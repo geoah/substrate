@@ -9,12 +9,19 @@ import (
 
 // The final reply's record links land on its row as mentions: a record that
 // does not exist is missing, one nothing in the run carried is unread, and
-// the run's result carries the same list.
+// the run's result carries the same list. A kind the agent does not read is
+// never marked missing, so a reply cannot tell its records' existence.
 func TestTheFinalReplyRecordsWhatItLinks(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	widget := crewPackage + "/widget"
+	task := "samples.substrate.reamde.dev/tasks/task"
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: task, ID: "t-real", Properties: map[string]any{"name": "real"},
+	}); err != nil {
+		t.Fatalf("put task: %v", err)
+	}
 	for _, id := range []string{"w-read", "w-unread"} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: widget, ID: id, Properties: map[string]any{"name": id},
@@ -25,7 +32,8 @@ func TestTheFinalReplyRecordsWhatItLinks(t *testing.T) {
 	reply := "Found [the read one](substrate://" + widget + "/w-read), " +
 		"[the other](ref:" + widget + "/w-unread) and [a ghost](substrate://" + widget + "/w-ghost). " +
 		"Again: [read](substrate://" + widget + "/w-read). " +
-		"`[example](substrate://" + widget + "/w-code)`"
+		"`[example](substrate://" + widget + "/w-code)`" +
+		" [a task](substrate://" + task + "/t-real) [no task](substrate://" + task + "/t-ghost)"
 	fake.script("arch",
 		fakeTurn{calls: []fakeCall{{"query", `{"kind": "` + widget + `", "id": "w-read"}`}}},
 		fakeTurn{content: reply},
@@ -38,6 +46,8 @@ func TestTheFinalReplyRecordsWhatItLinks(t *testing.T) {
 		{Kind: widget, ID: "w-read", Text: "the read one"},
 		{Kind: widget, ID: "w-unread", Text: "the other", Unread: true},
 		{Kind: widget, ID: "w-ghost", Text: "a ghost", Missing: true, Unread: true},
+		{Kind: task, ID: "t-real", Text: "a task", Unread: true},
+		{Kind: task, ID: "t-ghost", Text: "no task", Unread: true},
 	}
 	if len(res.Mentions) != len(want) {
 		t.Fatalf("result mentions: %+v", res.Mentions)

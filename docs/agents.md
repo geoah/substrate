@@ -510,8 +510,12 @@ blocks, and stamps them on the reply's `assistant` row as `mentions`:
 id (a merged-away id counts as the record it became), and `unread: true` when
 no tool result or message the model saw in the run carried the record. The
 `done` event's result carries the same list. A client renders a missing
-mention as its text alone, so an invented id never reads as a record; an
-unread one still renders, and is there for evaluating the agent.
+mention as its text alone, so an invented id of a kind the agent reads never
+reads as a record; an unread one still renders, and is there for evaluating
+the agent. A link to a kind outside the agent's `reads` is never checked and
+never marked `missing`: checking it would tell an app talking to the agent
+whether a record it cannot read exists. Such a link renders as a link, and
+opening an invented one answers `404`.
 
 ## Pinned context
 

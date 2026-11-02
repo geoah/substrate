@@ -1115,6 +1115,23 @@ func (s *scopedDataset) ChatAgent(ctx context.Context, _ substrate.Actor, name s
 			return nil, err
 		}
 	}
+	// The engine reads each context record under the agent's grant and
+	// stores it on a row this token reads, so the token must read each one
+	// itself, and a refusal is the scoped read's own answer, not an
+	// existence oracle.
+	if len(in.Context) > substrate.MaxChatContextRecords {
+		return nil, fmt.Errorf("%w: context names %d records, and a turn is about at most %d",
+			substrate.ErrValidation, len(in.Context), substrate.MaxChatContextRecords)
+	}
+	for _, path := range in.Context {
+		kind, id, ok := vocabulary.SplitRecordPath(path)
+		if !ok {
+			return nil, fmt.Errorf("%w: context %q is not a record path, <authority>/<package>/<kind>/<id>", substrate.ErrValidation, path)
+		}
+		if _, err := s.Get(ctx, kind, id); err != nil {
+			return nil, err
+		}
+	}
 	return s.inner.ChatAgent(substrate.WithoutScopes(ctx), s.actor, name, in, emit)
 }
 

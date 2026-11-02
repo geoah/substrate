@@ -599,7 +599,9 @@ records their chats are made of:
   path segment (`%2F` for its slashes), streaming as it does for the owner.
   The message is written as the app's, `app:<host>`; the agent runs under
   its own permissions, so it reads and writes what it would in the
-  owner's chat;
+  owner's chat. A chat's `context` may name only records the app's own
+  token reads; any other path is refused with the `404 not_found` a read
+  of it would answer, before the agent runs;
 - the threads (`substrate.reamde.dev/llm/thread`) whose `agent` matches: list,
   read, and `PATCH` of `subject` alone, to rename one;
 - their messages (`…/llm/message`) and interactions (`…/llm/interaction`):
