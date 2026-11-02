@@ -137,6 +137,14 @@ type Config struct {
 	// records it (appAuthorityFromFile). AuthorityDocs parses it.
 	InsecureAuthorityDocs string `envconfig:"SUBSTRATE_INSECURE_AUTHORITY_DOCS" default:""`
 
+	// InsecureAllowForeignPackages lets a token create a package under any
+	// authority, not only its repository's own (decision 0210). It exists
+	// for the provider end-to-end suite and `mise run test:e2e`, which apply
+	// shipped provider files rewired at a local mock. NEVER set it on a
+	// deployment anybody can reach: any token may then declare packages under
+	// names its repository does not own.
+	InsecureAllowForeignPackages bool `envconfig:"SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES" default:"false"`
+
 	// The host OAuth facility (bundles declare auth, the host runs it).
 	// StateKey signs flow state; CallbackURL is the one redirect URI every
 	// provider app registers. Both unset disables the facility.

@@ -12,7 +12,7 @@ import (
 // required, so a write that leaves either out is refused over HTTP with `422`
 // naming the property, and a patch that never mentions it is not.
 func TestATriggerWithoutASourceOrAPolicyWithoutAnActionAnswers422(t *testing.T) {
-	e := testenv.Start(t)
+	e := testenv.Start(t, testenv.WithRepository(probeAuthority))
 	e.ApplyVocabularyYAML(`
 kind: substrate.reamde.dev/core/package
 metadata: {id: ` + probeRef + `}

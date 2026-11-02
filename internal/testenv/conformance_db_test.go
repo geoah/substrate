@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	conformanceAuthority = "conformance.example.substrate.reamde.dev"
+	conformanceAuthority = "conformance.example.com"
 	conformancePackage   = "conformance"
 	// conformanceRef is the package identity the declarations live in, which
 	// is also the first two segments of every kind reference and every route.
@@ -111,7 +111,7 @@ type codeCase struct {
 }
 
 func TestPublishedErrorCodesEndToEnd(t *testing.T) {
-	e := testenv.Start(t)
+	e := testenv.Start(t, testenv.WithRepository(conformanceAuthority))
 	e.ApplyVocabularyYAML(conformanceVocabulary)
 
 	cases := conformanceCases()

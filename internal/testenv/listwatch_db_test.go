@@ -22,7 +22,7 @@ import (
 )
 
 func TestListHeadHandsOffToTheWatch(t *testing.T) {
-	e := testenv.Start(t)
+	e := testenv.Start(t, testenv.WithRepository(eventAuthority))
 	e.ApplyVocabularyYAML(eventVocabulary)
 
 	// Two writes before the list, so the head it reports is a real position

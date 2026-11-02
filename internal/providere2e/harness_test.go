@@ -152,6 +152,10 @@ func startServer(t *testing.T) *server {
 		// enrolling an authenticator for a repository this run deletes would
 		// be friction with nothing behind it.
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=true",
+		// The runner applies each provider's files rewired at its mock, under
+		// the provider's own authority, which a token may not create
+		// (decision 0210) and the catalog's install cannot rewire.
+		"SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES=true",
 		"SUBSTRATE_CREDENTIAL_KEY="+testenv.MintCredentialKey(),
 		// The host OAuth facility. The mock serves the consent redirect, so
 		// the callback has to be this server's own.

@@ -921,12 +921,20 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	if actor != nil {
 		// THE OWNERSHIP CHECK, at the one chokepoint (seed.go): who may write a
 		// kind DECLARATION into each touched package.
-		for _, g := range sortedKeys(touched) {
+		// Packages before authority rows, so a refused new package is what
+		// the refusal names, never the authority row beside it.
+		ordered := sortedKeys(touched)
+		sort.SliceStable(ordered, func(i, j int) bool {
+			return strings.Contains(ordered[i], "/") && !strings.Contains(ordered[j], "/")
+		})
+		for _, g := range ordered {
 			if err := authorizeDeclarationWrite(*actor, current, g); err != nil {
 				return nil, err
 			}
-			if err := authorizeNewPackage(*actor, current, g); err != nil {
-				return nil, err
+			if !ds.svc.foreignPackages {
+				if err := authorizeNewPackage(*actor, current, ds.scope.Repository, g); err != nil {
+					return nil, err
+				}
 			}
 			owner, err := ds.packageOwner(ctx, ds.db, g)
 			if err != nil {
@@ -1017,8 +1025,9 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// authority document travels with every closure published under it, so
 		// publishing that row would close `providers.substrate.reamde.dev`
 		// itself the moment any provider installed, and with it the hand apply
-		// of every sibling closure. The row says who publishes; the package
-		// row says who may write.
+		// of every sibling closure the repository already holds as
+		// `installed`. The row says who publishes; the package row says who
+		// may write.
 		source := vocabulary.SourceInstalled
 		if _, pkgName := vocabulary.SplitPackageRef(aname); b.published && pkgName != "" {
 			source = vocabulary.SourcePublished
