@@ -338,7 +338,7 @@ struct PackageOwnershipTests {
         #expect(try await first.ensure() == .current(held: 1))
         let baseline = try #require(PackageBaseline.load(from: directory))
         #expect(baseline.kinds["ada.example.com/training/set"] == 1)
-        #expect(baseline.kinds.count == 5)
+        #expect(baseline.kinds.count == 6)
 
         // The owner edited the set kind in the console; this build ships 2.
         let upgraded = Locked(0)
@@ -355,7 +355,7 @@ struct PackageOwnershipTests {
     @Test("a package changed outside the app at the same version stops the app's writes too")
     func driftedAtCurrent() async throws {
         let directory = temporaryDirectory()
-        try PackageBaseline(version: 2, kinds: Dictionary(uniqueKeysWithValues: ["exercise", "setup", "routine", "session", "set"].map {
+        try PackageBaseline(version: 2, kinds: Dictionary(uniqueKeysWithValues: ["exercise", "setup", "routine", "session", "set", "memory"].map {
             ("ada.example.com/training/\($0)", 1)
         })).save(to: directory, writingOptions: .atomic)
         let applied = Locked(0)
@@ -373,7 +373,7 @@ struct PackageOwnershipTests {
     @Test("an upgrade over kinds the app recorded goes through")
     func unchangedKinds() async throws {
         let directory = temporaryDirectory()
-        try PackageBaseline(version: 1, kinds: Dictionary(uniqueKeysWithValues: ["exercise", "setup", "routine", "session", "set"].map {
+        try PackageBaseline(version: 1, kinds: Dictionary(uniqueKeysWithValues: ["exercise", "setup", "routine", "session", "set", "memory"].map {
             ("ada.example.com/training/\($0)", 1)
         })).save(to: directory, writingOptions: .atomic)
         let applied = Locked(0)

@@ -53,7 +53,7 @@ public struct AppStatusCheck: Sendable {
                 // metadata lists: a server listing none has no check, and its
                 // approval gave the scopes as the app asked.
                 do {
-                    let result = try await client.checkAuthorization(manifest.check(for: session))
+                    let result = try await client.checkAuthorization(manifest.check(for: session, metadata: probe.metadata))
                     let found = manifest.changes(from: result, session: session)
                     if !found.serverBlocked.isEmpty {
                         issues.append(.serverTooOld(running: probe.version, needed: nil, missing: [], blocked: found.serverBlocked))

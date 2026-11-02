@@ -94,6 +94,7 @@ final class SubstrateLink {
 
     let manifest = WorkoutsManifest.current
     @ObservationIgnored let packageManifest: PackageManifest? = try? PackageManifest.bundled()
+    @ObservationIgnored let coachManifest: CoachManifest? = try? CoachManifest.bundled()
     /// Whether an app session is still set up with its server: the kit's
     /// check, at launch and on return to the foreground.
     @ObservationIgnored private(set) lazy var status = AppStatusModel { [weak self] in self?.statusCheck() }
@@ -303,6 +304,8 @@ final class SubstrateLink {
                 await refreshOutbox(account)
                 return
             }
+            await ensureCoach(account, training: state)
+            guard isCurrent(account) else { return }
             if let remote = account.remote {
                 let read = try await CatalogSync.read(account.api, remote: remote, outbox: account.outbox, sample: account.sample,
                                                       bundled: { try BundledCatalog().loadNow() })
@@ -319,6 +322,21 @@ final class SubstrateLink {
             await flush(account)
         } catch {
             if isCurrent(account) { note(error) }
+        }
+    }
+
+    /// Installs or updates the workout coach (decision 0206) when the token
+    /// approves it and training is current. Quiet: whatever it meets is
+    /// logged, never shown, and never stops the sync.
+    private func ensureCoach(_ account: SyncAccount, training: PackageState) async {
+        guard let coachManifest else { return }
+        let approval = CoachInstaller.approval(in: account.session.details, authority: account.api.rehome.authority)
+        let installer = CoachInstaller(api: account.api, manifest: coachManifest, approval: approval, clientID: manifest.clientID)
+        do {
+            let state = try await installer.ensure(training: training)
+            logger.info("workout coach: \(String(describing: state), privacy: .public)")
+        } catch {
+            logger.error("workout coach: \(error.localizedDescription, privacy: .public)")
         }
     }
 

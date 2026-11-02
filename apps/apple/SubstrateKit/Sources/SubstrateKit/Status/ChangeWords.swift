@@ -131,6 +131,12 @@ public extension AppManifest {
             let what = webhookWords(trigger: trigger, package: row?.webhook?.package)
             if action == AuthorizationSetup.Actions.none { return Change(kind: .webhook, words: "The \(what) is on") }
             return Change(kind: .webhook, words: "Turn on the \(what)")
+        case AuthorizationDetail.Types.agent:
+            guard let agent = detail.agent else { return nil }
+            let name = agent.split(separator: "/").last.map { String($0).splittingWords().joined(separator: " ").lowercased().capitalizedFirst } ?? agent
+            if action == AuthorizationSetup.Actions.none { return Change(kind: .install, words: "The AI agent \(name) is approved") }
+            let cap = detail.spendCentsPerDay.map { String(format: "Spends at most $%.2f a day", Double($0) / 100) }
+            return Change(kind: .install, words: "Add the AI agent \(name)", detail: cap)
         default:
             return nil
         }

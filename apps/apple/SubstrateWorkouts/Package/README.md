@@ -531,6 +531,23 @@ What a reader does with it:
 - **Filters**: "every set the lifter rated" is `rpeMethod eq entered`;
   "rated, pre-filled or copied" is `rpe exists`.
 
+## Memory
+
+`~/training/memory`, from version 2: one fact the workout coach keeps
+([the coach plan](../../../../docs/plans/workouts-coach.md#7-memory)). The
+app itself reads and writes none yet; the coach writes them with
+`source: coach`, and the owner reads, edits, retires and deletes them as the
+Coach memories collection in the console.
+
+| Property    | Type                               | Notes                                                                                                                  |
+| ----------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `text`      | text, required                     | One fact in the owner's words.                                                                                         |
+| `topic`     | enum, required                     | goal, experience, schedule, equipment, limitation, preference, baseline, lifestyle, response, change, other.          |
+| `exercise`  | reference to `~/training/exercise` | When the fact is about one.                                                                                            |
+| `until`     | date                               | The last day a passing fact holds; the coach retires it after.                                                         |
+| `active`    | bool, default true                 | Off retires the fact and keeps its history; the coach pins only active ones.                                           |
+| `source`    | enum, default `owner`              | owner, coach, app.                                                                                                     |
+
 ## Nesting
 
 Substrate caps object nesting at four levels: a kind's own property is level
@@ -703,13 +720,17 @@ console's agent or an importer edits what the app wrote, these rules hold:
   device writes only after an explicit takeover the first one honours. A
   second writer brings per-set `source` and `adapter` with it
   ([Left out](#left-out-and-why)).
-- **The agent proposes, it does not edit live.** A console or agent change
-  to a routine a session is running, or a change proposed from a session
-  back to its routine, is a proposal against a base
-  version through substrate's own surface (`core/propose`, which lands a
-  `substrate.reamde.dev/core/recordpatchrequest` the owner accepts), never
-  a second approval lifecycle inside these kinds. Nothing ever rewrites a
-  performed set's `target`.
+- **The workout coach writes routines only once the owner agrees, and
+  never while one is running.** The coach Substrate Workouts installs
+  (`~/trainingcoach/workoutCoach`, [decision 0206](../../../../docs/decisions/0206-an-app-declares-one-agent-held-to-its-own-reach.md))
+  writes routines, exercises, setups and its memories directly, after
+  presenting the change in a fixed shape and getting a clear yes in the chat,
+  and it checks for a session of the routine whose `status` is `active`
+  first and writes nothing while one runs. It never writes sessions or sets.
+  An owner who wants review of each write adds a `recordpatchpolicy` gate on
+  the coach. Another agent's change to a routine a session is running is a
+  proposal through substrate's own surface (`core/propose`). Nothing ever
+  rewrites a performed set's `target`.
 
 ## Apple Health
 
