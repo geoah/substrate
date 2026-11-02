@@ -16,8 +16,7 @@ struct RowsEditorPanel: View {
     var isResting = false
     /// A drop or a mini-set: the line hangs off the one above.
     var role: RowsRowRole = .working
-    var groupColor: Color = .accentColor
-    /// `Set 2`, `A2 Round 1`: the set as its line names it, for the undo toast.
+    /// `Set 2`, `Bird Dog, set 1`: the set as said aloud, for the undo toast.
     var name = ""
     /// The open set's Log button came into view or left it: the island docks
     /// the set while it is out (§7.6a). Nil for a fix.
@@ -178,16 +177,18 @@ struct RowsEditorPanel: View {
     private var titleGroup: some View {
         HStack(spacing: 10) {
             RowsGlyph(kind: glyph)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                if let badge = editor.badge {
-                    RowsBadge(text: badge, color: groupColor)
+            HStack(alignment: .center, spacing: 7) {
+                RowsSetLabel(text: editor.setLabel, isWarmup: role == .warmup,
+                             emphasis: editor.mode == .fix ? .done : .now)
+                if let caption = editor.caption {
+                    Text(caption)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(role == .drop ? RowsStyle.orange : Color.primary)
+                        .lineLimit(2)
                 }
-                Text(editor.title)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(editor.tint == .orange ? RowsStyle.orange : Color.primary)
-                    .lineLimit(2)
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(editor.title)
             .accessibilityAddTraits(.isHeader)
         }
     }

@@ -338,11 +338,8 @@ struct RowsNextPartView: View {
         .accessibilityHint("Shows every option for this set")
     }
 
-    @ViewBuilder
     private var badge: some View {
-        if let badge = next.badge {
-            RowsBadge(text: badge, color: tint)
-        }
+        RowsSetLabel(text: next.setLabel, isWarmup: next.isWarmup, emphasis: .now)
     }
 
     private var exerciseName: some View {
@@ -351,12 +348,15 @@ struct RowsNextPartView: View {
             .foregroundStyle(.primary)
     }
 
+    @ViewBuilder
     private var setLabel: some View {
-        Text(next.label)
-            .font(.subheadline)
-            .foregroundStyle(next.tint == .orange ? RowsStyle.orange : Color.secondary)
-            .lineLimit(1)
-            .layoutPriority(1)
+        if !next.label.isEmpty {
+            Text(next.label)
+                .font(.subheadline)
+                .foregroundStyle(Color.secondary)
+                .lineLimit(1)
+                .layoutPriority(1)
+        }
     }
 
     private var chevron: some View {

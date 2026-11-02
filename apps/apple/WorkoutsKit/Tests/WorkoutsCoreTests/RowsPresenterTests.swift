@@ -96,7 +96,7 @@ extension RowsBlock {
     var shape: [String] {
         items.map { item in
             switch item {
-            case let .set(set): "\(set.badge.map { "\($0) " } ?? "")\(set.title): \(set.state.rawValue)"
+            case let .set(set): "\(set.title): \(set.state.rawValue)"
             case let .warmups(fold): "\(fold.title): \(fold.values)"
             case let .round(header): header.title
             case let .chainHeader(header): header.text
@@ -144,7 +144,8 @@ struct RowsOpenSetTests {
         #expect(set3.sentence == "Set 3, coming up: 105 kilograms, 10 reps. Last time 105 kilograms, 8 reps.")
 
         let editor = try #require(set2.editor)
-        #expect(editor.mode == .log && editor.tint == .accent && editor.title == "Set 2" && editor.badge == nil)
+        #expect(editor.mode == .log && editor.tint == .accent && editor.title == "Set 2" && editor.setLabel == "2")
+        #expect(editor.caption == nil)
         #expect(editor.note == RowsNote(text: "Set 1: 105 kg × 10, assuming RPE 8; try 105 kg × 10", kind: .reason))
         #expect(editor.fields.map(\.field) == [.load, .reps])
         let load = try #require(editor.field(.load))
@@ -177,10 +178,10 @@ struct RowsOpenSetTests {
         let island = layout.island
         #expect(island.rest == nil && island.end == nil)
         #expect(island.next == RowsNextPart(
-            row: set2.id, exercise: "Leg Press (Machine)", badge: nil, label: "Set 2", tint: .accent, fields: editor.fields,
+            row: set2.id, exercise: "Leg Press (Machine)", setLabel: "2", label: "", tint: .accent, fields: editor.fields,
             rpe: "@ 8", rpeStrip: editor.rpe,
             primary: RowsButton(title: "Log", accessibilityLabel: "Log 105 kg × 10 @ 8", action: .tick(set2.id)),
-            timerStartedAt: nil, sentence: "Next: Leg Press (Machine). \(set2.sentence)"
+            timerStartedAt: nil, sentence: "Next: Leg Press (Machine). \(set2.sentence)", loggedText: "Set 2 logged"
         ))
         #expect(island.after == RowsAfterPart(row: set3.id, label: "Then", text: "Set 3, 105 kg × 10",
                                               sentence: "Then Set 3, 105 kg × 10"))
@@ -303,7 +304,7 @@ struct RowsOpenSetTests {
         #expect(editor.primary.title == "Log warm-up 40 kg × 12")
         // A new session starts nothing: no countdown, no clock, just the first set and the one after it.
         #expect(layout.island.rest == nil && !layout.island.isCounting)
-        #expect(layout.island.next?.row == warmup.id && layout.island.next?.label == "Warm-up 1")
+        #expect(layout.island.next?.row == warmup.id && layout.island.next?.setLabel == "W" && layout.island.next?.label == "")
         #expect(layout.island.next?.tint == .orange && layout.island.next?.primary.title == "Log")
         #expect(layout.island.after?.text == "Warm-up 2, 70 kg × 6")
 
@@ -490,38 +491,42 @@ struct RowsFlowTests {
 
 @Suite("Rows layout: groups, chains and timed sets")
 struct RowsStructureTests {
-    @Test("The superset mid-round: rounds in the order done, no rest lines in the block, A2 next in the island")
+    @Test("The superset mid-round: rounds in the order done, no rest lines in the block, Bird Dog next in the island")
     func supersetMidRound() throws {
         var session = try RowsSession.fullyBody()
         try session.log("glute-bridge", 0, at: 60)
         let layout = try session.layout(at: 69)
         let block = try #require(layout.block("group-a"))
-        #expect(block.title == "Superset A" && block.subtitle == "Glute Bridge and Bird Dog, 2 rounds")
+        #expect(block.title == "Superset" && block.subtitle == "Glute Bridge and Bird Dog, 2 rounds")
         #expect(block.group == "a" && block.slots == ["glute-bridge", "bird-dog"])
-        #expect(block.addSets.map(\.title) == ["Add A1 set", "Add A2 set"])
+        #expect(block.addSets.map(\.title) == ["Add Glute Bridge set", "Add Bird Dog set"])
         // Rest shows only in the island, as for a plain exercise: no "0:00, straight to A2", no "Rest 1:00, then round 2".
         #expect(block.shape == [
             "Round 1 of 2",
-            "A1 Glute Bridge: done",
-            "A2 Bird Dog: now",
+            "Glute Bridge, set 1: done",
+            "Bird Dog, set 1: now",
             "Round 2 of 2",
-            "A1 Glute Bridge: next",
-            "A2 Bird Dog: next",
+            "Glute Bridge, set 2: next",
+            "Bird Dog, set 2: next",
         ])
+        // Each line is its exercise and the set's own number, never a group letter.
+        #expect(block.lines.map(\.setLabel) == ["1", "1", "2", "2"])
+        #expect(block.lines.map(\.caption) == ["Glute Bridge", "Bird Dog", "Glute Bridge", "Bird Dog"])
         let a1 = block.lines[0]
         #expect(a1.values == "16 reps" && a1.changes == [RowsChange(text: "+1 rep", isGain: true)] && a1.verdict == .better)
         let editor = try #require(block.lines[1].editor)
-        #expect(editor.badge == "A2" && editor.title == "Bird Dog" && editor.fields.map(\.field) == [.reps])
+        #expect(editor.setLabel == "1" && editor.caption == "Bird Dog" && editor.title == "Bird Dog, set 1")
+        #expect(editor.fields.map(\.field) == [.reps])
         #expect(editor.field(.reps)?.value == "11" && editor.field(.reps)?.unit == "per side")
         #expect(editor.field(.reps)?.last == "last 10")
         // No plan effort and no rating last time: the strip waits behind + RPE.
         #expect(editor.rpe?.isCollapsed == true)
-        #expect(editor.primary.title == "Log A2, 11 per side")
+        #expect(editor.primary.title == "Log 11 per side")
         let a2 = try session.row("bird-dog", 0)
         #expect(layout.island.rest == nil)
-        #expect(layout.island.next?.row == a2 && layout.island.next?.badge == "A2")
+        #expect(layout.island.next?.row == a2 && layout.island.next?.setLabel == "1")
         #expect(layout.island.next?.exercise == "Bird Dog" && layout.island.next?.label == "Round 1")
-        #expect(layout.island.after?.text == "A1 Glute Bridge, round 2, 16 reps")
+        #expect(layout.island.after?.text == "Glute Bridge, round 2, 16 reps")
 
         // A2 done: the round rest runs in the island, and the block gains no line.
         try session.log("bird-dog", 0, at: 100)
@@ -674,7 +679,7 @@ struct RowsStructureTests {
         #expect(block.isFinished)
         #expect(block.summary == RowsBlockSummary(
             text: "Glute Bridge 16, 16; Bird Dog 11, 11 per side", change: RowsChange(text: "+1 rep", isGain: true),
-            sentence: "Superset A, done: Glute Bridge: 16 reps; 16 reps; Bird Dog: 11 reps per side; 11 reps per side. "
+            sentence: "Superset, done: Glute Bridge: 16 reps; 16 reps; Bird Dog: 11 reps per side; 11 reps per side. "
                 + "1 rep more than last time."
         ))
         #expect(block.items.compactMap { if case let .round(round) = $0 { round.isDone } else { nil } } == [true, true])
@@ -731,6 +736,18 @@ struct RowsRirstopEditorTests {
 
 @Suite("Rows layout: words")
 struct RowsWordsTests {
+    @Test("Every line starts with its own label, one shape: W for a warm-up, else its number; no caption repeats it")
+    func setLabels() throws {
+        var session = try RowsSession.dayOne()
+        let block = try #require(try session.layout(at: 0).block("leg-press"))
+        #expect(block.lines.map(\.setLabel) == ["W", "W", "1", "2", "3"])
+        #expect(block.lines.allSatisfy { $0.caption == nil })
+        // The words VoiceOver reads keep the set's name.
+        #expect(block.lines.map(\.title) == ["Warm-up 1", "Warm-up 2", "Set 1", "Set 2", "Set 3"])
+        // A warm-up says so in its label; no tag repeats it.
+        #expect(block.lines.allSatisfy { line in !line.tags.contains { $0.text == "warm-up" } })
+    }
+
     @Test("Block subtitles: a range and its effort, a hold, reps alone, an effort alone, and the set rest")
     func subtitles() throws {
         let layout = try RowsSession.fullyBody().layout(at: 0)

@@ -73,17 +73,17 @@ struct RowsBuilder {
         }
         let rows = slots.flatMap(state.orderedRows(inSlot:))
         let isFinished = !rows.isEmpty && rows.allSatisfy(\.isCompleted)
-        let title = block.group.map { "\($0.kind.label) \($0.key.uppercased())" } ?? block.cards.first?.name ?? ""
+        // No group letter: the members are named by their exercises.
+        let title = block.group.map(\.kind.label) ?? block.cards.first?.name ?? ""
         return RowsBlock(
             id: block.id,
             slots: slots,
             group: block.group?.key,
-            colorIndex: block.group?.colorIndex,
             title: title,
             subtitle: isGroup ? groupSubtitle(block) : slots.first.flatMap(plainSubtitle),
             items: items,
             addSets: block.cards.map { card in
-                RowsButton(title: isGroup ? "Add \(card.groupLabel ?? card.name) set" : "Add set",
+                RowsButton(title: isGroup ? "Add \(card.name) set" : "Add set",
                            accessibilityLabel: "Add a set to \(card.name)", action: .addSet(slot: card.slot, role: .working))
             },
             isFinished: isFinished,
@@ -185,7 +185,7 @@ struct RowsBuilder {
         let rows = units.joined().compactMap { state.rows[$0] }
         guard rows.allSatisfy(\.isCompleted) else { return units.flatMap { unitItems($0, isGroup: isGroup) } }
         let sets = rows.map { item($0, isGroup: isGroup) }
-        let values = sets.map { set in set.badge.map { "\($0) \(set.values)" } ?? set.values }
+        let values = sets.map(\.values)
         let previous = rows.map { evaluator.previous($0.id)?.values }
         var comparison: RowsChange?
         if previous.allSatisfy({ $0 != nil }) {
@@ -271,29 +271,49 @@ struct RowsBuilder {
         }
     }
 
-    /// `Set 1`, `Warm-up 2`, `Activation`, `Drop`, `Mini-set 3`, `Cluster 2`, `Set 1 left`; a
-    /// group's head is its exercise.
+    /// The set as said aloud: `Set 1`, `Warm-up 2`, `Activation`, `Drop`, `Mini-set 3`,
+    /// `Cluster 2`, `Set 1 left`; in a group after its exercise, `Glute Bridge, set 1`.
     func title(_ row: Row, head: Row, isGroup: Bool) -> String {
-        let name = p.exerciseName(state.slot(row.slot)?.exercise ?? ExerciseID(""))
-        let label = views[row.id]?.label
-        let ordinal = state.ordinal(of: row.id) ?? 1
-        let base = head.role == .warmup ? warmupTitle(row) : "Set \(ordinal)"
-        if let side = row.side {
-            return isGroup ? "\(name), \(side.rawValue)" : "\(base) \(side.rawValue)"
+        if isGroup {
+            let name = p.exerciseName(state.slot(row.slot)?.exercise ?? ExerciseID(""))
+            return "\(name), \(views[row.id]?.label.spoken ?? "set")"
         }
+        return part(row, head: head) ?? setTitle(row, head: head)
+    }
+
+    /// What a line shows beside its label: the exercise in a group (the part
+    /// of a chain after it), the part of a chain alone, else nothing, since
+    /// the label is the set's number (owner, 2026-11-02).
+    func caption(_ row: Row, head: Row, isGroup: Bool) -> String? {
+        let part = part(row, head: head)
+        guard isGroup else { return part }
+        let name = p.exerciseName(state.slot(row.slot)?.exercise ?? ExerciseID(""))
+        return part.map { "\(name), \($0.lowercased())" } ?? name
+    }
+
+    /// `Set 1`, `Warm-up 2`, `Set 1 left`.
+    func setTitle(_ row: Row, head: Row) -> String {
+        let base = head.role == .warmup ? warmupTitle(row) : "Set \(state.ordinal(of: row.id) ?? 1)"
+        return row.side.map { "\(base) \($0.rawValue)" } ?? base
+    }
+
+    /// A chain's part: `Activation`, `Drop`, `Drop 2`, `Mini-set 3`, `Cluster 2`; nil for a
+    /// set's head or side, which its label names.
+    func part(_ row: Row, head: Row) -> String? {
+        guard row.side == nil else { return nil }
         let index = Ordinals.segmentIndex(of: row.id, in: state) ?? 0
         if !row.isHead {
             switch head.structure {
             case .drop: return state.chain(of: head.id).count > 2 ? "Drop \(index)" : "Drop"
             case .cluster: return "Cluster \(index + 1)"
             case .myo, .myomatch, .restpause: return "Mini-set \(index)"
-            case .straight: return label?.spoken.capitalizedFirst ?? base
+            case .straight: return views[row.id]?.label.spoken.capitalizedFirst
             }
         }
         switch head.structure {
         case .myo, .myomatch, .restpause: return "Activation"
         case .cluster: return "Cluster 1"
-        case .straight, .drop: return isGroup ? name : base
+        case .straight, .drop: return nil
         }
     }
 
@@ -304,9 +324,9 @@ struct RowsBuilder {
     }
 
     /// The Log button's words before the values.
-    func logPrefix(_ row: Row, head: Row, badge: String?) -> String {
+    func logPrefix(_ row: Row, head: Row) -> String {
         let index = Ordinals.segmentIndex(of: row.id, in: state) ?? 0
-        if let side = row.side { return "Log \(badge.map { "\($0) " } ?? "")\(side.rawValue) side," }
+        if let side = row.side { return "Log \(side.rawValue) side," }
         if !row.isHead {
             switch head.structure {
             case .drop: return "Log drop"
@@ -315,7 +335,6 @@ struct RowsBuilder {
             case .straight: break
             }
         }
-        if let badge { return head.role == .warmup ? "Log \(badge) warm-up," : "Log \(badge)," }
         return head.role == .warmup ? "Log warm-up" : "Log"
     }
 
@@ -329,7 +348,8 @@ struct RowsBuilder {
         let unit = card?.unit ?? state.settings.defaultUnit
         let rowState = rowState(row)
         let title = title(row, head: head, isGroup: isGroup)
-        let badge = isGroup ? card?.groupLabel : nil
+        let setLabel = view?.label.short ?? ""
+        let caption = caption(row, head: head, isGroup: isGroup)
         let ghost = evaluator.ghost(row.id)
         let typedOnlyReps = row.isPending && row.entered.reps == nil
         let placeholder = typedOnlyReps ? ghost.repsPlaceholder : nil
@@ -338,8 +358,8 @@ struct RowsBuilder {
         let done = row.performed?.values
         let previous = view?.previous?.values
 
+        // A warm-up says so in its orange `W`; no tag repeats it.
         var tags: [RowsTag] = []
-        if isGroup, head.role == .warmup { tags.append(RowsTag(text: "warm-up", style: .orange)) }
         if waitingDrops > 0 {
             tags.append(RowsTag(text: waitingDrops == 1 ? "+ drop" : "+ \(waitingDrops) drops", style: .orange))
         }
@@ -358,7 +378,7 @@ struct RowsBuilder {
                 changes = [RowsText.firstTime]
             }
         }
-        let who = badge.map { "\($0) \(title)" } ?? title
+        let who = title
         let spokenNow = RowsText.spoken(done ?? evaluator.shown(row.id), measurement: measurement, perSide: perSide,
                                         repsHint: done == nil && typedOnlyReps && ghost.repsIsHint, placeholder: placeholder)
         let spokenLast = previous.map { "Last time \(RowsText.spoken($0, measurement: measurement, perSide: perSide))" }
@@ -386,7 +406,8 @@ struct RowsBuilder {
         let rpeShown = done?.rpe
         var editor: RowsEditor?
         if rowState == .now, let view {
-            let source = editorSource(row, head: head, view: view, mode: .log, title: title, badge: badge, isGroup: isGroup)
+            let source = editorSource(row, head: head, view: view, mode: .log, title: title, setLabel: setLabel,
+                                      caption: caption, isGroup: isGroup)
             let rpe: RowRPE = if case .prefill = view.rpeEntry, !p.settings.prefillsRPE { .none } else { view.rpeEntry }
             let running = p.timedID == row.id
             editor = source.editor(values: row.entered, rpe: rpe, commit: running ? view.stopValues : view.commitValues,
@@ -394,7 +415,8 @@ struct RowsBuilder {
         }
         var fix: RowsFix?
         if let done, let view {
-            let source = editorSource(row, head: head, view: view, mode: .fix, title: title, badge: badge, isGroup: isGroup)
+            let source = editorSource(row, head: head, view: view, mode: .fix, title: title, setLabel: setLabel,
+                                      caption: caption, isGroup: isGroup)
             fix = RowsFix(row: row.id, logged: done, source: source)
         }
         return RowsSetItem(
@@ -403,7 +425,8 @@ struct RowsBuilder {
             state: rowState,
             role: role(row, head: head),
             title: title,
-            badge: badge,
+            setLabel: setLabel,
+            caption: caption,
             isChained: !row.isHead && row.side == nil,
             values: values,
             valuesChanged: row.isPending && changedFromSuggestion(row.entered, ghost: ghost, measurement: measurement),
@@ -479,8 +502,8 @@ struct RowsBuilder {
 
     // MARK: - Editors
 
-    func editorSource(_ row: Row, head: Row, view: SetRowPresentation, mode: RowsEditor.Mode, title: String, badge: String?,
-                      isGroup: Bool) -> RowsEditorSource
+    func editorSource(_ row: Row, head: Row, view: SetRowPresentation, mode: RowsEditor.Mode, title: String,
+                      setLabel: String, caption: String?, isGroup: Bool) -> RowsEditorSource
     {
         let exercise = state.exercise(ofRow: row.id)
         let measurement = exercise?.measurement ?? .weightreps
@@ -554,7 +577,8 @@ struct RowsBuilder {
             mode: mode,
             tint: tint,
             title: title,
-            badge: badge,
+            setLabel: setLabel,
+            caption: caption,
             note: note,
             trailingNote: mode == .log && role == .drop && pause == 0 ? "no rest" : nil,
             reason: view.suggestion.flatMap { $0.stop ? nil : $0.text },
@@ -571,7 +595,7 @@ struct RowsBuilder {
             timeStep: card?.timeStep ?? exercise?.resolvedTimeStep ?? 5,
             rpeOffered: true,
             rpeOpen: head.role != .warmup && measurement.recordsReps && (previousRated || plannedEffort),
-            logPrefix: logPrefix(row, head: head, badge: badge),
+            logPrefix: logPrefix(row, head: head),
             timer: timer,
             secondary: secondary,
             isRunning: running,
@@ -745,17 +769,12 @@ struct RowsBuilder {
     func nextPart(_ item: RowsSetItem) -> RowsNextPart? {
         guard let editor = item.editor, let row = state.rows[item.id], let slot = state.slot(row.slot) else { return nil }
         let exercise = p.exerciseName(slot.exercise)
-        var label = item.title
-        if item.badge != nil {
-            // A group's line is titled by its exercise: say the warm-up or the
-            // round, or the part after the name.
-            let prefix = "\(exercise), "
-            if label == exercise {
-                label = item.role == .warmup ? warmupTitle(row)
-                    : "Round \(max(1, UpNext.round(of: row.id, in: state)))"
-            } else if label.hasPrefix(prefix) {
-                label = String(label.dropFirst(prefix.count)).capitalizedFirst
-            }
+        // The label says the set; words follow only where they help: the
+        // round in a group, a chain's part.
+        let head = state.rows[row.headID] ?? row
+        var label = part(row, head: head) ?? ""
+        if label.isEmpty, slot.group != nil, item.role != .warmup {
+            label = "Round \(max(1, UpNext.round(of: row.id, in: state)))"
         }
         let word: String = switch editor.primary.action {
         case .startTimedSet: "Start"
@@ -765,13 +784,15 @@ struct RowsBuilder {
         var startedAt: Date?
         if case let .running(start, _)? = editor.timer?.phase { startedAt = start }
         return RowsNextPart(
-            row: item.id, exercise: exercise, badge: item.badge, label: label, tint: editor.tint, fields: editor.fields,
+            row: item.id, exercise: exercise, setLabel: item.setLabel, isWarmup: item.role == .warmup, label: label,
+            tint: editor.tint, fields: editor.fields,
             rpe: editor.rpe?.shown.map { "@ \(Format.rpe($0))" },
             rpeStrip: editor.rpe,
             primary: RowsButton(title: word, accessibilityLabel: editor.primary.accessibilityLabel,
                                 action: editor.primary.action, isEnabled: editor.primary.isEnabled),
             timerStartedAt: startedAt,
-            sentence: "Next: \(exercise). \(item.sentence)"
+            sentence: "Next: \(exercise). \(item.sentence)",
+            loggedText: editor.loggedText
         )
     }
 
@@ -823,7 +844,7 @@ struct RowsBuilder {
     }
 
     /// The row after the open one in words with its values: `warm-up 2, 70 kg × 6`,
-    /// `A1 Glute Bridge, round 2, 16 reps`, `mini-set 2` (not made yet, so no values).
+    /// `Glute Bridge, round 2, 16 reps`, `mini-set 2` (not made yet, so no values).
     func nextText(_ next: RowID, from anchor: RowID, in preview: SessionState) -> String {
         let what = describe(next, from: anchor, in: preview)
         guard state.rows[next] != nil else { return what }
@@ -832,7 +853,7 @@ struct RowsBuilder {
     }
 
     /// A row in words, lower-case first, as seen from `anchor`: `mini-set 3`
-    /// or `drop 1` in the anchor's chain, `set 3` in its exercise, `A2 Bird
+    /// or `drop 1` in the anchor's chain, `set 3` in its exercise, `Bird
     /// Dog` in a group (`, round 2` when the round changes), else the exercise
     /// and the label: `Chest Press (Machine), warm-up`. `preview` is a state a
     /// tick was previewed in, which may hold a row the session does not have yet.
@@ -845,8 +866,8 @@ struct RowsBuilder {
         let anchorRow = anchor.flatMap { s.rows[$0] }
         if let anchorRow, anchorRow.headID == row.headID, !row.isHead, !part.isEmpty { return part }
         let name = p.exerciseName(slot.exercise)
-        if slot.group != nil, let badge = cards[row.slot]?.groupLabel {
-            var text = "\(badge) \(name)"
+        if slot.group != nil {
+            var text = name
             if !row.isHead, !part.isEmpty { text += ", \(part)" }
             let round = UpNext.round(of: id, in: s)
             if round > 0, let anchor, anchorRow != nil, UpNext.round(of: anchor, in: s) != round {

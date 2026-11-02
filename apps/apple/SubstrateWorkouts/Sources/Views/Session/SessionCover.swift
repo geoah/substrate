@@ -282,7 +282,7 @@ struct SessionCover: View {
                     Button {
                         session.scrollTarget = ScrollTarget(slot: card.slot)
                     } label: {
-                        Text(card.groupLabel.map { "\($0) \(card.name)" } ?? card.name)
+                        Text(card.name)
                         Text(card.progress)
                     }
                 }

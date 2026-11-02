@@ -83,7 +83,7 @@ public struct RoutinePreviewPresentation: Equatable, Sendable, Identifiable {
 /// A plain slot, or a group with its bracket and header.
 public struct RoutinePreviewBlock: Equatable, Sendable, Identifiable {
     public var id: String
-    /// `Superset A, rest 1:00 after each round`, with `2 rounds, ` before the
+    /// `Superset, rest 1:00 after each round`, with `2 rounds, ` before the
     /// rest when the group names its rounds; nil for a plain slot.
     public var header: String?
     /// The group's colour, as in the session (`GroupHeader.paletteSize`).
@@ -170,7 +170,6 @@ public enum RoutinePresenter {
         let groupKeys = Set(routine.groups.map(\.key))
         var blocks: [RoutinePreviewBlock] = []
         var placed: Set<String> = []
-        var colors = 0
         for slot in routine.slots {
             guard let key = slot.group, groupKeys.contains(key) else {
                 blocks.append(RoutinePreviewBlock(id: slot.key, header: nil, colorIndex: nil,
@@ -187,15 +186,17 @@ public enum RoutinePresenter {
             let roundsText = group.rounds.map { "\(Format.count($0, "round")), " } ?? ""
             blocks.append(RoutinePreviewBlock(
                 id: "group-\(key)",
-                header: "\(group.groupKind.label) \(key.uppercased()), \(roundsText)\(restText)",
-                colorIndex: colors % GroupHeader.paletteSize,
+                // No group letter and no colour: the members are named by their
+                // exercises, and colour is kept for warm-ups and failure (owner, 2026-11-02).
+                header: "\(group.groupKind.label), \(roundsText)\(restText)",
+                colorIndex: nil,
                 slots: members.enumerated().map { index, member in
-                    previewSlot(member, routine: routine, catalog: catalog,
-                                label: groupMemberLabel(group: key, position: index + 1),
-                                nextLabel: index + 1 < members.count ? groupMemberLabel(group: key, position: index + 2) : nil)
+                    previewSlot(member, routine: routine, catalog: catalog, label: nil,
+                                nextLabel: index + 1 < members.count
+                                    ? catalog.exercises[members[index + 1].exercise]?.name ?? members[index + 1].exercise.rawValue
+                                    : nil)
                 }
             ))
-            colors += 1
         }
         return RoutinePreviewPresentation(
             id: routine.id,

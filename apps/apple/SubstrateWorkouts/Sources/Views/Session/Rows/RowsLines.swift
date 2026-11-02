@@ -2,12 +2,14 @@ import WorkoutsCore
 import SwiftUI
 
 /// One set as one line that reads like a sentence (DESIGN.md §7.6a):
-/// `Set 1  110 kg × 8  @ 8      +5 kg, −2 reps  =`. Done lines end with the
-/// change against last time and the verdict mark; pending lines are muted
-/// and end with last time. When the line does not fit, its end moves under
-/// it. VoiceOver reads the presenter's sentence. A done line's check unticks
-/// it, and its `…` holds the set's menu (Untick set, Delete set and the
-/// rest), as the open set's does (owner, 2026-11-02).
+/// `[1]  110 kg × 8  @ 8      +5 kg, −2 reps  =`, the set's label first and,
+/// in a group, its exercise beside it. Done lines sit on a light green wash
+/// with their values struck through and grey, ending with the change against
+/// last time and the verdict mark, so a logged set never looks like the one
+/// to do (owner, 2026-11-02); pending lines are muted and end with last time.
+/// When the line does not fit, its end moves under it. VoiceOver reads the
+/// presenter's sentence. A done line's check unticks it, and its `…` holds
+/// the set's menu (Untick set, Delete set and the rest), as the open set's does.
 struct RowsSetLine<MenuItems: View>: View {
     let item: RowsSetItem
     /// The set to do now, drawn as a line while another set is being fixed.
@@ -18,15 +20,14 @@ struct RowsSetLine<MenuItems: View>: View {
     var isFresh = false
     /// A "Then" tap took the list here: an accent wash for a moment.
     var isMarked = false
-    var groupColor: Color = .accentColor
     /// A done set: a tap on its check unticks it.
     var onUntick: (() -> Void)?
     let onTap: () -> Void
     /// The set's `…` menu; none when there are no items.
     @ViewBuilder var menuItems: () -> MenuItems
 
-    @ScaledMetric(relativeTo: .subheadline) private var labelWidth: CGFloat = 44
     @ScaledMetric(relativeTo: .body) private var glyphSize: CGFloat = 22
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         HStack(spacing: 0) {
@@ -48,6 +49,11 @@ struct RowsSetLine<MenuItems: View>: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+        .background {
+            if isDone {
+                RowsStyle.doneFill(contrast)
+            }
+        }
         .background {
             if isFresh || isMarked {
                 LinearGradient(colors: [(isFresh ? Color.green : Color.accentColor).opacity(0.12), .clear],
@@ -169,35 +175,42 @@ struct RowsSetLine<MenuItems: View>: View {
         }
     }
 
-    @ViewBuilder
     private var title: some View {
-        if let badge = item.badge {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                RowsBadge(text: badge, color: groupColor)
-                Text(item.title)
-                    .font(.body)
-                    .foregroundStyle(isDone || item.state == .now ? Color.primary : Color.secondary)
+        HStack(alignment: .center, spacing: 7) {
+            RowsSetLabel(text: item.setLabel, isWarmup: item.role == .warmup, emphasis: labelEmphasis)
+            if let caption = item.caption {
+                Text(caption)
+                    .font(item.isChained ? .subheadline.weight(.semibold) : .body)
+                    .foregroundStyle(captionColor)
+                    .lineLimit(2)
             }
-            .lineLimit(2)
-        } else {
-            Text(item.title)
-                .font(item.role == .warmup || item.role == .drop ? .subheadline.weight(.semibold) : .subheadline)
-                .foregroundStyle(item.role == .warmup || item.role == .drop ? RowsStyle.orange : Color.secondary)
-                .lineLimit(1)
-                .frame(minWidth: labelWidth, alignment: .leading)
         }
+    }
+
+    private var labelEmphasis: RowsSetLabel.Emphasis {
+        switch item.state {
+        case .done: .done
+        case .now: collapsed ? .todo : .now
+        case .next, .locked: .todo
+        }
+    }
+
+    private var captionColor: Color {
+        if item.role == .drop { return RowsStyle.orange }
+        return item.state == .now ? .primary : .secondary
     }
 
     private var values: some View {
         Text(item.values)
             .font(.body.monospacedDigit())
+            .strikethrough(isDone, color: .secondary)
             .foregroundStyle(valuesColor)
             .lineLimit(2)
     }
 
     private var valuesColor: Color {
         if item.valuesChanged, !isDone { return .accentColor }
-        return isDone ? .primary : .secondary
+        return item.state == .now ? .primary : .secondary
     }
 
     @ViewBuilder
@@ -233,10 +246,10 @@ struct RowsSetLine<MenuItems: View>: View {
 
 extension RowsSetLine where MenuItems == EmptyView {
     init(item: RowsSetItem, collapsed: Bool = false, isResting: Bool = false, isFresh: Bool = false, isMarked: Bool = false,
-         groupColor: Color = .accentColor, onTap: @escaping () -> Void)
+         onTap: @escaping () -> Void)
     {
         self.init(item: item, collapsed: collapsed, isResting: isResting, isFresh: isFresh, isMarked: isMarked,
-                  groupColor: groupColor, onUntick: nil, onTap: onTap) { EmptyView() }
+                  onUntick: nil, onTap: onTap) { EmptyView() }
     }
 }
 

@@ -273,7 +273,7 @@ struct NextLine: View {
     var body: some View {
         Group {
             if let upNext, upNext.line == line {
-                let what = Text("\(Text("Next:").foregroundStyle(.secondary)) \(upNext.exerciseWithGroup), \(upNext.label.spoken)")
+                let what = Text("\(Text("Next:").foregroundStyle(.secondary)) \(upNext.exercise), \(upNext.label.spoken)")
                 if upNext.values.isEmpty {
                     what.lineLimit(lines)
                 } else {

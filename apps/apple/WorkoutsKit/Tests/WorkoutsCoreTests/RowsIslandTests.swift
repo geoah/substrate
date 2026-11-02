@@ -19,7 +19,7 @@ struct RowsIslandTests {
     @Test("the parts: rest only while resting, next only while its editor is out of view, after whenever there is one")
     func partSelection() {
         let button = RowsButton(title: "Log", action: .tick(RowID("r1")))
-        let next = RowsNextPart(row: RowID("r1"), exercise: "Leg Press (Machine)", badge: nil, label: "Set 1", tint: .accent,
+        let next = RowsNextPart(row: RowID("r1"), exercise: "Leg Press (Machine)", setLabel: "1", label: "", tint: .accent,
                                 fields: [], rpe: nil, primary: button, timerStartedAt: nil, sentence: "")
         let after = RowsAfterPart(row: RowID("r2"), label: "Then", text: "Set 2, 90 kg × 10", sentence: "")
         let rest = RowsRestPart(kind: .rest, title: "Rest", startedAt: engineEpoch, endsAt: engineEpoch.addingTimeInterval(90),

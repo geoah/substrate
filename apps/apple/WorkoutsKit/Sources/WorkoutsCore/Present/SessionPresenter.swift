@@ -119,7 +119,7 @@ struct Presenting {
         let isTiming = timerStart != nil && timedID == upNext?.row
         return AccessoryPresentation(
             title: title,
-            set: upNext.map { "\($0.exerciseWithGroup), \($0.label.spoken)" },
+            set: upNext.map { "\($0.exercise), \($0.label.spoken)" },
             values: isTiming ? "holding" : upNext.flatMap { $0.values.isEmpty ? nil : $0.values },
             row: upNext?.row,
             isPaused: isPaused,
@@ -251,7 +251,7 @@ struct Presenting {
         guard let index = members.firstIndex(where: { $0.key == slot.key }) else { return "Rest" }
         if index + 1 < members.count {
             let transition = RestRules.transition(slot: slot.key, in: state).seconds
-            return "Then \(Format.duration(transition)) to \(groupMemberLabel(group: key, position: index + 2))"
+            return "Then \(Format.duration(transition)) to \(exerciseName(members[index + 1].exercise))"
         }
         return "Round rest \(Format.rest(RestRules.roundRest(group: key, in: state).seconds))"
     }
@@ -468,19 +468,16 @@ struct Presenting {
             return nil
         }
         let name = exerciseName(slot.exercise)
-        let groupLabel = memberLabel(slot)
         let values = valuesText(id)
-        let described = groupLabel.map { "\(name) (\($0))" } ?? name
         let suggestion = evaluator.suggestion(id)
         return UpNextPresentation(
             row: id,
             slot: row.slot,
             exercise: name,
-            groupLabel: groupLabel,
             label: label,
             round: slot.group == nil ? nil : UpNext.round(of: id, in: state),
             values: values,
-            line: "Next: \(described), \(label.spoken)" + (values.isEmpty ? "" : ": \(values)"),
+            line: "Next: \(name), \(label.spoken)" + (values.isEmpty ? "" : ": \(values)"),
             reason: suggestion?.stop == true ? nil : suggestion?.text
         )
     }
@@ -498,10 +495,10 @@ struct Presenting {
         return text
     }
 
-    /// `Glute Bridge (A1), set 2`, or with `byRound` in a group `Bird Dog (A2), round 1`.
+    /// `Glute Bridge, set 2`, or with `byRound` in a group `Bird Dog, round 1`.
     func target(_ next: UpNextPresentation, byRound: Bool) -> String {
-        if byRound, let round = next.round, round > 0 { return "\(next.exerciseWithGroup), round \(round)" }
-        return "\(next.exerciseWithGroup), \(next.label.spoken)"
+        if byRound, let round = next.round, round > 0 { return "\(next.exercise), round \(round)" }
+        return "\(next.exercise), \(next.label.spoken)"
     }
 
     // MARK: - The rest bar
@@ -543,8 +540,8 @@ struct Presenting {
         return nil
     }
 
-    /// The pill's words. A transition names where to go: `Go: Bird Dog (A2) in`
-    /// in the bar (`long`), `Go: Bird Dog (A2)` on the Lock Screen.
+    /// The pill's words. A transition names where to go: `Go: Bird Dog in`
+    /// in the bar (`long`), `Go: Bird Dog` on the Lock Screen.
     func countdownLabel(_ countdown: Countdown, next: UpNextPresentation?, long: Bool) -> String {
         switch countdown.kind {
         case .manual: return "Timer"
@@ -553,7 +550,7 @@ struct Presenting {
             switch slot {
             case .transition:
                 guard let next else { return slot.label }
-                return "Go: \(next.exerciseWithGroup)" + (long ? " in" : "")
+                return "Go: \(next.exercise)" + (long ? " in" : "")
             case .blockRest where !long: return "Rest"
             default: return slot.label
             }
@@ -571,7 +568,9 @@ struct Presenting {
             clockStart: header.clockStart,
             clockPausedAt: header.clockPausedAt,
             exercise: subject?.exercise ?? "",
-            groupLabel: subject?.groupLabel,
+            setLabel: subject?.label.short,
+            isWarmup: subject?.label.short.hasPrefix("W") == true,
+            values: subject?.values ?? "",
             next: next ?? (state.rows.isEmpty ? "No exercises yet" : "All sets done"),
             nextRowID: subject?.row,
             canComplete: canComplete,

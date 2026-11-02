@@ -18,6 +18,8 @@ extension WorkoutsActivityAttributes.ContentState {
     static let resting = Self(
         clockStart: start,
         exercise: "Chest Press (Machine)",
+        setLabel: "2",
+        values: "35 kg × 14",
         next: "Set 2: 35 kg × 14",
         nextRowID: "row-chest-2",
         countdown: .init(kind: .rest, label: "Rest", startedAt: .now.addingTimeInterval(-44), endsAt: .now.addingTimeInterval(76)),
@@ -29,8 +31,9 @@ extension WorkoutsActivityAttributes.ContentState {
     static let roundRest = Self(
         clockStart: start,
         exercise: "Glute Bridge",
-        groupLabel: "A1",
-        next: "Round 2: × 15",
+        setLabel: "2",
+        values: "× 15",
+        next: "Set 2: × 15",
         nextRowID: "row-bridge-2",
         countdown: .init(kind: .roundRest, label: "Round rest", startedAt: .now.addingTimeInterval(-20), endsAt: .now.addingTimeInterval(70)),
         setsDone: 3,
@@ -43,6 +46,8 @@ extension WorkoutsActivityAttributes.ContentState {
     static let restOver = Self(
         clockStart: start,
         exercise: "Chest Press (Machine)",
+        setLabel: "2",
+        values: "35 kg × 14",
         next: "Set 2: 35 kg × 14",
         nextRowID: "row-chest-2",
         countdown: .init(kind: .rest, label: "Rest", startedAt: .now.addingTimeInterval(-130), endsAt: .now.addingTimeInterval(-10)),
@@ -54,7 +59,8 @@ extension WorkoutsActivityAttributes.ContentState {
     static let working = Self(
         clockStart: start,
         exercise: "Vertical Traction (Machine)",
-        groupLabel: "A2",
+        setLabel: "1",
+        values: "45 kg × 12",
         next: "Set 1: 45 kg × 12",
         nextRowID: "row-pull-1",
         setsDone: 9,
@@ -66,7 +72,10 @@ extension WorkoutsActivityAttributes.ContentState {
         clockStart: start,
         clockPausedAt: .now.addingTimeInterval(-60),
         exercise: "Seated Row (Machine)",
-        next: "Set 1: 50 kg × 9",
+        setLabel: "W",
+        isWarmup: true,
+        values: "30 kg × 12",
+        next: "Warm-up: 30 kg × 12",
         nextRowID: "row-row-1",
         setsDone: 10,
         setsPlanned: 24,
@@ -76,6 +85,8 @@ extension WorkoutsActivityAttributes.ContentState {
     static let timedSet = Self(
         clockStart: start,
         exercise: "Plank",
+        setLabel: "1",
+        values: "1:07",
         next: "Set 1: 1:07",
         nextRowID: "row-plank-1",
         countdown: .init(kind: .timedSet, label: "Plank, set 1", startedAt: .now.addingTimeInterval(-25), endsAt: .now.addingTimeInterval(42)),
@@ -87,6 +98,8 @@ extension WorkoutsActivityAttributes.ContentState {
     static let targetReached = Self(
         clockStart: start,
         exercise: "Plank",
+        setLabel: "1",
+        values: "1:07",
         next: "Set 1: 1:07",
         nextRowID: "row-plank-1",
         countdown: .init(kind: .timedSet, label: "Plank, set 1", startedAt: .now.addingTimeInterval(-72), endsAt: .now.addingTimeInterval(-5)),
@@ -114,8 +127,24 @@ extension WorkoutsActivityAttributes.ContentState {
         revision: 41
     )
 
+    /// The owner's screenshot (2026-11-02): a superset's transition, the
+    /// next member's name long enough to be cut.
+    static let transition = Self(
+        clockStart: start,
+        exercise: "Seated Leg Curl (Machine)",
+        setLabel: "2",
+        values: "40 kg × 10",
+        next: "Set 2: 40 kg × 10",
+        nextRowID: "row-curl-2",
+        countdown: .init(kind: .transition, label: "Go: Seated Leg Curl (Machine)", startedAt: .now.addingTimeInterval(-5),
+                         endsAt: .now.addingTimeInterval(10)),
+        setsDone: 11,
+        setsPlanned: 24,
+        revision: 20
+    )
+
     static let all: [Self] = [
-        .resting, .roundRest, .restOver, .working, .paused, .timedSet, .targetReached, .allDone, .finished,
+        .resting, .roundRest, .transition, .restOver, .working, .paused, .timedSet, .targetReached, .allDone, .finished,
     ]
 }
 
@@ -161,12 +190,14 @@ extension WorkoutsActivityAttributes.ContentState {
     WorkoutsActivityAttributes.ContentState.working
 }
 
-// The `.small` family as the watch's Smart Stack shows it, every phase.
+// The `.small` family at the watch Smart Stack's size, every phase: the
+// smallest watch's slot less the system's inset, so nothing here may clip.
 #Preview("Watch", traits: .sizeThatFitsLayout) {
     VStack(spacing: 12) {
         ForEach(Array(WorkoutsActivityAttributes.ContentState.all.enumerated()), id: \.offset) { _, state in
             SmallActivityView(phase: SessionPhase(state, isStale: false))
-                .frame(width: 170, height: 84)
+                .frame(width: 146, height: 54)
+                .padding(10)
                 .background(.black, in: .rect(cornerRadius: 16))
         }
     }

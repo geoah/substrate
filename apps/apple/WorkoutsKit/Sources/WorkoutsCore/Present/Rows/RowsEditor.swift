@@ -30,10 +30,12 @@ public struct RowsEditor: Equatable, Sendable {
     public var row: RowID
     public var mode: Mode
     public var tint: Tint
-    /// `Set 2`, `Warm-up 1`, `Drop`, `Mini-set 3`; in a group the exercise's name.
+    /// The set as said aloud: `Set 2`, `Warm-up 1`, `Drop`; in a group `Bird Dog, set 1`.
     public var title: String
-    /// `A2`, in a group.
-    public var badge: String?
+    /// The set's small label, as its line shows it: `W`, `2`, `2a`.
+    public var setLabel: String
+    /// Beside the label: the exercise in a group, `Drop`, `Mini-set 3`; nil for a plain set.
+    public var caption: String?
     /// The header line after the title: the suggestion's reason, `after the rest`,
     /// `of 2`, `to failure`, `at 6 kg`, `holding`, `logged at 09:28`.
     public var note: RowsNote?
@@ -56,7 +58,7 @@ public struct RowsEditor: Equatable, Sendable {
     /// `Cancel`, when fixing: drop the draft, send nothing.
     public var cancelTitle: String?
 
-    public init(row: RowID, mode: Mode, tint: Tint, title: String, badge: String?, note: RowsNote?, trailingNote: String?,
+    public init(row: RowID, mode: Mode, tint: Tint, title: String, setLabel: String, caption: String?, note: RowsNote?, trailingNote: String?,
                 reason: String?, fields: [RowsField], rpe: RowsRPEStrip?, timer: RowsTimer?, primary: RowsButton,
                 secondary: RowsButton?, delete: RowsButton?, cancelTitle: String?)
     {
@@ -64,7 +66,8 @@ public struct RowsEditor: Equatable, Sendable {
         self.mode = mode
         self.tint = tint
         self.title = title
-        self.badge = badge
+        self.setLabel = setLabel
+        self.caption = caption
         self.note = note
         self.trailingNote = trailingNote
         self.reason = reason
@@ -77,9 +80,9 @@ public struct RowsEditor: Equatable, Sendable {
         self.cancelTitle = cancelTitle
     }
 
-    /// The undo offer's words after a Log: `A2 Bird Dog logged`, `Set 2 logged`.
+    /// The undo offer's words after a Log: `Bird Dog, set 1 logged`, `Set 2 logged`.
     public var loggedText: String {
-        badge.map { "\($0) \(title) logged" } ?? "\(title) logged"
+        "\(title) logged"
     }
 
     public func field(_ field: ValueField) -> RowsField? {
@@ -487,7 +490,8 @@ struct RowsEditorSource: Equatable, Sendable {
     var mode: RowsEditor.Mode
     var tint: RowsEditor.Tint
     var title: String
-    var badge: String?
+    var setLabel: String
+    var caption: String?
     var note: RowsNote?
     var trailingNote: String?
     var reason: String?
@@ -558,8 +562,9 @@ struct RowsEditorSource: Equatable, Sendable {
                 primary = RowsButton(title: logTitle, action: .tick(row), isEnabled: canCommit)
             }
         }
-        return RowsEditor(row: row, mode: mode, tint: tint, title: title, badge: badge, note: note, trailingNote: trailingNote,
-                          reason: reason, fields: fieldPresentations, rpe: strip, timer: timer, primary: primary,
+        return RowsEditor(row: row, mode: mode, tint: tint, title: title, setLabel: setLabel, caption: caption, note: note,
+                          trailingNote: trailingNote, reason: reason, fields: fieldPresentations, rpe: strip, timer: timer,
+                          primary: primary,
                           secondary: secondary, delete: delete, cancelTitle: mode == .fix ? "Cancel" : nil)
     }
 

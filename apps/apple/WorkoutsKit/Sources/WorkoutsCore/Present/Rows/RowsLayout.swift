@@ -44,11 +44,11 @@ public struct RowsBlock: Equatable, Sendable, Identifiable {
     /// The slots in the block, in member order. The block's `…` menu reads
     /// `SessionPresentation.card(slot)` for the rest picker, notes and the rest.
     public var slots: [String]
-    /// The group's key; nil for a plain exercise.
+    /// The group's key; nil for a plain exercise. A group is drawn as one
+    /// card with its header, never in a colour of its own: colour means a
+    /// warm-up, failure or the set to do now (owner, 2026-11-02).
     public var group: String?
-    /// The group's colour, 0 to `GroupHeader.paletteSize − 1`.
-    public var colorIndex: Int?
-    /// `Leg Press (Machine)`, `Superset A`.
+    /// `Leg Press (Machine)`, `Superset`.
     public var title: String
     /// `6–10 reps at RPE 8, rest 2:30`, `10–15 reps at RPE 9.5, rest 1:30, set 2 ends in a drop`,
     /// `Glute Bridge and Bird Dog, 2 rounds`; nil when there is nothing to say.
@@ -62,13 +62,12 @@ public struct RowsBlock: Equatable, Sendable, Identifiable {
     /// What a finished block's line shows; nil until the block is finished.
     public var summary: RowsBlockSummary?
 
-    public init(id: String, slots: [String], group: String?, colorIndex: Int?, title: String, subtitle: String?,
+    public init(id: String, slots: [String], group: String?, title: String, subtitle: String?,
                 items: [RowsItem], addSets: [RowsButton], isFinished: Bool, summary: RowsBlockSummary?)
     {
         self.id = id
         self.slots = slots
         self.group = group
-        self.colorIndex = colorIndex
         self.title = title
         self.subtitle = subtitle
         self.items = items
@@ -253,11 +252,15 @@ public struct RowsSetItem: Equatable, Sendable, Identifiable {
     public var slot: String
     public var state: RowsRowState
     public var role: RowsRowRole
-    /// `Set 1`, `Warm-up 2`, `Activation`, `Drop`, `Mini-set 3`, `Set 1 left`; in a group, the
-    /// exercise's name (`Glute Bridge`) beside its `badge`.
+    /// The set as said aloud: `Set 1`, `Warm-up 2`, `Activation`, `Drop`, `Set 1 left`; in a
+    /// group, after its exercise: `Glute Bridge, set 2`. VoiceOver and the undo offer read it.
     public var title: String
-    /// `A1`, in a group.
-    public var badge: String?
+    /// The small label every line starts with, one size and shape: `W` for a warm-up (orange),
+    /// else the set's number within its exercise, `1`, `2a`, `M`, `1L` (the Table's `SetLabel`).
+    public var setLabel: String
+    /// What the line shows beside the label: the exercise's name in a group, the part of a
+    /// chain (`Drop`, `Mini-set 3`, `Activation`); nil for a plain exercise's set.
+    public var caption: String?
     /// Drawn hanging off the line above (a drop, a mini-set, a cluster).
     public var isChained: Bool
     /// `110 kg × 8`, `16 reps`, `11 per side`, `0:58 hold`, `25 kg to failure`: done values, or
@@ -289,8 +292,8 @@ public struct RowsSetItem: Equatable, Sendable, Identifiable {
     /// Done rows: the fix editor's start (tap the row, change, Save).
     public var fix: RowsFix?
 
-    public init(id: RowID, slot: String, state: RowsRowState, role: RowsRowRole, title: String, badge: String?,
-                isChained: Bool, values: String, valuesChanged: Bool, rpe: String?, rpeIsPrefilled: Bool, tags: [RowsTag],
+    public init(id: RowID, slot: String, state: RowsRowState, role: RowsRowRole, title: String, setLabel: String,
+                caption: String?, isChained: Bool, values: String, valuesChanged: Bool, rpe: String?, rpeIsPrefilled: Bool, tags: [RowsTag],
                 collapsedTag: RowsTag?, last: String?, changes: [RowsChange], verdict: RowsVerdict?, sentence: String,
                 tap: RowsTap, editor: RowsEditor?, fix: RowsFix?)
     {
@@ -299,7 +302,8 @@ public struct RowsSetItem: Equatable, Sendable, Identifiable {
         self.state = state
         self.role = role
         self.title = title
-        self.badge = badge
+        self.setLabel = setLabel
+        self.caption = caption
         self.isChained = isChained
         self.values = values
         self.valuesChanged = valuesChanged
@@ -557,9 +561,12 @@ public struct RowsNextPart: Equatable, Sendable {
     public var row: RowID
     /// `Leg Press (Machine)`.
     public var exercise: String
-    /// `A2`, in a group.
-    public var badge: String?
-    /// `Set 2`, `Warm-up 1`, `Drop`, `Mini-set 3`, `Round 2`.
+    /// The set's small label, as its line shows it: `W`, `2`, `2a`.
+    public var setLabel: String
+    /// A warm-up: its label is orange.
+    public var isWarmup: Bool
+    /// Plain words after the name where they help: `Round 2` in a group, `Drop`,
+    /// `Mini-set 3`; empty for a plain exercise's set, which its label says.
     public var label: String
     public var tint: RowsEditor.Tint
     /// The editor's value fields: the same steppers, keypads and words.
@@ -576,14 +583,19 @@ public struct RowsNextPart: Equatable, Sendable {
     public var timerStartedAt: Date?
     /// `Next: Leg Press (Machine), set 2, 105 kilograms, 10 reps.`
     public var sentence: String
+    /// The undo offer's words after a Log from the island: `Bird Dog, set 1 logged`, `Set 2 logged`.
+    public var loggedText: String
 
-    public init(row: RowID, exercise: String, badge: String?, label: String, tint: RowsEditor.Tint, fields: [RowsField],
-                rpe: String?, rpeStrip: RowsRPEStrip? = nil, primary: RowsButton, timerStartedAt: Date?, sentence: String)
+    public init(row: RowID, exercise: String, setLabel: String, isWarmup: Bool = false, label: String, tint: RowsEditor.Tint,
+                fields: [RowsField], rpe: String?, rpeStrip: RowsRPEStrip? = nil, primary: RowsButton, timerStartedAt: Date?,
+                sentence: String, loggedText: String? = nil)
     {
         self.row = row
         self.exercise = exercise
-        self.badge = badge
+        self.setLabel = setLabel
+        self.isWarmup = isWarmup
         self.label = label
+        self.loggedText = loggedText ?? "\(label.isEmpty ? "Set \(setLabel)" : label) logged"
         self.tint = tint
         self.fields = fields
         self.rpe = rpe
@@ -591,11 +603,6 @@ public struct RowsNextPart: Equatable, Sendable {
         self.primary = primary
         self.timerStartedAt = timerStartedAt
         self.sentence = sentence
-    }
-
-    /// The undo offer's words after a Log from the island: `A2 Round 1 logged`, `Set 2 logged`.
-    public var loggedText: String {
-        badge.map { "\($0) \(label) logged" } ?? "\(label) logged"
     }
 }
 

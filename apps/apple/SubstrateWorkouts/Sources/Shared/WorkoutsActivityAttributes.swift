@@ -18,8 +18,13 @@ nonisolated struct WorkoutsActivityAttributes: ActivityAttributes, Sendable {
         var clockPausedAt: Date?
         /// The Up next row's exercise, "Chest Press (Machine)".
         var exercise: String
-        /// The Up next row's group label, "A1".
-        var groupLabel: String?
+        /// The Up next row's set label, "W" or "2": a small label beside the
+        /// exercise, never a group letter (owner, 2026-11-02).
+        var setLabel: String?
+        /// The label is a warm-up's: orange.
+        var isWarmup: Bool = false
+        /// The Up next row's values alone, "35 kg × 14"; empty when none.
+        var values: String = ""
         /// "Set 2: 35 kg × 14", "All sets done".
         var next: String
         /// The row Done completes (and, while a timed set runs, the row Stop

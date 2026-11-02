@@ -17,6 +17,13 @@ enum RowsStyle {
     static let orangeButton = GroupPalette.adaptive(light: 0xB35C00, dark: 0xC26100)
     static let red = GroupPalette.adaptive(light: 0xD70015, dark: 0xFF6961)
 
+    /// A done line's wash: light enough that its words stay readable, plain
+    /// enough that it never reads as the set to do now (owner, 2026-11-02:
+    /// "I keep clicking on old ones"). Stronger with Increase Contrast.
+    static func doneFill(_ contrast: ColorSchemeContrast) -> Color {
+        Color(.systemGreen).opacity(contrast == .increased ? 0.16 : 0.08)
+    }
+
     /// The colour of an editor's controls: the accent, or orange for a warm-up or a drop.
     static func tint(_ tint: RowsEditor.Tint) -> Color {
         tint == .orange ? orange : .accentColor
@@ -117,18 +124,48 @@ struct RowsGlyph: View {
     }
 }
 
-/// `A1`, a group member's badge, in the group's colour.
-struct RowsBadge: View {
+/// A set's label at the start of its line, `W`, `1`, `2a`, `1L`: one size
+/// and shape on every line, and never a group's colour (owner, 2026-11-02).
+/// Orange for a warm-up, the accent for the set to do now, grey otherwise.
+struct RowsSetLabel: View {
+    enum Emphasis {
+        /// The set to do now: the accent.
+        case now
+        case todo
+        /// Logged: grey, its line says the rest.
+        case done
+    }
+
     let text: String
-    let color: Color
+    var isWarmup = false
+    var emphasis: Emphasis = .todo
+
+    @Environment(\.colorSchemeContrast) private var contrast
+    @ScaledMetric(relativeTo: .footnote) private var width: CGFloat = 30
+    @ScaledMetric(relativeTo: .footnote) private var height: CGFloat = 22
 
     var body: some View {
         Text(text)
-            .font(.footnote.weight(.bold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(color.opacity(0.13), in: .rect(cornerRadius: 6))
+            .font(.footnote.weight(.bold).monospacedDigit())
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .foregroundStyle(foreground)
+            .frame(width: width, height: height)
+            .background(fill, in: .rect(cornerRadius: 7))
+            .accessibilityHidden(true)
+    }
+
+    private var strong: Bool { contrast == .increased }
+
+    private var foreground: Color {
+        if isWarmup { return RowsStyle.orange }
+        return emphasis == .now ? .accentColor : .secondary
+    }
+
+    private var fill: Color {
+        if isWarmup { return Color.orange.opacity(strong ? 0.26 : 0.15) }
+        if emphasis == .now { return Color.accentColor.opacity(strong ? 0.24 : 0.14) }
+        return Color(strong ? .systemFill : .tertiarySystemFill)
     }
 }
 
