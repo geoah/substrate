@@ -21,7 +21,7 @@ func TestSpoolFilesListInArrivalOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := SetSpoolFileAside(repoDir, aside); err != nil {
+	if err := SetSpoolFileAside(repoDir, aside, UnreadableSpoolSuffix); err != nil {
 		t.Fatal(err)
 	}
 	for _, stray := range []string{tmpPrefix + "x", "notes.txt"} {

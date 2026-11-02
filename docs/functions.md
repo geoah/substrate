@@ -1492,6 +1492,11 @@ repository.
   accepted`, with `pending: true` so a client never reads it as a failure,
   until the fire settles, deletes the file, and starts the fire
   ([decision 0068](decisions/0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md)).
+  A spooled request the drain cannot open, or whose admission is refused for
+  its own content (a validation error, or a value Postgres refuses as a data
+  exception), is renamed `<name>.unreadable` or `<name>.refused`, logged, and
+  passed over, so it never holds up the requests after it; any other failure
+  stops the drain at that request and retries it.
   Until the drain has recorded it, a request is in no list and no count, and
   a full spool (10,000 requests or 256 MiB per repository) answers `503`
   with `Retry-After`. A server that stops after the `202` drains the spool

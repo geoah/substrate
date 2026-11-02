@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -341,4 +342,78 @@ func TestASpooledWebhookRestoresFromASnapshotAndAnExport(t *testing.T) {
 		}
 		restore(t, root, fid)
 	})
+}
+
+// The service refuses a part name or filename carrying a NUL before it
+// writes a spool file, so the door never answers 202 for a request no row
+// can store.
+func TestNULSpoolPartRefusedAtTheDoor(t *testing.T) {
+	ctx := context.Background()
+	svc, ds, _, root, _ := newHeldHookDataset(t, true)
+	dir := spoolDirOf(t, root, ds.Repository().ID)
+	poison := substrate.WebhookRequest{
+		Method: "POST", ContentType: "multipart/form-data",
+		Parts: []substrate.WebhookPart{{Name: "bad\x00name", Value: "x"}},
+	}
+
+	if _, err := engine.ReceiveWebhookSpooled(ctx, svc, testdb.Repository(t), "hook-held", "", poison); !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("the door spooled a NUL part name: %v", err)
+	}
+	filed := poison
+	filed.Parts = []substrate.WebhookPart{{Name: "f", Filename: "evil\x00.txt", Data: []byte("x")}}
+	if _, err := engine.ReceiveWebhookSpooled(ctx, svc, testdb.Repository(t), "hook-held", "", filed); !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("the door spooled a NUL filename: %v", err)
+	}
+	if files := spooledFiles(t, dir); len(files) != 0 {
+		t.Fatalf("a refused request left files: %v", files)
+	}
+}
+
+// A spooled request whose admission is refused for its content (here a part
+// name carrying a NUL, which no jsonb row stores, spooled by a binary before
+// the door refused it) is set aside as `.refused` and the drain goes on: the
+// request spooled after it is recorded and fired.
+func TestNULSpoolPoisonIsSetAside(t *testing.T) {
+	ctx := context.Background()
+	svc, ds, dsn, root, _ := newHeldHookDataset(t, true)
+	dir := spoolDirOf(t, root, ds.Repository().ID)
+	poison := substrate.WebhookRequest{
+		Method: "POST", ContentType: "multipart/form-data",
+		Parts: []substrate.WebhookPart{{Name: "bad\x00name", Value: "x"}},
+	}
+	bad, err := engine.SpoolWebhookUnchecked(ctx, ds, "hook-held", poison)
+	if err != nil {
+		t.Fatalf("spool the poison: %v", err)
+	}
+	shape := heldRequests["a json body"]
+	good, err := engine.ReceiveWebhookSpooled(ctx, svc, testdb.Repository(t), "hook-held", "", shape.req)
+	if err != nil {
+		t.Fatalf("receive: %v", err)
+	}
+	dispatch(t, ds)
+	resumedHook(t, ds, good, shape.name, shape.blob)
+
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		files := spooledFiles(t, dir)
+		aside := 0
+		for name := range files {
+			if strings.HasSuffix(name, "-"+bad+".webhook"+changelogfile.RefusedSpoolSuffix) {
+				aside++
+			}
+		}
+		if len(files) == 1 && aside == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the spool holds %v, want only the poison set aside", files)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if entries, _, _ := engine.SpoolStatsOf(ds); entries != 0 {
+		t.Fatalf("the spool index still counts %d requests", entries)
+	}
+	if n := admissions(t, dsn, bad); n != 0 {
+		t.Fatalf("the poison has %d delivery entries", n)
+	}
 }

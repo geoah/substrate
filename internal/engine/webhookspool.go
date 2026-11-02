@@ -15,9 +15,12 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/metrics"
@@ -219,6 +222,20 @@ func (ds *dataset) spoolStats() metrics.SpoolStats {
 // bound. at is the door's receipt time and verified says the door checked
 // the trigger's declared signature.
 func (ds *dataset) spoolWebhook(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time, verified bool) (string, string, error) {
+	// The envelope carries a part's name, filename and media type as jsonb
+	// strings, which cannot hold a NUL; the value and the bytes go to the
+	// blob store and may.
+	for i, p := range req.Parts {
+		if strings.IndexByte(p.Name, 0) >= 0 || strings.IndexByte(p.Filename, 0) >= 0 || strings.IndexByte(p.MediaType, 0) >= 0 {
+			return "", "", fmt.Errorf("%w: webhook part %d: its name, filename or media type carries a NUL (U+0000), which no row stores", substrate.ErrValidation, i)
+		}
+	}
+	return ds.writeSpooledWebhook(ctx, tr, req, at, verified)
+}
+
+// writeSpooledWebhook is spoolWebhook past its refusal of the request's
+// content: the file the drain reads, whatever the request carries.
+func (ds *dataset) writeSpooledWebhook(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time, verified bool) (string, string, error) {
 	if ds.svc.readOnly {
 		return "", "", ErrDirectoryReadOnly
 	}
@@ -481,10 +498,17 @@ func (ds *dataset) drainSpoolPass(ctx context.Context) bool {
 		// ledger, so its admission goes ahead of the repository's background
 		// writers as the door's did.
 		got, err := ds.drainSpooled(withForegroundWrites(ctx), name)
-		if errors.Is(err, errSpoolUnreadable) {
+		suffix := ""
+		switch {
+		case errors.Is(err, errSpoolUnreadable):
+			suffix = changelogfile.UnreadableSpoolSuffix
+		case spoolAdmissionRefused(err) != "":
+			suffix = changelogfile.RefusedSpoolSuffix
+		}
+		if suffix != "" {
 			ds.spoolDrainFailed(name, err)
-			if aside := changelogfile.SetSpoolFileAside(ds.dir, name); aside != nil {
-				ds.svc.log.Error("substrate: an unreadable spooled webhook request could not be set aside",
+			if aside := changelogfile.SetSpoolFileAside(ds.dir, name, suffix); aside != nil {
+				ds.svc.log.Error("substrate: a spooled webhook request the drain cannot record could not be set aside",
 					"repository", ds.Repository().ID, "file", name, "error", aside)
 				return false
 			}
@@ -520,8 +544,36 @@ func (ds *dataset) spoolDrainFailed(name string, err error) {
 			"repository", ds.Repository().ID, "file", name)
 		return
 	}
+	if reason := spoolAdmissionRefused(err); reason != "" {
+		ds.svc.log.Error("substrate: a spooled webhook request was refused at admission; it is set aside as "+changelogfile.RefusedSpoolSuffix,
+			"repository", ds.Repository().ID, "file", name, "reason", reason)
+		return
+	}
 	ds.svc.log.Warn("substrate: a spooled webhook request could not be recorded; the drain retries",
 		"repository", ds.Repository().ID, "file", name, "outcome", outcome)
+}
+
+// spoolAdmissionRefused names why a spooled request's admission failed for
+// the request's own content, or is empty for any other failure. A request
+// refused this way is refused by every retry, so the drain sets it aside
+// rather than stop every later request behind it; a transient failure (the
+// connection, a lock, the disk) keeps it in place for the retry decision
+// 0167 asks for. The reason is a fixed word or a SQLSTATE, never the error
+// text, which can quote the request.
+func spoolAdmissionRefused(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, substrate.ErrValidation) {
+		return "validation"
+	}
+	// Class 22 is Postgres's data exception: the value itself, such as a
+	// NUL in a jsonb string (22P05) or text that is not UTF-8 (22021).
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && strings.HasPrefix(pgErr.Code, "22") {
+		return "sqlstate " + pgErr.Code
+	}
+	return ""
 }
 
 // fireDrained hands a drained request's fire to the background when its

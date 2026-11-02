@@ -27,6 +27,10 @@ const spoolSuffix = ".webhook"
 // open, so the drain moves past it and an operator still finds the bytes.
 const UnreadableSpoolSuffix = ".unreadable"
 
+// RefusedSpoolSuffix is appended to a spooled request whose admission the
+// drain found refused for its content, which no retry changes.
+const RefusedSpoolSuffix = ".refused"
+
 // reSpoolName is `<20-digit ordinal>-<fire id>.webhook`. The ordinal is the
 // receipt time in Unix nanoseconds, made strictly increasing by the writer,
 // so name order is arrival order.
@@ -106,14 +110,18 @@ func RemoveSpoolFile(repoDir, name string) error {
 	return syncDir(dir)
 }
 
-// SetSpoolFileAside renames a spooled request the drain cannot open to
-// `<name>.unreadable`, which no listing returns, and fsyncs the directory.
-func SetSpoolFileAside(repoDir, name string) error {
+// SetSpoolFileAside renames a spooled request the drain cannot record to
+// `<name><suffix>` (UnreadableSpoolSuffix or RefusedSpoolSuffix), which no
+// listing returns, and fsyncs the directory.
+func SetSpoolFileAside(repoDir, name, suffix string) error {
 	if _, _, err := ParseSpoolFileName(name); err != nil {
 		return err
 	}
+	if suffix != UnreadableSpoolSuffix && suffix != RefusedSpoolSuffix {
+		return fmt.Errorf("changelogfile: %q is not a spool set-aside suffix", suffix)
+	}
 	dir := SpoolDir(repoDir)
-	if err := os.Rename(filepath.Join(dir, name), filepath.Join(dir, name+UnreadableSpoolSuffix)); err != nil {
+	if err := os.Rename(filepath.Join(dir, name), filepath.Join(dir, name+suffix)); err != nil {
 		return err
 	}
 	return syncDir(dir)
