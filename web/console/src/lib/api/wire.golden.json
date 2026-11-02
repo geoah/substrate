@@ -561,6 +561,17 @@
     "step": true,
     "to": false
   },
+  "DomainCheck": {
+    "reason": false,
+    "verified": true,
+    "verifiedAt": false
+  },
+  "DomainProof": {
+    "name": true,
+    "proof": true,
+    "record": true,
+    "verifiedAt": false
+  },
   "Downsample": {
     "points": true
   },

@@ -1,6 +1,9 @@
 package substrate
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Dataset is one repository's fully isolated dataset: every operation the
 // HTTP layer, the console and the background loops reach for, from the five
@@ -281,6 +284,18 @@ type Dataset interface {
 	// stream stays the point it pinned. The context is the stream's too: a
 	// caller that goes away ends it.
 	Export(ctx context.Context) (Export, error)
+
+	// --- domain verification (decision 0208) ---
+	// DomainState reads the pending proof and the verified stamp off the
+	// repository record.
+	DomainState(ctx context.Context) (DomainState, error)
+	// StartDomainVerification answers the pending proof, minting one when
+	// none is pending, so a second start never invalidates a record the owner
+	// already published.
+	StartDomainVerification(ctx context.Context) (DomainState, error)
+	// MarkDomainVerified stamps `domainVerifiedAt` on the repository record
+	// and spends the pending proof. The caller has checked the name.
+	MarkDomainVerified(ctx context.Context) (time.Time, error)
 }
 
 // ReembedReport is what one Reembed enqueued: the pair every vector will name

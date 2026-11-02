@@ -67,6 +67,10 @@ var wireTypes = map[string]any{
 	// A blob's manifest: what PUT /blobs answers and what a blobref property
 	// resolves to on a read. The console uploads blobs and reads them back.
 	"BlobInfo": BlobInfo{},
+	// Domain verification (decision 0208): what Settings' Verify domain
+	// card shows, and the check it runs.
+	"DomainProof": DomainProof{},
+	"DomainCheck": DomainCheck{},
 
 	// The change feed: the entry, the trigger stance decorating a row, the
 	// row, and the history page. The row and the page are what /changes and

@@ -80,6 +80,10 @@ type fakeSubstrate struct {
 	// the file name its Content-Disposition offers (export_test.go).
 	exportTar  []byte
 	exportName string
+
+	// domainRecordPublished makes the domain check pass; until then it
+	// fails with a reason (domain_test.go).
+	domainRecordPublished bool
 	// plan is POST /api/v1/vocabulary/plan's answer: the conversion plan the
 	// apply would run, which `apply --allow-data-loss` confirms by its hash.
 	plan substrate.VocabularyPlan
@@ -270,6 +274,9 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/vocabulary/upgrade", f.handleShippedUpgrade)
 	// The recovery export: a tar the test seeds (export_test.go).
 	mux.HandleFunc("GET /api/v1/export", f.handleExport)
+	// Domain verification (domain_test.go).
+	mux.HandleFunc("POST /api/v1/repository/domain", f.handleDomain)
+	mux.HandleFunc("POST /api/v1/repository/domain/verify", f.handleDomainVerify)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		f.noteRequest(r)
 		writeError(w, http.StatusNotFound, "not_found", "no such route: "+r.URL.Path, nil)
