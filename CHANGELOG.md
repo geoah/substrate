@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.114.1](https://github.com/geoah/substrate/compare/v0.114.0...v0.114.1) (2026-11-02)
+
+
+### Fixed
+
+* **apple:** run the workout coach on Sonnet behind a LiteLLM gateway ([#1150](https://github.com/geoah/substrate/issues/1150)) ([1afe978](https://github.com/geoah/substrate/commit/1afe978ba566d658e6107d8967b0d4cf0c4eca0c))
+
 ## [0.114.0](https://github.com/geoah/substrate/compare/v0.113.0...v0.114.0) (2026-11-02)
 
 
