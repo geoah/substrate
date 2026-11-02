@@ -1186,7 +1186,7 @@ func (d *fakeDataset) MintToken(_ context.Context, in substrate.MintTokenInput) 
 	return substrate.TokenInfo{
 		ID: "minted", Label: in.Label, Created: time.Unix(0, 0).UTC(), ExpiresAt: in.ExpiresAt,
 		Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName,
-		AppAuthority: in.AppAuthority, AppLocal: in.AppLocal,
+		AppAuthority: in.AppAuthority, AppAuthorityFromFile: in.AppAuthorityFromFile, AppLocal: in.AppLocal,
 	}, "substrate_tok_minted", nil
 }
 

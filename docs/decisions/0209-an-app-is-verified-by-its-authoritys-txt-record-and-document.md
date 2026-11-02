@@ -53,8 +53,20 @@ The token records the verified authority and whether the access went to a
 loopback address. A package's owner under
 [0205](0205-an-app-owns-the-package-it-declares.md) stays its client id, and
 the host-only claim compares the client id's host, never the actor.
+An approval checks the publisher again before the code is issued, and the
+token exchange checks it again before the token is minted. A publisher that
+no longer verifies the way the page showed refuses both, so a token never
+carries a publisher the owner did not approve. A token whose actor moved
+keeps writing label and annotation keys under `app:<client id host>`, the
+namespace it had before.
+
 `SUBSTRATE_INSECURE_AUTHORITY_DOCS` reads named authorities' documents from
-files, for development.
+files in place of DNS and the fetch, to test a document before it is
+published. Like the other `SUBSTRATE_INSECURE_` variables it is an
+operator's opt-in with a boot warning, and nothing limits it to
+development. So it shows wherever it acts: the approval page says, in its
+everyday view, that a file on this server verified the publisher and not
+DNS, and the token records `appAuthorityFromFile`.
 
 ### Consequences
 

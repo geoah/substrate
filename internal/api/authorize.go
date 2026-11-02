@@ -385,6 +385,32 @@ func (h *handler) verifiedApp(ctx context.Context, req authorize.Request) (autho
 	return doc, nil
 }
 
+// publisherMoved checks who publishes req's app again and says why it no
+// longer matches what the approval page showed, "" when it still does. The
+// DNS record is read again at every check; only a fetched document is
+// cached. A request the page has not shown has nothing to compare.
+func (h *handler) publisherMoved(ctx context.Context, req authorize.Request) string {
+	if req.Document == nil {
+		return ""
+	}
+	shown := req.Document.Publisher
+	now := h.verifier.Verify(ctx, req.Client, *req.Document, req.RedirectURI)
+	if shown.Same(now) {
+		return ""
+	}
+	switch {
+	case shown.Verified && !now.Verified:
+		why := now.Reason
+		if why == "" {
+			why = "the app's document names no publisher"
+		}
+		return "the page showed this app as published by " + shown.Authority + ", and that no longer verifies: " + why
+	case now.Verified && !shown.Verified:
+		return "the page showed this app as unverified, and it now verifies as published by " + now.Authority
+	}
+	return "the page showed this app as published by " + shown.Authority + ", and it now verifies differently, as " + now.Authority
+}
+
 // requestActor is the actor a token minted for req writes under, from the
 // publisher the approval page showed.
 func requestActor(req authorize.Request, doc authorize.Document) substrate.Actor {
@@ -574,7 +600,7 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 			Publisher: substrate.AuthorizationPublisher{
 				Authority: doc.Publisher.Authority, Name: doc.Publisher.Name, AppName: doc.Publisher.AppName,
 				Unconfirmed: doc.Publisher.Reason, Record: doc.Publisher.Record,
-				DocumentURL: doc.Publisher.DocURL, Listed: doc.Publisher.Listed,
+				DocumentURL: doc.Publisher.DocURL, Listed: doc.Publisher.Listed, FromFile: doc.Publisher.FromFile,
 			},
 		},
 		Redirect: substrate.AuthorizationRedirectTo{
@@ -832,6 +858,16 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 			Lifetime: time.Duration(*in.LifetimeDays) * 24 * time.Hour, ClientName: approvedName(doc),
 			Details: details, AppAuthority: verifiedAuthority(doc),
 		}, nil
+	}
+	// The publisher the page showed is checked again before anything is
+	// reserved, outside the store's lock: a record withdrawn since the page
+	// loaded leaves the owner approving something the page no longer
+	// describes.
+	if shown, err := h.authz.Claim(id, authority); err == nil && shown.State == substrate.AuthorizationPending {
+		if why := h.publisherMoved(ctx, shown); why != "" {
+			writeError(w, http.StatusConflict, codeConflict, "who publishes this app changed since the page loaded: "+why+". Reload the page and check the request again")
+			return
+		}
 	}
 	req, err := h.authz.Reserve(id, authority, func(req authorize.Request) error {
 		_, err := approve(req)
@@ -1241,6 +1277,13 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "the code was already used")
 		return
 	}
+	// The token carries the publisher the owner approved, or nothing: a
+	// publisher that no longer verifies the same way is refused, never
+	// minted as something else. The code is spent either way.
+	if why := h.publisherMoved(ctx, c.Request); why != "" {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "who publishes this app changed since the owner approved it: "+why+"; start again")
+		return
+	}
 	var expiresAt *time.Time
 	if c.Approval.Lifetime > 0 {
 		at := h.now().Add(c.Approval.Lifetime).UTC().Truncate(time.Second)
@@ -1256,8 +1299,9 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 	info, secret, err := c.Approval.Dataset.MintToken(ctx, substrate.MintTokenInput{
 		Label: c.Request.Client.Host, ExpiresAt: expiresAt, Scopes: scopes,
 		ClientID: c.Request.Client.ID, ClientName: c.Approval.ClientName,
-		AppAuthority: c.Approval.AppAuthority, AppLocal: authorize.LocalRedirect(c.Request.RedirectURI),
-		Agents: approvedAgents(c.Approval.Details, c.Approval.Repository),
+		AppAuthority: c.Approval.AppAuthority, AppAuthorityFromFile: c.Approval.AppAuthority != "" && c.Request.Document.Publisher.FromFile,
+		AppLocal: authorize.LocalRedirect(c.Request.RedirectURI),
+		Agents:   approvedAgents(c.Approval.Details, c.Approval.Repository),
 	})
 	if err != nil {
 		status, code := http.StatusInternalServerError, "server_error"

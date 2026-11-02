@@ -130,6 +130,22 @@ type Publisher struct {
 	Record string
 	DocURL string
 	Listed bool
+	// FromFile is true when the document came from a file this server was
+	// configured to read (SUBSTRATE_INSECURE_AUTHORITY_DOCS) in place of the
+	// authority's DNS record and the fetch: the operator, not the
+	// authority's DNS, vouched for it.
+	FromFile bool
+}
+
+// Same reports whether p and q are the same answer to who publishes an app:
+// both unverified, or both verified as the same authority by the same
+// source. An approval and a token exchange hold the publisher a later check
+// finds to the one the owner was shown.
+func (p Publisher) Same(q Publisher) bool {
+	if p.Verified != q.Verified {
+		return false
+	}
+	return !p.Verified || (p.Authority == q.Authority && p.FromFile == q.FromFile)
 }
 
 // PublisherOptions configures a Verifier. Every field may be zero.
@@ -256,6 +272,7 @@ func (v *Verifier) authorityDocument(ctx context.Context, authority string, p *P
 	if path, ok := v.local[authority]; ok {
 		p.Record = "none: SUBSTRATE_INSECURE_AUTHORITY_DOCS names a local file"
 		p.DocURL = "file:" + path
+		p.FromFile = true
 		body, err := os.ReadFile(path)
 		if err != nil {
 			return AuthorityDocument{}, fmt.Errorf("the local authority document of %s could not be read", authority)

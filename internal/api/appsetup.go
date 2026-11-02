@@ -85,6 +85,12 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 		stop(&substrate.AuthorizationFailure{Message: appsetup.FailureWords("Everything is set up, and approving", err)}, false)
 		return
 	}
+	// A set up may run for minutes: the publisher the page showed is checked
+	// again before the code exists.
+	if why := h.publisherMoved(ctx, req); why != "" {
+		stop(&substrate.AuthorizationFailure{Message: "Everything is set up, and who publishes this app changed since the page loaded: " + why + ". Reload the page and check the request again."}, false)
+		return
+	}
 	_, _, err = h.authz.Finish(req.ID, authority, approve, func(req authorize.Request, code string) substrate.AuthorizationRequest {
 		view := reads.view(req, *req.Document, authority, req.Setup, req.PlanHash)
 		view.Next = withParams(req.RedirectURI, url.Values{"code": {code}}, req)
