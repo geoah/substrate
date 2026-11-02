@@ -50,7 +50,7 @@ approval page.
 | R1 | An app finds a repository's server from the repository's name, through one small DNS record. |
 | R2 | A name outside the server's own host is proven before a repository takes it; an existing repository can prove its name later. |
 | R3 | An app's connect screen takes either a server address or a repository name, fills the sign-in page, and cannot be mixed up between servers. |
-| R4 | An app is named by a domain its publisher proves, never by where its files are hosted. |
+| R4 | An app, and the packages it brings, are named by a domain whose DNS its publisher controls, never by a host it can merely serve a file from. |
 | R5 | Where the platform can bind a domain to a signed binary, the server relies on it; where it cannot, the page marks the app unverified. |
 | R6 | One document describes everything a domain publishes: its apps and its packages, whatever the packages carry. |
 | R7 | An app's packages live under its publisher's authority, with the same names in every repository. The owner cannot edit them (the owner's decision in 0205) but can pause, uninstall or take them over. |
@@ -68,6 +68,7 @@ approval page.
 | atproto handles | `_atproto.<handle>` TXT `did=…`, or `https://<handle>/.well-known/atproto-did`; DNS wins on conflict; the DID document must name the handle back | the TXT label, the HTTPS fallback, the bidirectional check |
 | atproto lexicons | `_lexicon.<authority>` TXT names the account whose repository stores the schemas as records; no walking up or down the DNS tree | DNS as a pointer to where the vocabulary lives, one record per authority |
 | OAuth client ID metadata documents | the `client_id` is an HTTPS URL serving the client's metadata; MCP adopted it and tells servers to warn on `localhost`-only redirects, which it cannot protect | already in use (0194); stays the client registration |
+| ACME (RFC 8555) | proves control of a name before a certificate is issued: DNS-01 puts a token in a TXT record at `_acme-challenge.<name>`, HTTP-01 serves it under `/.well-known/acme-challenge/` | DNS as the proof that a publisher controls its authority |
 | RFC 8252 | a claimed `https` redirect is how a native public client is identified; a loopback or custom scheme can be impersonated | the rule for R5 |
 | Apple associated domains | the domain's `apple-app-site-association` file names the apps (team id and bundle id) it vouches for; `ASWebAuthenticationSession` delivers an `https` callback only to an app associated with the callback's host | how an Apple build proves it is the app |
 | RFC 9207 | the authorization response carries `iss`, which the client checks against the server it meant | R3's mix-up check |
@@ -81,14 +82,16 @@ domains are signed: about 4% of `.com` in Verisign's 2023 figure, so a TXT
 answer is only as trustworthy as the resolver that fetched it. A browser
 cannot read TXT records without a DNS-over-HTTPS service.
 
-## The files a publisher serves
+## What a publisher sets up
 
-Three files carry the publisher's side. Two exist today.
+One DNS record and three files carry the publisher's side. Two of the files
+exist today.
 
-| File | Exists | One per | Served at | Says |
+| Item | Exists | One per | Where | Says |
 | --- | --- | --- | --- | --- |
+| TXT record | new ([decision 3](#decision-3-how-an-app-proves-who-publishes-it)) | authority | `_substrate.<authority>` in the domain's DNS | where the authority document is; it is the proof that the publisher controls the name |
 | client document | yes, since [0194](../decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md) | app | the URL that is the app's `client_id`, such as `https://substrate.reamde.dev/apps/workouts/client.json` | the app's name and the redirect URIs its codes may be sent to |
-| authority document | new ([decision 6](#decision-6-the-one-document)) | publisher domain | `https://<domain>/.well-known/substrate/authority.json`, or the URL the domain's TXT record names | the packages the domain publishes, and the apps whose client documents it hosts elsewhere |
+| authority document | new ([decision 6](#decision-6-the-one-document)) | authority | the URL the TXT record names, conventionally `https://<authority>/.well-known/substrate/authority.json` | the apps that speak for the authority (by `client_id`) and the packages it publishes |
 | association file | Apple's | domain | `https://<domain>/.well-known/apple-app-site-association` | which signed apps (team id and bundle id) receive that domain's links |
 
 A `client_id` is what an app sends on every authorization request to say
@@ -166,54 +169,77 @@ record.
 
 ## Decision 3: how an app proves who publishes it
 
-The server starts from the one thing the app sends, its `client_id`, and
-has to decide which domain the approval page names as the app's publisher.
+The server starts from the one thing the app sends, its `client_id`, and has
+to decide which domain the approval page names as the app's publisher, and
+so under which authority the app may install packages. That answer must come
+from whoever controls the domain. Serving a file from a host does not prove
+it: anyone can publish a file at a path on `github.com`,
+`gist.githubusercontent.com` or `pastebin.com`, and none of them owns those
+names.
 
 | Option | For | Against |
 | --- | --- | --- |
-| A. The `client_id`'s host, wherever the document is (today) | nothing new | Workouts' `client_id` is a URL on the release bucket, so the page names the bucket's host |
-| B. The same rule, with each publisher serving its client documents from its own domain: `https://substrate.reamde.dev/apps/workouts/client.json` names `substrate.reamde.dev` | nothing new on the server; fetching the document over HTTPS from that host is the proof | the documents must be served from the domain itself |
-| C. The client document is served anywhere and names its publisher (`"substrate_authority": "substrate.reamde.dev"`); the publisher's authority document lists the `client_id` | hosting stays free | two fetches, and a field outside the OAuth standard |
-| D. As C, with the list of client ids in a TXT record: `_substrate.substrate.reamde.dev TXT "v=substrate1 app=https://cdn.example.net/workouts/client.json app=https://cdn.example.net/sync/client.json"` | no authority document | each client id is a whole URL of 40 to 80 bytes, so a 255-byte string holds three or four; adding an app or moving its host is a DNS change |
+| A. The `client_id`'s host (today) | nothing new | a file at any path makes an app the host's: a client document on `pastebin.com` names `pastebin.com` |
+| B. A file at the authority's `/.well-known/` path lists the `client_id` (ACME's HTTP-01, atproto's fallback) | no DNS change | proves control of a web server, not of the name; a host that lets its users publish under `/.well-known/` gives the name away, and the authority must run a web server |
+| C. A TXT record at `_substrate.<authority>` names the authority document, the document lists the `client_id`, and the client document names the authority | only whoever controls the domain's DNS can add the record (ACME's DNS-01); every file after it may be hosted anywhere, because the domain chose its URL | one DNS change per publisher; the answer is as trustworthy as the resolver |
+| D. As C, with the client ids in the TXT record itself: `"v=substrate1 app=https://cdn.example.net/workouts/client.json app=…"` | no authority document | each client id is a whole URL of 40 to 80 bytes, so a 255-byte string holds three or four; every new app is a DNS change |
 | E. A signed software statement (RFC 7591) or a client attestation (draft) | strongest; per instance with App Attest | the publisher runs a backend and manages keys; nothing else here needs one |
 
-**Chosen: B, with C for a publisher whose client documents live on another
-host.** The rule: an app speaks for the domain its `client_id` is served
-from, exactly as today. When its client document names a different
-authority, it speaks for that authority if the authority's document lists
-its `client_id`; otherwise it is unverified, headed by its own host, and the
-page notes the claim it could not confirm.
+**Chosen: C.**
 
-In C, the two directions do different jobs. The client document's
-`substrate_authority` is a claim, which anyone can write into their own
-document; it only tells the server which domain to ask. The listing in the
-authority document is the proof, because only whoever controls that domain
-can change it. A subdomain never speaks for its parent without the listing:
-the owner of `example.org` controls `alice.example.org`, not the other way
-round.
+```text
+_substrate.substrate.reamde.dev.  TXT  "v=substrate1 doc=https://substrate.reamde.dev/.well-known/substrate/authority.json"
+```
 
-Workouts under B, step by step:
+Workouts, step by step:
 
 1. Workouts opens `/oauth/authorize` with `client_id`
    `https://substrate.reamde.dev/apps/workouts/client.json` and
    `redirect_uri` `https://substrate.reamde.dev/apps/workouts/callback`.
-2. The server fetches the client document from `substrate.reamde.dev`. The
-   fetch succeeding over HTTPS proves the document is that domain's.
-3. The redirect is on the same domain and is a claimed link
-   ([decision 4](#decision-4-how-an-app-proves-it-is-the-binary)), so iOS
-   delivers the code only to the app that domain's association file names.
-4. The page reads "Substrate Workouts, by substrate.reamde.dev", and the
-   app's writes are `app:substrate.reamde.dev`.
+2. The server fetches the client document. It carries
+   `"substrate_authority": "substrate.reamde.dev"`, which is a claim: anyone
+   can write that line into a document of their own. It only tells the
+   server which name to ask.
+3. The server resolves `_substrate.substrate.reamde.dev`. Without a record
+   carrying `doc=` there is no publisher, and the app is unverified.
+4. It fetches the document the record names and looks for the `client_id`
+   under `apps`. Only whoever controls the DNS chose that URL, so a listing
+   there is the domain's word, wherever the file is hosted.
+5. The redirect's host is the authority or a name under it, and is a
+   claimed link ([decision 4](#decision-4-how-an-app-proves-it-is-the-binary)),
+   so the code reaches only the app the association file names.
+6. The page reads "Substrate Workouts, by substrate.reamde.dev"; the app
+   writes as `app:substrate.reamde.dev` and may install the packages the same
+   document lists.
 
-A notes app under C, with its client document at
-`https://cdn.example.net/notes/client.json` naming `notes.example.org`: the
-server reads `notes.example.org`'s authority document, finds the `client_id`
-listed, and names `notes.example.org`. Unlisted, the page names
-`cdn.example.net`, marks the app unverified, and says the document claims
-`notes.example.org`.
+What this refuses:
 
-B needs no authority document, so phase 1 ships it alone; C arrives with the
-authority document in phase 2. E stays open for a publisher that wants
+- A client document on `pastebin.com` claiming `substrate.reamde.dev`: not
+  listed in that document, so unverified.
+- One on `pastebin.com` claiming `pastebin.com`, or naming nothing: there is
+  no `_substrate.pastebin.com` record, so unverified. An unverified app is
+  never shown as published by a host; the page shows its claimed name
+  marked unverified, and where the access goes.
+- `alice.github.io`: GitHub controls the `github.io` zone, so Alice cannot
+  add `_substrate.alice.github.io`. Publishing needs a domain whose DNS the
+  publisher controls.
+- A lapsed domain: once the record is gone, the next check (every approval,
+  every set up check and the daily reread of documents) finds no publisher.
+  Its apps become unverified and its packages stop upgrading; what is
+  installed stays. A new owner who adds a record is a new publisher to every
+  server, and telling the two apart is
+  [#1144](https://github.com/geoah/substrate/issues/1144).
+
+Each authority stands alone: `_substrate.reamde.dev` says nothing about
+`substrate.reamde.dev`, and the server never walks up or down the DNS tree,
+as atproto's lexicon lookup does not. More than one `v=substrate1` record at
+one label leaves the name unverified. The server resolves through its
+configured resolver, so a signed zone is checked only where that resolver
+validates; an operator who wants more points the server at a validating or
+DNS-over-HTTPS resolver.
+
+The `client_id`'s host no longer names anything: a verified app's client
+document may live on a CDN. E stays open for a publisher that wants
 per-install proof later.
 
 ## Decision 4: how an app proves it is the binary
@@ -225,10 +251,9 @@ per-install proof later.
 | C. App Attest or Play Integrity through a client attestation | per installed instance | the publisher's backend, as decision 3's E |
 
 **Chosen: B for every native first-party app, A kept as the unverified
-path.** An app is **verified** when decision 3 names its publisher and its
-redirect is on the client document's own origin, or under C on the
-authority's domain: a claimed `https` link for a native app, the web origin
-for a web app (the browser enforces it). A loopback redirect
+path.** An app is **verified** when decision 3 finds it listed and its
+redirect's host is the authority or a name under it: a claimed `https` link
+for a native app, the web origin for a web app (the browser enforces it). A loopback redirect
 is never verified, whatever the `client_id`: the page reads "An app on this
 device that says it is Substrate Workouts".
 
@@ -292,10 +317,10 @@ token may declare `google.com/anything`. Samples are unaffected, since an
 import rehomes them onto `~`. A repository never installs a published
 package under its own authority, because that repository is the publisher.
 
-With B in place, `declare:` has no remaining use: an app without a domain
-can publish under one it controls (a `<user>.github.io` page is enough), and
-development uses [decision 8](#decision-8-development)'s local document.
-0203 and 0205 are superseded.
+With B in place, `declare:` has no remaining use, and development uses [decision 8](#decision-8-development)'s local document.
+0203 and 0205 are superseded. An app whose publisher has no domain of its
+own cannot bring packages; it works with the kinds the repository already
+holds, such as the samples and catalogues.
 
 ## Decision 6: the one document
 
@@ -309,9 +334,10 @@ development uses [decision 8](#decision-8-development)'s local document.
 **Chosen: B**, in a format a substrate could later generate and serve, so D
 becomes a hosting choice rather than a protocol.
 
-Location: `https://<authority>/.well-known/substrate/authority.json`, or the
-URL a TXT record names, which lets a publisher with no web server on the
-name host it anywhere:
+Location: the URL the authority's TXT record names (decision 3). The record
+is required, because it is the proof; the URL may be the domain's own
+`/.well-known/substrate/authority.json` or a file host, because the domain
+chose it:
 
 ```text
 _substrate.example.org.  TXT  "v=substrate1 doc=https://cdn.example.net/example-org/authority.json"
@@ -364,10 +390,9 @@ cost of a DNS change per release.
   The assistant's mappings, functions and triggers that read Google ship as
   one package with `"addonFor": "providers.substrate.reamde.dev/google"`, and
   likewise per provider.
-- **`apps`** lists the clients that speak for the authority: required for
-  a client document served from another host (decision 3's C), optional
-  for one on the domain, where it adds the packages each app may ask for
-  and the native app ids the approval page names beside the OS's own check. A package from the binary's catalog (Sync's `apple`
+- **`apps`** lists the clients that speak for the authority (decision 3),
+  the packages each may ask for, and the native app ids the approval page
+  names beside the OS's own check. A package from the binary's catalog (Sync's `apple`
   and `applehealth`) is asked for as today and is not listed.
 
 The server fetches with the guards `internal/authorize` applies to client
@@ -388,6 +413,8 @@ already use. Workouts' kinds become `substrate.reamde.dev/training/…`.
   document, so whoever can change the hosted file cannot replace `core`,
   `llm` or a catalogue. `providers.substrate.reamde.dev` and
   `samples.substrate.reamde.dev` stay binary-only.
+- **The record.** `_substrate.substrate.reamde.dev` goes in the
+  `reamde.dev` zone, naming the authority document.
 - **The domain is served.** `substrate.reamde.dev` serves a static site:
   `/.well-known/substrate/authority.json`,
   `/.well-known/apple-app-site-association`, each app's
@@ -465,7 +492,7 @@ A local build is an unverified app (decision 4) and may still ask for a
 published package: the package comes from its publisher's authority document, never
 from the app, so the build gets exactly what a release gets. For a package
 version that is not published yet, a development server reads a local
-document in place of the fetch: `SUBSTRATE_AUTHORITY_DOCS` maps an
+document in place of the DNS lookup and the fetch: `SUBSTRATE_AUTHORITY_DOCS` maps an
 authority to a file, and the variable is refused outside the `dev*` tasks.
 A local document for `substrate.reamde.dev` still cannot replace what the
 binary ships.
@@ -510,7 +537,7 @@ outside code and a domain that changes hands are
 | Option | For | Against |
 | --- | --- | --- |
 | A. `app:<client_id host>` (today) | nothing changes | names the file host, and a loopback impersonator gets the real name |
-| B. Follow the proof: `app:<authority>` when verified, `app:<host>` for a web app on its own origin, `app:local` for a loopback redirect | history says only what was proven | Sync, Chat and Workouts share `app:substrate.reamde.dev` |
+| B. Follow the proof: `app:<authority>` when verified, `app:<host>` for an unverified web app (the host its access is sent to, never shown as its publisher), `app:local` for a loopback redirect | history says only what was proven | Sync, Chat and Workouts share `app:substrate.reamde.dev` |
 | C. `app:<authority>:<app>` | tells a publisher's apps apart | widens the actor grammar ([0025](../decisions/0025-an-actor-carries-the-full-authority.md)); the token already names the exact client |
 
 **Chosen: B.** The changelog's principal (the token) names the exact client
@@ -520,13 +547,13 @@ actor's namespace.
 ## Phases
 
 1. **Before more people test.** The repository record and **Verify
-   domain**; `login_hint` and `iss`; app identity from the client
-   document's host (decision 3's B), claimed redirects and attribution by
-   proof; `substrate.reamde.dev` served, with Sync, Chat, Workouts and the
-   Console app moved onto it; the rule that a token creates packages only
+   domain**; `login_hint` and `iss`; the publisher record and an
+   authority document listing apps alone (decision 3), claimed redirects
+   and attribution by proof; `substrate.reamde.dev`'s record and site, with
+   Sync, Chat, Workouts and the Console app moved onto it; the rule that a token creates packages only
    under its own authority.
-2. **Published packages through approval.** The authority document
-   (decision 3's C and decision 6), fetching closures, the
+2. **Published packages through approval.** Packages in the authority
+   document (decision 6), fetching closures, the
    published install, versions and the build tracking of decision 7, the
    development override; Workouts moves to `substrate.reamde.dev/training`;
    `declare:` is retired.
@@ -538,7 +565,8 @@ actor's namespace.
 
 - The `_substrate` record, repository discovery and **Verify domain**,
   registration unchanged (amends 0046; 0052 stands).
-- Verified apps, the authority document, attribution by proof, and `full`
+- Verified apps proven through the authority's TXT record and document,
+  attribution by proof, and `full`
   for an unverified app marked as such (amends 0194, 0195's `app:<host>`
   and 0204).
 - First-party apps under `substrate.reamde.dev`, the binary winning for what
