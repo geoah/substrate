@@ -69,6 +69,7 @@ type AgentMention struct {
 	Text string `json:"text"`
 	// Missing is set when no live record has that kind and id: the model
 	// named a record that does not exist, and a client shows the label alone.
+	// It is never set on a kind outside the agent's reads.
 	Missing bool `json:"missing,omitempty"`
 	// Unread is set when nothing in the run's context carried that record:
 	// no tool result and no message. The link is still rendered.

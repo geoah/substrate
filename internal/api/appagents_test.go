@@ -32,6 +32,7 @@ type chatRecord struct {
 	actor    substrate.Actor
 	name     string
 	thread   string
+	context  []string
 	scoped   bool
 	decision string
 }
@@ -46,7 +47,7 @@ type agentDataset struct {
 func (d *agentDataset) ChatAgent(ctx context.Context, actor substrate.Actor, name string, in substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	d.rec.mu.Lock()
 	d.rec.calls++
-	d.rec.actor, d.rec.name, d.rec.thread = actor, name, in.Thread
+	d.rec.actor, d.rec.name, d.rec.thread, d.rec.context = actor, name, in.Thread, in.Context
 	_, d.rec.scoped = substrate.ScopesFrom(ctx)
 	d.rec.mu.Unlock()
 	emit(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "tA"})
@@ -319,6 +320,45 @@ func TestAnAppChatsWithTheAgentsItsScopesNameAsItself(t *testing.T) {
 	reader := e.grant("read:"+personKind, []string{"read:" + personKind})
 	wantStatus(t, e.do(http.MethodPost, "/api/v1/"+corePackage+"/agent/"+url.PathEscape(talkedAgent)+"/chat", reader, []byte(`{"message":"hi"}`), "application/json"), http.StatusForbidden)
 	wantStatus(t, e.do(http.MethodGet, "/api/v1/"+llmPackage+"/thread/tA/events", reader, nil, ""), http.StatusForbidden)
+}
+
+// A chat's context is read under the agent's grant, so an app's token names
+// only records it reads itself, and one it does not is answered as a scoped
+// read answers it, before the engine runs.
+func TestAnAppsChatContextNamesOnlyRecordsTheTokenReads(t *testing.T) {
+	e, rec := newAgentEnv(t)
+	e.seed(substrate.Record{ID: "ada", Kind: personKind, Version: 1}, nil)
+	chat := func(tok, body string) *httptest.ResponseRecorder {
+		return e.do(http.MethodPost, "/api/v1/"+corePackage+"/agent/"+url.PathEscape(talkedAgent)+"/chat", tok, []byte(body), "application/json")
+	}
+	ada := vocabulary.RecordPath(personKind, "ada")
+
+	talker := e.grant("agents:~/chat/*", []string{"agents:" + fakeRepository + "/chat/*"})
+	about := func(path string) *httptest.ResponseRecorder {
+		kind, id, _ := vocabulary.SplitRecordPath(path)
+		read := e.do(http.MethodGet, recordPath(kind, id), talker, nil, "")
+		got := chat(talker, `{"message":"hi","context":["`+path+`"]}`)
+		wantStatus(t, got, http.StatusNotFound)
+		if gotCode, readCode := decodeJSON[substrate.ErrorEnvelope](t, got).Error.Code, decodeJSON[substrate.ErrorEnvelope](t, read).Error.Code; got.Code != read.Code || gotCode != readCode {
+			t.Fatalf("a chat about %s answered %d %s, want what a read answers: %d %s", path, got.Code, gotCode, read.Code, readCode)
+		}
+		return got
+	}
+	if exists, missing := about(ada).Body.String(), about(vocabulary.RecordPath(personKind, "nobody")).Body.String(); exists != missing {
+		t.Fatalf("a chat about an unread kind tells a record that exists (%s) from one that does not (%s)", exists, missing)
+	}
+	about(vocabulary.RecordPath(kindThread, "tB"))
+	wantStatus(t, chat(talker, `{"message":"hi","context":["ada"]}`), http.StatusUnprocessableEntity)
+	if rec.calls != 0 {
+		t.Fatal("a chat about a record the token does not read reached the engine")
+	}
+
+	wantStatus(t, chat(talker, `{"message":"hi","context":["`+vocabulary.RecordPath(kindThread, "tA")+`"]}`), http.StatusOK)
+	reader := e.grant("agents:~/chat/* read:"+personKind, []string{"agents:" + fakeRepository + "/chat/*", "read:" + personKind})
+	wantStatus(t, chat(reader, `{"message":"hi","context":["`+ada+`"]}`), http.StatusOK)
+	if rec.calls != 2 || len(rec.context) != 1 || rec.context[0] != ada {
+		t.Fatalf("after %d calls the engine was handed context %v, want %s", rec.calls, rec.context, ada)
+	}
 }
 
 func TestADecideScopeDecidesWhatItsAgentsPropose(t *testing.T) {

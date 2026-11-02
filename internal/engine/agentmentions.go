@@ -137,7 +137,9 @@ func unescapeMarkdown(s string) string {
 // record has its kind and id (a merged-away id resolves to the record it
 // became), and unread when no message the model saw carried it. A failed
 // existence read leaves the mention unmarked: the stamp is evidence, and a
-// guess is not.
+// guess is not. A kind outside the agent's reads is never read for
+// existence: the row reaches whoever talks to the agent, and a mark there
+// would tell them what the agent itself cannot read.
 func (l *agentLoop) stampMentions(ctx context.Context, props map[string]any, reply string, seen []llm.Message) []substrate.AgentMention {
 	mentions := replyMentions(reply)
 	if len(mentions) == 0 {
@@ -146,8 +148,10 @@ func (l *agentLoop) stampMentions(ctx context.Context, props map[string]any, rep
 	stored := make([]any, 0, len(mentions))
 	for i := range mentions {
 		m := &mentions[i]
-		if live, err := l.ds.recordLive(ctx, eref{Kind: m.Kind, ID: m.ID}); err == nil {
-			m.Missing = !live
+		if l.ag.Reads != nil && (queryScope{kinds: l.ag.Reads.Kinds}).allows(m.Kind) {
+			if live, err := l.ds.recordLive(ctx, eref{Kind: m.Kind, ID: m.ID}); err == nil {
+				m.Missing = !live
+			}
 		}
 		m.Unread = !carried(seen, m.Kind, m.ID)
 		row := map[string]any{"kind": m.Kind, "id": m.ID, "text": m.Text}
