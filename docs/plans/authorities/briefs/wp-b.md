@@ -1,0 +1,17 @@
+# Work package B: repository domain verification and login_hint (decision 0208)
+
+Your checkout starts at `feat/domains-record` (PR #1146). Create branch `feat/verify-domain` from it. Open the PR with base `feat/domains-record`.
+
+Implement the plan's decision 2 (option D: registration unchanged, a repository proves its name afterwards) and the server's half of decision 1.
+
+1. **Server instance id.** Minted once at first boot and persisted server-wide (find where server-wide state lives; `internal/engine/migrations/` is append-only, so add the next migration if you need a table). Serve it in `GET /.well-known/substrate/server.json` (`internal/api/discovery.go`; wire golden).
+2. **Start verification.** Mint a one-time proof (random, URL-safe, about 10 characters) and keep it pending so a restart does not lose it (a managed property on the core `repository` record is one way; bump that kind's version). Answer the record to add: `_substrate.<repository> TXT "v=substrate1 server=<this server's origin> proof=<code>"`.
+3. **Check.** `domains.Lookup(<repository>)` finds a record whose `proof` equals the pending one and whose `server` origin serves `/.well-known/substrate/server.json` with this server's instance id (fetch with `authorize.ConfinedClient()`, cap the body). On success, stamp `domainVerifiedAt` (managed) on the repository record. A repository named under the host the request reached (`<label>.<host>`) is verified without a record. A failure answers a reason the owner can act on: no record, the proof differs, `server=` names another server, the lookup failed. The confined client refuses loopback, so a development server can only verify a name under its own host: say so in the docs and give the instance fetch a test seam.
+4. **Routes,** owner-only (an app's token is refused): `POST /api/v1/repository/domain` answers `{name, record, proof}`; `POST /api/v1/repository/domain/verify` answers `{verified, verifiedAt, reason}`. `RepositoryInfo` on the wire carries `domainVerifiedAt`. Follow the route groups in `internal/api/api.go` (owner-only by default).
+5. **Console.** In Settings, a **Verify domain** card: the record to copy, a **Check** button and the result. An "unverified" mark beside the repository name where the console shows it. Work package A is rewriting `web/console/src/pages/authorize.tsx`: put the mark in a small shared component, and limit your change to that page to rendering it, so the two branches merge.
+6. **`login_hint`.** `/oauth/authorize` accepts `login_hint`. When the owner is not signed in, the sign-in page fills the repository field with it. Accept only a valid repository name and ignore anything else. The server already sends `iss`; leave it.
+7. **substratectl,** the user's hat: `substratectl domain show` prints the record to add, and `substratectl domain verify` runs the check. Follow the existing command structure and its fake.
+8. **Docs.** How an app finds a repository's server from its name (the `_substrate` record with `server=`, the well-known fallback, the parent-host probe) in `docs/apps.md`; **Verify domain** in `docs/auth.md`; the commands in `docs/substratectl.md`. Decision record **0208**, "A repository proves its name with a TXT record after registration", amending 0046.
+9. **Tests** for the proof lifecycle, each refusal reason, the own-host case, the routes' owner-only rule, `login_hint` validation, and the console card (vitest).
+
+Suggested title: `feat(repository): verify a repository's name with its domain's TXT record`.

@@ -119,18 +119,27 @@ The connect screen resolves what is typed:
 1. If it serves `/.well-known/substrate/server.json`, it is a server; the
    sign-in page asks for the repository.
 2. Otherwise it is a repository name: read `_substrate.<name>`, else
-   `https://<name>/.well-known/substrate/repository.json`, and probe the
-   server it names.
+   `https://<name>/.well-known/substrate/repository.json`
+   (`{"server": "https://…"}`, held to the record's rule for `server=`),
+   and probe the server it names. Only a lookup that answers that the name
+   has no `v=substrate1` record (NXDOMAIN, or no matching record) lets
+   discovery go on to the web host. A failed lookup (a timeout, SERVFAIL),
+   a malformed record, or a record that names no server stops discovery
+   with an error and a way to try again, because DNS outranks the web host.
 3. Neither: strip the first label and probe the parent host as a server,
    which covers a default name such as `alice.substrate.rxtx.dev` without a
    record. Whoever controls the parent controls its subdomains, so this is
-   not a weaker proof.
+   not a weaker proof. The parent is never a top-level domain.
 4. Send `login_hint=<repository>` to `/oauth/authorize` so the sign-in page
    fills the name, check the response's `iss` (RFC 9207, which the server
    already sends), and check that the token response's `repository` is the
-   name resolved.
+   name resolved. A token for another repository is revoked, and kept only
+   in the app's pending-revocation store until the server confirms it.
 
-Apple apps read TXT records with `DNSServiceQueryRecord`. The console needs
+Apple apps read TXT records with `DNSServiceQueryRecord`. It reports a
+SERVFAIL as `NoSuchRecord`, the same as a name without a record, so a
+negative answer is asked again through libresolv before discovery goes on.
+The console needs
 none of this: the server serves it. Moving a repository to another server is
 then a change of one record.
 
@@ -152,12 +161,17 @@ _substrate.geoah.me.  TXT  "v=substrate1 server=https://substrate.rxtx.dev proof
 ```
 
 The server checks the record, stamps the result on the repository record,
-and the `proof` field may be removed afterwards. To confirm `server=` names
-itself without a configured public URL (0046 rejected one), the server
-fetches that origin's `server.json` and compares an instance id it mints at
-first boot. A name under the server's own host is verified without a
-record. Until a name is verified, the console and the approval page mark it
-unverified. Nothing is renamed, so the authority stays permanent
+and the `proof` field may be removed afterwards. With `SUBSTRATE_PUBLIC_URL`
+configured, `server=` must equal that origin exactly. Without one, the
+server fetches the `server=` origin's `server.json` and compares an instance
+id it minted at first boot. That comparison is a consistency check that
+`server=` reaches this server, not proof of which server it is: a proxy can
+relay it. Passing still needs the proof in DNS, which only the name's
+controller can publish. A name exactly one label under the public URL's host
+is verified without a record. The request's `Host` header decides nothing,
+because a caller chooses it, so a server with no public URL verifies every
+name through the record. Until a name is verified, the console and the
+approval page mark it unverified. Nothing is renamed, so the authority stays permanent
 ([0052](../decisions/0052-the-authority-is-the-repository-id.md)).
 
 Discovery does not wait for verification: an app that starts from a name
@@ -316,6 +330,11 @@ comes from that authority's document or the binary's catalog. Today any
 token may declare `google.com/anything`. Samples are unaffected, since an
 import rehomes them onto `~`. A repository never installs a published
 package under its own authority, because that repository is the publisher.
+A package the repository already holds is not new, including one a
+quarantine took out of the live registry, so the owner can still repair it.
+Until decision 8's local document covers packages,
+`SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES` lifts the rule for the suites
+that apply shipped provider files directly.
 
 With B in place, `declare:` has no remaining use, and development uses
 [decision 8](#decision-8-development)'s local document. 0203 and 0205 are
@@ -493,10 +512,14 @@ A local build is an unverified app (decision 4) and may still ask for a
 published package: the package comes from its publisher's authority document, never
 from the app, so the build gets exactly what a release gets. For a package
 version that is not published yet, a development server reads a local
-document in place of the DNS lookup and the fetch: `SUBSTRATE_AUTHORITY_DOCS` maps an
-authority to a file, and the variable is refused outside the `dev*` tasks.
-A local document for `substrate.reamde.dev` still cannot replace what the
-binary ships.
+document in place of the DNS lookup and the fetch:
+`SUBSTRATE_INSECURE_AUTHORITY_DOCS` maps an authority to a file. The server
+has no development mode to tie it to, so it follows the other
+`SUBSTRATE_INSECURE_` settings: an operator's opt-in, warned about at boot,
+and disclosed wherever it acts. The approval page says a file on this server
+vouched for the publisher, not DNS, and the token records it. A local
+document for `substrate.reamde.dev` still cannot replace what the binary
+ships.
 
 ## Decision 9: what installed code may reach
 
@@ -542,8 +565,12 @@ outside code and a domain that changes hands are
 | C. `app:<authority>:<app>` | tells a publisher's apps apart | widens the actor grammar ([0025](../decisions/0025-an-actor-carries-the-full-authority.md)); the token already names the exact client |
 
 **Chosen: B.** The changelog's principal (the token) names the exact client
-and build, as 0194 already relies on. Labels an app writes go under its
-actor's namespace.
+and build, as 0194 already relies on. `app:local` covers a loopback client
+id and a loopback redirect alike, and an https client id on the host `local`
+is refused so no web app can produce it. Labels an app writes go under its
+actor's namespace. A token may also keep writing the keys it wrote under
+`app:<client id host>`, the namespace an earlier binary gave it, so the
+change of actor breaks no client.
 
 ## Phases
 
@@ -557,24 +584,31 @@ actor's namespace.
    document (decision 6), fetching closures, the
    published install, versions and the build tracking of decision 7, the
    development override; Workouts moves to `substrate.reamde.dev/training`;
-   `declare:` is retired.
+   `declare:` is retired. Decision 0207's `agent` detail requires a
+   `declare:~/<package>` scope, so retiring `declare:` needs a way for an
+   app's agent to ship in a published package.
 3. **Full apps.** Code bounded by scopes, optional add-ons, agent providers
    through inputs, settings and secrets on the page, the wider scoped
    surface, and #1144's egress and review work.
 
+Phase 1 is implemented in pull requests #1146, #1147, #1148, #1149 and
+#1151. Their state, merge order, review record and what is still unverified
+are in [phase 1 status](authorities/phase-1.md).
+
 ## Decisions this needs
 
 - The `_substrate` record, repository discovery and **Verify domain**,
-  registration unchanged (amends 0046; 0052 stands).
+  registration unchanged (amends 0046; 0052 stands). Drafted as 0208.
 - Verified apps proven through the authority's TXT record and document,
   attribution by proof, and `full`
   for an unverified app marked as such (amends 0194, 0195's `app:<host>`
-  and 0204).
+  and 0204). Drafted as 0209.
 - First-party apps under `substrate.reamde.dev`, the binary winning for what
   it ships.
 - A token creates packages only under its repository's authority (amends
   `authorizeNewPackage`, which today admits any new authority but the
   publisher's and keeps a hand-apply door open for shipped closures).
+  Drafted as 0210.
 - Published packages installed from a document through approval, and the
   retirement of `declare:` (amends 0202, supersedes 0203 and 0205).
 - Published package versions and build tracking; no `movedFrom` for a
