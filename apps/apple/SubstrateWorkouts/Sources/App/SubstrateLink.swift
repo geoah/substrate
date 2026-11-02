@@ -153,7 +153,8 @@ final class SubstrateLink {
     /// Again after the access ended) is revoked like any replaced one.
     func signIn(_ probe: ServerProbe.Result) async throws {
         guard let oauth = OAuthClient(manifest: manifest, probe: probe) else { throw URLError(.badServerResponse) }
-        try await adopt(try await oauth.signIn(server: probe.origin, repository: probe.repository), replacing: session)
+        try await adopt(try await oauth.signIn(server: probe.origin, repository: probe.repository,
+                                                        keepingRejectedIn: .workouts), replacing: session)
     }
 
     /// The flow again with the whole request: Change Access, a renewal, a
