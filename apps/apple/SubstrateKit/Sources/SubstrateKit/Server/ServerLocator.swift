@@ -13,6 +13,9 @@ import Foundation
 ///
 /// Steps 2 to 4 apply only to a bare domain name, and the result carries
 /// that name as the repository the sign-in asks for and holds the token to.
+/// Steps 3 and 4 run only after the lookup answered that the name has no
+/// `v=substrate1` record: a lookup that failed stops here, since the record
+/// it missed may name another server than the web host or the parent would.
 public struct ServerLocator: Sendable {
     public var probe: ServerProbe
     public var resolver: any TXTResolver
@@ -35,6 +38,27 @@ public struct ServerLocator: Sendable {
                 + "it has no _substrate record and no \(ServerLocator.repositoryDocumentPath)."
             if let parent { text += " \(parent) is not a Substrate server either." }
             return text
+        }
+    }
+
+    /// The lookup of the name's record failed (a timeout, SERVFAIL): it
+    /// said nothing, so nothing after it may stand in for it.
+    public struct LookupFailed: LocalizedError, Sendable {
+        /// `_substrate.<name>`.
+        public let query: String
+        public let underlying: String
+
+        public var errorDescription: String? {
+            "The DNS lookup for \(query) failed, so the server it names is unknown. Check your connection and try again."
+        }
+    }
+
+    /// The name's record answered and names no server, such as a publisher's
+    /// record carrying only `doc=`.
+    public struct NoServerInRecord: LocalizedError, Sendable {
+        public let name: String
+        public var errorDescription: String? {
+            "The _substrate record of \(name) names no server. Type your server's address instead."
         }
     }
 
@@ -78,10 +102,11 @@ public struct ServerLocator: Sendable {
         throw NotFound(name: name, parent: parent)
     }
 
-    /// Step 2: the record's `server=`. A record that cannot be read is said,
-    /// never skipped: DNS wins over the web host when both answer, so one a
-    /// web host could stand in for would let it. A failed lookup, rather than
-    /// a missing record, moves on to the web host.
+    /// Step 2: the record's `server=`, or nil only when the lookup answered
+    /// that the name has no `v=substrate1` record. DNS wins over the web host,
+    /// so whatever else the lookup comes to stops discovery: a failed lookup
+    /// (`LookupFailed`), a record that cannot be read (`Malformed`) and one
+    /// that names no server (`NoServerInRecord`).
     func recordServer(_ name: String) async throws -> URL? {
         guard let query = DomainRecord.queryName(for: name) else { return nil }
         let txts: [String]?
@@ -89,10 +114,11 @@ public struct ServerLocator: Sendable {
             txts = try await resolver.txt(query)
         } catch {
             if isCancellation(error) { throw error }
-            return nil
+            throw LookupFailed(query: query, underlying: (error as? LocalizedError)?.errorDescription ?? "\(error)")
         }
-        guard let txts, let record = try DomainRecord.parse(txts), let server = record.server else { return nil }
-        return URL(string: server)
+        guard let txts, let record = try DomainRecord.parse(txts) else { return nil }
+        guard let server = record.server, let url = URL(string: server) else { throw NoServerInRecord(name: name) }
+        return url
     }
 
     /// Step 3: `repository.json` on the name's own host, its `server` held

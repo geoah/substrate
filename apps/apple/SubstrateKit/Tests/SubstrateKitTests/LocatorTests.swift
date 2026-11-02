@@ -174,13 +174,48 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     @Test func withoutARecordTheWebHostNamesTheServer() async throws {
         let transport = HostTransport().substrate("substrate.example.org")
             .on("ada.example.com", ServerLocator.repositoryDocumentPath, json: #"{"server":"https://substrate.example.org/"}"#)
-        for resolver in [TableResolver(), TableResolver(failure: URLError(.timedOut)),
-                         TableResolver(["_substrate.ada.example.com": ["v=spf1 -all", "v=substrate1 doc=https://ada.example.com/a.json"]])]
-        {
+        // No record: NXDOMAIN, or TXT strings none of which is ours.
+        for resolver in [TableResolver(), TableResolver(["_substrate.ada.example.com": ["v=spf1 -all"]])] {
             let found = try await locator(transport, resolver).locate("ada.example.com", requirement: requirement, app: "App")
             #expect(found.origin.absoluteString == "https://substrate.example.org")
             #expect(found.repository == "ada.example.com")
         }
+    }
+
+    /// A lookup that failed said nothing, so neither the web host nor the
+    /// parent may answer for the record it missed.
+    @Test func aFailedLookupStopsDiscovery() async throws {
+        let failures: [Error] = [
+            URLError(.timedOut),
+            // SERVFAIL, as DNS-SD reports it.
+            DNSServiceTXTResolver.Failed(name: "_substrate.alice.substrate.example.org", code: -65537),
+        ]
+        for failure in failures {
+            let transport = HostTransport().substrate("substrate.example.org").substrate("other.example.net")
+                .on("alice.substrate.example.org", ServerLocator.repositoryDocumentPath, json: #"{"server":"https://other.example.net"}"#)
+            do {
+                _ = try await locator(transport, TableResolver(failure: failure))
+                    .locate("alice.substrate.example.org", requirement: requirement, app: "App")
+                Issue.record("a failed lookup fell through to another server: \(failure)")
+            } catch let failed as ServerLocator.LookupFailed {
+                #expect(failed.query == "_substrate.alice.substrate.example.org")
+                #expect(failed.errorDescription?.contains("The DNS lookup for _substrate.alice.substrate.example.org failed") == true)
+            }
+            #expect(!transport.requested.contains("alice.substrate.example.org\(ServerLocator.repositoryDocumentPath)"))
+            #expect(!transport.requested.contains("substrate.example.org/.well-known/substrate/server.json"))
+        }
+    }
+
+    /// A record that answers and names no server (a publisher's `doc=`
+    /// alone) is DNS's answer too, not an absence.
+    @Test func aRecordWithoutAServerStopsDiscovery() async throws {
+        let transport = HostTransport().substrate("substrate.example.org")
+            .on("ada.example.com", ServerLocator.repositoryDocumentPath, json: #"{"server":"https://substrate.example.org"}"#)
+        let resolver = TableResolver(["_substrate.ada.example.com": ["v=substrate1 doc=https://ada.example.com/a.json"]])
+        await #expect(throws: ServerLocator.NoServerInRecord.self) {
+            try await locator(transport, resolver).locate("ada.example.com", requirement: requirement, app: "App")
+        }
+        #expect(!transport.requested.contains("ada.example.com\(ServerLocator.repositoryDocumentPath)"))
     }
 
     @Test func aDocumentServerMustBeAnHTTPSOrigin() async throws {
@@ -303,6 +338,49 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
         #expect(items["redirect_uri"] == redirect.absoluteString)
         let bare = try oauth.authorizeURL(redirect: redirect.absoluteString, pkce: PKCE(verifier: "v"), state: "s")
         #expect(!bare.absoluteString.contains("login_hint"))
+    }
+
+    /// A token for the wrong repository is kept to revoke, never as the
+    /// session, so a revocation that fails leaves it for `revokePending`
+    /// rather than live with nothing holding it, and the person is told.
+    @Test func aRejectedTokenWhoseRevocationFailsIsKeptToRevoke() async throws {
+        let server = try #require(URL(string: "https://ada.example.com"))
+        let meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(metadataJSON().utf8))
+        let token = try JSONDecoder().decode(TokenResponse.self, from: Data(
+            #"{"access_token":"sub_app_bob","scope":"read:*","repository":"bob.example.com"}"#.utf8))
+        let session = Session(server: server, token: token, clientID: "https://sync.substrate.example.com/client.json",
+                              revocation: nil, now: Date())
+        let mismatch = try #require(RepositoryMismatch(resolved: "ada.example.com", token: session.repository, server: server))
+
+        let failing = StubTransport().on("POST", "/oauth/revoke", status: 503, json: "")
+        let store = SessionStore(service: "test", storage: MemoryStorage())
+        let pending = await OAuthClient(manifest: syncManifest(), metadata: meta, transport: failing)
+            .reject(session, mismatch, keepingIn: store)
+        #expect(failing.sent("POST", "/oauth/revoke").count == 1)
+        #expect(pending.revocation == .pending)
+        #expect(store.pendingRevocations() == [session])
+        #expect(store.load() == nil)
+        #expect(pending.errorDescription?.contains("You signed in to bob.example.com, not ada.example.com.") == true)
+        #expect(pending.errorDescription?.contains("ada.example.com didn't confirm revoking the access it gave for bob.example.com") == true)
+
+        // The next try revokes it and forgets it.
+        let answering = StubTransport().on("POST", "/oauth/revoke", status: 200, json: "")
+        #expect(await store.revokePending(current: nil, transport: answering) == [])
+        #expect(store.pendingRevocations().isEmpty)
+
+        // Revoked at once: nothing is left kept.
+        let revoked = await OAuthClient(manifest: syncManifest(), metadata: meta, transport: answering)
+            .reject(session, mismatch, keepingIn: store)
+        #expect(revoked.revocation == .revoked)
+        #expect(store.pendingRevocations().isEmpty)
+        #expect(revoked.errorDescription?.contains("didn't confirm") == false)
+
+        // Neither kept nor revoked: the person is told to revoke it.
+        let refusing = SessionStore(service: "test", storage: MemoryStorage(refusing: ["session.revocations"]))
+        let live = await OAuthClient(manifest: syncManifest(), metadata: meta, transport: failing)
+            .reject(session, mismatch, keepingIn: refusing)
+        #expect(live.revocation == .live)
+        #expect(live.errorDescription?.contains("Revoke it in ada.example.com's Settings, under Apps.") == true)
     }
 
     @Test func aTokenForAnotherRepositoryIsRefused() {

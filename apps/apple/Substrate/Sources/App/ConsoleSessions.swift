@@ -34,8 +34,14 @@ final class ConsoleSessions: ObservableObject {
         known = (defaults.stringArray(forKey: Self.knownKey) ?? []).compactMap(ServerAddress.origin(of:))
     }
 
+    /// The Keychain item of the app's sign-in to `server`, and of the tokens
+    /// kept beside it to revoke.
+    static func store(for server: URL) -> SessionStore {
+        SessionStore(service: service, account: "session " + server.absoluteString)
+    }
+
     private func store(for server: URL) -> SessionStore {
-        SessionStore(service: Self.service, account: "session " + server.absoluteString)
+        Self.store(for: server)
     }
 
     /// The app's sign-in to `server`, if it holds one it still uses.

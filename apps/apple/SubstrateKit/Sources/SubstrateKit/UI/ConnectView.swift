@@ -64,6 +64,9 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
 
     @State var phase: Phase
     @State var problem: String?
+    /// The last check failed in a way the same check may not: the name's
+    /// DNS lookup did not answer, so the button offers Try Again.
+    @State private var retryable = false
     /// The sign-in waiting on the browser, which Cancel stops.
     @State private var signingIn: Task<Void, Never>?
     @FocusState private var focused: Bool
@@ -177,6 +180,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                     if let found, typed == Self.shown(found) { return }
                     if found != nil { phase = .idle }
                     problem = nil
+                    retryable = false
                 }
                 .disabled(busy)
         }
@@ -204,7 +208,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
 
     private var buttonTitle: String {
         switch phase {
-        case .idle: "Continue"
+        case .idle: retryable ? "Try Again" : "Continue"
         case .checking: "Checking…"
         case .found: WebAuthenticator.opensBrowser ? "Continue in Your Browser" : "Sign In with Your Substrate"
         case .signingIn: "Waiting for Your Browser…"
@@ -255,9 +259,11 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
             do {
                 let result = try await locator.locate(typed, requirement: manifest.requirement, app: manifest.appName)
                 address = Self.shown(result)
+                retryable = false
                 phase = .found(result)
             } catch {
                 phase = .idle
+                retryable = error is ServerLocator.LookupFailed
                 if !isCancellation(error) { problem = (error as? LocalizedError)?.errorDescription ?? explain(error, app: manifest.appName, server: origin) }
             }
         }
