@@ -989,8 +989,12 @@ new binary that opened a repository and wrote nothing leaves that stamp alone.
 **Rolling the image back is only safe while both stamps and the schema still
 fit.** An older binary refuses a repository stamped above its maxima and a
 database holding a migration it does not carry (below), so the way back from
-either is to restore the copy taken before the upgrade. Rolling *forward* to a
-binary whose maxima cover the stamps always works.
+either is to restore the database and the data root together, both from the
+copies taken before the upgrade, and boot the older binary under the same
+credential key. A database restored alone is not a rollback: the data root
+still holds what the newer binary wrote, and the older binary's boot meets it,
+refusing the repository or importing its newer rows into the restored copy.
+Rolling *forward* to a binary whose maxima cover the stamps always works.
 
 [Quarantine](vocabulary.md#quarantine) is what a tightened contract does: a
 binary that narrows what a declaration may say quarantines each installed
@@ -1020,8 +1024,9 @@ sweep, the declared indexes, the data root import) writes to the schema, and
 an older binary does not know the shape it would be writing to. The refusal
 names each such row by its recorded name, which is the migration file's name
 (`0002_something`); the tree's history says which release added that file. The
-repair is to run that release or a later one, or to restore the database from
-the copy taken before the upgrade. This is the database's own downgrade
+repair is to run that release or a later one, or to restore the database and
+the data root together from the copies taken before the upgrade, under the same
+credential key, as for any rollback (above). This is the database's own downgrade
 refusal, beside the two per-repository ones above, and it closes the rollback
 even when no repository was written: a new binary that carries a migration
 applies it at its first boot. The operator commands that open the engine
