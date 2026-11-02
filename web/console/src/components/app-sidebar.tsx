@@ -2,15 +2,15 @@
  * theme, sign out), the search that opens ⌘K, the five places (Home, All
  * data, Agents, Tools, Providers, and Observations after All data where a
  * kind records measurements), then the collections grouped the way a
- * person meets them ("Your data", one "From <Provider>" per provider) and, at
- * the foot, History, Settings and the Technical details switch. The
- * repository's name appears once: a second chip for it is a second door to
- * the same menu.
+ * person meets them (one group per package, one "From <Provider>" per
+ * provider) and, at the foot, History, Settings and the Technical details
+ * switch. The repository's name appears once: a second chip for it is a
+ * second door to the same menu.
  *
  * Everyday mode lists each group's primary collections by display plural.
- * Technical mode lists the authority / package tree with each kind's own
- * name, can show the supporting and internal kinds too, and adds the
- * substrate's own machinery as a last group. */
+ * Technical mode lists each group's authority / package tree with each
+ * kind's own name, can show the supporting and internal kinds too, and adds
+ * the substrate's own machinery as a last group. */
 
 import { useMemo, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"

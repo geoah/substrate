@@ -42,6 +42,7 @@ import {
   collectionSource,
   packageTitle,
 } from "@/lib/collections"
+import { isMachinery } from "@/lib/core-kinds"
 import { kindByIdentity } from "@/lib/definition"
 import {
   displayName,
@@ -78,9 +79,11 @@ const decode = (s: string) => {
   }
 }
 
-/** The crumbs a collection reads as: "Your data / Tasks" or
- * "From Google / Contacts" in everyday words, the reference spelled segment
- * by segment in technical mode. */
+/** The crumbs a collection reads as: "Training / Training sessions" or
+ * "From Google / Contacts" in everyday words, the first crumb opening the
+ * package (the substrate's machinery opens its authority, whose name the
+ * crumb is), and the reference spelled segment by segment in technical
+ * mode. */
 function collectionCrumbs(
   authority: string,
   pkg: string,
@@ -106,7 +109,9 @@ function collectionCrumbs(
   return [
     {
       label: collectionSource(kind),
-      to: "/data",
+      to: isMachinery(authority, pkg)
+        ? `/data/${authority}`
+        : `/data/${authority}/${pkg}`,
       ...(provider && { provider }),
     },
     {

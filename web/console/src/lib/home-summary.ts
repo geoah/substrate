@@ -65,8 +65,8 @@ export function namesSummary(names: string[], shown = 2): string {
   return `${names.slice(0, shown).join(", ")} and ${names.length - shown} more`
 }
 
-/** One heading of Home's collections: "Your data", or "From Google" with
- * the provider it names. */
+/** One heading of Home's collections: "Your data", the owner's packages
+ * ranked together, or "From Google" with the provider it names. */
 export interface HomeSection {
   id: string
   label: string
@@ -74,10 +74,11 @@ export interface HomeSection {
   kinds: KindInfo[]
 }
 
-/** Home's collections, grouped the way the sidebar groups them. Up to `cap`
- * cards: yours take at least `yoursAtLeast` places, the ones that hold
- * something first, and the providers' kinds fill what is left in the
- * sidebar's order. `held` says whether a kind holds any records. */
+/** Home's collections. Up to `cap` cards: the owner's packages take at least
+ * `yoursAtLeast` places, ranked together across packages with the ones that
+ * hold something first (a heading per package would spend the cards on
+ * headings), and the providers' kinds fill what is left in the sidebar's
+ * order. `held` says whether a kind holds any records. */
 export function homeSections(
   groups: readonly CollectionGroup[],
   held: (kind: KindInfo) => boolean,
@@ -85,7 +86,7 @@ export function homeSections(
   yoursAtLeast = 6
 ): HomeSection[] {
   const yours = groups
-    .filter((g) => g.type === "yours")
+    .filter((g) => g.type === "package")
     .flatMap((g) => g.primary)
     .map((k, i) => ({ k, i, held: held(k) }))
     .sort((a, b) => Number(b.held) - Number(a.held) || a.i - b.i)

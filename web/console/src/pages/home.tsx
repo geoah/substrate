@@ -70,7 +70,7 @@ export function HomePage() {
     [registry.data, repository.data]
   )
   const yourKinds = (groups ?? [])
-    .filter((g) => g.type === "yours")
+    .filter((g) => g.type === "package")
     .flatMap((g) => g.primary)
   // The collections that hold something lead; the counts are the ones the
   // cards read, so this costs no extra request.

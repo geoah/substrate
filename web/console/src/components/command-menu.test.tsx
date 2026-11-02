@@ -39,6 +39,7 @@ function kind(identity: string): KindInfo {
 
 const KINDS = [
   kind("ada.example.com/tasks/task"),
+  kind("substrate.reamde.dev/health/workout"),
   kind("providers.substrate.reamde.dev/google/drivefile"),
 ]
 
@@ -174,6 +175,22 @@ describe("CommandMenu", () => {
     // "lisb" is not in "Drive files", however its letters are spread
     await type("lisb")
     await waitFor(() => expect(headings()).not.toContain("Collections"))
+  })
+
+  it("finds a package's collections by the package's name, and names it beside each", async () => {
+    renderMenu()
+    await screen.findByRole("group", { name: "Health" })
+    await type("health")
+    const collections = await screen.findByRole("group", {
+      name: "Collections",
+    })
+    const workouts = within(collections).getByRole("option", {
+      name: /Workouts/,
+    })
+    expect(workouts.textContent).toContain("Health")
+    expect(
+      within(collections).queryByRole("option", { name: /Tasks/ })
+    ).toBeNull()
   })
 
   it("searches the primary kinds alone, not their details or the substrate's machinery", async () => {

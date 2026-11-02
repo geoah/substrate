@@ -1,6 +1,6 @@
 /** All data (`/data`): every collection in the substrate, grouped the way the
- * sidebar groups them. "Your data" is yours to change; each "From
- * <Provider>" group holds copies that provider keeps up to date. Everyday
+ * sidebar groups them. A package's collections are yours to change; each
+ * "From <Provider>" group holds copies that provider keeps up to date. Everyday
  * mode lists the primary collections and says how many supporting ones sit
  * behind them, and a group holding an agent's app says which agent made
  * what; technical mode lists every kind with its reference, the
@@ -49,7 +49,7 @@ import { kindOrigin, packageAgent, packagesQueryOptions } from "@/lib/packages"
 import { cn } from "@/lib/utils"
 
 const HINT: Record<CollectionGroup["type"], (g: CollectionGroup) => string> = {
-  yours: () => "yours to change",
+  package: () => "yours to change",
   provider: (g) =>
     `copies kept up to date by ${g.provider?.name ?? "a provider"}`,
   system: () => "the substrate’s own machinery",

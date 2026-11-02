@@ -30,9 +30,9 @@ describe("crumbsFor", () => {
     )
   })
 
-  it("reads a record in everyday words: where it lives, its collection, the record", () => {
+  it("reads a record in everyday words: its package, its collection, the record", () => {
     expect(crumbsFor("/data/a.example.com/tasks/task/t1")).toEqual([
-      { label: "Your data", to: "/data" },
+      { label: "Tasks", to: "/data/a.example.com/tasks" },
       {
         label: "Tasks",
         kind: "a.example.com/tasks/task",
@@ -51,11 +51,22 @@ describe("crumbsFor", () => {
     )
     expect(from).toEqual({
       label: "From Google",
-      to: "/data",
+      to: "/data/providers.substrate.reamde.dev/google",
       provider: "google",
     })
     expect(contacts).toMatchObject({ label: "Contacts" })
     expect(contacts.to).toBeUndefined()
+  })
+
+  it("reads a catalogue's collection under its package, the machinery under Substrate", () => {
+    expect(crumbsFor("/data/substrate.reamde.dev/health/workout")[0]).toEqual({
+      label: "Health",
+      to: "/data/substrate.reamde.dev/health",
+    })
+    expect(crumbsFor("/data/substrate.reamde.dev/core/token")[0]).toEqual({
+      label: "Substrate",
+      to: "/data/substrate.reamde.dev",
+    })
   })
 
   it("spells the reference segment by segment in technical mode", () => {
@@ -128,11 +139,11 @@ describe("crumbsFor", () => {
   it("keeps an authority and a package page under All data, in words", () => {
     expect(crumbsFor("/data/a.example.com")).toEqual([
       { label: "All data", to: "/data" },
-      { label: "Your data" },
+      { label: "a.example.com" },
     ])
     expect(crumbsFor("/data/a.example.com/tasks")).toEqual([
       { label: "All data", to: "/data" },
-      { label: "Your data", to: "/data/a.example.com" },
+      { label: "a.example.com", to: "/data/a.example.com" },
       { label: "Tasks package" },
     ])
     expect(crumbsFor("/data/providers.substrate.reamde.dev/google")).toEqual([
@@ -166,9 +177,9 @@ describe("pageTitle", () => {
         "Test the landing page"
       )
     ).toBe("Test the landing page · Tasks")
-    expect(pageTitle(crumbsFor("/data/a.example.com/tasks/task"))).toBe(
-      "Tasks · Your data"
-    )
+    expect(
+      pageTitle(crumbsFor("/data/substrate.reamde.dev/health/workout"))
+    ).toBe("Workouts · Health")
   })
 
   it("reads an untitled record, and a page the shell does not know", () => {
