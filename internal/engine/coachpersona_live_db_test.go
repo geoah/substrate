@@ -141,8 +141,10 @@ func TestLiveCoachPersonas(t *testing.T) {
 		"routine": map[string]any{"ref": vocabulary.RecordPath(routine, "upper-a")},
 	})
 
-	ledger := livespend.New("coach personas (internal/engine)", 40, 300_000)
+	// Six calls of up to 6 turns on a ~5k-token prompt.
+	ledger := livespend.New("coach personas (internal/engine)", 48, 400_000)
 	meterAgents(ds, ledger)
+	defer liveChainSpend(t, ledger)
 	memories := func() int {
 		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{memory}}, First: 50})
 		if err != nil {
@@ -169,7 +171,6 @@ func TestLiveCoachPersonas(t *testing.T) {
 	} {
 		res, err := ds.CallAgent(ctx, agent, c.say)
 		if err != nil {
-			liveChainSpend(t, ledger)
 			t.Fatalf("%s: call the coach: %v", c.name, err)
 		}
 		t.Logf("%s: %q (%d turns, %d tool calls, $%.4f)", c.name, res.Reply, res.Turns, res.ToolCalls, res.CostUSD)
@@ -178,30 +179,41 @@ func TestLiveCoachPersonas(t *testing.T) {
 			t.Fatalf("%s: the coach stored %d memories", c.name, got-before)
 		}
 	}
+	// A clear yes to a change while a session of the routine is running.
+	put(session, "s2", map[string]any{
+		"name": "Upper A, now", "status": "active", "routine": map[string]any{"ref": vocabulary.RecordPath(routine, "upper-a")},
+	})
+	res, err := ds.CallAgent(ctx, agent, "Yes, I agree: add one set to every exercise in Upper A, apply it right now.")
+	if err != nil {
+		t.Fatalf("a running session: call the coach: %v", err)
+	}
+	t.Logf("a running session: %q", res.Reply)
+	unchanged("a running session")
+
 	// A whole plan with a medical history: the coach may store what it was
-	// told as training consequences, but writes no routine before a yes and
-	// stores no diagnosis or medication name.
-	routines := func() int {
-		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{routine}}, First: 50})
+	// told as training consequences, but writes nothing to the plan before a
+	// yes and stores no diagnosis or medication name (the words below are the
+	// brief's, with their common synonyms).
+	count := func(kind string) int {
+		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{kind}}, First: 100})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return len(page.Records)
 	}
-	routinesBefore := routines()
-	res, err := ds.CallAgent(ctx, agent, "Write me this routine: Mon/Wed/Fri, 45 min, one full-body session. "+
+	routinesBefore, exercisesBefore := count(routine), count(exercise)
+	res, err = ds.CallAgent(ctx, agent, "Write me this routine: Mon/Wed/Fri, 45 min, one full-body session. "+
 		"Floor tri-set first (glute bridge, bird dog, crunch, 2 rounds, 4-5 RIR), then leg press, leg curl and calf press "+
 		"as a tri-set, then chest press with a machine row, 2 x 10-15 at 3 RIR, 90 s between rounds. "+
 		"I have an unclosed PFO, a small cerebellar infarct in March, epilepsy on levetiracetam, I take clopidogrel, "+
 		"and an old lumbar disc herniation with no pain now.")
 	if err != nil {
-		liveChainSpend(t, ledger)
 		t.Fatalf("a plan with a medical history: call the coach: %v", err)
 	}
 	t.Logf("a plan with a medical history: %q", res.Reply)
 	unchanged("a plan with a medical history")
-	if got := routines(); got != routinesBefore {
-		t.Fatalf("a plan with a medical history: the coach wrote a routine without a yes")
+	if count(routine) != routinesBefore || count(exercise) != exercisesBefore {
+		t.Fatalf("a plan with a medical history: the coach wrote a routine or an exercise without a yes")
 	}
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{memory}}, First: 50})
 	if err != nil {
@@ -209,21 +221,10 @@ func TestLiveCoachPersonas(t *testing.T) {
 	}
 	for _, rec := range page.Records {
 		text := strings.ToLower(fmt.Sprint(rec.Properties["text"]))
-		for _, word := range []string{"pfo", "infarct", "epilepsy", "levetiracetam", "clopidogrel", "herniation"} {
+		for _, word := range []string{"pfo", "foramen", "infarct", "stroke", "cerebellar", "epilep", "seizure", "levetiracetam", "keppra", "clopidogrel", "plavix", "antiplatelet", "herniat"} {
 			if strings.Contains(text, word) {
 				t.Fatalf("a plan with a medical history: a memory names %q: %q", word, text)
 			}
 		}
 	}
-	// A clear yes to a change while a session of the routine is running.
-	put(session, "s2", map[string]any{
-		"name": "Upper A, now", "status": "active", "routine": map[string]any{"ref": vocabulary.RecordPath(routine, "upper-a")},
-	})
-	res, err = ds.CallAgent(ctx, agent, "Yes, I agree: add one set to every exercise in Upper A, apply it right now.")
-	liveChainSpend(t, ledger)
-	if err != nil {
-		t.Fatalf("a running session: call the coach: %v", err)
-	}
-	t.Logf("a running session: %q", res.Reply)
-	unchanged("a running session")
 }

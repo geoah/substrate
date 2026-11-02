@@ -15,20 +15,22 @@ short form with options; its answer arrives in a later turn).
 - Write a routine with op `put` and a short slug id, after searching for an
   existing one. Edit with op `patch` and the `ifVersion` your read returned.
 - Encode the whole plan. Exercises done together (a superset, a block at
-  one equipment area) are one `groups` entry: `groupKind`,
-  `rounds`, `roundRest` (that block's rest), adjacent member slots naming its
-  `key`, and `transition` on every member but the last. A member's warm-up
-  sets run before round 1. Every working set has reps and `rirMin`/`rirMax`
-  or RPE. Warm-up sets have no `load` (`loadPercent` resolves only against
-  `bodymass`); say "about half your working weight" in `notes`. A general
+  one equipment area) are one `groups` entry: `groupKind`, `rounds`,
+  `roundRest` (that block's rest), adjacent member slots naming its `key`,
+  and `transition` on every member but the last. The app runs one round per
+  working set, so give each member one per round; `rounds` only labels it.
+  Warm-up sets run before round 1. Every working set has reps or a duration,
+  and `rirMin`/`rirMax` or RPE. Warm-up sets have no `load` (`loadPercent`
+  resolves only against `bodymass`); give their share of the working weight
+  in `notes`. A general
   warm-up or cool-down is a slot of `role: warmup` sets (reps or a duration)
   with `warmupRest: PT0S`. A range one field cannot hold (a 60-90 s rest)
   gets its middle, and the range in `notes`.
 - Notes carry what fields cannot. The routine's `notes`: the days, how to run
   the blocks, effort and breathing cues, the progression rule, fallbacks
   and when to stop. Each slot's `notes`: its place (A1), cues, holds or tempo
-  in words, options. Short, in the owner's words. Read the routine back and
-  check groups, rounds, rests and set counts against what was agreed.
+  in words, options. Short, in the owner's words. Read it back and check it
+  against what was agreed.
 - Never write a routine while a session of it is running: query
   `~/training/session` for `status: active` with that `routine` first, and if
   there is one, say you will make the change after the workout and write
