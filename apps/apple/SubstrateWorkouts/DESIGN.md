@@ -2149,7 +2149,8 @@ line when fixing). In order:
   "Log A2, 11 per side", "Log drop 25 kg × 12"); disabled while a required value is missing. A timed set has "Log 1:07
   hold" beside Start, then Cancel beside "Stop and log". A pending mini-set has "End myo-reps here" under Log. Fixing
   has Save, enabled once the draft differs; Delete set is in the `…`, as on every set.
-- **The set's `…`**, on the open set, on a fix and on every done line (owner, 2026-11-02): the Table's set menu items,
+- **The set's `…`**, on the open set, on a fix and on every done line (owner, 2026-11-02; a lone done warm-up is
+  drawn as its own line rather than folded, so it has one too): the Table's set menu items,
   with "Untick set" first on a done set and "Delete set" last. Delete set takes the set off the screen at once and
   "Set 2 deleted, Undo" floats above the island for five seconds; the removal itself waits that long
   (`SessionController.pendingRemoval`: the engine has no event that brings a removed set back), and goes before any
@@ -2217,7 +2218,8 @@ from the screen's edges, stacking up to three parts with hairlines between them,
    while the open editor's primary button (Log, Start or Stop, measured alone, without the action beside or under it)
    is out of view (less than half of it between the toolbar and the island, for a quarter of a second, so a Log or a
    row opening never makes it blink): while that button is on screen the list already offers the Log, and the island
-   never shows it twice. `RowsDock` decides it and is tested. A new open row waits for its editor's report; a fix
+   never shows it twice. `RowsDock` decides it and is tested. A new open row waits for its editor's report (one that
+   came in the same pass, before the dock heard the row opened, is kept and used); a fix
    takes the open panel off the list for a while, which is not the panel leaving the viewport, so the last report
    stands through it and the panel reports again when it ends. An editor awaited that never reports (the lazy list
    never laid it out) is out of view once a bounded wait ends, and a jump past an editor the list never laid out

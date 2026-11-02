@@ -114,6 +114,34 @@ struct RowsDockTests {
         #expect(dock.isDocked)
     }
 
+    @Test("a panel that reports before the dock hears its row opened: the report is kept, and the wait never docks it")
+    func earlyReport() {
+        // A timed set stopped: the next set's panel is laid out in view in the same pass, and reports first.
+        var dock = dock(open: set1)
+        dock.logButton(of: set2, isVisible: true)
+        #expect(!dock.isDocked && dock.open == set1)
+        dock.show(open: set2, isFixing: false)
+        #expect(!dock.isDocked && dock.logVisible == true && !dock.awaitsReport)
+        // Its Bool does not change again, so no report follows; the bounded wait settles nothing.
+        dock.noReport()
+        #expect(!dock.isDocked)
+
+        // Out of view first: it docks once the row is open.
+        var below = RowsDock()
+        below.show(open: set1, isFixing: false)
+        below.logButton(of: set2, isVisible: false)
+        below.show(open: set2, isFixing: false)
+        #expect(below.isDocked)
+
+        // A report kept for one row says nothing once another opens: it goes at every change of the open row.
+        var stale = RowsDock()
+        stale.show(open: set1, isFixing: false)
+        stale.logButton(of: set2, isVisible: false)
+        stale.show(open: set3, isFixing: false)
+        stale.show(open: set2, isFixing: false)
+        #expect(!stale.isDocked && stale.logVisible == nil && stale.awaitsReport)
+    }
+
     @Test("while the list scrolls itself to the open set nothing docks; an undock is never held")
     func seekHoldsDock() {
         // A Log near the bottom: the next panel opens lower, reports out of view, and the list scrolls to it.

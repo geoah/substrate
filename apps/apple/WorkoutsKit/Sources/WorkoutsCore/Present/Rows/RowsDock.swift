@@ -9,7 +9,9 @@
 ///
 /// - The open set docks only while its editor's Log button is known to be
 ///   out of view and no done set is being fixed. A new open row starts
-///   unknown: its editor has not reported yet.
+///   unknown, unless its editor reported before the dock heard of the row
+///   (a panel laid out in the same pass that opened it): that report is
+///   kept and used, since its button reports only when it changes.
 /// - A fix takes the open panel off the list for a while; that is not the
 ///   panel leaving the viewport. The last report stands through the fix,
 ///   and when it ends the panel is laid out again and reports at once.
@@ -31,6 +33,10 @@ public struct RowsDock: Equatable, Sendable {
     public private(set) var isFixing = false
     /// The open editor's Log button as last reported; nil until it reports.
     public private(set) var logVisible: Bool?
+    /// Reports from editors of rows not open (yet), since the last change
+    /// of the open row: the first report of a panel laid out before the dock
+    /// heard that its row opened.
+    public private(set) var early: [RowID: Bool] = [:]
     /// The open editor is to report: a new open row, or a fix ended. Until
     /// it does, `logVisible` is the best guess, and `noReport()` settles it.
     public private(set) var awaitsReport = false
@@ -51,8 +57,9 @@ public struct RowsDock: Equatable, Sendable {
     public mutating func show(open: RowID?, isFixing: Bool) {
         guard open != self.open || isFixing != self.isFixing else { return }
         if open != self.open {
-            logVisible = nil
-            awaitsReport = open != nil
+            logVisible = open.flatMap { early[$0] }
+            awaitsReport = open != nil && logVisible == nil
+            early = [:]
         } else if !isFixing {
             // The fix ended: the open panel is laid out again where it was.
             awaitsReport = true
@@ -66,7 +73,11 @@ public struct RowsDock: Equatable, Sendable {
     /// editor's counts, and none while a fix holds the screen (the open
     /// panel leaving for the fix's is not the panel leaving the viewport).
     public mutating func logButton(of row: RowID, isVisible: Bool) {
-        guard row == open, !isFixing else { return }
+        guard !isFixing else { return }
+        guard row == open else {
+            early[row] = isVisible
+            return
+        }
         logVisible = isVisible
         awaitsReport = false
         settle()

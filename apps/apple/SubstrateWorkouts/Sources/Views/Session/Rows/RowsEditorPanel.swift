@@ -114,7 +114,28 @@ struct RowsEditorPanel: View {
     /// The note beside the title when it fits, else on its own line under
     /// it. The RPE meaning shown for a moment takes the note's place without
     /// changing which: the panel never jumps.
+    @ViewBuilder
     private var header: some View {
+        if typeSize.isAccessibilitySize {
+            // The title first, never squeezed to a letter a line by the
+            // controls beside it; the controls under it, at the trailing edge.
+            VStack(alignment: .leading, spacing: 2) {
+                titleGroup
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    trailing
+                }
+                noteSlot(lines: nil)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(minHeight: 36)
+        } else {
+            compactHeader
+        }
+    }
+
+    private var compactHeader: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
                 titleGroup
@@ -242,6 +263,9 @@ struct RowsEditorPanel: View {
                 Button(cancel) { screen.cancelFix() }
                     .font(.body)
                     .foregroundStyle(Color.accentColor)
+                    // One word, never wrapped: the header moves its note down first.
+                    .lineLimit(1)
+                    .fixedSize()
                     .frame(minHeight: 44)
             }
             if let row {
@@ -337,8 +361,8 @@ struct RowsEditorPanel: View {
     }
 }
 
-/// Reports whether the primary button (Log, Start, Stop) is in the list's viewport, on screen: the
-/// list less its insets, the bars over it (`RowsDock.isInView`). Geometry
+/// Reports whether the primary button (Log, Start, Stop) is in the list's viewport, on screen:
+/// between the list's top and the bar over its foot (`RowsDock.isInView`). Geometry
 /// reports on appearing too, so a panel laid out again says where it is at
 /// once; a lazy list dropping it counts as out of view.
 private struct RowsLogVisibility: ViewModifier {
@@ -452,9 +476,10 @@ struct RowsFieldRow: View {
         .accessibilityHint("Opens a keypad")
     }
 
-    /// A hint such as `≈15` reads with its unit; words such as `to failure` do not.
+    /// A hint such as `≈15` reads with its unit, and so does an empty field
+    /// that must be filled (`– reps` on a drop to failure): it says what it wants.
     private var showsUnit: Bool {
-        field.value != nil || typing != nil || field.placeholder?.first == "\u{2248}"
+        field.value != nil || typing != nil || field.placeholder?.first == "\u{2248}" || field.isMissing
     }
 
     @ViewBuilder

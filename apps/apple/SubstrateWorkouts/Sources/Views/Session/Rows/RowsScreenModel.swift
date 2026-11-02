@@ -83,14 +83,21 @@ final class RowsScreenModel {
     private(set) var dock = RowsDock()
     /// The dock's changes animate with this: a fade under Reduce Motion (the view sets it).
     @ObservationIgnored var dockAnimation: Animation? = .smooth(duration: 0.3)
-    /// The list's frame on screen and its insets (the bars over it): its viewport.
+    /// The list's frame on screen (it starts under the toolbar) and the top
+    /// of the bar over its foot (the island, the undo offer, the keypad), on
+    /// screen: the two edges of where the list shows content.
     var listFrame = CGRect.zero
-    var listInsets = EdgeInsets()
+    var barTop: CGFloat?
 
-    /// Where the list shows content, on screen: its frame less the toolbar and the island.
+    /// Where the list shows content, on screen: from its top to the top of
+    /// the bar, at its docked height while it holds it. Both edges are
+    /// measured, not derived from the scroll view's insets, which count the
+    /// toolbar again on top of a frame that already starts under it (a Log
+    /// button just under the toolbar docked a second one).
     var listViewport: ClosedRange<Double> {
-        let top = Double(listFrame.minY + listInsets.top)
-        return top ... max(top, Double(listFrame.maxY - listInsets.bottom))
+        let top = Double(listFrame.minY)
+        let bottom = Double(barTop ?? listFrame.maxY)
+        return top ... max(top, bottom)
     }
     @ObservationIgnored private var hideTask: Task<Void, Never>?
     /// The bounded wait for an awaited editor's report (`RowsDock.noReport`).
@@ -157,11 +164,14 @@ final class RowsScreenModel {
 
     /// The open editor's Log button came into view or left it. Back in view
     /// undocks at once; out of view docks after a beat, so a panel that only
-    /// blinks out (a Log, a row opening) never makes the island jump. Only
-    /// the open editor's reports count, so the panel a Log removed cannot
-    /// cancel the new one's.
+    /// blinks out (a Log, a row opening) never makes the island jump. A
+    /// report from a row not open (yet) is kept as it is (`RowsDock.early`)
+    /// and cannot cancel the open editor's.
     func logVisibility(_ row: RowID, visible: Bool) {
-        guard row == dock.open else { return }
+        guard row == dock.open else {
+            dock.logButton(of: row, isVisible: visible)
+            return
+        }
         hideTask?.cancel()
         if visible {
             withAnimation(dockAnimation) { dock.logButton(of: row, isVisible: true) }

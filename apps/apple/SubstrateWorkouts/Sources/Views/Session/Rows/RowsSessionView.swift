@@ -65,9 +65,6 @@ struct RowsSessionView: View {
             .background(Color(.systemGroupedBackground))
             .scrollEdgeEffectStyle(.soft, for: .bottom)
             .safeAreaBar(edge: .bottom) { bottomBar(proxy) }
-            .onScrollGeometryChange(for: EdgeInsets.self) { $0.contentInsets } action: { _, insets in
-                screen.listInsets = insets
-            }
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
                 screen.listFrame = frame
             }
@@ -155,6 +152,10 @@ struct RowsSessionView: View {
         // Undocked while the list moves: the island shrinks, the inset does not.
         .frame(minHeight: screen.dock.holdsHeight && !screen.dock.isDocked && screen.typing == nil ? dockedBarHeight : nil,
                alignment: .bottom)
+        // The viewport's foot: the bar's top on screen, at its held height too.
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+            screen.barTop = top
+        }
         .animation(.smooth(duration: 0.25), value: screen.typing?.row)
         .animation(.smooth(duration: 0.25), value: screen.undo)
         .opacity(hidden ? 0 : 1)

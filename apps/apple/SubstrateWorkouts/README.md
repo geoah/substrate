@@ -207,6 +207,22 @@ scrolled away) and the one after it. They are `docs/screenshots/session-after-*.
 | --- | --- | --- | --- |
 | ![Docked](docs/screenshots/session-after-docked.jpg) | ![Superset](docs/screenshots/session-after-superset.jpg) | ![Plank](docs/screenshots/session-after-plank.jpg) | ![Minimised](docs/screenshots/session-after-minimised.jpg) |
 
+After the second review and the owner's feedback on the pre-release
+(2026-11-02, iPhone 17 simulator; "Three parts" and "Docked next set" above
+are retaken there too): a done set's `…` with Untick set and Delete set, the
+RPE in the island with its stops, a fix with Save and Cancel only, "Then"
+taking the list to its set, the labelled RPE stops, and at the largest text
+size the island docking only the name and Log, or Stop and its clock (Stop is
+measured alone, so a visible Stop above Cancel docks nothing).
+
+| A done set's `…` | RPE in the island | Fixing | "Then" shows the set |
+| --- | --- | --- | --- |
+| ![Done set menu](docs/screenshots/session-after-done-menu.jpg) | ![Island RPE](docs/screenshots/session-after-island-rpe.jpg) | ![Fix](docs/screenshots/session-after-fix.jpg) | ![Then](docs/screenshots/session-after-then.jpg) |
+
+| RPE, labelled | Largest text, docked | Largest text, timed | Largest text, Stop in view |
+| --- | --- | --- | --- |
+| ![RPE label](docs/screenshots/session-after-rpe-label.jpg) | ![AX docked](docs/screenshots/session-after-accessibility-size.jpg) | ![AX timed](docs/screenshots/session-after-accessibility-timed.jpg) | ![AX Stop](docs/screenshots/session-after-accessibility-stop.jpg) |
+
 `docs/screenshots/rows-*.jpg` are the Rows layout from the app's build in
 rxtx.dev (Spotter, geoah/rxtx.dev#118), with example sessions loaded as history: drops, a past set being
 fixed, a timed plank and dark mode.

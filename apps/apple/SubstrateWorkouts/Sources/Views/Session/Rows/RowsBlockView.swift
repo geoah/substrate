@@ -219,6 +219,9 @@ struct RowsBlockView: View {
         switch item {
         case let .set(set):
             setView(set)
+        case let .warmups(fold) where fold.sets.count == 1:
+            // One warm-up folds to nothing shorter: its own line, with its check and `…`.
+            setView(fold.sets[0])
         case let .warmups(fold):
             let open = screen.unfolded.contains(fold.id) || fold.sets.contains { $0.id == screen.fixing?.row }
             RowsWarmupFoldLine(fold: fold, isOpen: open) {
