@@ -61,6 +61,15 @@ public enum Format {
         return "\(hours):\(minutes < 10 ? "0\(minutes)" : "\(minutes)"):\(ss)"
     }
 
+    /// How long a session has run, to the minute: `0 min`, `12 min`, `1 h 5 min`.
+    /// The Rows title shows it so it reads as the session's length, not as a
+    /// clock running for the set at hand.
+    public static func sessionLength(_ seconds: Seconds) -> String {
+        let minutes = max(0, seconds) / 60
+        guard minutes >= 60 else { return "\(minutes) min" }
+        return "\(minutes / 60) h \(minutes % 60) min"
+    }
+
     /// A rest: `Off` for 0 (no timer), else a duration.
     public static func rest(_ seconds: Seconds) -> String {
         seconds <= 0 ? "Off" : duration(seconds)

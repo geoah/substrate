@@ -2,11 +2,12 @@ import WorkoutsCore
 import SwiftUI
 
 /// The Rows session layout (DESIGN.md §7.6a), the default: the session's
-/// blocks as opaque cards of one-line sets, the set to do now open in place,
-/// and a floating glass capsule at the bottom. It reads
+/// blocks as opaque cards of one-line sets, the open set in place (any set
+/// opens with a tap), and a floating glass island at the bottom. It reads
 /// `presentation.rowsLayout` and sends the same commands as the Table. After
 /// a Log the list brings the next open set into view, never while a finger
-/// is on it.
+/// is on it. The island's bar insets the list, so nothing it holds ever
+/// covers the set being edited.
 struct RowsSessionView: View {
     let presentation: SessionPresentation
     let finish: () -> Void
@@ -21,9 +22,12 @@ struct RowsSessionView: View {
 
     private var layout: RowsLayout { presentation.rowsLayout }
 
-    private var isResting: Bool {
-        if case .resting = layout.capsule { return true }
-        return false
+    private var isResting: Bool { layout.island.rest != nil }
+
+    /// The open editor is on screen: the island leaves the next set out.
+    private var editorInView: Bool {
+        guard let open = layout.openRow else { return true }
+        return screen.hiddenEditor != open || screen.fixing != nil
     }
 
     var body: some View {
@@ -119,9 +123,9 @@ struct RowsSessionView: View {
                     RowsUndoToast(undo: undo) { screen.undoLast(session: session) }
                         .padding(.horizontal, 16)
                 }
-                RowsCapsuleView(
-                    capsule: layout.capsule,
-                    layout: layout,
+                RowsIslandView(
+                    island: layout.island,
+                    editorInView: editorInView,
                     perform: { screen.perform($0, session: session, cover: cover) },
                     showOpenRow: { scrollToOpenRow(proxy) },
                     finish: finish,
@@ -199,8 +203,10 @@ struct RowsSessionView: View {
     }
 }
 
-/// The Rows layout's title: the session's name over its clock, which a tap
-/// pauses or resumes (the Table shows the clock in its header instead).
+/// The Rows layout's title: the session's name over how long it has run,
+/// to the minute and in grey (`24 min`), so it reads as the session's
+/// length and never as a clock running for the set at hand. A tap pauses or
+/// resumes the session clock (the Table shows the clock in its header).
 struct RowsTitleView: View {
     let title: String
     let header: SessionHeaderStats
@@ -213,25 +219,19 @@ struct RowsTitleView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                HStack(spacing: 3) {
-                    Image(systemName: header.isPaused ? "pause.fill" : "stopwatch")
-                        .font(.caption2.weight(.semibold))
-                        .accessibilityHidden(true)
-                    if header.isPaused {
-                        Text(header.durationText)
-                    } else {
-                        SessionClockText(clockStart: header.clockStart, pausedAt: header.clockPausedAt)
-                    }
+                TimelineView(.periodic(from: header.clockStart, by: 60)) { context in
+                    let end = header.clockPausedAt ?? context.date
+                    let length = Format.sessionLength(Seconds(max(0, end.timeIntervalSince(header.clockStart))))
+                    Text(header.isPaused ? "Paused, \(length)" : length)
                 }
-                .font(.footnote.weight(.semibold).monospacedDigit())
-                .foregroundStyle(header.isPaused ? Color.orange : Color.accentColor)
+                .font(.footnote.monospacedDigit())
+                .foregroundStyle(header.isPaused ? Color.orange : Color.secondary)
                 .lineLimit(1)
             }
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(header.isPaused ? "paused" : "")
         .accessibilityHint(header.isPaused ? "Resumes the session clock" : "Pauses the session clock")
     }
 }

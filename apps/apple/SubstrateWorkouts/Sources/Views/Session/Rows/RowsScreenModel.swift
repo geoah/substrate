@@ -5,7 +5,8 @@ import SwiftUI
 /// The Rows layout's own view state (DESIGN.md §7.6a): which done set is
 /// being fixed and its draft, which field the keypad types into, which
 /// finished blocks and warm-up folds are open, the RPE meaning shown for a
-/// moment, and the undo offer after a Log. The session lives in
+/// moment, the undo offer after a Log, and whether the open editor is
+/// scrolled out of view (the island then docks the next set). The session lives in
 /// `SessionController`; this never holds a rule. Every value it shows and
 /// every change it sends comes from `SessionPresentation.rowsLayout`.
 @MainActor
@@ -55,6 +56,11 @@ final class RowsScreenModel {
     var undo: Undo?
     /// The set just logged: tinted green for a moment.
     var fresh: RowID?
+    /// The open editor whose panel the owner scrolled out of view: the island
+    /// docks that set while it stays the open one. Set a moment after the
+    /// panel leaves (a Log replaces it at once), cleared as soon as it is back.
+    private(set) var hiddenEditor: RowID?
+    @ObservationIgnored private var hideTask: Task<Void, Never>?
     /// A Log the entry check holds: once the answer logs the row, it gets the
     /// undo offer and the green wash as any other Log.
     @ObservationIgnored private var heldLog: (row: RowID, text: String?)?
@@ -92,10 +98,39 @@ final class RowsScreenModel {
         }
     }
 
+    /// The `½`: the value with its half point added or taken off, rated, and its meaning for a moment.
+    func pick(_ half: RowsRPEHalf, in editor: RowsEditor, session: SessionController) {
+        guard let patch = half.patch else { return }
+        apply(patch, row: editor.row, mode: editor.mode, session: session)
+        if let meaning = half.meaning { show(Flash(row: editor.row, text: meaning, token: next())) }
+    }
+
     // MARK: - The keypad
 
     func openKeypad(_ field: RowsField, in editor: RowsEditor) {
-        typing = Typing(row: editor.row, mode: editor.mode, keypad: field.keypad)
+        openKeypad(field, row: editor.row, mode: editor.mode)
+    }
+
+    func openKeypad(_ field: RowsField, row: RowID, mode: RowsEditor.Mode) {
+        typing = Typing(row: row, mode: mode, keypad: field.keypad)
+    }
+
+    // MARK: - Docking
+
+    /// The open editor's panel came into view or left it. Back in view
+    /// undocks at once; out of view docks after a beat, so a panel that only
+    /// blinks out (a Log, a row opening) never makes the island jump.
+    func editorVisibility(_ row: RowID, visible: Bool, animation: Animation?) {
+        hideTask?.cancel()
+        if visible {
+            if hiddenEditor == row { withAnimation(animation) { hiddenEditor = nil } }
+            return
+        }
+        hideTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            withAnimation(animation) { self.hiddenEditor = row }
+        }
     }
 
     func type(_ key: String) {

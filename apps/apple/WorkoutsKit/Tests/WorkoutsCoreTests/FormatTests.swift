@@ -14,6 +14,8 @@ struct FormatTests {
         #expect(Format.duration(53) == "0:53")
         #expect(Format.duration(90) == "1:30")
         #expect(Format.duration(62) == "1:02")
+        #expect(Format.sessionLength(59) == "0 min" && Format.sessionLength(754) == "12 min")
+        #expect(Format.sessionLength(3900) == "1 h 5 min")
         #expect(Format.duration(0) == "0:00")
         #expect(Format.duration(599) == "9:59")
         #expect(Format.duration(3599) == "59:59")

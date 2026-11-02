@@ -18,15 +18,16 @@ newest first. **Exercises** lists every exercise with its history and its
 estimated 1RM trend. **Settings** holds units, rest defaults, the session
 switches, alerts, Apple Health, the substrate and the update check. A session
 runs in a full-screen cover whose default layout, **Rows**, shows each set as
-a line, opens the set to do now in place with steppers and the planned RPE
-filled in, and keeps a capsule at the bottom with the rest countdown or what
-is up next; **Table** is the grid. The session's Live Activity
+a line, opens the next set in place with steppers and the planned RPE filled
+in (any other set opens with a tap, in any order), and keeps an island at the
+bottom with the rest countdown, the next set once its editor is scrolled away,
+and the set after it; **Table** is the grid. The session's Live Activity
 (`SubstrateWorkoutsWidgets`) shows the rest on the Lock Screen and in the
 Dynamic Island.
 
 ```bash
 mise run apple:build:workouts     # the app for the simulator
-mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (378 tests, on the Mac)
+mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (405 tests, on the Mac)
 mise run apple:release:workouts   # archived, signed and published under workouts/
 uv run --with pyyaml apps/apple/scripts/workouts-package.py   # the package's manifests into the app's JSON
 ```
@@ -191,6 +192,20 @@ They are `docs/screenshots/signed-*.jpg`.
 | History | Substrate in Settings |
 | --- | --- |
 | ![History](docs/screenshots/signed-09-history-session.jpg) | ![Settings](docs/screenshots/signed-10-settings-substrate.jpg) |
+
+The session screen after the owner's first review (2026-11-02, iPhone 18 Pro
+Max simulator): sets logged in any order, nothing timed but a timed set, and
+the island's three parts, the rest, the next set (docked once its editor is
+scrolled away) and the one after it. They are `docs/screenshots/session-after-*.jpg`;
+`session-before-*.jpg` are the same moments before.
+
+| Start | Resting | Any order | Three parts |
+| --- | --- | --- | --- |
+| ![Start](docs/screenshots/session-after-start.jpg) | ![Resting](docs/screenshots/session-after-resting.jpg) | ![Any order](docs/screenshots/session-after-any-order.jpg) | ![Island](docs/screenshots/session-after-island.jpg) |
+
+| Docked next set | Superset | Plank | Minimised |
+| --- | --- | --- | --- |
+| ![Docked](docs/screenshots/session-after-docked.jpg) | ![Superset](docs/screenshots/session-after-superset.jpg) | ![Plank](docs/screenshots/session-after-plank.jpg) | ![Minimised](docs/screenshots/session-after-minimised.jpg) |
 
 `docs/screenshots/rows-*.jpg` are the Rows layout from the app's build in
 rxtx.dev (Spotter, geoah/rxtx.dev#118), with example sessions loaded as history: drops, a past set being

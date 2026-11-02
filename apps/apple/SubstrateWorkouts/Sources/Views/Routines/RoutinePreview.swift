@@ -3,9 +3,10 @@ import SwiftUI
 
 /// A routine before it starts (DESIGN.md §7.3): each exercise's planned sets
 /// in words, groups with their bracket and A1, A2 labels, the rests that
-/// differ from the defaults, tempo and notes. Start sits in the bottom
-/// toolbar, the system's glass; the tab bar steps aside on this pushed
-/// page, or its floating glass would lie over Start.
+/// differ from the defaults, tempo and notes. Start floats in a bar of its
+/// own at the bottom of the list, above the tab bar and the session's bar
+/// when one runs: the list scrolls clear of all three, and neither glass
+/// ever lies over Start.
 struct RoutinePreview: View {
     let routineID: RoutineID
 
@@ -18,16 +19,15 @@ struct RoutinePreview: View {
             list(preview)
                 .navigationTitle(preview.name)
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar(.hidden, for: .tabBar)
-                .toolbar {
-                    ToolbarItem(placement: .bottomBar) {
-                        StartSessionButton(request: .routine(routineID)) {
-                            Text("Start routine")
-                                .font(.body.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.glassProminent)
+                .safeAreaBar(edge: .bottom) {
+                    StartSessionButton(request: .routine(routineID)) {
+                        Text("Start routine")
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 36)
                     }
+                    .buttonStyle(.glassProminent)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
                 }
         } else {
             ContentUnavailableView("Routine not found", systemImage: "list.bullet.clipboard")

@@ -258,12 +258,17 @@ public struct RowsKeypadChip: Equatable, Sendable, Identifiable {
     }
 }
 
-/// The full-width RPE strip: 6 to 10 in half steps. A value that is no
-/// rating yet (the plan's pre-fill, or a logged pre-filled or copied value)
-/// is one outlined, hollow cell; a tap on it rates it. A rating is filled
-/// solid; a tap on it clears it.
+/// The RPE control: five whole stops, 6 to 10, and a `½` toggle that adds
+/// or takes away the half point, so every half step is two taps away and the
+/// control fits inside the card. The stop holding the value shows it (`8.5`).
+/// A value that is no rating yet (the plan's pre-fill, or a logged pre-filled
+/// or copied value) is outlined, hollow; a tap on it rates it. A rating is
+/// filled solid; a tap on it clears it.
 public struct RowsRPEStrip: Equatable, Sendable {
+    /// 6, 7, 8, 9 and 10.
     public var cells: [RowsRPECell]
+    /// The `½` toggle.
+    public var half: RowsRPEHalf
     /// The value the strip shows, rated or not.
     public var shown: Decimal?
     /// `shown` is the owner's rating (a tap, or an imported value).
@@ -271,17 +276,18 @@ public struct RowsRPEStrip: Equatable, Sendable {
     /// Hidden behind `addTitle` until the owner opens it (view state): no value, no
     /// pre-fill and no rating last time, or a warm-up or timed set.
     public var isCollapsed: Bool
-    /// `+ RPE`.
+    /// `RPE`, after a plus symbol: one line at every text size.
     public var addTitle: String
     /// `Leg Press (Machine), set 2, RPE`.
     public var accessibilityLabel: String
     /// `8, planned, not rated yet`, `8.5`, `9, copied from last time`, `not rated`.
     public var accessibilityValue: String
 
-    public init(cells: [RowsRPECell], shown: Decimal?, isRated: Bool, isCollapsed: Bool, addTitle: String,
+    public init(cells: [RowsRPECell], half: RowsRPEHalf, shown: Decimal?, isRated: Bool, isCollapsed: Bool, addTitle: String,
                 accessibilityLabel: String, accessibilityValue: String)
     {
         self.cells = cells
+        self.half = half
         self.shown = shown
         self.isRated = isRated
         self.isCollapsed = isCollapsed
@@ -290,10 +296,32 @@ public struct RowsRPEStrip: Equatable, Sendable {
         self.accessibilityValue = accessibilityValue
     }
 
-    public static let addTitle = "+ RPE"
+    public static let addTitle = "RPE"
 }
 
-/// One cell of the RPE strip (44 pt wide).
+/// The `½` beside the RPE stops: on when the value has a half point.
+public struct RowsRPEHalf: Equatable, Sendable {
+    /// `½`.
+    public var text: String
+    public var isOn: Bool
+    /// The value with the half point added or taken away, rated; nil when
+    /// there is no value yet, or at 10.
+    public var patch: SetValuesPatch?
+    /// What the header says for a moment after the tap.
+    public var meaning: String?
+    /// `Add half a point`, `Take off the half point`.
+    public var accessibilityLabel: String
+
+    public init(text: String, isOn: Bool, patch: SetValuesPatch?, meaning: String?, accessibilityLabel: String) {
+        self.text = text
+        self.isOn = isOn
+        self.patch = patch
+        self.meaning = meaning
+        self.accessibilityLabel = accessibilityLabel
+    }
+}
+
+/// One stop of the RPE control (at least 44 pt wide).
 public struct RowsRPECell: Equatable, Sendable, Identifiable {
     public enum Style: String, Equatable, Sendable {
         case plain
@@ -304,10 +332,11 @@ public struct RowsRPECell: Equatable, Sendable, Identifiable {
         case filled
     }
 
+    /// The value the stop sets or shows: its whole number, or the shown value with its half point.
     public var value: Decimal
     /// `8`, `8.5`.
     public var text: String
-    /// A half step: smaller, regular weight.
+    /// It shows a half step.
     public var isHalf: Bool
     public var style: Style
     /// A tap: `enteringRPE(value)`, on an outlined cell too (it then counts as
@@ -668,13 +697,26 @@ struct RowsEditorSource: Equatable, Sendable {
     func rpeStrip(_ rpe: RowRPE) -> RowsRPEStrip {
         let shown = rpe.shown
         let isRated = if case let .value(_, method) = rpe { method.isRating } else { false }
-        let cells = RPEScaleText.values.map { value in
-            let style: RowsRPECell.Style = shown == value ? (isRated ? .filled : .outlined) : .plain
+        func meaning(_ value: Decimal) -> String {
             let words = RPEScaleText.reserve(value, measurement: measurement) ?? RPEScaleText.headline(value)
-            let meaning = "RPE \(Format.rpe(value))" + (words.map { ": \($0.lowercasedFirst)" } ?? "")
-            return RowsRPECell(value: value, text: Format.rpe(value), isHalf: value != value.roundedTo(0), style: style,
-                               patch: style == .filled ? .clearingRPE : .enteringRPE(value), meaning: meaning)
+            return "RPE \(Format.rpe(value))" + (words.map { ": \($0.lowercasedFirst)" } ?? "")
         }
+        let cells = RPEScaleText.values.filter { $0 == $0.roundedTo(0) }.map { whole in
+            // The stop holding the value stands for it, half point and all.
+            let holds = shown.map { $0 >= whole && $0 < whole + 1 } ?? false
+            let value = holds ? shown ?? whole : whole
+            let style: RowsRPECell.Style = holds ? (isRated ? .filled : .outlined) : .plain
+            return RowsRPECell(value: value, text: Format.rpe(value), isHalf: value != value.roundedTo(0), style: style,
+                               patch: style == .filled ? .clearingRPE : .enteringRPE(value), meaning: meaning(value))
+        }
+        let isOn = shown.map { $0 != $0.roundedTo(0) } ?? false
+        let toggled: Decimal? = shown.flatMap { value in
+            let next = isOn ? value - Decimal(5) / 10 : value + Decimal(5) / 10
+            return RPEScaleText.values.contains(value) && RPEScaleText.values.contains(next) ? next : nil
+        }
+        let half = RowsRPEHalf(text: "\u{00BD}", isOn: isOn, patch: toggled.map(SetValuesPatch.enteringRPE),
+                               meaning: toggled.map(meaning),
+                               accessibilityLabel: isOn ? "Take off the half point" : "Add half a point")
         let value: String = switch rpe {
         case .none: "not rated"
         case let .prefill(x): "\(Format.rpe(x)), planned, not rated yet"
@@ -682,7 +724,7 @@ struct RowsEditorSource: Equatable, Sendable {
         case let .value(x, .prefilled): "\(Format.rpe(x)), as planned, not rated"
         case let .value(x, _): Format.rpe(x)
         }
-        return RowsRPEStrip(cells: cells, shown: shown, isRated: isRated, isCollapsed: shown == nil && !rpeOpen,
+        return RowsRPEStrip(cells: cells, half: half, shown: shown, isRated: isRated, isCollapsed: shown == nil && !rpeOpen,
                             addTitle: RowsRPEStrip.addTitle, accessibilityLabel: "\(spoken), RPE", accessibilityValue: value)
     }
 }

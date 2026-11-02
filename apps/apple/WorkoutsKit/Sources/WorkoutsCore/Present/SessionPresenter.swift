@@ -78,7 +78,7 @@ struct Presenting {
         let header = headerStats()
         let upNext = upNextPresentation()
         let blocks = self.blocks()
-        let rowsLayout = self.rowsLayout(blocks: blocks, header: header)
+        let rowsLayout = self.rowsLayout(blocks: blocks)
         let completed = state.rows.values.count { $0.isHead && $0.isCompleted }
         let started = Format.time(state.session.at, in: settings.timeZone)
         // The Live Activity's Done ticks Up next with its shown values only;
@@ -105,7 +105,8 @@ struct Presenting {
             notification: notification(upNext),
             accessory: AccessoryPresentation(
                 title: title,
-                detail: upNext.map { "\($0.exerciseWithGroup), \($0.label.spoken)" },
+                detail: upNext.map { "\($0.exerciseWithGroup), \($0.label.spoken)" + ($0.values.isEmpty ? "" : ", \($0.values)") },
+                row: upNext?.row,
                 isPaused: header.isPaused,
                 restEndsAt: state.countdown.flatMap { $0.isRestLike && !$0.hasEnded(by: now) ? $0.endsAt : nil }
             ),

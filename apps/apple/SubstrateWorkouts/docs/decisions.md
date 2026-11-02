@@ -177,6 +177,29 @@ The options, with their screens and rationales, are in [design/](design/README.m
   [reviews/data-model-2026-10-31/DECISIONS.md](reviews/data-model-2026-10-31/DECISIONS.md),
   [DESIGN.md §4.14](../DESIGN.md#414-rpe-provenance-and-the-pre-fill).
 
+### U7. Any order, nothing timed but a timed set, and a three-part island
+
+- **Decided by** the owner, 2026-11-02, after the first session on the Rows screen.
+- **What:** a set is never "started" and nothing counts up for it: only a timed set (a
+  plank) has Start, a running clock and Stop. Any set in any exercise opens with a tap and
+  logs in any order; the suggested next set is only the one open when nothing else is.
+  There is no "… is up" page after a Log. The bottom capsule becomes an island of up to
+  three parts, each shown only when it applies: the rest, the next set (compact, with Log),
+  and the set after it on one line. The RPE strip must fit inside the card, "+ RPE" on one
+  line, no rest lines inside a superset, and the minimised session bar must not cover
+  Start and must say more than a timer.
+- **The lead's choices**, open to the owner: the island docks the next set only while its
+  editor is scrolled out of view, so it is never on screen twice; the RPE control is five
+  whole stops and a `½` toggle; the title keeps the session's length, to the minute and in
+  grey ("24 min"), so it does not read as a set's timer; the minimised bar shows the rest
+  beside the session's name while one runs, otherwise the next set with its values, and
+  drops the session clock; passed-over sets carry no tag.
+- **Why:** the owner said "I don't want to have to start a workout that is not timed … I
+  want to just freely move between exercises and mark them as done", and asked for the
+  island's "three parts that should be shown/hidden as they are appropriate".
+- **Source:** owner, 2026-11-02;
+  [DESIGN.md §7.6a](../DESIGN.md#76a-the-rows-layout-the-default).
+
 ## The data model, first draft (lead)
 
 Taken by the lead on 2026-10-30 from the research, for the owner to overturn. They are listed

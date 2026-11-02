@@ -101,7 +101,6 @@ struct RowsSetLine: View {
         case .done: return warmup ? .warmupDone : .done
         case .now: return isResting || collapsed ? .waiting : warmup ? .warmupNow : .now
         case .next: return warmup ? .warmupTodo : item.role == .drop ? .hook : .todo
-        case .later: return .later
         case .locked: return item.role == .drop ? .hook : .locked
         }
     }
@@ -264,48 +263,6 @@ struct RowsRoundHeaderView: View {
             .padding(.top, 8)
             .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
-    }
-}
-
-/// A thin line between a group's sets, on the rail that joins their rings:
-/// `→ 0:00, straight to A2`, `⏱ Rest 1:00, then round 2`.
-struct RowsConnectorView: View {
-    let connector: RowsConnector
-
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .body) private var glyph: CGFloat = 22
-
-    var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                Rectangle()
-                    .fill(Color(.tertiaryLabel))
-                    .frame(width: 1.5)
-                Image(systemName: connector.kind == .transition ? "arrow.right" : "timer")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(isRest ? Color.accentColor : Color.secondary)
-                    .frame(width: glyph, height: 18)
-                    .background(RowsStyle.card)
-            }
-            .frame(width: glyph)
-            Text("\(Text("\(connector.lead),").fontWeight(.semibold).foregroundStyle(leadColor)) \(connector.text)")
-                .font(.footnote.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 28)
-        .opacity(connector.phase == .passed ? 0.55 : 1)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(connector.sentence)
-        .accessibilityValue(connector.phase == .running ? "running now" : "")
-    }
-
-    private var isRest: Bool { connector.kind != .transition }
-
-    private var leadColor: Color {
-        isRest ? .accentColor : .primary
     }
 }
 

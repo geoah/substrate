@@ -713,15 +713,18 @@ public struct CountdownNotification: Equatable, Sendable {
 public struct AccessoryPresentation: Equatable, Sendable {
     /// The routine's name or "Training session".
     public var title: String
-    /// `Chest Press (Machine), set 2`; nil when every set is done.
+    /// The next set with its values, `Chest Press (Machine), set 2, 40 kg × 11`; nil when every set is done.
     public var detail: String?
+    /// That set: a tap on the bar opens the session at it.
+    public var row: RowID?
     public var isPaused: Bool
     /// A running rest's end, for "Rest 1:16"; nil when none runs or it is over.
     public var restEndsAt: Date?
 
-    public init(title: String, detail: String?, isPaused: Bool, restEndsAt: Date?) {
+    public init(title: String, detail: String?, row: RowID? = nil, isPaused: Bool, restEndsAt: Date?) {
         self.title = title
         self.detail = detail
+        self.row = row
         self.isPaused = isPaused
         self.restEndsAt = restEndsAt
     }

@@ -3,9 +3,9 @@ import SwiftUI
 
 /// One exercise or group on the Rows layout (DESIGN.md §7.6a): an opaque
 /// card with the name, the plan in one line and the `…` menu, then its lines
-/// in the order they are done (a group's members interleaved by round, with
-/// the hand-off and the rests as thin lines), the set to do now open in
-/// place, and `+ Add set`. A finished block folds to one line with the
+/// in the order they are done (a group's members interleaved by round; the
+/// rests show in the island, not here), the open set in place, and
+/// `+ Add set`. Any pending set opens with a tap. A finished block folds to one line with the
 /// headline change until it is opened again.
 struct RowsBlockView: View {
     let block: RowsBlock
@@ -18,6 +18,7 @@ struct RowsBlockView: View {
     @Environment(CoverModel.self) private var cover
     @Environment(RowsScreenModel.self) private var screen
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .body) private var separatorIndent: CGFloat = 48
 
     var body: some View {
@@ -205,7 +206,7 @@ struct RowsBlockView: View {
         switch item {
         case let .set(set): !showsEditor(set)
         case .warmups, .miniSets: true
-        case .round, .connector, .chainHeader: false
+        case .round, .chainHeader: false
         }
     }
 
@@ -234,8 +235,6 @@ struct RowsBlockView: View {
             }
         case let .round(header):
             RowsRoundHeaderView(header: header)
-        case let .connector(connector):
-            RowsConnectorView(connector: connector)
         case let .chainHeader(header):
             RowsChainHeaderView(header: header)
         case let .miniSets(line):
@@ -256,6 +255,15 @@ struct RowsBlockView: View {
             } else if screen.fixing == nil, set.state == .now, let editor = set.editor {
                 RowsEditorPanel(editor: editor, row: presentation.row(set.id), isResting: isResting, role: set.role,
                                 groupColor: groupColor)
+                    // Scrolled mostly out of view, the island docks this set (§7.6a). A jump
+                    // can drop the panel from the lazy list without a visibility change:
+                    // its disappearance counts as out of view.
+                    .onScrollVisibilityChange(threshold: 0.4) { visible in
+                        screen.editorVisibility(set.id, visible: visible, animation: dockAnimation)
+                    }
+                    .onDisappear {
+                        screen.editorVisibility(set.id, visible: false, animation: dockAnimation)
+                    }
             } else {
                 RowsSetLine(item: set, collapsed: set.state == .now, isResting: isResting, isFresh: screen.fresh == set.id,
                             groupColor: groupColor) {
@@ -264,6 +272,10 @@ struct RowsBlockView: View {
             }
         }
         .id(set.id)
+    }
+
+    private var dockAnimation: Animation {
+        reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)
     }
 
     private func tap(_ set: RowsSetItem) {

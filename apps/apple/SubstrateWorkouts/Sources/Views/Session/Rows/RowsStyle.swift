@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The Rows layout's colours, sizes and small shared pieces (DESIGN.md
 /// §7.6a). Content is opaque: cards and editors use flat fills; only the
-/// capsule, the keypad and the undo toast float on glass.
+/// island, the keypad and the undo toast float on glass.
 enum RowsStyle {
     static let cardRadius: CGFloat = 24
     static let editorRadius: CGFloat = 20
@@ -55,7 +55,7 @@ enum RowsStyle {
     }
 }
 
-/// The circle at the start of a line: done, now, waiting, to do, later, locked.
+/// The circle at the start of a line: done, now, waiting, to do, locked.
 struct RowsGlyph: View {
     enum Kind: Equatable {
         case done
@@ -67,8 +67,6 @@ struct RowsGlyph: View {
         case waiting
         case todo
         case warmupTodo
-        /// Passed over: a pause mark.
-        case later
         case locked
         /// A drop hanging off its set.
         case hook
@@ -100,11 +98,6 @@ struct RowsGlyph: View {
                 Circle().strokeBorder(Color(.tertiaryLabel), lineWidth: 1.5)
             case .warmupTodo:
                 Circle().strokeBorder(Color.orange.opacity(0.55), lineWidth: 1.5)
-            case .later:
-                Circle().fill(Color(.tertiarySystemFill))
-                Image(systemName: "pause.fill")
-                    .font(.system(size: size * 0.36, weight: .bold))
-                    .foregroundStyle(.secondary)
             case .locked:
                 Circle().strokeBorder(Color(.quaternaryLabel), style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2.5]))
             case .hook:
@@ -139,7 +132,7 @@ struct RowsBadge: View {
     }
 }
 
-/// A small tag after a line's values: `+ drop`, `later`, `up next`.
+/// A small tag after a line's values: `+ drop`, `up next`.
 struct RowsTagView: View {
     let tag: RowsTag
 
@@ -216,7 +209,7 @@ struct RowsFilledButtonStyle: ButtonStyle {
     }
 }
 
-/// A tinted capsule button: the secondary beside Start or Stop, Go back.
+/// A tinted capsule button: the secondary beside Start or Stop.
 struct RowsTintedButtonStyle: ButtonStyle {
     let tint: Color
     var minHeight: CGFloat = 50

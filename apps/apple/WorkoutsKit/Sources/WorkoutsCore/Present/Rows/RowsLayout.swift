@@ -1,8 +1,9 @@
 import Foundation
 
 // The Rows session layout (DESIGN §7.6, the owner's chosen design): each set
-// is one line that reads like a sentence, the set to do now is open in place
-// as an editor, and a floating capsule says what is happening. Everything a
+// is one line that reads like a sentence, the set to do next is open in place
+// as an editor, any other set opens with a tap, and a floating island stacks
+// the rest, the next set and the one after it. Everything a
 // Rows view shows is here as plain values; the views compute no rule. They
 // send `RowsAction`s, which map one to one onto the controller's commands,
 // and `SetValuesPatch`es, the same edits the Table layout sends.
@@ -11,20 +12,21 @@ import Foundation
 public struct RowsLayout: Equatable, Sendable {
     /// Display order, as `SessionPresentation.blocks`: a plain exercise or a group.
     public var blocks: [RowsBlock]
-    /// The floating capsule at the bottom.
-    public var capsule: RowsCapsule
-    /// The row open in place: Up next, or the timed row while its timer runs.
-    /// Nil when every set is done. Scroll to it after a Log.
+    /// The floating island at the bottom.
+    public var island: RowsIsland
+    /// The row open in place: Up next (the suggestion, or the set the owner
+    /// tapped), or the timed row while its timer runs. Nil when every set is
+    /// done. Scroll to it after a Log.
     public var openRow: RowID?
 
-    public init(blocks: [RowsBlock], capsule: RowsCapsule, openRow: RowID?) {
+    public init(blocks: [RowsBlock], island: RowsIsland, openRow: RowID?) {
         self.blocks = blocks
-        self.capsule = capsule
+        self.island = island
         self.openRow = openRow
     }
 
     /// No session yet.
-    public static let empty = RowsLayout(blocks: [], capsule: .empty, openRow: nil)
+    public static let empty = RowsLayout(blocks: [], island: .empty, openRow: nil)
 
     /// A set row wherever it sits: a block's own line, a folded warm-up, a mini-set chip.
     public func item(_ row: RowID) -> RowsSetItem? {
@@ -95,7 +97,7 @@ public struct RowsBlock: Equatable, Sendable, Identifiable {
             case let .set(set): [set]
             case let .warmups(fold): fold.sets
             case let .miniSets(line): line.sets
-            case .round, .connector, .chainHeader: []
+            case .round, .chainHeader: []
             }
         }
     }
@@ -124,10 +126,9 @@ public enum RowsItem: Equatable, Sendable, Identifiable {
     case set(RowsSetItem)
     /// Every warm-up of the block once all are done, on one line.
     case warmups(RowsWarmupFold)
-    /// `Round 1 of 2`, in a group.
+    /// `Round 1 of 2`, in a group. A group shows no rest lines: rest shows in
+    /// the island, as for a plain exercise.
     case round(RowsRoundHeader)
-    /// A transition, a round rest or the rest before the next exercise, in a group.
-    case connector(RowsConnector)
     /// `Set 2 as myo-reps, 0:15 between mini-sets`, above a chain's head.
     case chainHeader(RowsChainHeader)
     /// A chain's done mini-sets or clusters as chips: `Mini-sets 4 4 4`.
@@ -138,7 +139,6 @@ public enum RowsItem: Equatable, Sendable, Identifiable {
         case let .set(item): item.id.rawValue
         case let .warmups(fold): fold.id
         case let .round(header): header.id
-        case let .connector(connector): connector.id
         case let .chainHeader(header): header.id
         case let .miniSets(line): line.id
         }
@@ -148,12 +148,10 @@ public enum RowsItem: Equatable, Sendable, Identifiable {
 /// Where a set row stands.
 public enum RowsRowState: String, Equatable, Sendable {
     case done
-    /// The set to do now: open in place with its editor.
+    /// The open set: the suggestion, or the one the owner tapped. Open in place with its editor.
     case now
-    /// Pending, after the open row: muted, with last time.
+    /// Pending: muted, with last time. A tap opens it; sets are done in any order.
     case next
-    /// Pending, passed over (the owner went ahead out of order): a grey "later" tag.
-    case later
     /// A segment whose earlier link is pending (a second side before the first).
     case locked
 }
@@ -178,7 +176,7 @@ public struct RowsTag: Equatable, Sendable {
     public enum Style: String, Equatable, Sendable {
         /// Tinted: `up next`.
         case accent
-        /// Grey: `later`, `top set`, `back-off`.
+        /// Grey: `top set`, `back-off`.
         case grey
         /// Orange: `warm-up`, `+ drop`.
         case orange
@@ -245,7 +243,7 @@ public enum RowsTap: Equatable, Sendable {
     case none
     /// A done row: open `fix` in place (view state, no command until Save).
     case fix
-    /// A later or upcoming row: do it now (`touchRow`); it opens and becomes the current set.
+    /// A pending row, in any order: open it (`touchRow`); it becomes the set to log.
     case doNow(RowsAction)
 }
 
@@ -271,7 +269,7 @@ public struct RowsSetItem: Equatable, Sendable, Identifiable {
     public var rpe: String?
     /// The done row's RPE is the plan's, logged as shown, not tapped.
     public var rpeIsPrefilled: Bool
-    /// Tags after the values: `+ drop`, `later`, `to failure`, `top set`, `warm-up`.
+    /// Tags after the values: `+ drop`, `to failure`, `top set`, `warm-up`.
     public var tags: [RowsTag]
     /// The tag the open row shows while it is drawn collapsed (another row is
     /// being fixed): `up next`.
@@ -357,47 +355,6 @@ public struct RowsRoundHeader: Equatable, Sendable, Identifiable {
         self.rounds = rounds
         self.title = title
         self.isDone = isDone
-    }
-}
-
-/// A thin line between a group's sets: `0:00, straight to A2`, `Rest 1:00, then round 2`,
-/// `Rest 1:00, then Plank`.
-public struct RowsConnector: Equatable, Sendable, Identifiable {
-    public enum Kind: String, Equatable, Sendable {
-        /// To the next member of the round: an arrow.
-        case transition
-        /// After a round: a timer.
-        case roundRest
-        /// After the group's last round, before the next exercise: a timer.
-        case blockRest
-    }
-
-    public enum Phase: String, Equatable, Sendable {
-        case upcoming
-        /// Its countdown runs now.
-        case running
-        case passed
-    }
-
-    public var id: String
-    public var kind: Kind
-    public var seconds: Seconds
-    /// Bold, tinted for a rest: `0:00`, `Rest 1:00`.
-    public var lead: String
-    /// `straight to A2`, `then round 2`, `then Plank`.
-    public var text: String
-    public var phase: Phase
-    /// `No rest, straight to A2`.
-    public var sentence: String
-
-    public init(id: String, kind: Kind, seconds: Seconds, lead: String, text: String, phase: Phase, sentence: String) {
-        self.id = id
-        self.kind = kind
-        self.seconds = seconds
-        self.lead = lead
-        self.text = text
-        self.phase = phase
-        self.sentence = sentence
     }
 }
 
@@ -490,136 +447,153 @@ public struct RowsButton: Equatable, Sendable {
     }
 }
 
-// MARK: - The capsule
+// MARK: - The island
 
-/// The floating capsule at the bottom of the Rows layout (glass): the rest
-/// countdown, or in words what to do now.
-public enum RowsCapsule: Equatable, Sendable {
-    /// A rest, a pause, a transition or the standalone timer counts down.
-    case resting(RowsRestCapsule)
-    /// The open row is up: `Set 2 is up`, `Rest 2:30 done`.
-    case upNext(RowsNowCapsule)
-    /// No rest after the last set: go straight to the open row. `A2 Bird Dog now, no rest`,
-    /// `Drop to 25 kg now`.
-    case go(RowsNowCapsule)
-    /// The owner went ahead out of order; a passed-over set waits.
-    case waiting(RowsWaitingCapsule)
-    /// A timed set runs: what comes after it.
-    case timing(RowsTimingCapsule)
+/// The floating island at the bottom of the Rows layout (glass, DESIGN
+/// §7.6a): a stack of up to three parts, each only when it applies. Nothing
+/// in it counts up: a set is never "started", only a timed set runs a clock.
+///
+/// 1. `rest`: the countdown with −15, +15 and Skip, while a rest runs.
+/// 2. `next`: the set to log next in its compact form. The open editor shows
+///    the same set in the list, so the view docks this part only while that
+///    editor is out of view (`parts(editorInView:)`).
+/// 3. `after`: the set after that on one line; a tap opens it.
+public struct RowsIsland: Equatable, Sendable {
+    public var rest: RowsRestPart?
+    public var next: RowsNextPart?
+    public var after: RowsAfterPart?
+    /// Every set is done (`allDone`), or there is no exercise yet (`empty`).
+    public var end: RowsIslandEnd?
+
+    public init(rest: RowsRestPart?, next: RowsNextPart?, after: RowsAfterPart?, end: RowsIslandEnd?) {
+        self.rest = rest
+        self.next = next
+        self.after = after
+        self.end = end
+    }
+
+    /// No exercise yet: a tap opens the exercise picker.
+    public static let empty = RowsIsland(rest: nil, next: nil, after: nil, end: .empty)
+
+    /// The parts to draw, top to bottom. `editorInView`: the open editor is on
+    /// screen, so the list already shows the next set and the island leaves
+    /// it out; scrolled away, the compact next set docks between the rest and
+    /// the line after it.
+    public func parts(editorInView: Bool) -> [RowsIslandPart] {
+        var parts: [RowsIslandPart] = []
+        if rest != nil { parts.append(.rest) }
+        if next != nil, !editorInView { parts.append(.next) }
+        if after != nil { parts.append(.after) }
+        if let end { parts.append(end == .empty ? .empty : .allDone) }
+        return parts
+    }
+
+    /// A rest or a timed set is counting: the island stays on a page pushed inside the cover.
+    public var isCounting: Bool {
+        rest != nil || next?.timerStartedAt != nil
+    }
+}
+
+/// One part of the island.
+public enum RowsIslandPart: String, Equatable, Sendable {
+    case rest, next, after, allDone, empty
+}
+
+/// The island when there is no set to log.
+public enum RowsIslandEnd: Equatable, Sendable {
     /// Every set is done: Finish.
     case allDone(title: String, detail: String)
-    /// No exercise yet: a tap opens the exercise picker.
+    /// No exercise yet.
     case empty
 }
 
-/// The capsule while a countdown runs.
-public struct RowsRestCapsule: Equatable, Sendable {
+/// The island's rest part, while a rest, a pause, a switch or the standalone
+/// timer counts down: a ring and the time left, `of 2:30`, −15, +15 and Skip.
+public struct RowsRestPart: Equatable, Sendable {
     public var kind: LiveActivityCountdown.Kind
-    /// `Rest, then set 3`, `Round rest, then round 2`, `Pause, then mini-set 3`, `Timer`.
+    /// `Rest`, `Round rest`, `Pause`, `Timer`: VoiceOver's label for the countdown.
     public var title: String
     public var startedAt: Date
     public var endsAt: Date
     /// `of 2:30`, beside the countdown.
     public var totalText: String
-    /// `After set 3`, tinted; nil for the standalone timer or with nothing after.
-    public var afterLabel: String?
-    /// `Chest Press (Machine), warm-up, 25 kg × 15`.
-    public var afterText: String?
     /// −15, +15 and Skip.
     public var minus: RowsButton
     public var plus: RowsButton
     public var skip: RowsButton
 
     public init(kind: LiveActivityCountdown.Kind, title: String, startedAt: Date, endsAt: Date, totalText: String,
-                afterLabel: String?, afterText: String?, minus: RowsButton, plus: RowsButton, skip: RowsButton)
+                minus: RowsButton, plus: RowsButton, skip: RowsButton)
     {
         self.kind = kind
         self.title = title
         self.startedAt = startedAt
         self.endsAt = endsAt
         self.totalText = totalText
-        self.afterLabel = afterLabel
-        self.afterText = afterText
         self.minus = minus
         self.plus = plus
         self.skip = skip
     }
 }
 
-/// The capsule's colour and glyph.
-public enum RowsCapsuleTone: String, Equatable, Sendable {
-    /// A tinted arrow or check.
-    case accent
-    /// A green check: a rest just ended.
-    case restDone
-    /// Orange: a warm-up or a drop.
-    case orange
-}
-
-/// The capsule when no countdown runs: what is up and a clock counting up.
-public struct RowsNowCapsule: Equatable, Sendable {
+/// The island's next part: the open set, compact. The exercise and the set,
+/// its values with their steppers (a tap on a number types it), the RPE when
+/// one is planned or rated, and Log; Start or Stop for a timed set. A tap on
+/// the name brings the full editor into view.
+public struct RowsNextPart: Equatable, Sendable {
     public var row: RowID
-    public var tone: RowsCapsuleTone
-    /// `Set 2 is up`, `Leg Press (Machine), warm-up 1 is up`, `A2 Bird Dog now, no rest`, `Drop to 25 kg now`.
-    public var title: String
-    /// `Rest 2:30 done`, `Rest 1:00 after, then warm-up 2, 70 kg × 6`, `Then rest 1:00, then round 2`.
-    public var detail: String?
-    /// The clock on the right counts up from here: the last tick, else the session's start.
-    public var since: Date
-    /// Under that clock: `since set 1`, `since A1`, `session`.
-    public var sinceLabel: String
-    /// The session clock is paused (`session` only): the clock stands at
-    /// this instant, as the title's does.
-    public var pausedAt: Date?
+    /// `Leg Press (Machine)`.
+    public var exercise: String
+    /// `A2`, in a group.
+    public var badge: String?
+    /// `Set 2`, `Warm-up 1`, `Drop`, `Mini-set 3`, `Round 2`.
+    public var label: String
+    public var tint: RowsEditor.Tint
+    /// The editor's value fields: the same steppers, keypads and words.
+    public var fields: [RowsField]
+    /// `@ 8`: the RPE the Log commits; nil when none.
+    public var rpe: String?
+    /// `Log`, `Start`, `Stop`: the editor's primary action, in a word.
+    public var primary: RowsButton
+    /// A timed set runs: its clock counts up from here.
+    public var timerStartedAt: Date?
+    /// `Next: Leg Press (Machine), set 2, 105 kilograms, 10 reps.`
+    public var sentence: String
 
-    public init(row: RowID, tone: RowsCapsuleTone, title: String, detail: String?, since: Date, sinceLabel: String,
-                pausedAt: Date? = nil)
+    public init(row: RowID, exercise: String, badge: String?, label: String, tint: RowsEditor.Tint, fields: [RowsField],
+                rpe: String?, primary: RowsButton, timerStartedAt: Date?, sentence: String)
     {
         self.row = row
-        self.tone = tone
-        self.title = title
-        self.detail = detail
-        self.since = since
-        self.sinceLabel = sinceLabel
-        self.pausedAt = pausedAt
+        self.exercise = exercise
+        self.badge = badge
+        self.label = label
+        self.tint = tint
+        self.fields = fields
+        self.rpe = rpe
+        self.primary = primary
+        self.timerStartedAt = timerStartedAt
+        self.sentence = sentence
     }
 }
 
-/// A passed-over set waits while the owner does another.
-public struct RowsWaitingCapsule: Equatable, Sendable {
-    /// The waiting row.
-    public var row: RowID
-    /// `Leg Press (Machine), set 3 is waiting`.
-    public var title: String
-    /// `Go back to it when you are ready`.
-    public var detail: String
-    /// `Go back`: do the waiting row now.
-    public var goBack: RowsButton
+/// The island's last line: the set after the next one. A tap opens it.
+public struct RowsAfterPart: Equatable, Sendable {
+    /// Nil when that set does not exist yet (a myo chain's next mini-set
+    /// appears only on a tick): the line reads, a tap does nothing.
+    public var row: RowID?
+    /// `Then`.
+    public var label: String
+    /// `Calf Press (Machine), set 1, 60 kg × 12`, `set 3, 105 kg × 10`, `A2 Bird Dog, 11 per side`.
+    public var text: String
+    /// `.touch(row)`; nil with no row.
+    public var action: RowsAction?
+    public var sentence: String
 
-    public init(row: RowID, title: String, detail: String, goBack: RowsButton) {
+    public init(row: RowID?, label: String, text: String, action: RowsAction?, sentence: String) {
         self.row = row
-        self.title = title
-        self.detail = detail
-        self.goBack = goBack
-    }
-}
-
-/// The capsule while a timed set runs: what comes after it (the clock is in the open row).
-public struct RowsTimingCapsule: Equatable, Sendable {
-    public var row: RowID
-    /// `Then rest 0:15`, `Then no rest`, `Last set`.
-    public var title: String
-    /// `Set 2, 0:58 hold, last 0:53`.
-    public var detail: String?
-    public var startedAt: Date
-    /// Nil for a stopwatch.
-    public var endsAt: Date?
-
-    public init(row: RowID, title: String, detail: String?, startedAt: Date, endsAt: Date?) {
-        self.row = row
-        self.title = title
-        self.detail = detail
-        self.startedAt = startedAt
-        self.endsAt = endsAt
+        self.label = label
+        self.text = text
+        self.action = action
+        self.sentence = sentence
     }
 }

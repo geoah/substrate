@@ -4,7 +4,7 @@ import SwiftUI
 /// The session (DESIGN.md §7.6, §7.6a): a full-screen cover with the
 /// system's glass toolbar and the session in the content layer, drawn in the
 /// owner's layout. Rows (the default) lists each set as a line with the set
-/// to do now open in place and a glass capsule at the bottom; Table is the
+/// to do next open in place and a glass island at the bottom; Table is the
 /// grid of exercise cards with the rest bar. Both read the same presentation;
 /// every change is a command.
 struct SessionCover: View {
@@ -231,13 +231,14 @@ struct SessionCover: View {
 
     /// On a page pushed inside the cover (an exercise's history), a running
     /// rest or timed set keeps its controls; the Up next chip goes back. In
-    /// Rows it is the capsule, whose tap goes back.
+    /// Rows it is the island, whose next set's name goes back.
     @ViewBuilder
     private var pushedRestBar: some View {
-        if layout == .rows, let rows = session.presentation?.rowsLayout, rows.capsule.isCounting {
-            RowsCapsuleView(
-                capsule: rows.capsule,
-                layout: rows,
+        if layout == .rows, let rows = session.presentation?.rowsLayout, rows.island.isCounting {
+            // The list is not on this page: the next set is always docked.
+            RowsIslandView(
+                island: rows.island,
+                editorInView: false,
                 perform: { rowsScreen.perform($0, session: session, cover: cover) },
                 showOpenRow: { path = NavigationPath() },
                 finish: beginFinish,
