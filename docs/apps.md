@@ -211,14 +211,24 @@ The token records the verified authority, and the app writes as
 `app:<authority>`. An app whose access went to a loopback address writes as
 `app:local`, and any other as `app:` and the host of its client id. What a
 package the app declares is owned by stays its client id, whichever actor it
-writes as.
+writes as. Its label and annotation keys go under its actor's namespace, and
+a token may still write keys under `app:` and the host of its client id,
+the namespace an earlier binary gave it.
 
-To test a document before publishing it, a development server reads it from
-a file in place of the DNS lookup and the fetch:
+The page shows the publisher it checked, and an approval and the token
+exchange check it again: when the record was withdrawn or now names
+something else, the approval asks the owner to reload the page, and the
+exchange is refused.
+
+To test a document before publishing it, the operator can have the server
+read it from a file in place of the DNS lookup and the fetch:
 `SUBSTRATE_INSECURE_AUTHORITY_DOCS=example.org=/path/to/authority.json`, a
 comma-separated list. The server logs a warning naming each authority at
 boot and refuses to start when a file cannot be read; `.mise/dev.sh` passes
-the variable through. Never set it on a server anybody else reaches.
+the variable through. Nothing limits it to a development server, so it
+shows where it acts: the approval page says the publisher was verified by a
+file on this server, not by DNS, and the token records
+`appAuthorityFromFile`. Never set it on a server anybody else reaches.
 
 ### Native apps
 

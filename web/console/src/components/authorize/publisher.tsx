@@ -6,7 +6,7 @@
 
 import { BadgeCheckIcon } from "lucide-react"
 
-import { Fact } from "@/components/authorize/parts"
+import { Fact, Warning } from "@/components/authorize/parts"
 import type { AuthorizationRequest } from "@/lib/api/types"
 import { accessGoesTo } from "@/lib/app-publisher"
 
@@ -26,6 +26,13 @@ export function PublisherLines({ request }: { request: AuthorizationRequest }) {
             </span>
           </span>
         </p>
+        {publisher.fromFile && (
+          <Warning title="Verified by a file on this server, not by DNS">
+            This server is configured to read {publisher.authority}’s authority
+            document from a local file in place of its DNS record. Whoever set
+            up the server vouches for this app, not {publisher.authority}.
+          </Warning>
+        )}
         {publisher.name && (
           <p className="text-xs text-muted-foreground">
             Publisher’s name{" "}
@@ -90,6 +97,12 @@ export function PublisherFacts({ request }: { request: AuthorizationRequest }) {
         <dt className="text-muted-foreground">Document</dt>
         <dd className="font-mono text-xs leading-5 [overflow-wrap:anywhere]">
           {publisher.documentUrl || "none read"}
+        </dd>
+        <dt className="text-muted-foreground">Read from</dt>
+        <dd>
+          {publisher.fromFile
+            ? "A local file (SUBSTRATE_INSECURE_AUTHORITY_DOCS)"
+            : "DNS and the document it names"}
         </dd>
         <dt className="text-muted-foreground">Lists this client id</dt>
         <dd>{publisher.listed ? "Yes" : "No"}</dd>

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -1246,22 +1247,41 @@ func sortedKeys[V any](m map[string]V) []string {
 
 func actorNamespace(a substrate.Actor) string { return string(a) }
 
+// legacyAppNamespace is `app:` and the host of an app's client id, "" for
+// any other actor or a client id that names no host.
+func legacyAppNamespace(actor substrate.Actor, clientID string) string {
+	if !substrate.IsAppActor(actor) || clientID == "" {
+		return ""
+	}
+	u, err := url.Parse(clientID)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return string(substrate.AppActor(u.Host))
+}
+
 // metaKeyAllowed enforces the label/annotation namespace rule: a human hand
 // (`api`, `console`, `substratectl`) and the engine's own may write any
 // well-formed key, which is what makes the `owner/…` convention theirs to
 // write; every other actor — an agent, a function, a bundle — is bound to its
 // own actor name as the namespace.
-func metaKeyAllowed(actor substrate.Actor, key string) error {
+//
+// An app writes under its own actor and, beside it, under `app:` and the host
+// of its client id (clientID, substrate.ClientIDFrom): the namespace a binary
+// before decision 0209 gave the same token, so keys it wrote then stay its to
+// change once its actor is `app:local` or `app:<authority>`.
+func metaKeyAllowed(actor substrate.Actor, clientID, key string) error {
 	if problem := vocabulary.MetaKeyProblem(key); problem != "" {
 		return fmt.Errorf("%w: %s", substrate.ErrValidation, problem)
 	}
 	if substrate.HumanActors[actor] || actor == substrate.ActorSystem {
 		return nil
 	}
-	if ns := vocabulary.MetaKeyNamespace(key); ns != actorNamespace(actor) {
-		return fmt.Errorf("%w: actor %q may not write key %q", substrate.ErrForbidden, actor, key)
+	ns := vocabulary.MetaKeyNamespace(key)
+	if ns == actorNamespace(actor) || ns == legacyAppNamespace(actor, clientID) {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("%w: actor %q may not write key %q", substrate.ErrForbidden, actor, key)
 }
 
 // inRawTx runs fn in a plain scoped transaction: no actor, no fold, no
