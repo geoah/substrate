@@ -1,0 +1,2493 @@
+# Carried into substrate on 2026-11-02 from rxtx.dev, where it was
+# research/workouts/substrate/examples/coverage.yaml, the kinds were the draft
+# mneme.rxtx.dev/training and the app was called Spotter. The kinds are now
+# the app's own ~/training (decision record 0203) and the adapter is
+# substrate-workouts; nothing else changed, so where the comments below
+# mention Mneme they describe the plan of the time. README.md beside this
+# file says how these records relate to the JSON the app bundles.
+#
+# Example records: test vectors for what the owner's screenshots do not
+# show, as records of ~/training (research draft of 2026-10-31).
+#
+# NOT THE OWNER'S. Every exercise, routine, session and set here is
+# illustrative. Bundle this file for tests only, never as history: its
+# sessions would put invented loads into PREVIOUS and the suggestions.
+#
+# Apply after exercises.yaml, routines.yaml and sessions.yaml. The file
+# lists its exercises, its setups, the routine, the three sessions and then
+# the sets, because a setup, a routine slot, a session slot and a set name
+# an exercise that must exist, and a set names a session, a setup and a
+# chain head that must exist.
+#
+# WHAT IT ADDS to the other files: the five measurements they do not use;
+# top and back-off sets; myo-rep match, rest-pause and cluster chains;
+# AMRAP, failure and an RIR target; paired sets and a circuit with rounds;
+# assistance in pounds and bodyweight plus a load; distance; a side chain
+# on a timed hold with a stopwatch and a matched side; a substituted
+# exercise; a set the plan did not have; an empty session in progress with a
+# superset made in the gym and rests set on its slots, a deload and setups
+# of their own; and a Hevy import with Hevy's RPE scale, its source set
+# types, imported provenance and setups. Five setup records, one per
+# exercise and gym, which the sets name in `setup`.
+#
+# NONE OF IT MOVES THE OTHER FILES' VECTORS. The sessions are dated after the
+# 27 October session or carry a setup, and they share no exercise with
+# the 30 October table (the chest press sets here are at other gyms).
+#
+# IDS. the app's records use lowercase UUIDv7s whose first 48 bits are the
+# record's `at`, with random bits from a fixed seed. The import's ids are
+# composed from Hevy's keys: `hevy-<workout id>` for the session and
+# `hevy-<workout id>-<exercise index>-<set index>` for a set, both indices
+# from 0 as Hevy numbers them.
+#
+# REST is measured as in sessions.yaml: `restBefore` from the tick before to
+# the end of the rest, `restMethod: start` where a timed set's play ended it
+# and `interaction` elsewhere, `restPlanned` by research
+# 02 §3.3's choice, PT0S where no timer ran, `startedAt` only on timed sets
+# and carries.
+#
+# PROVENANCE. the app's sets are written as in sessions.yaml
+# (`completionMethod: individual`, `timeBasis: completion`, `rpeScale:
+# rirbased`, `rpeMethod: entered`), with the load's meaning copied from the
+# exercise. The Hevy import's are `completionMethod: imported`, `timeBasis:
+# session` (they sit at the session's start), `rpeMethod: imported` beside
+# Hevy's `rpeScale: hevy`, and no rest fields.
+# ---- exercises the screenshots do not have --------------------------------
+# Six measurements the owner's exercises do not use, one exercise each. The
+# settings are illustrative, not the owner's.
+#
+# A distance and a time, no load: a rowing machine warm-up.
+kind: ~/training/exercise
+metadata:
+  id: rowing-machine
+data:
+  properties:
+    name: Rowing (Machine)
+    aliases: [Rower, Ergometer]
+    measurement: distanceduration
+    equipment: machine
+    laterality: bilateral
+    primaryMuscles: [cardio]
+    secondaryMuscles: [upperback, quadriceps]
+    restClass: highrep
+    codes:
+      - system: healthconnect
+        code: EXERCISE_SEGMENT_TYPE_ROWING_MACHINE
+---
+# Assistance, in pounds: a pin-loaded assistance stack in 10 lb steps makes
+# this a pound exercise in a kilogram gym (`loadStep`'s unit). The
+# assistance counts down from the whole body: no `bodyShare`, so 1.
+kind: ~/training/exercise
+metadata:
+  id: assisted-pull-up-machine
+data:
+  properties:
+    name: Assisted Pull Up (Machine)
+    measurement: bodyweightassistedreps
+    equipment: machine
+    laterality: bilateral
+    primaryMuscles: [lats]
+    secondaryMuscles: [biceps, upperback]
+    restClass: compound
+    loadStep:
+      value: "10"
+      unit: lb
+    loadMax:
+      value: "150"
+      unit: lb
+---
+# Bodyweight plus a load on a dip belt. The step is 03 §9.1's for added
+# load; `plate` alone has no default grid.
+kind: ~/training/exercise
+metadata:
+  id: dip-weighted
+data:
+  properties:
+    name: Chest Dip (Weighted)
+    aliases: [Weighted dip]
+    measurement: weightedbodyweightreps
+    equipment: plate
+    laterality: bilateral
+    primaryMuscles: [chest]
+    secondaryMuscles: [triceps, shoulders]
+    restClass: compound
+    loadStep:
+      value: "2.5"
+      unit: kg
+---
+# A load and a distance: one dumbbell in each hand, logged per dumbbell.
+kind: ~/training/exercise
+metadata:
+  id: farmers-carry-dumbbell
+data:
+  properties:
+    name: Farmer's Carry (Dumbbell)
+    aliases: [Farmer's walk]
+    measurement: shortdistanceweight
+    equipment: dumbbell
+    laterality: bilateral
+    loadBasis: perimplement
+    implements: 2
+    primaryMuscles: [forearms]
+    secondaryMuscles: [traps, abdominals]
+    restClass: carry
+    loadStep:
+      value: "2"
+      unit: kg
+    codes:
+      - system: fit
+        code: carry/farmers_walk
+---
+# A timed hold done one side at a time.
+kind: ~/training/exercise
+metadata:
+  id: side-plank
+data:
+  properties:
+    name: Side Plank
+    measurement: duration
+    equipment: none
+    laterality: unilateral
+    primaryMuscles: [abdominals]
+    restClass: timed
+---
+# A load and a time: a plate on the back.
+kind: ~/training/exercise
+metadata:
+  id: plank-weighted
+data:
+  properties:
+    name: Plank (Weighted)
+    measurement: weightduration
+    equipment: plate
+    laterality: bilateral
+    primaryMuscles: [abdominals]
+    restClass: timed
+    variationOf: ~/training/exercise/plank
+    loadStep:
+      value: "5"
+      unit: kg
+---
+# ---- setups ----------------------------------------------------------------
+# The stations the coverage sessions name in `set.setup`, one per exercise
+# and gym: the hotel gym of the 29 October session and the old gym of the
+# Hevy import. A setup must exist before a set names it (`mustExist`), so
+# they come before the sessions. Its grid overrides the exercise's: the
+# hotel's chest press steps by 2.5 kg where the home gym's steps by 5 kg.
+# Not the owner's.
+kind: ~/training/setup
+metadata:
+  id: hotel-gym-chest-press
+data:
+  properties:
+    name: Chest Press (Machine), hotel gym
+    exercise: ~/training/exercise/chest-press-machine
+    gym: Hotel gym
+    loadBase:
+      value: "5"
+      unit: kg
+    loadStep:
+      value: "2.5"
+      unit: kg
+    loadMax:
+      value: "80"
+      unit: kg
+    notes: Seat on 4.
+---
+kind: ~/training/setup
+metadata:
+  id: hotel-gym-leg-extension
+data:
+  properties:
+    name: Leg Extension (Machine), hotel gym
+    exercise: ~/training/exercise/leg-extension-machine
+    gym: Hotel gym
+    loadStep:
+      value: "5"
+      unit: kg
+---
+kind: ~/training/setup
+metadata:
+  id: hotel-gym-seated-row
+data:
+  properties:
+    name: Seated Row (Machine), hotel gym
+    exercise: ~/training/exercise/seated-row-machine
+    gym: Hotel gym
+    loadStep:
+      value: "5"
+      unit: kg
+---
+# The old gym, as the Hevy importer was told; no grid known.
+kind: ~/training/setup
+metadata:
+  id: old-gym-chest-press
+data:
+  properties:
+    name: Chest Press (Machine), old gym
+    exercise: ~/training/exercise/chest-press-machine
+    gym: Old gym
+---
+kind: ~/training/setup
+metadata:
+  id: old-gym-seated-row
+data:
+  properties:
+    name: Seated Row (Machine), old gym
+    exercise: ~/training/exercise/seated-row-machine
+    gym: Old gym
+---
+# ---- the routine -------------------------------------------------------------
+# Every method the owner's routines leave out, in one routine of a test
+# folder. Not a routine to train with.
+#   top set and back-off set     leg press (the back-off is 10 % lighter)
+#   warm-up rest per slot        leg press (`warmupRest`)
+#   myo-rep match                seated leg curl, set 2 (matches set 1's reps)
+#   rest-pause                   leg extension (two mini-sets, 20 s apart)
+#   cluster, an RIR target       hip thrust (4 clusters of 3, 2 in reserve)
+#   AMRAP                        rope pushdown, set 2
+#   a set to failure             weighted dip, set 3
+#   paired sets with rounds      assisted pull-up and weighted dip (3 rounds,
+#                                1 min between them, 1 min 30 s per round;
+#                                the dip's warm-up before round 1)
+#   a circuit with rounds        carry, side plank and weighted plank (2)
+#   assistance in pounds         assisted pull-up
+#   a distance                   rowing warm-up, carry
+#   one side at a time, matched  side plank (stopwatch, the right side's
+#                                target is the left side's time)
+#   an activity type             functional strength training
+kind: ~/training/routine
+metadata:
+  id: coverage-every-method
+data:
+  properties:
+    name: Coverage – every method
+    folder: Workouts test vectors
+    position: 1
+    notes: >-
+      Test vectors for the methods the owner's routines do not use. Not a
+      routine to train with.
+    activityType: functionalstrengthtraining
+    groups:
+      - key: a
+        groupKind: paired
+        pairing: antagonist
+        rounds: 3
+        roundRest: PT1M30S
+      - key: b
+        groupKind: circuit
+        rounds: 2
+        roundRest: PT1M
+    slots:
+      - key: rowing
+        exercise: ~/training/exercise/rowing-machine
+        sets:
+          - key: w1
+            role: warmup
+            termination: distance
+            distance:
+              value: "500"
+              unit: m
+      - key: leg-press
+        exercise: ~/training/exercise/leg-press-machine
+        setRest: PT2M30S
+        warmupRest: PT1M
+        sets:
+          - key: w1
+            role: warmup
+            load:
+              value: "40"
+              unit: kg
+            repsMin: 12
+            repsMax: 12
+          - key: s1
+            roleLabel: top
+            load:
+              value: "110"
+              unit: kg
+            repsMin: 6
+            repsMax: 6
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            roleLabel: backoff
+            dropPercent: "10"
+            repsMin: 8
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: seated-leg-curl
+        exercise: ~/training/exercise/seated-leg-curl-machine
+        setRest: PT1M30S
+        sets:
+          - key: s1
+            load:
+              value: "40"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "9"
+            rpeMax: "9"
+          - key: s2
+            structure: myomatch
+            load:
+              value: "40"
+              unit: kg
+            intraSetPause: PT10S
+      - key: leg-extension
+        exercise: ~/training/exercise/leg-extension-machine
+        setRest: PT1M30S
+        sets:
+          - key: s1
+            structure: restpause
+            load:
+              value: "45"
+              unit: kg
+            repsMin: 10
+            repsMax: 12
+            rpeMin: "9.5"
+            rpeMax: "9.5"
+            miniSets: 2
+            intraSetPause: PT20S
+      - key: hip-thrust
+        exercise: ~/training/exercise/hip-thrust-barbell
+        setRest: PT2M
+        sets:
+          - key: s1
+            structure: cluster
+            load:
+              value: "80"
+              unit: kg
+            miniSetReps: 3
+            miniSets: 3
+            rirMin: "2"
+            rirMax: "2"
+            intraSetPause: PT20S
+      - key: pushdown
+        exercise: ~/training/exercise/triceps-rope-pushdown
+        setRest: PT1M
+        sets:
+          - key: s1
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "9"
+            rpeMax: "9"
+          - key: s2
+            termination: amrap
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 12
+      - key: pull-up
+        exercise: ~/training/exercise/assisted-pull-up-machine
+        group: a
+        transition: PT1M
+        sets:
+          - key: s1
+            assistance:
+              value: "60"
+              unit: lb
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            assistance:
+              value: "60"
+              unit: lb
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            assistance:
+              value: "60"
+              unit: lb
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: dip
+        exercise: ~/training/exercise/dip-weighted
+        group: a
+        sets:
+          - key: w1
+            role: warmup
+            repsMin: 8
+            repsMax: 8
+          - key: s1
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            termination: failure
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 6
+      - key: carry
+        exercise: ~/training/exercise/farmers-carry-dumbbell
+        group: b
+        transition: PT30S
+        sets:
+          - key: s1
+            termination: distance
+            load:
+              value: "20"
+              unit: kg
+            distance:
+              value: "40"
+              unit: m
+          - key: s2
+            termination: distance
+            load:
+              value: "20"
+              unit: kg
+            distance:
+              value: "40"
+              unit: m
+      - key: side-plank
+        exercise: ~/training/exercise/side-plank
+        group: b
+        transition: PT30S
+        sideSwitch: PT10S
+        sideOrder: left
+        sideMatch: true
+        sets:
+          - key: s1
+            durationMin: PT30S
+            durationMax: PT45S
+            timerMode: stopwatch
+          - key: s2
+            durationMin: PT30S
+            durationMax: PT45S
+            timerMode: stopwatch
+      - key: weighted-plank
+        exercise: ~/training/exercise/plank-weighted
+        group: b
+        sets:
+          - key: s1
+            load:
+              value: "10"
+              unit: kg
+            durationMin: PT45S
+            durationMax: PT1M
+          - key: s2
+            load:
+              value: "10"
+              unit: kg
+            durationMin: PT45S
+            durationMax: PT1M
+---
+# ---- the sessions ------------------------------------------------------------
+#
+# Coverage – every method, Wed 28 Oct 10:00 GMT. From the routine, with its
+# activity type copied at Start. The rope pushdown was swapped for the bar
+# pushdown: a new session slot that names the routine slot it replaces.
+kind: ~/training/session
+metadata:
+  id: 01a181f3-c900-74e4-b0e2-345e3defd3cf
+data:
+  properties:
+    name: "Coverage – every method, Wed 28 Oct 10:00"
+    status: finished
+    at: "2026-10-28T10:00:00Z"
+    endsAt: "2026-10-28T10:56:03Z"
+    utcOffsetStart: 0
+    utcOffsetEnd: 0
+    timezone: Europe/London
+    routine: ~/training/routine/coverage-every-method
+    routineVersion: 1
+    activityType: functionalstrengthtraining
+    sport: strength
+    slots:
+      - key: rowing
+        exercise: ~/training/exercise/rowing-machine
+        routineSlot: rowing
+        sets:
+          - key: w1
+            role: warmup
+            termination: distance
+            distance:
+              value: "500"
+              unit: m
+      - key: leg-press
+        exercise: ~/training/exercise/leg-press-machine
+        routineSlot: leg-press
+        sets:
+          - key: w1
+            role: warmup
+            load:
+              value: "40"
+              unit: kg
+            repsMin: 12
+            repsMax: 12
+          - key: s1
+            roleLabel: top
+            load:
+              value: "110"
+              unit: kg
+            repsMin: 6
+            repsMax: 6
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            roleLabel: backoff
+            dropPercent: "10"
+            repsMin: 8
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: seated-leg-curl
+        exercise: ~/training/exercise/seated-leg-curl-machine
+        routineSlot: seated-leg-curl
+        sets:
+          - key: s1
+            load:
+              value: "40"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "9"
+            rpeMax: "9"
+          - key: s2
+            structure: myomatch
+            load:
+              value: "40"
+              unit: kg
+            intraSetPause: PT10S
+      - key: leg-extension
+        exercise: ~/training/exercise/leg-extension-machine
+        routineSlot: leg-extension
+        sets:
+          - key: s1
+            structure: restpause
+            load:
+              value: "45"
+              unit: kg
+            repsMin: 10
+            repsMax: 12
+            rpeMin: "9.5"
+            rpeMax: "9.5"
+            miniSets: 2
+            intraSetPause: PT20S
+      - key: hip-thrust
+        exercise: ~/training/exercise/hip-thrust-barbell
+        routineSlot: hip-thrust
+        sets:
+          - key: s1
+            structure: cluster
+            load:
+              value: "80"
+              unit: kg
+            miniSetReps: 3
+            miniSets: 3
+            rirMin: "2"
+            rirMax: "2"
+            intraSetPause: PT20S
+      - key: triceps-pushdown
+        exercise: ~/training/exercise/triceps-pushdown
+        routineSlot: pushdown
+        notes: The rope was taken; the bar instead.
+        sets:
+          - key: s1
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "9"
+            rpeMax: "9"
+          - key: s2
+            termination: amrap
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 12
+      - key: pull-up
+        exercise: ~/training/exercise/assisted-pull-up-machine
+        group: a
+        routineSlot: pull-up
+        sets:
+          - key: s1
+            assistance:
+              value: "60"
+              unit: lb
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            assistance:
+              value: "60"
+              unit: lb
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            assistance:
+              value: "60"
+              unit: lb
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: dip
+        exercise: ~/training/exercise/dip-weighted
+        group: a
+        routineSlot: dip
+        sets:
+          - key: w1
+            role: warmup
+            repsMin: 8
+            repsMax: 8
+          - key: s1
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            termination: failure
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 6
+      - key: carry
+        exercise: ~/training/exercise/farmers-carry-dumbbell
+        group: b
+        routineSlot: carry
+        sets:
+          - key: s1
+            termination: distance
+            load:
+              value: "20"
+              unit: kg
+            distance:
+              value: "40"
+              unit: m
+          - key: s2
+            termination: distance
+            load:
+              value: "20"
+              unit: kg
+            distance:
+              value: "40"
+              unit: m
+      - key: side-plank
+        exercise: ~/training/exercise/side-plank
+        group: b
+        routineSlot: side-plank
+        sets:
+          - key: s1
+            durationMin: PT30S
+            durationMax: PT45S
+            timerMode: stopwatch
+          - key: s2
+            durationMin: PT30S
+            durationMax: PT45S
+            timerMode: stopwatch
+      - key: weighted-plank
+        exercise: ~/training/exercise/plank-weighted
+        group: b
+        routineSlot: weighted-plank
+        sets:
+          - key: s1
+            load:
+              value: "10"
+              unit: kg
+            durationMin: PT45S
+            durationMax: PT1M
+          - key: s2
+            load:
+              value: "10"
+              unit: kg
+            durationMin: PT45S
+            durationMax: PT1M
+    groups:
+      - key: a
+        groupKind: paired
+      - key: b
+        groupKind: circuit
+    bodyMass:
+      value: "82.2"
+      unit: kg
+    sessionRPE: "8"
+    healthKitWorkout: "6D2A51F0-3C7E-4B19-A8E4-5F0C2D9B7A13"
+    workout: substrate.reamde.dev/health/workout/applehealth/substrate-sync-5e2b9c41/6D2A51F0-3C7E-4B19-A8E4-5F0C2D9B7A13
+    revision: 3
+    adapter: substrate-workouts@0.1.0
+---
+# An empty session, Thu 29 Oct 18:05 GMT, IN PROGRESS: written the app's
+# way, a create with no `status` (so it is `active`) and no `endsAt`, then
+# patches as the owner added exercises (revision 5). At a hotel gym, so every
+# set names the hotel gym's setup of its exercise (`hotel-gym-chest-press`
+# and so on) and keeps its own history. A deload, so
+# suggestions and trends discount it. The owner added the leg extension and
+# changed its warm-up rest, then made the chest press and the row a
+# superset: the slots and the group hold those rests, because no routine
+# does. No Health link yet: that comes after Finish.
+kind: ~/training/session
+metadata:
+  id: 01a188d6-2ce0-7bbd-84a8-a52f602ab29c
+data:
+  properties:
+    name: "Training session, Thu 29 Oct 18:05"
+    at: "2026-10-29T18:05:00Z"
+    utcOffsetStart: 0
+    timezone: Europe/London
+    deload: true
+    sport: strength
+    slots:
+      - key: leg-extension
+        exercise: ~/training/exercise/leg-extension-machine
+        setRest: PT1M30S
+        warmupRest: PT30S
+      - key: chest-press
+        exercise: ~/training/exercise/chest-press-machine
+        group: a
+        transition: PT15S
+      - key: seated-row
+        exercise: ~/training/exercise/seated-row-machine
+        group: a
+    groups:
+      - key: a
+        groupKind: superset
+        pairing: antagonist
+        rounds: 2
+        roundRest: PT1M30S
+    bodyMass:
+      value: "82.1"
+      unit: kg
+    revision: 5
+    adapter: substrate-workouts@0.1.0
+---
+# A Hevy workout, imported. The id is the upstream key (`hevy-` and Hevy's
+# workout id), so a re-import lands on the same row. Hevy gives UTC times
+# and no offset, so the importer assumed Europe/London and wrote the offsets
+# and the local `name` from it. No routine: Hevy's `routine_id` names no
+# routine here. No body mass: Hevy holds none. The owner told the importer
+# these sessions were at the old gym, so each machine set carries
+# the old gym's setup of its exercise (`old-gym-chest-press`,
+# `old-gym-seated-row`).
+kind: ~/training/session
+metadata:
+  id: hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10
+data:
+  properties:
+    name: "Upper A, Sat 3 Oct 10:15"
+    status: finished
+    at: "2026-10-03T09:15:00Z"
+    endsAt: "2026-10-03T10:02:30Z"
+    utcOffsetStart: 60
+    utcOffsetEnd: 60
+    timezone: Europe/London
+    sport: strength
+    slots:
+      - key: chest-press
+        exercise: ~/training/exercise/chest-press-machine
+      - key: seated-row
+        exercise: ~/training/exercise/seated-row-machine
+    notes: Imported from Hevy.
+    revision: 1
+    adapter: hevyimport@0.1.0
+---
+# ---- sets: Coverage – every method, Wed 28 Oct -------------------------------
+# Rowing (Machine), W1: 500 m in 2:05. No load mode: it moves no load.
+kind: ~/training/set
+metadata:
+  id: 01a181f6-9ba8-7833-8d5b-f7010a765893
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/rowing-machine
+    slot: rowing
+    order: 1
+    ordinal: 1
+    role: warmup
+    at: "2026-10-28T10:03:05Z"
+    timeBasis: completion
+    completionMethod: individual
+    startedAt: "2026-10-28T10:01:00Z"
+    duration: PT2M5S
+    distance:
+      value: "500"
+      unit: m
+    laterality: bilateral
+    rpeScale: rirbased
+    target:
+      plannedSet: w1
+      termination: distance
+      distance:
+        value: "500"
+        unit: m
+    revision: 1
+---
+# Leg Press (Machine), W1: 40 kg x 12.
+kind: ~/training/set
+metadata:
+  id: 01a181f8-7068-73f4-8e27-bbcb79d0ed1d
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/leg-press-machine
+    slot: leg-press
+    order: 1
+    ordinal: 1
+    role: warmup
+    at: "2026-10-28T10:05:05Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "40"
+      unit: kg
+    reps: 12
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpeScale: rirbased
+    restBefore: PT1M20S
+    restMethod: interaction
+    restPlanned: PT45S
+    target:
+      plannedSet: w1
+      termination: reps
+      repsMin: 12
+      repsMax: 12
+      load:
+        value: "40"
+        unit: kg
+    revision: 1
+---
+# Leg Press (Machine), 1, the top set: 110 kg x 6 at RPE 8. The rest before it is
+# the slot's warm-up rest, 1 min.
+kind: ~/training/set
+metadata:
+  id: 01a181f9-f708-7a19-86e7-d0bc28959ad6
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/leg-press-machine
+    slot: leg-press
+    order: 2
+    ordinal: 1
+    roleLabel: top
+    at: "2026-10-28T10:06:45Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "110"
+      unit: kg
+    reps: 6
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "8"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT1M10S
+    restMethod: interaction
+    restPlanned: PT1M
+    target:
+      plannedSet: s1
+      termination: reps
+      repsMin: 6
+      repsMax: 6
+      load:
+        value: "110"
+        unit: kg
+      rpeMin: "8"
+      rpeMax: "8"
+    revision: 1
+---
+# Leg Press (Machine), 2, the back-off set: 10 % off 110 kg is 99 kg, rounded
+# down to the 5 kg grid, 95 kg; 95 kg x 10 at RPE 8.
+kind: ~/training/set
+metadata:
+  id: 01a181fc-f0c0-7e96-a4b0-3835c718e1f3
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/leg-press-machine
+    slot: leg-press
+    order: 3
+    ordinal: 2
+    roleLabel: backoff
+    at: "2026-10-28T10:10:00Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "95"
+      unit: kg
+    reps: 10
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "8"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT2M35S
+    restMethod: interaction
+    restPlanned: PT2M30S
+    target:
+      plannedSet: s2
+      termination: reprange
+      repsMin: 8
+      repsMax: 10
+      rpeMin: "8"
+      rpeMax: "8"
+      dropPercent: "10"
+    revision: 1
+---
+# Leg Press (Machine), 3: a set the plan did not have, so no target. 95 kg x 9
+# at RPE 8.5.
+kind: ~/training/set
+metadata:
+  id: 01a181ff-f630-7df6-b0e5-abccc2309a74
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/leg-press-machine
+    slot: leg-press
+    order: 4
+    ordinal: 3
+    at: "2026-10-28T10:13:18Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "95"
+      unit: kg
+    reps: 9
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "8.5"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT2M40S
+    restMethod: interaction
+    restPlanned: PT2M30S
+    revision: 1
+---
+# Seated Leg Curl (Machine), 1: 40 kg x 12 at RPE 9.
+kind: ~/training/set
+metadata:
+  id: 01a18203-16f8-7fcb-8216-ba319639a735
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/seated-leg-curl-machine
+    slot: seated-leg-curl
+    order: 1
+    ordinal: 1
+    at: "2026-10-28T10:16:43Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "40"
+      unit: kg
+    reps: 12
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "9"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT2M45S
+    restMethod: interaction
+    restPlanned: PT2M30S
+    target:
+      plannedSet: s1
+      termination: reprange
+      repsMin: 10
+      repsMax: 15
+      load:
+        value: "40"
+        unit: kg
+      rpeMin: "9"
+      rpeMax: "9"
+    revision: 1
+---
+# Seated Leg Curl (Machine), 2, a myo-rep match: 7, then 3 and 2, 12 in all,
+# matching set 1. The total to match is resolved from set 1 when the set
+# starts and copied as `totalReps`.
+kind: ~/training/set
+metadata:
+  id: 01a18204-ebb8-7454-850f-c9f33a82ceb6
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/seated-leg-curl-machine
+    slot: seated-leg-curl
+    order: 2
+    ordinal: 2
+    structure: myomatch
+    chainPosition: 1
+    at: "2026-10-28T10:18:43Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "40"
+      unit: kg
+    reps: 7
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "9"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT1M35S
+    restMethod: interaction
+    restPlanned: PT1M30S
+    target:
+      plannedSet: s2
+      termination: totalreps
+      load:
+        value: "40"
+        unit: kg
+      totalReps: 12
+      intraSetPause: PT10S
+    revision: 1
+---
+# Seated Leg Curl (Machine), 2a: 3 reps, 10 s after the first bout.
+kind: ~/training/set
+metadata:
+  id: 01a18205-39d8-73a9-9e67-6d959031fb3e
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/seated-leg-curl-machine
+    slot: seated-leg-curl
+    order: 3
+    ordinal: 2
+    structure: myomatch
+    continues: ~/training/set/01a18204-ebb8-7454-850f-c9f33a82ceb6
+    chainPosition: 2
+    at: "2026-10-28T10:19:03Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "40"
+      unit: kg
+    reps: 3
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpeScale: rirbased
+    restBefore: PT10S
+    restMethod: interaction
+    restPlanned: PT10S
+    target:
+      plannedSet: s2
+    revision: 1
+---
+# Seated Leg Curl (Machine), 2b: 2 reps; 12 reached, the set ends.
+kind: ~/training/set
+metadata:
+  id: 01a18205-8410-72ec-bd73-940ec5db956e
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/seated-leg-curl-machine
+    slot: seated-leg-curl
+    order: 4
+    ordinal: 2
+    structure: myomatch
+    continues: ~/training/set/01a18204-ebb8-7454-850f-c9f33a82ceb6
+    chainPosition: 3
+    at: "2026-10-28T10:19:22Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "40"
+      unit: kg
+    reps: 2
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpeScale: rirbased
+    restBefore: PT11S
+    restMethod: interaction
+    restPlanned: PT10S
+    target:
+      plannedSet: s2
+    revision: 1
+---
+# Leg Extension (Machine), 1, rest-pause: 45 kg x 12 at RPE 9.5, then two
+# mini-sets 20 s apart.
+kind: ~/training/set
+metadata:
+  id: 01a18207-be60-760c-aaf7-2731df83ffa0
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/leg-extension-machine
+    slot: leg-extension
+    order: 1
+    ordinal: 1
+    structure: restpause
+    chainPosition: 1
+    at: "2026-10-28T10:21:48Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "45"
+      unit: kg
+    reps: 12
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "9.5"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT1M50S
+    restMethod: interaction
+    restPlanned: PT1M30S
+    target:
+      plannedSet: s1
+      termination: reprange
+      repsMin: 10
+      repsMax: 12
+      load:
+        value: "45"
+        unit: kg
+      rpeMin: "9.5"
+      rpeMax: "9.5"
+      miniSets: 2
+      intraSetPause: PT20S
+    revision: 1
+---
+# Leg Extension (Machine), 1a: 4 reps.
+kind: ~/training/set
+metadata:
+  id: 01a18208-3b60-75c1-a747-de10cdaf9df1
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/leg-extension-machine
+    slot: leg-extension
+    order: 2
+    ordinal: 1
+    structure: restpause
+    continues: ~/training/set/01a18207-be60-760c-aaf7-2731df83ffa0
+    chainPosition: 2
+    at: "2026-10-28T10:22:20Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "45"
+      unit: kg
+    reps: 4
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpeScale: rirbased
+    restBefore: PT20S
+    restMethod: interaction
+    restPlanned: PT20S
+    target:
+      plannedSet: s1
+    revision: 1
+---
+# Leg Extension (Machine), 1b: 3 reps; two mini-sets done.
+kind: ~/training/set
+metadata:
+  id: 01a18208-b478-73d5-82af-575c1b2641b3
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/leg-extension-machine
+    slot: leg-extension
+    order: 3
+    ordinal: 1
+    structure: restpause
+    continues: ~/training/set/01a18207-be60-760c-aaf7-2731df83ffa0
+    chainPosition: 3
+    at: "2026-10-28T10:22:51Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "45"
+      unit: kg
+    reps: 3
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpeScale: rirbased
+    restBefore: PT21S
+    restMethod: interaction
+    restPlanned: PT20S
+    target:
+      plannedSet: s1
+    revision: 1
+---
+# Hip Thrust (Barbell), 1, a cluster set: four clusters of 3 at 80 kg, 20 s
+# apart. The target is 2 reps in reserve (`rirMin` and `rirMax` 2); the
+# RPE is logged on the last cluster, where the effort is felt.
+kind: ~/training/set
+metadata:
+  id: 01a1820b-2d48-76c6-a87e-e60d28c9ad96
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/hip-thrust-barbell
+    slot: hip-thrust
+    order: 1
+    ordinal: 1
+    structure: cluster
+    chainPosition: 1
+    at: "2026-10-28T10:25:33Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "80"
+      unit: kg
+    reps: 3
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpeScale: rirbased
+    restBefore: PT2M30S
+    restMethod: interaction
+    restPlanned: PT1M30S
+    target:
+      plannedSet: s1
+      load:
+        value: "80"
+        unit: kg
+      rirMin: "2"
+      rirMax: "2"
+      miniSetReps: 3
+      miniSets: 3
+      intraSetPause: PT20S
+    revision: 1
+---
+# Hip Thrust (Barbell), cluster 2: 3 reps.
+kind: ~/training/set
+metadata:
+  id: 01a1820b-aa48-76a3-be4a-291a7d40b3da
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/hip-thrust-barbell
+    slot: hip-thrust
+    order: 2
+    ordinal: 1
+    structure: cluster
+    continues: ~/training/set/01a1820b-2d48-76c6-a87e-e60d28c9ad96
+    chainPosition: 2
+    at: "2026-10-28T10:26:05Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "80"
+      unit: kg
+    reps: 3
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpeScale: rirbased
+    restBefore: PT20S
+    restMethod: interaction
+    restPlanned: PT20S
+    target:
+      plannedSet: s1
+    revision: 1
+---
+# Hip Thrust (Barbell), cluster 3: 3 reps.
+kind: ~/training/set
+metadata:
+  id: 01a1820c-2b30-7897-9d1e-952f54e0a043
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/hip-thrust-barbell
+    slot: hip-thrust
+    order: 3
+    ordinal: 1
+    structure: cluster
+    continues: ~/training/set/01a1820b-2d48-76c6-a87e-e60d28c9ad96
+    chainPosition: 3
+    at: "2026-10-28T10:26:38Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "80"
+      unit: kg
+    reps: 3
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpeScale: rirbased
+    restBefore: PT21S
+    restMethod: interaction
+    restPlanned: PT20S
+    target:
+      plannedSet: s1
+    revision: 1
+---
+# Hip Thrust (Barbell), cluster 4: 3 reps at RPE 8.
+kind: ~/training/set
+metadata:
+  id: 01a1820c-a830-75d1-97e6-5e886334579b
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/hip-thrust-barbell
+    slot: hip-thrust
+    order: 4
+    ordinal: 1
+    structure: cluster
+    continues: ~/training/set/01a1820b-2d48-76c6-a87e-e60d28c9ad96
+    chainPosition: 4
+    at: "2026-10-28T10:27:10Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "80"
+      unit: kg
+    reps: 3
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "8"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT20S
+    restMethod: interaction
+    restPlanned: PT20S
+    target:
+      plannedSet: s1
+    revision: 1
+---
+# Triceps Pushdown, 1: the rope was taken, so the owner swapped in the bar.
+# The session slot is new (`triceps-pushdown`) and names the routine slot it
+# replaces; the target is the rope pushdown's, as planned. 25 kg x 14 at
+# RPE 9.
+kind: ~/training/set
+metadata:
+  id: 01a1820f-2cb8-7a60-978a-7c60650be66f
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/triceps-pushdown
+    slot: triceps-pushdown
+    order: 1
+    ordinal: 1
+    at: "2026-10-28T10:29:55Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "25"
+      unit: kg
+    reps: 14
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "9"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT2M10S
+    restMethod: interaction
+    restPlanned: PT2M
+    target:
+      plannedSet: s1
+      termination: reprange
+      repsMin: 12
+      repsMax: 15
+      load:
+        value: "20"
+        unit: kg
+      rpeMin: "9"
+      rpeMax: "9"
+    revision: 1
+---
+# Triceps Pushdown, 2, AMRAP: 16 reps; a 17th was tried and stalled halfway
+# (`failedRepAttempted`), so the set reached failure.
+kind: ~/training/set
+metadata:
+  id: 01a18210-c6e0-71df-a90e-e1a28cb7ab96
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/triceps-pushdown
+    slot: triceps-pushdown
+    order: 2
+    ordinal: 2
+    at: "2026-10-28T10:31:40Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "25"
+      unit: kg
+    reps: 16
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "10"
+    rpeMethod: entered
+    rpeScale: rirbased
+    reachedFailure: true
+    failedRepAttempted: true
+    notes: The 17th stalled halfway; elbows drifted forward.
+    restBefore: PT1M5S
+    restMethod: interaction
+    restPlanned: PT1M
+    target:
+      plannedSet: s2
+      termination: amrap
+      repsMin: 12
+      load:
+        value: "20"
+        unit: kg
+    revision: 1
+---
+# Chest Dip (Weighted), W1: bodyweight only (0 kg added) x 8, before round 1.
+kind: ~/training/set
+metadata:
+  id: 01a18212-7490-7407-82ca-12ec2f86a375
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/dip-weighted
+    slot: dip
+    order: 1
+    ordinal: 1
+    role: warmup
+    at: "2026-10-28T10:33:30Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: bodyweightplus
+    load:
+      value: "0"
+      unit: kg
+    reps: 8
+    loadBasis: total
+    implements: 1
+    bodyShare: "1"
+    laterality: bilateral
+    repsBasis: total
+    rpeScale: rirbased
+    restBefore: PT1M30S
+    restMethod: interaction
+    restPlanned: PT1M
+    target:
+      plannedSet: w1
+      termination: reps
+      repsMin: 8
+      repsMax: 8
+    revision: 1
+---
+# Assisted Pull Up (Machine), 1: 60 lb of assistance x 8 at RPE 8. The rest
+# before it is the dip warm-up's 45 s.
+kind: ~/training/set
+metadata:
+  id: 01a18213-ad10-76f0-9265-7db113416dfb
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/assisted-pull-up-machine
+    slot: pull-up
+    order: 1
+    ordinal: 1
+    at: "2026-10-28T10:34:50Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: assisted
+    assistance:
+      value: "60"
+      unit: lb
+    reps: 8
+    loadBasis: total
+    implements: 1
+    bodyShare: "1"
+    laterality: bilateral
+    repsBasis: total
+    rpe: "8"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT50S
+    restMethod: interaction
+    restPlanned: PT45S
+    target:
+      plannedSet: s1
+      termination: reprange
+      repsMin: 6
+      repsMax: 10
+      assistance:
+        value: "60"
+        unit: lb
+      rpeMin: "8"
+      rpeMax: "8"
+    revision: 1
+---
+# Chest Dip (Weighted), 1: bodyweight plus 10 kg x 9 at RPE 8, 1 min after
+# the pull-up (the paired sets' transition).
+kind: ~/training/set
+metadata:
+  id: 01a18215-0ca0-7609-8768-ce74caf3e770
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/dip-weighted
+    slot: dip
+    order: 2
+    ordinal: 1
+    at: "2026-10-28T10:36:20Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: bodyweightplus
+    load:
+      value: "10"
+      unit: kg
+    reps: 9
+    loadBasis: total
+    implements: 1
+    bodyShare: "1"
+    laterality: bilateral
+    repsBasis: total
+    rpe: "8"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT1M5S
+    restMethod: interaction
+    restPlanned: PT1M
+    target:
+      plannedSet: s1
+      termination: reprange
+      repsMin: 6
+      repsMax: 10
+      load:
+        value: "10"
+        unit: kg
+      rpeMin: "8"
+      rpeMax: "8"
+    revision: 1
+---
+# Assisted Pull Up (Machine), 2: 60 lb of assistance x 8 at RPE 8.5. The rest
+# before it is the round rest, 1 min 30 s.
+kind: ~/training/set
+metadata:
+  id: 01a18216-f4e8-79c7-ba7e-253c3d207ce3
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/assisted-pull-up-machine
+    slot: pull-up
+    order: 2
+    ordinal: 2
+    at: "2026-10-28T10:38:25Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: assisted
+    assistance:
+      value: "60"
+      unit: lb
+    reps: 8
+    loadBasis: total
+    implements: 1
+    bodyShare: "1"
+    laterality: bilateral
+    repsBasis: total
+    rpe: "8.5"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT1M35S
+    restMethod: interaction
+    restPlanned: PT1M30S
+    target:
+      plannedSet: s2
+      termination: reprange
+      repsMin: 6
+      repsMax: 10
+      assistance:
+        value: "60"
+        unit: lb
+      rpeMin: "8"
+      rpeMax: "8"
+    revision: 1
+---
+# Chest Dip (Weighted), 2: bodyweight plus 10 kg x 8 at RPE 8.5, 1 min after
+# the pull-up (the paired sets' transition).
+kind: ~/training/set
+metadata:
+  id: 01a18218-48c0-7a80-b95c-608dcbea798d
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/dip-weighted
+    slot: dip
+    order: 3
+    ordinal: 2
+    at: "2026-10-28T10:39:52Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: bodyweightplus
+    load:
+      value: "10"
+      unit: kg
+    reps: 8
+    loadBasis: total
+    implements: 1
+    bodyShare: "1"
+    laterality: bilateral
+    repsBasis: total
+    rpe: "8.5"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT1M2S
+    restMethod: interaction
+    restPlanned: PT1M
+    target:
+      plannedSet: s2
+      termination: reprange
+      repsMin: 6
+      repsMax: 10
+      load:
+        value: "10"
+        unit: kg
+      rpeMin: "8"
+      rpeMax: "8"
+    revision: 1
+---
+# Assisted Pull Up (Machine), 3: 60 lb of assistance x 7 at RPE 9. The rest
+# before it is the round rest, 1 min 30 s.
+kind: ~/training/set
+metadata:
+  id: 01a1821a-2550-731f-87aa-488d20eaca2e
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/assisted-pull-up-machine
+    slot: pull-up
+    order: 3
+    ordinal: 3
+    at: "2026-10-28T10:41:54Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: assisted
+    assistance:
+      value: "60"
+      unit: lb
+    reps: 7
+    loadBasis: total
+    implements: 1
+    bodyShare: "1"
+    laterality: bilateral
+    repsBasis: total
+    rpe: "9"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT1M32S
+    restMethod: interaction
+    restPlanned: PT1M30S
+    target:
+      plannedSet: s3
+      termination: reprange
+      repsMin: 6
+      repsMax: 10
+      assistance:
+        value: "60"
+        unit: lb
+      rpeMin: "8"
+      rpeMax: "8"
+    revision: 1
+---
+# Chest Dip (Weighted), 3, to failure: bodyweight plus 10 kg x 8, the ninth
+# not possible (`reachedFailure`).
+kind: ~/training/set
+metadata:
+  id: 01a1821b-9098-78d7-8cd2-9f62e6e376f1
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/dip-weighted
+    slot: dip
+    order: 4
+    ordinal: 3
+    at: "2026-10-28T10:43:27Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: bodyweightplus
+    load:
+      value: "10"
+      unit: kg
+    reps: 8
+    loadBasis: total
+    implements: 1
+    bodyShare: "1"
+    laterality: bilateral
+    repsBasis: total
+    rpe: "10"
+    rpeMethod: entered
+    rpeScale: rirbased
+    reachedFailure: true
+    restBefore: PT1M3S
+    restMethod: interaction
+    restPlanned: PT1M
+    target:
+      plannedSet: s3
+      termination: failure
+      repsMin: 6
+      load:
+        value: "10"
+        unit: kg
+    revision: 1
+---
+# Farmer's Carry (Dumbbell), 1: 20 kg in each hand for 40 m in 0:36. The rest
+# before it is the paired sets' round rest.
+kind: ~/training/set
+metadata:
+  id: 01a1821d-f1f8-7f52-8abb-ae1b158e2771
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/farmers-carry-dumbbell
+    slot: carry
+    order: 1
+    ordinal: 1
+    at: "2026-10-28T10:46:03Z"
+    timeBasis: completion
+    completionMethod: individual
+    startedAt: "2026-10-28T10:45:27Z"
+    loadMode: external
+    load:
+      value: "20"
+      unit: kg
+    duration: PT36S
+    distance:
+      value: "40"
+      unit: m
+    loadBasis: perimplement
+    implements: 2
+    laterality: bilateral
+    rpeScale: rirbased
+    restBefore: PT2M
+    restMethod: start
+    restPlanned: PT1M30S
+    target:
+      plannedSet: s1
+      termination: distance
+      load:
+        value: "20"
+        unit: kg
+      distance:
+        value: "40"
+        unit: m
+    revision: 1
+---
+# Side Plank, 1 left: 0:41 on the stopwatch.
+kind: ~/training/set
+metadata:
+  id: 01a1821f-1ad8-7f5e-b6df-68d283541178
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/side-plank
+    slot: side-plank
+    order: 1
+    ordinal: 1
+    chainPosition: 1
+    side: left
+    at: "2026-10-28T10:47:19Z"
+    timeBasis: completion
+    completionMethod: individual
+    startedAt: "2026-10-28T10:46:38Z"
+    duration: PT41S
+    laterality: unilateral
+    rpeScale: rirbased
+    restBefore: PT35S
+    restMethod: start
+    restPlanned: PT30S
+    target:
+      plannedSet: s1
+      termination: time
+      durationMin: PT30S
+      durationMax: PT45S
+      timerMode: stopwatch
+    revision: 1
+---
+# Side Plank, 1 right: matched to the left side's 0:41 (`sideMatch`), 10 s
+# after it.
+kind: ~/training/set
+metadata:
+  id: 01a1821f-e210-73ef-85b9-7a80dcb33bba
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/side-plank
+    slot: side-plank
+    order: 2
+    ordinal: 1
+    continues: ~/training/set/01a1821f-1ad8-7f5e-b6df-68d283541178
+    chainPosition: 2
+    side: right
+    at: "2026-10-28T10:48:10Z"
+    timeBasis: completion
+    completionMethod: individual
+    startedAt: "2026-10-28T10:47:29Z"
+    duration: PT41S
+    laterality: unilateral
+    rpeScale: rirbased
+    restBefore: PT10S
+    restMethod: start
+    restPlanned: PT10S
+    target:
+      plannedSet: s1
+      termination: time
+      durationMin: PT41S
+      durationMax: PT41S
+      timerMode: stopwatch
+    revision: 1
+---
+# Plank (Weighted), 1: a 10 kg plate for 0:55.
+kind: ~/training/set
+metadata:
+  id: 01a18221-5528-7bda-8fea-bff804c6b52b
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/plank-weighted
+    slot: weighted-plank
+    order: 1
+    ordinal: 1
+    at: "2026-10-28T10:49:45Z"
+    timeBasis: completion
+    completionMethod: individual
+    startedAt: "2026-10-28T10:48:50Z"
+    loadMode: external
+    load:
+      value: "10"
+      unit: kg
+    duration: PT55S
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    rpeScale: rirbased
+    restBefore: PT40S
+    restMethod: start
+    restPlanned: PT30S
+    target:
+      plannedSet: s1
+      termination: time
+      load:
+        value: "10"
+        unit: kg
+      durationMin: PT45S
+      durationMax: PT1M
+      timerMode: countdown
+    revision: 1
+---
+# Farmer's Carry (Dumbbell), 2: 20 kg in each hand for 40 m in 0:35. The rest
+# before it is the circuit's round rest, 1 min.
+kind: ~/training/set
+metadata:
+  id: 01a18222-dbc8-7d81-97be-a9ada36d102c
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/farmers-carry-dumbbell
+    slot: carry
+    order: 2
+    ordinal: 2
+    at: "2026-10-28T10:51:25Z"
+    timeBasis: completion
+    completionMethod: individual
+    startedAt: "2026-10-28T10:50:50Z"
+    loadMode: external
+    load:
+      value: "20"
+      unit: kg
+    duration: PT35S
+    distance:
+      value: "40"
+      unit: m
+    loadBasis: perimplement
+    implements: 2
+    laterality: bilateral
+    rpeScale: rirbased
+    restBefore: PT1M5S
+    restMethod: start
+    restPlanned: PT1M
+    target:
+      plannedSet: s2
+      termination: distance
+      load:
+        value: "20"
+        unit: kg
+      distance:
+        value: "40"
+        unit: m
+    revision: 1
+---
+# Side Plank, 2 left: 0:38 on the stopwatch.
+kind: ~/training/set
+metadata:
+  id: 01a18223-ed38-766e-a366-ba9387543189
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/side-plank
+    slot: side-plank
+    order: 3
+    ordinal: 2
+    chainPosition: 1
+    side: left
+    at: "2026-10-28T10:52:35Z"
+    timeBasis: completion
+    completionMethod: individual
+    startedAt: "2026-10-28T10:51:57Z"
+    duration: PT38S
+    laterality: unilateral
+    rpeScale: rirbased
+    restBefore: PT32S
+    restMethod: start
+    restPlanned: PT30S
+    target:
+      plannedSet: s2
+      termination: time
+      durationMin: PT30S
+      durationMax: PT45S
+      timerMode: stopwatch
+    revision: 1
+---
+# Side Plank, 2 right: matched to the left side's 0:38 (`sideMatch`), 10 s
+# after it.
+kind: ~/training/set
+metadata:
+  id: 01a18224-a8b8-7391-9511-b37116678bbb
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/side-plank
+    slot: side-plank
+    order: 4
+    ordinal: 2
+    continues: ~/training/set/01a18223-ed38-766e-a366-ba9387543189
+    chainPosition: 2
+    side: right
+    at: "2026-10-28T10:53:23Z"
+    timeBasis: completion
+    completionMethod: individual
+    startedAt: "2026-10-28T10:52:45Z"
+    duration: PT38S
+    laterality: unilateral
+    rpeScale: rirbased
+    restBefore: PT10S
+    restMethod: start
+    restPlanned: PT10S
+    target:
+      plannedSet: s2
+      termination: time
+      durationMin: PT38S
+      durationMax: PT38S
+      timerMode: stopwatch
+    revision: 1
+---
+# Plank (Weighted), 2: a 10 kg plate for 0:50.
+kind: ~/training/set
+metadata:
+  id: 01a18225-f4c0-791f-a28b-35fafea799a7
+data:
+  properties:
+    session: ~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf
+    exercise: ~/training/exercise/plank-weighted
+    slot: weighted-plank
+    order: 2
+    ordinal: 2
+    at: "2026-10-28T10:54:48Z"
+    timeBasis: completion
+    completionMethod: individual
+    startedAt: "2026-10-28T10:53:58Z"
+    loadMode: external
+    load:
+      value: "10"
+      unit: kg
+    duration: PT50S
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    rpeScale: rirbased
+    restBefore: PT35S
+    restMethod: start
+    restPlanned: PT30S
+    target:
+      plannedSet: s2
+      termination: time
+      load:
+        value: "10"
+        unit: kg
+      durationMin: PT45S
+      durationMax: PT1M
+      timerMode: countdown
+    revision: 1
+---
+# ---- sets: the empty session, Thu 29 Oct (in progress) ------------------------
+# Leg Extension (Machine), W1: 20 kg x 15. Added to an empty session, so no
+# target; `setup` keeps this gym's machine apart from the home gym's.
+kind: ~/training/set
+metadata:
+  id: 01a188d8-01a0-7300-8df7-95c6f6a2e42e
+data:
+  properties:
+    session: ~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c
+    exercise: ~/training/exercise/leg-extension-machine
+    slot: leg-extension
+    order: 1
+    ordinal: 1
+    setup: ~/training/setup/hotel-gym-leg-extension
+    role: warmup
+    at: "2026-10-29T18:07:00Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "20"
+      unit: kg
+    reps: 15
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpeScale: rirbased
+    revision: 1
+---
+# Leg Extension (Machine), 1: 35 kg x 12 at RPE 6, after the 30 s warm-up rest
+# the owner set on the slot.
+kind: ~/training/set
+metadata:
+  id: 01a188d9-16f8-7752-a873-f3b7709309ce
+data:
+  properties:
+    session: ~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c
+    exercise: ~/training/exercise/leg-extension-machine
+    slot: leg-extension
+    order: 2
+    ordinal: 1
+    setup: ~/training/setup/hotel-gym-leg-extension
+    at: "2026-10-29T18:08:11Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "35"
+      unit: kg
+    reps: 12
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "6"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT35S
+    restMethod: interaction
+    restPlanned: PT30S
+    revision: 1
+---
+# Leg Extension (Machine), 2: 35 kg x 12 at RPE 6.5 (Hevy has no 6.5; see the
+# export rules).
+kind: ~/training/set
+metadata:
+  id: 01a188db-0af8-7a64-887b-d3598ecda0f6
+data:
+  properties:
+    session: ~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c
+    exercise: ~/training/exercise/leg-extension-machine
+    slot: leg-extension
+    order: 3
+    ordinal: 2
+    setup: ~/training/setup/hotel-gym-leg-extension
+    at: "2026-10-29T18:10:19Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "35"
+      unit: kg
+    reps: 12
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "6.5"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT1M32S
+    restMethod: interaction
+    restPlanned: PT1M30S
+    revision: 1
+---
+# Chest Press (Machine), 1: 30 kg x 12 at RPE 6, round 1 of the superset made in
+# the gym.
+kind: ~/training/set
+metadata:
+  id: 01a188dd-6870-7808-a4ea-ce14cf769c54
+data:
+  properties:
+    session: ~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c
+    exercise: ~/training/exercise/chest-press-machine
+    slot: chest-press
+    order: 1
+    ordinal: 1
+    setup: ~/training/setup/hotel-gym-chest-press
+    at: "2026-10-29T18:12:54Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "30"
+      unit: kg
+    reps: 12
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "6"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT2M
+    restMethod: interaction
+    restPlanned: PT1M30S
+    revision: 1
+---
+# Seated Row (Machine), 1: 35 kg x 12 at RPE 6, 15 s after the press (the
+# transition the owner set).
+kind: ~/training/set
+metadata:
+  id: 01a188de-3f48-795d-b7b7-2bed0de9bd11
+data:
+  properties:
+    session: ~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c
+    exercise: ~/training/exercise/seated-row-machine
+    slot: seated-row
+    order: 1
+    ordinal: 1
+    setup: ~/training/setup/hotel-gym-seated-row
+    at: "2026-10-29T18:13:49Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "35"
+      unit: kg
+    reps: 12
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "6"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT20S
+    restMethod: interaction
+    restPlanned: PT15S
+    revision: 1
+---
+# Chest Press (Machine), 2: 30 kg x 12 at RPE 6.5, after the round rest.
+kind: ~/training/set
+metadata:
+  id: 01a188e0-2b78-76b9-89b1-d266b1d3b50e
+data:
+  properties:
+    session: ~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c
+    exercise: ~/training/exercise/chest-press-machine
+    slot: chest-press
+    order: 2
+    ordinal: 2
+    setup: ~/training/setup/hotel-gym-chest-press
+    at: "2026-10-29T18:15:55Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "30"
+      unit: kg
+    reps: 12
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "6.5"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT1M31S
+    restMethod: interaction
+    restPlanned: PT1M30S
+    revision: 1
+---
+# Seated Row (Machine), 2: 35 kg x 12 at RPE 6.5. The session is still running.
+kind: ~/training/set
+metadata:
+  id: 01a188e0-fa80-70fb-823f-aefb407bce9d
+data:
+  properties:
+    session: ~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c
+    exercise: ~/training/exercise/seated-row-machine
+    slot: seated-row
+    order: 2
+    ordinal: 2
+    setup: ~/training/setup/hotel-gym-seated-row
+    at: "2026-10-29T18:16:48Z"
+    timeBasis: completion
+    completionMethod: individual
+    loadMode: external
+    load:
+      value: "35"
+      unit: kg
+    reps: 12
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "6.5"
+    rpeMethod: entered
+    rpeScale: rirbased
+    restBefore: PT18S
+    restMethod: interaction
+    restPlanned: PT15S
+    revision: 1
+---
+# ---- sets: the Hevy import, Sat 3 Oct ------------------------------------------
+# Chest Press (Machine), Hevy set 0: warmup, 20 kg x 15. Every imported set sits
+# `at` the session's start (Hevy records no set times) and has no rest
+# fields; `sourceType` keeps Hevy's own set type.
+kind: ~/training/set
+metadata:
+  id: hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-0-0
+data:
+  properties:
+    session: ~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10
+    exercise: ~/training/exercise/chest-press-machine
+    slot: chest-press
+    order: 1
+    ordinal: 1
+    setup: ~/training/setup/old-gym-chest-press
+    role: warmup
+    at: "2026-10-03T09:15:00Z"
+    timeBasis: session
+    completionMethod: imported
+    loadMode: external
+    load:
+      value: "20"
+      unit: kg
+    reps: 15
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    sourceType: warmup
+    revision: 1
+---
+# Chest Press (Machine), Hevy set 1: normal, 30 kg x 12 at Hevy's RPE 8.
+kind: ~/training/set
+metadata:
+  id: hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-0-1
+data:
+  properties:
+    session: ~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10
+    exercise: ~/training/exercise/chest-press-machine
+    slot: chest-press
+    order: 2
+    ordinal: 1
+    setup: ~/training/setup/old-gym-chest-press
+    at: "2026-10-03T09:15:00Z"
+    timeBasis: session
+    completionMethod: imported
+    loadMode: external
+    load:
+      value: "30"
+      unit: kg
+    reps: 12
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "8"
+    rpeMethod: imported
+    rpeScale: hevy
+    sourceType: normal
+    revision: 1
+---
+# Chest Press (Machine), Hevy set 2: normal, 30 kg x 10 at RPE 9. The dropset row
+# after it makes it a chain head: structure drop, its source type still
+# normal.
+kind: ~/training/set
+metadata:
+  id: hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-0-2
+data:
+  properties:
+    session: ~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10
+    exercise: ~/training/exercise/chest-press-machine
+    slot: chest-press
+    order: 3
+    ordinal: 2
+    setup: ~/training/setup/old-gym-chest-press
+    structure: drop
+    chainPosition: 1
+    at: "2026-10-03T09:15:00Z"
+    timeBasis: session
+    completionMethod: imported
+    loadMode: external
+    load:
+      value: "30"
+      unit: kg
+    reps: 10
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "9"
+    rpeMethod: imported
+    rpeScale: hevy
+    sourceType: normal
+    revision: 1
+---
+# Chest Press (Machine), Hevy set 3: dropset, 20 kg x 8, unrated: 2a.
+kind: ~/training/set
+metadata:
+  id: hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-0-3
+data:
+  properties:
+    session: ~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10
+    exercise: ~/training/exercise/chest-press-machine
+    slot: chest-press
+    order: 4
+    ordinal: 2
+    setup: ~/training/setup/old-gym-chest-press
+    structure: drop
+    continues: ~/training/set/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-0-2
+    chainPosition: 2
+    at: "2026-10-03T09:15:00Z"
+    timeBasis: session
+    completionMethod: imported
+    loadMode: external
+    load:
+      value: "20"
+      unit: kg
+    reps: 8
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    sourceType: dropset
+    revision: 1
+---
+# Seated Row (Machine), Hevy set 0: normal, 40 kg x 12 at RPE 8.5.
+kind: ~/training/set
+metadata:
+  id: hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-1-0
+data:
+  properties:
+    session: ~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10
+    exercise: ~/training/exercise/seated-row-machine
+    slot: seated-row
+    order: 1
+    ordinal: 1
+    setup: ~/training/setup/old-gym-seated-row
+    at: "2026-10-03T09:15:00Z"
+    timeBasis: session
+    completionMethod: imported
+    loadMode: external
+    load:
+      value: "40"
+      unit: kg
+    reps: 12
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    rpe: "8.5"
+    rpeMethod: imported
+    rpeScale: hevy
+    sourceType: normal
+    revision: 1
+---
+# Seated Row (Machine), Hevy set 1: failure, 40 kg x 10. Hevy's failure type is
+# `reachedFailure`; Hevy logs the last completed rep, so no failed attempt.
+kind: ~/training/set
+metadata:
+  id: hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-1-1
+data:
+  properties:
+    session: ~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10
+    exercise: ~/training/exercise/seated-row-machine
+    slot: seated-row
+    order: 2
+    ordinal: 2
+    setup: ~/training/setup/old-gym-seated-row
+    at: "2026-10-03T09:15:00Z"
+    timeBasis: session
+    completionMethod: imported
+    loadMode: external
+    load:
+      value: "40"
+      unit: kg
+    reps: 10
+    loadBasis: total
+    implements: 1
+    laterality: bilateral
+    repsBasis: total
+    reachedFailure: true
+    sourceType: failure
+    revision: 1

@@ -12,8 +12,10 @@ named its later sync "V2". The sync is built: [README.md](README.md) says how th
 package and writes through its outbox, and the seams of §2.5 are implemented by WorkoutsKit's `WorkoutsSync`. Sections
 9.8 to 9.10 and 11 describe that first build's project and release, which `apps/apple/project.yml` and
 [`apps/apple/README.md`](../README.md) replace. Where a rule comes from the research behind the app, the source is given
-in brackets ("req 23" is requirement 23 of the research's README; "03 §11.2" is section 11.2 of its progression study);
-the research stays with the app's history outside this tree, and nobody needs it to build.
+in brackets and links to it: "req 23" is requirement 23 of the [research's README](docs/research/README.md#requirements),
+and "03 §11.2" is section 11.2 of its [progression study](docs/research/03-progression.md). The research, the reviews and
+every decision since are in [`docs/`](docs/README.md); [docs/decisions.md](docs/decisions.md) lists the decisions with who
+took them and why. Nobody needs any of it to build.
 
 The data shapes are the training package's, beside this file in [`Package/`](Package/README.md). Where this document and
 those files disagree about a property, the kind files win and this document is wrong.
@@ -45,7 +47,7 @@ those files disagree about a property, the kind files win and this document is w
 - Picks every rest from the seven rest slots (§4.7), counts it down from an absolute end time, offers −15 s, +15 s and
   Skip, and alerts with a time-sensitive notification when the phone is away.
 - Shows a Live Activity on the Lock Screen and in the Dynamic Island with ±15 s, Skip and Done.
-- Suggests the next set's load and reps by research 03 Part B, shown as grey ghost values with a one-line reason.
+- Suggests the next set's load and reps by research [03 Part B](docs/research/03-progression.md#part-b-specification), shown as grey ghost values with a one-line reason.
 - Edits the session on the fly: add, remove, replace, reorder and group exercises; add and remove sets; change a set's
   kind; change rests; notes.
 - At Finish: one dialog for unticked sets, editable start and end, an optional session RPE, a summary, then a local
@@ -84,12 +86,12 @@ Recorded as decisions the owner may overturn; this spec does not reopen them.
   No rating is valid.
 - **Load.** A quantity in the unit entered, kg by default, lb allowed; a load mode beside it; assistance as its own
   positive quantity.
-- **Rest.** The rest slots of 02 §3: set rest, warm-up rest, transition per group member, round rest per group,
-  intra-set pause, side switch, per-set override. Defaults from 02 §4.3 and §4.4 when the routine says nothing; warm-up
+- **Rest.** The rest slots of [02 §3](docs/research/02-training-methods.md#3-grouping): set rest, warm-up rest, transition per group member, round rest per group,
+  intra-set pause, side switch, per-set override. Defaults from [02 §4.3](docs/research/02-training-methods.md#43-default-rest-between-sets-by-exercise-class) and [§4.4](docs/research/02-training-methods.md#44-default-rests-inside-structures-and-groups) when the routine says nothing; warm-up
   rest 45 s.
 - **Myo-reps.** The method author's stop rule by default (stop when a mini-set loses a rep from the first, or after
   five), with target, cap and total configurable in data; every mini-set is its own set record in a chain. **Drop sets.** Chains, no rest inside, 20 % default drop rounded down.
-- **Suggestions.** 03 Part B exactly: the load is cut below the range; an in-session raise is capped at one step or
+- **Suggestions.** [03 Part B](docs/research/03-progression.md#part-b-specification) exactly: the load is cut below the range; an in-session raise is capped at one step or
   10 %. PREVIOUS is the last time the same exercise was done anywhere, with the same setup key.
 - **Session RPE.** Optional, asked at Finish, skippable. **AlarmKit** V1.1. **Keep awake** a setting, on by default.
 - **Apple Health.** `HKWorkoutBuilder` at Finish, `traditionalStrengthTraining` unless the routine says otherwise,
@@ -105,7 +107,7 @@ Also open to the owner. Each is explained where it lands.
 
 | Decision                                                                                                                                                                  | Where |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| Four tabs: Routines, History, Exercises, Settings. The scaffold's Settings tab stays; req 36 had three tabs.                                                              | §7.1  |
+| Four tabs: Routines, History, Exercises, Settings. The scaffold's Settings tab stays; [req 36](docs/research/README.md#session-engine-and-app) had three tabs.                                                              | §7.1  |
 | The bundled exercises and routines ship; the bundled example sessions are test and preview data only, never the owner's history (the examples README's caution).          | §2.4  |
 | The RPE keypad offers 6 to 10 in half steps, 6.5 included, plus Clear.                                                                                                    | §7.6  |
 | A rest timer runs after an exercise's last set too ("Rest before next exercise"), a setting on by default.                                                                | §4.7  |
@@ -119,7 +121,7 @@ Also open to the owner. Each is explained where it lands.
 | A cold launch with a session in progress opens the session screen.                                                                                                        | §6.3  |
 | No `HKMetadataKeyWorkoutBrandName` in V1 (open question 24).                                                                                                              | §9.5  |
 | Rest measurement: the rest before a set ends at Skip, a timed set's start, the first touch on the next set after its countdown ended, or the tick, whichever comes first. | §4.8  |
-| Rest-pause and cluster mini-sets, back-off loads and `rirstop` sets use small rules of the app's own around 03 Part B, which does not cover them.                         | §5.3  |
+| Rest-pause and cluster mini-sets, back-off loads and `rirstop` sets use small rules of the app's own around [03 Part B](docs/research/03-progression.md#part-b-specification), which does not cover them.                         | §5.3  |
 
 ## 2. Architecture
 
@@ -177,7 +179,7 @@ apps/apple/
 All files live under `Application Support/Workouts/`, created on first use and included in the device backup. Every write
 is `Data.write(to:options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])`. The
 protection class matters: a Live Activity button runs app code while the phone is locked, and `.complete` would make
-the file unreadable then (04 §4.1). WorkoutsCore's file stores take the writing options as a parameter so the Mac tests
+the file unreadable then ([04 §4.1](docs/research/04-ios-platform.md#41-persist-every-change)). WorkoutsCore's file stores take the writing options as a parameter so the Mac tests
 can pass `.atomic` alone.
 
 | File                        | Holds                                                                                                                    | Written                                                                       |
@@ -216,9 +218,11 @@ exercise). The next save writes the file as format 2.
 ### 2.4 Bundled data and the generator
 
 In this repository the bundled and fixture JSON are the source, and `apps/apple/scripts/workouts-package.py` writes
-only the package's manifests and `kinds.json`; the generator below is the first build's.
+only the package's manifests and `kinds.json`; the generator below is the first build's, and stayed in rxtx.dev. The
+YAML it read is in [`docs/examples/`](docs/examples/README.md), rehomed to `~/training` and checked equal to the JSON
+record for record; that page says how the two relate.
 
-The examples in `research/workouts/substrate/examples/` are YAML in `substratectl apply -f` form. The app bundles them
+The examples in rxtx.dev's `research/workouts/substrate/examples/` (now [`docs/examples/`](docs/examples/README.md)) are YAML in `substratectl apply -f` form. The app bundles them
 as JSON in the shape substrate's REST API speaks, the flat record:
 
 ```json
@@ -265,7 +269,7 @@ archived builds (§9.8). `coverage.yaml`'s exercises and routine are test data t
 ### 2.5 The seam where V2 plugs in
 
 V2 adds a second WorkoutsKit target, `WorkoutsSync` (Foundation only): the substrate client (copied from Substrate
-Sync's `Client.swift` as research 05 §6 lists), an ordered outbox persisted next to the journal, a write planner that
+Sync's `Client.swift` as research [05 §6](docs/research/05-substrate-fit.md#6-how-the-app-talks-to-substrate) lists), an ordered outbox persisted next to the journal, a write planner that
 maps engine events to `PUT`, `PATCH` and `DELETE` (the package README's "How the app writes (V2)" table), and a
 change-feed reader. V1 defines the protocols it will implement and ships local implementations:
 
@@ -1089,7 +1093,7 @@ cache of the fold, so its shape may change freely.
 - **`reorderExercises`.** The keys must be a permutation of the slots. After the move, each group's members are gathered
   at the position of its first member, keeping their new relative order, so a group stays contiguous.
 - **`replaceExercise`.** If the slot has no completed row: the slot is replaced in place by a slot with the new key and
-  exercise, keeping `group`, `routineSlot`, rests and notes; its pending rows keep their targets (03 §13: the new
+  exercise, keeping `group`, `routineSlot`, rests and notes; its pending rows keep their targets ([03 §13](docs/research/03-progression.md#13-edge-cases): the new
   exercise uses its own history; a cold start may use the planned load). If it has completed rows: the old slot keeps
   only its completed rows, and a new slot with the pending rows is inserted right after it, in the same group and with
   the same `routineSlot`. The new slot also records the old slot's lane (`replaces`, state only, never a record): in a
@@ -1113,7 +1117,7 @@ cache of the fold, so its shape may change freely.
   measurement (`restClock.endedAt = at` if nil), sets `timerStartedAt = at` and `countdown = .timedSet(row)` with
   `endsAt = at + target` (nil for a stopwatch). Fails if another timed set runs.
 - **`stopTimedSet`.** Completes the row exactly as `completeSet`, with `duration = at − timerStartedAt` filled in the
-  values unless the owner typed one. Reaching the target does nothing by itself: the count runs on past zero (req 31).
+  values unless the owner typed one. Reaching the target does nothing by itself: the count runs on past zero ([req 31](docs/research/README.md#session-engine-and-app)).
 - **`cancelTimedSet`.** Clears `timerStartedAt` and the countdown.
 - **`finish`.** Fails while a timed set runs. Clamps start to at most the first performed row's `startedAt` or
   `completedAt`, and end to at least the last `completedAt`. Unticked rows: `drop` removes them; `markDone` completes
@@ -1159,7 +1163,7 @@ For each routine slot, each planned set becomes one row, in order, then known se
   `loadReference: bodymass` and a body mass at Start, `load` = body mass × `loadPercent` / 100 in the body mass's unit
   and `referenceLoad` = the body mass. V1 keeps no one-rep max or training max, so a percentage of one stays
   unresolved: `loadPercent` and `loadReference` are copied, `load` and `referenceLoad` are absent, and the suggestion
-  picks a load (03 §11.4).
+  picks a load ([03 §11.4](docs/research/03-progression.md#114-working-set-cold-start)).
 - **Known segments are created with their head:** for a drop set, `drops` (default 1) rows with `structure: drop`,
   `chainPosition` 2, 3, and target `{plannedSet, repsMin = repsMax = dropReps}` when `dropReps` is set; for a cluster,
   `miniSets` rows with target `{plannedSet, repsMin = repsMax = miniSetReps}` (the head is the first cluster: with no rep
@@ -1180,7 +1184,7 @@ reason line all describe it. It is recomputed after every event.
   by its segments).
 - A group contributes one block: first every member's warm-up rows (member order), then round 1, round 2 and so on. Round
   `r` holds, for each member in order that has an `r`-th working head, that head and its segments. A member with
-  fewer working sets drops out of the later rounds (02 §3.3; with A 4 sets, B 3, C 2: A, B, C, A, B, C, A, B, A). A
+  fewer working sets drops out of the later rounds ([02 §3.3](docs/research/02-training-methods.md#33-which-rest-applies-the-rule-for-the-engine); with A 4 sets, B 3, C 2: A, B, C, A, B, C, A, B, A). A
   member is a lane: a slot that replaced another mid-exercise (`replaceExercise` with done sets) continues that slot's
   lane, its working heads numbered after the old slot's, so A1, B1, A2, B2 and then a replacement's set is round 3. A
   row's round is this number; outside a group it is the head's ordinal.
@@ -1192,7 +1196,7 @@ reason line all describe it. It is recomputed after every event.
    wrapping around to the start; with no anchor, the first pending row of the sequence.
 3. If no row is pending, there is no Up next and the session shows "All sets done" with Finish.
 
-Because segments follow their head and rounds interleave members, rule 2 gives req 23's order: the rest of the chain,
+Because segments follow their head and rounds interleave members, rule 2 gives [req 23](docs/research/README.md#session-engine-and-app)'s order: the rest of the chain,
 then the next member of the round (or the first member of the next round), then the next set of the same exercise, then
 the next exercise with an unfinished set. A segment whose earlier link is pending is skipped by rule 2 (it cannot be
 ticked yet).
@@ -1217,13 +1221,13 @@ Source, notifies: Bool }` picks one rest, from C and the expected next row N (§
 | 7 | N is in another slot or group block than C                                           | `blockRest`     | if the "rest after an exercise's last set" setting is off: 0. Else C's group's round rest (as line 6) if C is grouped, else C's set rest (as line 8) |
 | 8 | Otherwise (N is in C's own plain slot)                                               | `setRest`       | session slot, routine slot, settings default for C's exercise's `restClass`, else the settings fallback                                              |
 
-Defaults (02 §4.3 and §4.4; editable ones are in Settings and snapshotted at Start):
+Defaults ([02 §4.3](docs/research/02-training-methods.md#43-default-rest-between-sets-by-exercise-class) and [§4.4](docs/research/02-training-methods.md#44-default-rests-inside-structures-and-groups); editable ones are in Settings and snapshotted at Start):
 
 | Rest                                  | Default                                                                                                                                                                                        | In Settings |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
 | Warm-up rest                          | 45 s                                                                                                                                                                                           | yes         |
 | Set rest by rest class                | heavycompound 3:00, compound 2:00, isolation 1:30, highrep 1:00, timed 1:00, carry 2:00, power 3:00                                                                                            | yes         |
-| Set rest, exercise with no rest class | 2:00 (02 §4.2: err long)                                                                                                                                                                       | yes         |
+| Set rest, exercise with no rest class | 2:00 ([02 §4.2](docs/research/02-training-methods.md#42-what-this-means-for-spotter): err long)                                                                                                                                                                       | yes         |
 | Transition                            | by `pairing`: samemuscle, preexhaust, mechanicaldrop 0; antagonist, upperlower, unrelated 15 s. No pairing: `paired` 1:00; `triset`, `giantset`, `circuit` 15 s; `superset` 0 (disagreement 9) | no          |
 | Round rest                            | `circuit` 2:00; any other group 2:30 when a member's rest class is heavycompound, compound, power or carry, else 1:30                                                                          | no          |
 | Intra-set pause                       | drop 0 (no timer), myo and myomatch 15 s, restpause and cluster 20 s                                                                                                                           | no          |
@@ -1246,13 +1250,13 @@ after glute bridge 1 is `transition` 0; glute bridge 2 after bird dog 1 is `roun
 
 ### 4.8 Rest measurement
 
-Each set record carries `restBefore`, `restPlanned` and `restSkipped` (req 9). The engine keeps one `restClock`:
+Each set record carries `restBefore`, `restPlanned` and `restSkipped` ([req 9](docs/research/README.md#data-model)). The engine keeps one `restClock`:
 
 - It starts at every tick: `since` = the tick, `planned` = the decision's seconds (0 when no timer ran), `slot`.
 - It ends (`endedAt`) at the first of: Skip; a timed set's start; a `touchRow` on a pending row once the rest's
   countdown has ended or when none ran (the standalone timer does not count); the next tick. Touches while a rest
   countdown still runs do not end it, because owners type the next load during rest (Hevy's screenshots show it); the
-  countdown keeps counting whatever row is touched (req 24).
+  countdown keeps counting whatever row is touched ([req 24](docs/research/README.md#session-engine-and-app)).
 - The next completed row takes `restBefore = (endedAt ?? its completedAt) − since`, `restPlanned = planned` (after any
   ±15 s), `restSkipped = skipped`.
 - The session's first performed row, and rows marked done at Finish, carry no rest fields.
@@ -1268,8 +1272,8 @@ head (`continues` on the record). All records of a chain share the head's `struc
 
 | Structure         | Segments            | Created                        | Segment target and ghost                                                                                                                                                                                           | Ends                                                                                                                                                   |
 | ----------------- | ------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `drop`            | `drops` (default 1) | with the head                  | Load from 03 §11.7 on the parent's performed load, or on the load its row shows while the parent is pending (`dropStep` wins over `dropPercent`, then the exercise's, then 20 %); reps `dropReps`, else to failure | After the last drop. If 03 §11.7 finds no lighter load when the parent is ticked, the remaining drop rows are removed ("No lighter load for a drop").  |
-| `myo`             | mini-sets           | one at a time, after each tick | 03 §11.6: load the activation's, reps `t1` then `m1`                                                                                                                                                               | 03 §11.6 stop: cap `miniSets` ?? exercise `myoMaxMiniSets` ?? 5, rule planned ?? exercise ?? `repdrop`, `totalReps`                                    |
+| `drop`            | `drops` (default 1) | with the head                  | Load from [03 §11.7](docs/research/03-progression.md#117-drop-sets) on the parent's performed load, or on the load its row shows while the parent is pending (`dropStep` wins over `dropPercent`, then the exercise's, then 20 %); reps `dropReps`, else to failure | After the last drop. If [03 §11.7](docs/research/03-progression.md#117-drop-sets) finds no lighter load when the parent is ticked, the remaining drop rows are removed ("No lighter load for a drop").  |
+| `myo`             | mini-sets           | one at a time, after each tick | [03 §11.6](docs/research/03-progression.md#116-myo-rep-mini-sets): load the activation's, reps `t1` then `m1`                                                                                                                                                               | [03 §11.6](docs/research/03-progression.md#116-myo-rep-mini-sets) stop: cap `miniSets` ?? exercise `myoMaxMiniSets` ?? 5, rule planned ?? exercise ?? `repdrop`, `totalReps`                                    |
 | `myomatch`        | mini-sets           | one at a time                  | Load the head's; reps `min(miniSetReps ?? t1, T − done)`                                                                                                                                                           | When head reps + mini-sets reach `T`, the reps of the slot's previous working set (resolved into `target.totalReps` at the head's tick), or at the cap |
 | `restpause`       | mini-sets           | one at a time                  | Load the head's; reps `miniSetReps`, else open                                                                                                                                                                     | At `miniSets` (default 2) or `totalReps`                                                                                                               |
 | `cluster`         | `miniSets` clusters | with the head                  | Load the head's; reps `miniSetReps`                                                                                                                                                                                | After the last cluster                                                                                                                                 |
@@ -1292,7 +1296,7 @@ chain counted once (its segments share the head's ordinal). During the session i
 **Order** (`order`): the row's place among the slot's performed rows in display order, from 1, each record of a chain
 counting.
 
-**Label** (req 37), one function, `SetLabel.make(row, slot) -> (short: String, spoken: String)`:
+**Label** ([req 37](docs/research/README.md#session-engine-and-app)), one function, `SetLabel.make(row, slot) -> (short: String, spoken: String)`:
 
 | Row                                 | Short      | Spoken (Live Activity, notifications, VoiceOver)           |
 | ----------------------------------- | ---------- | ---------------------------------------------------------- |
@@ -1310,15 +1314,15 @@ A failure or AMRAP set keeps its number and shows a red `F` badge beside it; a t
 - **Sets** (header and summaries): completed working chain heads, labelled "Working sets" in the header and the Finish
   sheet. A chain and a side pair count once. Warm-ups never. At Finish they are counted on the projected state
   (§7.7), so marked-done rows count as History will count them.
-- **Volume load**: for each completed record with an effective load (03 §10.4, with the session's body mass),
+- **Volume load**: for each completed record with an effective load ([03 §10.4](docs/research/03-progression.md#104-effective-load), with the session's body mass),
   `reps × effective load`, times `implements` for a `perimplement` load, times 2 for a `perside` load unless the set
   is `unilateral` (bilateral and alternating sets alike). Reps count as logged: `repsBasis` is not read, so an
   alternating set's per-side count is not doubled (10 a side with a pair of 10 kg dumbbells is 200 kg), and an
   imported alternating set counted in `total` reps counts as given. `loadBasis`, `implements`, `laterality` and
   `bodyShare` are the set's own copies (§3.5), the exercise's only for a set written before they existed, so editing
-  an exercise changes no past volume. Warm-ups are left out unless the "Count warm-ups in volume" setting is on (req 32). No-load measurements and
+  an exercise changes no past volume. Warm-ups are left out unless the "Count warm-ups in volume" setting is on ([req 32](docs/research/README.md#session-engine-and-app)). No-load measurements and
   bodyweight sets without a body mass add nothing. Shown in the default unit, rounded to the nearest whole unit.
-- **Working sets per muscle** (session detail): 1 per primary muscle, 0.5 per secondary, per counted set (02 §6.2). A
+- **Working sets per muscle** (session detail): 1 per primary muscle, 0.5 per secondary, per counted set ([02 §6.2](docs/research/02-training-methods.md#62-counting-rules-spotter-needs)). A
   derived view, never stored.
 
 ### 4.12 Revisions
@@ -1330,11 +1334,11 @@ earlier version left the phone; V2 will raise it with its PATCH.
 
 ### 4.13 Formatting
 
-One formatter module, used everywhere (req 37; 06 §5 item 14):
+One formatter module, used everywhere ([req 37](docs/research/README.md#session-engine-and-app); [06 §5](docs/research/06-app-teardown.md#5-pain-points-to-avoid) item 14):
 
 - **Durations**: `m:ss` under an hour (`0:53`, `1:30`), `h:mm:ss` from an hour (`1:02:05`); `Off` for a rest of 0. The
   same formatter for rests, timed sets, the session clock and summaries.
-- **Loads** (03 §12): at most two decimals, trailing zeros removed, a space, the unit: `35 kg`, `92.5 kg`, `190 lb`.
+- **Loads** ([03 §12](docs/research/03-progression.md#12-explanation-strings)): at most two decimals, trailing zeros removed, a space, the unit: `35 kg`, `92.5 kg`, `190 lb`.
   Bodyweight `BW`, added load `BW + 2.5 kg`, assistance `BW − 30 kg` (U+2212).
 - **A set**: `{load} × {reps}` with U+00D7; reps only `× 15`; timed `1:02`, with load `10 kg for 1:02`; distance
   `40 m`, with load `20 kg for 40 m`; RPE added after a space as `@ 9.5` in PREVIOUS and history, a rated RPE only
@@ -1384,7 +1388,7 @@ says it.
 
 ### 5.1 The function
 
-WorkoutsCore implements research 03 Part B (§8 to §13) exactly, as one pure function. Its types are 03 §9's, kept apart
+WorkoutsCore implements research [03 Part B](docs/research/03-progression.md#part-b-specification) (§8 to §13) exactly, as one pure function. Its types are [03 §9](docs/research/03-progression.md#9-inputs)'s, kept apart
 from the record model so the engine is testable from 03's vectors alone:
 
 ```swift
@@ -1459,11 +1463,11 @@ public func suggest(pending: PendingSet, exercise: ExerciseConfig, today: [DoneS
                     bodyMass: Double?, now: Date, calendar: Calendar) -> Suggestion?
 ```
 
-The building blocks are 03 §10 to §12 with their constants and tolerances (the percentage curve `P`, `p`, `pInv`, the
+The building blocks are [03 §10](docs/research/03-progression.md#10-building-blocks) to [§12](docs/research/03-progression.md#12-explanation-strings) with their constants and tolerances (the percentage curve `P`, `p`, `pInv`, the
 effective RPE, effective load, the grid's `floorG`, `next`, `prev`, `repsAt`, evidence selection with the 180-day,
 five-session plausibility test, the fatigue allowance, the 10 % raise cap, the long-break cuts, every explanation
 template). `calendar` (the owner's time zone) only counts whole local days between a past session's start and `now`.
-The engine is re-run after every change and never commits anything (req 29).
+The engine is re-run after every change and never commits anything ([req 29](docs/research/README.md#session-engine-and-app)).
 
 ### 5.2 Building the inputs
 
@@ -1472,9 +1476,9 @@ The engine is re-run after every change and never commits anything (req 29).
 - **`ExerciseConfig`** from the exercise. `unit` = `loadStep`'s unit, else the default unit setting. `mode`:
   `weightreps`, `weightduration`, `shortdistanceweight` are `external`; `weightedbodyweightreps` is `bodyweightAdded`
   with `canAddLoad` true; `bodyweightreps` is `bodyweightAdded` with `canAddLoad` false; `bodyweightassistedreps` is
-  `bodyweightAssisted`; `repsonly`, `duration`, `distanceduration` are `none` (03 §11.5 and §11.8 apply). `base`, `step`,
+  `bodyweightAssisted`; `repsonly`, `duration`, `distanceduration` are `none` ([03 §11.5](docs/research/03-progression.md#115-reps-only-rule) and [§11.8](docs/research/03-progression.md#118-timed-sets) apply). `base`, `step`,
   `maxLoad` from `loadBase`, `loadStep`, `loadMax` converted to the unit, else the defaults below. `dropPercent / 100`,
-  and the other settings with 03 §9.1's defaults.
+  and the other settings with [03 §9.1](docs/research/03-progression.md#91-exercise-configuration-per-exercise-and-setup)'s defaults.
 
   | Equipment or measurement                                 | Base, step (kg) | Base, step (lb) |
   | -------------------------------------------------------- | --------------- | --------------- |
@@ -1498,9 +1502,9 @@ The engine is re-run after every change and never commits anything (req 29).
   RPE; drop and mini-set records stay separate sets of their kinds. `rpe` is the set's rating (`ratedRPE`, §4.14):
   `rpe` when its method is `entered`, `imported` or absent, else `10 − rir` when that is a rating and the scale is
   RIR-based (`rirbased`, `hevy`, `strong` or none; never `cr10`). A pre-filled or copied RPE is no rating: the done set
-  has no `rpe`, so 03 §10.2 takes the target's top (or 10 when the set fell short), and keeps the value as
+  has no `rpe`, so [03 §10.2](docs/research/03-progression.md#102-effective-rpe-of-a-done-set) takes the target's top (or 10 when the set fell short), and keeps the value as
   `unratedRPE` for the text. Today's rows read the same way. Values from an imported `rpeScale` are passed unchanged. Loads are converted to the exercise unit (1 lb = 0.45359237 kg, rounded to 0.01;
-  03 §13). In bodyweight modes `load` is the added load or the assistance.
+  [03 §13](docs/research/03-progression.md#13-edge-cases)). In bodyweight modes `load` is the added load or the assistance.
 - **Target** from the row's copied target: the top of its effort range (`rpeMax`, else `10 − rirMin`; a range of RPE
   7 to 8 aims at 8), converted to the exercise unit. A cluster set's head
   is its first cluster: when its target has neither `repsMin` nor `repsMax`, both read as `miniSetReps`, today and from
@@ -1508,40 +1512,40 @@ The engine is re-run after every change and never commits anything (req 29).
   and the clusters after it take its load.
 - **Today** is this session's completed rows of the same exercise; **history** is the history index's sessions for the
   exercise with the same setup (V1: sets with no `setup`), newest first, excluding the active session, at most the six
-  newest within 180 days of now (03 DI 7). Deload sessions are left out of the history and the plausibility median (the
+  newest within 180 days of now ([03 DI 7](docs/research/03-progression.md#design-implications-for-spotter)). Deload sessions are left out of the history and the plausibility median (the
   kind says suggestions discount them; 03 has no finer rule); today's sets count even in a deload session. PREVIOUS
   still shows a deload session when it was the last time, marked "deload", and the e1RM trend draws its point hollow.
 - **Body mass**: the session's, in kg.
 
 ### 5.3 the app's rules around 03
 
-03 Part B does not cover these; they are small and labelled as the app's:
+[03 Part B](docs/research/03-progression.md#part-b-specification) does not cover these; they are small and labelled as the app's:
 
 - **Back-off sets.** A pending working row with `roleLabel: backoff` and a `dropPercent` or `dropStep` in its target,
   after a completed working set of the same slot: load `floorG(parent × (1 − d))` or `floorG(parent − dropStep)`
-  (`prev(parent)` if not lighter), reps `min(max(repsAt(L, E, R), lo), hi)` with `E` from 03 §11.2's in-session estimate
+  (`prev(parent)` if not lighter), reps `min(max(repsAt(L, E, R), lo), hi)` with `E` from [03 §11.2](docs/research/03-progression.md#112-working-set-with-evidence-from-today-in-session)'s in-session estimate
   of that parent. Reason `backoff`, text `Back-off {d}% from {parent load}: try {new}` (or `Back-off {step} from
   {parent load}: try {new}`). The coverage session's 110 kg top set then gives 95 kg.
-- **Rest-pause and cluster mini-sets** reuse 03 §11.6 with the rule switched off: they stop only at the cap or the total;
+- **Rest-pause and cluster mini-sets** reuse [03 §11.6](docs/research/03-progression.md#116-myo-rep-mini-sets) with the rule switched off: they stop only at the cap or the total;
   rest-pause reps are `miniSetReps` or open; cluster reps are `miniSetReps`. Mini-sets never feed the e1RM.
-- **Myo-rep match** passes `myoTotalReps = T − head reps` and `myoMiniReps = miniSetReps` into 03 §11.6.
+- **Myo-rep match** passes `myoTotalReps = T − head reps` and `myoMiniReps = miniSetReps` into [03 §11.6](docs/research/03-progression.md#116-myo-rep-mini-sets).
 - **`rirstop`** (stop at the effort target): the load is suggested as usual; the reps are only a hint, shown as `≈15`, and
   the tick does not commit them: the owner types the reps done.
 - **No grid** (equipment with no default step and no `loadStep`): every rule that moves a load keeps the load and works on
-  reps as 03 §11.5 does when no heavier or lighter setting exists. A drop is the exception: the app cannot know a
+  reps as [03 §11.5](docs/research/03-progression.md#115-reps-only-rule) does when no heavier or lighter setting exists. A drop is the exception: the app cannot know a
   band's or a suspension trainer's lighter setting, so the drop leaves the load to the owner (`Drop from 20 kg: a
   lighter load, to failure`, no load suggested) and never reports "No lighter load", which would remove the planned
   drops.
-- **"Assuming RPE x".** 03 §12's `{prev}` adds `at RPE {e}` only for a rated RPE. A set that carried a pre-filled or
+- **"Assuming RPE x".** [03 §12](docs/research/03-progression.md#12-explanation-strings)'s `{prev}` adds `at RPE {e}` only for a rated RPE. A set that carried a pre-filled or
   copied RPE, read as none (§5.2), adds `, assuming RPE {e}` with the effective RPE the rule used, never "at": the 26
   October leg press set 2 reads "Set 1: 105 kg × 9, assuming RPE 8; try 105 kg × 9" (the examples README). A set with
   no RPE at all keeps 03's text.
-- **History's body share.** A past set's effective load uses the exercise's current `bodyShare`, as 03 §10.4 does; the
+- **History's body share.** A past set's effective load uses the exercise's current `bodyShare`, as [03 §10.4](docs/research/03-progression.md#104-effective-load) does; the
   set's own copy (§3.5) is what volume reads (§4.11).
 
 ### 5.4 PREVIOUS
 
-PREVIOUS is the same row last time, wherever the exercise was done (lead decision; req 28):
+PREVIOUS is the same row last time, wherever the exercise was done (lead decision; [req 28](docs/research/README.md#session-engine-and-app)):
 
 - The newest finished session in the history index that has a performed set of this exercise with the same setup (V1:
   none), excluding the active session.
@@ -1554,7 +1558,7 @@ PREVIOUS is the same row last time, wherever the exercise was done (lead decisio
 
 ### 5.5 Ghost values
 
-Each field of a pending row shows, in grey, the first of (req 28):
+Each field of a pending row shows, in grey, the first of ([req 28](docs/research/README.md#session-engine-and-app)):
 
 | Field                        | Ghost source, first present wins                                                                   |
 | ---------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -1570,7 +1574,7 @@ A typed value replaces the ghost in black. The tick commits what the row shows, 
 ### 5.6 Where the output appears
 
 - **Set rows**: the ghost values (§5.5).
-- **Reason line**: one line of secondary text under the Up next row only, with the suggestion's `text` (03 §12). A tap on
+- **Reason line**: one line of secondary text under the Up next row only, with the suggestion's `text` ([03 §12](docs/research/03-progression.md#12-explanation-strings)). A tap on
   any other pending row's ghost value shows that row's text in a small popover.
 - **Rest bar** and **Live Activity**: "Next: Chest Press (Machine), set 1: 40 kg × 11", from the Up next row's ghost
   values.
@@ -1580,9 +1584,9 @@ A typed value replaces the ghost in black. The tick commits what the row shows, 
 
 ### 5.7 Entry validation
 
-Before a working set with an effective load is committed (tick, Stop or Done), the controller runs 03 §10.7's
+Before a working set with an effective load is committed (tick, Stop or Done), the controller runs [03 §10.7](docs/research/03-progression.md#107-selecting-evidence)'s
 plausibility test on it: the set's e1RM against the median session-best e1RM of the five newest other sessions within
-180 days, when there are at least three. Outside 0.5 to 1.5 times, a dialog asks before the event is sent (req 30):
+180 days, when there are at least three. Outside 0.5 to 1.5 times, a dialog asks before the event is sent ([req 30](docs/research/README.md#session-engine-and-app)):
 
 - Title: "500 kg × 8 is far from your recent sets"; message "Recently about 35 kg × 12."
 - If dividing or multiplying the load by 10 lands inside the range, the first button offers it: "Use 50 kg".
@@ -1601,7 +1605,7 @@ launch or lazily when a Live Activity intent launches the app in the background.
   actions call it. A command is the event minus what the controller adds: ids (UUIDv7), the instant (floored to the
   second, clamped to the last event's), and values that need history (ghost values for a tick or Done, an added
   exercise's rows from last time).
-- After a successful `apply`, in this order (04 §2.4): bump the effects revision; write the journal (before any
+- After a successful `apply`, in this order ([04 §2.4](docs/research/04-ios-platform.md#24-keeping-them-consistent-when-rest-is-extended-or-skipped)): bump the effects revision; write the journal (before any
   `await`); recompute the presentation; `await coordinator.sync(state, presentation, revision)`; `await sync.applied(...)`
   in a detached task.
 - `start(routine:)` and `startEmpty()` check for an active session first (the conflict dialog, §7.4), read the body
@@ -1617,7 +1621,7 @@ launch or lazily when a Live Activity intent launches the app in the background.
 
 ### 6.2 CountdownCoordinator
 
-The only code that touches the notification and the Live Activity (req 25). `sync(state, presentation, revision)`:
+The only code that touches the notification and the Live Activity ([req 25](docs/research/README.md#session-engine-and-app)). `sync(state, presentation, revision)`:
 
 1. Remember `mine = revision`.
 2. Remove the pending and delivered notification `workouts.countdown`; add a new one if a countdown has a future end and
@@ -1625,7 +1629,7 @@ The only code that touches the notification and the Live Activity (req 25). `syn
    after.)
 3. After each `await`, stop if `mine` is no longer the latest revision.
 4. Update the Live Activity with the new content, `staleDate` = the countdown's end, and `timestamp:` = the event's
-   instant, so ActivityKit drops a late, older update (04 §2.4).
+   instant, so ActivityKit drops a late, older update ([04 §2.4](docs/research/04-ios-platform.md#24-keeping-them-consistent-when-rest-is-extended-or-skipped)).
 
 `restore(state)` runs the same steps at launch and on every return to the foreground, so whatever happened while the
 app was suspended or dead, the alert and the Live Activity match the journal again.
@@ -1752,7 +1756,7 @@ labels. Start runs §7.4's check.
 
 ### 7.4 Starting while a session is open
 
-A `confirmationDialog` anchored to the Start button that was tapped (req 22):
+A `confirmationDialog` anchored to the Start button that was tapped ([req 22](docs/research/README.md#session-engine-and-app)):
 
 ```text
 +--------------------------------------------------+
@@ -1785,7 +1789,7 @@ inline:    [ ● Rest 1:16 ]        or        [ ● 24:16 ]
 - The dot is green while active, grey while the clock is paused ("Paused" replaces the clock).
 - The clock is `Text(timerInterval:)` from `clockStart` (§9.1), the rest `Text(timerInterval:countsDown: true)`; both
   tick with no app code.
-- No discard button (06 §5 item 8). Tapping opens the session cover with the zoom transition.
+- No discard button ([06 §5](docs/research/06-app-teardown.md#5-pain-points-to-avoid) item 8). Tapping opens the session cover with the zoom transition.
 
 ### 7.6 The session cover
 
@@ -1846,7 +1850,7 @@ sets ("3 of 40": working sets done of planned; the label says "Working sets" bec
 group's colour bracket when grouped, a "Rest 1:30" chip (`.bordered`, opens the rest menu) and a "Note" chip, the slot's
 notes in secondary text, the set grid, and a full-width `.bordered` "+ Add set".
 
-**Set grid columns** follow the exercise's `measurement` (req 28; 06 §1.3). Every grid starts with SET and PREVIOUS and
+**Set grid columns** follow the exercise's `measurement` ([req 28](docs/research/README.md#session-engine-and-app); [06 §1.3](docs/research/06-app-teardown.md#13-log-workout-header-stats-strip-exercise-card-images-3-5-6)). Every grid starts with SET and PREVIOUS and
 ends with the tick:
 
 | Measurement              | Middle columns                    | RPE column |
@@ -1919,7 +1923,7 @@ and no custom background:
 +--------------------------------------------------+
 ```
 
-Values and text (the RIR-based scale with Hevy's wording; 02 §5.2):
+Values and text (the RIR-based scale with Hevy's wording; [02 §5.2](docs/research/02-training-methods.md#52-what-the-apps-show)):
 
 | RPE | Headline        | Reps in reserve text          |
 | --- | --------------- | ----------------------------- |
@@ -2018,7 +2022,7 @@ then A to Z. Rows show the name and the equipment label. "New exercise…" at th
 "Superset A" row and move as a block unless dragged within it. Done sends `reorderExercises`.
 
 **Discard**: `…` > "Discard session" asks "Discard this session? 11 done sets will be deleted." with "Discard"
-(destructive) and "Cancel". It is the only way to discard (req 22).
+(destructive) and "Cancel". It is the only way to discard ([req 22](docs/research/README.md#session-engine-and-app)).
 
 ### 7.6a The Rows layout (the default)
 
@@ -2209,7 +2213,7 @@ Tapping Finish:
    dialog's message says so ("2 have a value missing and are left out either way.") and it adds "Fill in the missing
    values", which closes the dialog, scrolls to the first unticked set with a value missing and puts the keypad on its
    first empty field (a locked drop is only scrolled to). The dialog's words come from `FinishPresenter.summary` for
-   `markDone`, worked out once when Finish is tapped. There is no second "are you sure" (06 §2.8 item 10).
+   `markDone`, worked out once when Finish is tapped. There is no second "are you sure" ([06 §2.8](docs/research/06-app-teardown.md#28-what-reviewers-and-users-complain-about) item 10).
 2. The Finish sheet (`.large`, content in a `Form`):
 
 ```text
@@ -2334,7 +2338,7 @@ exercises carry "On this iPhone".
   says "Added load", an assisted one "Assistance". Equipment follows the list's rule.
 - **Trend**: Swift Charts `LineMark` plus `PointMark`, one point per session, joined by straight segments
   (`.interpolationMethod(.linear)`): a smoothed curve would draw values between sessions that no session had. Each
-  point: the best e1RM of its working sets with `n = reps + 10 − RPE ≤ 12` (03 DI 12), by 03 §10.2 to §10.6 with that
+  point: the best e1RM of its working sets with `n = reps + 10 − RPE ≤ 12` ([03 DI 12](docs/research/03-progression.md#design-implications-for-spotter)), by [03 §10.2](docs/research/03-progression.md#102-effective-rpe-of-a-done-set) to [§10.6](docs/research/03-progression.md#106-e1rm-and-predicted-reps) with that
   session's body mass, in the exercise's unit.
   Timed exercises chart the longest hold; reps-only and plain bodyweight without a body mass chart the most reps. Tapping
   a point pushes that session. Under two points: "Not enough sessions for a trend yet."
@@ -2375,7 +2379,7 @@ Rest values use the rest picker of §7.6.
 
 ## 8. Liquid Glass
 
-Glass is a functional layer for navigation and controls; content never gets it (HIG Materials; 04 §1.1).
+Glass is a functional layer for navigation and controls; content never gets it (HIG Materials; [04 §1.1](docs/research/04-ios-platform.md#11-the-rules-that-decide-where-glass-goes)).
 
 **Glass, provided by the system** (no custom glass, no custom backgrounds):
 
@@ -2446,7 +2450,7 @@ struct WorkoutsActivityAttributes: ActivityAttributes {
 ```
 
 The content stays far below the 4 KB limit. `staleDate` is the countdown's end, so at that instant `context.isStale`
-flips with no app code running and the view switches to "Rest over" (req 27); the app also pushes a fresh state when it
+flips with no app code running and the view switches to "Rest over" ([req 27](docs/research/README.md#session-engine-and-app)); the app also pushes a fresh state when it
 next runs.
 
 **Layouts** (`SubstrateWorkoutsWidgets/SessionLiveActivity.swift`):
@@ -2481,7 +2485,7 @@ Dynamic Island
   the Lock Screen, in the expanded Dynamic Island and on the watch. The word "Next", the routine title and the clock are
   secondary; the countdown and the buttons carry the tint.
 - `.supplementalActivityFamilies([.small])` with a watch layout: the countdown large, the Next line, no buttons. It costs
-  a few lines and the watch is where the owner looks (06 §1.12).
+  a few lines and the watch is where the owner looks ([06 §1.12](docs/research/06-app-teardown.md#112-apple-watch-image-13)).
 - `widgetURL(substrate-workouts://session)` opens the session cover scrolled to Up next.
 
 **Buttons and how they reach the engine** (`the app/Shared/SessionIntents.swift`, compiled into both targets; bodies
@@ -2562,7 +2566,7 @@ with `.immediate`. A `.dismissed` state from `activityStateUpdates` is respected
 | The entry check asks (§5.7), a refused command | `.warning`                 |
 | Finish saved                                   | `.success`                 |
 
-No sound in the foreground by default: the owner may be listening to music (04 §4.4).
+No sound in the foreground by default: the owner may be listening to music ([04 §4.4](docs/research/04-ios-platform.md#44-screen-haptics-connectivity)).
 
 ### 9.4 Keep the screen awake
 
@@ -2573,7 +2577,7 @@ re-evaluated when any of the three changes, and set back to `false` when the cov
 
 **Body mass at Start**: if read access to `bodyMass` was granted, the latest sample ending on or before now
 (`HKSampleQuery`, sorted by end date, limit 1), converted to kg and rounded to 0.1; else the typed value in Settings;
-else none (bodyweight exercises then use 03 §11.5). Start never prompts for Health.
+else none (bodyweight exercises then use [03 §11.5](docs/research/03-progression.md#115-reps-only-rule)). Start never prompts for Health.
 
 **The workout at Finish** (`HealthExporter.save(records)`, called from the queue):
 
@@ -2648,7 +2652,7 @@ App `Info.plist` additions:
 Widget `Info.plist`: `CFBundleDisplayName` "the app", `CFBundleShortVersionString` `$(MARKETING_VERSION)`,
 `CFBundleVersion` `$(CURRENT_PROJECT_VERSION)`, `NSExtension` with `NSExtensionPointIdentifier`
 `com.apple.widgetkit-extension`. The version keys must use the same variables as the app's: `release.sh` passes them
-on the command line for every target, and checks only the app's own plist (04 §6), so a hardcoded value would slip
+on the command line for every target, and checks only the app's own plist ([04 §6](docs/research/04-ios-platform.md#6-signing-and-release-through-appsapplereleasesh)), so a hardcoded value would slip
 through. 
 
 ### 9.8 project.yml changes
@@ -2745,7 +2749,7 @@ targets:
 
 ### 9.10 Verify on a device
 
-The simulator cannot prove these. Each needs one pass on the owner's iPhone before V1 is called done (04 DI; the
+The simulator cannot prove these. Each needs one pass on the owner's iPhone before V1 is called done ([04 DI](docs/research/04-ios-platform.md#design-implications-for-spotter); the
 research README's "Still to check on a device"):
 
 1. **Locked rest**: tick a set, lock the phone; the time-sensitive notification arrives at the end, with Focus on.
@@ -2759,7 +2763,7 @@ research README's "Still to check on a device"):
    time-sensitive capability through the App Store Connect key; if not, add it once in the developer portal or ship with
    `.active`.
 6. **HealthKit provisioning**: the same dry run registers HealthKit on `dev.reamde.substrate.workouts` (the key may need the Admin
-   role, 04 §6).
+   role, [04 §6](docs/research/04-ios-platform.md#6-signing-and-release-through-appsapplereleasesh)).
 7. **The workout**: appears in Health and Fitness as traditional strength training, indoor, with the right times and
    pauses; the effort score shows on it; the metadata reads back in the Health app (Browse > Activity > Workouts > Show
    All Data > the workout: External UUID and Sync Identifier are the session id, the time zone is the session's);
@@ -2784,16 +2788,16 @@ and from `xcodebuild test` through the scheme's test target.
 | `RestRuleTests`           | Every line of §4.7, every default, the notify rule; the example replays of §10.5                                                                                                                                                                        |
 | `UpNextTests`             | The plan sequence for plain slots, groups with uneven members (A 4, B 3, C 2), warm-ups before round 1, chains, wrap-around, focus override, all done                                                                                                   |
 | `ChainTests`              | Drop rows created with the head and removed at the minimum; myo stop by `repdrop`, `belowtarget`, cap and total; myo-match total resolution; rest-pause and cluster; side chains with `sideMatch` and `weakerfirst`; edits that stop or restart a chain |
-| `SuggestVectorTests`      | 03 §14, V1 to V19 (§10.2), plus `p`, `pInv` at every published point and the 03 §9.1 rounding checks                                                                                                                                                    |
+| `SuggestVectorTests`      | [03 §14](docs/research/03-progression.md#14-test-vectors), V1 to V19 (§10.2), plus `p`, `pInv` at every published point and the [03 §9.1](docs/research/03-progression.md#91-exercise-configuration-per-exercise-and-setup) rounding checks                                                                                                                                                    |
 | `ExampleProgressionTests` | §10.3                                                                                                                                                                                                                                                   |
 | `PresenterTests`          | Columns per measurement; labels (§4.10); ghost precedence; PREVIOUS matching by ordinal, chain position and side; the reason line only on Up next; `rirstop` hints                                                                                      |
-| `FormatTests`             | Every formatter example in §4.13 and 03 §12                                                                                                                                                                                                             |
+| `FormatTests`             | Every formatter example in §4.13 and [03 §12](docs/research/03-progression.md#12-explanation-strings)                                                                                                                                                                                                             |
 | `JournalTests`            | Atomic write and reload; refold mismatch handling, a rewrite that fails; format number; an unreadable journal set aside                                                                                                                                 |
 | `HistoryStoreTests`       | Load, index by exercise newest first, skip an undecodable file, delete; the Health queue's lifecycle, lost sessions queued again, an unreadable queue set aside                                                                                         |
 | `ReviewFixTests`          | The V1 review's fixes: cluster heads, failure sets switched in the gym, rest clocks around removals and same-second ticks, replacements in a group, no-grid drops, the rest bar's and Lock Screen's forms                                               |
 | `UUIDv7Tests`             | Version and variant bits, timestamp equals the instant, lowercase, ordering                                                                                                                                                                             |
 
-### 10.2 Suggestion vectors, verbatim from 03 §14
+### 10.2 Suggestion vectors, verbatim from [03 §14](docs/research/03-progression.md#14-test-vectors)
 
 Each is one `@Test` asserting the load, reps (or duration), `stop`, reason and the exact text; intermediate numbers to
 1e-4 where the vector gives them.

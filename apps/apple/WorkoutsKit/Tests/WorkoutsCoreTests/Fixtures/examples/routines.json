@@ -1,5 +1,5 @@
 {
-  "source": "research/workouts/substrate/examples/routines.yaml",
+  "source": "apps/apple/SubstrateWorkouts/docs/examples/routines.yaml",
   "records": [
     {
       "kind": "~/training/routine",

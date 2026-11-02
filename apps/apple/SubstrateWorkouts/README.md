@@ -9,6 +9,8 @@ count for the next set from this session and earlier ones. Each finished
 session is also saved to Apple Health as one strength workout. It came to
 this repository from an app called Spotter; its spec is
 [DESIGN.md](DESIGN.md), and its package is [Package/](Package/README.md).
+The research, design options, reviews and decisions behind it are in
+[docs/](docs/README.md).
 
 The app has four tabs. **Routines** lists the routines by folder, previews
 one and starts it (or an empty session). **History** lists finished sessions,
@@ -190,6 +192,6 @@ They are `docs/screenshots/signed-*.jpg`.
 | --- | --- |
 | ![History](docs/screenshots/signed-09-history-session.jpg) | ![Settings](docs/screenshots/signed-10-settings-substrate.jpg) |
 
-`docs/screenshots/rows-*.jpg` are the Rows layout from the app's first build
-(Spotter), with example sessions loaded as history: drops, a past set being
+`docs/screenshots/rows-*.jpg` are the Rows layout from the app's build in
+rxtx.dev (Spotter, geoah/rxtx.dev#118), with example sessions loaded as history: drops, a past set being
 fixed, a timed plank and dark mode.
