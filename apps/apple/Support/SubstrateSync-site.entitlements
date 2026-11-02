@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.healthkit</key>
+	<true/>
+	<key>com.apple.developer.healthkit.access</key>
+	<array/>
+	<key>com.apple.developer.healthkit.background-delivery</key>
+	<true/>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)dev.reamde.substrate.sync</string>
+	</array>
+	<!-- The site host the release publishes its association file on: the
+	     system hands the sign-in's https callback there to this app alone
+	     (ASWebAuthenticationSession's https callback), under both services. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>webcredentials:$(SUBSTRATE_SITE_HOST)</string>
+		<string>applinks:$(SUBSTRATE_SITE_HOST)</string>
+	</array>
+</dict>
+</plist>

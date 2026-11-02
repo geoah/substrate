@@ -1,8 +1,8 @@
 import Foundation
 
-/// Receives the authorization redirect on a loopback port (RFC 8252 §7.3).
-/// A native app has no web host to claim an https redirect with, and the
-/// server admits `http` on a loopback host at any port, so the app listens on
+/// Receives the authorization redirect on a loopback port (RFC 8252 §7.3),
+/// for a build that claims no https redirect (a local one): the server
+/// admits `http` on a loopback host at any port, so the app listens on
 /// 127.0.0.1 while the sign-in sheet is up and the browser lands here. A
 /// plain socket, not Network.framework's listener: on iOS that listener
 /// accepts at the kernel and never hands the connection over, under the

@@ -33,8 +33,11 @@ public struct ConnectHeader: View {
     }
 }
 
-/// The server first: the address, checked against its discovery document
-/// and the app's requirement when the person presses Continue. A server that
+/// The server first: one field that takes a server's address or a
+/// repository's name, resolved by `ServerLocator` and checked against the
+/// server's discovery document and the app's requirement when the person
+/// presses Continue. A server found from a repository's name carries that
+/// name to the sign-in. A server that
 /// can give the app access of its own offers the browser sign-in; one the
 /// app falls back for shows the app's own password door; one too old says
 /// what it lacks. Without a password door, a server the app would fall back
@@ -43,6 +46,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
     let manifest: AppManifest
     @Binding var address: String
     let probe: ServerProbe
+    let locator: ServerLocator
     let header: Header
     let onSignIn: (ServerProbe.Result) async throws -> Void
     let passwordDoor: (ServerProbe.Result) -> PasswordDoor
@@ -81,6 +85,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
         self.manifest = manifest
         _address = address
         self.probe = probe
+        locator = ServerLocator(probe: probe)
         self.header = header
         self.onSignIn = onSignIn
         self.passwordDoor = passwordDoor
@@ -157,7 +162,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
             Image(systemName: "server.rack")
                 .foregroundStyle(.secondary)
                 .frame(width: 22)
-            TextField("substrate.example.com", text: $address)
+            TextField("ada.example.com", text: $address)
                 .textFieldStyle(.plain)
                 .textContentType(.URL)
                 #if os(iOS)
@@ -169,7 +174,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                 .onSubmit(check)
                 .onChange(of: address) { _, typed in
                     // Writing the checked origin back is not a new address.
-                    if let found, typed == found.origin.absoluteString { return }
+                    if let found, typed == Self.shown(found) { return }
                     if found != nil { phase = .idle }
                     problem = nil
                 }
@@ -179,7 +184,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
         .frame(minHeight: 50)
         .background(.fill.tertiary, in: .rect(cornerRadius: 14))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Server")
+        .accessibilityLabel("Repository or server")
     }
 
     private var primaryButton: some View {
@@ -214,6 +219,9 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                 } icon: {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                 }
+                if let repository = found.repository {
+                    Text("Repository: \(repository)")
+                }
                 if door(for: found) == .password {
                     Text("This server can't give \(manifest.appName) access of its own yet, so your password goes to it directly.")
                 } else if case .signingIn = phase, WebAuthenticator.opensBrowser {
@@ -225,21 +233,28 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                 }
             }
         } else {
-            Text("Your Substrate server's address. A name alone is read as https://.")
+            Text("Your repository's name, or your Substrate server's address. A name alone is read as https://.")
         }
     }
 
+    /// What the field shows once a server is found: the repository's name
+    /// it was found from, else the server's origin.
+    static func shown(_ found: ServerProbe.Result) -> String {
+        found.repository ?? found.origin.absoluteString
+    }
+
     private func check() {
-        guard let origin = ServerAddress.origin(of: address) else {
-            problem = "That is not an http or https address."
+        let typed = address
+        guard let origin = ServerAddress.origin(of: typed) else {
+            problem = "That is not a server address or a repository name."
             return
         }
         phase = .checking
         problem = nil
         Task {
             do {
-                let result = try await probe.probe(origin, requirement: manifest.requirement, app: manifest.appName)
-                address = origin.absoluteString
+                let result = try await locator.locate(typed, requirement: manifest.requirement, app: manifest.appName)
+                address = Self.shown(result)
                 phase = .found(result)
             } catch {
                 phase = .idle
