@@ -19,6 +19,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { BoxesIcon, ChevronRightIcon } from "lucide-react"
 
 import { Fact, Problem, Warning } from "@/components/authorize/parts"
+import {
+  PublisherFacts,
+  PublisherLines,
+} from "@/components/authorize/publisher"
 import { ScopeRow } from "@/components/authorize/scope-row"
 import { SetupRow } from "@/components/authorize/setup-row"
 import { ConsolePreferencesProvider } from "@/components/console-preferences"
@@ -72,6 +76,7 @@ import {
   webhookTriggers,
   type SetupLine,
 } from "@/lib/app-setup"
+import { appTitle as titleOf } from "@/lib/app-publisher"
 import { relativeTime, shortDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { authorizeRoute } from "@/router"
@@ -256,6 +261,8 @@ function AppFacts({
           )}
         </Fact>
       )}
+
+      <PublisherFacts request={request} />
 
       <Fact label="After you answer, you go to">
         <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
@@ -463,7 +470,7 @@ function Approval({
       technical={technical}
     />
   )
-  const appTitle = app.local ? "An app on this device" : app.host
+  const appTitle = titleOf(request)
 
   return (
     <Card>
@@ -485,14 +492,7 @@ function Approval({
         {fold.reauth && (
           <p className="font-medium [overflow-wrap:anywhere]">{appTitle}</p>
         )}
-        {app.name && (
-          <p className="text-xs text-muted-foreground">
-            It calls itself{" "}
-            <span className="[overflow-wrap:anywhere] text-foreground">
-              {app.name}
-            </span>
-          </p>
-        )}
+        <PublisherLines request={request} />
         {technical && (
           <p className="text-xs text-muted-foreground">
             <span>Client id </span>
@@ -513,6 +513,8 @@ function Approval({
             Approving is the same as signing it in with your password: it can do
             everything you can, including revoking your other sessions. Approve
             only an app you trust that much.
+            {!app.verified &&
+              " This app is unverified: nothing confirms which program receives a token equal to your password."}
           </Warning>
         )}
         {technical ? (

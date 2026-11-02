@@ -105,6 +105,10 @@ type Config struct {
 	// authorization flow (decision 0194). Nil is the real fetcher, which
 	// dials public addresses alone; a test supplies documents from memory.
 	ClientDocuments clientDocuments
+	// Publishers decides who publishes an app (decision 0209). Nil is a
+	// verifier on the system resolver and the confined client; a test
+	// supplies one over fixed DNS answers.
+	Publishers appPublishers
 	// PublicURL is this server's origin as apps reach it
 	// (SUBSTRATE_PUBLIC_URL): the issuer of the authorization flow whatever
 	// Host a request names. Empty derives the issuer from the Host.
@@ -137,6 +141,7 @@ type handler struct {
 	// a flood here costs no owner a login.
 	authz     *authorize.Store
 	fetcher   clientDocuments
+	verifier  appPublishers
 	parkRate  *rateLimiter
 	publicURL string
 	// resolver and instances are domain verification's two reads of the
@@ -173,6 +178,7 @@ func New(cfg Config) http.Handler {
 		draining:     cfg.Draining,
 		authz:        authorize.NewStore(now),
 		fetcher:      cfg.ClientDocuments,
+		verifier:     cfg.Publishers,
 		parkRate:     newRateLimiter(interval, now),
 		publicURL:    strings.TrimRight(cfg.PublicURL, "/"),
 		setups:       appsetup.NewRunner(cfg.Catalog),
@@ -188,6 +194,9 @@ func New(cfg Config) http.Handler {
 	}
 	if h.instances == nil {
 		h.instances = fetchServerInstance
+	}
+	if h.verifier == nil {
+		h.verifier = authorize.NewVerifier(authorize.PublisherOptions{Now: now, Resolver: h.resolver})
 	}
 
 	r := chi.NewRouter()

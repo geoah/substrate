@@ -51,6 +51,11 @@ func ParseClientID(raw string) (Client, error) {
 		if u.Path == "" {
 			return Client{}, errors.New("client_id has no path: an app's client id is the URL of its metadata document")
 		}
+		// `app:local` is the actor of every app on the owner's device, so
+		// no web app may be named by the same word (decision 0209).
+		if strings.EqualFold(u.Hostname(), "local") {
+			return Client{}, errors.New("client_id is on the host local, which names apps on the owner's device")
+		}
 		return Client{ID: raw, Host: u.Host}, nil
 	case "http":
 		if !loopbackHost(u.Hostname()) {

@@ -78,6 +78,7 @@ func (d *mintingDataset) MintToken(_ context.Context, in substrate.MintTokenInpu
 	info := substrate.TokenInfo{
 		ID: fmt.Sprintf("app%d", n), Label: in.Label, Created: time.Unix(0, 0).UTC(),
 		ExpiresAt: in.ExpiresAt, Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName, Agents: in.Agents,
+		AppAuthority: in.AppAuthority, AppLocal: in.AppLocal,
 	}
 	d.svc.tokens[secret] = fakeToken{repository: d.repository.Authority, info: info}
 	return info, secret, nil
@@ -1044,9 +1045,13 @@ func TestAnApprovalNamesItsLifetime(t *testing.T) {
 }
 
 // An IPv6 app's actor is also its label namespace, so it carries no bracket.
+// A loopback one writes as app:local (decision 0209).
 func TestAnIPv6AppsActorIsAValidLabelNamespace(t *testing.T) {
-	actor := appActorOf(substrate.TokenInfo{ClientID: "http://[::1]:8080/client"})
-	if actor != "app:::1:8080" {
+	if actor := appActorOf(substrate.TokenInfo{ClientID: "http://[::1]:8080/client"}); actor != substrate.AppActorLocal {
+		t.Fatalf("a loopback app's actor = %q", actor)
+	}
+	actor := appActorOf(substrate.TokenInfo{ClientID: "https://[2001:db8::1]:8443/client"})
+	if actor != "app:2001:db8::1:8443" {
 		t.Fatalf("actor = %q", actor)
 	}
 	if problem := vocabulary.MetaKeyProblem(string(actor) + "/tag"); problem != "" {

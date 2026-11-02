@@ -142,6 +142,7 @@ var wireTypes = map[string]any{
 	// approval it posts and the redirect either answer carries.
 	"AuthorizationRequest":    AuthorizationRequest{},
 	"AuthorizationApp":        AuthorizationApp{},
+	"AuthorizationPublisher":  AuthorizationPublisher{},
 	"AuthorizationRedirectTo": AuthorizationRedirectTo{},
 	"AuthorizationScope":      AuthorizationScope{},
 	"AuthorizationKind":       AuthorizationKind{},

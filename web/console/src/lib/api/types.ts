@@ -873,8 +873,14 @@ export interface TokenInfo {
   scopes?: string[]
   /** The app's client id URL, on a token minted for an app. */
   clientId?: string
-  /** The name the app claimed when the owner approved it; unverified. */
+  /** The name the app claimed when the owner approved it, or the name its
+   * verified publisher gives it. */
   clientName?: string
+  /** The authority the approval verified as the app's publisher (decision
+   * 0209). */
+  appAuthority?: string
+  /** The approval sent the access to a program on the owner's device. */
+  appLocal?: boolean
   /** The agents the owner approved the app to declare (decision 0207). */
   agents?: AgentApproval[]
 }
@@ -966,8 +972,29 @@ export interface AuthorizationApp {
   uri?: string
   /** The claimed `uri` is on another host than the client id. */
   uriHostDiffers?: boolean
-  /** What the app's changes are recorded as, `app:<host>`. */
+  /** What the app's changes are recorded as: `app:<authority>` for a
+   * verified app, `app:local` for one whose access goes to this device,
+   * `app:<host>` otherwise (decision 0209). */
   actor: string
+  /** The app's publisher is confirmed by its authority's `_substrate`
+   * record and document, and the access goes to that authority. */
+  verified: boolean
+  publisher: AuthorizationPublisher
+}
+
+/** What the server read about who publishes an app. `authority` is the
+ * verified one or the one the app claims; `name` and `appName` are the
+ * authority document's; `unconfirmed` is why the app is not verified, absent
+ * when it is or claims no publisher. `record`, `documentUrl` and `listed` are
+ * the technical details. */
+export interface AuthorizationPublisher {
+  authority?: string
+  name?: string
+  appName?: string
+  unconfirmed?: string
+  record?: string
+  documentUrl?: string
+  listed: boolean
 }
 
 /** Where the code goes on approval. */

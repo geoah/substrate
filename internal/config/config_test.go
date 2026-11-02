@@ -391,3 +391,18 @@ func TestParseLogLevel(t *testing.T) {
 		}
 	}
 }
+
+func TestInsecureAuthorityDocsIsAListOfAuthorityAndPath(t *testing.T) {
+	got, err := Config{InsecureAuthorityDocs: " example.org=/tmp/a.json , dev.example.com=/tmp/b.json"}.AuthorityDocs()
+	if err != nil || len(got) != 2 || got["example.org"] != "/tmp/a.json" || got["dev.example.com"] != "/tmp/b.json" {
+		t.Fatalf("AuthorityDocs = %v, %v", got, err)
+	}
+	if got, err := (Config{}).AuthorityDocs(); err != nil || got != nil {
+		t.Fatalf("unset reads %v, %v", got, err)
+	}
+	for _, bad := range []string{"example.org", "example.org=", "=/tmp/a.json", "Example.Org=/tmp/a.json", "org=/tmp/a.json", "example.org=/a,example.org=/b"} {
+		if _, err := (Config{InsecureAuthorityDocs: bad}).AuthorityDocs(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_INSECURE_AUTHORITY_DOCS") {
+			t.Errorf("%q: %v, want a refusal naming the variable", bad, err)
+		}
+	}
+}

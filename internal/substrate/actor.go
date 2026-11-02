@@ -72,19 +72,27 @@ const (
 	AgentActorPrefix    = "agent:"
 )
 
-// AppActorPrefix opens the actor an app's token writes under (decision 0194):
-// `app:<host>`, the host of the client id the owner approved, so a change an
-// app made reads as the app's and never as the owner's. The server derives it
-// from the token record, so a request may never claim one, and no package may
-// declare one: its tier is the engine's to decide, not data an install
+// AppActorPrefix opens the actor an app's token writes under (decisions
+// 0194 and 0209), so a change an app made reads as the app's and never as
+// the owner's. What follows the prefix is what the approval proved:
+// `app:<authority>` for an app whose publisher was verified, `app:local`
+// for one whose access went to a program on the owner's device, and
+// `app:<host>`, the host of its client id, for any other. The server derives
+// it from the token record, so a request may never claim one, and no package
+// may declare one: its tier is the engine's to decide, not data an install
 // writes. The token behind each write is the changelog's principal, which
-// tells two apps on one host apart.
+// tells two apps of one publisher apart.
 const AppActorPrefix = "app:"
 
-// AppActor renders the actor of an app whose client id is on host, a
-// `host[:port]` as a URL carries it. An IPv6 literal loses its brackets
-// (`[::1]:8080` is `app:::1:8080`), since the actor is also the namespace of
-// the app's label and annotation keys, which take no bracket.
+// AppActorLocal is the actor of every app whose access went to a loopback
+// address: nothing tells two programs on the owner's device apart, so none
+// is named by the host or the publisher it claims.
+const AppActorLocal Actor = AppActorPrefix + "local"
+
+// AppActor renders the actor of an app named by host, a `host[:port]` as a
+// URL carries it, or by a verified authority. An IPv6 literal loses its
+// brackets (`[::1]:8080` is `app:::1:8080`), since the actor is also the
+// namespace of the app's label and annotation keys, which take no bracket.
 func AppActor(host string) Actor {
 	host = strings.NewReplacer("[", "", "]", "").Replace(strings.ToLower(host))
 	return Actor(AppActorPrefix + host)
