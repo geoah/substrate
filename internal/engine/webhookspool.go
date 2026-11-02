@@ -556,10 +556,10 @@ func (ds *dataset) spoolDrainFailed(name string, err error) {
 // spoolAdmissionRefused names why a spooled request's admission failed for
 // the request's own content, or is empty for any other failure. A request
 // refused this way is refused by every retry, so the drain sets it aside
-// rather than stop every later request behind it; a transient failure (the
-// connection, a lock, the disk) keeps it in place for the retry decision
-// 0167 asks for. The reason is a fixed word or a SQLSTATE, never the error
-// text, which can quote the request.
+// rather than stop every later request behind it (decision 0206); any other
+// failure keeps it in place for the retry decision 0167 asks for. The reason
+// is a fixed word or a SQLSTATE, never the error text, which can quote the
+// request.
 func spoolAdmissionRefused(err error) string {
 	if err == nil {
 		return ""
@@ -567,10 +567,13 @@ func spoolAdmissionRefused(err error) string {
 	if errors.Is(err, substrate.ErrValidation) {
 		return "validation"
 	}
-	// Class 22 is Postgres's data exception: the value itself, such as a
-	// NUL in a jsonb string (22P05) or text that is not UTF-8 (22021).
+	// Only the two codes for a string no row can store: a NUL in text or
+	// jsonb (22P05) and a byte sequence that is not valid UTF-8 (22021). The
+	// rest of class 22 can come from a stored row or the engine's own
+	// queries, and setting a request aside for one of those would drop a
+	// request the sender was answered 202 for.
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && strings.HasPrefix(pgErr.Code, "22") {
+	if errors.As(err, &pgErr) && (pgErr.Code == "22P05" || pgErr.Code == "22021") {
 		return "sqlstate " + pgErr.Code
 	}
 	return ""
