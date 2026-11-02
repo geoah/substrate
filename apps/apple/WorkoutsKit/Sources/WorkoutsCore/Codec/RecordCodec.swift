@@ -6,6 +6,7 @@ import Foundation
 /// it decodes.
 public struct RecordCodec: Sendable {
     public let kinds: KindNames
+    public let movementSchema: KindSchema
     public let exerciseSchema: KindSchema
     public let routineSchema: KindSchema
     public let sessionSchema: KindSchema
@@ -14,6 +15,7 @@ public struct RecordCodec: Sendable {
 
     public init(kinds: KindNames = .v1) {
         self.kinds = kinds
+        movementSchema = Self.movementSchema(kinds)
         exerciseSchema = Self.exerciseSchema(kinds)
         routineSchema = Self.routineSchema(kinds)
         sessionSchema = Self.sessionSchema(kinds)
@@ -21,8 +23,8 @@ public struct RecordCodec: Sendable {
         setupSchema = Self.setupSchema(kinds)
     }
 
-    /// The five kinds as this codec reads and writes them.
-    public var schemas: [KindSchema] { [exerciseSchema, routineSchema, sessionSchema, setSchema, setupSchema] }
+    /// The six kinds as this codec reads and writes them.
+    public var schemas: [KindSchema] { [movementSchema, exerciseSchema, routineSchema, sessionSchema, setSchema, setupSchema] }
 
     /// The schema for a kind name, if the codec knows it.
     public func schema(for kind: String) -> KindSchema? { schemas.first { $0.kind == kind } }
@@ -34,8 +36,9 @@ public struct RecordCodec: Sendable {
 
 // MARK: - Any record
 
-/// A decoded record of one of the five kinds.
+/// A decoded record of one of the six kinds.
 public enum DecodedRecord: Hashable, Sendable {
+    case movement(Movement)
     case exercise(Exercise)
     case routine(Routine)
     case session(TrainingSession)
@@ -44,9 +47,10 @@ public enum DecodedRecord: Hashable, Sendable {
 }
 
 public extension RecordCodec {
-    /// Decodes a record of any of the five kinds.
+    /// Decodes a record of any of the six kinds.
     func decode(_ record: FlatRecord) throws(CodecError) -> DecodedRecord {
         switch record.kind {
+        case kinds.movement: try .movement(decodeMovement(record))
         case kinds.exercise: try .exercise(decodeExercise(record))
         case kinds.routine: try .routine(decodeRoutine(record))
         case kinds.session: try .session(decodeSession(record))
@@ -58,6 +62,7 @@ public extension RecordCodec {
 
     func encode(_ record: DecodedRecord) -> FlatRecord {
         switch record {
+        case let .movement(value): encode(value)
         case let .exercise(value): encode(value)
         case let .routine(value): encode(value)
         case let .session(value): encode(value)
@@ -94,6 +99,37 @@ public extension RecordCodec {
 // MARK: - Exercise
 
 public extension RecordCodec {
+    func decodeMovement(_ record: FlatRecord) throws(CodecError) -> Movement {
+        try check(record, is: kinds.movement)
+        var r = PropertyReader(record: record)
+        var movement = try Movement(
+            id: MovementID(record.id),
+            name: r.requiredString("name"),
+            aliases: r.strings("aliases"),
+            force: r.enumeration("force"),
+            mechanic: r.enumeration("mechanic"),
+            muscles: Self.readMuscles(&r),
+            primaryMuscles: r.enumerations("primaryMuscles"),
+            secondaryMuscles: r.enumerations("secondaryMuscles"),
+            codes: Self.readCodes(&r)
+        )
+        movement.extra = r.extra
+        return movement
+    }
+
+    func encode(_ movement: Movement) -> FlatRecord {
+        var w = PropertyWriter(schema: movementSchema.allProperties, extra: movement.extra)
+        w.string("name", movement.name)
+        w.strings("aliases", movement.aliases)
+        w.enumeration("force", movement.force)
+        w.enumeration("mechanic", movement.mechanic)
+        writeMuscles(&w, movement.muscles, schema: movementSchema)
+        w.enumerations("primaryMuscles", movement.primaryMuscles)
+        w.enumerations("secondaryMuscles", movement.secondaryMuscles)
+        writeCodes(&w, movement.codes, schema: movementSchema)
+        return FlatRecord(kind: kinds.movement, id: movement.id.rawValue, properties: w.finish())
+    }
+
     func decodeExercise(_ record: FlatRecord) throws(CodecError) -> Exercise {
         try check(record, is: kinds.exercise)
         var r = PropertyReader(record: record)
@@ -109,18 +145,11 @@ public extension RecordCodec {
             implements: r.int("implements"),
             primaryMuscles: r.enumerations("primaryMuscles"),
             secondaryMuscles: r.enumerations("secondaryMuscles"),
+            muscles: Self.readMuscles(&r),
             restClass: r.enumeration("restClass"),
             variationOf: r.reference("variationOf", kind: kinds.exercise).map(ExerciseID.init(rawValue:)),
-            codes: r.objects("codes") { (c: inout PropertyReader) throws(CodecError) in
-                var coding = try Coding(
-                    system: c.requiredString("system"),
-                    code: c.requiredString("code"),
-                    version: c.string("version"),
-                    display: c.string("display")
-                )
-                coding.extra = c.extra
-                return coding
-            },
+            movement: r.reference("movement", kind: kinds.movement).map(MovementID.init(rawValue:)),
+            codes: Self.readCodes(&r),
             loadBase: r.mass("loadBase"),
             loadStep: r.mass("loadStep"),
             loadMax: r.mass("loadMax"),
@@ -149,17 +178,11 @@ public extension RecordCodec {
         w.int("implements", exercise.implements)
         w.enumerations("primaryMuscles", exercise.primaryMuscles)
         w.enumerations("secondaryMuscles", exercise.secondaryMuscles)
+        writeMuscles(&w, exercise.muscles, schema: exerciseSchema)
         w.enumeration("restClass", exercise.restClass)
         w.reference("variationOf", kind: kinds.exercise, id: exercise.variationOf?.rawValue)
-        let codingFields = exerciseSchema.fields("codes")
-        w.objects("codes", exercise.codes.map { coding in
-            var c = PropertyWriter(schema: codingFields, extra: coding.extra)
-            c.string("system", coding.system)
-            c.string("code", coding.code)
-            c.string("version", coding.version)
-            c.string("display", coding.display)
-            return c.finish()
-        })
+        w.reference("movement", kind: kinds.movement, id: exercise.movement?.rawValue)
+        writeCodes(&w, exercise.codes, schema: exerciseSchema)
         w.mass("loadBase", exercise.loadBase)
         w.mass("loadStep", exercise.loadStep)
         w.mass("loadMax", exercise.loadMax)
@@ -685,5 +708,59 @@ public extension RecordCodec {
         w.mass("loadMax", setup.loadMax)
         w.string("notes", setup.notes)
         return FlatRecord(kind: kinds.setup, id: setup.id.rawValue, properties: w.finish())
+    }
+}
+
+// MARK: - Shared fields
+
+extension RecordCodec {
+    /// `muscles[]`, as an exercise and a movement declare it.
+    static func readMuscles(_ r: inout PropertyReader) throws(CodecError) -> [MuscleShare] {
+        try r.objects("muscles") { (m: inout PropertyReader) throws(CodecError) in
+            let muscle: MuscleDetail? = try m.enumeration("muscle")
+            guard let involvement = try m.decimal("involvement") else {
+                throw CodecError.invalid(kind: m.kind, id: m.id, property: "muscles.involvement", value: "absent")
+            }
+            var share = MuscleShare(.neck, involvement)
+            share.muscle = muscle
+            share.extra = m.extra
+            return share
+        }
+    }
+
+    func writeMuscles(_ w: inout PropertyWriter, _ muscles: [MuscleShare], schema: KindSchema) {
+        let fields = schema.fields("muscles")
+        w.objects("muscles", muscles.map { share in
+            var m = PropertyWriter(schema: fields, extra: share.extra)
+            m.enumeration("muscle", share.muscle)
+            m.decimal("involvement", share.involvement)
+            return m.finish()
+        })
+    }
+
+    /// `codes[]`, as `observations/metric.codes` spells it.
+    static func readCodes(_ r: inout PropertyReader) throws(CodecError) -> [Coding] {
+        try r.objects("codes") { (c: inout PropertyReader) throws(CodecError) in
+            var coding = try Coding(
+                system: c.requiredString("system"),
+                code: c.requiredString("code"),
+                version: c.string("version"),
+                display: c.string("display")
+            )
+            coding.extra = c.extra
+            return coding
+        }
+    }
+
+    func writeCodes(_ w: inout PropertyWriter, _ codes: [Coding], schema: KindSchema) {
+        let fields = schema.fields("codes")
+        w.objects("codes", codes.map { coding in
+            var c = PropertyWriter(schema: fields, extra: coding.extra)
+            c.string("system", coding.system)
+            c.string("code", coding.code)
+            c.string("version", coding.version)
+            c.string("display", coding.display)
+            return c.finish()
+        })
     }
 }

@@ -1,0 +1,269 @@
+# movement: what a person searches for, such as Chest Press, with the
+# muscles it works and how much. Its exercises are the equipment versions
+# (Chest Press (Machine), Chest Press (Cable)), each with its own history,
+# load grid and measurement, since a machine stack, a cable and two
+# dumbbells move loads that never compare; each names its movement
+# (`exercise.movement`).
+#
+# WHY A KIND. Search and charts group by movement: "every chest press",
+# sets per muscle over a week, the exercises to switch between in the gym.
+# A string on the exercise could never become this reference once values
+# were stored, and the muscles belong to the movement, written once rather
+# than on every equipment version (an exercise's own `muscles` overrides
+# them where the equipment changes the work).
+#
+# THE APP SEEDS THEM. Substrate Workouts writes its exercise library
+# (movements, then their exercises) into the repository and fills what the
+# repository lacks at each library version; it never rewrites a value the
+# owner or the coach wrote, and never writes back one the owner deleted.
+# Codes say where an entry came from: `substrate-workouts-library` with
+# the library version that wrote it, `free-exercise-db`, `hevy`.
+#
+# THE ID IS THE NAME SLUGGED: `chest-press`.
+#
+# NO TEMPORAL BINDING. A movement has no instant of its own.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ~/training/movement
+data:
+  authority: "~"
+  package: training
+  description: >-
+    A movement such as Chest Press: what you search for, the muscles it works
+    and how much. Its exercises are the equipment versions, each with its
+    own history.
+  purpose: supporting
+  names:
+    singular: movement
+  label:
+    singular: Movement
+    plural: Movements
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the movement's name as the owner reads it, such as Chest
+        Press
+    aliases:
+      type: string
+      repeated: true
+      description: other names it goes by, for search
+    force:
+      type: enum
+      description: whether the muscles push the load away, pull it in, or
+        hold it still
+      values:
+        - value: push
+          label: Push
+        - value: pull
+          label: Pull
+        - value: static
+          label: Static hold
+    mechanic:
+      type: enum
+      description: whether it moves several joints or one
+      values:
+        - value: compound
+          label: Compound (several joints)
+        - value: isolation
+          label: Isolation (one joint)
+    muscles:
+      type: object
+      repeated: true
+      description: the muscles it works one by one, each with the share of
+        a set it counts for
+      fields:
+        muscle:
+          type: enum
+          required: true
+          description: the muscle
+          values:
+            - value: pecclavicular
+              label: Chest, upper (clavicular pectoralis)
+            - value: pecsternal
+              label: Chest, mid and lower (sternal pectoralis)
+            - value: serratus
+              label: Serratus anterior
+            - value: deltfront
+              label: Front delts
+            - value: deltside
+              label: Side delts
+            - value: deltrear
+              label: Rear delts
+            - value: rotatorcuff
+              label: Rotator cuff
+            - value: lats
+              label: Lats (latissimus dorsi and teres major)
+            - value: trapsupper
+              label: Upper traps
+            - value: trapsmiddle
+              label: Middle traps
+            - value: trapslower
+              label: Lower traps
+            - value: rhomboids
+              label: Rhomboids
+            - value: erectors
+              label: Spinal erectors
+            - value: bicepsbrachii
+              label: Biceps
+            - value: brachialis
+              label: Brachialis
+            - value: brachioradialis
+              label: Brachioradialis
+            - value: forearmflexors
+              label: Forearm flexors (grip)
+            - value: forearmextensors
+              label: Forearm extensors
+            - value: tricepslong
+              label: Triceps, long head
+            - value: tricepslateral
+              label: Triceps, lateral and medial heads
+            - value: rectusabdominis
+              label: Rectus abdominis
+            - value: obliques
+              label: Obliques
+            - value: transverseabdominis
+              label: Transverse abdominis
+            - value: iliopsoas
+              label: Hip flexors (iliopsoas)
+            - value: glutemax
+              label: Glute max
+            - value: glutemed
+              label: Glute med and min (hip abductors)
+            - value: adductors
+              label: Adductors
+            - value: rectusfemoris
+              label: Rectus femoris
+            - value: vasti
+              label: Vasti (outer, inner and middle quads)
+            - value: hamstrings
+              label: Hamstrings
+            - value: gastrocnemius
+              label: Gastrocnemius
+            - value: soleus
+              label: Soleus
+            - value: tibialis
+              label: Tibialis anterior
+            - value: neck
+              label: Neck
+        involvement:
+          type: decimal
+          required: true
+          min: 0
+          max: 1
+          description: the share of a set the muscle counts for, from 0 to
+            1, such as 1 for a prime mover and 0.5 for a synergist
+    primaryMuscles:
+      type: enum
+      repeated: true
+      description: the muscles it trains directly, each counting one set per
+        set done
+      values:
+        - value: abdominals
+          label: Abdominals
+        - value: abductors
+          label: Abductors
+        - value: adductors
+          label: Adductors
+        - value: biceps
+          label: Biceps
+        - value: calves
+          label: Calves
+        - value: cardio
+          label: Cardio
+        - value: chest
+          label: Chest
+        - value: forearms
+          label: Forearms
+        - value: fullbody
+          label: Full body
+        - value: glutes
+          label: Glutes
+        - value: hamstrings
+          label: Hamstrings
+        - value: lats
+          label: Lats
+        - value: lowerback
+          label: Lower back
+        - value: neck
+          label: Neck
+        - value: quadriceps
+          label: Quadriceps
+        - value: shoulders
+          label: Shoulders
+        - value: traps
+          label: Traps
+        - value: triceps
+          label: Triceps
+        - value: upperback
+          label: Upper back
+        - value: other
+          label: Other
+    secondaryMuscles:
+      type: enum
+      repeated: true
+      description: the muscles it trains indirectly, each counting half a
+        set per set done
+      values:
+        - value: abdominals
+          label: Abdominals
+        - value: abductors
+          label: Abductors
+        - value: adductors
+          label: Adductors
+        - value: biceps
+          label: Biceps
+        - value: calves
+          label: Calves
+        - value: cardio
+          label: Cardio
+        - value: chest
+          label: Chest
+        - value: forearms
+          label: Forearms
+        - value: fullbody
+          label: Full body
+        - value: glutes
+          label: Glutes
+        - value: hamstrings
+          label: Hamstrings
+        - value: lats
+          label: Lats
+        - value: lowerback
+          label: Lower back
+        - value: neck
+          label: Neck
+        - value: quadriceps
+          label: Quadriceps
+        - value: shoulders
+          label: Shoulders
+        - value: traps
+          label: Traps
+        - value: triceps
+          label: Triceps
+        - value: upperback
+          label: Upper back
+        - value: other
+          label: Other
+    codes:
+      type: object
+      repeated: true
+      description: the same exercise in other systems' code sets, which an
+        importer resolves it by
+      fields:
+        system:
+          type: string
+          required: true
+          description: the code system, a URI where it has one or a word such
+            as fit, hevy or strong
+        code:
+          type: string
+          required: true
+          description: the code in that system
+        version:
+          type: string
+          description: the code system's version, where it matters
+        display:
+          type: string
+          description: the code system's own name for it

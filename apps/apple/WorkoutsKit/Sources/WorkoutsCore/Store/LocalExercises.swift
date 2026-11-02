@@ -36,12 +36,20 @@ public struct LocalExercises: Sendable {
     /// Adds the exercise, or replaces the one with its id. Records this build
     /// cannot read are kept as they are.
     public func add(_ exercise: Exercise) throws {
+        try add(contentsOf: [exercise])
+    }
+
+    /// Adds the exercises, or replaces the ones with their ids, in one write:
+    /// an import's, all or none.
+    public func add(contentsOf exercises: [Exercise]) throws {
         var records = try records()
-        let record = codec.encode(exercise)
-        if let index = records.firstIndex(where: { $0.kind == record.kind && $0.id == record.id }) {
-            records[index] = record
-        } else {
-            records.append(record)
+        for exercise in exercises {
+            let record = codec.encode(exercise)
+            if let index = records.firstIndex(where: { $0.kind == record.kind && $0.id == record.id }) {
+                records[index] = record
+            } else {
+                records.append(record)
+            }
         }
         let file = RecordFile(format: 1, records: records)
         try WorkoutsFiles.write(file.json.data(), to: url, options: writingOptions)

@@ -1,0 +1,44 @@
+{
+  "workouts": [
+    {
+      "id": "w-1",
+      "title": "Push Day",
+      "routine_id": "r-1",
+      "description": "Felt good",
+      "start_time": "2026-10-30T13:43:00+00:00",
+      "end_time": "2026-10-30T14:30:20+00:00",
+      "exercises": [
+        {"index": 0, "title": "Chest Press (Machine)", "notes": null, "exercise_template_id": "7EB3F7C3", "superset_id": 0,
+         "sets": [{"index": 0, "type": "warmup", "weight_kg": 25, "reps": 15, "distance_meters": null, "duration_seconds": null, "rpe": null},
+                  {"index": 1, "type": "normal", "weight_kg": 3.757, "reps": 7, "distance_meters": null, "duration_seconds": null, "rpe": 8.5}]},
+        {"index": 1, "title": "Lat Pulldown (Cable)", "notes": null, "exercise_template_id": "6A6C31A5", "superset_id": 0,
+         "sets": [{"index": 0, "type": "normal", "weight_kg": 40, "reps": 12, "distance_meters": null, "duration_seconds": null, "rpe": null}]},
+        {"index": 2, "title": "My Stretch", "notes": "slow", "exercise_template_id": "11111111-2222-3333-4444-555555555555", "superset_id": null,
+         "sets": [{"index": 0, "type": "normal", "weight_kg": null, "reps": 10, "distance_meters": null, "duration_seconds": null, "rpe": null}]}
+      ]
+    }
+  ],
+  "routines": [
+    {
+      "id": "r-1",
+      "title": "Push Day",
+      "folder_id": 7,
+      "exercises": [
+        {"index": 0, "title": "Chest Press (Machine)", "notes": "Pause at the chest", "exercise_template_id": "7EB3F7C3", "superset_id": 0, "rest_seconds": 90,
+         "sets": [{"index": 0, "type": "warmup", "weight_kg": 25, "reps": 15, "distance_meters": null, "duration_seconds": null},
+                  {"index": 1, "type": "normal", "weight_kg": 50, "reps": 8, "distance_meters": null, "duration_seconds": null},
+                  {"index": 2, "type": "failure", "weight_kg": 50, "reps": 8, "distance_meters": null, "duration_seconds": null},
+                  {"index": 3, "type": "dropset", "weight_kg": 35, "reps": 10, "distance_meters": null, "duration_seconds": null}]},
+        {"index": 1, "title": "Lat Pulldown (Cable)", "notes": null, "exercise_template_id": "6A6C31A5", "superset_id": 0, "rest_seconds": 0,
+         "sets": [{"index": 0, "type": "normal", "weight_kg": 40, "reps": 12, "distance_meters": null, "duration_seconds": null}]},
+        {"index": 2, "title": "Plank", "notes": null, "exercise_template_id": "C6C9B8A0", "superset_id": null, "rest_seconds": 60,
+         "sets": [{"index": 0, "type": "normal", "weight_kg": null, "reps": null, "distance_meters": null, "duration_seconds": 45}]}
+      ]
+    }
+  ],
+  "folders": [{"id": 7, "index": 0, "title": "Strength"}],
+  "templates": {
+    "11111111-2222-3333-4444-555555555555": {"id": "11111111-2222-3333-4444-555555555555", "title": "My Stretch", "type": "reps_only",
+      "primary_muscle_group": "lower_back", "secondary_muscle_groups": ["glutes"], "equipment": "none", "is_custom": true}
+  }
+}

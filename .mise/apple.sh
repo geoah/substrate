@@ -591,8 +591,10 @@ build:workouts)
 	;;
 test:workouts)
 	# WorkoutsKit is a Swift package too: the model, both engines and the
-	# sync, on the Mac. The package's manifests and their JSON must agree.
+	# sync, on the Mac. The package's manifests and their JSON must agree,
+	# and so must the exercise library and its sources.
 	uv run --quiet --with pyyaml scripts/workouts-package.py --check
+	uv run --quiet --with pyyaml scripts/exercise-library.py --check
 	swift test --package-path WorkoutsKit
 	;;
 test:kit)

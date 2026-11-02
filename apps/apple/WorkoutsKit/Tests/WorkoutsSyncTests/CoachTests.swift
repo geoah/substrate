@@ -101,16 +101,16 @@ struct CoachTests {
     @Test("without an approval, or before training is current, nothing is written")
     func waits() async throws {
         let s = server()
-        #expect(try await installer(s, approval: nil).ensure(training: .current(held: 2)) == .notApproved)
+        #expect(try await installer(s, approval: nil).ensure(training: .current(held: 3)) == .notApproved)
         #expect(try await installer(s, approval: approval).ensure(training: .behind(held: 1)) == .waitingForTraining)
-        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 1)) == .waitingForTraining)
+        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 2)) == .waitingForTraining)
         #expect(!s.methodsAndPaths.contains { $0.hasPrefix("POST") })
     }
 
     @Test("a first install declares the coach on a keyed, priced model, reading only kinds the server holds")
     func firstInstall() async throws {
         let s = server()
-        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 2)) == .applied)
+        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 3)) == .applied)
         let data = try #require(applied(s))
         #expect(data["provider"] == .string("anthropic") && data["model"] == .string("claude-sonnet-5-5"))
         guard case let .object(perms)? = data["permissions"], case let .object(reads)? = perms["reads"],
@@ -147,18 +147,18 @@ struct CoachTests {
     @Test("an unchanged coach is not applied again, and a newer app's is left alone")
     func update() async throws {
         let first = server()
-        _ = try await installer(first, approval: approval).ensure(training: .current(held: 2))
+        _ = try await installer(first, approval: approval).ensure(training: .current(held: 3))
         let stored = try #require(applied(first))
         let row = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.object(["properties": .object(stored), "version": .number(3)])), as: UTF8.self)
         let again = server(agent: row)
-        #expect(try await installer(again, approval: approval).ensure(training: .current(held: 2)) == .current)
+        #expect(try await installer(again, approval: approval).ensure(training: .current(held: 3)) == .current)
         #expect(!again.methodsAndPaths.contains { $0.hasPrefix("POST") })
 
         var newer = stored
         newer["prompt"] = .string("Workout coach instructions, revision 999.\n\nlater")
         let newerRow = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.object(["properties": .object(newer)])), as: UTF8.self)
         let n = server(agent: newerRow)
-        #expect(try await installer(n, approval: approval).ensure(training: .current(held: 2)) == .newer(revision: 999))
+        #expect(try await installer(n, approval: approval).ensure(training: .current(held: 3)) == .newer(revision: 999))
         #expect(!n.methodsAndPaths.contains { $0.hasPrefix("POST") })
     }
 
@@ -171,7 +171,7 @@ struct CoachTests {
         ]
         let row = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.object(["properties": .object(props)])), as: UTF8.self)
         let s = server(agent: row)
-        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 2)) == .applied)
+        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 3)) == .applied)
         let data = try #require(applied(s))
         // The owner cannot choose the model, so the stored one is only an
         // older build's pick; this build's preference wins where it is priced.
@@ -188,7 +188,7 @@ struct CoachTests {
         ]
         let row = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.object(["properties": .object(props)])), as: UTF8.self)
         let s = server(agent: row)
-        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 2)) == .applied)
+        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 3)) == .applied)
         let data = try #require(applied(s))
         #expect(data["provider"] == .string("anthropic") && data["model"] == .string("claude-sonnet-5-5"))
     }
@@ -196,7 +196,7 @@ struct CoachTests {
     @Test("a refused apply is a state, not an error")
     func refused() async throws {
         let s = server(applyStatus: 403)
-        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 2)) == .refused("managed by the owner now"))
+        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 3)) == .refused("managed by the owner now"))
     }
 
     @Test("a coach package the owner took over is left alone, with no apply")
@@ -204,7 +204,7 @@ struct CoachTests {
         let s = server(packageRow: #"{"id":"ada.example.com/trainingcoach","kind":"substrate.reamde.dev/core/package","properties":{"declaredBy":"console","takenOverFrom":"https://workouts.example.org/client.json"},"version":2}"#)
         let i = CoachInstaller(api: api(s, authority: home), manifest: try CoachManifest.bundled(), approval: approval,
                                clientID: "https://workouts.example.org/client.json")
-        #expect(try await i.ensure(training: .current(held: 2)) == .managedElsewhere(.owner(takenOverFrom: "https://workouts.example.org/client.json")))
+        #expect(try await i.ensure(training: .current(held: 3)) == .managedElsewhere(.owner(takenOverFrom: "https://workouts.example.org/client.json")))
         #expect(!s.methodsAndPaths.contains { $0.hasPrefix("POST") })
     }
 
@@ -251,11 +251,11 @@ extension CoachTests {
         // A stored Sonnet on the unkeyed-but-priced openai row would rank
         // last (gpt-5 ranks 2, the anthropic row's Sonnet 0), so it moves.
         let worse = server(agent: try stored(provider: "openai", model: "gpt-5"))
-        #expect(try await installer(worse, approval: approval).ensure(training: .current(held: 2)) == .applied)
+        #expect(try await installer(worse, approval: approval).ensure(training: .current(held: 3)) == .applied)
         #expect(try #require(applied(worse))["model"] == .string("claude-sonnet-5-5"))
         // The same rank stands, so devices on different builds settle.
         let equal = server(agent: try stored(provider: "anthropic", model: "claude-sonnet-5-5"))
-        _ = try await installer(equal, approval: approval).ensure(training: .current(held: 2))
+        _ = try await installer(equal, approval: approval).ensure(training: .current(held: 3))
         if let data = applied(equal) { #expect(data["model"] == .string("claude-sonnet-5-5") && data["provider"] == .string("anthropic")) }
     }
 }

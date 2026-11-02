@@ -81,11 +81,8 @@ public enum Counting {
         var result: [Muscle: Decimal] = [:]
         for set in sets where set.role == .working && set.continues == nil {
             guard let exercise = exercises[set.exercise] else { continue }
-            for muscle in exercise.primaryMuscles {
-                result[muscle, default: 0] += 1
-            }
-            for muscle in exercise.secondaryMuscles {
-                result[muscle, default: 0] += Decimal(string: "0.5")!
+            for (muscle, share) in exercise.groupShares {
+                result[muscle, default: 0] += share
             }
         }
         return result

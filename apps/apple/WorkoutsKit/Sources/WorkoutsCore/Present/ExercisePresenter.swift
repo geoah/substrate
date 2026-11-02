@@ -176,7 +176,28 @@ public enum ExercisePresenter {
     public static func list(_ exercises: [ExerciseID: Exercise], history: HistoryIndex, query: String = "",
                             settings: PresenterSettings) -> [ExerciseSection]
     {
-        let rows = exercises.values.filter { ExerciseSearch.matches($0, query: query) }
+        sections(exercises.values.filter { ExerciseSearch.matches($0, query: query) }, history: history, settings: settings)
+    }
+
+    /// The Exercises tab: with no query, the owner's own exercises (done at
+    /// least once, in a routine, or not from the exercise library), since a
+    /// seeded library holds hundreds nobody has done; a query searches them
+    /// all.
+    public static func owned(_ exercises: [ExerciseID: Exercise], routines: [RoutineID: Routine], history: HistoryIndex, query: String = "",
+                             settings: PresenterSettings) -> [ExerciseSection]
+    {
+        guard query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return list(exercises, history: history, query: query, settings: settings)
+        }
+        let done = history.exercises
+        let planned = Set(routines.values.flatMap { $0.slots.map(\.exercise) })
+        return sections(exercises.values.filter { exercise in
+            done.contains(exercise.id) || planned.contains(exercise.id) || !exercise.isFromLibrary
+        }, history: history, settings: settings)
+    }
+
+    private static func sections(_ exercises: [Exercise], history: HistoryIndex, settings: PresenterSettings) -> [ExerciseSection] {
+        let rows = exercises
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             .map { row($0, history: history, settings: settings) }
         var sections: [ExerciseSection] = []
@@ -224,13 +245,22 @@ public enum ExercisePresenter {
         if let equipment = exercise.equipmentText { facts.append(LabelledValue("Equipment", equipment)) }
         facts.append(LabelledValue("Records", exercise.measurement.label))
         if exercise.resolvedLaterality != .bilateral { facts.append(LabelledValue("Sides", exercise.resolvedLaterality.label)) }
-        let primary = exercise.primaryMuscles.map(\.label).joined(separator: ", ")
-        let secondary = exercise.secondaryMuscles.map(\.label).joined(separator: ", ")
-        switch (primary.isEmpty, secondary.isEmpty) {
-        case (false, false): facts.append(LabelledValue("Muscles", "\(primary); also \(secondary)"))
-        case (false, true): facts.append(LabelledValue("Muscles", primary))
-        case (true, false): facts.append(LabelledValue("Muscles", "Also \(secondary)"))
-        case (true, true): break
+        let shares = exercise.muscles.compactMap { share in share.muscle.map { ($0, share.involvement) } }
+            .sorted { $0.1 > $1.1 }
+        if !shares.isEmpty {
+            // Each muscle on a line of its own with its share, largest first.
+            facts.append(LabelledValue("Muscles", shares.map { muscle, share in
+                "\(muscle.label) \(Format.number(share * 100, decimals: 0))%"
+            }.joined(separator: "\n")))
+        } else {
+            let primary = exercise.primaryMuscles.map(\.label).joined(separator: ", ")
+            let secondary = exercise.secondaryMuscles.map(\.label).joined(separator: ", ")
+            switch (primary.isEmpty, secondary.isEmpty) {
+            case (false, false): facts.append(LabelledValue("Muscles", "\(primary); also \(secondary)"))
+            case (false, true): facts.append(LabelledValue("Muscles", primary))
+            case (true, false): facts.append(LabelledValue("Muscles", "Also \(secondary)"))
+            case (true, true): break
+            }
         }
         if let fact = loadSteps(config) { facts.append(fact) }
         let sessions = sessionsWith(exercise.id, history: history)

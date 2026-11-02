@@ -28,6 +28,12 @@ public struct ExerciseID: StringID {
     public init(rawValue: String) { self.rawValue = rawValue }
 }
 
+/// A movement's id, the name slugged: `chest-press`.
+public struct MovementID: StringID {
+    public var rawValue: String
+    public init(rawValue: String) { self.rawValue = rawValue }
+}
+
 /// A routine's id, a slug the writer chooses: `fully-body-collection-1`.
 public struct RoutineID: StringID {
     public var rawValue: String

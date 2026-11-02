@@ -611,6 +611,34 @@ Two more, from the owner's first sessions with #1110's build, besides closing O1
   percentages, tempo, side settings, deload and the Health activity type, and the routine's
   place in its folder; each is kept as it is.
 
+## Movements and the exercise library (owner)
+
+### L1. Movements group exercises, and the app seeds an exercise library into its package
+
+- **Decided by** the owner, 2026-11-02: "one chest press" to switch between machine, cable and
+  dumbbells "just to simplify search and visualizations", the library "in substrate, under the
+  workouts app's authority … so the app controls/seeds it, and coach and console can read",
+  built from free-exercise-db and mapped from every Hevy exercise; the details by the lead.
+- **What:** a `movement` kind (package version 3) holds what a person searches for and the
+  muscles it works, each with a share of a set (34 muscles, each rolling up to one of Hevy's 20
+  groups; 1 a prime mover, 0.5 a synergist, as fractional counting has it). An exercise stays
+  one equipment version with its own history, load grid and measurement, and names its
+  movement; it counts from its movement's muscles unless it names its own. The app seeds
+  `Library/` (606 movements, 807 exercises) into the repository at the end of a sync.
+- **Why not one exercise with variants:** a machine stack, a cable and two dumbbells move loads
+  that never compare, so PREVIOUS, the suggestion and the e1RM stay per equipment; a movement
+  groups them for search and for counting without changing what a set names.
+- **Why seeded records, not a bundled list:** the coach and the console read records; a list
+  in the app would leave the coach inventing a second "Machine Chest Press" beside the owner's.
+- **Fill, never overwrite:** the server is the marker (the library's code, with the version a
+  record first appeared in), so a newer build writes only what appeared since and fills only
+  what a held record lacks; a record the owner deleted never comes back, on any phone. A
+  library correction to a value a repository already holds does not reach it, the price of
+  never writing over the owner.
+- **Muscles are ours:** the shares are this library's, informed by free-exercise-db's groups;
+  Hevy's own tags are not copied. A free-exercise-db entry no curated movement claims comes in
+  with its groups and no shares.
+
 ## Open questions
 
 ### Open since #1100

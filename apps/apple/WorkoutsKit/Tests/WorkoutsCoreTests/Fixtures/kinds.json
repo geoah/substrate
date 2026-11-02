@@ -2,6 +2,172 @@
   "source": "apps/apple/SubstrateWorkouts/Package",
   "kinds": [
     {
+      "kind": "~/training/movement",
+      "source": "movement.yaml",
+      "traits": [],
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "aliases",
+          "type": "string",
+          "repeated": true
+        },
+        {
+          "name": "force",
+          "type": "enum",
+          "values": [
+            "push",
+            "pull",
+            "static"
+          ]
+        },
+        {
+          "name": "mechanic",
+          "type": "enum",
+          "values": [
+            "compound",
+            "isolation"
+          ]
+        },
+        {
+          "name": "muscles",
+          "type": "object",
+          "repeated": true,
+          "fields": [
+            {
+              "name": "muscle",
+              "type": "enum",
+              "required": true,
+              "values": [
+                "pecclavicular",
+                "pecsternal",
+                "serratus",
+                "deltfront",
+                "deltside",
+                "deltrear",
+                "rotatorcuff",
+                "lats",
+                "trapsupper",
+                "trapsmiddle",
+                "trapslower",
+                "rhomboids",
+                "erectors",
+                "bicepsbrachii",
+                "brachialis",
+                "brachioradialis",
+                "forearmflexors",
+                "forearmextensors",
+                "tricepslong",
+                "tricepslateral",
+                "rectusabdominis",
+                "obliques",
+                "transverseabdominis",
+                "iliopsoas",
+                "glutemax",
+                "glutemed",
+                "adductors",
+                "rectusfemoris",
+                "vasti",
+                "hamstrings",
+                "gastrocnemius",
+                "soleus",
+                "tibialis",
+                "neck"
+              ]
+            },
+            {
+              "name": "involvement",
+              "type": "decimal",
+              "required": true
+            }
+          ]
+        },
+        {
+          "name": "primaryMuscles",
+          "type": "enum",
+          "repeated": true,
+          "values": [
+            "abdominals",
+            "abductors",
+            "adductors",
+            "biceps",
+            "calves",
+            "cardio",
+            "chest",
+            "forearms",
+            "fullbody",
+            "glutes",
+            "hamstrings",
+            "lats",
+            "lowerback",
+            "neck",
+            "quadriceps",
+            "shoulders",
+            "traps",
+            "triceps",
+            "upperback",
+            "other"
+          ]
+        },
+        {
+          "name": "secondaryMuscles",
+          "type": "enum",
+          "repeated": true,
+          "values": [
+            "abdominals",
+            "abductors",
+            "adductors",
+            "biceps",
+            "calves",
+            "cardio",
+            "chest",
+            "forearms",
+            "fullbody",
+            "glutes",
+            "hamstrings",
+            "lats",
+            "lowerback",
+            "neck",
+            "quadriceps",
+            "shoulders",
+            "traps",
+            "triceps",
+            "upperback",
+            "other"
+          ]
+        },
+        {
+          "name": "codes",
+          "type": "object",
+          "repeated": true,
+          "fields": [
+            {
+              "name": "system",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "code",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "display",
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "kind": "~/training/exercise",
       "source": "exercise.yaml",
       "traits": [],
@@ -126,6 +292,59 @@
           ]
         },
         {
+          "name": "muscles",
+          "type": "object",
+          "repeated": true,
+          "fields": [
+            {
+              "name": "muscle",
+              "type": "enum",
+              "required": true,
+              "values": [
+                "pecclavicular",
+                "pecsternal",
+                "serratus",
+                "deltfront",
+                "deltside",
+                "deltrear",
+                "rotatorcuff",
+                "lats",
+                "trapsupper",
+                "trapsmiddle",
+                "trapslower",
+                "rhomboids",
+                "erectors",
+                "bicepsbrachii",
+                "brachialis",
+                "brachioradialis",
+                "forearmflexors",
+                "forearmextensors",
+                "tricepslong",
+                "tricepslateral",
+                "rectusabdominis",
+                "obliques",
+                "transverseabdominis",
+                "iliopsoas",
+                "glutemax",
+                "glutemed",
+                "adductors",
+                "rectusfemoris",
+                "vasti",
+                "hamstrings",
+                "gastrocnemius",
+                "soleus",
+                "tibialis",
+                "neck"
+              ]
+            },
+            {
+              "name": "involvement",
+              "type": "decimal",
+              "required": true
+            }
+          ]
+        },
+        {
           "name": "restClass",
           "type": "enum",
           "values": [
@@ -142,6 +361,11 @@
           "name": "variationOf",
           "type": "reference",
           "kind": "~/training/exercise"
+        },
+        {
+          "name": "movement",
+          "type": "reference",
+          "kind": "~/training/movement"
         },
         {
           "name": "codes",

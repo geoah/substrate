@@ -75,6 +75,47 @@ public extension Muscle {
     }
 }
 
+public extension MuscleDetail {
+    var label: String {
+        switch self {
+        case .pecclavicular: "Chest, upper (clavicular pectoralis)"
+        case .pecsternal: "Chest, mid and lower (sternal pectoralis)"
+        case .serratus: "Serratus anterior"
+        case .deltfront: "Front delts"
+        case .deltside: "Side delts"
+        case .deltrear: "Rear delts"
+        case .rotatorcuff: "Rotator cuff"
+        case .lats: "Lats (latissimus dorsi and teres major)"
+        case .trapsupper: "Upper traps"
+        case .trapsmiddle: "Middle traps"
+        case .trapslower: "Lower traps"
+        case .rhomboids: "Rhomboids"
+        case .erectors: "Spinal erectors"
+        case .bicepsbrachii: "Biceps"
+        case .brachialis: "Brachialis"
+        case .brachioradialis: "Brachioradialis"
+        case .forearmflexors: "Forearm flexors (grip)"
+        case .forearmextensors: "Forearm extensors"
+        case .tricepslong: "Triceps, long head"
+        case .tricepslateral: "Triceps, lateral and medial heads"
+        case .rectusabdominis: "Rectus abdominis"
+        case .obliques: "Obliques"
+        case .transverseabdominis: "Transverse abdominis"
+        case .iliopsoas: "Hip flexors (iliopsoas)"
+        case .glutemax: "Glute max"
+        case .glutemed: "Glute med and min (hip abductors)"
+        case .adductors: "Adductors"
+        case .rectusfemoris: "Rectus femoris"
+        case .vasti: "Vasti (outer, inner and middle quads)"
+        case .hamstrings: "Hamstrings"
+        case .gastrocnemius: "Gastrocnemius"
+        case .soleus: "Soleus"
+        case .tibialis: "Tibialis anterior"
+        case .neck: "Neck"
+        }
+    }
+}
+
 public extension RestClass {
     /// The kind's label without its rest: `Heavy compound`.
     var label: String {

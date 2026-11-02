@@ -72,7 +72,7 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
         // Asked before the read too: an edit that lands while the list is on
         // the wire is in neither the list nor the queue asked after it.
         let before = await waiting()
-        let listed = try await api.list([kinds.exercise, kinds.setup, kinds.routine])
+        let listed = try await api.list([kinds.movement, kinds.exercise, kinds.setup, kinds.routine])
         let hidden = await hiding()
         let pending = before.merging(await waiting()) { _, after in after }
         let records = Self.overlay(listed.filter { !hidden.contains("\($0.kind)/\($0.id)") }, waiting: pending, kind: kinds.routine)
@@ -203,6 +203,7 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
                 case let .exercise(exercise): catalog.exercises[exercise.id] = exercise
                 case let .routine(routine): catalog.routines[routine.id] = routine
                 case let .setup(setup): catalog.setups[setup.id] = setup
+                case let .movement(movement): catalog.movements[movement.id] = movement
                 case .session, .set: continue
                 }
             } catch {
@@ -214,7 +215,10 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
 
     private func merged(_ base: Catalog) -> Catalog {
         var catalog = base
-        guard let localExercises else { return catalog }
+        guard let localExercises else {
+            catalog.resolveMovements()
+            return catalog
+        }
         do {
             let local = try localExercises.load()
             catalog.unreadable += local.unreadable
@@ -224,6 +228,7 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
         } catch {
             catalog.unreadable.append(UnreadableRecord(source: LocalExercises.fileName, reason: String(describing: error)))
         }
+        catalog.resolveMovements()
         return catalog
     }
 }

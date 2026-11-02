@@ -267,6 +267,103 @@ data:
           label: Upper back
         - value: other
           label: Other
+    # The muscles one by one, each with its share of the work, where
+    # primaryMuscles and secondaryMuscles name only Hevy's twenty lay groups
+    # at two fixed weights. A muscle belongs to one group (the app's
+    # `MuscleDetail.group`): a reader that knows only the groups rolls each
+    # entry up to its group, and a group counts the largest share among its
+    # muscles, so the triceps' two entries never make one set count twice.
+    # `involvement` is the share of a hard set the muscle is credited with:
+    # 1 for a prime mover, 0.5 for a synergist (the fractional rule the two
+    # lists encode), less for a muscle that only helps or steadies. Where
+    # this is present a reader counts from it; a writer that sets it keeps
+    # the two group lists in step, so older readers see the same groups.
+    muscles:
+      type: object
+      repeated: true
+      description: the muscles it works one by one, each with the share of
+        a set it counts for
+      fields:
+        muscle:
+          type: enum
+          required: true
+          description: the muscle
+          values:
+            - value: pecclavicular
+              label: Chest, upper (clavicular pectoralis)
+            - value: pecsternal
+              label: Chest, mid and lower (sternal pectoralis)
+            - value: serratus
+              label: Serratus anterior
+            - value: deltfront
+              label: Front delts
+            - value: deltside
+              label: Side delts
+            - value: deltrear
+              label: Rear delts
+            - value: rotatorcuff
+              label: Rotator cuff
+            - value: lats
+              label: Lats (latissimus dorsi and teres major)
+            - value: trapsupper
+              label: Upper traps
+            - value: trapsmiddle
+              label: Middle traps
+            - value: trapslower
+              label: Lower traps
+            - value: rhomboids
+              label: Rhomboids
+            - value: erectors
+              label: Spinal erectors
+            - value: bicepsbrachii
+              label: Biceps
+            - value: brachialis
+              label: Brachialis
+            - value: brachioradialis
+              label: Brachioradialis
+            - value: forearmflexors
+              label: Forearm flexors (grip)
+            - value: forearmextensors
+              label: Forearm extensors
+            - value: tricepslong
+              label: Triceps, long head
+            - value: tricepslateral
+              label: Triceps, lateral and medial heads
+            - value: rectusabdominis
+              label: Rectus abdominis
+            - value: obliques
+              label: Obliques
+            - value: transverseabdominis
+              label: Transverse abdominis
+            - value: iliopsoas
+              label: Hip flexors (iliopsoas)
+            - value: glutemax
+              label: Glute max
+            - value: glutemed
+              label: Glute med and min (hip abductors)
+            - value: adductors
+              label: Adductors
+            - value: rectusfemoris
+              label: Rectus femoris
+            - value: vasti
+              label: Vasti (outer, inner and middle quads)
+            - value: hamstrings
+              label: Hamstrings
+            - value: gastrocnemius
+              label: Gastrocnemius
+            - value: soleus
+              label: Soleus
+            - value: tibialis
+              label: Tibialis anterior
+            - value: neck
+              label: Neck
+        involvement:
+          type: decimal
+          required: true
+          min: 0
+          max: 1
+          description: the share of a set the muscle counts for, from 0 to
+            1, such as 1 for a prime mover and 0.5 for a synergist
     # The rest classes, which pick the default rest between sets
     # when a routine names none. A routine slot's own rest always wins.
     restClass:
@@ -296,6 +393,14 @@ data:
       kind: ~/training/exercise
       description: the exercise this one is a variation of, such as the flat
         press for an incline press
+    # The movement it is the equipment version of (`movement.yaml`). No
+    # mustExist: an exercise outlives a movement the owner deletes, as a set
+    # outlives its setup, and keeps its own muscles where it names any.
+    movement:
+      type: reference
+      kind: ~/training/movement
+      description: the movement it is a version of, such as Chest Press for
+        Chest Press (Machine)
     # The same fields, names and types as
     # substrate.reamde.dev/observations/metric.codes, with `system` and
     # `code` required: a coding without both resolves nothing. `system` is a

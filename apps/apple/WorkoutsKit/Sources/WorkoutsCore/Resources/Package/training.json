@@ -1,6 +1,6 @@
 {
   "package": "~/training",
-  "version": 2,
+  "version": 3,
   "documents": [
     {
       "kind": "substrate.reamde.dev/core/package",
@@ -10,7 +10,7 @@
       "data": {
         "authority": "~",
         "package": "training",
-        "version": 2
+        "version": 3
       }
     },
     {
@@ -26,6 +26,7 @@
           "substrate.reamde.dev/health"
         ],
         "installs": [
+          "~/training/movement",
           "~/training/exercise",
           "~/training/setup",
           "~/training/routine",
@@ -33,6 +34,426 @@
           "~/training/set",
           "~/training/memory"
         ]
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/kind",
+      "metadata": {
+        "id": "~/training/movement"
+      },
+      "data": {
+        "authority": "~",
+        "package": "training",
+        "description": "A movement such as Chest Press: what you search for, the muscles it works and how much. Its exercises are the equipment versions, each with its own history.",
+        "purpose": "supporting",
+        "names": {
+          "singular": "movement"
+        },
+        "label": {
+          "singular": "Movement",
+          "plural": "Movements"
+        },
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "description": "the movement's name as the owner reads it, such as Chest Press"
+          },
+          "aliases": {
+            "type": "string",
+            "repeated": true,
+            "description": "other names it goes by, for search"
+          },
+          "force": {
+            "type": "enum",
+            "description": "whether the muscles push the load away, pull it in, or hold it still",
+            "values": [
+              {
+                "value": "push",
+                "label": "Push"
+              },
+              {
+                "value": "pull",
+                "label": "Pull"
+              },
+              {
+                "value": "static",
+                "label": "Static hold"
+              }
+            ]
+          },
+          "mechanic": {
+            "type": "enum",
+            "description": "whether it moves several joints or one",
+            "values": [
+              {
+                "value": "compound",
+                "label": "Compound (several joints)"
+              },
+              {
+                "value": "isolation",
+                "label": "Isolation (one joint)"
+              }
+            ]
+          },
+          "muscles": {
+            "type": "object",
+            "repeated": true,
+            "description": "the muscles it works one by one, each with the share of a set it counts for",
+            "fields": {
+              "muscle": {
+                "type": "enum",
+                "required": true,
+                "description": "the muscle",
+                "values": [
+                  {
+                    "value": "pecclavicular",
+                    "label": "Chest, upper (clavicular pectoralis)"
+                  },
+                  {
+                    "value": "pecsternal",
+                    "label": "Chest, mid and lower (sternal pectoralis)"
+                  },
+                  {
+                    "value": "serratus",
+                    "label": "Serratus anterior"
+                  },
+                  {
+                    "value": "deltfront",
+                    "label": "Front delts"
+                  },
+                  {
+                    "value": "deltside",
+                    "label": "Side delts"
+                  },
+                  {
+                    "value": "deltrear",
+                    "label": "Rear delts"
+                  },
+                  {
+                    "value": "rotatorcuff",
+                    "label": "Rotator cuff"
+                  },
+                  {
+                    "value": "lats",
+                    "label": "Lats (latissimus dorsi and teres major)"
+                  },
+                  {
+                    "value": "trapsupper",
+                    "label": "Upper traps"
+                  },
+                  {
+                    "value": "trapsmiddle",
+                    "label": "Middle traps"
+                  },
+                  {
+                    "value": "trapslower",
+                    "label": "Lower traps"
+                  },
+                  {
+                    "value": "rhomboids",
+                    "label": "Rhomboids"
+                  },
+                  {
+                    "value": "erectors",
+                    "label": "Spinal erectors"
+                  },
+                  {
+                    "value": "bicepsbrachii",
+                    "label": "Biceps"
+                  },
+                  {
+                    "value": "brachialis",
+                    "label": "Brachialis"
+                  },
+                  {
+                    "value": "brachioradialis",
+                    "label": "Brachioradialis"
+                  },
+                  {
+                    "value": "forearmflexors",
+                    "label": "Forearm flexors (grip)"
+                  },
+                  {
+                    "value": "forearmextensors",
+                    "label": "Forearm extensors"
+                  },
+                  {
+                    "value": "tricepslong",
+                    "label": "Triceps, long head"
+                  },
+                  {
+                    "value": "tricepslateral",
+                    "label": "Triceps, lateral and medial heads"
+                  },
+                  {
+                    "value": "rectusabdominis",
+                    "label": "Rectus abdominis"
+                  },
+                  {
+                    "value": "obliques",
+                    "label": "Obliques"
+                  },
+                  {
+                    "value": "transverseabdominis",
+                    "label": "Transverse abdominis"
+                  },
+                  {
+                    "value": "iliopsoas",
+                    "label": "Hip flexors (iliopsoas)"
+                  },
+                  {
+                    "value": "glutemax",
+                    "label": "Glute max"
+                  },
+                  {
+                    "value": "glutemed",
+                    "label": "Glute med and min (hip abductors)"
+                  },
+                  {
+                    "value": "adductors",
+                    "label": "Adductors"
+                  },
+                  {
+                    "value": "rectusfemoris",
+                    "label": "Rectus femoris"
+                  },
+                  {
+                    "value": "vasti",
+                    "label": "Vasti (outer, inner and middle quads)"
+                  },
+                  {
+                    "value": "hamstrings",
+                    "label": "Hamstrings"
+                  },
+                  {
+                    "value": "gastrocnemius",
+                    "label": "Gastrocnemius"
+                  },
+                  {
+                    "value": "soleus",
+                    "label": "Soleus"
+                  },
+                  {
+                    "value": "tibialis",
+                    "label": "Tibialis anterior"
+                  },
+                  {
+                    "value": "neck",
+                    "label": "Neck"
+                  }
+                ]
+              },
+              "involvement": {
+                "type": "decimal",
+                "required": true,
+                "min": 0,
+                "max": 1,
+                "description": "the share of a set the muscle counts for, from 0 to 1, such as 1 for a prime mover and 0.5 for a synergist"
+              }
+            }
+          },
+          "primaryMuscles": {
+            "type": "enum",
+            "repeated": true,
+            "description": "the muscles it trains directly, each counting one set per set done",
+            "values": [
+              {
+                "value": "abdominals",
+                "label": "Abdominals"
+              },
+              {
+                "value": "abductors",
+                "label": "Abductors"
+              },
+              {
+                "value": "adductors",
+                "label": "Adductors"
+              },
+              {
+                "value": "biceps",
+                "label": "Biceps"
+              },
+              {
+                "value": "calves",
+                "label": "Calves"
+              },
+              {
+                "value": "cardio",
+                "label": "Cardio"
+              },
+              {
+                "value": "chest",
+                "label": "Chest"
+              },
+              {
+                "value": "forearms",
+                "label": "Forearms"
+              },
+              {
+                "value": "fullbody",
+                "label": "Full body"
+              },
+              {
+                "value": "glutes",
+                "label": "Glutes"
+              },
+              {
+                "value": "hamstrings",
+                "label": "Hamstrings"
+              },
+              {
+                "value": "lats",
+                "label": "Lats"
+              },
+              {
+                "value": "lowerback",
+                "label": "Lower back"
+              },
+              {
+                "value": "neck",
+                "label": "Neck"
+              },
+              {
+                "value": "quadriceps",
+                "label": "Quadriceps"
+              },
+              {
+                "value": "shoulders",
+                "label": "Shoulders"
+              },
+              {
+                "value": "traps",
+                "label": "Traps"
+              },
+              {
+                "value": "triceps",
+                "label": "Triceps"
+              },
+              {
+                "value": "upperback",
+                "label": "Upper back"
+              },
+              {
+                "value": "other",
+                "label": "Other"
+              }
+            ]
+          },
+          "secondaryMuscles": {
+            "type": "enum",
+            "repeated": true,
+            "description": "the muscles it trains indirectly, each counting half a set per set done",
+            "values": [
+              {
+                "value": "abdominals",
+                "label": "Abdominals"
+              },
+              {
+                "value": "abductors",
+                "label": "Abductors"
+              },
+              {
+                "value": "adductors",
+                "label": "Adductors"
+              },
+              {
+                "value": "biceps",
+                "label": "Biceps"
+              },
+              {
+                "value": "calves",
+                "label": "Calves"
+              },
+              {
+                "value": "cardio",
+                "label": "Cardio"
+              },
+              {
+                "value": "chest",
+                "label": "Chest"
+              },
+              {
+                "value": "forearms",
+                "label": "Forearms"
+              },
+              {
+                "value": "fullbody",
+                "label": "Full body"
+              },
+              {
+                "value": "glutes",
+                "label": "Glutes"
+              },
+              {
+                "value": "hamstrings",
+                "label": "Hamstrings"
+              },
+              {
+                "value": "lats",
+                "label": "Lats"
+              },
+              {
+                "value": "lowerback",
+                "label": "Lower back"
+              },
+              {
+                "value": "neck",
+                "label": "Neck"
+              },
+              {
+                "value": "quadriceps",
+                "label": "Quadriceps"
+              },
+              {
+                "value": "shoulders",
+                "label": "Shoulders"
+              },
+              {
+                "value": "traps",
+                "label": "Traps"
+              },
+              {
+                "value": "triceps",
+                "label": "Triceps"
+              },
+              {
+                "value": "upperback",
+                "label": "Upper back"
+              },
+              {
+                "value": "other",
+                "label": "Other"
+              }
+            ]
+          },
+          "codes": {
+            "type": "object",
+            "repeated": true,
+            "description": "the same exercise in other systems' code sets, which an importer resolves it by",
+            "fields": {
+              "system": {
+                "type": "string",
+                "required": true,
+                "description": "the code system, a URI where it has one or a word such as fit, hevy or strong"
+              },
+              "code": {
+                "type": "string",
+                "required": true,
+                "description": "the code in that system"
+              },
+              "version": {
+                "type": "string",
+                "description": "the code system's version, where it matters"
+              },
+              "display": {
+                "type": "string",
+                "description": "the code system's own name for it"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -368,6 +789,163 @@
               }
             ]
           },
+          "muscles": {
+            "type": "object",
+            "repeated": true,
+            "description": "the muscles it works one by one, each with the share of a set it counts for",
+            "fields": {
+              "muscle": {
+                "type": "enum",
+                "required": true,
+                "description": "the muscle",
+                "values": [
+                  {
+                    "value": "pecclavicular",
+                    "label": "Chest, upper (clavicular pectoralis)"
+                  },
+                  {
+                    "value": "pecsternal",
+                    "label": "Chest, mid and lower (sternal pectoralis)"
+                  },
+                  {
+                    "value": "serratus",
+                    "label": "Serratus anterior"
+                  },
+                  {
+                    "value": "deltfront",
+                    "label": "Front delts"
+                  },
+                  {
+                    "value": "deltside",
+                    "label": "Side delts"
+                  },
+                  {
+                    "value": "deltrear",
+                    "label": "Rear delts"
+                  },
+                  {
+                    "value": "rotatorcuff",
+                    "label": "Rotator cuff"
+                  },
+                  {
+                    "value": "lats",
+                    "label": "Lats (latissimus dorsi and teres major)"
+                  },
+                  {
+                    "value": "trapsupper",
+                    "label": "Upper traps"
+                  },
+                  {
+                    "value": "trapsmiddle",
+                    "label": "Middle traps"
+                  },
+                  {
+                    "value": "trapslower",
+                    "label": "Lower traps"
+                  },
+                  {
+                    "value": "rhomboids",
+                    "label": "Rhomboids"
+                  },
+                  {
+                    "value": "erectors",
+                    "label": "Spinal erectors"
+                  },
+                  {
+                    "value": "bicepsbrachii",
+                    "label": "Biceps"
+                  },
+                  {
+                    "value": "brachialis",
+                    "label": "Brachialis"
+                  },
+                  {
+                    "value": "brachioradialis",
+                    "label": "Brachioradialis"
+                  },
+                  {
+                    "value": "forearmflexors",
+                    "label": "Forearm flexors (grip)"
+                  },
+                  {
+                    "value": "forearmextensors",
+                    "label": "Forearm extensors"
+                  },
+                  {
+                    "value": "tricepslong",
+                    "label": "Triceps, long head"
+                  },
+                  {
+                    "value": "tricepslateral",
+                    "label": "Triceps, lateral and medial heads"
+                  },
+                  {
+                    "value": "rectusabdominis",
+                    "label": "Rectus abdominis"
+                  },
+                  {
+                    "value": "obliques",
+                    "label": "Obliques"
+                  },
+                  {
+                    "value": "transverseabdominis",
+                    "label": "Transverse abdominis"
+                  },
+                  {
+                    "value": "iliopsoas",
+                    "label": "Hip flexors (iliopsoas)"
+                  },
+                  {
+                    "value": "glutemax",
+                    "label": "Glute max"
+                  },
+                  {
+                    "value": "glutemed",
+                    "label": "Glute med and min (hip abductors)"
+                  },
+                  {
+                    "value": "adductors",
+                    "label": "Adductors"
+                  },
+                  {
+                    "value": "rectusfemoris",
+                    "label": "Rectus femoris"
+                  },
+                  {
+                    "value": "vasti",
+                    "label": "Vasti (outer, inner and middle quads)"
+                  },
+                  {
+                    "value": "hamstrings",
+                    "label": "Hamstrings"
+                  },
+                  {
+                    "value": "gastrocnemius",
+                    "label": "Gastrocnemius"
+                  },
+                  {
+                    "value": "soleus",
+                    "label": "Soleus"
+                  },
+                  {
+                    "value": "tibialis",
+                    "label": "Tibialis anterior"
+                  },
+                  {
+                    "value": "neck",
+                    "label": "Neck"
+                  }
+                ]
+              },
+              "involvement": {
+                "type": "decimal",
+                "required": true,
+                "min": 0,
+                "max": 1,
+                "description": "the share of a set the muscle counts for, from 0 to 1, such as 1 for a prime mover and 0.5 for a synergist"
+              }
+            }
+          },
           "restClass": {
             "type": "enum",
             "description": "the class that picks its default rest between sets when the routine names none",
@@ -406,6 +984,11 @@
             "type": "reference",
             "kind": "~/training/exercise",
             "description": "the exercise this one is a variation of, such as the flat press for an incline press"
+          },
+          "movement": {
+            "type": "reference",
+            "kind": "~/training/movement",
+            "description": "the movement it is a version of, such as Chest Press for Chest Press (Machine)"
           },
           "codes": {
             "type": "object",

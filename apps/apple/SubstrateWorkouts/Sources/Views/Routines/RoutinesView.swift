@@ -11,7 +11,8 @@ struct RoutinesView: View {
     @Environment(AppModel.self) private var app
     @Environment(SubstrateLink.self) private var link
     @State private var signingIn = false
-    @State private var path: [RoutineID] = []
+    /// Untyped: the preview pushes exercises and sessions too.
+    @State private var path = NavigationPath()
     @State private var collapsed: Set<String> = []
     @State private var deleting: RoutineToDelete?
     @State private var editing: RoutineEditRequest?
@@ -30,6 +31,7 @@ struct RoutinesView: View {
                 .navigationDestination(for: RoutineID.self) { id in
                     RoutinePreview(routineID: id)
                 }
+                .statsDestinations()
                 .safeAreaInset(edge: .top) { banner }
                 .signInSheet(isPresented: $signingIn)
         }
