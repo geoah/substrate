@@ -127,7 +127,7 @@ The connect screen resolves what is typed:
    not a weaker proof.
 4. Send `login_hint=<repository>` to `/oauth/authorize` so the sign-in page
    fills the name, check the response's `iss` (RFC 9207, which the server
-   starts sending), and check that the token response's `repository` is the
+   already sends), and check that the token response's `repository` is the
    name resolved.
 
 Apple apps read TXT records with `DNSServiceQueryRecord`. The console needs
