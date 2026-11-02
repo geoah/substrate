@@ -10,7 +10,9 @@ import WorkoutsCore
 /// authorization request, approved by the owner through the approval API the
 /// console's page calls (which installs the health catalogue), the code
 /// exchanged with its PKCE verifier, then the app's own package declared,
-/// the starter routines copied, a finished session and its sets written
+/// the owner's edit to it refused and the package taken over, after which
+/// the app applies nothing and its records still go: the starter routines
+/// copied, a finished session and its sets written
 /// through the outbox, and all of it read back with the owner's token.
 ///
 ///     WORKOUTS_E2E_SERVER=http://localhost:18087 WORKOUTS_E2E_OWNER_TOKEN=… swift test --filter LiveServer
@@ -88,8 +90,10 @@ struct LiveServerTests {
         let upgrade = PackageInstaller(api: api, manifest: bumped(installer.manifest, to: shipped + 1), baselineDirectory: baseline)
         #expect(try await upgrade.ensure() == .current(held: shipped + 1))
 
-        // The owner adds a property to the set kind in the console: the
-        // app's next upgrade writes nothing over it (O1/O2).
+        // The owner's edit to the app's kinds is refused: the package is the
+        // app's (decision 0205). The owner takes it over instead, and the
+        // app's next check applies nothing and keeps writing records, which
+        // the rest of this path does.
         let ownerAPI = WorkoutsAPI(client: owner, authority: session.repository)
         var setKind = try #require(upgrade.manifest.documents(for: api.rehome).first { document in
             guard case let .object(object) = document, case let .object(metadata)? = object["metadata"] else { return false }
@@ -102,9 +106,19 @@ struct LiveServerTests {
             object["data"] = WorkoutsCore.JSONValue.object(data)
             setKind = WorkoutsCore.JSONValue.object(object)
         }
+        do {
+            try await ownerAPI.applyVocabulary([setKind])
+            Issue.record("the owner's edit to the app's kind landed")
+        } catch let error as ServerError {
+            #expect(error.status == 403 && error.message.contains("managed by"))
+        }
+        let packageID = KindNames.packageID(authority: session.repository)
+        let takeover: JSONObject = ["package": .string(packageID), "confirm": .string(packageID)]
+        _ = try await owner.send("POST", "api/v1/vocabulary/takeover", body: .json(encoder.encode(WorkoutsCore.JSONValue.object(takeover))))
+        let third = PackageInstaller(api: api, manifest: bumped(installer.manifest, to: shipped + 2), baselineDirectory: baseline,
+                                     clientID: manifest.clientID)
+        #expect(try await third.ensure() == .managedElsewhere(held: shipped + 1, by: .owner(takenOverFrom: manifest.clientID)))
         try await ownerAPI.applyVocabulary([setKind])
-        let third = PackageInstaller(api: api, manifest: bumped(installer.manifest, to: shipped + 2), baselineDirectory: baseline)
-        #expect(try await third.ensure() == .edited(held: shipped + 1, kinds: ["\(session.repository)/training/set"]))
 
         // Routines from the server, after the starter copy.
         let directory = temporaryDirectory()

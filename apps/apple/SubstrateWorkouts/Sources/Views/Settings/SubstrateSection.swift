@@ -87,6 +87,9 @@ struct SubstrateSection: View {
         case let .newer(held): "Version \(held), newer than this app"
         case let .edited(held, _): "Version \(held), changed outside this app"
         case let .refused(held, _): held.map { "Version \($0), update refused" } ?? "Install refused"
+        case let .managedElsewhere(held, .owner(takenOverFrom: .some)):
+            held.map { "Version \($0), taken over by you" } ?? "Taken over by you"
+        case let .managedElsewhere(held, _): held.map { "Version \($0), managed elsewhere" } ?? "Managed elsewhere"
         }
     }
 
