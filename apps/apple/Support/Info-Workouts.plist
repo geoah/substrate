@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Substrate Workouts</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Substrate Workouts</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>dev.reamde.substrate.workouts</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>substrate-workouts</string>
+			</array>
+		</dict>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.healthcare-fitness</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Substrate Workouts connects to the server you choose, which may be on your local network.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Substrate Workouts saves each finished training session to Apple Health as one strength workout.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Substrate Workouts reads your latest body mass to work out bodyweight and assisted sets.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~iphone</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>SubstrateVersion</key>
+	<string>$(SUBSTRATE_VERSION)</string>
+	<key>SubstrateChannel</key>
+	<string>$(SUBSTRATE_CHANNEL)</string>
+	<key>SubstrateCommit</key>
+	<string>$(SUBSTRATE_COMMIT)</string>
+	<key>SubstrateUpdates</key>
+	<string>$(SUBSTRATE_UPDATES_URL)</string>
+	<key>SubstrateWorkoutsClientID</key>
+	<string>$(SUBSTRATE_WORKOUTS_CLIENT_ID)</string>
+</dict>
+</plist>

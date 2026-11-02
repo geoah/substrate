@@ -1,0 +1,2673 @@
+{
+  "source": "research/workouts/substrate/examples/coverage.yaml",
+  "records": [
+    {
+      "kind": "~/training/exercise",
+      "id": "rowing-machine",
+      "properties": {
+        "name": "Rowing (Machine)",
+        "aliases": [
+          "Rower",
+          "Ergometer"
+        ],
+        "measurement": "distanceduration",
+        "equipment": "machine",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "cardio"
+        ],
+        "secondaryMuscles": [
+          "upperback",
+          "quadriceps"
+        ],
+        "restClass": "highrep",
+        "codes": [
+          {
+            "system": "healthconnect",
+            "code": "EXERCISE_SEGMENT_TYPE_ROWING_MACHINE"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "assisted-pull-up-machine",
+      "properties": {
+        "name": "Assisted Pull Up (Machine)",
+        "measurement": "bodyweightassistedreps",
+        "equipment": "machine",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "lats"
+        ],
+        "secondaryMuscles": [
+          "biceps",
+          "upperback"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "10",
+          "unit": "lb"
+        },
+        "loadMax": {
+          "value": "150",
+          "unit": "lb"
+        }
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "dip-weighted",
+      "properties": {
+        "name": "Chest Dip (Weighted)",
+        "aliases": [
+          "Weighted dip"
+        ],
+        "measurement": "weightedbodyweightreps",
+        "equipment": "plate",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "chest"
+        ],
+        "secondaryMuscles": [
+          "triceps",
+          "shoulders"
+        ],
+        "restClass": "compound",
+        "loadStep": {
+          "value": "2.5",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "farmers-carry-dumbbell",
+      "properties": {
+        "name": "Farmer's Carry (Dumbbell)",
+        "aliases": [
+          "Farmer's walk"
+        ],
+        "measurement": "shortdistanceweight",
+        "equipment": "dumbbell",
+        "laterality": "bilateral",
+        "loadBasis": "perimplement",
+        "implements": 2,
+        "primaryMuscles": [
+          "forearms"
+        ],
+        "secondaryMuscles": [
+          "traps",
+          "abdominals"
+        ],
+        "restClass": "carry",
+        "loadStep": {
+          "value": "2",
+          "unit": "kg"
+        },
+        "codes": [
+          {
+            "system": "fit",
+            "code": "carry/farmers_walk"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "side-plank",
+      "properties": {
+        "name": "Side Plank",
+        "measurement": "duration",
+        "equipment": "none",
+        "laterality": "unilateral",
+        "primaryMuscles": [
+          "abdominals"
+        ],
+        "restClass": "timed"
+      }
+    },
+    {
+      "kind": "~/training/exercise",
+      "id": "plank-weighted",
+      "properties": {
+        "name": "Plank (Weighted)",
+        "measurement": "weightduration",
+        "equipment": "plate",
+        "laterality": "bilateral",
+        "primaryMuscles": [
+          "abdominals"
+        ],
+        "restClass": "timed",
+        "variationOf": "~/training/exercise/plank",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/setup",
+      "id": "hotel-gym-chest-press",
+      "properties": {
+        "name": "Chest Press (Machine), hotel gym",
+        "exercise": "~/training/exercise/chest-press-machine",
+        "gym": "Hotel gym",
+        "loadBase": {
+          "value": "5",
+          "unit": "kg"
+        },
+        "loadStep": {
+          "value": "2.5",
+          "unit": "kg"
+        },
+        "loadMax": {
+          "value": "80",
+          "unit": "kg"
+        },
+        "notes": "Seat on 4."
+      }
+    },
+    {
+      "kind": "~/training/setup",
+      "id": "hotel-gym-leg-extension",
+      "properties": {
+        "name": "Leg Extension (Machine), hotel gym",
+        "exercise": "~/training/exercise/leg-extension-machine",
+        "gym": "Hotel gym",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/setup",
+      "id": "hotel-gym-seated-row",
+      "properties": {
+        "name": "Seated Row (Machine), hotel gym",
+        "exercise": "~/training/exercise/seated-row-machine",
+        "gym": "Hotel gym",
+        "loadStep": {
+          "value": "5",
+          "unit": "kg"
+        }
+      }
+    },
+    {
+      "kind": "~/training/setup",
+      "id": "old-gym-chest-press",
+      "properties": {
+        "name": "Chest Press (Machine), old gym",
+        "exercise": "~/training/exercise/chest-press-machine",
+        "gym": "Old gym"
+      }
+    },
+    {
+      "kind": "~/training/setup",
+      "id": "old-gym-seated-row",
+      "properties": {
+        "name": "Seated Row (Machine), old gym",
+        "exercise": "~/training/exercise/seated-row-machine",
+        "gym": "Old gym"
+      }
+    },
+    {
+      "kind": "~/training/routine",
+      "id": "coverage-every-method",
+      "properties": {
+        "name": "Coverage – every method",
+        "folder": "Workouts test vectors",
+        "position": 1,
+        "notes": "Test vectors for the methods the owner's routines do not use. Not a routine to train with.",
+        "activityType": "functionalstrengthtraining",
+        "groups": [
+          {
+            "key": "a",
+            "groupKind": "paired",
+            "pairing": "antagonist",
+            "rounds": 3,
+            "roundRest": "PT1M30S"
+          },
+          {
+            "key": "b",
+            "groupKind": "circuit",
+            "rounds": 2,
+            "roundRest": "PT1M"
+          }
+        ],
+        "slots": [
+          {
+            "key": "rowing",
+            "exercise": "~/training/exercise/rowing-machine",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "termination": "distance",
+                "distance": {
+                  "value": "500",
+                  "unit": "m"
+                }
+              }
+            ]
+          },
+          {
+            "key": "leg-press",
+            "exercise": "~/training/exercise/leg-press-machine",
+            "setRest": "PT2M30S",
+            "warmupRest": "PT1M",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "load": {
+                  "value": "40",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 12
+              },
+              {
+                "key": "s1",
+                "roleLabel": "top",
+                "load": {
+                  "value": "110",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 6,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "roleLabel": "backoff",
+                "dropPercent": "10",
+                "repsMin": 8,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "seated-leg-curl",
+            "exercise": "~/training/exercise/seated-leg-curl-machine",
+            "setRest": "PT1M30S",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "40",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "9",
+                "rpeMax": "9"
+              },
+              {
+                "key": "s2",
+                "structure": "myomatch",
+                "load": {
+                  "value": "40",
+                  "unit": "kg"
+                },
+                "intraSetPause": "PT10S"
+              }
+            ]
+          },
+          {
+            "key": "leg-extension",
+            "exercise": "~/training/exercise/leg-extension-machine",
+            "setRest": "PT1M30S",
+            "sets": [
+              {
+                "key": "s1",
+                "structure": "restpause",
+                "load": {
+                  "value": "45",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 12,
+                "rpeMin": "9.5",
+                "rpeMax": "9.5",
+                "miniSets": 2,
+                "intraSetPause": "PT20S"
+              }
+            ]
+          },
+          {
+            "key": "hip-thrust",
+            "exercise": "~/training/exercise/hip-thrust-barbell",
+            "setRest": "PT2M",
+            "sets": [
+              {
+                "key": "s1",
+                "structure": "cluster",
+                "load": {
+                  "value": "80",
+                  "unit": "kg"
+                },
+                "miniSetReps": 3,
+                "miniSets": 3,
+                "rirMin": "2",
+                "rirMax": "2",
+                "intraSetPause": "PT20S"
+              }
+            ]
+          },
+          {
+            "key": "pushdown",
+            "exercise": "~/training/exercise/triceps-rope-pushdown",
+            "setRest": "PT1M",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "9",
+                "rpeMax": "9"
+              },
+              {
+                "key": "s2",
+                "termination": "amrap",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 12
+              }
+            ]
+          },
+          {
+            "key": "pull-up",
+            "exercise": "~/training/exercise/assisted-pull-up-machine",
+            "group": "a",
+            "transition": "PT1M",
+            "sets": [
+              {
+                "key": "s1",
+                "assistance": {
+                  "value": "60",
+                  "unit": "lb"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "assistance": {
+                  "value": "60",
+                  "unit": "lb"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "assistance": {
+                  "value": "60",
+                  "unit": "lb"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "dip",
+            "exercise": "~/training/exercise/dip-weighted",
+            "group": "a",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "repsMin": 8,
+                "repsMax": 8
+              },
+              {
+                "key": "s1",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "termination": "failure",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 6
+              }
+            ]
+          },
+          {
+            "key": "carry",
+            "exercise": "~/training/exercise/farmers-carry-dumbbell",
+            "group": "b",
+            "transition": "PT30S",
+            "sets": [
+              {
+                "key": "s1",
+                "termination": "distance",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "distance": {
+                  "value": "40",
+                  "unit": "m"
+                }
+              },
+              {
+                "key": "s2",
+                "termination": "distance",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "distance": {
+                  "value": "40",
+                  "unit": "m"
+                }
+              }
+            ]
+          },
+          {
+            "key": "side-plank",
+            "exercise": "~/training/exercise/side-plank",
+            "group": "b",
+            "transition": "PT30S",
+            "sideSwitch": "PT10S",
+            "sideOrder": "left",
+            "sideMatch": true,
+            "sets": [
+              {
+                "key": "s1",
+                "durationMin": "PT30S",
+                "durationMax": "PT45S",
+                "timerMode": "stopwatch"
+              },
+              {
+                "key": "s2",
+                "durationMin": "PT30S",
+                "durationMax": "PT45S",
+                "timerMode": "stopwatch"
+              }
+            ]
+          },
+          {
+            "key": "weighted-plank",
+            "exercise": "~/training/exercise/plank-weighted",
+            "group": "b",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "durationMin": "PT45S",
+                "durationMax": "PT1M"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "durationMin": "PT45S",
+                "durationMax": "PT1M"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/session",
+      "id": "01a181f3-c900-74e4-b0e2-345e3defd3cf",
+      "properties": {
+        "name": "Coverage – every method, Wed 28 Oct 10:00",
+        "status": "finished",
+        "at": "2026-10-28T10:00:00Z",
+        "endsAt": "2026-10-28T10:56:03Z",
+        "utcOffsetStart": 0,
+        "utcOffsetEnd": 0,
+        "timezone": "Europe/London",
+        "routine": "~/training/routine/coverage-every-method",
+        "routineVersion": 1,
+        "activityType": "functionalstrengthtraining",
+        "sport": "strength",
+        "slots": [
+          {
+            "key": "rowing",
+            "exercise": "~/training/exercise/rowing-machine",
+            "routineSlot": "rowing",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "termination": "distance",
+                "distance": {
+                  "value": "500",
+                  "unit": "m"
+                }
+              }
+            ]
+          },
+          {
+            "key": "leg-press",
+            "exercise": "~/training/exercise/leg-press-machine",
+            "routineSlot": "leg-press",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "load": {
+                  "value": "40",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 12
+              },
+              {
+                "key": "s1",
+                "roleLabel": "top",
+                "load": {
+                  "value": "110",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 6,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "roleLabel": "backoff",
+                "dropPercent": "10",
+                "repsMin": 8,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "seated-leg-curl",
+            "exercise": "~/training/exercise/seated-leg-curl-machine",
+            "routineSlot": "seated-leg-curl",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "40",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "9",
+                "rpeMax": "9"
+              },
+              {
+                "key": "s2",
+                "structure": "myomatch",
+                "load": {
+                  "value": "40",
+                  "unit": "kg"
+                },
+                "intraSetPause": "PT10S"
+              }
+            ]
+          },
+          {
+            "key": "leg-extension",
+            "exercise": "~/training/exercise/leg-extension-machine",
+            "routineSlot": "leg-extension",
+            "sets": [
+              {
+                "key": "s1",
+                "structure": "restpause",
+                "load": {
+                  "value": "45",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 12,
+                "rpeMin": "9.5",
+                "rpeMax": "9.5",
+                "miniSets": 2,
+                "intraSetPause": "PT20S"
+              }
+            ]
+          },
+          {
+            "key": "hip-thrust",
+            "exercise": "~/training/exercise/hip-thrust-barbell",
+            "routineSlot": "hip-thrust",
+            "sets": [
+              {
+                "key": "s1",
+                "structure": "cluster",
+                "load": {
+                  "value": "80",
+                  "unit": "kg"
+                },
+                "miniSetReps": 3,
+                "miniSets": 3,
+                "rirMin": "2",
+                "rirMax": "2",
+                "intraSetPause": "PT20S"
+              }
+            ]
+          },
+          {
+            "key": "triceps-pushdown",
+            "exercise": "~/training/exercise/triceps-pushdown",
+            "routineSlot": "pushdown",
+            "notes": "The rope was taken; the bar instead.",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "9",
+                "rpeMax": "9"
+              },
+              {
+                "key": "s2",
+                "termination": "amrap",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 12
+              }
+            ]
+          },
+          {
+            "key": "pull-up",
+            "exercise": "~/training/exercise/assisted-pull-up-machine",
+            "group": "a",
+            "routineSlot": "pull-up",
+            "sets": [
+              {
+                "key": "s1",
+                "assistance": {
+                  "value": "60",
+                  "unit": "lb"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "assistance": {
+                  "value": "60",
+                  "unit": "lb"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "assistance": {
+                  "value": "60",
+                  "unit": "lb"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "dip",
+            "exercise": "~/training/exercise/dip-weighted",
+            "group": "a",
+            "routineSlot": "dip",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "repsMin": 8,
+                "repsMax": 8
+              },
+              {
+                "key": "s1",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "termination": "failure",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 6
+              }
+            ]
+          },
+          {
+            "key": "carry",
+            "exercise": "~/training/exercise/farmers-carry-dumbbell",
+            "group": "b",
+            "routineSlot": "carry",
+            "sets": [
+              {
+                "key": "s1",
+                "termination": "distance",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "distance": {
+                  "value": "40",
+                  "unit": "m"
+                }
+              },
+              {
+                "key": "s2",
+                "termination": "distance",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "distance": {
+                  "value": "40",
+                  "unit": "m"
+                }
+              }
+            ]
+          },
+          {
+            "key": "side-plank",
+            "exercise": "~/training/exercise/side-plank",
+            "group": "b",
+            "routineSlot": "side-plank",
+            "sets": [
+              {
+                "key": "s1",
+                "durationMin": "PT30S",
+                "durationMax": "PT45S",
+                "timerMode": "stopwatch"
+              },
+              {
+                "key": "s2",
+                "durationMin": "PT30S",
+                "durationMax": "PT45S",
+                "timerMode": "stopwatch"
+              }
+            ]
+          },
+          {
+            "key": "weighted-plank",
+            "exercise": "~/training/exercise/plank-weighted",
+            "group": "b",
+            "routineSlot": "weighted-plank",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "durationMin": "PT45S",
+                "durationMax": "PT1M"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "durationMin": "PT45S",
+                "durationMax": "PT1M"
+              }
+            ]
+          }
+        ],
+        "groups": [
+          {
+            "key": "a",
+            "groupKind": "paired"
+          },
+          {
+            "key": "b",
+            "groupKind": "circuit"
+          }
+        ],
+        "bodyMass": {
+          "value": "82.2",
+          "unit": "kg"
+        },
+        "sessionRPE": "8",
+        "healthKitWorkout": "6D2A51F0-3C7E-4B19-A8E4-5F0C2D9B7A13",
+        "workout": "substrate.reamde.dev/health/workout/applehealth/substrate-sync-5e2b9c41/6D2A51F0-3C7E-4B19-A8E4-5F0C2D9B7A13",
+        "revision": 3,
+        "adapter": "substrate-workouts@0.1.0"
+      }
+    },
+    {
+      "kind": "~/training/session",
+      "id": "01a188d6-2ce0-7bbd-84a8-a52f602ab29c",
+      "properties": {
+        "name": "Training session, Thu 29 Oct 18:05",
+        "at": "2026-10-29T18:05:00Z",
+        "utcOffsetStart": 0,
+        "timezone": "Europe/London",
+        "deload": true,
+        "sport": "strength",
+        "slots": [
+          {
+            "key": "leg-extension",
+            "exercise": "~/training/exercise/leg-extension-machine",
+            "setRest": "PT1M30S",
+            "warmupRest": "PT30S"
+          },
+          {
+            "key": "chest-press",
+            "exercise": "~/training/exercise/chest-press-machine",
+            "group": "a",
+            "transition": "PT15S"
+          },
+          {
+            "key": "seated-row",
+            "exercise": "~/training/exercise/seated-row-machine",
+            "group": "a"
+          }
+        ],
+        "groups": [
+          {
+            "key": "a",
+            "groupKind": "superset",
+            "pairing": "antagonist",
+            "rounds": 2,
+            "roundRest": "PT1M30S"
+          }
+        ],
+        "bodyMass": {
+          "value": "82.1",
+          "unit": "kg"
+        },
+        "revision": 5,
+        "adapter": "substrate-workouts@0.1.0"
+      }
+    },
+    {
+      "kind": "~/training/session",
+      "id": "hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10",
+      "properties": {
+        "name": "Upper A, Sat 3 Oct 10:15",
+        "status": "finished",
+        "at": "2026-10-03T09:15:00Z",
+        "endsAt": "2026-10-03T10:02:30Z",
+        "utcOffsetStart": 60,
+        "utcOffsetEnd": 60,
+        "timezone": "Europe/London",
+        "sport": "strength",
+        "slots": [
+          {
+            "key": "chest-press",
+            "exercise": "~/training/exercise/chest-press-machine"
+          },
+          {
+            "key": "seated-row",
+            "exercise": "~/training/exercise/seated-row-machine"
+          }
+        ],
+        "notes": "Imported from Hevy.",
+        "revision": 1,
+        "adapter": "hevyimport@0.1.0"
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a181f6-9ba8-7833-8d5b-f7010a765893",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/rowing-machine",
+        "slot": "rowing",
+        "order": 1,
+        "ordinal": 1,
+        "role": "warmup",
+        "at": "2026-10-28T10:03:05Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "startedAt": "2026-10-28T10:01:00Z",
+        "duration": "PT2M5S",
+        "distance": {
+          "value": "500",
+          "unit": "m"
+        },
+        "laterality": "bilateral",
+        "rpeScale": "rirbased",
+        "target": {
+          "plannedSet": "w1",
+          "termination": "distance",
+          "distance": {
+            "value": "500",
+            "unit": "m"
+          }
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a181f8-7068-73f4-8e27-bbcb79d0ed1d",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/leg-press-machine",
+        "slot": "leg-press",
+        "order": 1,
+        "ordinal": 1,
+        "role": "warmup",
+        "at": "2026-10-28T10:05:05Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "40",
+          "unit": "kg"
+        },
+        "reps": 12,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M20S",
+        "restMethod": "interaction",
+        "restPlanned": "PT45S",
+        "target": {
+          "plannedSet": "w1",
+          "termination": "reps",
+          "repsMin": 12,
+          "repsMax": 12,
+          "load": {
+            "value": "40",
+            "unit": "kg"
+          }
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a181f9-f708-7a19-86e7-d0bc28959ad6",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/leg-press-machine",
+        "slot": "leg-press",
+        "order": 2,
+        "ordinal": 1,
+        "roleLabel": "top",
+        "at": "2026-10-28T10:06:45Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "110",
+          "unit": "kg"
+        },
+        "reps": 6,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "8",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M10S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M",
+        "target": {
+          "plannedSet": "s1",
+          "termination": "reps",
+          "repsMin": 6,
+          "repsMax": 6,
+          "load": {
+            "value": "110",
+            "unit": "kg"
+          },
+          "rpeMin": "8",
+          "rpeMax": "8"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a181fc-f0c0-7e96-a4b0-3835c718e1f3",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/leg-press-machine",
+        "slot": "leg-press",
+        "order": 3,
+        "ordinal": 2,
+        "roleLabel": "backoff",
+        "at": "2026-10-28T10:10:00Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "95",
+          "unit": "kg"
+        },
+        "reps": 10,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "8",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT2M35S",
+        "restMethod": "interaction",
+        "restPlanned": "PT2M30S",
+        "target": {
+          "plannedSet": "s2",
+          "termination": "reprange",
+          "repsMin": 8,
+          "repsMax": 10,
+          "rpeMin": "8",
+          "rpeMax": "8",
+          "dropPercent": "10"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a181ff-f630-7df6-b0e5-abccc2309a74",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/leg-press-machine",
+        "slot": "leg-press",
+        "order": 4,
+        "ordinal": 3,
+        "at": "2026-10-28T10:13:18Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "95",
+          "unit": "kg"
+        },
+        "reps": 9,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "8.5",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT2M40S",
+        "restMethod": "interaction",
+        "restPlanned": "PT2M30S",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18203-16f8-7fcb-8216-ba319639a735",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/seated-leg-curl-machine",
+        "slot": "seated-leg-curl",
+        "order": 1,
+        "ordinal": 1,
+        "at": "2026-10-28T10:16:43Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "40",
+          "unit": "kg"
+        },
+        "reps": 12,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "9",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT2M45S",
+        "restMethod": "interaction",
+        "restPlanned": "PT2M30S",
+        "target": {
+          "plannedSet": "s1",
+          "termination": "reprange",
+          "repsMin": 10,
+          "repsMax": 15,
+          "load": {
+            "value": "40",
+            "unit": "kg"
+          },
+          "rpeMin": "9",
+          "rpeMax": "9"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18204-ebb8-7454-850f-c9f33a82ceb6",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/seated-leg-curl-machine",
+        "slot": "seated-leg-curl",
+        "order": 2,
+        "ordinal": 2,
+        "structure": "myomatch",
+        "chainPosition": 1,
+        "at": "2026-10-28T10:18:43Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "40",
+          "unit": "kg"
+        },
+        "reps": 7,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "9",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M35S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M30S",
+        "target": {
+          "plannedSet": "s2",
+          "termination": "totalreps",
+          "load": {
+            "value": "40",
+            "unit": "kg"
+          },
+          "totalReps": 12,
+          "intraSetPause": "PT10S"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18205-39d8-73a9-9e67-6d959031fb3e",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/seated-leg-curl-machine",
+        "slot": "seated-leg-curl",
+        "order": 3,
+        "ordinal": 2,
+        "structure": "myomatch",
+        "continues": "~/training/set/01a18204-ebb8-7454-850f-c9f33a82ceb6",
+        "chainPosition": 2,
+        "at": "2026-10-28T10:19:03Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "40",
+          "unit": "kg"
+        },
+        "reps": 3,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpeScale": "rirbased",
+        "restBefore": "PT10S",
+        "restMethod": "interaction",
+        "restPlanned": "PT10S",
+        "target": {
+          "plannedSet": "s2"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18205-8410-72ec-bd73-940ec5db956e",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/seated-leg-curl-machine",
+        "slot": "seated-leg-curl",
+        "order": 4,
+        "ordinal": 2,
+        "structure": "myomatch",
+        "continues": "~/training/set/01a18204-ebb8-7454-850f-c9f33a82ceb6",
+        "chainPosition": 3,
+        "at": "2026-10-28T10:19:22Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "40",
+          "unit": "kg"
+        },
+        "reps": 2,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpeScale": "rirbased",
+        "restBefore": "PT11S",
+        "restMethod": "interaction",
+        "restPlanned": "PT10S",
+        "target": {
+          "plannedSet": "s2"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18207-be60-760c-aaf7-2731df83ffa0",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/leg-extension-machine",
+        "slot": "leg-extension",
+        "order": 1,
+        "ordinal": 1,
+        "structure": "restpause",
+        "chainPosition": 1,
+        "at": "2026-10-28T10:21:48Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "45",
+          "unit": "kg"
+        },
+        "reps": 12,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "9.5",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M50S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M30S",
+        "target": {
+          "plannedSet": "s1",
+          "termination": "reprange",
+          "repsMin": 10,
+          "repsMax": 12,
+          "load": {
+            "value": "45",
+            "unit": "kg"
+          },
+          "rpeMin": "9.5",
+          "rpeMax": "9.5",
+          "miniSets": 2,
+          "intraSetPause": "PT20S"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18208-3b60-75c1-a747-de10cdaf9df1",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/leg-extension-machine",
+        "slot": "leg-extension",
+        "order": 2,
+        "ordinal": 1,
+        "structure": "restpause",
+        "continues": "~/training/set/01a18207-be60-760c-aaf7-2731df83ffa0",
+        "chainPosition": 2,
+        "at": "2026-10-28T10:22:20Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "45",
+          "unit": "kg"
+        },
+        "reps": 4,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpeScale": "rirbased",
+        "restBefore": "PT20S",
+        "restMethod": "interaction",
+        "restPlanned": "PT20S",
+        "target": {
+          "plannedSet": "s1"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18208-b478-73d5-82af-575c1b2641b3",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/leg-extension-machine",
+        "slot": "leg-extension",
+        "order": 3,
+        "ordinal": 1,
+        "structure": "restpause",
+        "continues": "~/training/set/01a18207-be60-760c-aaf7-2731df83ffa0",
+        "chainPosition": 3,
+        "at": "2026-10-28T10:22:51Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "45",
+          "unit": "kg"
+        },
+        "reps": 3,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpeScale": "rirbased",
+        "restBefore": "PT21S",
+        "restMethod": "interaction",
+        "restPlanned": "PT20S",
+        "target": {
+          "plannedSet": "s1"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a1820b-2d48-76c6-a87e-e60d28c9ad96",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/hip-thrust-barbell",
+        "slot": "hip-thrust",
+        "order": 1,
+        "ordinal": 1,
+        "structure": "cluster",
+        "chainPosition": 1,
+        "at": "2026-10-28T10:25:33Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "80",
+          "unit": "kg"
+        },
+        "reps": 3,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpeScale": "rirbased",
+        "restBefore": "PT2M30S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M30S",
+        "target": {
+          "plannedSet": "s1",
+          "load": {
+            "value": "80",
+            "unit": "kg"
+          },
+          "rirMin": "2",
+          "rirMax": "2",
+          "miniSetReps": 3,
+          "miniSets": 3,
+          "intraSetPause": "PT20S"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a1820b-aa48-76a3-be4a-291a7d40b3da",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/hip-thrust-barbell",
+        "slot": "hip-thrust",
+        "order": 2,
+        "ordinal": 1,
+        "structure": "cluster",
+        "continues": "~/training/set/01a1820b-2d48-76c6-a87e-e60d28c9ad96",
+        "chainPosition": 2,
+        "at": "2026-10-28T10:26:05Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "80",
+          "unit": "kg"
+        },
+        "reps": 3,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpeScale": "rirbased",
+        "restBefore": "PT20S",
+        "restMethod": "interaction",
+        "restPlanned": "PT20S",
+        "target": {
+          "plannedSet": "s1"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a1820c-2b30-7897-9d1e-952f54e0a043",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/hip-thrust-barbell",
+        "slot": "hip-thrust",
+        "order": 3,
+        "ordinal": 1,
+        "structure": "cluster",
+        "continues": "~/training/set/01a1820b-2d48-76c6-a87e-e60d28c9ad96",
+        "chainPosition": 3,
+        "at": "2026-10-28T10:26:38Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "80",
+          "unit": "kg"
+        },
+        "reps": 3,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpeScale": "rirbased",
+        "restBefore": "PT21S",
+        "restMethod": "interaction",
+        "restPlanned": "PT20S",
+        "target": {
+          "plannedSet": "s1"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a1820c-a830-75d1-97e6-5e886334579b",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/hip-thrust-barbell",
+        "slot": "hip-thrust",
+        "order": 4,
+        "ordinal": 1,
+        "structure": "cluster",
+        "continues": "~/training/set/01a1820b-2d48-76c6-a87e-e60d28c9ad96",
+        "chainPosition": 4,
+        "at": "2026-10-28T10:27:10Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "80",
+          "unit": "kg"
+        },
+        "reps": 3,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "8",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT20S",
+        "restMethod": "interaction",
+        "restPlanned": "PT20S",
+        "target": {
+          "plannedSet": "s1"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a1820f-2cb8-7a60-978a-7c60650be66f",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/triceps-pushdown",
+        "slot": "triceps-pushdown",
+        "order": 1,
+        "ordinal": 1,
+        "at": "2026-10-28T10:29:55Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "25",
+          "unit": "kg"
+        },
+        "reps": 14,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "9",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT2M10S",
+        "restMethod": "interaction",
+        "restPlanned": "PT2M",
+        "target": {
+          "plannedSet": "s1",
+          "termination": "reprange",
+          "repsMin": 12,
+          "repsMax": 15,
+          "load": {
+            "value": "20",
+            "unit": "kg"
+          },
+          "rpeMin": "9",
+          "rpeMax": "9"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18210-c6e0-71df-a90e-e1a28cb7ab96",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/triceps-pushdown",
+        "slot": "triceps-pushdown",
+        "order": 2,
+        "ordinal": 2,
+        "at": "2026-10-28T10:31:40Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "25",
+          "unit": "kg"
+        },
+        "reps": 16,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "10",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "reachedFailure": true,
+        "failedRepAttempted": true,
+        "notes": "The 17th stalled halfway; elbows drifted forward.",
+        "restBefore": "PT1M5S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M",
+        "target": {
+          "plannedSet": "s2",
+          "termination": "amrap",
+          "repsMin": 12,
+          "load": {
+            "value": "20",
+            "unit": "kg"
+          }
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18212-7490-7407-82ca-12ec2f86a375",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/dip-weighted",
+        "slot": "dip",
+        "order": 1,
+        "ordinal": 1,
+        "role": "warmup",
+        "at": "2026-10-28T10:33:30Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "bodyweightplus",
+        "load": {
+          "value": "0",
+          "unit": "kg"
+        },
+        "reps": 8,
+        "loadBasis": "total",
+        "implements": 1,
+        "bodyShare": "1",
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M30S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M",
+        "target": {
+          "plannedSet": "w1",
+          "termination": "reps",
+          "repsMin": 8,
+          "repsMax": 8
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18213-ad10-76f0-9265-7db113416dfb",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/assisted-pull-up-machine",
+        "slot": "pull-up",
+        "order": 1,
+        "ordinal": 1,
+        "at": "2026-10-28T10:34:50Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "assisted",
+        "assistance": {
+          "value": "60",
+          "unit": "lb"
+        },
+        "reps": 8,
+        "loadBasis": "total",
+        "implements": 1,
+        "bodyShare": "1",
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "8",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT50S",
+        "restMethod": "interaction",
+        "restPlanned": "PT45S",
+        "target": {
+          "plannedSet": "s1",
+          "termination": "reprange",
+          "repsMin": 6,
+          "repsMax": 10,
+          "assistance": {
+            "value": "60",
+            "unit": "lb"
+          },
+          "rpeMin": "8",
+          "rpeMax": "8"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18215-0ca0-7609-8768-ce74caf3e770",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/dip-weighted",
+        "slot": "dip",
+        "order": 2,
+        "ordinal": 1,
+        "at": "2026-10-28T10:36:20Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "bodyweightplus",
+        "load": {
+          "value": "10",
+          "unit": "kg"
+        },
+        "reps": 9,
+        "loadBasis": "total",
+        "implements": 1,
+        "bodyShare": "1",
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "8",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M5S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M",
+        "target": {
+          "plannedSet": "s1",
+          "termination": "reprange",
+          "repsMin": 6,
+          "repsMax": 10,
+          "load": {
+            "value": "10",
+            "unit": "kg"
+          },
+          "rpeMin": "8",
+          "rpeMax": "8"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18216-f4e8-79c7-ba7e-253c3d207ce3",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/assisted-pull-up-machine",
+        "slot": "pull-up",
+        "order": 2,
+        "ordinal": 2,
+        "at": "2026-10-28T10:38:25Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "assisted",
+        "assistance": {
+          "value": "60",
+          "unit": "lb"
+        },
+        "reps": 8,
+        "loadBasis": "total",
+        "implements": 1,
+        "bodyShare": "1",
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "8.5",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M35S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M30S",
+        "target": {
+          "plannedSet": "s2",
+          "termination": "reprange",
+          "repsMin": 6,
+          "repsMax": 10,
+          "assistance": {
+            "value": "60",
+            "unit": "lb"
+          },
+          "rpeMin": "8",
+          "rpeMax": "8"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18218-48c0-7a80-b95c-608dcbea798d",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/dip-weighted",
+        "slot": "dip",
+        "order": 3,
+        "ordinal": 2,
+        "at": "2026-10-28T10:39:52Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "bodyweightplus",
+        "load": {
+          "value": "10",
+          "unit": "kg"
+        },
+        "reps": 8,
+        "loadBasis": "total",
+        "implements": 1,
+        "bodyShare": "1",
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "8.5",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M2S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M",
+        "target": {
+          "plannedSet": "s2",
+          "termination": "reprange",
+          "repsMin": 6,
+          "repsMax": 10,
+          "load": {
+            "value": "10",
+            "unit": "kg"
+          },
+          "rpeMin": "8",
+          "rpeMax": "8"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a1821a-2550-731f-87aa-488d20eaca2e",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/assisted-pull-up-machine",
+        "slot": "pull-up",
+        "order": 3,
+        "ordinal": 3,
+        "at": "2026-10-28T10:41:54Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "assisted",
+        "assistance": {
+          "value": "60",
+          "unit": "lb"
+        },
+        "reps": 7,
+        "loadBasis": "total",
+        "implements": 1,
+        "bodyShare": "1",
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "9",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M32S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M30S",
+        "target": {
+          "plannedSet": "s3",
+          "termination": "reprange",
+          "repsMin": 6,
+          "repsMax": 10,
+          "assistance": {
+            "value": "60",
+            "unit": "lb"
+          },
+          "rpeMin": "8",
+          "rpeMax": "8"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a1821b-9098-78d7-8cd2-9f62e6e376f1",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/dip-weighted",
+        "slot": "dip",
+        "order": 4,
+        "ordinal": 3,
+        "at": "2026-10-28T10:43:27Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "bodyweightplus",
+        "load": {
+          "value": "10",
+          "unit": "kg"
+        },
+        "reps": 8,
+        "loadBasis": "total",
+        "implements": 1,
+        "bodyShare": "1",
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "10",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "reachedFailure": true,
+        "restBefore": "PT1M3S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M",
+        "target": {
+          "plannedSet": "s3",
+          "termination": "failure",
+          "repsMin": 6,
+          "load": {
+            "value": "10",
+            "unit": "kg"
+          }
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a1821d-f1f8-7f52-8abb-ae1b158e2771",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/farmers-carry-dumbbell",
+        "slot": "carry",
+        "order": 1,
+        "ordinal": 1,
+        "at": "2026-10-28T10:46:03Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "startedAt": "2026-10-28T10:45:27Z",
+        "loadMode": "external",
+        "load": {
+          "value": "20",
+          "unit": "kg"
+        },
+        "duration": "PT36S",
+        "distance": {
+          "value": "40",
+          "unit": "m"
+        },
+        "loadBasis": "perimplement",
+        "implements": 2,
+        "laterality": "bilateral",
+        "rpeScale": "rirbased",
+        "restBefore": "PT2M",
+        "restMethod": "start",
+        "restPlanned": "PT1M30S",
+        "target": {
+          "plannedSet": "s1",
+          "termination": "distance",
+          "load": {
+            "value": "20",
+            "unit": "kg"
+          },
+          "distance": {
+            "value": "40",
+            "unit": "m"
+          }
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a1821f-1ad8-7f5e-b6df-68d283541178",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/side-plank",
+        "slot": "side-plank",
+        "order": 1,
+        "ordinal": 1,
+        "chainPosition": 1,
+        "side": "left",
+        "at": "2026-10-28T10:47:19Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "startedAt": "2026-10-28T10:46:38Z",
+        "duration": "PT41S",
+        "laterality": "unilateral",
+        "rpeScale": "rirbased",
+        "restBefore": "PT35S",
+        "restMethod": "start",
+        "restPlanned": "PT30S",
+        "target": {
+          "plannedSet": "s1",
+          "termination": "time",
+          "durationMin": "PT30S",
+          "durationMax": "PT45S",
+          "timerMode": "stopwatch"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a1821f-e210-73ef-85b9-7a80dcb33bba",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/side-plank",
+        "slot": "side-plank",
+        "order": 2,
+        "ordinal": 1,
+        "continues": "~/training/set/01a1821f-1ad8-7f5e-b6df-68d283541178",
+        "chainPosition": 2,
+        "side": "right",
+        "at": "2026-10-28T10:48:10Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "startedAt": "2026-10-28T10:47:29Z",
+        "duration": "PT41S",
+        "laterality": "unilateral",
+        "rpeScale": "rirbased",
+        "restBefore": "PT10S",
+        "restMethod": "start",
+        "restPlanned": "PT10S",
+        "target": {
+          "plannedSet": "s1",
+          "termination": "time",
+          "durationMin": "PT41S",
+          "durationMax": "PT41S",
+          "timerMode": "stopwatch"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18221-5528-7bda-8fea-bff804c6b52b",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/plank-weighted",
+        "slot": "weighted-plank",
+        "order": 1,
+        "ordinal": 1,
+        "at": "2026-10-28T10:49:45Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "startedAt": "2026-10-28T10:48:50Z",
+        "loadMode": "external",
+        "load": {
+          "value": "10",
+          "unit": "kg"
+        },
+        "duration": "PT55S",
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "rpeScale": "rirbased",
+        "restBefore": "PT40S",
+        "restMethod": "start",
+        "restPlanned": "PT30S",
+        "target": {
+          "plannedSet": "s1",
+          "termination": "time",
+          "load": {
+            "value": "10",
+            "unit": "kg"
+          },
+          "durationMin": "PT45S",
+          "durationMax": "PT1M",
+          "timerMode": "countdown"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18222-dbc8-7d81-97be-a9ada36d102c",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/farmers-carry-dumbbell",
+        "slot": "carry",
+        "order": 2,
+        "ordinal": 2,
+        "at": "2026-10-28T10:51:25Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "startedAt": "2026-10-28T10:50:50Z",
+        "loadMode": "external",
+        "load": {
+          "value": "20",
+          "unit": "kg"
+        },
+        "duration": "PT35S",
+        "distance": {
+          "value": "40",
+          "unit": "m"
+        },
+        "loadBasis": "perimplement",
+        "implements": 2,
+        "laterality": "bilateral",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M5S",
+        "restMethod": "start",
+        "restPlanned": "PT1M",
+        "target": {
+          "plannedSet": "s2",
+          "termination": "distance",
+          "load": {
+            "value": "20",
+            "unit": "kg"
+          },
+          "distance": {
+            "value": "40",
+            "unit": "m"
+          }
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18223-ed38-766e-a366-ba9387543189",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/side-plank",
+        "slot": "side-plank",
+        "order": 3,
+        "ordinal": 2,
+        "chainPosition": 1,
+        "side": "left",
+        "at": "2026-10-28T10:52:35Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "startedAt": "2026-10-28T10:51:57Z",
+        "duration": "PT38S",
+        "laterality": "unilateral",
+        "rpeScale": "rirbased",
+        "restBefore": "PT32S",
+        "restMethod": "start",
+        "restPlanned": "PT30S",
+        "target": {
+          "plannedSet": "s2",
+          "termination": "time",
+          "durationMin": "PT30S",
+          "durationMax": "PT45S",
+          "timerMode": "stopwatch"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18224-a8b8-7391-9511-b37116678bbb",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/side-plank",
+        "slot": "side-plank",
+        "order": 4,
+        "ordinal": 2,
+        "continues": "~/training/set/01a18223-ed38-766e-a366-ba9387543189",
+        "chainPosition": 2,
+        "side": "right",
+        "at": "2026-10-28T10:53:23Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "startedAt": "2026-10-28T10:52:45Z",
+        "duration": "PT38S",
+        "laterality": "unilateral",
+        "rpeScale": "rirbased",
+        "restBefore": "PT10S",
+        "restMethod": "start",
+        "restPlanned": "PT10S",
+        "target": {
+          "plannedSet": "s2",
+          "termination": "time",
+          "durationMin": "PT38S",
+          "durationMax": "PT38S",
+          "timerMode": "stopwatch"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a18225-f4c0-791f-a28b-35fafea799a7",
+      "properties": {
+        "session": "~/training/session/01a181f3-c900-74e4-b0e2-345e3defd3cf",
+        "exercise": "~/training/exercise/plank-weighted",
+        "slot": "weighted-plank",
+        "order": 2,
+        "ordinal": 2,
+        "at": "2026-10-28T10:54:48Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "startedAt": "2026-10-28T10:53:58Z",
+        "loadMode": "external",
+        "load": {
+          "value": "10",
+          "unit": "kg"
+        },
+        "duration": "PT50S",
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "rpeScale": "rirbased",
+        "restBefore": "PT35S",
+        "restMethod": "start",
+        "restPlanned": "PT30S",
+        "target": {
+          "plannedSet": "s2",
+          "termination": "time",
+          "load": {
+            "value": "10",
+            "unit": "kg"
+          },
+          "durationMin": "PT45S",
+          "durationMax": "PT1M",
+          "timerMode": "countdown"
+        },
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a188d8-01a0-7300-8df7-95c6f6a2e42e",
+      "properties": {
+        "session": "~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c",
+        "exercise": "~/training/exercise/leg-extension-machine",
+        "slot": "leg-extension",
+        "order": 1,
+        "ordinal": 1,
+        "setup": "~/training/setup/hotel-gym-leg-extension",
+        "role": "warmup",
+        "at": "2026-10-29T18:07:00Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "20",
+          "unit": "kg"
+        },
+        "reps": 15,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpeScale": "rirbased",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a188d9-16f8-7752-a873-f3b7709309ce",
+      "properties": {
+        "session": "~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c",
+        "exercise": "~/training/exercise/leg-extension-machine",
+        "slot": "leg-extension",
+        "order": 2,
+        "ordinal": 1,
+        "setup": "~/training/setup/hotel-gym-leg-extension",
+        "at": "2026-10-29T18:08:11Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "35",
+          "unit": "kg"
+        },
+        "reps": 12,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "6",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT35S",
+        "restMethod": "interaction",
+        "restPlanned": "PT30S",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a188db-0af8-7a64-887b-d3598ecda0f6",
+      "properties": {
+        "session": "~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c",
+        "exercise": "~/training/exercise/leg-extension-machine",
+        "slot": "leg-extension",
+        "order": 3,
+        "ordinal": 2,
+        "setup": "~/training/setup/hotel-gym-leg-extension",
+        "at": "2026-10-29T18:10:19Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "35",
+          "unit": "kg"
+        },
+        "reps": 12,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "6.5",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M32S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M30S",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a188dd-6870-7808-a4ea-ce14cf769c54",
+      "properties": {
+        "session": "~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c",
+        "exercise": "~/training/exercise/chest-press-machine",
+        "slot": "chest-press",
+        "order": 1,
+        "ordinal": 1,
+        "setup": "~/training/setup/hotel-gym-chest-press",
+        "at": "2026-10-29T18:12:54Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "30",
+          "unit": "kg"
+        },
+        "reps": 12,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "6",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT2M",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M30S",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a188de-3f48-795d-b7b7-2bed0de9bd11",
+      "properties": {
+        "session": "~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c",
+        "exercise": "~/training/exercise/seated-row-machine",
+        "slot": "seated-row",
+        "order": 1,
+        "ordinal": 1,
+        "setup": "~/training/setup/hotel-gym-seated-row",
+        "at": "2026-10-29T18:13:49Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "35",
+          "unit": "kg"
+        },
+        "reps": 12,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "6",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT20S",
+        "restMethod": "interaction",
+        "restPlanned": "PT15S",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a188e0-2b78-76b9-89b1-d266b1d3b50e",
+      "properties": {
+        "session": "~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c",
+        "exercise": "~/training/exercise/chest-press-machine",
+        "slot": "chest-press",
+        "order": 2,
+        "ordinal": 2,
+        "setup": "~/training/setup/hotel-gym-chest-press",
+        "at": "2026-10-29T18:15:55Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "30",
+          "unit": "kg"
+        },
+        "reps": 12,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "6.5",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT1M31S",
+        "restMethod": "interaction",
+        "restPlanned": "PT1M30S",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "01a188e0-fa80-70fb-823f-aefb407bce9d",
+      "properties": {
+        "session": "~/training/session/01a188d6-2ce0-7bbd-84a8-a52f602ab29c",
+        "exercise": "~/training/exercise/seated-row-machine",
+        "slot": "seated-row",
+        "order": 2,
+        "ordinal": 2,
+        "setup": "~/training/setup/hotel-gym-seated-row",
+        "at": "2026-10-29T18:16:48Z",
+        "timeBasis": "completion",
+        "completionMethod": "individual",
+        "loadMode": "external",
+        "load": {
+          "value": "35",
+          "unit": "kg"
+        },
+        "reps": 12,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "6.5",
+        "rpeMethod": "entered",
+        "rpeScale": "rirbased",
+        "restBefore": "PT18S",
+        "restMethod": "interaction",
+        "restPlanned": "PT15S",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-0-0",
+      "properties": {
+        "session": "~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10",
+        "exercise": "~/training/exercise/chest-press-machine",
+        "slot": "chest-press",
+        "order": 1,
+        "ordinal": 1,
+        "setup": "~/training/setup/old-gym-chest-press",
+        "role": "warmup",
+        "at": "2026-10-03T09:15:00Z",
+        "timeBasis": "session",
+        "completionMethod": "imported",
+        "loadMode": "external",
+        "load": {
+          "value": "20",
+          "unit": "kg"
+        },
+        "reps": 15,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "sourceType": "warmup",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-0-1",
+      "properties": {
+        "session": "~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10",
+        "exercise": "~/training/exercise/chest-press-machine",
+        "slot": "chest-press",
+        "order": 2,
+        "ordinal": 1,
+        "setup": "~/training/setup/old-gym-chest-press",
+        "at": "2026-10-03T09:15:00Z",
+        "timeBasis": "session",
+        "completionMethod": "imported",
+        "loadMode": "external",
+        "load": {
+          "value": "30",
+          "unit": "kg"
+        },
+        "reps": 12,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "8",
+        "rpeMethod": "imported",
+        "rpeScale": "hevy",
+        "sourceType": "normal",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-0-2",
+      "properties": {
+        "session": "~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10",
+        "exercise": "~/training/exercise/chest-press-machine",
+        "slot": "chest-press",
+        "order": 3,
+        "ordinal": 2,
+        "setup": "~/training/setup/old-gym-chest-press",
+        "structure": "drop",
+        "chainPosition": 1,
+        "at": "2026-10-03T09:15:00Z",
+        "timeBasis": "session",
+        "completionMethod": "imported",
+        "loadMode": "external",
+        "load": {
+          "value": "30",
+          "unit": "kg"
+        },
+        "reps": 10,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "9",
+        "rpeMethod": "imported",
+        "rpeScale": "hevy",
+        "sourceType": "normal",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-0-3",
+      "properties": {
+        "session": "~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10",
+        "exercise": "~/training/exercise/chest-press-machine",
+        "slot": "chest-press",
+        "order": 4,
+        "ordinal": 2,
+        "setup": "~/training/setup/old-gym-chest-press",
+        "structure": "drop",
+        "continues": "~/training/set/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-0-2",
+        "chainPosition": 2,
+        "at": "2026-10-03T09:15:00Z",
+        "timeBasis": "session",
+        "completionMethod": "imported",
+        "loadMode": "external",
+        "load": {
+          "value": "20",
+          "unit": "kg"
+        },
+        "reps": 8,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "sourceType": "dropset",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-1-0",
+      "properties": {
+        "session": "~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10",
+        "exercise": "~/training/exercise/seated-row-machine",
+        "slot": "seated-row",
+        "order": 1,
+        "ordinal": 1,
+        "setup": "~/training/setup/old-gym-seated-row",
+        "at": "2026-10-03T09:15:00Z",
+        "timeBasis": "session",
+        "completionMethod": "imported",
+        "loadMode": "external",
+        "load": {
+          "value": "40",
+          "unit": "kg"
+        },
+        "reps": 12,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "rpe": "8.5",
+        "rpeMethod": "imported",
+        "rpeScale": "hevy",
+        "sourceType": "normal",
+        "revision": 1
+      }
+    },
+    {
+      "kind": "~/training/set",
+      "id": "hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10-1-1",
+      "properties": {
+        "session": "~/training/session/hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10",
+        "exercise": "~/training/exercise/seated-row-machine",
+        "slot": "seated-row",
+        "order": 2,
+        "ordinal": 2,
+        "setup": "~/training/setup/old-gym-seated-row",
+        "at": "2026-10-03T09:15:00Z",
+        "timeBasis": "session",
+        "completionMethod": "imported",
+        "loadMode": "external",
+        "load": {
+          "value": "40",
+          "unit": "kg"
+        },
+        "reps": 10,
+        "loadBasis": "total",
+        "implements": 1,
+        "laterality": "bilateral",
+        "repsBasis": "total",
+        "reachedFailure": true,
+        "sourceType": "failure",
+        "revision": 1
+      }
+    }
+  ]
+}

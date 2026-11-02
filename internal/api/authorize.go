@@ -125,8 +125,10 @@ type protectedResourceMetadata struct {
 }
 
 // scopesSupported names the widest scope of each verb: every other scope is
-// a narrower pattern of one of them, which no list could enumerate.
-var scopesSupported = []string{"read:*", "write:*", "agents:*", "decide:*"}
+// a narrower pattern of one of them, which no list could enumerate. A
+// declare scope has no wider form than one package, so its entry is the
+// shape a request writes.
+var scopesSupported = []string{"read:*", "write:*", "agents:*", "decide:*", "declare:~/<package>"}
 
 func (h *handler) getAuthorizationServerMetadata(w http.ResponseWriter, r *http.Request) {
 	iss := h.issuerOf(r)

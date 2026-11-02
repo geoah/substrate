@@ -1,0 +1,94 @@
+# setup: one station an exercise is done on, such as the hotel gym's chest
+# press machine.
+#
+# WHY A KIND. A machine's history is kept per setup: the same chest press is a 5 kg stack in one gym and
+# a 10 lb stack in another, so its PREVIOUS, its load grid and its
+# suggestions differ. A set names its setup by reference (`set.setup`), which
+# a list filters through the refs table as it does `exercise`. Free weights
+# carry no setup and share their history everywhere. A string could never
+# become this reference once a value was stored (a datatype change is
+# refused while live records hold the property), so the kind exists before
+# the first set names one.
+#
+# THE ID IS CHOSEN BY THE WRITER and reads as the station:
+# `hotel-gym-chest-press`. One setup is one exercise at one place. Two
+# setups found to be the same machine are joined with a merge, the tool the
+# package already uses for duplicate exercises; a filter on a reference also
+# matches the merged-away id.
+#
+# ITS GRID OVERRIDES THE EXERCISE'S. `loadBase`, `loadStep` and `loadMax`
+# are the exercise's settings of the same names for this station; absent
+# means the exercise's, else the default for its equipment. Every other
+# suggestion setting stays on the exercise.
+#
+# DELETING ONE NEVER TOUCHES A SET. `set.setup` has no `onDelete`: a deleted
+# setup leaves its sets naming it, and a tombstoned or merged-away setup
+# still counts as existing for `mustExist`.
+#
+# NO TEMPORAL BINDING. A station has no instant of its own.
+# V1 writes no setup; the examples' coverage file has the shape.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ~/training/setup
+data:
+  authority: "~"
+  package: training
+  description: >-
+    One station an exercise is done on, such as the hotel gym's chest press
+    machine: the exercise, where it is, and its own load grid. Sets done on
+    it keep a history of their own.
+  purpose: supporting
+  names:
+    singular: setup
+  label:
+    singular: Exercise setup
+    plural: Exercise setups
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the setup's name as the owner reads it, such as Chest Press
+        (Machine), hotel gym
+    # mustExist: a setup of an exercise that does not exist has no
+    # measurement and no grid to override.
+    exercise:
+      type: reference
+      kind: ~/training/exercise
+      required: true
+      mustExist: true
+      description: the exercise done on it
+    gym:
+      type: string
+      description: where it is, such as Hotel gym
+    loadBase:
+      type: quantity
+      unit: kg
+      units: [kg, lb]
+      min:
+        value: "0"
+        unit: kg
+      description: the lightest load it can be set to here; absent means the
+        exercise's
+    loadStep:
+      type: quantity
+      unit: kg
+      units: [kg, lb]
+      min:
+        value: "0"
+        unit: kg
+      description: the smallest change of load here, such as one pin; its
+        unit is the setup's unit
+    loadMax:
+      type: quantity
+      unit: kg
+      units: [kg, lb]
+      min:
+        value: "0"
+        unit: kg
+      description: the heaviest load, or the most added load or assistance,
+        it can be set to here
+    notes:
+      type: text
+      description: what to remember about it, such as the seat height or which
+        of two machines it is

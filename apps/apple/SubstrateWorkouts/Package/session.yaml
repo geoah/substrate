@@ -1,0 +1,629 @@
+# session: one gym session as Substrate Workouts ran it. "Training session" on
+# every surface, apart from `substrate.reamde.dev/health/workout`, which is
+# the Apple Health copy of it and of every other workout.
+#
+# THE ID IS CHOSEN ON THE PHONE, a lowercase UUIDv7
+# (`01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10`): no `/`, sorts by time, and every
+# retry of the create is a PUT that lands the same row. The same string is
+# the Apple Health workout's `HKMetadataKeyExternalUUID` and
+# `HKMetadataKeySyncIdentifier`.
+#
+# `temporal(range)`: `at` is when the session started and `endsAt` when it
+# finished, both editable at Finish. `revised`, as `health/workout` binds it:
+# the phone raises `revision` on every change it sends, and the write path
+# refuses a lower one than the live record holds, so an outbox replay that
+# arrives after a newer write is refused as stale instead of reverting it.
+# The same number is the Health workout's `HKMetadataKeySyncVersion`. The
+# rule guards a LIVE record only: a put onto a tombstone or a purged id
+# starts afresh, and an equal revision is admitted, so Discard empties the
+# outbox before it deletes (the README, "How the app writes").
+#
+# THE STATE MOVES ONLY BY PATCH. A create never names `status` (it is born
+# `active`), so a create replayed after Finish cannot try to move it back
+# ("patch does transitions"). An importer writing a session that finished
+# long ago names `finished` on its create, which a creating write may do.
+# There is no way back from `finished`; reopening is an additive transition
+# if the owner wants it.
+#
+# DISCARD PURGES. Discarding from inside the session deletes the record with
+# `?purge=true`, and its sets go with it at once (`set.session` cascades).
+# No state is kept for a discarded session: `abandoned` waits for a reader
+# that needs it, and a state nothing writes is not declared. Adding it later
+# is additive.
+#
+# SLOTS, GROUPS AND THE PLAN AS IT STOOD. The session embeds the order of
+# its exercises and its supersets, which a reorder changes in one patch.
+# Each slot from a routine also keeps that routine slot's planned sets as the
+# session started with them (`slots[].sets`), done or not, with their keys,
+# because no read serves a routine as it was at an older version and
+# `routineVersion` only says that it changed. Each performed set still
+# carries the targets it was done against (`set.target`); no record is
+# written for a planned set nobody did. A routine slot with no set done is
+# not kept, and its planned sets go with it, so a wholly skipped exercise
+# leaves no trace on the session. The rests the owner
+# set during the session are kept where they apply: on the slot (`setRest`,
+# `warmupRest`, `transition`, `sideSwitch`) and on the group (`roundRest`,
+# `rounds`, `pairing`), written when the session has no routine for them or
+# the owner changed one. The rest each set actually got is on the set
+# (`restPlanned`).
+#
+# NOT A RESUME SOURCE IN V1. A session in progress lives on the phone, as an
+# event log and its folded state (requirement 21); these records are what it
+# syncs, and V1 writes them at Finish, the plan snapshot included. A V2
+# writer that sends the snapshot at Start gives a second device the planned
+# sets still to do; a running rest timer stays the phone's.
+#
+# THE APPLE HEALTH LINK. Substrate Workouts saves one strength workout
+# per finished session and never writes `health/workout` itself: Substrate
+# Sync delivers the HealthKit workout and the Apple Health adapter builds
+# that row at `applehealth/<account>/<UUID>`. The session keeps the UUID
+# HealthKit returned (`healthKitWorkout`) and points `workout` at the row.
+# `<account>` is Substrate Sync's own account id for the phone
+# (`substrate-sync-` and the first eight characters of its install id),
+# which Substrate Workouts cannot compute: it learns it from the server, so `workout` is
+# written only once Substrate Workouts has read it (the README, "Apple Health"). The
+# zone and the activity type the workout was saved with are kept here too
+# (`timezone`, `activityType`), so the record says what Health was sent.
+#
+# THE SPORT IS `sport`, spelled as `health/workout` spells it, so a reader
+# counts a Substrate Workouts session and a Garmin or WHOOP strength workout as one
+# sport. `activityType` is only the Apple Health save's setting.
+#
+# NO `{at}` IN THE TITLE. A template renders an instant in UTC, so the app
+# writes `name` on the local clock, as the Apple Health adapter does for
+# `health/workout`. A session written without one (an importer's, a write in
+# the console) is titled by its routine, else by its id.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ~/training/session
+data:
+  authority: "~"
+  package: training
+  description: >-
+    A training session: one visit to the gym as Substrate Workouts ran it,
+    from a workout routine or from nothing. When it started and finished,
+    the exercises in order and their supersets, and the Apple Health workout
+    it was saved as. Its sets are records of their own.
+  purpose: primary
+  names:
+    singular: session
+  label:
+    singular: Training session
+    plural: Training sessions
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/revised
+  displayTemplate: "{name|routine|id}"
+  # No declared index: "when was this routine last done" filters by
+  # `routine`, which the server answers from its refs table (the set kind's
+  # comment and the README, "Indices", say why).
+  properties:
+    # ---- what it is -----------------------------------------------------------
+    name:
+      type: string
+      description: the session's heading on the clock it was recorded on,
+        such as Day 1 – Strength Foundation, Fri 30 Oct 13:42
+    status:
+      type: state
+      description: active while it runs, then finished
+      states:
+        - active
+        - finished
+      initial: active
+      transitions:
+        - from: active
+          to: finished
+    # ---- the plan it came from -------------------------------------------------
+    # No mustExist: a routine deleted later leaves its sessions pointing at
+    # nothing, which is what happened.
+    routine:
+      type: reference
+      kind: ~/training/routine
+      description: the workout routine it was started from; absent for a session
+        started empty
+    routineVersion:
+      type: int
+      min: 1
+      description: the routine record's version when the session started
+    deload:
+      type: bool
+      description: true for a deload session, which suggestions and trends
+        discount
+    # `health/workout`'s code set, values and spelling, so the two kinds
+    # agree on what a strength session is. Substrate Workouts writes `strength`; an
+    # importer maps its source's word and keeps the word in `sportSource`.
+    sport:
+      type: enum
+      description: the sport, from the code set health/workout uses; Substrate
+        Workouts writes strength
+      values:
+        - value: running
+          label: Running
+        - value: walking
+          label: Walking
+        - value: hiking
+          label: Hiking
+        - value: cycling
+          label: Cycling
+        - value: swimming
+          label: Swimming
+        - value: strength
+          label: Strength
+        - value: yoga
+          label: Yoga
+        - value: pilates
+          label: Pilates
+        - value: rowing
+          label: Rowing
+        - value: elliptical
+          label: Elliptical
+        - value: stairs
+          label: Stairs
+        - value: hiit
+          label: HIIT
+        - value: dance
+          label: Dance
+        - value: boxing
+          label: Boxing
+        - value: climbing
+          label: Climbing
+        - value: tennis
+          label: Tennis
+        - value: golf
+          label: Golf
+        - value: skiing
+          label: Skiing
+        - value: other
+          label: Other
+    sportSource:
+      type: string
+      description: the sport as an imported source named it, before mapping,
+        such as FIT's training/strength_training; absent for a session logged
+        in Substrate Workouts
+    # Copied from the routine at Start (absent there means traditional
+    # strength training), so the Health save, a retry of it and an export
+    # read it from the session even after the routine changes or goes. An
+    # export setting only; `sport` is what the session was.
+    activityType:
+      type: enum
+      description: the Apple Health workout type the session is saved as,
+        used only by the Health save; absent means traditional strength training
+      values:
+        - value: traditionalstrengthtraining
+          label: Traditional strength training
+        - value: functionalstrengthtraining
+          label: Functional strength training
+        - value: coretraining
+          label: Core training
+        - value: highintensityintervaltraining
+          label: High-intensity interval training
+    # ---- the exercises, in order (level 1; fields at level 2) ------------------
+    slots:
+      type: object
+      repeated: true
+      description: the session's exercises in the order shown; each set names
+        its slot by key
+      fields:
+        # Unique within the session. From a routine it is the routine slot's
+        # key; an exercise added or replaced during the session gets a new
+        # one, so the sets already done keep theirs.
+        key:
+          type: string
+          required: true
+          description: the slot's key within the session, which its sets name
+        # mustExist, as on the set: a slot naming no exercise has no name and
+        # no columns to show.
+        exercise:
+          type: reference
+          kind: ~/training/exercise
+          required: true
+          mustExist: true
+          description: the exercise done in this slot
+        group:
+          type: string
+          description: the key of the session group this slot is a member
+            of
+        routineSlot:
+          type: string
+          description: the key of the routine slot it came from; absent for
+            an exercise added during the session
+        notes:
+          type: text
+          description: what the owner noted about this exercise in this session
+        # The routine slot's rests when the owner changes one during the
+        # session, or the rests an added exercise or an empty session's
+        # exercise runs with (last time's, else the defaults). Absent: the
+        # routine slot's value, else the default, as on the routine.
+        setRest:
+          type: duration
+          description: the rest between this slot's working sets, where the
+            session set it
+        warmupRest:
+          type: duration
+          description: the rest after one of this slot's warm-up sets, where
+            the session set it
+        transition:
+          type: duration
+          description: in a group, the rest from this member to the next one
+            in the same round, where the session set it
+        sideSwitch:
+          type: duration
+          description: for one side at a time, the pause between the sides,
+            where the session set it
+        # ---- the plan as it stood (level 2; fields at level 3) ----
+        # The routine slot's planned sets as the session ran them, every one,
+        # done or not, with the routine's keys, so a reader can set the plan
+        # against what was done after the routine changes or goes (the
+        # README, "Session"). The same fields as the routine's planned set,
+        # with a percentage load resolved into `load`. Absent on a slot the
+        # routine did not have; a routine slot with no set done is not a
+        # slot here at all.
+        sets:
+          type: object
+          repeated: true
+          description: the planned sets of the routine slot as the session
+            started with them, done or not, in order, warm-ups first
+          fields:
+            key:
+              type: string
+              required: true
+              description: the planned set's key within the slot, such as
+                w1 or s2, which a performed set names
+            role:
+              type: enum
+              default: working
+              description: warm-up or working
+              values:
+                - value: warmup
+                  label: Warm-up
+                - value: working
+                  label: Working
+            roleLabel:
+              type: enum
+              description: for a working set, top set or back-off set
+              values:
+                - value: top
+                  label: Top set
+                - value: backoff
+                  label: Back-off set
+            structure:
+              type: enum
+              default: straight
+              description: how the set is built, from straight to a chain
+                of drops or mini-sets
+              values:
+                - value: straight
+                  label: Straight
+                - value: drop
+                  label: Drop set
+                - value: myo
+                  label: Myo-reps
+                - value: myomatch
+                  label: Myo-rep match
+                - value: restpause
+                  label: Rest-pause
+                - value: cluster
+                  label: Cluster
+            termination:
+              type: enum
+              description: what ends the set; absent means the reps or the
+                time it names
+              values:
+                - value: reps
+                  label: Reps
+                - value: reprange
+                  label: Rep range
+                - value: amrap
+                  label: As many reps as possible
+                - value: failure
+                  label: To failure
+                - value: rirstop
+                  label: Stop at the effort target
+                - value: time
+                  label: Time
+                - value: distance
+                  label: Distance
+                - value: totalreps
+                  label: Total reps
+            repsMin:
+              type: int
+              min: 0
+              description: the fewest reps aimed for; equal to repsMax for
+                an exact count
+            repsMax:
+              type: int
+              min: 0
+              description: the most reps aimed for
+            load:
+              type: quantity
+              unit: kg
+              units: [kg, lb]
+              min:
+                value: "0"
+                unit: kg
+              description: the load to start from, in the unit written; the
+                added load on a bodyweight-plus exercise; wins over loadPercent
+                when both are given
+            loadPercent:
+              type: decimal
+              min: 0
+              max: 200
+              description: the load as a percentage of loadReference, such
+                as 80; load wins when both are given
+            loadReference:
+              type: enum
+              description: what loadPercent is a percentage of
+              values:
+                - value: onerm
+                  label: Tested one-rep max
+                - value: e1rm
+                  label: Estimated one-rep max
+                - value: trainingmax
+                  label: Training max
+                - value: bodymass
+                  label: Body mass
+            assistance:
+              type: quantity
+              unit: kg
+              units: [kg, lb]
+              min:
+                value: "0"
+                unit: kg
+              description: on an assisted exercise, the assistance to start
+                from
+            rpeMin:
+              type: decimal
+              min: 1
+              max: 10
+              description: the lowest effort aimed for on the RIR-based RPE
+                scale; equal to rpeMax for one value, such as 8 for two reps
+                left
+            rpeMax:
+              type: decimal
+              min: 1
+              max: 10
+              description: the highest effort aimed for on the RIR-based RPE
+                scale
+            rirMin:
+              type: decimal
+              min: 0
+              description: the fewest reps in reserve aimed for, where the
+                routine says it that way; equal to rirMax for one value
+            rirMax:
+              type: decimal
+              min: 0
+              description: the most reps in reserve aimed for
+            durationMin:
+              type: duration
+              description: the shortest time aimed for in a timed set; equal
+                to durationMax for an exact time
+            durationMax:
+              type: duration
+              description: the longest time aimed for in a timed set
+            timerMode:
+              type: enum
+              description: how the set's timer runs; absent means a countdown
+                when a duration is set
+              values:
+                - value: countdown
+                  label: Count down to the target
+                - value: stopwatch
+                  label: Stopwatch
+            distance:
+              type: quantity
+              unit: m
+              min:
+                value: "0"
+                unit: m
+              description: the distance aimed for, such as 20 m of a carry
+            tempo:
+              type: string
+              pattern: "^[0-9X]([-/]?[0-9X]){3}$"
+              description: the tempo to lift at, four phases eccentric first,
+                such as 3-1-1-0
+            miniSetReps:
+              type: int
+              min: 1
+              description: the reps of each mini-set or cluster; absent means
+                a quarter of the activation set's, from 3 to 5
+            miniSets:
+              type: int
+              min: 1
+              description: the most mini-sets after the first bout; for a
+                cluster set, the clusters after the first
+            myoStopRule:
+              type: enum
+              description: when this myo-rep set ends, overriding the exercise's
+                rule
+              values:
+                - value: repdrop
+                  label: A mini-set loses a rep from the first
+                - value: belowtarget
+                  label: A mini-set falls below its target
+            totalReps:
+              type: int
+              min: 1
+              description: the total reps that end a myo-rep or rest-pause
+                set; for a myo-rep match, absent means the previous set's
+                reps
+            drops:
+              type: int
+              min: 1
+              description: for a drop set, how many drops follow the first
+                bout
+            dropPercent:
+              type: decimal
+              min: 0
+              max: 100
+              description: how much lighter, in percent, each drop or a back-off
+                set is than the set before
+            dropStep:
+              type: quantity
+              unit: kg
+              units: [kg, lb]
+              min:
+                value: "0"
+                unit: kg
+              description: how much lighter, as a load, each drop or a back-off
+                set is than the set before
+            dropReps:
+              type: int
+              min: 1
+              description: the reps each drop aims for; absent means to failure
+            intraSetPause:
+              type: duration
+              description: the pause between the mini-sets, clusters or drops
+                of this set
+            rest:
+              type: duration
+              description: the rest after this set, overriding the slot's
+                or the group's
+    # Stored once per group, not on every member (requirement 4). A group
+    # made in the gym, or one whose round rest the owner changed, holds its
+    # values here; one taken from the routine unchanged needs only its kind.
+    groups:
+      type: object
+      repeated: true
+      description: the supersets, circuits and paired sets of the session;
+        a slot joins one by naming its key
+      fields:
+        key:
+          type: string
+          required: true
+          description: the group's key within the session, which its slots
+            name
+        groupKind:
+          type: enum
+          required: true
+          description: what sort of group it is
+          values:
+            - value: superset
+              label: Superset
+            - value: triset
+              label: Tri-set
+            - value: giantset
+              label: Giant set
+            - value: circuit
+              label: Circuit
+            - value: paired
+              label: Paired sets
+        pairing:
+          type: enum
+          description: how the members relate, which picks the default rest
+            between them
+          values:
+            - value: antagonist
+              label: Antagonists
+            - value: samemuscle
+              label: Same muscle
+            - value: preexhaust
+              label: Pre-exhaust
+            - value: upperlower
+              label: Upper with lower body
+            - value: unrelated
+              label: Unrelated
+            - value: mechanicaldrop
+              label: Mechanical drop
+        rounds:
+          type: int
+          min: 1
+          description: how many rounds, where the session set it; absent means
+            as many as the member with the most working sets
+        roundRest:
+          type: duration
+          description: the rest after the last member of a round, where the
+            session set it
+    # ---- time ------------------------------------------------------------------
+    # `at` and `endsAt` are the trait's. `start` and `end` because `at` and
+    # `endsAt` are reserved at every level.
+    pauses:
+      type: object
+      repeated: true
+      description: the spans the session's clock was paused, which Apple Health
+        gets as pause and resume events
+      fields:
+        start:
+          type: datetime
+          required: true
+          description: when the pause began
+        end:
+          type: datetime
+          description: when the session resumed; absent while it is paused
+    utcOffsetStart:
+      type: int
+      min: -1080
+      max: 1080
+      description: minutes east of UTC when it began
+    utcOffsetEnd:
+      type: int
+      min: -1080
+      max: 1080
+      description: minutes east of UTC when it ended
+    # HealthKit's `HKMetadataKeyTimeZone` takes a zone name, which two
+    # offsets cannot give back. Spelled as core's `recurring` trait and the
+    # Apple Health provider spell it.
+    timezone:
+      type: timezone
+      description: the IANA zone the session was recorded in, such as Europe/London
+    # ---- the body and the effort -----------------------------------------------
+    # The mass in force that day (from Apple Health), so a bodyweight set's
+    # effective load stays right when body mass changes.
+    bodyMass:
+      type: quantity
+      unit: kg
+      units: [kg, lb]
+      min:
+        value: "0"
+        unit: kg
+      description: the owner's body mass on the day, which bodyweight and
+        assisted sets are reckoned from
+    # The CR10 scale, asked at Finish and skippable. Not the sets' RPE scale, so
+    # not the same name. 0 is admitted (CR10 has a 0; FIT and Health Connect
+    # take it), but Apple's effort score runs from 1, so a 0 is never sent
+    # to Health as one.
+    sessionRPE:
+      type: decimal
+      min: 0
+      max: 10
+      description: how hard the whole session felt on the CR10 scale, 0 to
+        10, if the owner rated it at Finish
+    notes:
+      type: text
+      description: anything worth saying about the session
+    # ---- the Apple Health copy --------------------------------------------------
+    healthKitWorkout:
+      type: string
+      pattern: "^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$"
+      description: the UUID of the Apple Health workout the session was saved
+        as, in HealthKit's uppercase spelling
+    # No mustExist: Substrate Sync may deliver the row after this is written.
+    workout:
+      type: reference
+      kind: substrate.reamde.dev/health/workout
+      description: the health workout built from that Apple Health workout,
+        at applehealth/<account>/<UUID>, where the account is Substrate Sync's
+        for the phone
+    # ---- provenance, as health/workout spells it --------------------------------
+    source:
+      type: reference
+      kind: substrate.reamde.dev/observations/source
+      description: the app or device it was logged with, such as Substrate
+        Workouts or an imported Hevy history
+    about:
+      type: reference
+      kind: any
+      description: who trained; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the record an importer built this from, such as a Hevy
+        workout; absent for a session logged in Substrate Workouts
+    revision:
+      type: int
+      min: 0
+      description: rises with each change the writer sends; a lower one is
+        refused
+    adapter:
+      type: string
+      description: what wrote it and its version, `<name>@<version>`, such
+        as substrate-workouts@1.0.0

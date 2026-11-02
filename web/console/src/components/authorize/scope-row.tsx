@@ -150,16 +150,20 @@ function ScopeFacts({
           .
         </p>
       )}
-      <div className="flex flex-col gap-1">
-        <p className="text-xs font-medium text-muted-foreground">
-          Covers today
-        </p>
-        {agentsScope ? (
-          <AgentList agents={scope.agents} talk={scope.verb === "agents"} />
-        ) : (
-          <KindList kinds={scope.kinds} />
-        )}
-      </div>
+      {/* A declare scope names a package, not records: it reaches no
+          kind's records, so a list of them would only say "nothing". */}
+      {scope.verb !== "declare" && (
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-medium text-muted-foreground">
+            Covers today
+          </p>
+          {agentsScope ? (
+            <AgentList agents={scope.agents} talk={scope.verb === "agents"} />
+          ) : (
+            <KindList kinds={scope.kinds} />
+          )}
+        </div>
+      )}
     </>
   )
 }

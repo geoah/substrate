@@ -1,0 +1,421 @@
+# exercise: one movement the owner trains, such as Chest Press (Machine).
+#
+# THE ID IS CHOSEN BY THE WRITER and reads as the movement:
+# `chest-press-machine`, so the record path is
+# `~/training/exercise/chest-press-machine` and a reference
+# reads well in a routine. The name may change; the id does not. Two rows
+# for one movement (an agent minted a duplicate) are joined with a merge,
+# and a filter on a reference also matches the merged-away id. This kind
+# must never be the target of a `recordmapping`, whose targets take
+# server-assigned ids only (decision record 0049).
+#
+# NO TEMPORAL BINDING. A catalogue entry has no instant of its own; when it
+# was written is a fact about the row.
+#
+# IDENTITY ACROSS SYSTEMS IS `codes`, with the fields, names and types of
+# `substrate.reamde.dev/observations/metric.codes`. No catalogue shares a key
+# (FIT uses enum pairs, Health Connect integers, Hevy opaque template ids,
+# Strong the name it prints), so an importer resolves an exercise by
+# `(system, code)` and never by a fuzzy name; an unknown code becomes a
+# mapping the owner confirms. The importer holds that
+# mapping itself and writes nothing for it until it is confirmed: a set
+# names an exercise that exists (`mustExist`), so the confirmation either
+# adds the code to an exercise here or creates a new one.
+#
+# THE SUGGESTION READS ITS SETTINGS HERE, so the console's
+# agent can tune a lift without an app release. Every setting is optional:
+# absent means the engine's default by equipment.
+# They are the kind's own properties and not one object, so each can be
+# renamed or made required by declaration while the kind is small, which an
+# object's fields cannot.
+#
+# THE EXERCISE'S UNIT IS ITS `loadStep`'s UNIT. The engine's settings have a `unit`; a
+# separate property could disagree with the step it describes, so the step
+# carries it: a 10 lb pin on a stack makes the exercise a pound exercise in a
+# kilogram gym. With no step the owner's default unit applies.
+#
+# THE LOAD MODE IS THE MEASUREMENT'S. The engine's `mode` and `canAddLoad` are
+# both said by `measurement`: weightedbodyweightreps adds load to body mass,
+# bodyweightassistedreps subtracts assistance, bodyweightreps adds nothing,
+# and repsonly, duration and distanceduration move no load at all.
+#
+# DEFAULT GRIDS BY EQUIPMENT are the engine's, with two rows of their own: a
+# plate-loaded machine starts at 0 and steps by 2.5 kg (one plate a side),
+# and plate, resistanceband, suspension, other and none have no default
+# grid, so the load is the lifter's until `loadStep` names one (base 0). A
+# `setup` of this exercise overrides the grid for one station.
+#
+# THE LOAD'S MEANING IS COPIED ONTO EACH SET. `laterality`, `loadBasis`,
+# `implements` and `bodyShare` are the defaults a set copies, resolved, when
+# it is logged (`set.loadBasis` and the rest), so editing them here changes
+# how future sets are read and never a stored one.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ~/training/exercise
+data:
+  authority: "~"
+  package: training
+  description: >-
+    One movement the owner trains, such as Chest Press (Machine): which numbers
+    a set of it records, its equipment and muscles, its codes in other systems,
+    and the settings Substrate Workouts's next-set suggestion reads.
+  purpose: primary
+  names:
+    singular: exercise
+  displayTemplate: "{name}"
+  properties:
+    # ---- what it is ---------------------------------------------------------
+    name:
+      type: string
+      required: true
+      description: the exercise's name as the owner reads it, such as Chest
+        Press (Machine)
+    # Search words: DB for dumbbell, RDL, the gym's own name for a machine.
+    aliases:
+      type: string
+      repeated: true
+      description: other names it is found by, such as RDL or the gym's name
+        for the machine
+    # Hevy's eight exercise types (`CustomExerciseType`, spelled by the enum
+    # rule: lowercase, `_` dropped) plus weighted bodyweight, which Hevy keeps
+    # as a separate kind of record. It decides the set grid's columns and how
+    # a set's load is read.
+    measurement:
+      type: enum
+      required: true
+      description: which numbers a set of it records, which decides the set
+        row's columns and how its load is read
+      values:
+        - value: weightreps
+          label: Weight and reps
+        - value: repsonly
+          label: Reps only
+        - value: bodyweightreps
+          label: Bodyweight reps
+        - value: weightedbodyweightreps
+          label: Bodyweight plus load and reps
+        - value: bodyweightassistedreps
+          label: Assisted bodyweight reps
+        - value: duration
+          label: Duration
+        - value: weightduration
+          label: Weight and duration
+        - value: distanceduration
+          label: Distance and duration
+        - value: shortdistanceweight
+          label: Weight and distance
+    # Hevy's nine equipment values by the enum rule, plus the two the
+    # suggestion's default steps need apart from `machine`: a cable stack and
+    # a plate-loaded machine (such as Shoulder Press (Machine Plates)).
+    equipment:
+      type: enum
+      description: what the load is moved with, which picks the default load
+        step and base
+      values:
+        - value: none
+          label: None
+        - value: barbell
+          label: Barbell
+        - value: dumbbell
+          label: Dumbbell
+        - value: kettlebell
+          label: Kettlebell
+        - value: machine
+          label: Machine
+        - value: plateloaded
+          label: Plate-loaded machine
+        - value: cable
+          label: Cable
+        - value: plate
+          label: Plate
+        - value: resistanceband
+          label: Resistance band
+        - value: suspension
+          label: Suspension
+        - value: other
+          label: Other
+    # Reps count per side on unilateral and alternating exercises: 10 bird dogs are 10 with each side. A
+    # set copies the laterality and its count (`set.repsBasis`) when logged;
+    # absent here means bilateral.
+    laterality:
+      type: enum
+      description: whether it works both sides at once, one side at a time,
+        or the sides in turn within a set; on the last two a set's reps count
+        per side
+      values:
+        - value: bilateral
+          label: Both sides
+        - value: unilateral
+          label: One side at a time
+        - value: alternating
+          label: Alternating sides
+    # No source records this, and it is what makes a dumbbell load or an
+    # iso-lateral machine's load comparable. Absent means
+    # total; a set copies it when logged.
+    loadBasis:
+      type: enum
+      description: what a logged load counts, the whole load, one implement
+        such as one dumbbell, or one side of a machine
+      values:
+        - value: total
+          label: Total
+        - value: perimplement
+          label: Per implement
+        - value: perside
+          label: Per side
+    # What volume multiplies a per-implement load by: a lateral raise holds two dumbbells, a single-leg Romanian
+    # deadlift one. Comparisons (PREVIOUS, e1RM, records) use the load as
+    # logged and never multiply it. A set copies it when logged.
+    implements:
+      type: int
+      min: 1
+      description: how many implements a set holds, such as 2 for a pair of
+        dumbbells; absent means one
+    # Hevy's twenty lay muscle groups by the enum rule; seventeen of them are
+    # free-exercise-db's (its middle back is Hevy's upper back). Fractional
+    # set counting reads both lists: 1 for a primary muscle, 0.5 for a
+    # secondary one.
+    primaryMuscles:
+      type: enum
+      repeated: true
+      description: the muscles it trains directly, each counting one set per
+        set done
+      values:
+        - value: abdominals
+          label: Abdominals
+        - value: abductors
+          label: Abductors
+        - value: adductors
+          label: Adductors
+        - value: biceps
+          label: Biceps
+        - value: calves
+          label: Calves
+        - value: cardio
+          label: Cardio
+        - value: chest
+          label: Chest
+        - value: forearms
+          label: Forearms
+        - value: fullbody
+          label: Full body
+        - value: glutes
+          label: Glutes
+        - value: hamstrings
+          label: Hamstrings
+        - value: lats
+          label: Lats
+        - value: lowerback
+          label: Lower back
+        - value: neck
+          label: Neck
+        - value: quadriceps
+          label: Quadriceps
+        - value: shoulders
+          label: Shoulders
+        - value: traps
+          label: Traps
+        - value: triceps
+          label: Triceps
+        - value: upperback
+          label: Upper back
+        - value: other
+          label: Other
+    secondaryMuscles:
+      type: enum
+      repeated: true
+      description: the muscles it trains indirectly, each counting half a
+        set per set done
+      values:
+        - value: abdominals
+          label: Abdominals
+        - value: abductors
+          label: Abductors
+        - value: adductors
+          label: Adductors
+        - value: biceps
+          label: Biceps
+        - value: calves
+          label: Calves
+        - value: cardio
+          label: Cardio
+        - value: chest
+          label: Chest
+        - value: forearms
+          label: Forearms
+        - value: fullbody
+          label: Full body
+        - value: glutes
+          label: Glutes
+        - value: hamstrings
+          label: Hamstrings
+        - value: lats
+          label: Lats
+        - value: lowerback
+          label: Lower back
+        - value: neck
+          label: Neck
+        - value: quadriceps
+          label: Quadriceps
+        - value: shoulders
+          label: Shoulders
+        - value: traps
+          label: Traps
+        - value: triceps
+          label: Triceps
+        - value: upperback
+          label: Upper back
+        - value: other
+          label: Other
+    # The rest classes, which pick the default rest between sets
+    # when a routine names none. A routine slot's own rest always wins.
+    restClass:
+      type: enum
+      description: the class that picks its default rest between sets when
+        the routine names none
+      values:
+        - value: heavycompound
+          label: Heavy compound (3 min)
+        - value: compound
+          label: Compound (2 min)
+        - value: isolation
+          label: Isolation (1 min 30 s)
+        - value: highrep
+          label: High-rep small muscles and trunk (1 min)
+        - value: timed
+          label: Timed hold (1 min)
+        - value: carry
+          label: Carry or sled (2 min)
+        - value: power
+          label: Power and jumps (3 min)
+    # wger's variation group as a pointer: the incline dumbbell press is a
+    # variation of the dumbbell press. History stays per exercise; a reader
+    # may offer the parent's history when the variation has none.
+    variationOf:
+      type: reference
+      kind: ~/training/exercise
+      description: the exercise this one is a variation of, such as the flat
+        press for an incline press
+    # The same fields, names and types as
+    # substrate.reamde.dev/observations/metric.codes, with `system` and
+    # `code` required: a coding without both resolves nothing. `system` is a
+    # URI where the system has one and a short word otherwise: `http://hl7.org/fhir/uv/phr/CodeSystem/observation-pghd-codes`
+    # (the HL7 PHR workout codes), `fit` (`category/name`, such as
+    # squat/barbell_back_squat), `healthconnect`
+    # (EXERCISE_SEGMENT_TYPE_PLANK), `hevy` (the template id), `strong` (the
+    # exact export name, such as Squat (Barbell)), `wger` (the uuid),
+    # `free-exercise-db` (its id). A broad code (Health Connect's segment
+    # types) may cover several exercises; two exercises sharing one are never
+    # merged for it.
+    codes:
+      type: object
+      repeated: true
+      description: the same exercise in other systems' code sets, which an
+        importer resolves it by
+      fields:
+        system:
+          type: string
+          required: true
+          description: the code system, a URI where it has one or a word such
+            as fit, hevy or strong
+        code:
+          type: string
+          required: true
+          description: the code in that system
+        version:
+          type: string
+          description: the code system's version, where it matters
+        display:
+          type: string
+          description: the code system's own name for it
+    # ---- the suggestion's settings -------------------------
+    # The load grid: base + k * step, up to max. In a bodyweight mode the
+    # step and max are of the added load or the assistance.
+    loadBase:
+      type: quantity
+      unit: kg
+      units: [kg, lb]
+      min:
+        value: "0"
+        unit: kg
+      description: the lightest load it can be set to, such as the empty bar;
+        absent means the default for its equipment, else 0
+    loadStep:
+      type: quantity
+      unit: kg
+      units: [kg, lb]
+      min:
+        value: "0"
+        unit: kg
+      description: the smallest change of load, such as one pin or two of
+        the smallest plates; its unit is the exercise's unit
+    loadMax:
+      type: quantity
+      unit: kg
+      units: [kg, lb]
+      min:
+        value: "0"
+        unit: kg
+      description: the heaviest load, or the most added load or assistance,
+        it can be set to
+    # Read only for the three bodyweight measurements; a repsonly or
+    # duration exercise moves no load whatever this says. A bodyweight set
+    # copies it when logged.
+    bodyShare:
+      type: decimal
+      min: 0
+      max: 1
+      description: the share of body mass a bodyweight set moves, from 0 to
+        1, such as 0.65 for a push-up; absent means 1; read only for the bodyweight
+        measurements
+    # 8 to 12 at RPE 8 unless the owner says otherwise. These are the
+    # exercise's own defaults for a set whose routine names no target.
+    defaultRepsMin:
+      type: int
+      min: 1
+      description: the fewest reps of the range a working set aims for when
+        its routine names none
+    defaultRepsMax:
+      type: int
+      min: 1
+      description: the most reps of the range a working set aims for when
+        its routine names none
+    defaultRPE:
+      type: decimal
+      min: 1
+      max: 10
+      description: the effort a working set aims for when its routine names
+        none, on the RIR-based RPE scale
+    repGain:
+      type: int
+      min: 0
+      description: the reps added per session at an unchanged load; absent
+        means 1
+    # 20 means a fifth lighter. Rounded down to the load grid.
+    dropPercent:
+      type: decimal
+      min: 0
+      max: 100
+      description: how much lighter each drop of a drop set is, in percent;
+        absent means 20
+    timeStep:
+      type: duration
+      description: the time added per session to a timed set at an unchanged
+        load; absent means 5 seconds
+    # The method author's own rule by default: stop when a mini-set loses a
+    # rep from the first mini-set, or after five mini-sets. A routine's planned set may set its own rule, cap,
+    # target and total.
+    myoStopRule:
+      type: enum
+      description: when a myo-rep set ends; absent means repdrop, the method's
+        own rule
+      values:
+        - value: repdrop
+          label: A mini-set loses a rep from the first
+        - value: belowtarget
+          label: A mini-set falls below its target
+    myoMaxMiniSets:
+      type: int
+      min: 1
+      description: the most mini-sets after a myo activation set; absent means
+        5

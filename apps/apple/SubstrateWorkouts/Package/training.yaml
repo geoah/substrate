@@ -1,0 +1,74 @@
+# training: strength sessions in the gym, down to the set. Substrate
+# Workouts' own package (decision record 0203): the app carries these
+# manifests and declares them in a repository through its `declare:~/training`
+# scope, under the repository's own authority, so what lands is
+# `<authority>/training`. `~` below is that authority; the app writes it in
+# before it applies them. The app's README says how it installs, upgrades and
+# reads the package.
+#
+# Five kinds, a catalogue, a plan and a log:
+#
+#   exercise   one movement, with the settings the next-set suggestion reads
+#   setup      one station an exercise is done on, such as a gym's machine,
+#              with its own load grid ("Exercise setup")
+#   routine    the plan the console's agent writes ("Workout routine")
+#   session    one visit to the gym, as the app ran it ("Training session")
+#   set        one performed set, its own record
+#
+# ONE RECORD PER SET. A list filter and the aggregate read reach only a
+# kind's top-level properties, so a set's load, reps and effort are
+# queryable only as properties of a set kind of their own. The session keeps
+# the order of its exercises (`slots`) and its supersets (`groups`), which is
+# what a reorder changes in one patch.
+#
+# NAMES ARE ALWAYS FULL. The package is `training`, not `workouts`, because
+# `substrate.reamde.dev/health/workout` is a workout as a wearable records
+# it, and a training session is a different record that may point at one.
+# The labels say "Workout routine" and "Training session" so a person and an
+# agent tell them apart.
+#
+# FIRST-PARTY SPELLING WHERE THEY OVERLAP. `about`, `source`, `origin`,
+# `revision`, `adapter`, `utcOffsetStart`, `utcOffsetEnd`, `name`, `notes`
+# (as `text`), `duration` and `distance` (a quantity in metres) are spelled
+# and typed as `substrate.reamde.dev/health/workout` spells them, and the
+# session and the set bind core's `revised` as the workout does.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: ~/training
+data:
+  authority: "~"
+  package: training
+  # 1: exercise, setup, routine, session and set. The app ships each
+  # change as the next version, additive only, and reads the version a
+  # repository holds to decide whether to install, upgrade or stop.
+  version: 1
+---
+# ---- the bundle document -----------------------------------------------------
+#
+# `requires: substrate.reamde.dev/health` for `session.workout`, which points
+# at the Apple Health copy of a session (a `health/workout` row the Apple
+# Health adapter builds). The app's approval installs that catalogue first
+# (a `package` authorization detail), and the apply refuses the batch while
+# it is missing.
+#
+# NOT `substrate.reamde.dev/observations`, although `session.source` pins its
+# `source` kind: that package is seeded into every repository. A unit (`kg`,
+# `lb`, `m`) is a record of core's `unit` kind, also seeded.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: ~/training
+data:
+  authority: "~"
+  package: training
+  description: >-
+    Strength training: the exercises you do and the machines you do them on,
+    your workout routines, and the training sessions and sets Substrate Workouts
+    logs. Needs the health catalogue.
+  requires:
+    - substrate.reamde.dev/health
+  installs:
+    - ~/training/exercise
+    - ~/training/setup
+    - ~/training/routine
+    - ~/training/session
+    - ~/training/set

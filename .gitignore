@@ -21,6 +21,8 @@ dist/
 /apps/apple/build/
 /apps/apple/SubstrateKit/.build/
 /apps/apple/SubstrateKit/.swiftpm/
+/apps/apple/WorkoutsKit/.build/
+/apps/apple/WorkoutsKit/.swiftpm/
 
 # Editors / OS
 .DS_Store

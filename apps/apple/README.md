@@ -1,7 +1,7 @@
 # The Apple apps
 
-Three apps: the console in a native shell, Substrate Chat (below) and
-Substrate Sync (below).
+Four apps: the console in a native shell, Substrate Chat, Substrate Sync and
+Substrate Workouts (each below).
 
 The console, bundled, in a native shell for macOS, iPadOS and iOS: one
 SwiftUI target (`Substrate`, bundle id `dev.reamde.substrate.console`) that
@@ -565,6 +565,32 @@ own with the same feeds and install page as the console app's; the Mac build
 updates itself through Sparkle with the console app's key, and the iOS build
 offers each newer release.
 
+## Substrate Workouts
+
+A fourth app in the same project: `SubstrateWorkouts` (bundle id
+`dev.reamde.substrate.workouts`), iPhone only, iOS 27, with its Live Activity
+extension (`dev.reamde.substrate.workouts.widgets`). It logs strength
+sessions in the gym, down to the set, into a training package it keeps in the
+repository itself: its approval asks for `declare:~/training`, and the app
+installs, upgrades and reads its own package's version
+([0203](../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)).
+Its model and engines are a Swift package of their own, `WorkoutsKit`
+(Foundation only), and its sign-in is SubstrateKit's. Everything else, the
+outbox, the cached routines and the package's rules, is in
+[its README](SubstrateWorkouts/README.md).
+
+```bash
+mise run apple:build:workouts     # the app for the simulator
+mise run apple:test:workouts      # WorkoutsKit's tests, on the Mac
+mise run apple:release:workouts   # archived, signed and published under workouts/
+```
+
+**Releases** go to `$SUBSTRATE_APPLE_RELEASE_URL/workouts/` with the same
+feeds and install page as Sync's, and its client ID metadata document as
+`workouts/client.json`. The build needs HealthKit and time-sensitive
+notifications on the development profile, which `-allowProvisioningUpdates`
+adds to the app id.
+
 ## Layout
 
 ```text
@@ -580,4 +606,7 @@ SubstrateChat/Sources/      Substrate Chat: App/, API/, Model/ (the transcript f
 SubstrateChatTests/         its tests: the fold, the stream lines, the Markdown parser, the words
 SubstrateSync/Sources/      Substrate Sync: App/, API/, Sync/ (the mappings, the readers, the engine), Views/, Debug/
 SubstrateSyncTests/         its tests: ids, labels, dates, the Health goldens
+SubstrateWorkouts/          Substrate Workouts: Sources/ (App/, Platform/, Shared/, Views/), Package/ (its training package), DESIGN.md
+SubstrateWorkoutsWidgets/   its Live Activity
+WorkoutsKit/                its Swift package: WorkoutsCore (model, engines, presenters) and WorkoutsSync (package, catalogue, outbox), with their tests
 ```

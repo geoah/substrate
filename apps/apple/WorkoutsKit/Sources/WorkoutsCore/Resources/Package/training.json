@@ -1,0 +1,2498 @@
+{
+  "package": "~/training",
+  "version": 1,
+  "documents": [
+    {
+      "kind": "substrate.reamde.dev/core/package",
+      "metadata": {
+        "id": "~/training"
+      },
+      "data": {
+        "authority": "~",
+        "package": "training",
+        "version": 1
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/bundle",
+      "metadata": {
+        "id": "~/training"
+      },
+      "data": {
+        "authority": "~",
+        "package": "training",
+        "description": "Strength training: the exercises you do and the machines you do them on, your workout routines, and the training sessions and sets Substrate Workouts logs. Needs the health catalogue.",
+        "requires": [
+          "substrate.reamde.dev/health"
+        ],
+        "installs": [
+          "~/training/exercise",
+          "~/training/setup",
+          "~/training/routine",
+          "~/training/session",
+          "~/training/set"
+        ]
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/kind",
+      "metadata": {
+        "id": "~/training/exercise"
+      },
+      "data": {
+        "authority": "~",
+        "package": "training",
+        "description": "One movement the owner trains, such as Chest Press (Machine): which numbers a set of it records, its equipment and muscles, its codes in other systems, and the settings Substrate Workouts's next-set suggestion reads.",
+        "purpose": "primary",
+        "names": {
+          "singular": "exercise"
+        },
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "description": "the exercise's name as the owner reads it, such as Chest Press (Machine)"
+          },
+          "aliases": {
+            "type": "string",
+            "repeated": true,
+            "description": "other names it is found by, such as RDL or the gym's name for the machine"
+          },
+          "measurement": {
+            "type": "enum",
+            "required": true,
+            "description": "which numbers a set of it records, which decides the set row's columns and how its load is read",
+            "values": [
+              {
+                "value": "weightreps",
+                "label": "Weight and reps"
+              },
+              {
+                "value": "repsonly",
+                "label": "Reps only"
+              },
+              {
+                "value": "bodyweightreps",
+                "label": "Bodyweight reps"
+              },
+              {
+                "value": "weightedbodyweightreps",
+                "label": "Bodyweight plus load and reps"
+              },
+              {
+                "value": "bodyweightassistedreps",
+                "label": "Assisted bodyweight reps"
+              },
+              {
+                "value": "duration",
+                "label": "Duration"
+              },
+              {
+                "value": "weightduration",
+                "label": "Weight and duration"
+              },
+              {
+                "value": "distanceduration",
+                "label": "Distance and duration"
+              },
+              {
+                "value": "shortdistanceweight",
+                "label": "Weight and distance"
+              }
+            ]
+          },
+          "equipment": {
+            "type": "enum",
+            "description": "what the load is moved with, which picks the default load step and base",
+            "values": [
+              {
+                "value": "none",
+                "label": "None"
+              },
+              {
+                "value": "barbell",
+                "label": "Barbell"
+              },
+              {
+                "value": "dumbbell",
+                "label": "Dumbbell"
+              },
+              {
+                "value": "kettlebell",
+                "label": "Kettlebell"
+              },
+              {
+                "value": "machine",
+                "label": "Machine"
+              },
+              {
+                "value": "plateloaded",
+                "label": "Plate-loaded machine"
+              },
+              {
+                "value": "cable",
+                "label": "Cable"
+              },
+              {
+                "value": "plate",
+                "label": "Plate"
+              },
+              {
+                "value": "resistanceband",
+                "label": "Resistance band"
+              },
+              {
+                "value": "suspension",
+                "label": "Suspension"
+              },
+              {
+                "value": "other",
+                "label": "Other"
+              }
+            ]
+          },
+          "laterality": {
+            "type": "enum",
+            "description": "whether it works both sides at once, one side at a time, or the sides in turn within a set; on the last two a set's reps count per side",
+            "values": [
+              {
+                "value": "bilateral",
+                "label": "Both sides"
+              },
+              {
+                "value": "unilateral",
+                "label": "One side at a time"
+              },
+              {
+                "value": "alternating",
+                "label": "Alternating sides"
+              }
+            ]
+          },
+          "loadBasis": {
+            "type": "enum",
+            "description": "what a logged load counts, the whole load, one implement such as one dumbbell, or one side of a machine",
+            "values": [
+              {
+                "value": "total",
+                "label": "Total"
+              },
+              {
+                "value": "perimplement",
+                "label": "Per implement"
+              },
+              {
+                "value": "perside",
+                "label": "Per side"
+              }
+            ]
+          },
+          "implements": {
+            "type": "int",
+            "min": 1,
+            "description": "how many implements a set holds, such as 2 for a pair of dumbbells; absent means one"
+          },
+          "primaryMuscles": {
+            "type": "enum",
+            "repeated": true,
+            "description": "the muscles it trains directly, each counting one set per set done",
+            "values": [
+              {
+                "value": "abdominals",
+                "label": "Abdominals"
+              },
+              {
+                "value": "abductors",
+                "label": "Abductors"
+              },
+              {
+                "value": "adductors",
+                "label": "Adductors"
+              },
+              {
+                "value": "biceps",
+                "label": "Biceps"
+              },
+              {
+                "value": "calves",
+                "label": "Calves"
+              },
+              {
+                "value": "cardio",
+                "label": "Cardio"
+              },
+              {
+                "value": "chest",
+                "label": "Chest"
+              },
+              {
+                "value": "forearms",
+                "label": "Forearms"
+              },
+              {
+                "value": "fullbody",
+                "label": "Full body"
+              },
+              {
+                "value": "glutes",
+                "label": "Glutes"
+              },
+              {
+                "value": "hamstrings",
+                "label": "Hamstrings"
+              },
+              {
+                "value": "lats",
+                "label": "Lats"
+              },
+              {
+                "value": "lowerback",
+                "label": "Lower back"
+              },
+              {
+                "value": "neck",
+                "label": "Neck"
+              },
+              {
+                "value": "quadriceps",
+                "label": "Quadriceps"
+              },
+              {
+                "value": "shoulders",
+                "label": "Shoulders"
+              },
+              {
+                "value": "traps",
+                "label": "Traps"
+              },
+              {
+                "value": "triceps",
+                "label": "Triceps"
+              },
+              {
+                "value": "upperback",
+                "label": "Upper back"
+              },
+              {
+                "value": "other",
+                "label": "Other"
+              }
+            ]
+          },
+          "secondaryMuscles": {
+            "type": "enum",
+            "repeated": true,
+            "description": "the muscles it trains indirectly, each counting half a set per set done",
+            "values": [
+              {
+                "value": "abdominals",
+                "label": "Abdominals"
+              },
+              {
+                "value": "abductors",
+                "label": "Abductors"
+              },
+              {
+                "value": "adductors",
+                "label": "Adductors"
+              },
+              {
+                "value": "biceps",
+                "label": "Biceps"
+              },
+              {
+                "value": "calves",
+                "label": "Calves"
+              },
+              {
+                "value": "cardio",
+                "label": "Cardio"
+              },
+              {
+                "value": "chest",
+                "label": "Chest"
+              },
+              {
+                "value": "forearms",
+                "label": "Forearms"
+              },
+              {
+                "value": "fullbody",
+                "label": "Full body"
+              },
+              {
+                "value": "glutes",
+                "label": "Glutes"
+              },
+              {
+                "value": "hamstrings",
+                "label": "Hamstrings"
+              },
+              {
+                "value": "lats",
+                "label": "Lats"
+              },
+              {
+                "value": "lowerback",
+                "label": "Lower back"
+              },
+              {
+                "value": "neck",
+                "label": "Neck"
+              },
+              {
+                "value": "quadriceps",
+                "label": "Quadriceps"
+              },
+              {
+                "value": "shoulders",
+                "label": "Shoulders"
+              },
+              {
+                "value": "traps",
+                "label": "Traps"
+              },
+              {
+                "value": "triceps",
+                "label": "Triceps"
+              },
+              {
+                "value": "upperback",
+                "label": "Upper back"
+              },
+              {
+                "value": "other",
+                "label": "Other"
+              }
+            ]
+          },
+          "restClass": {
+            "type": "enum",
+            "description": "the class that picks its default rest between sets when the routine names none",
+            "values": [
+              {
+                "value": "heavycompound",
+                "label": "Heavy compound (3 min)"
+              },
+              {
+                "value": "compound",
+                "label": "Compound (2 min)"
+              },
+              {
+                "value": "isolation",
+                "label": "Isolation (1 min 30 s)"
+              },
+              {
+                "value": "highrep",
+                "label": "High-rep small muscles and trunk (1 min)"
+              },
+              {
+                "value": "timed",
+                "label": "Timed hold (1 min)"
+              },
+              {
+                "value": "carry",
+                "label": "Carry or sled (2 min)"
+              },
+              {
+                "value": "power",
+                "label": "Power and jumps (3 min)"
+              }
+            ]
+          },
+          "variationOf": {
+            "type": "reference",
+            "kind": "~/training/exercise",
+            "description": "the exercise this one is a variation of, such as the flat press for an incline press"
+          },
+          "codes": {
+            "type": "object",
+            "repeated": true,
+            "description": "the same exercise in other systems' code sets, which an importer resolves it by",
+            "fields": {
+              "system": {
+                "type": "string",
+                "required": true,
+                "description": "the code system, a URI where it has one or a word such as fit, hevy or strong"
+              },
+              "code": {
+                "type": "string",
+                "required": true,
+                "description": "the code in that system"
+              },
+              "version": {
+                "type": "string",
+                "description": "the code system's version, where it matters"
+              },
+              "display": {
+                "type": "string",
+                "description": "the code system's own name for it"
+              }
+            }
+          },
+          "loadBase": {
+            "type": "quantity",
+            "unit": "kg",
+            "units": [
+              "kg",
+              "lb"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "kg"
+            },
+            "description": "the lightest load it can be set to, such as the empty bar; absent means the default for its equipment, else 0"
+          },
+          "loadStep": {
+            "type": "quantity",
+            "unit": "kg",
+            "units": [
+              "kg",
+              "lb"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "kg"
+            },
+            "description": "the smallest change of load, such as one pin or two of the smallest plates; its unit is the exercise's unit"
+          },
+          "loadMax": {
+            "type": "quantity",
+            "unit": "kg",
+            "units": [
+              "kg",
+              "lb"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "kg"
+            },
+            "description": "the heaviest load, or the most added load or assistance, it can be set to"
+          },
+          "bodyShare": {
+            "type": "decimal",
+            "min": 0,
+            "max": 1,
+            "description": "the share of body mass a bodyweight set moves, from 0 to 1, such as 0.65 for a push-up; absent means 1; read only for the bodyweight measurements"
+          },
+          "defaultRepsMin": {
+            "type": "int",
+            "min": 1,
+            "description": "the fewest reps of the range a working set aims for when its routine names none"
+          },
+          "defaultRepsMax": {
+            "type": "int",
+            "min": 1,
+            "description": "the most reps of the range a working set aims for when its routine names none"
+          },
+          "defaultRPE": {
+            "type": "decimal",
+            "min": 1,
+            "max": 10,
+            "description": "the effort a working set aims for when its routine names none, on the RIR-based RPE scale"
+          },
+          "repGain": {
+            "type": "int",
+            "min": 0,
+            "description": "the reps added per session at an unchanged load; absent means 1"
+          },
+          "dropPercent": {
+            "type": "decimal",
+            "min": 0,
+            "max": 100,
+            "description": "how much lighter each drop of a drop set is, in percent; absent means 20"
+          },
+          "timeStep": {
+            "type": "duration",
+            "description": "the time added per session to a timed set at an unchanged load; absent means 5 seconds"
+          },
+          "myoStopRule": {
+            "type": "enum",
+            "description": "when a myo-rep set ends; absent means repdrop, the method's own rule",
+            "values": [
+              {
+                "value": "repdrop",
+                "label": "A mini-set loses a rep from the first"
+              },
+              {
+                "value": "belowtarget",
+                "label": "A mini-set falls below its target"
+              }
+            ]
+          },
+          "myoMaxMiniSets": {
+            "type": "int",
+            "min": 1,
+            "description": "the most mini-sets after a myo activation set; absent means 5"
+          }
+        }
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/kind",
+      "metadata": {
+        "id": "~/training/setup"
+      },
+      "data": {
+        "authority": "~",
+        "package": "training",
+        "description": "One station an exercise is done on, such as the hotel gym's chest press machine: the exercise, where it is, and its own load grid. Sets done on it keep a history of their own.",
+        "purpose": "supporting",
+        "names": {
+          "singular": "setup"
+        },
+        "label": {
+          "singular": "Exercise setup",
+          "plural": "Exercise setups"
+        },
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "description": "the setup's name as the owner reads it, such as Chest Press (Machine), hotel gym"
+          },
+          "exercise": {
+            "type": "reference",
+            "kind": "~/training/exercise",
+            "required": true,
+            "mustExist": true,
+            "description": "the exercise done on it"
+          },
+          "gym": {
+            "type": "string",
+            "description": "where it is, such as Hotel gym"
+          },
+          "loadBase": {
+            "type": "quantity",
+            "unit": "kg",
+            "units": [
+              "kg",
+              "lb"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "kg"
+            },
+            "description": "the lightest load it can be set to here; absent means the exercise's"
+          },
+          "loadStep": {
+            "type": "quantity",
+            "unit": "kg",
+            "units": [
+              "kg",
+              "lb"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "kg"
+            },
+            "description": "the smallest change of load here, such as one pin; its unit is the setup's unit"
+          },
+          "loadMax": {
+            "type": "quantity",
+            "unit": "kg",
+            "units": [
+              "kg",
+              "lb"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "kg"
+            },
+            "description": "the heaviest load, or the most added load or assistance, it can be set to here"
+          },
+          "notes": {
+            "type": "text",
+            "description": "what to remember about it, such as the seat height or which of two machines it is"
+          }
+        }
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/kind",
+      "metadata": {
+        "id": "~/training/routine"
+      },
+      "data": {
+        "authority": "~",
+        "package": "training",
+        "description": "A workout routine: the plan for one gym session, written in the console or by its agent. Ordered slots, one exercise each, hold planned sets with their targets and rests; groups bind slots into supersets and circuits. The Substrate Workouts app starts training sessions from it.",
+        "purpose": "primary",
+        "names": {
+          "singular": "routine"
+        },
+        "label": {
+          "singular": "Workout routine",
+          "plural": "Workout routines"
+        },
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "description": "the routine's name, such as Day 1 – Strength Foundation"
+          },
+          "folder": {
+            "type": "string",
+            "description": "the folder it is listed under, such as Full Body 3x Week (Back-Friendly)"
+          },
+          "position": {
+            "type": "int",
+            "min": 1,
+            "description": "its place in its folder, from 1"
+          },
+          "notes": {
+            "type": "text",
+            "description": "what the routine is for and how to run it, shown before it starts"
+          },
+          "deload": {
+            "type": "bool",
+            "description": "true for a deload routine, whose sessions suggestions and trends discount"
+          },
+          "activityType": {
+            "type": "enum",
+            "description": "the Apple Health workout type its sessions are saved as, used only by the Health save; absent means traditional strength training",
+            "values": [
+              {
+                "value": "traditionalstrengthtraining",
+                "label": "Traditional strength training"
+              },
+              {
+                "value": "functionalstrengthtraining",
+                "label": "Functional strength training"
+              },
+              {
+                "value": "coretraining",
+                "label": "Core training"
+              },
+              {
+                "value": "highintensityintervaltraining",
+                "label": "High-intensity interval training"
+              }
+            ]
+          },
+          "groups": {
+            "type": "object",
+            "repeated": true,
+            "description": "the supersets, circuits and paired sets of the routine; a slot joins one by naming its key",
+            "fields": {
+              "key": {
+                "type": "string",
+                "required": true,
+                "description": "the group's key within the routine, such as a, which its slots name in their group field"
+              },
+              "groupKind": {
+                "type": "enum",
+                "required": true,
+                "description": "what sort of group it is",
+                "values": [
+                  {
+                    "value": "superset",
+                    "label": "Superset"
+                  },
+                  {
+                    "value": "triset",
+                    "label": "Tri-set"
+                  },
+                  {
+                    "value": "giantset",
+                    "label": "Giant set"
+                  },
+                  {
+                    "value": "circuit",
+                    "label": "Circuit"
+                  },
+                  {
+                    "value": "paired",
+                    "label": "Paired sets"
+                  }
+                ]
+              },
+              "pairing": {
+                "type": "enum",
+                "description": "how the members relate, which picks the default rest between them",
+                "values": [
+                  {
+                    "value": "antagonist",
+                    "label": "Antagonists"
+                  },
+                  {
+                    "value": "samemuscle",
+                    "label": "Same muscle"
+                  },
+                  {
+                    "value": "preexhaust",
+                    "label": "Pre-exhaust"
+                  },
+                  {
+                    "value": "upperlower",
+                    "label": "Upper with lower body"
+                  },
+                  {
+                    "value": "unrelated",
+                    "label": "Unrelated"
+                  },
+                  {
+                    "value": "mechanicaldrop",
+                    "label": "Mechanical drop"
+                  }
+                ]
+              },
+              "rounds": {
+                "type": "int",
+                "min": 1,
+                "description": "how many rounds; absent means as many as the member with the most working sets, with warm-ups before round 1"
+              },
+              "roundRest": {
+                "type": "duration",
+                "description": "the rest after the last member of a round, before the next round starts"
+              }
+            }
+          },
+          "slots": {
+            "type": "object",
+            "repeated": true,
+            "description": "the routine's exercises in order, each with its rests and planned sets",
+            "fields": {
+              "key": {
+                "type": "string",
+                "required": true,
+                "description": "the slot's key within the routine, such as chest-press"
+              },
+              "exercise": {
+                "type": "reference",
+                "kind": "~/training/exercise",
+                "required": true,
+                "mustExist": true,
+                "description": "the exercise done in this slot"
+              },
+              "group": {
+                "type": "string",
+                "description": "the key of the group this slot is a member of; absent for a plain exercise"
+              },
+              "setRest": {
+                "type": "duration",
+                "description": "the rest between this slot's working sets; absent means the default for the exercise's rest class"
+              },
+              "warmupRest": {
+                "type": "duration",
+                "description": "the rest after one of this slot's warm-up sets; absent means 45 seconds"
+              },
+              "transition": {
+                "type": "duration",
+                "description": "in a group, the rest from this member to the next one in the same round"
+              },
+              "sideSwitch": {
+                "type": "duration",
+                "description": "for one side at a time, the pause between the sides of a set; absent means none"
+              },
+              "sideOrder": {
+                "type": "enum",
+                "description": "for one side at a time, which side goes first",
+                "values": [
+                  {
+                    "value": "left",
+                    "label": "Left first"
+                  },
+                  {
+                    "value": "right",
+                    "label": "Right first"
+                  },
+                  {
+                    "value": "weakerfirst",
+                    "label": "Weaker side first"
+                  }
+                ]
+              },
+              "sideMatch": {
+                "type": "bool",
+                "description": "true when the second side's target is the reps the first side did"
+              },
+              "notes": {
+                "type": "text",
+                "description": "what to remember about this exercise in this routine, such as the seat height"
+              },
+              "sets": {
+                "type": "object",
+                "repeated": true,
+                "description": "the sets planned for this slot, in order, warm-ups first",
+                "fields": {
+                  "key": {
+                    "type": "string",
+                    "required": true,
+                    "description": "the planned set's key within the slot, such as w1 or s2, which a performed set names"
+                  },
+                  "role": {
+                    "type": "enum",
+                    "default": "working",
+                    "description": "warm-up or working",
+                    "values": [
+                      {
+                        "value": "warmup",
+                        "label": "Warm-up"
+                      },
+                      {
+                        "value": "working",
+                        "label": "Working"
+                      }
+                    ]
+                  },
+                  "roleLabel": {
+                    "type": "enum",
+                    "description": "for a working set, top set or back-off set",
+                    "values": [
+                      {
+                        "value": "top",
+                        "label": "Top set"
+                      },
+                      {
+                        "value": "backoff",
+                        "label": "Back-off set"
+                      }
+                    ]
+                  },
+                  "structure": {
+                    "type": "enum",
+                    "default": "straight",
+                    "description": "how the set is built, from straight to a chain of drops or mini-sets",
+                    "values": [
+                      {
+                        "value": "straight",
+                        "label": "Straight"
+                      },
+                      {
+                        "value": "drop",
+                        "label": "Drop set"
+                      },
+                      {
+                        "value": "myo",
+                        "label": "Myo-reps"
+                      },
+                      {
+                        "value": "myomatch",
+                        "label": "Myo-rep match"
+                      },
+                      {
+                        "value": "restpause",
+                        "label": "Rest-pause"
+                      },
+                      {
+                        "value": "cluster",
+                        "label": "Cluster"
+                      }
+                    ]
+                  },
+                  "termination": {
+                    "type": "enum",
+                    "description": "what ends the set; absent means the reps or the time it names",
+                    "values": [
+                      {
+                        "value": "reps",
+                        "label": "Reps"
+                      },
+                      {
+                        "value": "reprange",
+                        "label": "Rep range"
+                      },
+                      {
+                        "value": "amrap",
+                        "label": "As many reps as possible"
+                      },
+                      {
+                        "value": "failure",
+                        "label": "To failure"
+                      },
+                      {
+                        "value": "rirstop",
+                        "label": "Stop at the effort target"
+                      },
+                      {
+                        "value": "time",
+                        "label": "Time"
+                      },
+                      {
+                        "value": "distance",
+                        "label": "Distance"
+                      },
+                      {
+                        "value": "totalreps",
+                        "label": "Total reps"
+                      }
+                    ]
+                  },
+                  "repsMin": {
+                    "type": "int",
+                    "min": 0,
+                    "description": "the fewest reps aimed for; equal to repsMax for an exact count"
+                  },
+                  "repsMax": {
+                    "type": "int",
+                    "min": 0,
+                    "description": "the most reps aimed for"
+                  },
+                  "load": {
+                    "type": "quantity",
+                    "unit": "kg",
+                    "units": [
+                      "kg",
+                      "lb"
+                    ],
+                    "min": {
+                      "value": "0",
+                      "unit": "kg"
+                    },
+                    "description": "the load to start from, in the unit written; the added load on a bodyweight-plus exercise; wins over loadPercent when both are given"
+                  },
+                  "loadPercent": {
+                    "type": "decimal",
+                    "min": 0,
+                    "max": 200,
+                    "description": "the load as a percentage of loadReference, such as 80; load wins when both are given"
+                  },
+                  "loadReference": {
+                    "type": "enum",
+                    "description": "what loadPercent is a percentage of",
+                    "values": [
+                      {
+                        "value": "onerm",
+                        "label": "Tested one-rep max"
+                      },
+                      {
+                        "value": "e1rm",
+                        "label": "Estimated one-rep max"
+                      },
+                      {
+                        "value": "trainingmax",
+                        "label": "Training max"
+                      },
+                      {
+                        "value": "bodymass",
+                        "label": "Body mass"
+                      }
+                    ]
+                  },
+                  "assistance": {
+                    "type": "quantity",
+                    "unit": "kg",
+                    "units": [
+                      "kg",
+                      "lb"
+                    ],
+                    "min": {
+                      "value": "0",
+                      "unit": "kg"
+                    },
+                    "description": "on an assisted exercise, the assistance to start from"
+                  },
+                  "rpeMin": {
+                    "type": "decimal",
+                    "min": 1,
+                    "max": 10,
+                    "description": "the lowest effort aimed for on the RIR-based RPE scale; equal to rpeMax for one value, such as 8 for two reps left"
+                  },
+                  "rpeMax": {
+                    "type": "decimal",
+                    "min": 1,
+                    "max": 10,
+                    "description": "the highest effort aimed for on the RIR-based RPE scale"
+                  },
+                  "rirMin": {
+                    "type": "decimal",
+                    "min": 0,
+                    "description": "the fewest reps in reserve aimed for, where the routine says it that way; equal to rirMax for one value"
+                  },
+                  "rirMax": {
+                    "type": "decimal",
+                    "min": 0,
+                    "description": "the most reps in reserve aimed for"
+                  },
+                  "durationMin": {
+                    "type": "duration",
+                    "description": "the shortest time aimed for in a timed set; equal to durationMax for an exact time"
+                  },
+                  "durationMax": {
+                    "type": "duration",
+                    "description": "the longest time aimed for in a timed set"
+                  },
+                  "timerMode": {
+                    "type": "enum",
+                    "description": "how the set's timer runs; absent means a countdown when a duration is set",
+                    "values": [
+                      {
+                        "value": "countdown",
+                        "label": "Count down to the target"
+                      },
+                      {
+                        "value": "stopwatch",
+                        "label": "Stopwatch"
+                      }
+                    ]
+                  },
+                  "distance": {
+                    "type": "quantity",
+                    "unit": "m",
+                    "min": {
+                      "value": "0",
+                      "unit": "m"
+                    },
+                    "description": "the distance aimed for, such as 20 m of a carry"
+                  },
+                  "tempo": {
+                    "type": "string",
+                    "pattern": "^[0-9X]([-/]?[0-9X]){3}$",
+                    "description": "the tempo to lift at, four phases eccentric first, such as 3-1-1-0"
+                  },
+                  "miniSetReps": {
+                    "type": "int",
+                    "min": 1,
+                    "description": "the reps of each mini-set or cluster; absent means a quarter of the activation set's, from 3 to 5"
+                  },
+                  "miniSets": {
+                    "type": "int",
+                    "min": 1,
+                    "description": "the most mini-sets after the first bout; for a cluster set, the clusters after the first"
+                  },
+                  "myoStopRule": {
+                    "type": "enum",
+                    "description": "when this myo-rep set ends, overriding the exercise's rule",
+                    "values": [
+                      {
+                        "value": "repdrop",
+                        "label": "A mini-set loses a rep from the first"
+                      },
+                      {
+                        "value": "belowtarget",
+                        "label": "A mini-set falls below its target"
+                      }
+                    ]
+                  },
+                  "totalReps": {
+                    "type": "int",
+                    "min": 1,
+                    "description": "the total reps that end a myo-rep or rest-pause set; for a myo-rep match, absent means the previous set's reps"
+                  },
+                  "drops": {
+                    "type": "int",
+                    "min": 1,
+                    "description": "for a drop set, how many drops follow the first bout"
+                  },
+                  "dropPercent": {
+                    "type": "decimal",
+                    "min": 0,
+                    "max": 100,
+                    "description": "how much lighter, in percent, each drop or a back-off set is than the set before"
+                  },
+                  "dropStep": {
+                    "type": "quantity",
+                    "unit": "kg",
+                    "units": [
+                      "kg",
+                      "lb"
+                    ],
+                    "min": {
+                      "value": "0",
+                      "unit": "kg"
+                    },
+                    "description": "how much lighter, as a load, each drop or a back-off set is than the set before"
+                  },
+                  "dropReps": {
+                    "type": "int",
+                    "min": 1,
+                    "description": "the reps each drop aims for; absent means to failure"
+                  },
+                  "intraSetPause": {
+                    "type": "duration",
+                    "description": "the pause between the mini-sets, clusters or drops of this set"
+                  },
+                  "rest": {
+                    "type": "duration",
+                    "description": "the rest after this set, overriding the slot's or the group's"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/kind",
+      "metadata": {
+        "id": "~/training/session"
+      },
+      "data": {
+        "authority": "~",
+        "package": "training",
+        "description": "A training session: one visit to the gym as Substrate Workouts ran it, from a workout routine or from nothing. When it started and finished, the exercises in order and their supersets, and the Apple Health workout it was saved as. Its sets are records of their own.",
+        "purpose": "primary",
+        "names": {
+          "singular": "session"
+        },
+        "label": {
+          "singular": "Training session",
+          "plural": "Training sessions"
+        },
+        "traits": [
+          "substrate.reamde.dev/core/temporal(range)",
+          "substrate.reamde.dev/core/revised"
+        ],
+        "displayTemplate": "{name|routine|id}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "the session's heading on the clock it was recorded on, such as Day 1 – Strength Foundation, Fri 30 Oct 13:42"
+          },
+          "status": {
+            "type": "state",
+            "description": "active while it runs, then finished",
+            "states": [
+              "active",
+              "finished"
+            ],
+            "initial": "active",
+            "transitions": [
+              {
+                "from": "active",
+                "to": "finished"
+              }
+            ]
+          },
+          "routine": {
+            "type": "reference",
+            "kind": "~/training/routine",
+            "description": "the workout routine it was started from; absent for a session started empty"
+          },
+          "routineVersion": {
+            "type": "int",
+            "min": 1,
+            "description": "the routine record's version when the session started"
+          },
+          "deload": {
+            "type": "bool",
+            "description": "true for a deload session, which suggestions and trends discount"
+          },
+          "sport": {
+            "type": "enum",
+            "description": "the sport, from the code set health/workout uses; Substrate Workouts writes strength",
+            "values": [
+              {
+                "value": "running",
+                "label": "Running"
+              },
+              {
+                "value": "walking",
+                "label": "Walking"
+              },
+              {
+                "value": "hiking",
+                "label": "Hiking"
+              },
+              {
+                "value": "cycling",
+                "label": "Cycling"
+              },
+              {
+                "value": "swimming",
+                "label": "Swimming"
+              },
+              {
+                "value": "strength",
+                "label": "Strength"
+              },
+              {
+                "value": "yoga",
+                "label": "Yoga"
+              },
+              {
+                "value": "pilates",
+                "label": "Pilates"
+              },
+              {
+                "value": "rowing",
+                "label": "Rowing"
+              },
+              {
+                "value": "elliptical",
+                "label": "Elliptical"
+              },
+              {
+                "value": "stairs",
+                "label": "Stairs"
+              },
+              {
+                "value": "hiit",
+                "label": "HIIT"
+              },
+              {
+                "value": "dance",
+                "label": "Dance"
+              },
+              {
+                "value": "boxing",
+                "label": "Boxing"
+              },
+              {
+                "value": "climbing",
+                "label": "Climbing"
+              },
+              {
+                "value": "tennis",
+                "label": "Tennis"
+              },
+              {
+                "value": "golf",
+                "label": "Golf"
+              },
+              {
+                "value": "skiing",
+                "label": "Skiing"
+              },
+              {
+                "value": "other",
+                "label": "Other"
+              }
+            ]
+          },
+          "sportSource": {
+            "type": "string",
+            "description": "the sport as an imported source named it, before mapping, such as FIT's training/strength_training; absent for a session logged in Substrate Workouts"
+          },
+          "activityType": {
+            "type": "enum",
+            "description": "the Apple Health workout type the session is saved as, used only by the Health save; absent means traditional strength training",
+            "values": [
+              {
+                "value": "traditionalstrengthtraining",
+                "label": "Traditional strength training"
+              },
+              {
+                "value": "functionalstrengthtraining",
+                "label": "Functional strength training"
+              },
+              {
+                "value": "coretraining",
+                "label": "Core training"
+              },
+              {
+                "value": "highintensityintervaltraining",
+                "label": "High-intensity interval training"
+              }
+            ]
+          },
+          "slots": {
+            "type": "object",
+            "repeated": true,
+            "description": "the session's exercises in the order shown; each set names its slot by key",
+            "fields": {
+              "key": {
+                "type": "string",
+                "required": true,
+                "description": "the slot's key within the session, which its sets name"
+              },
+              "exercise": {
+                "type": "reference",
+                "kind": "~/training/exercise",
+                "required": true,
+                "mustExist": true,
+                "description": "the exercise done in this slot"
+              },
+              "group": {
+                "type": "string",
+                "description": "the key of the session group this slot is a member of"
+              },
+              "routineSlot": {
+                "type": "string",
+                "description": "the key of the routine slot it came from; absent for an exercise added during the session"
+              },
+              "notes": {
+                "type": "text",
+                "description": "what the owner noted about this exercise in this session"
+              },
+              "setRest": {
+                "type": "duration",
+                "description": "the rest between this slot's working sets, where the session set it"
+              },
+              "warmupRest": {
+                "type": "duration",
+                "description": "the rest after one of this slot's warm-up sets, where the session set it"
+              },
+              "transition": {
+                "type": "duration",
+                "description": "in a group, the rest from this member to the next one in the same round, where the session set it"
+              },
+              "sideSwitch": {
+                "type": "duration",
+                "description": "for one side at a time, the pause between the sides, where the session set it"
+              },
+              "sets": {
+                "type": "object",
+                "repeated": true,
+                "description": "the planned sets of the routine slot as the session started with them, done or not, in order, warm-ups first",
+                "fields": {
+                  "key": {
+                    "type": "string",
+                    "required": true,
+                    "description": "the planned set's key within the slot, such as w1 or s2, which a performed set names"
+                  },
+                  "role": {
+                    "type": "enum",
+                    "default": "working",
+                    "description": "warm-up or working",
+                    "values": [
+                      {
+                        "value": "warmup",
+                        "label": "Warm-up"
+                      },
+                      {
+                        "value": "working",
+                        "label": "Working"
+                      }
+                    ]
+                  },
+                  "roleLabel": {
+                    "type": "enum",
+                    "description": "for a working set, top set or back-off set",
+                    "values": [
+                      {
+                        "value": "top",
+                        "label": "Top set"
+                      },
+                      {
+                        "value": "backoff",
+                        "label": "Back-off set"
+                      }
+                    ]
+                  },
+                  "structure": {
+                    "type": "enum",
+                    "default": "straight",
+                    "description": "how the set is built, from straight to a chain of drops or mini-sets",
+                    "values": [
+                      {
+                        "value": "straight",
+                        "label": "Straight"
+                      },
+                      {
+                        "value": "drop",
+                        "label": "Drop set"
+                      },
+                      {
+                        "value": "myo",
+                        "label": "Myo-reps"
+                      },
+                      {
+                        "value": "myomatch",
+                        "label": "Myo-rep match"
+                      },
+                      {
+                        "value": "restpause",
+                        "label": "Rest-pause"
+                      },
+                      {
+                        "value": "cluster",
+                        "label": "Cluster"
+                      }
+                    ]
+                  },
+                  "termination": {
+                    "type": "enum",
+                    "description": "what ends the set; absent means the reps or the time it names",
+                    "values": [
+                      {
+                        "value": "reps",
+                        "label": "Reps"
+                      },
+                      {
+                        "value": "reprange",
+                        "label": "Rep range"
+                      },
+                      {
+                        "value": "amrap",
+                        "label": "As many reps as possible"
+                      },
+                      {
+                        "value": "failure",
+                        "label": "To failure"
+                      },
+                      {
+                        "value": "rirstop",
+                        "label": "Stop at the effort target"
+                      },
+                      {
+                        "value": "time",
+                        "label": "Time"
+                      },
+                      {
+                        "value": "distance",
+                        "label": "Distance"
+                      },
+                      {
+                        "value": "totalreps",
+                        "label": "Total reps"
+                      }
+                    ]
+                  },
+                  "repsMin": {
+                    "type": "int",
+                    "min": 0,
+                    "description": "the fewest reps aimed for; equal to repsMax for an exact count"
+                  },
+                  "repsMax": {
+                    "type": "int",
+                    "min": 0,
+                    "description": "the most reps aimed for"
+                  },
+                  "load": {
+                    "type": "quantity",
+                    "unit": "kg",
+                    "units": [
+                      "kg",
+                      "lb"
+                    ],
+                    "min": {
+                      "value": "0",
+                      "unit": "kg"
+                    },
+                    "description": "the load to start from, in the unit written; the added load on a bodyweight-plus exercise; wins over loadPercent when both are given"
+                  },
+                  "loadPercent": {
+                    "type": "decimal",
+                    "min": 0,
+                    "max": 200,
+                    "description": "the load as a percentage of loadReference, such as 80; load wins when both are given"
+                  },
+                  "loadReference": {
+                    "type": "enum",
+                    "description": "what loadPercent is a percentage of",
+                    "values": [
+                      {
+                        "value": "onerm",
+                        "label": "Tested one-rep max"
+                      },
+                      {
+                        "value": "e1rm",
+                        "label": "Estimated one-rep max"
+                      },
+                      {
+                        "value": "trainingmax",
+                        "label": "Training max"
+                      },
+                      {
+                        "value": "bodymass",
+                        "label": "Body mass"
+                      }
+                    ]
+                  },
+                  "assistance": {
+                    "type": "quantity",
+                    "unit": "kg",
+                    "units": [
+                      "kg",
+                      "lb"
+                    ],
+                    "min": {
+                      "value": "0",
+                      "unit": "kg"
+                    },
+                    "description": "on an assisted exercise, the assistance to start from"
+                  },
+                  "rpeMin": {
+                    "type": "decimal",
+                    "min": 1,
+                    "max": 10,
+                    "description": "the lowest effort aimed for on the RIR-based RPE scale; equal to rpeMax for one value, such as 8 for two reps left"
+                  },
+                  "rpeMax": {
+                    "type": "decimal",
+                    "min": 1,
+                    "max": 10,
+                    "description": "the highest effort aimed for on the RIR-based RPE scale"
+                  },
+                  "rirMin": {
+                    "type": "decimal",
+                    "min": 0,
+                    "description": "the fewest reps in reserve aimed for, where the routine says it that way; equal to rirMax for one value"
+                  },
+                  "rirMax": {
+                    "type": "decimal",
+                    "min": 0,
+                    "description": "the most reps in reserve aimed for"
+                  },
+                  "durationMin": {
+                    "type": "duration",
+                    "description": "the shortest time aimed for in a timed set; equal to durationMax for an exact time"
+                  },
+                  "durationMax": {
+                    "type": "duration",
+                    "description": "the longest time aimed for in a timed set"
+                  },
+                  "timerMode": {
+                    "type": "enum",
+                    "description": "how the set's timer runs; absent means a countdown when a duration is set",
+                    "values": [
+                      {
+                        "value": "countdown",
+                        "label": "Count down to the target"
+                      },
+                      {
+                        "value": "stopwatch",
+                        "label": "Stopwatch"
+                      }
+                    ]
+                  },
+                  "distance": {
+                    "type": "quantity",
+                    "unit": "m",
+                    "min": {
+                      "value": "0",
+                      "unit": "m"
+                    },
+                    "description": "the distance aimed for, such as 20 m of a carry"
+                  },
+                  "tempo": {
+                    "type": "string",
+                    "pattern": "^[0-9X]([-/]?[0-9X]){3}$",
+                    "description": "the tempo to lift at, four phases eccentric first, such as 3-1-1-0"
+                  },
+                  "miniSetReps": {
+                    "type": "int",
+                    "min": 1,
+                    "description": "the reps of each mini-set or cluster; absent means a quarter of the activation set's, from 3 to 5"
+                  },
+                  "miniSets": {
+                    "type": "int",
+                    "min": 1,
+                    "description": "the most mini-sets after the first bout; for a cluster set, the clusters after the first"
+                  },
+                  "myoStopRule": {
+                    "type": "enum",
+                    "description": "when this myo-rep set ends, overriding the exercise's rule",
+                    "values": [
+                      {
+                        "value": "repdrop",
+                        "label": "A mini-set loses a rep from the first"
+                      },
+                      {
+                        "value": "belowtarget",
+                        "label": "A mini-set falls below its target"
+                      }
+                    ]
+                  },
+                  "totalReps": {
+                    "type": "int",
+                    "min": 1,
+                    "description": "the total reps that end a myo-rep or rest-pause set; for a myo-rep match, absent means the previous set's reps"
+                  },
+                  "drops": {
+                    "type": "int",
+                    "min": 1,
+                    "description": "for a drop set, how many drops follow the first bout"
+                  },
+                  "dropPercent": {
+                    "type": "decimal",
+                    "min": 0,
+                    "max": 100,
+                    "description": "how much lighter, in percent, each drop or a back-off set is than the set before"
+                  },
+                  "dropStep": {
+                    "type": "quantity",
+                    "unit": "kg",
+                    "units": [
+                      "kg",
+                      "lb"
+                    ],
+                    "min": {
+                      "value": "0",
+                      "unit": "kg"
+                    },
+                    "description": "how much lighter, as a load, each drop or a back-off set is than the set before"
+                  },
+                  "dropReps": {
+                    "type": "int",
+                    "min": 1,
+                    "description": "the reps each drop aims for; absent means to failure"
+                  },
+                  "intraSetPause": {
+                    "type": "duration",
+                    "description": "the pause between the mini-sets, clusters or drops of this set"
+                  },
+                  "rest": {
+                    "type": "duration",
+                    "description": "the rest after this set, overriding the slot's or the group's"
+                  }
+                }
+              }
+            }
+          },
+          "groups": {
+            "type": "object",
+            "repeated": true,
+            "description": "the supersets, circuits and paired sets of the session; a slot joins one by naming its key",
+            "fields": {
+              "key": {
+                "type": "string",
+                "required": true,
+                "description": "the group's key within the session, which its slots name"
+              },
+              "groupKind": {
+                "type": "enum",
+                "required": true,
+                "description": "what sort of group it is",
+                "values": [
+                  {
+                    "value": "superset",
+                    "label": "Superset"
+                  },
+                  {
+                    "value": "triset",
+                    "label": "Tri-set"
+                  },
+                  {
+                    "value": "giantset",
+                    "label": "Giant set"
+                  },
+                  {
+                    "value": "circuit",
+                    "label": "Circuit"
+                  },
+                  {
+                    "value": "paired",
+                    "label": "Paired sets"
+                  }
+                ]
+              },
+              "pairing": {
+                "type": "enum",
+                "description": "how the members relate, which picks the default rest between them",
+                "values": [
+                  {
+                    "value": "antagonist",
+                    "label": "Antagonists"
+                  },
+                  {
+                    "value": "samemuscle",
+                    "label": "Same muscle"
+                  },
+                  {
+                    "value": "preexhaust",
+                    "label": "Pre-exhaust"
+                  },
+                  {
+                    "value": "upperlower",
+                    "label": "Upper with lower body"
+                  },
+                  {
+                    "value": "unrelated",
+                    "label": "Unrelated"
+                  },
+                  {
+                    "value": "mechanicaldrop",
+                    "label": "Mechanical drop"
+                  }
+                ]
+              },
+              "rounds": {
+                "type": "int",
+                "min": 1,
+                "description": "how many rounds, where the session set it; absent means as many as the member with the most working sets"
+              },
+              "roundRest": {
+                "type": "duration",
+                "description": "the rest after the last member of a round, where the session set it"
+              }
+            }
+          },
+          "pauses": {
+            "type": "object",
+            "repeated": true,
+            "description": "the spans the session's clock was paused, which Apple Health gets as pause and resume events",
+            "fields": {
+              "start": {
+                "type": "datetime",
+                "required": true,
+                "description": "when the pause began"
+              },
+              "end": {
+                "type": "datetime",
+                "description": "when the session resumed; absent while it is paused"
+              }
+            }
+          },
+          "utcOffsetStart": {
+            "type": "int",
+            "min": -1080,
+            "max": 1080,
+            "description": "minutes east of UTC when it began"
+          },
+          "utcOffsetEnd": {
+            "type": "int",
+            "min": -1080,
+            "max": 1080,
+            "description": "minutes east of UTC when it ended"
+          },
+          "timezone": {
+            "type": "timezone",
+            "description": "the IANA zone the session was recorded in, such as Europe/London"
+          },
+          "bodyMass": {
+            "type": "quantity",
+            "unit": "kg",
+            "units": [
+              "kg",
+              "lb"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "kg"
+            },
+            "description": "the owner's body mass on the day, which bodyweight and assisted sets are reckoned from"
+          },
+          "sessionRPE": {
+            "type": "decimal",
+            "min": 0,
+            "max": 10,
+            "description": "how hard the whole session felt on the CR10 scale, 0 to 10, if the owner rated it at Finish"
+          },
+          "notes": {
+            "type": "text",
+            "description": "anything worth saying about the session"
+          },
+          "healthKitWorkout": {
+            "type": "string",
+            "pattern": "^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$",
+            "description": "the UUID of the Apple Health workout the session was saved as, in HealthKit's uppercase spelling"
+          },
+          "workout": {
+            "type": "reference",
+            "kind": "substrate.reamde.dev/health/workout",
+            "description": "the health workout built from that Apple Health workout, at applehealth/<account>/<UUID>, where the account is Substrate Sync's for the phone"
+          },
+          "source": {
+            "type": "reference",
+            "kind": "substrate.reamde.dev/observations/source",
+            "description": "the app or device it was logged with, such as Substrate Workouts or an imported Hevy history"
+          },
+          "about": {
+            "type": "reference",
+            "kind": "any",
+            "description": "who trained; absent means the repository's owner"
+          },
+          "origin": {
+            "type": "reference",
+            "kind": "any",
+            "description": "the record an importer built this from, such as a Hevy workout; absent for a session logged in Substrate Workouts"
+          },
+          "revision": {
+            "type": "int",
+            "min": 0,
+            "description": "rises with each change the writer sends; a lower one is refused"
+          },
+          "adapter": {
+            "type": "string",
+            "description": "what wrote it and its version, `<name>@<version>`, such as substrate-workouts@1.0.0"
+          }
+        }
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/kind",
+      "metadata": {
+        "id": "~/training/set"
+      },
+      "data": {
+        "authority": "~",
+        "package": "training",
+        "description": "One set the owner performed in a training session: the exercise, the load in the unit used and what it counts, the reps or time, the effort and how it was given, the rest before it, and the targets it was done against. A drop, a myo mini-set or one side is a record of its own, chained to the set it continues.",
+        "purpose": "supporting",
+        "names": {
+          "singular": "set"
+        },
+        "traits": [
+          "substrate.reamde.dev/core/temporal(point)",
+          "substrate.reamde.dev/core/revised"
+        ],
+        "displayTemplate": "{exercise}",
+        "properties": {
+          "session": {
+            "type": "reference",
+            "kind": "~/training/session",
+            "required": true,
+            "mustExist": true,
+            "onDelete": "cascade",
+            "description": "the training session the set was done in"
+          },
+          "exercise": {
+            "type": "reference",
+            "kind": "~/training/exercise",
+            "required": true,
+            "mustExist": true,
+            "description": "the exercise the set was done on"
+          },
+          "slot": {
+            "type": "string",
+            "required": true,
+            "description": "the key of the session slot the set belongs to"
+          },
+          "order": {
+            "type": "int",
+            "min": 1,
+            "required": true,
+            "description": "the set's row in its slot, from 1, warm-ups first and a chain's records in turn"
+          },
+          "ordinal": {
+            "type": "int",
+            "min": 1,
+            "description": "its number among the slot's sets of the same role, a chain counted once, such as working set 2"
+          },
+          "setup": {
+            "type": "reference",
+            "kind": "~/training/setup",
+            "mustExist": true,
+            "description": "the station it was done on, such as the hotel gym's chest press; sets with different setups keep separate history"
+          },
+          "role": {
+            "type": "enum",
+            "default": "working",
+            "description": "warm-up or working",
+            "values": [
+              {
+                "value": "warmup",
+                "label": "Warm-up"
+              },
+              {
+                "value": "working",
+                "label": "Working"
+              }
+            ]
+          },
+          "roleLabel": {
+            "type": "enum",
+            "description": "for a working set, top set or back-off set",
+            "values": [
+              {
+                "value": "top",
+                "label": "Top set"
+              },
+              {
+                "value": "backoff",
+                "label": "Back-off set"
+              }
+            ]
+          },
+          "structure": {
+            "type": "enum",
+            "default": "straight",
+            "description": "how the set is built, the same on every record of a chain",
+            "values": [
+              {
+                "value": "straight",
+                "label": "Straight"
+              },
+              {
+                "value": "drop",
+                "label": "Drop set"
+              },
+              {
+                "value": "myo",
+                "label": "Myo-reps"
+              },
+              {
+                "value": "myomatch",
+                "label": "Myo-rep match"
+              },
+              {
+                "value": "restpause",
+                "label": "Rest-pause"
+              },
+              {
+                "value": "cluster",
+                "label": "Cluster"
+              }
+            ]
+          },
+          "continues": {
+            "type": "reference",
+            "kind": "~/training/set",
+            "mustExist": true,
+            "onDelete": "cascade",
+            "description": "the first set of the chain this one continues, such as the working set before a drop; absent on a chain's head"
+          },
+          "chainPosition": {
+            "type": "int",
+            "min": 1,
+            "description": "its place in its chain, 1 for the head, 2 for the first drop, mini-set or second side"
+          },
+          "side": {
+            "type": "enum",
+            "description": "the side done, when one side at a time is logged as two records",
+            "values": [
+              {
+                "value": "left",
+                "label": "Left"
+              },
+              {
+                "value": "right",
+                "label": "Right"
+              }
+            ]
+          },
+          "loadMode": {
+            "type": "enum",
+            "description": "how the load reads, an external load, bodyweight alone, bodyweight plus the load, or bodyweight less the assistance; absent when the exercise moves no load",
+            "values": [
+              {
+                "value": "external",
+                "label": "External load"
+              },
+              {
+                "value": "bodyweight",
+                "label": "Bodyweight"
+              },
+              {
+                "value": "bodyweightplus",
+                "label": "Bodyweight plus load"
+              },
+              {
+                "value": "assisted",
+                "label": "Assisted"
+              }
+            ]
+          },
+          "load": {
+            "type": "quantity",
+            "unit": "kg",
+            "units": [
+              "kg",
+              "lb"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "kg"
+            },
+            "description": "the load in the unit it was entered in, as loadBasis counts it; the added load on bodyweight plus"
+          },
+          "assistance": {
+            "type": "quantity",
+            "unit": "kg",
+            "units": [
+              "kg",
+              "lb"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "kg"
+            },
+            "description": "on an assisted exercise, the assistance used, as a positive amount"
+          },
+          "resistanceLabel": {
+            "type": "string",
+            "description": "the resistance as the equipment labels it when it is not a load, such as a red band or level 7"
+          },
+          "reps": {
+            "type": "int",
+            "min": 0,
+            "description": "the reps completed, not counting a failed attempt, as repsBasis counts them"
+          },
+          "duration": {
+            "type": "duration",
+            "description": "the time a timed set lasted, past its target if the owner kept going"
+          },
+          "distance": {
+            "type": "quantity",
+            "unit": "m",
+            "min": {
+              "value": "0",
+              "unit": "m"
+            },
+            "description": "how far, such as the length of a carry"
+          },
+          "loadBasis": {
+            "type": "enum",
+            "description": "what the load counts, the whole load, one implement such as one dumbbell, or one side of a machine, as the exercise said when the set was logged",
+            "values": [
+              {
+                "value": "total",
+                "label": "Total"
+              },
+              {
+                "value": "perimplement",
+                "label": "Per implement"
+              },
+              {
+                "value": "perside",
+                "label": "Per side"
+              }
+            ]
+          },
+          "implements": {
+            "type": "int",
+            "min": 1,
+            "description": "how many implements the set held, such as 2 for a pair of dumbbells, as the exercise said when the set was logged"
+          },
+          "bodyShare": {
+            "type": "decimal",
+            "min": 0,
+            "max": 1,
+            "description": "the share of body mass the set moved, from 0 to 1, as the exercise said when the set was logged; on the bodyweight modes only"
+          },
+          "laterality": {
+            "type": "enum",
+            "description": "whether the exercise worked both sides at once, one side at a time, or the sides in turn, when the set was logged",
+            "values": [
+              {
+                "value": "bilateral",
+                "label": "Both sides"
+              },
+              {
+                "value": "unilateral",
+                "label": "One side at a time"
+              },
+              {
+                "value": "alternating",
+                "label": "Alternating sides"
+              }
+            ]
+          },
+          "repsBasis": {
+            "type": "enum",
+            "description": "whether reps counts both sides together or one side's reps; Substrate Workouts counts per side on unilateral and alternating work",
+            "values": [
+              {
+                "value": "total",
+                "label": "Total"
+              },
+              {
+                "value": "perside",
+                "label": "Per side"
+              }
+            ]
+          },
+          "rpe": {
+            "type": "decimal",
+            "min": 0,
+            "max": 10,
+            "description": "the effort the set was logged with, on the scale rpeScale names"
+          },
+          "rpeMethod": {
+            "type": "enum",
+            "description": "how rpe got its value, written whenever rpe is; a reader takes only an entered or imported rpe as a rating",
+            "values": [
+              {
+                "value": "entered",
+                "label": "Rated by the lifter"
+              },
+              {
+                "value": "prefilled",
+                "label": "Pre-filled from the plan and logged unchanged"
+              },
+              {
+                "value": "copied",
+                "label": "Copied from last time"
+              },
+              {
+                "value": "imported",
+                "label": "Imported from another app"
+              }
+            ]
+          },
+          "rir": {
+            "type": "decimal",
+            "min": 0,
+            "description": "the reps in reserve as a source logged them, never derived from rpe"
+          },
+          "rirMethod": {
+            "type": "enum",
+            "description": "how rir got its value, written whenever rir is, with the same rules as rpeMethod",
+            "values": [
+              {
+                "value": "entered",
+                "label": "Rated by the lifter"
+              },
+              {
+                "value": "prefilled",
+                "label": "Pre-filled from the plan and logged unchanged"
+              },
+              {
+                "value": "copied",
+                "label": "Copied from last time"
+              },
+              {
+                "value": "imported",
+                "label": "Imported from another app"
+              }
+            ]
+          },
+          "rpeScale": {
+            "type": "enum",
+            "description": "the scale rpe and the target's effort are on; Substrate Workouts writes rirbased; absent reads as rirbased",
+            "values": [
+              {
+                "value": "rirbased",
+                "label": "RIR-based RPE"
+              },
+              {
+                "value": "hevy",
+                "label": "Hevy"
+              },
+              {
+                "value": "strong",
+                "label": "Strong"
+              },
+              {
+                "value": "cr10",
+                "label": "CR10"
+              }
+            ]
+          },
+          "reachedFailure": {
+            "type": "bool",
+            "description": "true when the set ended because another full rep was not possible"
+          },
+          "failedRepAttempted": {
+            "type": "bool",
+            "description": "true when a further rep was tried and missed, as Strong's Failure tag means"
+          },
+          "completionMethod": {
+            "type": "enum",
+            "description": "how the set was completed, ticked on its own, marked done with the other unticked rows at Finish, or imported",
+            "values": [
+              {
+                "value": "individual",
+                "label": "Ticked on its own"
+              },
+              {
+                "value": "bulk",
+                "label": "Marked done at Finish"
+              },
+              {
+                "value": "imported",
+                "label": "Imported"
+              }
+            ]
+          },
+          "notes": {
+            "type": "text",
+            "description": "what the owner noted about this set, such as two partial reps at the end"
+          },
+          "sourceType": {
+            "type": "string",
+            "description": "an imported set's type as its source wrote it, such as Hevy's dropset; absent for a set logged in Substrate Workouts"
+          },
+          "timeBasis": {
+            "type": "enum",
+            "description": "what at is, the instant the set was completed, a time of its session's standing in for one nobody recorded, or an estimate",
+            "values": [
+              {
+                "value": "completion",
+                "label": "When it was completed"
+              },
+              {
+                "value": "session",
+                "label": "A time of its session's"
+              },
+              {
+                "value": "estimated",
+                "label": "Estimated"
+              }
+            ]
+          },
+          "startedAt": {
+            "type": "datetime",
+            "description": "when the set began, where it is known, such as a timed set's start"
+          },
+          "restBefore": {
+            "type": "duration",
+            "description": "the rest actually taken before this set, from the end of the set before"
+          },
+          "restMethod": {
+            "type": "enum",
+            "description": "how restBefore was measured, to this set's recorded start, to the end of the rest on the device, as a source recorded it, or estimated",
+            "values": [
+              {
+                "value": "start",
+                "label": "To the set's start"
+              },
+              {
+                "value": "interaction",
+                "label": "To the end of the rest on the device"
+              },
+              {
+                "value": "imported",
+                "label": "As the source recorded it"
+              },
+              {
+                "value": "estimated",
+                "label": "Estimated"
+              }
+            ]
+          },
+          "restPlanned": {
+            "type": "duration",
+            "description": "the rest prescribed before this set, as the timer counted it down"
+          },
+          "restSkipped": {
+            "type": "bool",
+            "description": "true when the owner skipped the rest before this set"
+          },
+          "target": {
+            "type": "object",
+            "description": "the planned set this set fulfils and its targets as they stood; absent for an added set",
+            "fields": {
+              "plannedSet": {
+                "type": "string",
+                "description": "the key of the planned set it fulfils, such as s2"
+              },
+              "termination": {
+                "type": "enum",
+                "description": "what was to end the set",
+                "values": [
+                  {
+                    "value": "reps",
+                    "label": "Reps"
+                  },
+                  {
+                    "value": "reprange",
+                    "label": "Rep range"
+                  },
+                  {
+                    "value": "amrap",
+                    "label": "As many reps as possible"
+                  },
+                  {
+                    "value": "failure",
+                    "label": "To failure"
+                  },
+                  {
+                    "value": "rirstop",
+                    "label": "Stop at the effort target"
+                  },
+                  {
+                    "value": "time",
+                    "label": "Time"
+                  },
+                  {
+                    "value": "distance",
+                    "label": "Distance"
+                  },
+                  {
+                    "value": "totalreps",
+                    "label": "Total reps"
+                  }
+                ]
+              },
+              "repsMin": {
+                "type": "int",
+                "min": 0,
+                "description": "the fewest reps aimed for"
+              },
+              "repsMax": {
+                "type": "int",
+                "min": 0,
+                "description": "the most reps aimed for"
+              },
+              "load": {
+                "type": "quantity",
+                "unit": "kg",
+                "units": [
+                  "kg",
+                  "lb"
+                ],
+                "min": {
+                  "value": "0",
+                  "unit": "kg"
+                },
+                "description": "the planned load as an absolute load, resolved from a percentage where the plan gave one, before any suggestion"
+              },
+              "loadPercent": {
+                "type": "decimal",
+                "min": 0,
+                "max": 200,
+                "description": "the planned load as a percentage of loadReference, where the plan gave it that way"
+              },
+              "loadReference": {
+                "type": "enum",
+                "description": "what loadPercent was a percentage of",
+                "values": [
+                  {
+                    "value": "onerm",
+                    "label": "Tested one-rep max"
+                  },
+                  {
+                    "value": "e1rm",
+                    "label": "Estimated one-rep max"
+                  },
+                  {
+                    "value": "trainingmax",
+                    "label": "Training max"
+                  },
+                  {
+                    "value": "bodymass",
+                    "label": "Body mass"
+                  }
+                ]
+              },
+              "referenceLoad": {
+                "type": "quantity",
+                "unit": "kg",
+                "units": [
+                  "kg",
+                  "lb"
+                ],
+                "min": {
+                  "value": "0",
+                  "unit": "kg"
+                },
+                "description": "the reference load the percentage was taken of, as it stood, such as a 120 kg training max"
+              },
+              "assistance": {
+                "type": "quantity",
+                "unit": "kg",
+                "units": [
+                  "kg",
+                  "lb"
+                ],
+                "min": {
+                  "value": "0",
+                  "unit": "kg"
+                },
+                "description": "the planned assistance on an assisted exercise"
+              },
+              "rpeMin": {
+                "type": "decimal",
+                "min": 1,
+                "max": 10,
+                "description": "the lowest effort aimed for, on the scale rpeScale names; equal to rpeMax for one value"
+              },
+              "rpeMax": {
+                "type": "decimal",
+                "min": 1,
+                "max": 10,
+                "description": "the highest effort aimed for"
+              },
+              "rirMin": {
+                "type": "decimal",
+                "min": 0,
+                "description": "the fewest reps in reserve aimed for; equal to rirMax for one value"
+              },
+              "rirMax": {
+                "type": "decimal",
+                "min": 0,
+                "description": "the most reps in reserve aimed for"
+              },
+              "durationMin": {
+                "type": "duration",
+                "description": "the shortest time aimed for"
+              },
+              "durationMax": {
+                "type": "duration",
+                "description": "the longest time aimed for"
+              },
+              "timerMode": {
+                "type": "enum",
+                "description": "how the set's timer ran",
+                "values": [
+                  {
+                    "value": "countdown",
+                    "label": "Count down to the target"
+                  },
+                  {
+                    "value": "stopwatch",
+                    "label": "Stopwatch"
+                  }
+                ]
+              },
+              "distance": {
+                "type": "quantity",
+                "unit": "m",
+                "min": {
+                  "value": "0",
+                  "unit": "m"
+                },
+                "description": "the distance aimed for"
+              },
+              "tempo": {
+                "type": "string",
+                "pattern": "^[0-9X]([-/]?[0-9X]){3}$",
+                "description": "the tempo to lift at, four phases eccentric first, such as 3-1-1-0"
+              },
+              "miniSetReps": {
+                "type": "int",
+                "min": 1,
+                "description": "the reps aimed for in each mini-set or cluster"
+              },
+              "miniSets": {
+                "type": "int",
+                "min": 1,
+                "description": "the most mini-sets or clusters after the first bout"
+              },
+              "myoStopRule": {
+                "type": "enum",
+                "description": "when the myo-rep set was to end",
+                "values": [
+                  {
+                    "value": "repdrop",
+                    "label": "A mini-set loses a rep from the first"
+                  },
+                  {
+                    "value": "belowtarget",
+                    "label": "A mini-set falls below its target"
+                  }
+                ]
+              },
+              "totalReps": {
+                "type": "int",
+                "min": 1,
+                "description": "the total reps that were to end a myo-rep or rest-pause set"
+              },
+              "drops": {
+                "type": "int",
+                "min": 1,
+                "description": "how many drops were to follow the first bout"
+              },
+              "dropPercent": {
+                "type": "decimal",
+                "min": 0,
+                "max": 100,
+                "description": "how much lighter, in percent, each drop or a back-off set was to be"
+              },
+              "dropStep": {
+                "type": "quantity",
+                "unit": "kg",
+                "units": [
+                  "kg",
+                  "lb"
+                ],
+                "min": {
+                  "value": "0",
+                  "unit": "kg"
+                },
+                "description": "how much lighter each drop or a back-off set was to be, as a load"
+              },
+              "dropReps": {
+                "type": "int",
+                "min": 1,
+                "description": "the reps each drop aimed for; absent means to failure"
+              },
+              "intraSetPause": {
+                "type": "duration",
+                "description": "the pause between the mini-sets, clusters or drops of the set"
+              }
+            }
+          },
+          "origin": {
+            "type": "reference",
+            "kind": "any",
+            "description": "the record an importer built this from, such as a Hevy workout; absent for a set logged in Substrate Workouts"
+          },
+          "revision": {
+            "type": "int",
+            "min": 0,
+            "description": "rises with each change the writer sends; a lower one is refused"
+          }
+        }
+      }
+    }
+  ]
+}

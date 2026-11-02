@@ -975,9 +975,11 @@ export interface AuthorizationScope {
   allowed?: boolean
 }
 
-/** What one scope of an app's token does with its pattern. `webhook` names
+/** What one scope of an app's token does with its pattern. `declare` keeps one
+ * package of the owner's own (decision 0203). `webhook` names
  * one trigger, and only an approved `webhook` detail puts it on a token. */
-export type ScopeVerb = "read" | "write" | "agents" | "decide" | "webhook"
+export type ScopeVerb =
+  "read" | "write" | "agents" | "decide" | "declare" | "webhook"
 
 /** One kind a scope reaches today, or one a package the request sets up
  * would add (`added`). `purpose` is absent for a primary kind. */

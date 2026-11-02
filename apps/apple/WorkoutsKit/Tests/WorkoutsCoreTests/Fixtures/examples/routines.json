@@ -1,0 +1,1270 @@
+{
+  "source": "research/workouts/substrate/examples/routines.yaml",
+  "records": [
+    {
+      "kind": "~/training/routine",
+      "id": "fully-body-collection-1",
+      "properties": {
+        "name": "Fully Body Collection #1",
+        "folder": "Full Body 3x Week (Back-Friendly)",
+        "position": 1,
+        "notes": "Every exercise of the folder in one routine: open it and do what the day allows, in any order. Two sets each, stopped one or two reps short, except the chest press, whose second set ends with a drop. Core and glute work is a good start on a stiff day.",
+        "groups": [
+          {
+            "key": "a",
+            "groupKind": "superset",
+            "roundRest": "PT1M"
+          }
+        ],
+        "slots": [
+          {
+            "key": "leg-press",
+            "exercise": "~/training/exercise/leg-press-machine",
+            "setRest": "PT2M",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "load": {
+                  "value": "40",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 12
+              },
+              {
+                "key": "s1",
+                "load": {
+                  "value": "90",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "90",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "calf-press",
+            "exercise": "~/training/exercise/calf-press-machine",
+            "setRest": "PT1M",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "60",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 20,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "60",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 20,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "seated-leg-curl",
+            "exercise": "~/training/exercise/seated-leg-curl-machine",
+            "setRest": "PT1M30S",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "35",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "35",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "leg-extension",
+            "exercise": "~/training/exercise/leg-extension-machine",
+            "setRest": "PT1M30S",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "35",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "35",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "hip-thrust",
+            "exercise": "~/training/exercise/hip-thrust-barbell",
+            "setRest": "PT2M",
+            "notes": "Ribs down and chin tucked; stop with the hips level with the knees, without arching the lower back.",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "60",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "60",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "goblet-squat",
+            "exercise": "~/training/exercise/goblet-squat",
+            "setRest": "PT2M",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "16",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "7",
+                "rpeMax": "7"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "16",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "7",
+                "rpeMax": "7"
+              }
+            ]
+          },
+          {
+            "key": "chest-press",
+            "exercise": "~/training/exercise/chest-press-machine",
+            "setRest": "PT1M30S",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "load": {
+                  "value": "25",
+                  "unit": "kg"
+                },
+                "repsMin": 15,
+                "repsMax": 15
+              },
+              {
+                "key": "s1",
+                "load": {
+                  "value": "35",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "9.5",
+                "rpeMax": "9.5"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "35",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "9.5",
+                "rpeMax": "9.5",
+                "structure": "drop",
+                "drops": 1
+              }
+            ]
+          },
+          {
+            "key": "seated-row",
+            "exercise": "~/training/exercise/seated-row-machine",
+            "setRest": "PT1M30S",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "40",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "40",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "shoulder-press",
+            "exercise": "~/training/exercise/shoulder-press-machine-plates",
+            "setRest": "PT2M",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "triceps-pushdown",
+            "exercise": "~/training/exercise/triceps-pushdown",
+            "setRest": "PT1M",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "9",
+                "rpeMax": "9"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "9",
+                "rpeMax": "9"
+              }
+            ]
+          },
+          {
+            "key": "torso-rotation",
+            "exercise": "~/training/exercise/torso-rotation",
+            "setRest": "PT1M",
+            "sideSwitch": "PT10S",
+            "sideOrder": "left",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "25",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "7",
+                "rpeMax": "7"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "25",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "7",
+                "rpeMax": "7"
+              }
+            ]
+          },
+          {
+            "key": "bulgarian-split-squat",
+            "exercise": "~/training/exercise/bulgarian-split-squat-dumbbell",
+            "setRest": "PT2M",
+            "sideSwitch": "PT15S",
+            "sideOrder": "left",
+            "notes": "Rear foot on the bench, torso upright; step far enough forward that the front heel stays down.",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "single-leg-romanian-deadlift",
+            "exercise": "~/training/exercise/single-leg-romanian-deadlift-dumbbell",
+            "setRest": "PT1M30S",
+            "sideSwitch": "PT15S",
+            "sideOrder": "left",
+            "notes": "One dumbbell, in the hand opposite the working leg; hinge only as far as the back stays flat.",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "7",
+                "rpeMax": "7"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "7",
+                "rpeMax": "7"
+              }
+            ]
+          },
+          {
+            "key": "plank",
+            "exercise": "~/training/exercise/plank",
+            "setRest": "PT15S",
+            "sets": [
+              {
+                "key": "s1",
+                "durationMin": "PT45S",
+                "durationMax": "PT1M30S"
+              },
+              {
+                "key": "s2",
+                "durationMin": "PT45S",
+                "durationMax": "PT1M30S"
+              }
+            ]
+          },
+          {
+            "key": "crunch",
+            "exercise": "~/training/exercise/crunch",
+            "setRest": "PT0S",
+            "sets": [
+              {
+                "key": "s1",
+                "repsMin": 12,
+                "repsMax": 20
+              },
+              {
+                "key": "s2",
+                "repsMin": 12,
+                "repsMax": 20
+              }
+            ]
+          },
+          {
+            "key": "lumbar-extension-stretch",
+            "exercise": "~/training/exercise/lumbar-extension-stretch",
+            "setRest": "PT0S",
+            "notes": "Hips stay on the floor; press up only as far as is comfortable and hold two seconds at the top.",
+            "sets": [
+              {
+                "key": "s1",
+                "repsMin": 10,
+                "repsMax": 10
+              },
+              {
+                "key": "s2",
+                "repsMin": 10,
+                "repsMax": 10
+              }
+            ]
+          },
+          {
+            "key": "glute-bridge",
+            "exercise": "~/training/exercise/glute-bridge",
+            "group": "a",
+            "transition": "PT0S",
+            "sets": [
+              {
+                "key": "s1",
+                "repsMin": 12,
+                "repsMax": 20
+              },
+              {
+                "key": "s2",
+                "repsMin": 12,
+                "repsMax": 20
+              }
+            ]
+          },
+          {
+            "key": "bird-dog",
+            "exercise": "~/training/exercise/bird-dog",
+            "group": "a",
+            "notes": "Reps per side, alternating; slow, and the hips stay square.",
+            "sets": [
+              {
+                "key": "s1",
+                "repsMin": 8,
+                "repsMax": 10
+              },
+              {
+                "key": "s2",
+                "repsMin": 8,
+                "repsMax": 10
+              }
+            ]
+          },
+          {
+            "key": "pallof-press",
+            "exercise": "~/training/exercise/cable-core-pallof-press",
+            "setRest": "PT1M",
+            "sideSwitch": "PT10S",
+            "sideOrder": "left",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 12,
+                "rpeMin": "7",
+                "rpeMax": "7"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 12,
+                "rpeMin": "7",
+                "rpeMax": "7"
+              }
+            ]
+          },
+          {
+            "key": "glute-focused-step-down",
+            "exercise": "~/training/exercise/glute-focused-step-down",
+            "setRest": "PT1M",
+            "sideSwitch": "PT10S",
+            "sideOrder": "left",
+            "sets": [
+              {
+                "key": "s1",
+                "repsMin": 8,
+                "repsMax": 12
+              },
+              {
+                "key": "s2",
+                "repsMin": 8,
+                "repsMax": 12
+              }
+            ]
+          },
+          {
+            "key": "push-up",
+            "exercise": "~/training/exercise/push-up",
+            "setRest": "PT1M30S",
+            "sets": [
+              {
+                "key": "s1",
+                "termination": "rirstop",
+                "rpeMin": "9",
+                "rpeMax": "9"
+              },
+              {
+                "key": "s2",
+                "termination": "rirstop",
+                "rpeMin": "9",
+                "rpeMax": "9"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/routine",
+      "id": "day-1-strength-foundation",
+      "properties": {
+        "name": "Day 1 – Strength Foundation",
+        "folder": "Full Body 3x Week (Back-Friendly)",
+        "position": 2,
+        "notes": "The heavier day: sets of 6 to 10, two reps short of failure (RPE 8). The Romanian deadlift stays easier (RPE 7) and slow on the way down, to spare the lower back. Two warm-ups on the leg press; the second lateral raise is a myo-rep set.",
+        "slots": [
+          {
+            "key": "leg-press",
+            "exercise": "~/training/exercise/leg-press-machine",
+            "setRest": "PT2M30S",
+            "notes": "Feet high and shoulder width; lower only until the hips start to tuck.",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "load": {
+                  "value": "40",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 12
+              },
+              {
+                "key": "w2",
+                "role": "warmup",
+                "load": {
+                  "value": "70",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 6,
+                "rest": "PT1M30S"
+              },
+              {
+                "key": "s1",
+                "load": {
+                  "value": "100",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "100",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "100",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "iso-lateral-chest-press",
+            "exercise": "~/training/exercise/iso-lateral-chest-press-machine",
+            "setRest": "PT2M",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 6,
+                "repsMax": 10,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "seated-row",
+            "exercise": "~/training/exercise/seated-row-machine",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "45",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "45",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "45",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "lateral-raise",
+            "exercise": "~/training/exercise/lateral-raise-dumbbell",
+            "setRest": "PT1M30S",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "6",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "6",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 20,
+                "rpeMin": "9",
+                "rpeMax": "9",
+                "structure": "myo",
+                "intraSetPause": "PT15S"
+              }
+            ]
+          },
+          {
+            "key": "romanian-deadlift",
+            "exercise": "~/training/exercise/romanian-deadlift-dumbbell",
+            "setRest": "PT2M",
+            "notes": "Bells close to the legs; hinge to mid-shin and end the set when the back starts to round.",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "16",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "7",
+                "rpeMax": "7",
+                "tempo": "3-1-1-0"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "16",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "7",
+                "rpeMax": "7",
+                "tempo": "3-1-1-0"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "16",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "7",
+                "rpeMax": "7",
+                "tempo": "3-1-1-0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/routine",
+      "id": "day-2-volume-stability",
+      "properties": {
+        "name": "Day 2 – Volume & Stability",
+        "folder": "Full Body 3x Week (Back-Friendly)",
+        "position": 3,
+        "notes": "The volume day: sets of 10 to 15 at RPE 8. The incline press and the vertical traction alternate as a superset. The goblet squat stays easy (RPE 7) to keep the trunk upright; the last pushdown goes to failure.",
+        "groups": [
+          {
+            "key": "a",
+            "groupKind": "superset",
+            "pairing": "antagonist",
+            "roundRest": "PT2M30S"
+          }
+        ],
+        "slots": [
+          {
+            "key": "seated-leg-curl",
+            "exercise": "~/training/exercise/seated-leg-curl-machine",
+            "setRest": "PT1M30S",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "35",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "35",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "35",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "incline-bench-press",
+            "exercise": "~/training/exercise/incline-bench-press-dumbbell",
+            "group": "a",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "load": {
+                  "value": "10",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 12
+              },
+              {
+                "key": "s1",
+                "load": {
+                  "value": "14",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "14",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "14",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "vertical-traction",
+            "exercise": "~/training/exercise/vertical-traction-machine",
+            "group": "a",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "45",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "45",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "45",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "goblet-squat",
+            "exercise": "~/training/exercise/goblet-squat",
+            "setRest": "PT2M",
+            "notes": "Heels down and elbows inside the knees; only as deep as the lower back stays neutral.",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "16",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "7",
+                "rpeMax": "7"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "16",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "7",
+                "rpeMax": "7"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "16",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "7",
+                "rpeMax": "7"
+              }
+            ]
+          },
+          {
+            "key": "triceps-rope-pushdown",
+            "exercise": "~/training/exercise/triceps-rope-pushdown",
+            "setRest": "PT1M",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "9",
+                "rpeMax": "9"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "9",
+                "rpeMax": "9"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "20",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "termination": "failure"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "~/training/routine",
+      "id": "day-3",
+      "properties": {
+        "name": "Day 3",
+        "folder": "Full Body 3x Week (Back-Friendly)",
+        "position": 4,
+        "notes": "Sets of 10 to 15 at RPE 8, and 8 to 12 at RPE 7 to 8 on the press; one warm-up on the leg press. The overhead press is done seated, back on the pad.",
+        "slots": [
+          {
+            "key": "calf-extension",
+            "exercise": "~/training/exercise/calf-extension-machine",
+            "setRest": "PT1M",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "50",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 20,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "50",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 20,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "50",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 20,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "leg-press",
+            "exercise": "~/training/exercise/leg-press-machine",
+            "setRest": "PT2M",
+            "sets": [
+              {
+                "key": "w1",
+                "role": "warmup",
+                "load": {
+                  "value": "40",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 12
+              },
+              {
+                "key": "s1",
+                "load": {
+                  "value": "90",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "90",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "90",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "chest-fly",
+            "exercise": "~/training/exercise/chest-fly-dumbbell",
+            "setRest": "PT1M30S",
+            "notes": "Elbows soft; stop the stretch with the hands level with the chest.",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "8",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "8",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "8",
+                  "unit": "kg"
+                },
+                "repsMin": 12,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "seated-row",
+            "exercise": "~/training/exercise/seated-row-machine",
+            "setRest": "PT2M",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "45",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "45",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "45",
+                  "unit": "kg"
+                },
+                "repsMin": 10,
+                "repsMax": 15,
+                "rpeMin": "8",
+                "rpeMax": "8"
+              }
+            ]
+          },
+          {
+            "key": "overhead-press",
+            "exercise": "~/training/exercise/overhead-press-dumbbell",
+            "setRest": "PT2M",
+            "notes": "Seated on an upright bench with the back on the pad, so the lower back does not arch.",
+            "sets": [
+              {
+                "key": "s1",
+                "load": {
+                  "value": "12",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "7",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s2",
+                "load": {
+                  "value": "12",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "7",
+                "rpeMax": "8"
+              },
+              {
+                "key": "s3",
+                "load": {
+                  "value": "12",
+                  "unit": "kg"
+                },
+                "repsMin": 8,
+                "repsMax": 12,
+                "rpeMin": "7",
+                "rpeMax": "8"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

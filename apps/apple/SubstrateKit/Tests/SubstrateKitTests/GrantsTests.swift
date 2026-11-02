@@ -160,7 +160,7 @@ import Testing
 
     @Test func everySentenceIsTheConsoles() throws {
         let entries = try JSONDecoder().decode([Entry].self, from: Data(contentsOf: Self.fixture))
-        #expect(Set(entries.map { ScopeWords.split($0.scope).verb }) == ["read", "write", "agents", "decide", "webhook"])
+        #expect(Set(entries.map { ScopeWords.split($0.scope).verb }) == ["read", "write", "agents", "decide", "declare", "webhook"])
         // A manifest that names nothing itself, so a webhook's package reads
         // by its id, as the console's packageName reads it.
         let manifest = AppManifest(appName: "App", clientID: "http://localhost/client.json", scopes: [])

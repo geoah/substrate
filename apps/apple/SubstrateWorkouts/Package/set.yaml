@@ -1,0 +1,688 @@
+# set: one performed set, its own record.
+#
+# WHY A KIND AND NOT A LIST ON THE SESSION. A list filter and the aggregate
+# read reach a kind's top-level properties only; a value inside an object
+# is outside the filter grammar, and the property read refuses a repeated
+# property. As records, "every set of the chest press" is one indexed list,
+# "heaviest load per week" is one aggregate read grouped by `exercise`, each
+# set is written once at its own id by whichever device did it, and every
+# outside source (Hevy's exercise history, Strong rows, FIT `set` messages,
+# Health Connect segments) maps one to one. What is filtered or aggregated
+# is a top-level property; the plan's targets, read only with the set, are
+# one object (`target`).
+#
+# THE ID IS CHOSEN ON THE PHONE, a lowercase UUIDv7, and the session and the
+# exercise are written before the first set naming them (both are
+# `mustExist`). An importer composes an id from the upstream key instead, so
+# a re-import rewrites in place; one whose upstream lost or reordered a set
+# purges the session first (the README, "Importing").
+#
+# `temporal(point)`, AT WHEN THE SET ENDED. Every set has an end (the tick);
+# few have a known start (a timed set's play, nothing else), so a range would
+# have to invent one. `startedAt` holds it when it is known. `timeBasis` says
+# what `at` is: `completion` for a set ticked when it was done, `session` for
+# a set that sits at a time of its session's (an imported set with no times
+# of its own sits `at` its session's start; a set marked done at Finish sits
+# at its end), `estimated` for a time a writer worked out. One exercise's
+# history, ordered by `at`, still orders such sets by session; they leave
+# `startedAt` and the rest fields empty.
+#
+# `revised`, AS ON THE SESSION. The phone raises `revision` with every edit
+# it sends, and a stale outbox replay onto a live set is refused rather than
+# reverting it. The rule holds for live records only, and an equal revision
+# is admitted, so every edit of a stored set is a PATCH with `ifVersion`
+# (the README, "How the app writes").
+#
+# STRUCTURED SETS ARE CHAINS. A drop set, a myo-rep, rest-pause or cluster
+# set and a set done one side at a time are several records: the first is
+# the chain's head, each later one names the head in `continues` and has its
+# `chainPosition`. A chain counts as one set for set counts, PREVIOUS and
+# suggestions, and shares its head's `ordinal`. So `2`, `2a` and `2b` are
+# one working set, set 2 with two drops. The head owns its chain: deleting
+# it takes the chain with it (`continues` cascades), and a member naming a
+# head that does not exist is refused (`mustExist`), so the writer puts a
+# chain's head before its members. The package README, "Reading", says how a
+# reader folds a chain into one set.
+#
+# EFFORT AS ENTERED, WITH HOW IT WAS ENTERED. `rpe` is the value the set was
+# logged with and `rir` what a source logged as reps in reserve; neither is
+# converted on write, because a 9.5 means "maybe one more rep" in Hevy and
+# "no more reps, slightly more load" in Boostcamp. `rpeScale` names the
+# scale; Substrate Workouts writes `rirbased` on every set it logs. `rpeMethod` (and
+# `rirMethod` for `rir`) says how the value got there, and is written
+# whenever the value is: the Rows screen shows the plan's RPE pre-filled, so
+# one tap logs it, and `prefilled` keeps that apart from a rating the lifter
+# gave (`entered`). Only `entered` and `imported` are ratings: a reader
+# treats a `prefilled` or `copied` RPE as no rating. RIR = 10 - RPE holds on
+# the RIR-based scales only (`rirbased`, `hevy`, `strong`, or no scale),
+# never on `cr10`. No rating is a valid state, as in Hevy.
+#
+# LOAD AS ENTERED. A quantity in the unit the owner used (kg, or lb), never a
+# float; `loadMode` says how to read it, and assistance is a positive amount
+# of its own, never a negative load. A set of an exercise that moves no load
+# (`repsonly`, `duration`, `distanceduration`) has no `loadMode` at all: it
+# adds nothing to volume, e1RM or load records. A resistance that is not a
+# load (a band's colour, a machine's level) is a label, never kilograms.
+#
+# WHAT THE NUMBERS MEANT, AS THEY STOOD. `loadBasis`, `implements`,
+# `bodyShare`, `laterality` and `repsBasis` are copied from the exercise when
+# the set is logged, resolved (an absent setting written as its default), so
+# editing the exercise later never reinterprets a stored load or rep count.
+# On a unilateral or alternating exercise Substrate Workouts counts reps per side
+# (`repsBasis: perside`): 10 reps of bird dogs are 10 with each side. An
+# importer keeps its source's count (`total` for 21 lunges in all).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ~/training/set
+data:
+  authority: "~"
+  package: training
+  description: >-
+    One set the owner performed in a training session: the exercise, the load
+    in the unit used and what it counts, the reps or time, the effort and
+    how it was given, the rest before it, and the targets it was done against.
+    A drop, a myo mini-set or one side is a record of its own, chained to
+    the set it continues.
+  purpose: supporting
+  names:
+    singular: set
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/core/revised
+  # The exercise's own title, which is its name. A bare reference renders
+  # the id when the exercise is missing, where `{exercise.name}` would render
+  # nothing, and it ties the title to no property of the exercise, which a
+  # rename would otherwise have to rewrite first. A title is written with
+  # the set and never refreshed, so it shows the name as it stood then.
+  displayTemplate: "{exercise}"
+  # NO DECLARED INDICES. The two reads, one exercise's history newest first
+  # (PREVIOUS, the suggestion, charts) and one session's sets, filter by a
+  # reference, and at substrate ffd7b967 the server answers that from its
+  # refs table (refs_dst_idx) and sorts by `at`: row level security keeps the
+  # planner from probing an index through `props->` (internal/engine/
+  # query.go, condReference). A declared [exercise, at] or [session, at]
+  # would be maintained on every set written and read by nothing. Declaring
+  # one later builds it and touches no record (the README, "Indices").
+  properties:
+    # ---- where it sits -------------------------------------------------------
+    # The session owns its sets: deleting it (a discard) collects them.
+    session:
+      type: reference
+      kind: ~/training/session
+      required: true
+      mustExist: true
+      onDelete: cascade
+      description: the training session the set was done in
+    # The exercise actually done, which may be a substitute for the plan's.
+    # `mustExist`: a set without its exercise has no name, no measurement
+    # (which decides its columns) and no load grid. A tombstoned or
+    # merged-away exercise still counts as existing.
+    exercise:
+      type: reference
+      kind: ~/training/exercise
+      required: true
+      mustExist: true
+      description: the exercise the set was done on
+    slot:
+      type: string
+      required: true
+      description: the key of the session slot the set belongs to
+    order:
+      type: int
+      min: 1
+      required: true
+      description: the set's row in its slot, from 1, warm-ups first and a
+        chain's records in turn
+    # Working set n is compared with working set n, not row with row, so a
+    # warm-up added or a drop dropped does not shift last time's numbers.
+    ordinal:
+      type: int
+      min: 1
+      description: its number among the slot's sets of the same role, a chain
+        counted once, such as working set 2
+    # A machine's history is kept per setup, so two gyms' chest press
+    # machines do not mix unless the owner merges their setups; free weights
+    # carry none and share their history everywhere. A reference, never a
+    # label: a string could not become one once stored. No `onDelete`:
+    # deleting a setup never touches a set.
+    setup:
+      type: reference
+      kind: ~/training/setup
+      mustExist: true
+      description: the station it was done on, such as the hotel gym's chest
+        press; sets with different setups keep separate history
+    # ---- what kind of set ----------------------------
+    role:
+      type: enum
+      default: working
+      description: warm-up or working
+      values:
+        - value: warmup
+          label: Warm-up
+        - value: working
+          label: Working
+    roleLabel:
+      type: enum
+      description: for a working set, top set or back-off set
+      values:
+        - value: top
+          label: Top set
+        - value: backoff
+          label: Back-off set
+    structure:
+      type: enum
+      default: straight
+      description: how the set is built, the same on every record of a chain
+      values:
+        - value: straight
+          label: Straight
+        - value: drop
+          label: Drop set
+        - value: myo
+          label: Myo-reps
+        - value: myomatch
+          label: Myo-rep match
+        - value: restpause
+          label: Rest-pause
+        - value: cluster
+          label: Cluster
+    # ---- the chain ---------------------------------
+    # The head, not the record just before: a deleted middle drop then
+    # orphans nothing, and a chain is the head plus the records naming it.
+    # The head owns its chain: deleting working set 2 takes 2a and 2b with
+    # it, so no drop is left pointing at nothing with a position from 2.
+    # `mustExist`: the head is written first, and a member naming a head
+    # that is not there is refused rather than stored dangling.
+    continues:
+      type: reference
+      kind: ~/training/set
+      mustExist: true
+      onDelete: cascade
+      description: the first set of the chain this one continues, such as
+        the working set before a drop; absent on a chain's head
+    chainPosition:
+      type: int
+      min: 1
+      description: its place in its chain, 1 for the head, 2 for the first
+        drop, mini-set or second side
+    side:
+      type: enum
+      description: the side done, when one side at a time is logged as two
+        records
+      values:
+        - value: left
+          label: Left
+        - value: right
+          label: Right
+    # ---- what was lifted ------------------------------------------------------
+    # Absent when the exercise moves no load (`repsonly`, `duration`,
+    # `distanceduration`): such a set adds nothing to volume or e1RM.
+    loadMode:
+      type: enum
+      description: how the load reads, an external load, bodyweight alone,
+        bodyweight plus the load, or bodyweight less the assistance; absent
+        when the exercise moves no load
+      values:
+        - value: external
+          label: External load
+        - value: bodyweight
+          label: Bodyweight
+        - value: bodyweightplus
+          label: Bodyweight plus load
+        - value: assisted
+          label: Assisted
+    # Never indexed: the server refuses an index on a quantity, whose order
+    # converts through the repository's unit graph.
+    load:
+      type: quantity
+      unit: kg
+      units: [kg, lb]
+      min:
+        value: "0"
+        unit: kg
+      description: the load in the unit it was entered in, as loadBasis counts
+        it; the added load on bodyweight plus
+    assistance:
+      type: quantity
+      unit: kg
+      units: [kg, lb]
+      min:
+        value: "0"
+        unit: kg
+      description: on an assisted exercise, the assistance used, as a positive
+        amount
+    # A band's colour, a machine's level, an uncalibrated plate number: kept
+    # as the equipment labels it and never turned into kilograms.
+    resistanceLabel:
+      type: string
+      description: the resistance as the equipment labels it when it is not
+        a load, such as a red band or level 7
+    # Hevy refuses 0; Strong logs a missed single as 0 with Failure.
+    reps:
+      type: int
+      min: 0
+      description: the reps completed, not counting a failed attempt, as repsBasis
+        counts them
+    duration:
+      type: duration
+      description: the time a timed set lasted, past its target if the owner
+        kept going
+    distance:
+      type: quantity
+      unit: m
+      min:
+        value: "0"
+        unit: m
+      description: how far, such as the length of a carry
+    # ---- what the numbers meant, copied from the exercise when logged ----------
+    # Resolved: an exercise setting left out is written as its default, so a
+    # later edit of the exercise reinterprets nothing stored here. The two
+    # load fields go with a load (`loadMode` present), `bodyShare` with the
+    # three bodyweight modes, `repsBasis` with `reps`; `laterality` with
+    # every set.
+    loadBasis:
+      type: enum
+      description: what the load counts, the whole load, one implement such
+        as one dumbbell, or one side of a machine, as the exercise said when
+        the set was logged
+      values:
+        - value: total
+          label: Total
+        - value: perimplement
+          label: Per implement
+        - value: perside
+          label: Per side
+    implements:
+      type: int
+      min: 1
+      description: how many implements the set held, such as 2 for a pair
+        of dumbbells, as the exercise said when the set was logged
+    bodyShare:
+      type: decimal
+      min: 0
+      max: 1
+      description: the share of body mass the set moved, from 0 to 1, as the
+        exercise said when the set was logged; on the bodyweight modes only
+    laterality:
+      type: enum
+      description: whether the exercise worked both sides at once, one side
+        at a time, or the sides in turn, when the set was logged
+      values:
+        - value: bilateral
+          label: Both sides
+        - value: unilateral
+          label: One side at a time
+        - value: alternating
+          label: Alternating sides
+    repsBasis:
+      type: enum
+      description: whether reps counts both sides together or one side's reps;
+        Substrate Workouts counts per side on unilateral and alternating work
+      values:
+        - value: total
+          label: Total
+        - value: perside
+          label: Per side
+    # ---- effort and outcome ------------------------------------------------------
+    rpe:
+      type: decimal
+      min: 0
+      max: 10
+      description: the effort the set was logged with, on the scale rpeScale
+        names
+    # Rules (the README, "Effort provenance"): tapping a value is `entered`,
+    # even the value already shown; a one-tap log with the plan's value
+    # untouched is `prefilled`; PREVIOUS copied into the row is `copied`; an
+    # import is `imported`. Clearing the rating removes rpe and rpeMethod.
+    # Equality with the plan never decides it. Absent with rpe present: a
+    # set written before the field existed.
+    rpeMethod:
+      type: enum
+      description: how rpe got its value, written whenever rpe is; a reader
+        takes only an entered or imported rpe as a rating
+      values:
+        - value: entered
+          label: Rated by the lifter
+        - value: prefilled
+          label: Pre-filled from the plan and logged unchanged
+        - value: copied
+          label: Copied from last time
+        - value: imported
+          label: Imported from another app
+    rir:
+      type: decimal
+      min: 0
+      description: the reps in reserve as a source logged them, never derived
+        from rpe
+    rirMethod:
+      type: enum
+      description: how rir got its value, written whenever rir is, with the
+        same rules as rpeMethod
+      values:
+        - value: entered
+          label: Rated by the lifter
+        - value: prefilled
+          label: Pre-filled from the plan and logged unchanged
+        - value: copied
+          label: Copied from last time
+        - value: imported
+          label: Imported from another app
+    # Substrate Workouts writes `rirbased` on every set it logs, so the scale of `rpe`
+    # and of the target's effort range is stated, not implied. Absent (sets
+    # written before `rirbased` existed) still reads as the RIR-based scale.
+    # Hevy and Strong are kept apart because their words for a half step
+    # differ; `cr10` is Health Connect's and FIT's 0 to 10 scale, on which
+    # RIR = 10 - RPE does not hold.
+    rpeScale:
+      type: enum
+      description: the scale rpe and the target's effort are on; Substrate
+        Workouts writes rirbased; absent reads as rirbased
+      values:
+        - value: rirbased
+          label: RIR-based RPE
+        - value: hevy
+          label: Hevy
+        - value: strong
+          label: Strong
+        - value: cr10
+          label: CR10
+    reachedFailure:
+      type: bool
+      description: true when the set ended because another full rep was not
+        possible
+    failedRepAttempted:
+      type: bool
+      description: true when a further rep was tried and missed, as Strong's
+        Failure tag means
+    # Finish's "Mark them done as shown" commits rows nobody ticked; a reader
+    # may want to tell those apart, since their values were never confirmed
+    # one by one.
+    completionMethod:
+      type: enum
+      description: how the set was completed, ticked on its own, marked done
+        with the other unticked rows at Finish, or imported
+      values:
+        - value: individual
+          label: Ticked on its own
+        - value: bulk
+          label: Marked done at Finish
+        - value: imported
+          label: Imported
+    # A note on this set alone: partials, forced reps, a machine setting that
+    # changed. A note on the exercise for the
+    # whole session is the slot's.
+    notes:
+      type: text
+      description: what the owner noted about this set, such as two partial
+        reps at the end
+    # The source's own set type, kept beside the mapped role and structure
+    #: Hevy's `normal`, `warmup`,
+    # `failure` or `dropset`, Strong's `W` or `D`. Absent for a set logged in
+    # Substrate Workouts.
+    sourceType:
+      type: string
+      description: an imported set's type as its source wrote it, such as
+        Hevy's dropset; absent for a set logged in Substrate Workouts
+    # ---- time and rest --------------------------------
+    # `at` is the trait's: when the set ended.
+    timeBasis:
+      type: enum
+      description: what at is, the instant the set was completed, a time of
+        its session's standing in for one nobody recorded, or an estimate
+      values:
+        - value: completion
+          label: When it was completed
+        - value: session
+          label: A time of its session's
+        - value: estimated
+          label: Estimated
+    startedAt:
+      type: datetime
+      description: when the set began, where it is known, such as a timed
+        set's start
+    restBefore:
+      type: duration
+      description: the rest actually taken before this set, from the end of
+        the set before
+    # Substrate Workouts' rest ends at a timed set's play (`start`: it runs to
+    # `startedAt`), or at Skip or the first touch on the next set once the
+    # countdown is over (`interaction`); a rep set ticked with no touch first
+    # counts its own working time in. Written whenever restBefore is.
+    restMethod:
+      type: enum
+      description: how restBefore was measured, to this set's recorded start,
+        to the end of the rest on the device, as a source recorded it, or
+        estimated
+      values:
+        - value: start
+          label: To the set's start
+        - value: interaction
+          label: To the end of the rest on the device
+        - value: imported
+          label: As the source recorded it
+        - value: estimated
+          label: Estimated
+    restPlanned:
+      type: duration
+      description: the rest prescribed before this set, as the timer counted
+        it down
+    restSkipped:
+      type: bool
+      description: true when the owner skipped the rest before this set
+    # ---- the plan in force (level 1; fields at level 2) -------------------------
+    # Copied when the set is done, so history survives a routine edit and the
+    # suggestion knows what the set was aimed at.
+    # Absent for a set the plan did not have. A chain's later records carry
+    # the planned set's key and their own targets: a drop's reps, a
+    # mini-set's reps, the second side's reps and time.
+    #
+    # THE EFFECTIVE PRESCRIPTION. Every field the planned set names is copied,
+    # and four are written resolved where the plan leaves them out, because
+    # the engine ran with a value: `timerMode` on a timed target (countdown),
+    # `myoStopRule` on a myo-rep set (the exercise's, else repdrop),
+    # `intraSetPause` on a structured set (15 s for myo-reps and myo-rep
+    # match, 20 s for rest-pause and clusters, PT0S for drops) and a myo-rep
+    # match's `totalReps` (the matched set's reps). `dropReps` absent means
+    # each drop went to failure.
+    #
+    # `load` IS ALWAYS THE RESOLVED ABSOLUTE LOAD. A planned set given as a
+    # percentage of a reference writes the load it came to; `loadPercent`,
+    # `loadReference` and `referenceLoad` beside it say why. When the
+    # reference is not known, `load` and `referenceLoad` are absent and
+    # `loadPercent` with `loadReference` alone say what was planned: in V1
+    # every reference but `bodymass`, since Substrate Workouts keeps no one-rep max or
+    # training max yet.
+    target:
+      type: object
+      description: the planned set this set fulfils and its targets as they
+        stood; absent for an added set
+      fields:
+        # The planned set's `key` in the routine slot that the session slot's
+        # `routineSlot` names. A key, not a position: substrate keeps no
+        # readable copy of a routine at an older version, and a warm-up the
+        # agent inserts would shift every position after it.
+        plannedSet:
+          type: string
+          description: the key of the planned set it fulfils, such as s2
+        termination:
+          type: enum
+          description: what was to end the set
+          values:
+            - value: reps
+              label: Reps
+            - value: reprange
+              label: Rep range
+            - value: amrap
+              label: As many reps as possible
+            - value: failure
+              label: To failure
+            - value: rirstop
+              label: Stop at the effort target
+            - value: time
+              label: Time
+            - value: distance
+              label: Distance
+            - value: totalreps
+              label: Total reps
+        repsMin:
+          type: int
+          min: 0
+          description: the fewest reps aimed for
+        repsMax:
+          type: int
+          min: 0
+          description: the most reps aimed for
+        load:
+          type: quantity
+          unit: kg
+          units: [kg, lb]
+          min:
+            value: "0"
+            unit: kg
+          description: the planned load as an absolute load, resolved from
+            a percentage where the plan gave one, before any suggestion
+        loadPercent:
+          type: decimal
+          min: 0
+          max: 200
+          description: the planned load as a percentage of loadReference,
+            where the plan gave it that way
+        loadReference:
+          type: enum
+          description: what loadPercent was a percentage of
+          values:
+            - value: onerm
+              label: Tested one-rep max
+            - value: e1rm
+              label: Estimated one-rep max
+            - value: trainingmax
+              label: Training max
+            - value: bodymass
+              label: Body mass
+        referenceLoad:
+          type: quantity
+          unit: kg
+          units: [kg, lb]
+          min:
+            value: "0"
+            unit: kg
+          description: the reference load the percentage was taken of, as
+            it stood, such as a 120 kg training max
+        assistance:
+          type: quantity
+          unit: kg
+          units: [kg, lb]
+          min:
+            value: "0"
+            unit: kg
+          description: the planned assistance on an assisted exercise
+        # One value is rpeMin equal to rpeMax. The suggestion reads the top
+        # of the range (rpeMax) as the load selector.
+        rpeMin:
+          type: decimal
+          min: 1
+          max: 10
+          description: the lowest effort aimed for, on the scale rpeScale
+            names; equal to rpeMax for one value
+        rpeMax:
+          type: decimal
+          min: 1
+          max: 10
+          description: the highest effort aimed for
+        rirMin:
+          type: decimal
+          min: 0
+          description: the fewest reps in reserve aimed for; equal to rirMax
+            for one value
+        rirMax:
+          type: decimal
+          min: 0
+          description: the most reps in reserve aimed for
+        durationMin:
+          type: duration
+          description: the shortest time aimed for
+        durationMax:
+          type: duration
+          description: the longest time aimed for
+        timerMode:
+          type: enum
+          description: how the set's timer ran
+          values:
+            - value: countdown
+              label: Count down to the target
+            - value: stopwatch
+              label: Stopwatch
+        distance:
+          type: quantity
+          unit: m
+          min:
+            value: "0"
+            unit: m
+          description: the distance aimed for
+        tempo:
+          type: string
+          pattern: "^[0-9X]([-/]?[0-9X]){3}$"
+          description: the tempo to lift at, four phases eccentric first,
+            such as 3-1-1-0
+        # The structure's parameters as they stood, which the suggestion reads
+        # for drops and mini-sets and which say how a stored chain
+        # was meant to run.
+        miniSetReps:
+          type: int
+          min: 1
+          description: the reps aimed for in each mini-set or cluster
+        miniSets:
+          type: int
+          min: 1
+          description: the most mini-sets or clusters after the first bout
+        myoStopRule:
+          type: enum
+          description: when the myo-rep set was to end
+          values:
+            - value: repdrop
+              label: A mini-set loses a rep from the first
+            - value: belowtarget
+              label: A mini-set falls below its target
+        totalReps:
+          type: int
+          min: 1
+          description: the total reps that were to end a myo-rep or rest-pause
+            set
+        drops:
+          type: int
+          min: 1
+          description: how many drops were to follow the first bout
+        dropPercent:
+          type: decimal
+          min: 0
+          max: 100
+          description: how much lighter, in percent, each drop or a back-off
+            set was to be
+        dropStep:
+          type: quantity
+          unit: kg
+          units: [kg, lb]
+          min:
+            value: "0"
+            unit: kg
+          description: how much lighter each drop or a back-off set was to
+            be, as a load
+        dropReps:
+          type: int
+          min: 1
+          description: the reps each drop aimed for; absent means to failure
+        intraSetPause:
+          type: duration
+          description: the pause between the mini-sets, clusters or drops
+            of the set
+    # ---- provenance, as health/workout spells it -------------------------------
+    origin:
+      type: reference
+      kind: any
+      description: the record an importer built this from, such as a Hevy
+        workout; absent for a set logged in Substrate Workouts
+    revision:
+      type: int
+      min: 0
+      description: rises with each change the writer sends; a lower one is
+        refused

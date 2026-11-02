@@ -1,0 +1,1378 @@
+{
+  "source": "apps/apple/SubstrateWorkouts/Package",
+  "kinds": [
+    {
+      "kind": "~/training/exercise",
+      "source": "exercise.yaml",
+      "traits": [],
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "aliases",
+          "type": "string",
+          "repeated": true
+        },
+        {
+          "name": "measurement",
+          "type": "enum",
+          "required": true,
+          "values": [
+            "weightreps",
+            "repsonly",
+            "bodyweightreps",
+            "weightedbodyweightreps",
+            "bodyweightassistedreps",
+            "duration",
+            "weightduration",
+            "distanceduration",
+            "shortdistanceweight"
+          ]
+        },
+        {
+          "name": "equipment",
+          "type": "enum",
+          "values": [
+            "none",
+            "barbell",
+            "dumbbell",
+            "kettlebell",
+            "machine",
+            "plateloaded",
+            "cable",
+            "plate",
+            "resistanceband",
+            "suspension",
+            "other"
+          ]
+        },
+        {
+          "name": "laterality",
+          "type": "enum",
+          "values": [
+            "bilateral",
+            "unilateral",
+            "alternating"
+          ]
+        },
+        {
+          "name": "loadBasis",
+          "type": "enum",
+          "values": [
+            "total",
+            "perimplement",
+            "perside"
+          ]
+        },
+        {
+          "name": "implements",
+          "type": "int"
+        },
+        {
+          "name": "primaryMuscles",
+          "type": "enum",
+          "repeated": true,
+          "values": [
+            "abdominals",
+            "abductors",
+            "adductors",
+            "biceps",
+            "calves",
+            "cardio",
+            "chest",
+            "forearms",
+            "fullbody",
+            "glutes",
+            "hamstrings",
+            "lats",
+            "lowerback",
+            "neck",
+            "quadriceps",
+            "shoulders",
+            "traps",
+            "triceps",
+            "upperback",
+            "other"
+          ]
+        },
+        {
+          "name": "secondaryMuscles",
+          "type": "enum",
+          "repeated": true,
+          "values": [
+            "abdominals",
+            "abductors",
+            "adductors",
+            "biceps",
+            "calves",
+            "cardio",
+            "chest",
+            "forearms",
+            "fullbody",
+            "glutes",
+            "hamstrings",
+            "lats",
+            "lowerback",
+            "neck",
+            "quadriceps",
+            "shoulders",
+            "traps",
+            "triceps",
+            "upperback",
+            "other"
+          ]
+        },
+        {
+          "name": "restClass",
+          "type": "enum",
+          "values": [
+            "heavycompound",
+            "compound",
+            "isolation",
+            "highrep",
+            "timed",
+            "carry",
+            "power"
+          ]
+        },
+        {
+          "name": "variationOf",
+          "type": "reference",
+          "kind": "~/training/exercise"
+        },
+        {
+          "name": "codes",
+          "type": "object",
+          "repeated": true,
+          "fields": [
+            {
+              "name": "system",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "code",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "display",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "name": "loadBase",
+          "type": "quantity"
+        },
+        {
+          "name": "loadStep",
+          "type": "quantity"
+        },
+        {
+          "name": "loadMax",
+          "type": "quantity"
+        },
+        {
+          "name": "bodyShare",
+          "type": "decimal"
+        },
+        {
+          "name": "defaultRepsMin",
+          "type": "int"
+        },
+        {
+          "name": "defaultRepsMax",
+          "type": "int"
+        },
+        {
+          "name": "defaultRPE",
+          "type": "decimal"
+        },
+        {
+          "name": "repGain",
+          "type": "int"
+        },
+        {
+          "name": "dropPercent",
+          "type": "decimal"
+        },
+        {
+          "name": "timeStep",
+          "type": "duration"
+        },
+        {
+          "name": "myoStopRule",
+          "type": "enum",
+          "values": [
+            "repdrop",
+            "belowtarget"
+          ]
+        },
+        {
+          "name": "myoMaxMiniSets",
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "kind": "~/training/routine",
+      "source": "routine.yaml",
+      "traits": [],
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "folder",
+          "type": "string"
+        },
+        {
+          "name": "position",
+          "type": "int"
+        },
+        {
+          "name": "notes",
+          "type": "text"
+        },
+        {
+          "name": "deload",
+          "type": "bool"
+        },
+        {
+          "name": "activityType",
+          "type": "enum",
+          "values": [
+            "traditionalstrengthtraining",
+            "functionalstrengthtraining",
+            "coretraining",
+            "highintensityintervaltraining"
+          ]
+        },
+        {
+          "name": "groups",
+          "type": "object",
+          "repeated": true,
+          "fields": [
+            {
+              "name": "key",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "groupKind",
+              "type": "enum",
+              "required": true,
+              "values": [
+                "superset",
+                "triset",
+                "giantset",
+                "circuit",
+                "paired"
+              ]
+            },
+            {
+              "name": "pairing",
+              "type": "enum",
+              "values": [
+                "antagonist",
+                "samemuscle",
+                "preexhaust",
+                "upperlower",
+                "unrelated",
+                "mechanicaldrop"
+              ]
+            },
+            {
+              "name": "rounds",
+              "type": "int"
+            },
+            {
+              "name": "roundRest",
+              "type": "duration"
+            }
+          ]
+        },
+        {
+          "name": "slots",
+          "type": "object",
+          "repeated": true,
+          "fields": [
+            {
+              "name": "key",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "exercise",
+              "type": "reference",
+              "required": true,
+              "kind": "~/training/exercise"
+            },
+            {
+              "name": "group",
+              "type": "string"
+            },
+            {
+              "name": "setRest",
+              "type": "duration"
+            },
+            {
+              "name": "warmupRest",
+              "type": "duration"
+            },
+            {
+              "name": "transition",
+              "type": "duration"
+            },
+            {
+              "name": "sideSwitch",
+              "type": "duration"
+            },
+            {
+              "name": "sideOrder",
+              "type": "enum",
+              "values": [
+                "left",
+                "right",
+                "weakerfirst"
+              ]
+            },
+            {
+              "name": "sideMatch",
+              "type": "bool"
+            },
+            {
+              "name": "notes",
+              "type": "text"
+            },
+            {
+              "name": "sets",
+              "type": "object",
+              "repeated": true,
+              "fields": [
+                {
+                  "name": "key",
+                  "type": "string",
+                  "required": true
+                },
+                {
+                  "name": "role",
+                  "type": "enum",
+                  "default": "working",
+                  "values": [
+                    "warmup",
+                    "working"
+                  ]
+                },
+                {
+                  "name": "roleLabel",
+                  "type": "enum",
+                  "values": [
+                    "top",
+                    "backoff"
+                  ]
+                },
+                {
+                  "name": "structure",
+                  "type": "enum",
+                  "default": "straight",
+                  "values": [
+                    "straight",
+                    "drop",
+                    "myo",
+                    "myomatch",
+                    "restpause",
+                    "cluster"
+                  ]
+                },
+                {
+                  "name": "termination",
+                  "type": "enum",
+                  "values": [
+                    "reps",
+                    "reprange",
+                    "amrap",
+                    "failure",
+                    "rirstop",
+                    "time",
+                    "distance",
+                    "totalreps"
+                  ]
+                },
+                {
+                  "name": "repsMin",
+                  "type": "int"
+                },
+                {
+                  "name": "repsMax",
+                  "type": "int"
+                },
+                {
+                  "name": "load",
+                  "type": "quantity"
+                },
+                {
+                  "name": "loadPercent",
+                  "type": "decimal"
+                },
+                {
+                  "name": "loadReference",
+                  "type": "enum",
+                  "values": [
+                    "onerm",
+                    "e1rm",
+                    "trainingmax",
+                    "bodymass"
+                  ]
+                },
+                {
+                  "name": "assistance",
+                  "type": "quantity"
+                },
+                {
+                  "name": "rpeMin",
+                  "type": "decimal"
+                },
+                {
+                  "name": "rpeMax",
+                  "type": "decimal"
+                },
+                {
+                  "name": "rirMin",
+                  "type": "decimal"
+                },
+                {
+                  "name": "rirMax",
+                  "type": "decimal"
+                },
+                {
+                  "name": "durationMin",
+                  "type": "duration"
+                },
+                {
+                  "name": "durationMax",
+                  "type": "duration"
+                },
+                {
+                  "name": "timerMode",
+                  "type": "enum",
+                  "values": [
+                    "countdown",
+                    "stopwatch"
+                  ]
+                },
+                {
+                  "name": "distance",
+                  "type": "quantity"
+                },
+                {
+                  "name": "tempo",
+                  "type": "string"
+                },
+                {
+                  "name": "miniSetReps",
+                  "type": "int"
+                },
+                {
+                  "name": "miniSets",
+                  "type": "int"
+                },
+                {
+                  "name": "myoStopRule",
+                  "type": "enum",
+                  "values": [
+                    "repdrop",
+                    "belowtarget"
+                  ]
+                },
+                {
+                  "name": "totalReps",
+                  "type": "int"
+                },
+                {
+                  "name": "drops",
+                  "type": "int"
+                },
+                {
+                  "name": "dropPercent",
+                  "type": "decimal"
+                },
+                {
+                  "name": "dropStep",
+                  "type": "quantity"
+                },
+                {
+                  "name": "dropReps",
+                  "type": "int"
+                },
+                {
+                  "name": "intraSetPause",
+                  "type": "duration"
+                },
+                {
+                  "name": "rest",
+                  "type": "duration"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "~/training/session",
+      "source": "session.yaml",
+      "traits": [
+        "substrate.reamde.dev/core/temporal(range)",
+        "substrate.reamde.dev/core/revised"
+      ],
+      "properties": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "state",
+          "values": [
+            "active",
+            "finished"
+          ]
+        },
+        {
+          "name": "routine",
+          "type": "reference",
+          "kind": "~/training/routine"
+        },
+        {
+          "name": "routineVersion",
+          "type": "int"
+        },
+        {
+          "name": "deload",
+          "type": "bool"
+        },
+        {
+          "name": "sport",
+          "type": "enum",
+          "values": [
+            "running",
+            "walking",
+            "hiking",
+            "cycling",
+            "swimming",
+            "strength",
+            "yoga",
+            "pilates",
+            "rowing",
+            "elliptical",
+            "stairs",
+            "hiit",
+            "dance",
+            "boxing",
+            "climbing",
+            "tennis",
+            "golf",
+            "skiing",
+            "other"
+          ]
+        },
+        {
+          "name": "sportSource",
+          "type": "string"
+        },
+        {
+          "name": "activityType",
+          "type": "enum",
+          "values": [
+            "traditionalstrengthtraining",
+            "functionalstrengthtraining",
+            "coretraining",
+            "highintensityintervaltraining"
+          ]
+        },
+        {
+          "name": "slots",
+          "type": "object",
+          "repeated": true,
+          "fields": [
+            {
+              "name": "key",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "exercise",
+              "type": "reference",
+              "required": true,
+              "kind": "~/training/exercise"
+            },
+            {
+              "name": "group",
+              "type": "string"
+            },
+            {
+              "name": "routineSlot",
+              "type": "string"
+            },
+            {
+              "name": "notes",
+              "type": "text"
+            },
+            {
+              "name": "setRest",
+              "type": "duration"
+            },
+            {
+              "name": "warmupRest",
+              "type": "duration"
+            },
+            {
+              "name": "transition",
+              "type": "duration"
+            },
+            {
+              "name": "sideSwitch",
+              "type": "duration"
+            },
+            {
+              "name": "sets",
+              "type": "object",
+              "repeated": true,
+              "fields": [
+                {
+                  "name": "key",
+                  "type": "string",
+                  "required": true
+                },
+                {
+                  "name": "role",
+                  "type": "enum",
+                  "default": "working",
+                  "values": [
+                    "warmup",
+                    "working"
+                  ]
+                },
+                {
+                  "name": "roleLabel",
+                  "type": "enum",
+                  "values": [
+                    "top",
+                    "backoff"
+                  ]
+                },
+                {
+                  "name": "structure",
+                  "type": "enum",
+                  "default": "straight",
+                  "values": [
+                    "straight",
+                    "drop",
+                    "myo",
+                    "myomatch",
+                    "restpause",
+                    "cluster"
+                  ]
+                },
+                {
+                  "name": "termination",
+                  "type": "enum",
+                  "values": [
+                    "reps",
+                    "reprange",
+                    "amrap",
+                    "failure",
+                    "rirstop",
+                    "time",
+                    "distance",
+                    "totalreps"
+                  ]
+                },
+                {
+                  "name": "repsMin",
+                  "type": "int"
+                },
+                {
+                  "name": "repsMax",
+                  "type": "int"
+                },
+                {
+                  "name": "load",
+                  "type": "quantity"
+                },
+                {
+                  "name": "loadPercent",
+                  "type": "decimal"
+                },
+                {
+                  "name": "loadReference",
+                  "type": "enum",
+                  "values": [
+                    "onerm",
+                    "e1rm",
+                    "trainingmax",
+                    "bodymass"
+                  ]
+                },
+                {
+                  "name": "assistance",
+                  "type": "quantity"
+                },
+                {
+                  "name": "rpeMin",
+                  "type": "decimal"
+                },
+                {
+                  "name": "rpeMax",
+                  "type": "decimal"
+                },
+                {
+                  "name": "rirMin",
+                  "type": "decimal"
+                },
+                {
+                  "name": "rirMax",
+                  "type": "decimal"
+                },
+                {
+                  "name": "durationMin",
+                  "type": "duration"
+                },
+                {
+                  "name": "durationMax",
+                  "type": "duration"
+                },
+                {
+                  "name": "timerMode",
+                  "type": "enum",
+                  "values": [
+                    "countdown",
+                    "stopwatch"
+                  ]
+                },
+                {
+                  "name": "distance",
+                  "type": "quantity"
+                },
+                {
+                  "name": "tempo",
+                  "type": "string"
+                },
+                {
+                  "name": "miniSetReps",
+                  "type": "int"
+                },
+                {
+                  "name": "miniSets",
+                  "type": "int"
+                },
+                {
+                  "name": "myoStopRule",
+                  "type": "enum",
+                  "values": [
+                    "repdrop",
+                    "belowtarget"
+                  ]
+                },
+                {
+                  "name": "totalReps",
+                  "type": "int"
+                },
+                {
+                  "name": "drops",
+                  "type": "int"
+                },
+                {
+                  "name": "dropPercent",
+                  "type": "decimal"
+                },
+                {
+                  "name": "dropStep",
+                  "type": "quantity"
+                },
+                {
+                  "name": "dropReps",
+                  "type": "int"
+                },
+                {
+                  "name": "intraSetPause",
+                  "type": "duration"
+                },
+                {
+                  "name": "rest",
+                  "type": "duration"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "groups",
+          "type": "object",
+          "repeated": true,
+          "fields": [
+            {
+              "name": "key",
+              "type": "string",
+              "required": true
+            },
+            {
+              "name": "groupKind",
+              "type": "enum",
+              "required": true,
+              "values": [
+                "superset",
+                "triset",
+                "giantset",
+                "circuit",
+                "paired"
+              ]
+            },
+            {
+              "name": "pairing",
+              "type": "enum",
+              "values": [
+                "antagonist",
+                "samemuscle",
+                "preexhaust",
+                "upperlower",
+                "unrelated",
+                "mechanicaldrop"
+              ]
+            },
+            {
+              "name": "rounds",
+              "type": "int"
+            },
+            {
+              "name": "roundRest",
+              "type": "duration"
+            }
+          ]
+        },
+        {
+          "name": "pauses",
+          "type": "object",
+          "repeated": true,
+          "fields": [
+            {
+              "name": "start",
+              "type": "datetime",
+              "required": true
+            },
+            {
+              "name": "end",
+              "type": "datetime"
+            }
+          ]
+        },
+        {
+          "name": "utcOffsetStart",
+          "type": "int"
+        },
+        {
+          "name": "utcOffsetEnd",
+          "type": "int"
+        },
+        {
+          "name": "timezone",
+          "type": "timezone"
+        },
+        {
+          "name": "bodyMass",
+          "type": "quantity"
+        },
+        {
+          "name": "sessionRPE",
+          "type": "decimal"
+        },
+        {
+          "name": "notes",
+          "type": "text"
+        },
+        {
+          "name": "healthKitWorkout",
+          "type": "string"
+        },
+        {
+          "name": "workout",
+          "type": "reference",
+          "kind": "substrate.reamde.dev/health/workout"
+        },
+        {
+          "name": "source",
+          "type": "reference",
+          "kind": "substrate.reamde.dev/observations/source"
+        },
+        {
+          "name": "about",
+          "type": "reference",
+          "kind": "any"
+        },
+        {
+          "name": "origin",
+          "type": "reference",
+          "kind": "any"
+        },
+        {
+          "name": "revision",
+          "type": "int"
+        },
+        {
+          "name": "adapter",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "kind": "~/training/set",
+      "source": "set.yaml",
+      "traits": [
+        "substrate.reamde.dev/core/temporal(point)",
+        "substrate.reamde.dev/core/revised"
+      ],
+      "properties": [
+        {
+          "name": "session",
+          "type": "reference",
+          "required": true,
+          "kind": "~/training/session"
+        },
+        {
+          "name": "exercise",
+          "type": "reference",
+          "required": true,
+          "kind": "~/training/exercise"
+        },
+        {
+          "name": "slot",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "order",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "ordinal",
+          "type": "int"
+        },
+        {
+          "name": "setup",
+          "type": "reference",
+          "kind": "~/training/setup"
+        },
+        {
+          "name": "role",
+          "type": "enum",
+          "default": "working",
+          "values": [
+            "warmup",
+            "working"
+          ]
+        },
+        {
+          "name": "roleLabel",
+          "type": "enum",
+          "values": [
+            "top",
+            "backoff"
+          ]
+        },
+        {
+          "name": "structure",
+          "type": "enum",
+          "default": "straight",
+          "values": [
+            "straight",
+            "drop",
+            "myo",
+            "myomatch",
+            "restpause",
+            "cluster"
+          ]
+        },
+        {
+          "name": "continues",
+          "type": "reference",
+          "kind": "~/training/set"
+        },
+        {
+          "name": "chainPosition",
+          "type": "int"
+        },
+        {
+          "name": "side",
+          "type": "enum",
+          "values": [
+            "left",
+            "right"
+          ]
+        },
+        {
+          "name": "loadMode",
+          "type": "enum",
+          "values": [
+            "external",
+            "bodyweight",
+            "bodyweightplus",
+            "assisted"
+          ]
+        },
+        {
+          "name": "load",
+          "type": "quantity"
+        },
+        {
+          "name": "assistance",
+          "type": "quantity"
+        },
+        {
+          "name": "resistanceLabel",
+          "type": "string"
+        },
+        {
+          "name": "reps",
+          "type": "int"
+        },
+        {
+          "name": "duration",
+          "type": "duration"
+        },
+        {
+          "name": "distance",
+          "type": "quantity"
+        },
+        {
+          "name": "loadBasis",
+          "type": "enum",
+          "values": [
+            "total",
+            "perimplement",
+            "perside"
+          ]
+        },
+        {
+          "name": "implements",
+          "type": "int"
+        },
+        {
+          "name": "bodyShare",
+          "type": "decimal"
+        },
+        {
+          "name": "laterality",
+          "type": "enum",
+          "values": [
+            "bilateral",
+            "unilateral",
+            "alternating"
+          ]
+        },
+        {
+          "name": "repsBasis",
+          "type": "enum",
+          "values": [
+            "total",
+            "perside"
+          ]
+        },
+        {
+          "name": "rpe",
+          "type": "decimal"
+        },
+        {
+          "name": "rpeMethod",
+          "type": "enum",
+          "values": [
+            "entered",
+            "prefilled",
+            "copied",
+            "imported"
+          ]
+        },
+        {
+          "name": "rir",
+          "type": "decimal"
+        },
+        {
+          "name": "rirMethod",
+          "type": "enum",
+          "values": [
+            "entered",
+            "prefilled",
+            "copied",
+            "imported"
+          ]
+        },
+        {
+          "name": "rpeScale",
+          "type": "enum",
+          "values": [
+            "rirbased",
+            "hevy",
+            "strong",
+            "cr10"
+          ]
+        },
+        {
+          "name": "reachedFailure",
+          "type": "bool"
+        },
+        {
+          "name": "failedRepAttempted",
+          "type": "bool"
+        },
+        {
+          "name": "completionMethod",
+          "type": "enum",
+          "values": [
+            "individual",
+            "bulk",
+            "imported"
+          ]
+        },
+        {
+          "name": "notes",
+          "type": "text"
+        },
+        {
+          "name": "sourceType",
+          "type": "string"
+        },
+        {
+          "name": "timeBasis",
+          "type": "enum",
+          "values": [
+            "completion",
+            "session",
+            "estimated"
+          ]
+        },
+        {
+          "name": "startedAt",
+          "type": "datetime"
+        },
+        {
+          "name": "restBefore",
+          "type": "duration"
+        },
+        {
+          "name": "restMethod",
+          "type": "enum",
+          "values": [
+            "start",
+            "interaction",
+            "imported",
+            "estimated"
+          ]
+        },
+        {
+          "name": "restPlanned",
+          "type": "duration"
+        },
+        {
+          "name": "restSkipped",
+          "type": "bool"
+        },
+        {
+          "name": "target",
+          "type": "object",
+          "fields": [
+            {
+              "name": "plannedSet",
+              "type": "string"
+            },
+            {
+              "name": "termination",
+              "type": "enum",
+              "values": [
+                "reps",
+                "reprange",
+                "amrap",
+                "failure",
+                "rirstop",
+                "time",
+                "distance",
+                "totalreps"
+              ]
+            },
+            {
+              "name": "repsMin",
+              "type": "int"
+            },
+            {
+              "name": "repsMax",
+              "type": "int"
+            },
+            {
+              "name": "load",
+              "type": "quantity"
+            },
+            {
+              "name": "loadPercent",
+              "type": "decimal"
+            },
+            {
+              "name": "loadReference",
+              "type": "enum",
+              "values": [
+                "onerm",
+                "e1rm",
+                "trainingmax",
+                "bodymass"
+              ]
+            },
+            {
+              "name": "referenceLoad",
+              "type": "quantity"
+            },
+            {
+              "name": "assistance",
+              "type": "quantity"
+            },
+            {
+              "name": "rpeMin",
+              "type": "decimal"
+            },
+            {
+              "name": "rpeMax",
+              "type": "decimal"
+            },
+            {
+              "name": "rirMin",
+              "type": "decimal"
+            },
+            {
+              "name": "rirMax",
+              "type": "decimal"
+            },
+            {
+              "name": "durationMin",
+              "type": "duration"
+            },
+            {
+              "name": "durationMax",
+              "type": "duration"
+            },
+            {
+              "name": "timerMode",
+              "type": "enum",
+              "values": [
+                "countdown",
+                "stopwatch"
+              ]
+            },
+            {
+              "name": "distance",
+              "type": "quantity"
+            },
+            {
+              "name": "tempo",
+              "type": "string"
+            },
+            {
+              "name": "miniSetReps",
+              "type": "int"
+            },
+            {
+              "name": "miniSets",
+              "type": "int"
+            },
+            {
+              "name": "myoStopRule",
+              "type": "enum",
+              "values": [
+                "repdrop",
+                "belowtarget"
+              ]
+            },
+            {
+              "name": "totalReps",
+              "type": "int"
+            },
+            {
+              "name": "drops",
+              "type": "int"
+            },
+            {
+              "name": "dropPercent",
+              "type": "decimal"
+            },
+            {
+              "name": "dropStep",
+              "type": "quantity"
+            },
+            {
+              "name": "dropReps",
+              "type": "int"
+            },
+            {
+              "name": "intraSetPause",
+              "type": "duration"
+            }
+          ]
+        },
+        {
+          "name": "origin",
+          "type": "reference",
+          "kind": "any"
+        },
+        {
+          "name": "revision",
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "kind": "~/training/setup",
+      "source": "setup.yaml",
+      "traits": [],
+      "properties": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "exercise",
+          "type": "reference",
+          "required": true,
+          "kind": "~/training/exercise"
+        },
+        {
+          "name": "gym",
+          "type": "string"
+        },
+        {
+          "name": "loadBase",
+          "type": "quantity"
+        },
+        {
+          "name": "loadStep",
+          "type": "quantity"
+        },
+        {
+          "name": "loadMax",
+          "type": "quantity"
+        },
+        {
+          "name": "notes",
+          "type": "text"
+        }
+      ]
+    }
+  ]
+}

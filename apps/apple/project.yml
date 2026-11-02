@@ -20,6 +20,10 @@ packages:
   # record views (SubstrateKit/README.md).
   SubstrateKit:
     path: SubstrateKit
+  # Substrate Workouts' model, session and suggestion engines (WorkoutsCore,
+  # Foundation only) and its sync with a substrate (WorkoutsSync).
+  WorkoutsKit:
+    path: WorkoutsKit
 settings:
   base:
     DEVELOPMENT_TEAM: KFA5J8GDWJ
@@ -42,6 +46,8 @@ settings:
     # Substrate Sync's, the same way: empty is a local build's loopback id
     # (SyncManifest.localClientID).
     SUBSTRATE_SYNC_CLIENT_ID: ""
+    # Substrate Workouts', the same way (WorkoutsManifest.localClientID).
+    SUBSTRATE_WORKOUTS_CLIENT_ID: ""
 targets:
   Substrate:
     # One native target for iPhone, iPad and Mac: not Mac Catalyst and not
@@ -237,3 +243,79 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.sync.uitests
         GENERATE_INFOPLIST_FILE: "YES"
         TARGETED_DEVICE_FAMILY: "1,2"
+  SubstrateWorkouts:
+    # iPhone only, iOS 27: strength sessions in the gym. The model and both
+    # engines are WorkoutsKit's, Foundation only; sign-in, the session and
+    # the status check are SubstrateKit's; the updater is the console app's
+    # file, whose iOS path reads this app's own release feed.
+    type: application
+    platform: iOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: SubstrateWorkouts
+        excludes:
+          - "*.md"
+          - "Package/**"
+          - "docs/**"
+      - Substrate/Sources/App/Updater.swift
+    dependencies:
+      - package: WorkoutsKit
+        product: WorkoutsCore
+      - package: WorkoutsKit
+        product: WorkoutsSync
+      - package: SubstrateKit
+      # The session's Live Activity.
+      - target: SubstrateWorkoutsWidgets
+        embed: true
+    scheme:
+      testTargets:
+        - package: WorkoutsKit/WorkoutsCoreTests
+        - package: WorkoutsKit/WorkoutsSyncTests
+    settings:
+      base:
+        PRODUCT_NAME: SubstrateWorkouts
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.workouts
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: Support/Info-Workouts.plist
+        CODE_SIGN_ENTITLEMENTS: Support/SubstrateWorkouts.entitlements
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "6.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SUPPORTS_MACCATALYST: "NO"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        # The app's own code runs on the main actor unless it says
+        # otherwise; WorkoutsKit stays nonisolated and Sendable.
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: "YES"
+        # WORKOUTS_APP gates the LiveActivityIntent bodies that reach the
+        # session; the widget compiles the same Shared/ files without it.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) WORKOUTS_APP"
+        ENABLE_PREVIEWS: "YES"
+        # Preview-only data (example sessions) stays out of archives.
+        DEVELOPMENT_ASSET_PATHS: '"SubstrateWorkouts/Preview Content"'
+  SubstrateWorkoutsWidgets:
+    # The session's Live Activity and nothing else. It links no WorkoutsKit:
+    # every string it shows arrives preformatted in the content state, and
+    # its buttons are LiveActivityIntents that run in the app's process, so
+    # it needs no entitlements and no App Group.
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "27.0"
+    sources:
+      - SubstrateWorkoutsWidgets
+      - SubstrateWorkouts/Sources/Shared
+    settings:
+      base:
+        PRODUCT_NAME: SubstrateWorkoutsWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.workouts.widgets
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: Support/Info-WorkoutsWidgets.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "6.0"
+        SKIP_INSTALL: "YES"
+        ENABLE_PREVIEWS: "YES"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: "YES"
