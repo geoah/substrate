@@ -2016,9 +2016,9 @@ inside the cover (an exercise's history) a running rest or timed set keeps the s
 **Supersets**: a group block has a header row (content): "Superset A: 2 rounds, 1:00 after each round" (the kind's
 label, rounds, round rest), with a `…` menu: "Rest after each round…", "Kind" (Superset, Tri-set, Giant set, Circuit,
 Paired sets), "Pairing" (§3.3 values), "Ungroup all". Member cards carry `A1`, `A2` (group key upper-cased, member
-position) and share a coloured bracket; each group gets the next colour of a fixed palette of four accessible colours:
-indigo, teal, orange and pink in shades that read at 4.5:1 or better on the card in light and dark (the system teal,
-orange and pink do not on white). The warm-up `W` uses the same orange.
+position) in the Table layout and share a grey bracket; groups take no colour of their own (owner, 2026-11-02: a colour
+per group read as a warm-up's orange or a failure's red). The Rows layout and the Live Activity name a member by its
+exercise and its set label, never a group letter.
 The member card's Rest chip reads "Then 0:00 to A2" (its transition) instead of the set rest; the last member's reads
 "Round rest 1:00".
 
@@ -2107,10 +2107,14 @@ session's length and not as a clock running for the set at hand; a tap pauses or
 - A 22 pt ring: done is a filled green check (orange for a warm-up); the open set an accent ring with a dot (a hollow
   inner ring while a rest runs before it, and on the open set drawn as a line while another set is fixed); pending a
   grey ring (orange for a warm-up); `locked` a dashed ring, the line dimmed; a drop not yet done a hook.
-- The title (15 pt secondary, at least 44 pt wide so the values line up; orange semibold for a warm-up or a drop; in a
-  group the `A1` badge in the group's colour and the exercise's name at 17 pt), the values (17 pt, monospaced digits:
-  primary when done, secondary when pending, the accent when `valuesChanged`), the RPE ("@ 8", 15 pt secondary) and the
-  tags ("+ drop" orange, "up next" accent).
+- The set's label (`setLabel`, one size and shape on every line: a 30 × 22 pt rounded chip, 13 pt bold): an orange `W`
+  for a warm-up, else the set's number within its exercise (`1`, `2a`, `M`, `1L`), the accent on the set to do now,
+  grey otherwise. Never a group letter and never a group's colour: colour means a warm-up, failure or the set to do now
+  (owner, 2026-11-02). Beside it the `caption`: the exercise's name in a group, a chain's part (`Drop`, `Mini-set 3`),
+  nothing for a plain exercise's set. Then the values (17 pt, monospaced digits: secondary, the accent when
+  `valuesChanged`), the RPE ("@ 8", 15 pt secondary) and the tags ("+ drop" orange, "to failure" red, "up next" accent).
+- A done line sits on a light green wash (8 %, 16 % with Increase Contrast) with its values grey and struck through, so
+  a logged set never reads as the one to do; a tap still opens its fix.
 - At the end: on a done line the changes, joined by commas, gains green and everything else grey, then the verdict mark
   (a 20 pt disc: `arrow.up.right` green for better, `equal` or `arrow.down.right` grey); on a pending line `last`.
 - When it does not fit on one line, the end moves to a second line; at the largest sizes the title, the values and the

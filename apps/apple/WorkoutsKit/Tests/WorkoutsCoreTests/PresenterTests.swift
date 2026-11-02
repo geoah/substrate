@@ -252,7 +252,7 @@ struct PresenterSessionTests {
         #expect(group.group?.title == "Superset A: 2 rounds, 1:00 after each round")
         #expect(group.group?.colorIndex == 0)
         #expect(group.cards.map(\.groupLabel) == ["A1", "A2"])
-        #expect(group.cards.map(\.restChip) == ["Then 0:00 to A2", "Round rest 1:00"])
+        #expect(group.cards.map(\.restChip) == ["Then 0:00 to Bird Dog", "Round rest 1:00"])
         #expect(group.cards.map(\.name) == ["Glute Bridge", "Bird Dog"])
         #expect(presentation.blocks.count == 20)
         let upNext = try #require(presentation.upNext)
@@ -262,7 +262,8 @@ struct PresenterSessionTests {
         #expect(presentation.restBar == .upNext("Next: Leg Press (Machine), warm-up: 40 kg × 12"))
         #expect(presentation.liveActivity == LiveActivityContent(
             title: "Fully Body Collection #1", clockStart: NextFullyBody.start, clockPausedAt: nil,
-            exercise: "Leg Press (Machine)", groupLabel: nil, next: "Warm-up: 40 kg × 12", nextRowID: upNext.row,
+            exercise: "Leg Press (Machine)", setLabel: "W", isWarmup: true, values: "40 kg × 12", next: "Warm-up: 40 kg × 12",
+            nextRowID: upNext.row,
             countdown: nil, setsDone: 0, setsPlanned: 42
         ))
         #expect(presentation.notification == nil)
@@ -315,7 +316,7 @@ struct PresenterSessionTests {
         #expect(presentation.blocks.compactMap(\.group).map(\.title)
             == ["Paired sets B: 1 round, 2:30 after each round", "Superset A: 1 round, 1:30 after each round"])
         // Antagonists move on in 15 s (§4.7, the pairing before the kind).
-        #expect(presentation.blocks.first?.cards.map(\.restChip) == ["Then 0:15 to B2", "Round rest 2:30"])
+        #expect(presentation.blocks.first?.cards.map(\.restChip) == ["Then 0:15 to \(row.name)", "Round rest 2:30"])
     }
 }
 
@@ -357,11 +358,11 @@ struct PresenterRestTests {
         var session = try NextFullyBody()
         try session.tick("glute-bridge", 0, SetValues(reps: 16), at: 60)
         var presentation = try session.present(at: 61)
-        #expect(presentation.restBar == .go("Go: Bird Dog (A2), round 1"))
+        #expect(presentation.restBar == .go("Go: Bird Dog, round 1"))
         #expect(presentation.liveActivity.countdown == nil)
         #expect(presentation.notification == nil)
-        #expect(presentation.upNext?.line == "Next: Bird Dog (A2), set 1: × 11")
-        #expect(presentation.liveActivity.groupLabel == "A2")
+        #expect(presentation.upNext?.line == "Next: Bird Dog, set 1: × 11")
+        #expect(presentation.liveActivity.setLabel == "1" && presentation.liveActivity.exercise == "Bird Dog")
 
         try session.tick("bird-dog", 0, SetValues(reps: 10), at: 120)
         presentation = try session.present(at: 121)
@@ -371,7 +372,7 @@ struct PresenterRestTests {
             return
         }
         #expect(countdown.label == "Round rest" && countdown.slot == .roundRest && countdown.endsAt == end)
-        #expect(presentation.notification == CountdownNotification(title: "Round 2", body: "Next: Glute Bridge (A1), set 2: × 16",
+        #expect(presentation.notification == CountdownNotification(title: "Round 2", body: "Next: Glute Bridge, set 2: × 16",
                                                                    fireDate: end))
         #expect(presentation.liveActivity.countdown?.kind == .roundRest)
         #expect(presentation.liveActivity.countdown?.label == "Round rest")
@@ -393,12 +394,12 @@ struct PresenterRestTests {
             Issue.record("expected a countdown, got \(presentation.restBar)")
             return
         }
-        #expect(countdown.label == "Go: Row (A2) in")
+        #expect(countdown.label == "Go: Row in")
         #expect(countdown.slot == .transition && countdown.notifies)
-        #expect(presentation.liveActivity.countdown?.label == "Go: Row (A2)")
+        #expect(presentation.liveActivity.countdown?.label == "Go: Row")
         #expect(presentation.liveActivity.countdown?.kind == .transition)
         #expect(presentation.notification?.title == "Go")
-        #expect(presentation.notification?.body == "Next: Row (A2), round 1: 50 kg × 8")
+        #expect(presentation.notification?.body == "Next: Row, round 1: 50 kg × 8")
     }
 
     @Test("A timed set: the bar's Stop, the activity's countdown, the target's alert, Stop's values")
@@ -728,9 +729,10 @@ struct PresenterScreenTests {
             == ["2 sets of 8–12 reps at RPE 8, from 10 kg", "Rest 2:00", "Left side first", "Switch sides 0:15"])
         #expect(slots["hip-thrust"]?.notes?.hasPrefix("Ribs down") == true)
         let group = try #require(preview.blocks.first { $0.header != nil })
-        #expect(group.header == "Superset A, rest 1:00 after each round")
-        #expect(group.slots.map(\.groupLabel) == ["A1", "A2"])
-        #expect(group.slots.map(\.lines) == [["2 sets of 12–20 reps", "Then straight to A2"], ["2 sets of 8–10 reps"]])
+        // No group letter and no colour: the members are named by their exercises.
+        #expect(group.header == "Superset, rest 1:00 after each round" && group.colorIndex == nil)
+        #expect(group.slots.allSatisfy { $0.groupLabel == nil })
+        #expect(group.slots.map(\.lines) == [["2 sets of 12–20 reps", "Then straight to \(group.slots[1].name)"], ["2 sets of 8–10 reps"]])
         let day1 = RoutinePresenter.preview(try #require(catalog.routines["day-1-strength-foundation"]), catalog: catalog,
                                             history: history, settings: Progression.settings)
         let day1Slots = Dictionary(uniqueKeysWithValues: day1.blocks.flatMap(\.slots).map { ($0.id, $0) })

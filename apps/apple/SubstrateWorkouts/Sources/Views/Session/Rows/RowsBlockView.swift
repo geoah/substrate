@@ -33,7 +33,10 @@ struct RowsBlockView: View {
     private var holdsOpenRow: Bool { layout.openRow.map { block.item($0) != nil } ?? false }
     private var groupHeader: GroupHeader? { presentation.blocks.first { $0.id == block.id }?.group }
     private var cards: [ExerciseCard] { block.slots.compactMap { presentation.card($0) } }
-    private var groupColor: Color { block.group == nil ? .accentColor : GroupPalette.color(block.colorIndex) }
+    /// `Superset, Glute Bridge and Bird Dog`: two groups never sound the same.
+    private var spokenTitle: String {
+        block.group == nil ? block.title : [block.title, block.subtitle].compactMap { $0 }.joined(separator: ", ")
+    }
 
     // MARK: - The folded line
 
@@ -130,7 +133,7 @@ struct RowsBlockView: View {
                     roundIcon("chevron.up")
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Fold \(block.title)")
+                .accessibilityLabel("Fold \(spokenTitle)")
             }
             menu
         }
@@ -173,7 +176,7 @@ struct RowsBlockView: View {
                 GroupMenuItems(group: group)
                 Divider()
                 ForEach(cards) { card in
-                    Menu(card.groupLabel.map { "\($0) \(card.name)" } ?? card.name) {
+                    Menu(card.name) {
                         Button("History", systemImage: "chart.line.uptrend.xyaxis") { showExercise(card.exercise) }
                         ExerciseMenuItems(card: card, group: group, allCards: presentation.cards)
                     }
@@ -185,7 +188,7 @@ struct RowsBlockView: View {
         } label: {
             roundIcon("ellipsis")
         }
-        .accessibilityLabel("\(block.title) options")
+        .accessibilityLabel("\(spokenTitle) options")
     }
 
     private func roundIcon(_ symbol: String) -> some View {
@@ -254,36 +257,31 @@ struct RowsBlockView: View {
         Group {
             if let fixing = screen.fixing, fixing.row == set.id, let fix = set.fix {
                 RowsEditorPanel(editor: fix.editor(draft: fixing.draft), row: presentation.row(set.id), role: set.role,
-                                groupColor: groupColor, name: name(set))
+                                name: set.title)
             } else if screen.fixing == nil, set.state == .now, let editor = set.editor {
                 // With its Log button out of view, the island docks this set (§7.6a, `RowsDock`).
                 RowsEditorPanel(editor: editor, row: presentation.row(set.id), isResting: isResting, role: set.role,
-                                groupColor: groupColor, name: name(set)) { visible in
+                                name: set.title) { visible in
                     screen.logVisibility(set.id, visible: visible)
                 }
             } else if set.state == .done, let row = presentation.row(set.id) {
                 // A done set: its check unticks it, its `…` holds Untick set and Delete set (owner, 2026-11-02).
                 RowsSetLine(item: set, isFresh: screen.fresh == set.id, isMarked: screen.mark?.row == set.id,
-                            groupColor: groupColor, onUntick: { screen.untick(set.id, name: name(set), session: session) }) {
+                            onUntick: { screen.untick(set.id, name: set.title, session: session) }) {
                     tap(set)
                 } menuItems: {
                     SetMenuItems(row: row,
-                                 untick: { screen.untick(set.id, name: name(set), session: session) },
-                                 delete: { screen.delete(set.id, name: name(set), session: session) })
+                                 untick: { screen.untick(set.id, name: set.title, session: session) },
+                                 delete: { screen.delete(set.id, name: set.title, session: session) })
                 }
             } else {
                 RowsSetLine(item: set, collapsed: set.state == .now, isResting: isResting, isFresh: screen.fresh == set.id,
-                            isMarked: screen.mark?.row == set.id, groupColor: groupColor) {
+                            isMarked: screen.mark?.row == set.id) {
                     tap(set)
                 }
             }
         }
         .id(set.id)
-    }
-
-    /// `A2 Round 1`, `Set 2`: the set as its line names it, for the undo toast.
-    private func name(_ set: RowsSetItem) -> String {
-        set.badge.map { "\($0) \(set.title)" } ?? set.title
     }
 
     private func tap(_ set: RowsSetItem) {

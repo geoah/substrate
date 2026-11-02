@@ -201,32 +201,43 @@ struct SetsRing: View {
     }
 }
 
-/// A superset's member label, "A1".
-struct GroupBadge: View {
+/// The Up next set's label, "W" or "2", as the app's lines draw it: one
+/// size and shape, orange for a warm-up, never a group letter or a group's
+/// colour (owner, 2026-11-02).
+struct SetLabelChip: View {
     let label: String
+    let isWarmup: Bool
     let tint: Color
+    var size: CGFloat = 20
 
     var body: some View {
+        let color = isWarmup ? Color.orange : tint
+        let spoken = isWarmup ? "Warm-up" : label.allSatisfy(\.isNumber) ? "Set \(label)" : nil
         Text(label)
-            .font(.caption.weight(.bold))
+            .font(.system(size: size * 0.6, weight: .bold))
             .monospacedDigit()
-            .foregroundStyle(tint)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .background(tint.opacity(0.18), in: Capsule())
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .foregroundStyle(color)
+            .frame(width: size * 1.35, height: size)
+            .background(color.opacity(0.2), in: .rect(cornerRadius: size * 0.3))
+            .accessibilityLabel(spoken ?? "")
+            .accessibilityHidden(spoken == nil)
     }
 }
 
-/// The Up next exercise, with its group label.
+/// The Up next exercise, after its set label.
 struct ExerciseLine: View {
     let phase: SessionPhase
     var font: Font = .headline
+    var chipSize: CGFloat = 20
 
     var body: some View {
         if !phase.state.exercise.isEmpty {
             HStack(spacing: 6) {
-                if let group = phase.state.groupLabel {
-                    GroupBadge(label: group, tint: phase.tint)
+                if let label = phase.state.setLabel {
+                    // The accent, never the phase's green or orange: orange means a warm-up.
+                    SetLabelChip(label: label, isWarmup: phase.state.isWarmup, tint: .workoutsAccent, size: chipSize)
                 }
                 Text(phase.state.exercise)
                     .font(font)
@@ -236,9 +247,10 @@ struct ExerciseLine: View {
     }
 }
 
-/// "Next" and the Up next set, or "All sets done" on its own. The set's
-/// values ("Set 2: 105 kg × 10") are what the owner looks for between sets,
-/// so they are primary and medium weight; the word "Next" is a quiet label.
+/// "Next" and the Up next set's values, or "All sets done" on its own. The
+/// values ("105 kg × 10") are what the owner looks for between sets, so they
+/// are primary and medium weight; the label beside the exercise says which
+/// set, and the word "Next" is a quiet label.
 struct NextLine: View {
     let phase: SessionPhase
     var font: Font = .subheadline
@@ -253,7 +265,7 @@ struct NextLine: View {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text("Next")
                         .foregroundStyle(.secondary)
-                    Text(phase.state.next)
+                    Text(phase.state.values.isEmpty ? phase.state.next : phase.state.values)
                         .fontWeight(.medium)
                         .foregroundStyle(.primary)
                 }
@@ -496,53 +508,81 @@ struct LockScreenView: View {
     }
 }
 
-/// The watch's Smart Stack: the countdown large, the Next line, no buttons.
+/// The watch's Smart Stack: one thing, in two lines, so it never clips
+/// (owner, 2026-11-02: four lines were cut off at the top and the bottom).
+/// Resting, the countdown and what comes next; otherwise the set to do now,
+/// its label and exercise over its values. No buttons, no session clock. The
+/// system insets the view, so it adds no padding of its own.
 struct SmallActivityView: View {
     let phase: SessionPhase
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             switch phase.mode {
-            case .counting, .timing, .targetReached:
-                Text(phase.mode == .counting ? phase.countdown?.label ?? "" : phase.timedCaption)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+            case .counting:
+                // A transition's label names the exercise the line under it shows.
+                countdownRow(caption: phase.countdown?.kind == .transition ? "Go" : phase.countdown?.label ?? "")
+                ExerciseLine(phase: phase, font: Self.lineFont, chipSize: 16)
+                    .minimumScaleFactor(0.8)
+            case .timing, .targetReached:
+                countdownRow(caption: phase.timedCaption)
+                Text(phase.countdown?.label ?? phase.state.exercise)
+                    .font(Self.lineFont)
                     .lineLimit(1)
-                CountdownText(phase: phase)
-                    .font(.system(.title, design: .rounded, weight: .semibold))
-                    .foregroundStyle(phase.tint)
-                    .minimumScaleFactor(0.6)
-            case .over:
-                Text(phase.overTitle)
-                    .font(.system(.title2, design: .rounded, weight: .bold))
-                    .foregroundStyle(phase.tint)
-            case .working:
-                HStack(spacing: 6) {
-                    SetsRing(phase: phase, size: 18)
-                    SessionClock(state: phase.state)
-                        .font(.system(.title3, design: .rounded, weight: .semibold))
+                    .minimumScaleFactor(0.8)
+            case .over, .working:
+                if phase.state.nextRowID == nil {
+                    allDone
+                } else {
+                    ExerciseLine(phase: phase, font: Self.lineFont, chipSize: 16)
+                        .minimumScaleFactor(0.8)
+                    Text(phase.state.values.isEmpty ? phase.state.next : phase.state.values)
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(phase.mode == .over ? phase.tint : .primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
             case .finished:
                 Label(phase.state.finishedSummary ?? "", systemImage: "checkmark.circle.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(Self.lineFont)
                     .foregroundStyle(phase.tint)
                     .lineLimit(2)
-            }
-            switch phase.mode {
-            case .counting, .over, .working:
-                ExerciseLine(phase: phase, font: .caption.weight(.semibold))
-                NextLine(phase: phase, font: .caption2)
-            case .timing, .targetReached:
-                // The timed set is Up next; its label already names it.
-                Text(phase.countdown?.label ?? "")
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-            case .finished:
-                EmptyView()
+                    .minimumScaleFactor(0.8)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    /// Fixed sizes: the slot does not grow with the watch's text size, so
+    /// text styles that do would clip it again (the owner's complaint).
+    private static let lineFont = Font.system(size: 13, weight: .semibold)
+
+    /// The countdown large, its word beside it: `1:16  Rest`.
+    private func countdownRow(caption: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            CountdownText(phase: phase)
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .foregroundStyle(phase.tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .layoutPriority(1)
+            Text(caption)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(phase.mode == .targetReached ? phase.tint : .secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+    }
+
+    private var allDone: some View {
+        HStack(spacing: 6) {
+            SetsRing(phase: phase, size: 18)
+            Text(phase.state.next)
+                .font(Self.lineFont)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+        }
     }
 }
 
@@ -552,11 +592,8 @@ struct CompactLeading: View {
     let phase: SessionPhase
 
     var body: some View {
-        if let group = phase.state.groupLabel, phase.mode != .finished {
-            Text(group)
-                .font(.caption.weight(.bold))
-                .monospacedDigit()
-                .foregroundStyle(phase.tint)
+        if let label = phase.state.setLabel, phase.mode != .finished {
+            SetLabelChip(label: label, isWarmup: phase.state.isWarmup, tint: .workoutsAccent, size: 18)
         } else {
             Image(systemName: phase.mode == .finished ? "checkmark.circle.fill" : "dumbbell.fill")
                 .foregroundStyle(phase.tint)

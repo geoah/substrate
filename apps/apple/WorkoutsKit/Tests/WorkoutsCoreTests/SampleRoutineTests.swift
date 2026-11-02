@@ -83,17 +83,17 @@ struct SampleRoutineTests {
         let text = slots.flatMap(\.lines).joined(separator: "\n")
         for phrase in ["Warm-up: 500 m", "Warm-up: 8 reps", "Warm-up: 12 reps at 50% of body mass", "Set 1 is the top set",
                        "Set 2 backs off 10%", "Warm-up rest 1:00", "RPE 7–8", "Tempo 3-0-1-0", "Rest after set 2: 3:00",
-                       "Set 3 is a drop set: 2 drops, 5 kg lighter each, 6 reps each", "BW − 90 lb", "Then straight to A2",
+                       "Set 3 is a drop set: 2 drops, 5 kg lighter each, 6 reps each", "BW − 90 lb", "Then straight to Push Up",
                        "each until 2–3 reps in reserve", "as many reps as possible", "Set 1 is myo-reps, until a mini-set comes in short",
                        "Set 2 is a myo-rep match", "Weaker side first", "Switch sides 0:15", "The second side matches",
                        "Set 2 is rest-pause: 3 mini-sets, to 20 total reps", "Set 1 is a cluster set", "Set 2 to failure",
-                       "counted down", "on the stopwatch", "Then 0:15 to B2", "2 sets of 40 m, with 16 kg", "hold 0:30–0:45, counted down, with 10 kg"]
+                       "counted down", "on the stopwatch", "Then 0:15 to Farmer's Carry (Dumbbell)", "2 sets of 40 m, with 16 kg", "hold 0:30–0:45, counted down, with 10 kg"]
         {
             #expect(text.localizedCaseInsensitiveContains(phrase), "the preview names \(phrase):\n\(text)")
         }
-        // The two groups show as their own blocks with labels.
-        #expect(preview.blocks.compactMap(\.header) == ["Superset A, rest 1:30 after each round", "Circuit B, 2 rounds, rest 1:00 after each round"])
-        #expect(slots.compactMap(\.groupLabel) == ["A1", "A2", "B1", "B2"])
+        // The two groups show as their own blocks, with no group letters.
+        #expect(preview.blocks.compactMap(\.header) == ["Superset, rest 1:30 after each round", "Circuit, 2 rounds, rest 1:00 after each round"])
+        #expect(slots.allSatisfy { $0.groupLabel == nil })
     }
 
     @Test("a session through it reaches Finish with every method in its records")

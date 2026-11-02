@@ -73,7 +73,7 @@ struct ReorderSheet: View {
             guard let group = block.group else {
                 return block.cards.map { Item(kind: .slot($0.slot, name: $0.name, group: nil)) }
             }
-            let header = Item(kind: .group(group.key, title: "\(group.kind.label) \(group.key.uppercased())", color: group.colorIndex))
+            let header = Item(kind: .group(group.key, title: group.kind.label, color: group.colorIndex))
             return [header] + block.cards.map { Item(kind: .slot($0.slot, name: $0.name, group: group.key)) }
         }
     }

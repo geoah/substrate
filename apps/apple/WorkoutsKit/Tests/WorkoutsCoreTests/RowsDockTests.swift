@@ -404,7 +404,7 @@ struct RowsTakeBackTests {
 
 @Suite("Rows island: words in a group and the minimised bar")
 struct RowsIslandWordsTests {
-    @Test("a group's warm-up reads Warm-up in the island, never Round 1")
+    @Test("a group's warm-up shows its orange W in the island, never Round 1 or a group letter")
     func groupWarmup() throws {
         var script = EngineScript(at: engineEpoch)
         try script.start(EngineCatalog.routine([
@@ -418,12 +418,12 @@ struct RowsIslandWordsTests {
         let layout = try session.layout(at: 1)
         #expect(layout.openRow == warmup)
         let next = try #require(layout.island.next)
-        #expect(next.badge == "A1" && next.exercise == "Row" && next.label == "Warm-up" && next.tint == .orange)
-        #expect(next.loggedText == "A1 Warm-up logged")
+        #expect(next.setLabel == "W" && next.exercise == "Row" && next.label.isEmpty && next.tint == .orange)
+        #expect(next.loggedText == "Row, warm-up logged")
 
         try session.tick("row", 0, kgReps(30, 10), at: 30)
         let working = try #require(try session.layout(at: 31).island.next)
-        #expect(working.label == "Round 1" && working.badge == "A1")
+        #expect(working.label == "Round 1" && working.setLabel == "1" && working.exercise == "Row")
     }
 
     @Test("the minimised bar splits the set from its values, so the values are never what is cut")

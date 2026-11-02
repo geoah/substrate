@@ -229,7 +229,7 @@ public struct ExerciseCard: Equatable, Sendable, Identifiable {
     /// `A1`.
     public var groupLabel: String?
     public var colorIndex: Int?
-    /// `Rest 1:30`; a member's `Then 0:00 to A2`; the last member's `Round rest 1:00`.
+    /// `Rest 1:30`; a member's `Then 0:00 to Bird Dog`; the last member's `Round rest 1:00`.
     public var restChip: String
     /// The rests the "Rest…" menu offers for this slot.
     public var rests: [SlotRestOption]
@@ -535,10 +535,9 @@ public struct UntickedRow: Equatable, Sendable {
 public struct UpNextPresentation: Equatable, Sendable {
     public var row: RowID
     public var slot: String
-    /// `Chest Press (Machine)`.
+    /// `Chest Press (Machine)`. A grouped set is named by its exercise and
+    /// its set label, never by a group letter (owner, 2026-11-02).
     public var exercise: String
-    /// `A2` when grouped.
-    public var groupLabel: String?
     public var label: SetLabel
     /// Its round in a group block.
     public var round: Int?
@@ -549,23 +548,17 @@ public struct UpNextPresentation: Equatable, Sendable {
     /// The suggestion's text, shown under the row.
     public var reason: String?
 
-    public init(row: RowID, slot: String, exercise: String, groupLabel: String?, label: SetLabel, round: Int?, values: String,
+    public init(row: RowID, slot: String, exercise: String, label: SetLabel, round: Int?, values: String,
                 line: String, reason: String?)
     {
         self.row = row
         self.slot = slot
         self.exercise = exercise
-        self.groupLabel = groupLabel
         self.label = label
         self.round = round
         self.values = values
         self.line = line
         self.reason = reason
-    }
-
-    /// `Chest Press (Machine)`, or `Bird Dog (A2)` in a group.
-    public var exerciseWithGroup: String {
-        groupLabel.map { "\(exercise) (\($0))" } ?? exercise
     }
 }
 
@@ -577,7 +570,7 @@ public enum RestBarPresentation: Equatable, Sendable {
     case resting(RestCountdownPresentation)
     /// For ten seconds after a rest ends: "Rest over. Go: set 2, 35 kg × 14", tinted green.
     case restOver(String)
-    /// A rest of 0 after the last tick: "Go: Bird Dog (A2), round 1".
+    /// A rest of 0 after the last tick: "Go: Bird Dog, round 1".
     case go(String)
     /// "Plank, set 1", its countdown or stopwatch, and Stop.
     case timedSet(TimedSetBar)
@@ -591,7 +584,7 @@ public enum RestBarPresentation: Equatable, Sendable {
 /// A countdown in the rest bar.
 public struct RestCountdownPresentation: Equatable, Sendable {
     /// `Rest`, `Warm-up rest`, `Round rest`, `Rest before next exercise`,
-    /// `Switch sides`, `Pause`, `Go: Bird Dog (A2) in`, `Timer`.
+    /// `Switch sides`, `Pause`, `Go: Bird Dog in`, `Timer`.
     public var label: String
     /// Nil for the standalone timer.
     public var slot: RestSlot?
@@ -640,7 +633,13 @@ public struct LiveActivityContent: Equatable, Sendable {
     public var clockPausedAt: Date?
     /// The Up next row's exercise; empty when every set is done.
     public var exercise: String
-    public var groupLabel: String?
+    /// The Up next row's set label, `W`, `2`, `2a`: the small label beside
+    /// the exercise. Nil when every set is done.
+    public var setLabel: String?
+    /// The label is a warm-up's: drawn orange.
+    public var isWarmup: Bool
+    /// The Up next row's values alone, `35 kg × 14`; empty when none.
+    public var values: String
     /// `Set 2: 35 kg × 14`, or `All sets done`.
     public var next: String
     /// The row Done completes, or the row Stop stops while a timed set runs.
@@ -654,14 +653,17 @@ public struct LiveActivityContent: Equatable, Sendable {
     public var setsDone: Int
     public var setsPlanned: Int
 
-    public init(title: String, clockStart: Date, clockPausedAt: Date?, exercise: String, groupLabel: String?, next: String,
-                nextRowID: RowID?, canComplete: Bool = true, countdown: LiveActivityCountdown?, setsDone: Int, setsPlanned: Int)
+    public init(title: String, clockStart: Date, clockPausedAt: Date?, exercise: String, setLabel: String?,
+                isWarmup: Bool = false, values: String = "", next: String, nextRowID: RowID?, canComplete: Bool = true,
+                countdown: LiveActivityCountdown?, setsDone: Int, setsPlanned: Int)
     {
         self.title = title
         self.clockStart = clockStart
         self.clockPausedAt = clockPausedAt
         self.exercise = exercise
-        self.groupLabel = groupLabel
+        self.setLabel = setLabel
+        self.isWarmup = isWarmup
+        self.values = values
         self.next = next
         self.nextRowID = nextRowID
         self.canComplete = canComplete

@@ -2,18 +2,13 @@ import WorkoutsCore
 import SwiftUI
 import UIKit
 
-/// The four accessible colours groups take in turn (DESIGN.md §7.6): a
-/// superset's bracket, its header and its member labels. The system's teal,
-/// orange and pink are too light for text on a white card, so each is a
-/// shade that reads at 4.5:1 or better on the card in both appearances.
+/// A group's bracket, header and member labels. One grey for every group:
+/// a colour per group read as a warm-up's orange or a failure's red, so
+/// colour is kept for what a set is (owner, 2026-11-02). The grey reads at
+/// 4.5:1 or better on the card in both appearances.
 enum GroupPalette {
-    static func color(_ index: Int?) -> Color {
-        switch (index ?? 0) % GroupHeader.paletteSize {
-        case 0: adaptive(light: 0x5856D6, dark: 0x7D7AFF)
-        case 1: adaptive(light: 0x00788A, dark: 0x40C8E0)
-        case 2: warmup
-        default: adaptive(light: 0xD70040, dark: 0xFF6482)
-        }
+    static func color(_: Int?) -> Color {
+        adaptive(light: 0x6C6C70, dark: 0x98989D)
     }
 
     /// The orange of a group and of a warm-up's `W`.
