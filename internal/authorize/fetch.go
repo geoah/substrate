@@ -84,6 +84,16 @@ func NewFetcher(now func() time.Time) *Fetcher {
 	return newFetcher(&http.Client{Transport: confinedTransport(), Timeout: fetchTimeout}, now)
 }
 
+// ConfinedClient is an HTTP client for a URL anybody may name, the same one
+// the app document fetch uses: public unicast addresses only, checked on the
+// resolved address at connect, no proxy, no redirects and a short timeout.
+// A caller still bounds the body it reads.
+func ConfinedClient() *http.Client {
+	c := &http.Client{Transport: confinedTransport(), Timeout: fetchTimeout}
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return c
+}
+
 func newFetcher(c *http.Client, now func() time.Time) *Fetcher {
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Fetcher{client: c, slots: make(chan struct{}, fetchSlots), now: now, cache: map[string]cached{}}
