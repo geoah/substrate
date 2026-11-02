@@ -450,6 +450,22 @@ struct RowsIslandWordsTests {
         #expect(running.detail == "Plank, set 1, holding")
     }
 
+    @Test("the docked set carries each value's − and + beside its RPE: the island never trades the steppers for the RPE")
+    func dockedStepsAndRPE() throws {
+        let session = try RowsSession.dayOne()
+        let next = try #require(try session.layout(at: 0).island.next)
+        #expect(!next.fields.isEmpty)
+        for field in next.fields {
+            #expect(field.minus != nil && field.plus != nil, "\(field.field)")
+        }
+        let working = try #require(try RowsSession.dayOne().layout(at: 0).blocks.first?.setItems.first { $0.role != .warmup })
+        var opened = session
+        try opened.perform(.touch(working.id), at: 5)
+        let set = try #require(try opened.layout(at: 6).island.next)
+        #expect(set.rpe == "@ 8" && set.rpeStrip?.isCollapsed == false)
+        #expect(set.fields.allSatisfy { $0.minus != nil && $0.plus != nil })
+    }
+
     @Test("a compact stepper's glyph is its sign")
     func stepSymbol() {
         #expect(RowsStep(title: "\u{2212}5", accessibilityLabel: "", patch: SetValuesPatch()).symbol == "\u{2212}")

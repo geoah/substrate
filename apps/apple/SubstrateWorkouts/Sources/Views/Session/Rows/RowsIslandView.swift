@@ -223,15 +223,18 @@ struct RowsRestPartView: View {
     }
 }
 
-/// The next set, compact: `A2 Bird Dog  Round 1  ⌃` over its values with
-/// steppers, its RPE and a Log check. When the row is too narrow the steppers
-/// go and a tap on a number types it (on a 375 pt phone at the default size
-/// load, reps and RPE fit one row so); when even that does not fit the
-/// clock, each value, the RPE and Log take a line each. At the accessibility
-/// sizes it docks only the name and Log, or Stop and its clock: a tap on the
-/// name brings the full editor into view, so the island never takes half the
-/// screen. Every target stays at least 44 pt: the layout gives way, never
-/// the targets.
+/// The next set, compact: `A2 Bird Dog  Round 1  ⌃` on a line of its own
+/// (the name cut in its middle; a tap brings the full editor into view),
+/// then its values, each with − and + (a tap on a number types it), its RPE
+/// (a tap opens the stops in the island) and Log as a check, on one row
+/// where they fit. Where they do not, the values take the first row and the
+/// RPE the second, with Log at its right edge; narrower still (larger text)
+/// each value takes a line of its own, still with its steppers, and the
+/// number shrinks between them before a stepper ever goes: the steppers
+/// never give way to the RPE (owner, 2026-11-02). A timed set's clock leads
+/// the values. At the accessibility sizes it docks only the name and Log, or
+/// Stop and its clock, so the island never takes half the screen. Every
+/// target stays at least 44 pt: the layout gives way, never the targets.
 struct RowsNextPartView: View {
     let next: RowsNextPart
     let perform: (RowsAction) -> Void
@@ -258,9 +261,25 @@ struct RowsNextPartView: View {
                 }
             } else {
                 ViewThatFits(in: .horizontal) {
-                    controls(steppers: true)
-                    controls(steppers: false)
-                    stacked
+                    // Wide: the values, the RPE and Log on one row.
+                    HStack(spacing: 6) {
+                        valuesRow
+                        rpeButton
+                        Spacer(minLength: 0)
+                        primary
+                    }
+                    // Narrow: the values, then the RPE with Log at the right edge.
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            valuesRow
+                        }
+                        logRow
+                    }
+                    // Larger text: each value on a line of its own, steppers kept.
+                    VStack(alignment: .leading, spacing: 6) {
+                        stacked
+                        logRow
+                    }
                 }
                 if screen.islandRPE == next.row, let strip = showsRPE {
                     rpePicker(strip)
@@ -277,8 +296,9 @@ struct RowsNextPartView: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// The name, the set and its RPE on one line; at the accessibility sizes
-    /// the name takes a line of its own, so it is never cut to nothing.
+    /// The name and the set on a line of their own (a tap brings the full
+    /// editor into view); at the accessibility sizes the name takes a line
+    /// of its own and the set the next, so it is never cut to nothing.
     private var title: some View {
         Button(action: showOpenRow) {
             Group {
@@ -297,10 +317,12 @@ struct RowsNextPartView: View {
                 } else {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         badge
-                        exerciseName.lineLimit(1)
+                        exerciseName
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                         setLabel
-                        Spacer(minLength: 4)
                         chevron
+                        Spacer(minLength: 0)
                     }
                 }
             }
@@ -340,38 +362,37 @@ struct RowsNextPartView: View {
             .accessibilityHidden(true)
     }
 
-    private func controls(steppers: Bool) -> some View {
+    /// The clock and each value with its steppers, side by side.
+    @ViewBuilder
+    private var valuesRow: some View {
+        clock
+        ForEach(next.fields) { field in
+            compactField(field, steppers: true)
+        }
+    }
+
+    /// The RPE and, at the row's right edge, Log.
+    private var logRow: some View {
         HStack(spacing: 6) {
-            values(steppers: steppers)
+            rpeButton
             Spacer(minLength: 0)
             primary
         }
     }
 
-    /// The clock, each value, the RPE and Log on a line of their own; a
-    /// value keeps its steppers where its line has room for them.
+    /// The values when one row cannot hold them: the clock, then each value
+    /// on a line of its own, still with its steppers; the number shrinks
+    /// between them before a stepper ever goes.
     private var stacked: some View {
         VStack(alignment: .leading, spacing: 6) {
             clock
             ForEach(next.fields) { field in
                 ViewThatFits(in: .horizontal) {
                     compactField(field, steppers: true)
-                    compactField(field, steppers: false)
-                    compactField(field, steppers: false, fitsWidth: true)
+                    compactField(field, steppers: true, fitsWidth: true)
                 }
             }
-            rpeButton
-            primary
         }
-    }
-
-    @ViewBuilder
-    private func values(steppers: Bool) -> some View {
-        clock
-        ForEach(next.fields) { field in
-            compactField(field, steppers: steppers)
-        }
-        rpeButton
     }
 
     /// The RPE the island shows: as the panel shows it, so a warm-up's or a

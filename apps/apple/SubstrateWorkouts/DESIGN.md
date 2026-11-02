@@ -2203,18 +2203,22 @@ from the screen's edges, stacking up to three parts with hairlines between them,
    one axis, "of 2:30" on the countdown's baseline, then −15, +15 and Skip. When the row is narrow "of 2:30" goes
    first, then the buttons move under the time. VoiceOver reads the rest's title as the clock's label and the time
    left with the total as its value.
-2. **The next set** (`RowsNextPart`): the exercise and its label ("Leg Press (Machine)  Set 3", "A2 Bird Dog  Round 1")
-   with a chevron, then on one row its values each in a tinted capsule with − and + (44 pt targets; a tap on the
-   number opens the keypad), its RPE ("@ 8", outlined while it is the plan's, filled once rated), and Log as a check
-   alone (44 pt, read "Log" and then what it logs); play, or the running clock and stop, for a timed set. A tap on the
-   RPE opens the panel's stops in the island, under the row: a stop rates and closes them, `½` keeps them open. The
-   RPE shows as the panel shows it, so a warm-up's or a timed set's stays out until opened there (owner, 2026-11-02).
-   A group's warm-up reads "Warm-up", never a round. Spacing is 6 pt. Too narrow, the steppers go and the numbers
-   stay tappable: on a 375 pt phone at the default size load, reps and RPE fit one row so; narrower still the clock,
-   each value, the RPE and Log take a line each. At the accessibility sizes it docks only the name row and Log, or
-   the clock and stop: a tap on the name brings the full editor into view, so the island stays a few lines and the
-   list keeps the screen. The layout gives way, never the targets: each stepper half, each number and the name row
-   stay at least 44 pt. A tap on a number opens the keypad where the list is, without scrolling it. It is drawn only
+2. **The next set** (`RowsNextPart`): the exercise and its label ("Leg Press (Machine)  Set 3", "A2 Bird Dog  Round
+   1") on a line of their own, the name cut in its middle, with a chevron (a tap brings the full editor into view).
+   Under it its values, each in a tinted capsule with − and + (44 pt targets; a tap on the number opens the keypad),
+   its RPE ("@ 8", outlined while it is the plan's, filled once rated) and Log as a check alone (44 pt, read "Log"
+   and then what it logs; play or stop for a timed set, whose clock leads the values): on one row where they fit;
+   where they do not, the values take the first row and the RPE the second, with Log at its right edge; with larger
+   text each value takes a line of its own, still with its steppers, and on the narrowest line the number shrinks
+   between them. The steppers never give way to the RPE (owner, 2026-11-02). Measured at the default size, two
+   values with their steppers, the RPE and Log need about 385 pt and the island holds 346 pt on a 402 pt phone and
+   384 pt on a 440 pt one, so a load-and-reps set takes two rows on every phone today, and a set with one value
+   (reps alone, a hold) takes one. A tap on the RPE opens the panel's stops in the island, under the values: a stop
+   rates and closes them, `½` keeps them open. The RPE shows as the panel shows it, so a warm-up's or a timed set's
+   stays out until opened there. A group's warm-up reads "Warm-up", never a round. Spacing is 6 pt. At the
+   accessibility sizes it docks only the name row and Log, or the clock and stop: a tap on the name brings the full
+   editor into view, so the island stays a few lines and the list keeps the screen. The layout gives way, never the
+   targets: each stepper half, each number and the name row stay at least 44 pt. A tap on a number opens the keypad where the list is, without scrolling it. It is drawn only
    while the open editor's primary button (Log, Start or Stop, measured alone, without the action beside or under it)
    is out of view (less than half of it between the toolbar and the island, for a quarter of a second, so a Log or a
    row opening never makes it blink): while that button is on screen the list already offers the Log, and the island

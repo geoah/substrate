@@ -229,9 +229,13 @@ The options, with their screens and rationales, are in [design/](design/README.m
     with the undo toast in place of a question. A done set can be unticked from its `…` or
     with a tap on its green check; it opens again with its values, as Undo after a Log now
     does, and the toast logs it again.
-  - The island's docked set shows its RPE, a tap opening the stops in the island; Log is a
-    check alone, and the spacing is tighter, so load, reps and RPE fit one row on a 375 pt
-    phone.
+  - The island's docked set shows its RPE, a tap opening the stops in the island, and Log is
+    a check alone. **The − and + stay**: the owner, the same day, on the pre-release that
+    traded them for tap-to-type numbers to fit the RPE on the values' row: "why did you
+    remove the +/- from the current set island? that was useful. add it back". The name keeps
+    its own line; under it the values with their steppers, the RPE and Log share one row
+    where they fit, and where they do not the values take the first row and the RPE the
+    second, with Log at its right edge. The steppers never give way to the RPE on any width.
   - The RPE stops in the panel carry the label "RPE".
   - "To failure" is no longer words inside the reps field. The header says it once, and the
     failure choice stays the set kind in the `…`, tagged on the logged line. What is written
