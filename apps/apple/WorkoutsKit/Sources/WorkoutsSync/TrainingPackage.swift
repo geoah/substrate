@@ -66,19 +66,29 @@ public enum PackageState: Sendable, Hashable {
     /// package holds, such as a kind or property the owner added. Only the
     /// owner can settle it, on the server.
     case refused(held: Int?, reason: String)
+    /// The package is not this app's any more, or never was (decision 0205):
+    /// the owner took it over, or another app declared it. The server refuses
+    /// the app's apply with a 403, so the app stops applying, and keeps
+    /// sending records, which the server still takes. Read off the package
+    /// row on every check, so it is never re-applied in a loop.
+    case managedElsewhere(held: Int?, by: PackageManager)
 
     public var held: Int? {
         switch self {
         case .missing: nil
         case let .behind(held), let .current(held), let .newer(held), let .edited(held, _): held
-        case let .refused(held, _): held
+        case let .refused(held, _), let .managedElsewhere(held, _): held
         }
     }
 
-    /// Whether the app may write records of the package.
+    /// Whether the app may write records of the package. A package managed
+    /// elsewhere still takes the app's records: only its kinds are closed to
+    /// the app.
     public var writable: Bool {
-        if case .current = self { return true }
-        return false
+        switch self {
+        case .current, .managedElsewhere: true
+        default: false
+        }
     }
 
     static func of(held: Int?, shipped: Int) -> PackageState {
@@ -86,6 +96,56 @@ public enum PackageState: Sendable, Hashable {
         if held < shipped { return .behind(held: held) }
         if held > shipped { return .newer(held: held) }
         return .current(held: held)
+    }
+}
+
+/// Who keeps a training package that is not this app's (decision 0205).
+public enum PackageManager: Sendable, Hashable {
+    /// The owner: they took it over (from the app named, by its client id,
+    /// where the row says), or declared it themselves.
+    case owner(takenOverFrom: String?)
+    /// Another app declared it: its client id, or its `app:<host>` actor.
+    case otherApp(String)
+    /// The server refused the app's apply as not its package, in its words,
+    /// and the row does not say who keeps it.
+    case unknown(String)
+
+    /// Who keeps the package, from its row's ownership stamps, or nil when
+    /// the row says it is this app's or says nothing. `clientID` is this
+    /// app's; without it only a takeover or a package the owner declared is
+    /// told apart. A row an app on this app's host declared before the
+    /// client id was stamped is this app's: its apply claims it.
+    static func of(_ row: JSONObject, clientID: String?) -> PackageManager? {
+        func string(_ key: String) -> String? {
+            if case let .string(value)? = row[key], !value.isEmpty { return value }
+            return nil
+        }
+        if let from = string("takenOverFrom") { return .owner(takenOverFrom: from) }
+        guard let by = string("declaredBy") else { return nil }
+        guard by.hasPrefix("app:") else { return .owner(takenOverFrom: nil) }
+        guard let clientID else { return nil }
+        if let client = string("declaredByClient") { return client == clientID ? nil : .otherApp(client) }
+        return appActor(of: clientID) == by ? nil : .otherApp(by)
+    }
+
+    /// The `app:<host[:port]>` actor the server derives from a client id.
+    static func appActor(of clientID: String) -> String? {
+        guard let url = URL(string: clientID), let host = url.host?.lowercased() else { return nil }
+        return "app:" + host + (url.port.map { ":\($0)" } ?? "")
+    }
+
+    /// Settings' words for it.
+    public var sentence: String {
+        switch self {
+        case .owner(takenOverFrom: .some):
+            "Your Training package is managed by you now (taken over); this app no longer updates it."
+        case .owner(takenOverFrom: nil):
+            "Your Training package is managed by you, not this app; this app doesn\u{2019}t update it."
+        case let .otherApp(app):
+            "Your Training package is managed by another app, \(app); this app doesn\u{2019}t update it."
+        case let .unknown(reason):
+            "Your substrate doesn\u{2019}t let this app update the Training package: \(reason)"
+        }
     }
 }
 
@@ -135,11 +195,16 @@ public struct PackageInstaller: Sendable {
     /// The folder of this server and repository, where the baseline is kept;
     /// nil keeps none, and then only the server's guard protects the package.
     public var baselineDirectory: URL?
+    /// This app's client id, which the server owns the package by (decision
+    /// 0205), so a package another app declared is told apart before an
+    /// apply. Nil leaves that to the server's 403.
+    public var clientID: String?
 
-    public init(api: WorkoutsAPI, manifest: PackageManifest, baselineDirectory: URL? = nil) {
+    public init(api: WorkoutsAPI, manifest: PackageManifest, baselineDirectory: URL? = nil, clientID: String? = nil) {
         self.api = api
         self.manifest = manifest
         self.baselineDirectory = baselineDirectory
+        self.clientID = clientID
     }
 
     public var packageID: String { KindNames.packageID(authority: api.rehome.authority) }
@@ -147,12 +212,16 @@ public struct PackageInstaller: Sendable {
     static let kindKind = "substrate.reamde.dev/core/kind"
     static let bundleKind = "substrate.reamde.dev/core/bundle"
 
-    /// The version the repository holds, read from its package row.
+    /// The version the repository holds, read from its package row, and
+    /// whether the row says the package is kept by someone else.
     public func state() async throws -> PackageState {
         let row = try await api.packageRow(packageID)
         let held: Int? = row.flatMap { properties -> Int? in
             guard case let .number(version)? = properties["version"] else { return nil }
             return NSDecimalNumber(decimal: version).intValue
+        }
+        if let row, let manager = PackageManager.of(row, clientID: clientID) {
+            return .managedElsewhere(held: held, by: manager)
         }
         return .of(held: held, shipped: manifest.version)
     }
@@ -183,13 +252,14 @@ public struct PackageInstaller: Sendable {
     /// Installs or upgrades as the state asks, and answers the state after.
     /// A newer version is left alone; a package changed outside the app is
     /// `.edited` and nothing is written; a refusal of the server's guard
-    /// comes back as `.refused`, in its words.
+    /// comes back as `.refused`, in its words; a package the owner took over
+    /// or another app keeps is `.managedElsewhere` and is never applied.
     @discardableResult
     public func ensure() async throws -> PackageState {
         let before = try await state()
         let baseline = baselineDirectory.flatMap(PackageBaseline.load(from:))
         switch before {
-        case .newer, .edited, .refused:
+        case .newer, .edited, .refused, .managedElsewhere:
             return before
         case let .current(held):
             guard let baseline else {
@@ -208,10 +278,25 @@ public struct PackageInstaller: Sendable {
             try await api.applyVocabulary(manifest.documents(for: api.rehome))
         } catch let error as ServerError where error.status == 409 {
             return .refused(held: before.held, reason: error.message)
+        } catch let error as ServerError where Self.notTheAppsPackage(error) {
+            // Not this app's package (decision 0205): taken over, or another
+            // app's, after the row was read. The row says who from the next
+            // check on, so this is one refused apply, not a loop.
+            let after = try? await state()
+            if case .managedElsewhere? = after { return after! }
+            return .managedElsewhere(held: before.held, by: .unknown(error.message))
         }
         let after = try await state()
         if let held = after.held { try? await record(version: held) }
         return after
+    }
+
+    /// Whether the server refused an apply because the package is not this
+    /// app's (decision 0205), in the words its chokepoint answers: "managed
+    /// by" an app, or "the owner's package". Every other 403, a token
+    /// without the `declare:` scope among them, is the caller's to explain.
+    static func notTheAppsPackage(_ error: ServerError) -> Bool {
+        error.status == 403 && (error.message.contains("is managed by") || error.message.contains("is the owner's package"))
     }
 
     /// The kinds the owner changed since the baseline: a row at another

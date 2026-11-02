@@ -27,6 +27,7 @@ import {
 } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
 import { displayName } from "@/lib/kind-names"
+import { declarationApp, type PackageRow } from "@/lib/packages"
 import { splitRecordPath } from "@/lib/record-path"
 
 // ── sources, grouped by mapping ──────────────────────────────────────────────
@@ -269,16 +270,24 @@ export function adapterOutput(
   return { writer, ...(actor ? { actor } : {}), origin }
 }
 
+/** Why the console offers no edit of a record. */
+export type ReadOnlyReason = "provider" | "adapter" | "app"
+
 /** Whether the console offers no edit of a record, and why: a provider's
- * copy, which the owner changes upstream, or an adapter's output, which the
- * owner corrects with a record of their own. Every door to an edit asks
- * this, the record page's sheet and header, its YAML source and the edit
- * route alike. */
+ * copy, which the owner changes upstream; an adapter's output, which the
+ * owner corrects with a record of their own; or a declaration of a package
+ * an approved app manages (decision 0205), which changes through that app
+ * until the owner takes the package over. Every door to an edit asks this,
+ * the record page's sheet and header, its YAML source and the edit route
+ * alike. `packages` are the package rows, for a kind or a bundle, whose
+ * package's row says which app manages it. */
 export function readOnlyReason(
-  record: SubstrateRecord
-): "provider" | "adapter" | undefined {
+  record: SubstrateRecord,
+  packages?: ReadonlyMap<string, PackageRow>
+): ReadOnlyReason | undefined {
   if (providerOfKind(record.kind)) return "provider"
-  return adapterOutput(record) ? "adapter" : undefined
+  if (adapterOutput(record)) return "adapter"
+  return declarationApp(record, packages) ? "app" : undefined
 }
 
 /** The amber pill's words when live sources offer something else: the one

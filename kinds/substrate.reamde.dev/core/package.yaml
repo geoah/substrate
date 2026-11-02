@@ -5,7 +5,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 22
+  version: 23
   description: >-
     One package whose kinds this repository holds: the group a declaration
     is versioned, owned and quarantined in. The row says who may write under
@@ -74,6 +74,22 @@ data:
       managed: true
       description: the actor that first declared this package, stamped by
         the engine when the row is created
+    # The full client id of the app that declared the package (decision record
+    # 0205), beside its host-only `app:<host>` actor: what ownership is
+    # compared on, so two apps on one host are two owners. An app's package
+    # stamped before this property is claimed by the first apply from an app
+    # on the same host. A takeover clears it.
+    declaredByClient:
+      type: string
+      managed: true
+      description: the client id of the app that declared this package and
+        keeps its declarations
+    # The app a takeover took the package from (decision record 0205): its
+    # client id, or its actor where none was stamped.
+    takenOverFrom:
+      type: string
+      managed: true
+      description: the app the owner took this package over from
     # Issue 010 runtime state, owned by repository-open: set when a stored
     # closure no longer admits under the current binary — the package is left
     # out of the live registry and the repository opens without it. Re-applying

@@ -223,7 +223,7 @@ export function scopeSentence(scope: SentenceScope): string {
  * holds, and a bundle that carries code, so both stay the owner's. */
 export function declareSentence(pkg: string): string {
   const name = packageDisplayName(pkg.split("/")[1] ?? pkg)
-  return `Install your ${name} package and add to it as the app changes; it can’t remove a kind, property or value the package holds, yours included, or add code`
+  return `Install your ${name} package and add to it as the app changes; it can’t remove a kind, property or value the package holds, or add code. The app will own these kinds: you can’t edit them unless you take them over, and their records stay yours`
 }
 
 /** What a `webhook` detail lets the app do once it is set up: deliver with

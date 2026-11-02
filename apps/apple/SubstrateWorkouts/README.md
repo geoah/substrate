@@ -56,7 +56,7 @@ asks for:
 
 | Asks | Why |
 | --- | --- |
-| `declare:~/training` | to install and upgrade the app's own package ([0203](../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)) |
+| `declare:~/training` | to install and upgrade the app's own package, which the app then owns ([0203](../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md), [0205](../../../docs/decisions/0205-an-app-owns-the-package-it-declares.md)) |
 | `write:~/training/*` | to read and write its exercises, routines, sessions and sets |
 | `read:substrate.reamde.dev/health/workout`, `read:…/applehealth/account` | to find the Health workout a session was saved as |
 | `package` detail `substrate.reamde.dev/health` | the catalogue the package requires, installed on approval |
@@ -67,6 +67,13 @@ release stamps its client id (`SubstrateWorkoutsClientID`, the
 `http://127.0.0.1/substrate-workouts`. The session is kept in the Keychain
 under `dev.reamde.substrate.workouts`, and Sign Out revokes it as the kit
 does for every app.
+
+**A local build is another app.** The server owns the package by the full
+client id, so the local build and a release build are two apps: whichever
+declares `~/training` in a repository first owns it, and the other is
+refused, at the approval page and at its apply. Point a local build at a
+separate repository (a throwaway one on `mise run dev` is the usual), or take
+the package over in the repository you share and let neither build update it.
 
 **The package is the app's.** At sign-in, at launch and on return to the
 foreground, `PackageInstaller` reads
@@ -79,19 +86,31 @@ foreground, `PackageInstaller` reads
 | any version it knows, a kind changed outside the app | writes nothing there, keeps sessions on the phone, and says "The Training package on <server> was changed outside Substrate Workouts; it is managed by this app." |
 | this version | does nothing |
 | a newer version | writes nothing more, keeps sessions on the phone, and says to update the app |
+| a package the owner took over, or another app's | never applies to it, keeps sending sessions, and says "Your Training package is managed by you now (taken over); this app no longer updates it", or "…by another app" |
+
+**The server enforces it** (decision
+[0205](../../../docs/decisions/0205-an-app-owns-the-package-it-declares.md)):
+the package's kinds change only through this app, by its client id. The
+owner can't edit them in the console, through `substratectl` or the API, and
+there is nothing to override. The owner's ways in are the bundle's
+**Pause** and **Resume**, which stay theirs, and **Take over…** on the
+package's page, which makes the package theirs for good (there is no
+handing it back). After a takeover the server answers the app's apply with
+`403`: the app reads the package row (`takenOverFrom`, `declaredBy`,
+`declaredByClient`) before every apply, so it stops applying from the first
+check on, never in a loop, and keeps flushing the outbox, since the server
+still takes the app's record writes. A `403` on an apply it did send, in the
+moment between its read and a takeover, ends the same way.
 
 A change to the package ships as the next version and is additive only. The
 server refuses the app's token an apply that would remove anything the
-package holds, a kind, property or value the owner added included, and a
-lossy change; the app shows that refusal in the server's words and writes
-nothing until the owner settles it. A kind edit moves that kind's version and
-not the package's, so after each apply the app records every kind row's
-version (`package.json` in the repository's folder) and compares them at
-every check. The training kinds belong to the app and the owner does not edit
-them (decisions O1 and O2, 2026-11-02): there is no applying over a changed
-package from the app, and the server is gaining the refusal of an owner's
-edit to an app's kinds, which closes the window between the app's comparison
-and its apply. On the phone the kinds are spelled
+package holds, and a lossy change; the app shows that refusal in the
+server's words and writes nothing until it is settled. After each apply the
+app still records every kind row's version (`package.json` in the
+repository's folder) and compares them at every check: with the owner's
+edits refused, a moved kind means a package that predates the app's install,
+and the app writes nothing there and never applies over it. On the phone the
+kinds are spelled
 `~/training/…`; `Rehome` swaps `~` for the repository's authority at the
 server's edge, both ways, and nowhere else.
 
@@ -163,13 +182,14 @@ recorded from a server built from this tree (`Tests/WorkoutsSyncTests/Fixtures`)
 the outbox's order and its answers to `409`, `422`, `401` and the network, a
 delete, a discard, a reset and a new write while a write is in flight, a
 failed save and an unreadable file, parked writes, the history exchange, the
-package installer and an owner's edit, the rehoming, and the sign-in request
+package installer and an owner's edit, a package managed elsewhere and the
+`403` that says so (`OwnershipTests`), the rehoming, and the sign-in request
 and status.
 
 `LiveServerTests` runs the whole path against a real substrate when told
 where: the authorization request, approved through the approval API (which
-installs health), the package declared, upgraded, stopped by an owner's
-property and refused by the server when applied over it, the starter
+installs health), the package declared and upgraded, the owner's edit to
+it refused, the package taken over and the app's apply stopped, the starter
 routines copied, a
 finished session and its 20 sets written through the outbox, and all of it
 read back as the owner.

@@ -81,6 +81,31 @@ func DecisionFrom(ctx context.Context) string {
 	return p
 }
 
+// The CLIENT ID of an app's token rides the context beside its scopes: the
+// full client id (its client id metadata document URL) the owner approved.
+// The actor an app writes under names only the URL's host, `app:<host>`, so
+// two apps on one host, and every loopback build, share an actor; the client
+// id is what tells them apart where that matters, the ownership of a package
+// an app declared (decision 0205). The only writer is `withRequestAuth`, and
+// only for a scoped token: a full-access app token writes as a door.
+type clientIDKey struct{}
+
+// WithClientID marks ctx as serving the app whose client id is id. An empty
+// id leaves ctx unmarked.
+func WithClientID(ctx context.Context, id string) context.Context {
+	if id == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, clientIDKey{}, id)
+}
+
+// ClientIDFrom returns the client id of the app token behind ctx, "" when
+// none stands behind the request.
+func ClientIDFrom(ctx context.Context) string {
+	id, _ := ctx.Value(clientIDKey{}).(string)
+	return id
+}
+
 // A WEBHOOK GRANT stands in for one webhook trigger's key
 // (docs/plans/app-setup.md). The webhook door sets it once it has
 // authenticated the bearer as an app's token that opens the repository the

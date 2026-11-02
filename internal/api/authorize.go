@@ -373,6 +373,9 @@ type pageReads struct {
 	kinds    []substrate.KindInfo
 	previous *substrate.AuthorizationPrevious
 	agents   []*substrate.Record
+	// refused is why each refused declare scope, resolved, cannot be
+	// approved (declareRefusal).
+	refused map[string]string
 }
 
 // readForPage reads what the approval page's view of req needs of ds.
@@ -390,7 +393,59 @@ func readForPage(ctx context.Context, ds substrate.Dataset, req authorize.Reques
 			return out, err
 		}
 	}
+	authority := ds.Repository().Authority
+	for _, s := range req.Scopes {
+		resolved := s.Resolve(authority).String()
+		why, err := declareRefusal(ctx, ds, req.Client, resolved)
+		if err != nil {
+			return out, err
+		}
+		if why != "" {
+			if out.refused == nil {
+				out.refused = map[string]string{}
+			}
+			out.refused[resolved] = why
+		}
+	}
 	return out, nil
+}
+
+// declareRefusal says why an app may not be granted raw, a resolved scope,
+// when raw is a `declare:` scope over a package the app could not keep
+// (decision 0205): one the owner keeps (declared by hand, or taken over from
+// an app), or one another app declared, by client id. Empty when the scope is
+// not a declare scope, the package does not exist yet, or the app is the one
+// that declared it, which is a renewal. A package an app declared before the
+// client id was stamped is this app's when the host matches, since its first
+// apply claims it.
+func declareRefusal(ctx context.Context, ds substrate.Dataset, client authorize.Client, raw string) (string, error) {
+	s, err := scope.Parse(raw)
+	if err != nil || s.Verb != scope.Declare {
+		return "", nil
+	}
+	pkg := s.Pattern
+	row, err := ds.Get(ctx, corePackage+"/package", pkg)
+	if errors.Is(err, substrate.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if row.DeletedAt != nil {
+		return "", nil
+	}
+	owner := substrate.PackageOwnerOf(row.Properties)
+	if !owner.App() {
+		why := pkg + " is your package"
+		if from, _ := row.Properties[substrate.PackageTakenOverFrom].(string); from != "" {
+			why += ", taken over from " + from
+		}
+		return why + ": an app keeps only a package it declares, so it cannot be given declare over yours. Approve the other scopes, or remove the package first", nil
+	}
+	if ok, _ := owner.Admits(substrate.AppActor(client.Host), client.ID); ok {
+		return "", nil
+	}
+	return pkg + " is managed by another app, " + owner.String() + ", which declared it: only that app changes its kinds, so " + client.ID + " cannot be given declare over it", nil
 }
 
 // view is the approval page's view of req in repository authority: the app as
@@ -473,6 +528,7 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 			Agents:  []*substrate.Record{},
 			Allowed: before.Covers(resolved, scopeInternal(resolved, registry)),
 		}
+		row.Refused = p.refused[resolved.String()]
 		if resolved.OverAgents() {
 			row.Agents = matchedAgents(resolved, p.agents)
 		} else {
@@ -604,6 +660,19 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		scopes, err := approvedScopes(req, authority, in.Scopes)
 		if err != nil {
 			return authorize.Approval{}, err
+		}
+		// A declare scope over a package the app may not keep is refused
+		// here, before a code or a token exists; the apply-time chokepoint
+		// still holds the race (decision 0205). The read outlives the
+		// request: a set up finishes the approval after the 202 answered.
+		for _, s := range scopes {
+			why, err := declareRefusal(context.WithoutCancel(ctx), ds, req.Client, s)
+			if err != nil {
+				return authorize.Approval{}, err
+			}
+			if why != "" {
+				return authorize.Approval{}, fmt.Errorf("%w: %s", substrate.ErrForbidden, why)
+			}
 		}
 		if in.LifetimeDays == nil {
 			return authorize.Approval{}, validation("an approval names its lifetimeDays: 7, 30 or 90, or 0 for until revoked")

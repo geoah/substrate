@@ -5,7 +5,7 @@
  * provider's copy says where to change it. */
 
 import { useRef, useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
   CodeIcon,
@@ -42,7 +42,12 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { toast } from "@/components/ui/toast"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { providerOfKind } from "@/lib/actor-identity"
+import { actorIdentity, providerOfKind } from "@/lib/actor-identity"
+import {
+  awaitsPackageRows,
+  declarationApp,
+  packagesQueryOptions,
+} from "@/lib/packages"
 import { splitKind } from "@/lib/api/http"
 import { createRecord } from "@/lib/api/records"
 import { deleteRecord } from "@/lib/api/sync"
@@ -204,7 +209,16 @@ export function RecordHeader({
   // An adapter's output is read only too: the owner corrects it with a
   // record of their own (`AdapterNotice`).
   const adapter = provider ? undefined : adapterOutput(record)
-  const locked = Boolean(provider) || Boolean(adapter)
+  // A declaration of a package an app manages is read only too: the owner
+  // takes the package over to change it (decision 0205).
+  const packages = useQuery(packagesQueryOptions)
+  const app =
+    provider || adapter ? undefined : declarationApp(record, packages.data)
+  const locked =
+    Boolean(provider) ||
+    Boolean(adapter) ||
+    Boolean(app) ||
+    awaitsPackageRows(record, packages.isPending)
   const facts = headerFacts(record, rows)
   const path = `${record.kind}/${record.id}`
   const { authority, pkg, name } = splitKind(record.kind)
@@ -313,6 +327,13 @@ export function RecordHeader({
                   <DropdownMenuSeparator />
                   <DropdownMenuItem disabled>
                     Written by {adapter.writer}
+                  </DropdownMenuItem>
+                </>
+              ) : app ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled>
+                    Managed by {actorIdentity(app).name}
                   </DropdownMenuItem>
                 </>
               ) : (

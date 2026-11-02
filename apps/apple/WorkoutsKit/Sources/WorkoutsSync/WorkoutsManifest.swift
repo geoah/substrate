@@ -85,6 +85,10 @@ public enum SyncStatus: Sendable, Hashable {
     /// The server refused the upgrade, which would remove what the package
     /// holds.
     case packageRefused(String)
+    /// The package is not the app's (decision 0205): the owner took it over,
+    /// or another app keeps it. The app no longer updates it, and records
+    /// still go, with this many waiting.
+    case packageManagedElsewhere(PackageManager, waiting: Int)
     /// Ready, with this many writes still waiting.
     case ready(waiting: Int)
     /// Ready, and the approved access ends on this date.
@@ -122,6 +126,7 @@ public enum SyncStatus: Sendable, Hashable {
         case let .refused(reason): return .refused(waiting: waiting, reason: reason)
         default: break
         }
+        if case let .managedElsewhere(_, manager) = package { return .packageManagedElsewhere(manager, waiting: waiting) }
         for case let .accessEndsSoon(date) in issues {
             return .accessEndsSoon(date, waiting: waiting)
         }
@@ -145,6 +150,8 @@ public enum SyncStatus: Sendable, Hashable {
             "A change could not be kept on this iPhone: \(reason)"
         case let .packageEdited(server, _):
             "The Training package on \(server) was changed outside Substrate Workouts; it is managed by this app. Sessions stay on this iPhone."
+        case let .packageManagedElsewhere(manager, waiting):
+            manager.sentence + " Sessions still sync." + (waiting == 0 ? "" : " Sending \(waiting) \(waiting == 1 ? "change" : "changes").")
         case let .packageRefused(reason):
             "Your substrate refused this app's update to the training package: \(reason) Sessions wait on this iPhone until the package is settled on your substrate."
         case let .accessEndsSoon(date, waiting):

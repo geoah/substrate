@@ -1255,3 +1255,60 @@ func TestASecondFullRequestReadsAsAllowedBefore(t *testing.T) {
 		t.Fatalf("a second full request = previous %+v allowed %v", again.Previous, again.Scopes[0].Allowed)
 	}
 }
+
+// A DECLARE SCOPE OVER A PACKAGE THE APP COULD NOT KEEP IS REFUSED AT THE
+// PAGE (decision 0205): one the owner keeps, or one another app declared,
+// even from the same host. The page says why on the scope, and an approval
+// naming it is refused before a code exists; the rest of the request can
+// still be approved. A package the app itself declared is a renewal, and
+// one an app on its host declared before the client id was stamped is its
+// to claim.
+func TestADeclareScopeOverAPackageTheAppCannotKeepIsRefused(t *testing.T) {
+	pkg := fakeRepository + "/training"
+	declare := "declare:" + pkg
+	read := "read:" + personKind
+	for name, tc := range map[string]struct {
+		props map[string]any
+		want  string
+	}{
+		"nobody holds it":   {},
+		"the owner's":       {props: map[string]any{"declaredBy": "console"}, want: "is your package"},
+		"taken over":        {props: map[string]any{"declaredBy": "console", "takenOverFrom": "https://notes.example.org/client.json"}, want: "taken over from https://notes.example.org/client.json"},
+		"another host's":    {props: map[string]any{"declaredBy": "app:workouts.example.org", "declaredByClient": "https://workouts.example.org/client.json"}, want: "another app, https://workouts.example.org/client.json"},
+		"the same host's":   {props: map[string]any{"declaredBy": "app:notes.example.org", "declaredByClient": "https://notes.example.org/other/client.json"}, want: "another app, https://notes.example.org/other/client.json"},
+		"this app's":        {props: map[string]any{"declaredBy": "app:notes.example.org", "declaredByClient": appClientID}},
+		"its host's, older": {props: map[string]any{"declaredBy": "app:notes.example.org"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newAppEnv(t)
+			if tc.props != nil {
+				e.svc.datasets[fakeRepository].records[pkg] = &substrate.Record{Kind: corePackage + "/package", ID: pkg, Properties: tc.props}
+			}
+			id := e.park(appRequest("declare:~/training " + read))
+			page := decodeJSON[substrate.AuthorizationRequest](t, e.show(id))
+			var refused string
+			for _, s := range page.Scopes {
+				if s.Scope == declare {
+					refused = s.Refused
+				}
+			}
+			if tc.want == "" {
+				if refused != "" {
+					t.Fatalf("the page refuses the declare scope: %s", refused)
+				}
+				wantStatus(t, e.approveShown(id, []string{declare, read}, 30), http.StatusOK)
+				return
+			}
+			if !strings.Contains(refused, tc.want) {
+				t.Fatalf("the page's refusal = %q, want it to say %q", refused, tc.want)
+			}
+			rec := e.approveShown(id, []string{declare, read}, 30)
+			wantStatus(t, rec, http.StatusForbidden)
+			if !strings.Contains(rec.Body.String(), tc.want) {
+				t.Errorf("the approval's refusal = %s, want it to say %q", rec.Body.String(), tc.want)
+			}
+			// The request is handed back, and the rest of it approves.
+			wantStatus(t, e.approveShown(id, []string{read}, 30), http.StatusOK)
+		})
+	}
+}

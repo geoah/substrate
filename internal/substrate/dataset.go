@@ -136,6 +136,12 @@ type Dataset interface {
 	// lossy is refused here, under ErrLossyConversion; it takes the confirmed
 	// form below.
 	ApplyVocabularyDocuments(ctx context.Context, actor Actor, docs []map[string]any) ([]*Record, error)
+	// TakeOverPackage makes a package an app declared under its `declare:`
+	// scope the owner's (decision 0205): its row's declaredBy becomes actor,
+	// so the owner's doors write its declarations again. confirm repeats the
+	// package identity; only the owner's own hand may take one; nothing but
+	// the row's declaredBy moves.
+	TakeOverPackage(ctx context.Context, actor Actor, pkg, confirm string) (*Record, error)
 	// PlanVocabularyApply stages the batch read-only and answers what admitting
 	// it would refuse and what it would rewrite.
 	PlanVocabularyApply(ctx context.Context, actor Actor, docs []map[string]any) (VocabularyPlan, error)

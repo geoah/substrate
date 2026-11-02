@@ -23,15 +23,22 @@ Below, `~/training/…` is that name.
 **It is the app's.** The kinds are Substrate Workouts' authority: the app
 installs and upgrades them, and the owner does not edit them (decisions O1
 and O2, 2026-11-02, in [decisions.md](../docs/decisions.md#open-since-1100)).
-The server's refusal of an owner's edit to an app's kinds is in progress;
-until then the app finds a package changed outside it, writes nothing to that
-repository and says so, and never applies over the change.
+The server enforces it
+([0205](../../../../docs/decisions/0205-an-app-owns-the-package-it-declares.md)):
+the package row names the app by its client id, and every other hand's
+change to its package, bundle or kind documents, the owner's included, is
+refused with `403`. There are no owner edits to override. The records stay
+the owner's, and so does the bundle's Pause and Resume. The owner's one way
+to change the kinds is **Take over…** on the package's page, after which the
+package is theirs for good and the app stops updating it (its apply answers
+`403`, and it keeps sending records). A local build and a release build are
+two apps, so each wants its own repository.
 
 **Changing it.** A change ships as the next `version` in `training.yaml`,
 and only additive changes (a new kind, a new optional property, a new enum
 value): the server refuses the app's token an apply that removes anything the
 package holds, or that it would have to confirm as lossy, so a narrowing
-waits for the owner. A bundle the app sends lists its kinds and nothing more
+waits for a takeover. A bundle the app sends lists its kinds and nothing more
 (no `modules`, `oauth2` or `inputs`), and a kind declares no `indices` or
 `embed`. Run the generator, then `mise run apple:test:workouts`, whose
 codec drift test reads the kinds' property names from the generated

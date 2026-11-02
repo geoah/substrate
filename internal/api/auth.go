@@ -132,6 +132,11 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		}}
 		ctx = withTokenLease(ctx, lease)
 		actor := appActorOf(tok)
+		// The full client id beside the host-only actor: what a package the
+		// app declares is owned by (decision 0205).
+		if actor != substrate.ActorAPI {
+			ctx = substrate.WithClientID(ctx, tok.ClientID)
+		}
 		return withRequestAuth(ctx, newScopedDataset(ds, grant, actor), tok, actor), 0, "", "", nil
 	}
 	actor := substrate.ActorAPI

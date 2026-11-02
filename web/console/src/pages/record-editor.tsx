@@ -90,7 +90,18 @@ import {
 } from "@/lib/record-yaml"
 import { kindByCollection } from "@/lib/definition"
 import { displayName, lowerFirst } from "@/lib/kind-names"
-import { adapterOutput, readOnlyReason } from "@/lib/provenance"
+import { actorIdentity } from "@/lib/actor-identity"
+import {
+  awaitsPackageRows,
+  declarationApp,
+  packagesQueryOptions,
+  type PackageRow,
+} from "@/lib/packages"
+import {
+  adapterOutput,
+  readOnlyReason,
+  type ReadOnlyReason,
+} from "@/lib/provenance"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { cn } from "@/lib/utils"
 import { recordEditRoute, recordNewRoute } from "@/router"
@@ -136,6 +147,7 @@ function RecordEditor({
 }) {
   const units = useUnits()
   const registry = useQuery(kindsQueryOptions)
+  const packages = useQuery(packagesQueryOptions)
   const kindInfo = registry.data
     ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
@@ -144,7 +156,13 @@ function RecordEditor({
     enabled: mode === "edit" && Boolean(id),
   })
 
-  const ready = !registry.isPending && (mode === "create" || !record.isPending)
+  // A declaration's editor waits for the package rows too: they say whether
+  // an app manages it (decision 0205).
+  const ready =
+    !registry.isPending &&
+    (mode === "create" ||
+      (!record.isPending &&
+        !(record.data && awaitsPackageRows(record.data, packages.isPending))))
 
   if (!ready) return <EditorSkeleton />
 
@@ -165,11 +183,14 @@ function RecordEditor({
     )
   }
 
-  // A provider's copy and an adapter's output are read only on every door,
-  // this route included: a save here would be a correction the next sync or
-  // the next delivery overwrites.
+  // A provider's copy, an adapter's output and an app's declaration are read
+  // only on every door, this route included: a save here would be a
+  // correction the next sync or the next delivery overwrites, or one the
+  // server refuses because the app manages the package.
   const locked =
-    mode === "edit" && record.data ? readOnlyReason(record.data) : undefined
+    mode === "edit" && record.data
+      ? readOnlyReason(record.data, packages.data)
+      : undefined
   if (locked && record.data) {
     return (
       <ReadOnlyRecord
@@ -177,6 +198,7 @@ function RecordEditor({
         kind={kindInfo}
         reason={locked}
         params={{ authority, pkg, name, id: record.data.id }}
+        packages={packages.data}
       />
     )
   }
@@ -764,13 +786,16 @@ function ReadOnlyRecord({
   kind,
   reason,
   params,
+  packages,
 }: {
   record: SubstrateRecord
   kind: KindInfo
-  reason: "provider" | "adapter"
+  packages?: ReadonlyMap<string, PackageRow>
+  reason: ReadOnlyReason
   params: { authority: string; pkg: string; name: string; id: string }
 }) {
   const adapter = reason === "adapter" ? adapterOutput(record) : undefined
+  const app = reason === "app" ? declarationApp(record, packages) : undefined
   return (
     <div className="flex flex-1 p-6">
       <Empty>
@@ -782,7 +807,9 @@ function ReadOnlyRecord({
           <EmptyDescription>
             {adapter
               ? "An adapter wrote it, and rewrites it when the provider’s data changes."
-              : "It is a provider’s copy: change it at the provider, and the next sync brings the change here."}
+              : app
+                ? `${actorIdentity(app).name} manages this package and changes its definitions. To change them yourself, take the package over from its page.`
+                : "It is a provider’s copy: change it at the provider, and the next sync brings the change here."}
           </EmptyDescription>
         </EmptyHeader>
         {adapter && (

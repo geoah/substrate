@@ -278,7 +278,8 @@ final class SubstrateLink {
         syncing = true
         defer { if self.account === account { syncing = false } }
         do {
-            let installer = PackageInstaller(api: account.api, manifest: packageManifest, baselineDirectory: account.directory)
+            let installer = PackageInstaller(api: account.api, manifest: packageManifest, baselineDirectory: account.directory,
+                                             clientID: manifest.clientID)
             let state = try await installer.ensure()
             guard isCurrent(account) else { return }
             account.package = state

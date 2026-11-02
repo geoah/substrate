@@ -173,13 +173,16 @@ func (t *txn) put(in substrate.PutInput) (*substrate.Record, error) {
 	return t.putKind(ty, in)
 }
 
-// putKind is put with the write's kind ALREADY RESOLVED. THE VOCABULARY
-// PROJECTION IS ITS ONE OUTSIDE CALLER, and it has to be: a projected
-// declaration row must be validated against the definition that will be live
-// once the projection commits, which is not always the stored one the live
-// registry holds (vocabularywrite.go projectionKind). Nothing else about the
-// write changes: the same locks, the same system-kind guard, the same coercion
-// and the same apply path.
+// putKind is put with the write's kind ALREADY RESOLVED. It has two outside
+// callers. The vocabulary projection has to be one: a projected declaration
+// row must be validated against the definition that will be live once the
+// projection commits, which is not always the stored one the live registry
+// holds (vocabularywrite.go projectionKind). The takeover is the other
+// (appowned.go TakeOverPackage): it rewrites the package row's managed
+// ownership properties, which the generic put refuses from any caller, under
+// the vocabulary write mutex. Nothing else about the write changes: the same
+// locks, the same system-kind guard, the same coercion and the same apply
+// path.
 func (t *txn) putKind(ty *vocabulary.Kind, in substrate.PutInput) (*substrate.Record, error) {
 	sp, err := t.putSpec(ty, in)
 	if err != nil {

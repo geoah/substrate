@@ -211,6 +211,11 @@ export function ScopeRow({
         <label htmlFor={id} className="cursor-pointer">
           {scopeSentence(scope)}
         </label>
+        {scope.refused && (
+          <p className="text-xs text-destructive">
+            Can’t be approved: {scope.refused}.
+          </p>
+        )}
         {technical && <ScopeFacts scope={scope} repository={repository} />}
       </div>
     </li>

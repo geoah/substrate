@@ -51,6 +51,7 @@ import { kindByCollection } from "@/lib/definition"
 import { displayName, lowerFirst } from "@/lib/kind-names"
 import { METRIC_TRAIT, SYNC_TRAIT } from "@/lib/core-kinds"
 import { OBSERVED_SHOWN, observedVariant } from "@/lib/observations"
+import { awaitsPackageRows, packagesQueryOptions } from "@/lib/packages"
 import { readOnlyReason } from "@/lib/provenance"
 import { foldedBy } from "@/lib/record-view"
 import { inkPlan, inkPlanNames } from "@/lib/ink-record"
@@ -126,10 +127,14 @@ export function RecordDocument({
   const [technical] = useTechnicalDetails()
   const [source, setSource] = useState(false)
   const [holders, setHolders] = useState(false)
-  // A provider's copy and an adapter's output are read only: the owner
-  // changes the first upstream and corrects the second with a record of
-  // their own (the header says how).
-  const readOnly = Boolean(readOnlyReason(record))
+  // A provider's copy, an adapter's output and an app's declaration are
+  // read only: the owner changes the first upstream, corrects the second
+  // with a record of their own, and takes the third's package over (the
+  // header says how).
+  const packages = useQuery(packagesQueryOptions)
+  const readOnly =
+    Boolean(readOnlyReason(record, packages.data)) ||
+    awaitsPackageRows(record, packages.isPending)
   const { rows } = useRecordChanges(record)
   const moved = useLiveRecord(record)
   const mappingIds = useMemo(

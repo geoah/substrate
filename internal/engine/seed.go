@@ -23,8 +23,9 @@ package engine
 //     (catalog/catalog.go). The embedded catalog is a source, never a
 //     publisher; nothing on the serving path reads it.
 //
-// And one function decides who may write a declaration at all:
-// authorizeDeclarationWrite, below.
+// And one chokepoint decides who may write a declaration at all:
+// authorizeDeclarationWrite, below, with authorizeNewPackage and
+// authorizeAppOwnedWrite beside it.
 
 import (
 	"context"
@@ -112,6 +113,55 @@ func authorizeNewPackage(actor substrate.Actor, current *vocabulary.Registry, pk
 	}
 	return fmt.Errorf("%w: %s publishes the substrate's own vocabulary; a repository declares its own kinds under its own authority",
 		substrate.ErrForbidden, publisherAuthority)
+}
+
+// authorizeAppOwnedWrite is the third rule of the chokepoint (decision 0205):
+// a package an app declared through its `declare:` scope is the app's, and
+// its declarations change only under that same app. "The same app" is the
+// same client id, not the same host: the row's `declaredBy` names the app's
+// `app:<host>` actor for a reader, and `declaredByClient` beside it the full
+// client id the app was approved under, which is what is compared, so two
+// apps on one https host and any two loopback builds are two owners
+// (substrate.PackageOwner.Admits). Every other hand is refused, the owner's
+// doors, agents, functions, other apps and the substrate's own paths alike:
+// an uninstall or a catalog install would change the app's declarations as
+// surely as an apply. The records of the package's kinds are untouched by
+// this; they stay the owner's.
+//
+// The rule runs the other way too: an app writes declarations only into a
+// package it declared, or a new one it is about to. A package the owner
+// declared, or one the owner took over (TakeOverPackage), is the owner's,
+// and an app's scope does not reach into it.
+//
+// owner is the package row's app owner, the zero value for none; held says
+// the repository holds the package at all; clientID is the writing app's
+// client id (substrate.ClientIDFrom), "" for every other hand.
+func authorizeAppOwnedWrite(actor substrate.Actor, clientID string, owner substrate.PackageOwner, held bool, pkg string) error {
+	if !owner.App() {
+		if held && substrate.IsAppActor(actor) {
+			return fmt.Errorf("%w: %s is the owner's package, not one %s declared: an app changes only the package it declared",
+				substrate.ErrForbidden, pkg, actor)
+		}
+		return nil
+	}
+	if ok, _ := owner.Admits(actor, clientID); ok {
+		return nil
+	}
+	if substrate.IsAppActor(actor) {
+		return fmt.Errorf("%w: %s is managed by another app, %s, which declared it: an app changes only the package it declared, and %s is not that app",
+			substrate.ErrForbidden, pkg, owner, appName(actor, clientID))
+	}
+	return fmt.Errorf("%w: %s is managed by the app %s, which declared it: its package, bundle and kind documents change only through that app, and its records stay yours; to manage the package yourself, take it over (POST /api/v1/vocabulary/takeover)",
+		substrate.ErrForbidden, pkg, owner)
+}
+
+// appName names a writing app for a refusal: its client id where the request
+// carried one, its actor otherwise.
+func appName(actor substrate.Actor, clientID string) string {
+	if clientID != "" {
+		return clientID
+	}
+	return string(actor)
 }
 
 // isSubstratePath reports whether an actor is one of the substrate's own

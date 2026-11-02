@@ -132,6 +132,35 @@ func holdWaitingMappings(ctx context.Context, ds substrate.Dataset, docs []map[s
 	return vocabulary.WithoutMappings(docs, drop), held, nil
 }
 
+// vocabularyTakeoverRequest is the takeover's body: the package, and the same
+// identity again as the confirmation a deliberate takeover carries.
+type vocabularyTakeoverRequest struct {
+	Package string `json:"package"`
+	Confirm string `json:"confirm"`
+}
+
+// takeOverPackage is POST /api/v1/vocabulary/takeover: the owner makes a
+// package an app declared under its `declare:` scope their own (decision
+// 0205), answering the package row as it now stands. It is on the owner's
+// surface, and the engine refuses every hand but the owner's.
+func (h *handler) takeOverPackage(w http.ResponseWriter, r *http.Request) {
+	var req vocabularyTakeoverRequest
+	if !readJSON(w, r, &req, jsonBody) {
+		return
+	}
+	if req.Package == "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, "package is required: the identity, <authority>/<package>, of the package to take over")
+		return
+	}
+	ctx := r.Context()
+	rec, err := DatasetFrom(ctx).TakeOverPackage(ctx, ActorFrom(ctx), req.Package, req.Confirm)
+	if err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rec)
+}
+
 // planVocabulary is POST /api/v1/vocabulary/plan: what applying the batch
 // would refuse and what it would rewrite, with the plan hash and changelog
 // head a confirmation names (decision 0067). It writes nothing. A POST because

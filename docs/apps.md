@@ -96,7 +96,10 @@ before, since anything on your computer may send the same client id.
 
 App tokens are listed under **Apps** in Settings, with the app, its scopes,
 when you approved it and when it expires. **Revoke** deletes the token, like
-any other.
+any other. A package an app installed under a `declare:` scope stays the
+app's when you revoke it: its collections read "Managed by <app>" and their
+definitions stay read only until you take the package over from its page
+([keep a package of your own](#keep-a-package-of-your-own)).
 
 ## For an app
 
@@ -306,8 +309,54 @@ of its own, under the repository's own authority
 ([0203](decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)).
 It asks for `declare:~/<package>` beside the scopes that write the package's
 records, and the approval page says "Install your <package> package and add
-to it as the app changes". A package the app needs from the catalog, such as
-one its kinds name, is a `package` detail of the same request.
+to it as the app changes; … The app will own these kinds: you can't edit them
+unless you take them over, and their records stay yours". A package the app
+needs from the catalog, such as one its kinds name, is a `package` detail of
+the same request.
+
+The package is the app's
+([0205](decisions/0205-an-app-owns-the-package-it-declares.md)): its
+`package`, `bundle` and `kind` documents change only through the app that
+declared it, under the `declare:` scope. "The app" is its **client id**: the
+package row's `declaredBy` names it as `app:<host>` for a reader, and
+`declaredByClient` beside it holds the full client id the owner approved,
+which is what the server compares. Two apps served from one host, and two
+loopback apps, are two owners; a renewed token for the same client id is the
+same app. Every other hand is refused with `403` naming the app: the owner's
+token through the console, `substratectl` or the API, a full-access app
+token (which writes as a door, the owner's own hand), an agent, a function,
+another app holding the same scope, and an uninstall. The records of its
+kinds stay the owner's, to read, write and delete as before. An app in turn
+writes only into a package it declared: a package the owner declared, or
+took over, refuses its apply with `403`.
+
+**A local build is another app.** A build that signs in with a loopback
+client id and the release build with its https one are two client ids, so
+whichever declares the package first owns it and the other is refused. Point
+a local build at a separate repository, or take the package over in the one
+you share. A package an app declared under an older server carries only
+`app:<host>`; the first apply from a client id on that host claims it and
+stamps the client id, and only that client id owns it after.
+
+**Refused at approval.** A `declare:` scope over a package the owner keeps,
+or one another client id declared, cannot be approved: the approval page
+shows why on the scope and leaves it unchecked, and
+`POST /api/v1/authorizations/{request}` naming it answers `403` before any
+code exists. The rest of the request can still be approved. A renewal for
+the app that declared the package passes.
+
+**The bundle's switch stays the owner's.** Disabling and enabling the app's
+bundle (`PATCH` of its bundle row's `disabled`, or **Pause** and **Resume**
+on the package page) change no declaration, so they stay the owner's, as the
+runtime off switch an owner, or an agent acting for them, relies on. Purging
+its data (`purging`) deletes every record of its kinds and is refused with
+`403` until the owner takes the package over, like an uninstall.
+
+**What it requires stays.** The owner's uninstall of a package the app's
+bundle `requires:` (for Substrate Workouts' `~/training`, the health
+catalogue) is refused with `403` (`guard`), naming the app's package: the
+app's package would otherwise be quarantined at the next open, and nobody
+could mend it. Take the app's package over, or remove it, first.
 
 ```
 scope=declare:~/training write:~/training/* read:substrate.reamde.dev/health/workout
@@ -344,13 +393,33 @@ authority, to `POST /api/v1/vocabulary/apply`:
   when there is none, apply again when it is older, stop and say so when it
   is newer.
 
-A kind edit moves that kind's version and not the package's, so the package
-version alone does not say whether the owner changed the package. The token
-also reads the package's kind rows
+The token also reads the package's kind rows
 (`GET /api/v1/substrate.reamde.dev/core/kind/<authority>%2F<package>%2F<name>`),
-whose `version` an app records after each apply it makes and compares before
-the next: a kind whose version moved, or one it did not install, is the
-owner's change, and the app asks before it applies over it.
+whose `version` an app may record after each apply it makes and compare
+before the next. The server already refuses the owner's edits, so a kind
+whose version moved is a safety net, not a choice to offer: it means the
+package predates the app's install or was taken over.
+
+**The owner's way back.** The owner takes the package over, deliberately:
+**Take over…** on the package's page in the console, which asks for the
+package's identity to be typed, or
+`substratectl takeover <authority>/<package> --confirm <authority>/<package>`,
+both `POST /api/v1/vocabulary/takeover` with
+`{"package": "<authority>/<package>", "confirm": "<authority>/<package>"}`.
+Only the owner's own token takes a package over (a full-access app token is
+one), and only one an app manages (`409` otherwise). It rewrites the row:
+`declaredBy` becomes the hand that took it, `takenOverFrom` names the app it
+was taken from, by client id, and `declaredByClient` goes. The answer is that
+row, and the changelog entry carries the same. Nothing else changes: no
+kind, no record, no token. From then on the owner edits the package as any of
+theirs, and the app's next apply into it answers `403`, while its record
+writes still land, so an app stops applying on that `403` and keeps sending
+records. It cannot be handed back, and there is no reverse operation.
+Revoking the app leaves the package locked.
+
+A repository migration or a rebuild from the changelog is not a hand: it
+rewrites the rows wholesale, ownership stamps included, and the package stays
+whose it was.
 
 The guard reads the stored package before the engine applies the batch, and
 the apply takes no expected version, so an owner's edit that lands in between
@@ -642,7 +711,7 @@ A scope is a verb and a pattern:
 | `agents` | agent ids | chats with the matching agents and their threads ([talk to agents](#talk-to-agents)) |
 | `decide` | agent ids | the change requests the matching agents propose ([talk to agents](#talk-to-agents)) |
 | `webhook` | one trigger id, never a pattern | delivering to that webhook and its parked list ([deliver to a webhook](#deliver-to-a-webhook)) |
-| `declare` | one package of the repository's own, `~/<package>`, never a pattern | applying that package's declarations and reading its package row ([keep a package of your own](#keep-a-package-of-your-own)) |
+| `declare` | one package of the repository's own, `~/<package>`, never a pattern | applying that package's declarations and reading its package row; the app then owns the package ([keep a package of your own](#keep-a-package-of-your-own)) |
 
 | Pattern | Reaches |
 | --- | --- |
