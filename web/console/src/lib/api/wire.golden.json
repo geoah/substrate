@@ -310,6 +310,7 @@
     "appName": false,
     "authority": false,
     "documentUrl": false,
+    "fromFile": false,
     "listed": true,
     "name": false,
     "record": false,
@@ -866,6 +867,7 @@
   "TokenInfo": {
     "agents": false,
     "appAuthority": false,
+    "appAuthorityFromFile": false,
     "appLocal": false,
     "clientId": false,
     "clientName": false,

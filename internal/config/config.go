@@ -129,9 +129,12 @@ type Config struct {
 	// each named authority's document is read from the file, in place of its
 	// `_substrate` TXT record and the fetch, when the approval page decides
 	// whether an app is verified (decision 0209). It exists to test an app
-	// against a document that is not published yet. NEVER set it on a
-	// deployment anybody can reach: whoever writes the file decides which
-	// apps read as published by that authority. AuthorityDocs parses it.
+	// against a document that is not published yet. Like the other
+	// SUBSTRATE_INSECURE_ variables it is an operator's opt-in with a boot
+	// warning, and nothing ties it to a development box: whoever writes the
+	// file decides which apps read as published by that authority, so the
+	// approval page says a file vouched for the publisher and the token
+	// records it (appAuthorityFromFile). AuthorityDocs parses it.
 	InsecureAuthorityDocs string `envconfig:"SUBSTRATE_INSECURE_AUTHORITY_DOCS" default:""`
 
 	// The host OAuth facility (bundles declare auth, the host runs it).

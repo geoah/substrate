@@ -2190,4 +2190,36 @@ describe("AuthorizePage", () => {
     expect(await screen.findByText("It asks for full access")).toBeTruthy()
     expect(screen.queryByText(/nothing confirms which program/)).toBeNull()
   })
+
+  it("says in the everyday view that a file on this server vouched for a publisher", async () => {
+    answers.GET = () =>
+      jsonResponse(200, {
+        ...PUBLISHED,
+        app: {
+          ...PUBLISHED.app,
+          publisher: {
+            ...PUBLISHED.app.publisher,
+            record:
+              "none: SUBSTRATE_INSECURE_AUTHORITY_DOCS names a local file",
+            documentUrl: "file:/srv/authority.json",
+            fromFile: true,
+          },
+        },
+      })
+    renderPage()
+    await screen.findByRole("heading", { level: 1, name: "Example Workouts" })
+    expect(
+      screen.getByText("Verified by a file on this server, not by DNS")
+    ).toBeTruthy()
+    expect(
+      screen.getByText(/vouches for this app, not example.org/)
+    ).toBeTruthy()
+  })
+
+  it("says nothing of a file when DNS verified the publisher", async () => {
+    answers.GET = () => jsonResponse(200, PUBLISHED)
+    renderPage()
+    await screen.findByRole("heading", { level: 1, name: "Example Workouts" })
+    expect(screen.queryByText(/Verified by a file/)).toBeNull()
+  })
 })
