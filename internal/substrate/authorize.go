@@ -348,8 +348,34 @@ type AuthorizationApp struct {
 	// the page warns about: the app is naming a site its client id does not
 	// prove it runs.
 	URIHostDiffers bool `json:"uriHostDiffers,omitempty"`
-	// Actor is what the app's changes are recorded as, `app:<host>`.
+	// Actor is what the app's changes are recorded as: `app:<authority>`
+	// for a verified app, `app:local` for one whose access goes to this
+	// device, `app:<host>` otherwise (decision 0209).
 	Actor string `json:"actor"`
+	// Verified is true when the app's publisher is confirmed: its document
+	// claims an authority, the authority's `_substrate` record names a
+	// document that lists this client id, and the access goes to the
+	// authority or a name under it.
+	Verified  bool                   `json:"verified"`
+	Publisher AuthorizationPublisher `json:"publisher"`
+}
+
+// AuthorizationPublisher is what the server read about who publishes an
+// app. Authority is the verified one, or the one the app claims; Name is the
+// authority document's name for the publisher and AppName its name for the
+// app, both only when the document was read. Unconfirmed is why an app is
+// not verified, absent when it is or when it claims no publisher. Record,
+// DocumentURL and Listed are the technical details: the `_substrate` record
+// as read, the document it names, and whether that document lists the
+// client id.
+type AuthorizationPublisher struct {
+	Authority   string `json:"authority,omitempty"`
+	Name        string `json:"name,omitempty"`
+	AppName     string `json:"appName,omitempty"`
+	Unconfirmed string `json:"unconfirmed,omitempty"`
+	Record      string `json:"record,omitempty"`
+	DocumentURL string `json:"documentUrl,omitempty"`
+	Listed      bool   `json:"listed"`
 }
 
 // AuthorizationRedirectTo is where the code goes on approval.

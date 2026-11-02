@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -133,8 +134,8 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		}}
 		ctx = withTokenLease(ctx, lease)
 		actor := appActorOf(tok)
-		// The full client id beside the host-only actor: what a package the
-		// app declares is owned by (decision 0205).
+		// The full client id beside the actor: what a package the app
+		// declares is owned by (decision 0205).
 		if actor != substrate.ActorAPI {
 			ctx = substrate.WithClientID(ctx, tok.ClientID)
 		}
@@ -154,11 +155,25 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 	return withRequestAuth(ctx, ds, tok, actor), 0, "", "", nil
 }
 
-// appActorOf is the actor an app's token writes under: `app:` and the host of
-// the client id the owner approved. A scoped token with no client id (none
+// appActorOf is the actor an app's token writes under, from what its
+// approval proved (decision 0209). A scoped token with no client id (none
 // the authorization flow mints) writes as `api`.
 func appActorOf(tok substrate.TokenInfo) substrate.Actor {
-	u, err := url.Parse(tok.ClientID)
+	return appActorFor(tok.ClientID, tok.AppAuthority, tok.AppLocal)
+}
+
+// appActorFor is an app's actor: `app:<authority>` when authority was
+// verified as its publisher, `app:local` when its client id or the redirect
+// it was approved for is a loopback address, `app:<host>` of its client id
+// otherwise, and `api` for a client id that names no host.
+func appActorFor(clientID, authority string, local bool) substrate.Actor {
+	if authority != "" {
+		return substrate.AppActor(authority)
+	}
+	if c, err := authorize.ParseClientID(clientID); local || (err == nil && c.Local) {
+		return substrate.AppActorLocal
+	}
+	u, err := url.Parse(clientID)
 	if err != nil || u.Host == "" {
 		return substrate.ActorAPI
 	}

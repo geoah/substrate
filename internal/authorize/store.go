@@ -143,6 +143,9 @@ type Approval struct {
 	Scopes     []string
 	Lifetime   time.Duration
 	ClientName string
+	// AppAuthority is the publisher the approval page showed as verified,
+	// "" when it showed none: the token's actor is derived from it.
+	AppAuthority string
 	// Details are what the approval set up, or found in place, which the
 	// token response lists.
 	Details []substrate.AuthorizationDetail

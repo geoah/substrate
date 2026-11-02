@@ -222,8 +222,10 @@
     "host": true,
     "local": true,
     "name": false,
+    "publisher": true,
     "uri": false,
-    "uriHostDiffers": false
+    "uriHostDiffers": false,
+    "verified": true
   },
   "AuthorizationApproval": {
     "lifetimeDays": true,
@@ -303,6 +305,15 @@
     "approvedAt": true,
     "expiresAt": false,
     "scopes": true
+  },
+  "AuthorizationPublisher": {
+    "appName": false,
+    "authority": false,
+    "documentUrl": false,
+    "listed": true,
+    "name": false,
+    "record": false,
+    "unconfirmed": false
   },
   "AuthorizationRedirectTo": {
     "host": true,
@@ -854,6 +865,8 @@
   },
   "TokenInfo": {
     "agents": false,
+    "appAuthority": false,
+    "appLocal": false,
     "clientId": false,
     "clientName": false,
     "createdAt": true,

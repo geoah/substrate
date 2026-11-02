@@ -78,6 +78,7 @@ import type {
   AuthorizationPackage,
   AuthorizationPackageStep,
   AuthorizationPrevious,
+  AuthorizationPublisher,
   AuthorizationRedirectTo,
   AuthorizationRequest,
   AuthorizationScope,
@@ -598,6 +599,8 @@ const tokenInfo: Shape<TokenInfo> = {
   scopes: false,
   clientId: false,
   clientName: false,
+  appAuthority: false,
+  appLocal: false,
   agents: false,
 }
 
@@ -637,6 +640,18 @@ const authorizationApp: Shape<AuthorizationApp> = {
   uri: false,
   uriHostDiffers: false,
   actor: true,
+  verified: true,
+  publisher: true,
+}
+
+const authorizationPublisher: Shape<AuthorizationPublisher> = {
+  authority: false,
+  name: false,
+  appName: false,
+  unconfirmed: false,
+  record: false,
+  documentUrl: false,
+  listed: true,
 }
 
 const authorizationRedirectTo: Shape<AuthorizationRedirectTo> = {
@@ -1230,6 +1245,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   TokenInfo: tokenInfo,
   AuthorizationRequest: authorizationRequest,
   AuthorizationApp: authorizationApp,
+  AuthorizationPublisher: authorizationPublisher,
   AuthorizationRedirectTo: authorizationRedirectTo,
   AuthorizationScope: authorizationScope,
   AuthorizationKind: authorizationKind,
