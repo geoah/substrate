@@ -23,6 +23,13 @@ describe("actorIdentity", () => {
     expect(actorIdentity("app:").cls).toBe("you")
   })
 
+  it("names an app on this device as one, never by a host", () => {
+    expect(actorIdentity("app:local")).toMatchObject({
+      cls: "app",
+      name: "An app on this device",
+    })
+  })
+
   it("names the engine", () => {
     expect(actorIdentity("substrate")).toMatchObject({
       cls: "engine",

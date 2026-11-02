@@ -76,6 +76,8 @@ const REQUEST = {
     uri: "https://notes-app.example.org",
     uriHostDiffers: true,
     actor: "app:notes.example.com",
+    verified: false,
+    publisher: { listed: false },
   },
   redirect: {
     uri: "http://127.0.0.1:53021/oauth/callback",
@@ -98,7 +100,9 @@ const LOCAL_REQUEST = {
     clientId: "http://127.0.0.1:8765/client",
     host: "127.0.0.1:8765",
     local: true,
-    actor: "app:127.0.0.1:8765",
+    actor: "app:local",
+    verified: false,
+    publisher: { listed: false },
   },
   redirect: {
     uri: "http://127.0.0.1:8765/callback",
@@ -201,6 +205,8 @@ const SYNC = {
     local: false,
     name: "Substrate Sync",
     actor: "app:sync.example.com",
+    verified: false,
+    publisher: { listed: false },
   },
   redirect: {
     uri: "https://sync.example.com/callback",
@@ -2054,5 +2060,134 @@ describe("AuthorizePage", () => {
       screen.getByRole<HTMLInputElement>("checkbox", { name: NOTES_WORDS })
         .checked
     ).toBe(false)
+  })
+
+  const PUBLISHED = {
+    ...REQUEST,
+    app: {
+      clientId: "https://cdn.example.net/workouts/client.json",
+      host: "cdn.example.net",
+      local: false,
+      name: "Workouts",
+      actor: "app:example.org",
+      verified: true,
+      publisher: {
+        authority: "example.org",
+        name: "Example",
+        appName: "Example Workouts",
+        record:
+          "v=substrate1 doc=https://example.org/.well-known/substrate/authority.json",
+        documentUrl: "https://example.org/.well-known/substrate/authority.json",
+        listed: true,
+      },
+    },
+    redirect: {
+      uri: "https://apps.example.org/workouts/callback",
+      host: "apps.example.org",
+    },
+  }
+  const FULL = {
+    scope: "full",
+    requested: "full",
+    verb: "full",
+    write: false,
+    pattern: "",
+    glob: false,
+    kinds: [],
+    agents: [],
+  }
+
+  it.each(MODES)(
+    "heads a verified app with its name and its publisher ($name)",
+    async ({ technical }) => {
+      answers.GET = () => jsonResponse(200, PUBLISHED)
+      renderPage({ technical })
+      expect(
+        await screen.findByRole("heading", {
+          level: 1,
+          name: "Example Workouts",
+        })
+      ).toBeTruthy()
+      expect(screen.getByText(/^by/).textContent).toBe("by example.org")
+      expect(screen.getByText(/Publisher’s name/).textContent).toBe(
+        "Publisher’s name Example"
+      )
+      expect(screen.queryByText(/Unverified/)).toBeNull()
+      const check = screen.queryByRole("region", { name: "Publisher check" })
+      expect(check !== null).toBe(technical)
+      if (check) {
+        expect(
+          within(check).getByText(
+            "https://example.org/.well-known/substrate/authority.json"
+          )
+        ).toBeTruthy()
+        expect(within(check).getByText("Yes")).toBeTruthy()
+      }
+    }
+  )
+
+  it("marks an app whose publisher could not be confirmed, with where its access goes", async () => {
+    answers.GET = () =>
+      jsonResponse(200, {
+        ...REQUEST,
+        app: {
+          ...REQUEST.app,
+          publisher: {
+            authority: "example.org",
+            unconfirmed:
+              "the authority document of example.org does not list this app's client id",
+            record:
+              "v=substrate1 doc=https://example.org/.well-known/substrate/authority.json",
+            documentUrl:
+              "https://example.org/.well-known/substrate/authority.json",
+            listed: false,
+          },
+        },
+        redirect: {
+          uri: "https://notes.example.com/callback",
+          host: "notes.example.com",
+        },
+      })
+    renderPage({ technical: true })
+    await screen.findByRole("heading", { level: 1, name: "notes.example.com" })
+    expect(screen.getByText(/It calls itself/).textContent).toBe(
+      "It calls itself Notes for Ada"
+    )
+    expect(screen.getByText(/^Unverified/).parentElement?.textContent).toBe(
+      "Unverified. Its access goes to https://notes.example.com"
+    )
+    expect(screen.getByText(/could not be confirmed/).textContent).toBe(
+      "It says example.org publishes it, which could not be confirmed: the authority document of example.org does not list this app's client id."
+    )
+    const check = screen.getByRole("region", { name: "Publisher check" })
+    expect(within(check).getByText("No")).toBeTruthy()
+  })
+
+  it("says a loopback app's access goes to an app on this device", async () => {
+    renderPage()
+    await screen.findByRole("heading", { level: 1, name: "notes.example.com" })
+    expect(screen.getByText(/^Unverified/).parentElement?.textContent).toBe(
+      "Unverified. Its access goes to an app on this device"
+    )
+  })
+
+  it("lets an unverified app ask for full access, and says what nothing confirms", async () => {
+    answers.GET = () => jsonResponse(200, { ...REQUEST, scopes: [FULL] })
+    renderPage()
+    expect(await screen.findByText("It asks for full access")).toBeTruthy()
+    expect(
+      screen.getByText(
+        /nothing confirms which program receives a token equal to your password/
+      )
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }))
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(APPROVED))
+  })
+
+  it("says nothing of an unverified program when a verified app asks for full access", async () => {
+    answers.GET = () => jsonResponse(200, { ...PUBLISHED, scopes: [FULL] })
+    renderPage()
+    expect(await screen.findByText("It asks for full access")).toBeTruthy()
+    expect(screen.queryByText(/nothing confirms which program/)).toBeNull()
   })
 })

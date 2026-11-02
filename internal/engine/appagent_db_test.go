@@ -519,3 +519,72 @@ func TestTheShippedCoachLoads(t *testing.T) {
 		t.Fatalf("the shipped coach does not load: %v", err)
 	}
 }
+
+// An app's actor follows what its approval proved (decision 0209), and what
+// it keeps follows its client id (decision 0205): an app that declared its
+// packages before its publisher was verified keeps them, and its agent, once
+// it writes as its authority, and another client of the same authority does
+// not.
+func TestAVerifiedAppKeepsItsPackagesAndItsAgent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	fake := newFakeLLM(t)
+	ds.mu.Lock()
+	ds.skipThreadTitles = true
+	ds.mu.Unlock()
+	home := ds.Repository().Authority
+	f := aaFixture{
+		ds: ds, fake: fake, training: home + "/training", memory: home + "/training/memory",
+		coachPkg: home + "/trainingcoach", agent: home + "/trainingcoach/workoutCoach",
+	}
+	putAAProvider(t, ds, fake, "1", "5")
+	const client = "https://cdn.example.net/workouts/client.json"
+	app := substrate.WithClientID(ctx, client)
+	unverified, verified := substrate.AppActor("cdn.example.net"), substrate.AppActor("example.org")
+	if _, err := ds.ApplyVocabularyDocuments(app, unverified, []map[string]any{
+		vocabulary.PackageManifest(f.training, 0),
+		vocabulary.BundleManifest(f.training, map[string]any{"installs": []any{f.memory}}),
+		vocabulary.KindManifest(f.training, map[string]any{"singular": "memory"}, map[string]any{"properties": map[string]any{
+			"text": map[string]any{"type": "text"},
+		}}),
+	}); err != nil {
+		t.Fatalf("the app declares training before it is verified: %v", err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(app, verified, f.coachDocs("You coach.", 100)); err != nil {
+		t.Fatalf("the verified app declares its coach: %v", err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(app, verified, []map[string]any{
+		vocabulary.KindManifest(f.training, map[string]any{"singular": "memory"}, map[string]any{"properties": map[string]any{
+			"text": map[string]any{"type": "text"}, "note": map[string]any{"type": "text"},
+		}}),
+	}); err != nil {
+		t.Fatalf("the verified app changes the training it declared before: %v", err)
+	}
+	other := substrate.WithClientID(ctx, "https://cdn.example.net/sync/client.json")
+	if _, err := ds.ApplyVocabularyDocuments(other, verified, f.coachDocs("Another app's coach.", 100)); !errors.Is(err, substrate.ErrForbidden) {
+		t.Fatalf("another client of the same authority changes the coach: %v, want forbidden", err)
+	}
+
+	if _, _, err := ds.MintToken(ctx, substrate.MintTokenInput{
+		Label: "cdn.example.net", Scopes: []string{"declare:" + f.coachPkg},
+		ClientID: client, ClientName: "Example Workouts", AppAuthority: "example.org", Agents: []substrate.AgentApproval{f.approval()},
+	}); err != nil {
+		t.Fatalf("mint the verified app's token: %v", err)
+	}
+	tokens, err := ds.Tokens(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, tok := range tokens {
+		found = found || (tok.ClientID == client && tok.AppAuthority == "example.org" && !tok.AppLocal)
+	}
+	if !found {
+		t.Fatalf("no token lists the verified authority: %+v", tokens)
+	}
+	f.fake.script("coach", fakeTurn{content: "hi"})
+	if res, err := ds.CallAgent(ctx, f.agent, "hello"); err != nil || res.Status != threadOK {
+		t.Fatalf("the verified app's agent: %+v, %v", res, err)
+	}
+}

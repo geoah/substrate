@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/api"
+	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/config"
@@ -256,6 +257,19 @@ func run() error {
 		// Loud, and at boot: anyone who can reach this port may create a user.
 		slog.Warn("no SUBSTRATE_INVITE_CODE: registration asks for no invite code — set one before anyone else can reach this substrate")
 	}
+	authorityDocs, err := cfg.AuthorityDocs()
+	if err != nil {
+		return err
+	}
+	if err := authorize.CheckLocalDocuments(authorityDocs); err != nil {
+		return fmt.Errorf("SUBSTRATE_INSECURE_AUTHORITY_DOCS: %w", err)
+	}
+	for authority, path := range authorityDocs {
+		// Loud, and at boot: this file, not the authority's DNS, decides
+		// which apps read as its.
+		slog.Warn("SUBSTRATE_INSECURE_AUTHORITY_DOCS is set: apps are verified against a local file for this authority, never its DNS record: local development only",
+			"authority", authority, "path", path)
+	}
 	// Closed by the server's shutdown (newServer), so the streams it would
 	// otherwise wait on end first.
 	draining := make(chan struct{})
@@ -267,6 +281,7 @@ func run() error {
 		PublicURL:    cfg.PublicURL,
 		InviteCode:   cfg.InviteCode,
 		TOTPDisabled: cfg.InsecureDisableTOTP,
+		Publishers:   authorize.NewVerifier(authorize.PublisherOptions{LocalDocuments: authorityDocs}),
 		Metrics:      cfg.Metrics,
 		Draining:     draining,
 	})
