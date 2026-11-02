@@ -78,8 +78,9 @@ type Service interface {
 
 	// InstanceID is this server's instance id, minted at its first boot and
 	// kept for good. GET /.well-known/substrate/server.json serves it, so a
-	// server reading a domain's `_substrate` record can tell whether the
-	// `server=` origin it names is itself (decision 0208).
+	// server reading a domain's `_substrate` record can check that the
+	// `server=` origin it names reaches this server (decision 0208). It is a
+	// consistency check, not authentication: a proxy relays it.
 	InstanceID() string
 
 	Close() error

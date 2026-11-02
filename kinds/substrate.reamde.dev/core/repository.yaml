@@ -48,8 +48,8 @@ data:
       type: datetime
       managed: true
       description: when a check last proved this repository controls its name's
-        DNS, or found the name one label under the address the server was
-        reached on; absent while unverified
+        DNS, or found the name one label under the server's configured public
+        URL; absent while unverified
     # a repository is born `active`; suspend and resume are the operator's,
     # and `deleting` is terminal and reached by the teardown path, not by a
     # declared transition.

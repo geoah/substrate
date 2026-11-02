@@ -39,13 +39,31 @@ func loadInstanceID(root string, readOnly bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Written to a temporary name and renamed, so a crash leaves either no
-	// file or a whole one, never a torn id the next boot refuses.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(id+"\n"), 0o600); err != nil {
-		return "", fmt.Errorf("substrate/engine: write %s: %w", tmp, err)
+	// Written whole to a uniquely named temporary file, then linked to the
+	// final name, which fails when the name exists. Two first boots racing
+	// over one data root therefore persist one id, and the loser answers the
+	// winner's: rename would let the second replace the first after the first
+	// had already answered its own.
+	tmp, err := os.CreateTemp(root, instanceFile+"-*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("substrate/engine: write %s: %w", path, err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.WriteString(id + "\n"); err != nil {
+		_ = tmp.Close()
+		return "", fmt.Errorf("substrate/engine: write %s: %w", tmp.Name(), err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return "", fmt.Errorf("substrate/engine: write %s: %w", tmp.Name(), err)
+	}
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("substrate/engine: write %s: %w", tmp.Name(), err)
+	}
+	if err := os.Link(tmp.Name(), path); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return loadInstanceID(root, true)
+		}
 		return "", fmt.Errorf("substrate/engine: write %s: %w", path, err)
 	}
 	return id, nil

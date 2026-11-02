@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -21,7 +21,12 @@ import (
 // `_substrate` TXT record to publish, with a one-time proof the repository
 // record keeps pending; POST /repository/domain/verify reads the record back
 // and stamps `domainVerifiedAt` when it carries that proof and its `server=`
-// origin is this server. Both are the owner's: an app's token is refused.
+// reaches this server. The proof in DNS is the evidence: only the name's
+// controller can publish it. The `server=` comparison is a consistency check
+// that the record points here, not authentication of the server, since a
+// proxy in front of this server can relay its server.json. Both routes refuse
+// a scoped app token; a full-access token is a sign-in and acts as the owner
+// (decision 0204).
 
 const (
 	domainRoute       = "/repository/domain"
@@ -99,11 +104,16 @@ func (h *handler) postDomain(w http.ResponseWriter, r *http.Request) {
 
 // postDomainVerify runs the check. A failed check is a 200 with a reason: the
 // request succeeded and its answer is "not yet".
+//
+// Nothing here reads the request's Host to decide: a caller names any Host it
+// likes. The own-host shortcut and the `server=` origin come from the
+// operator's configured public URL alone, and without one every name needs
+// the record.
 func (h *handler) postDomainVerify(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
 	repository := ds.Repository().ID
-	if !underOwnHost(repository, r.Host) {
+	if !h.underPublicHost(repository) {
 		state, err := ds.DomainState(ctx)
 		if err != nil {
 			writeSubstrateError(w, r, err)
@@ -124,7 +134,8 @@ func (h *handler) postDomainVerify(w http.ResponseWriter, r *http.Request) {
 
 // checkDomain answers why repository's `_substrate` record does not prove the
 // name for this server, or "" when it does. Each reason names what the owner
-// changes.
+// changes. issuer is only the origin the reasons suggest; the checks never
+// trust it unless it is the configured public URL.
 func (h *handler) checkDomain(ctx context.Context, repository, proof, issuer string) string {
 	label := domains.Label + "." + repository
 	if proof == "" {
@@ -148,6 +159,13 @@ func (h *handler) checkDomain(ctx context.Context, repository, proof, issuer str
 	case rec.Server == "":
 		return fmt.Sprintf("the record at %s names no server=: add server=%s", label, issuer)
 	}
+	// With a configured public URL, server= must name exactly that origin.
+	if h.publicURL != "" && rec.Server != strings.ToLower(h.publicURL) {
+		return fmt.Sprintf("server=%s names another substrate: point it at %s", rec.Server, h.publicURL)
+	}
+	// The instance comparison is a consistency check that server= reaches
+	// this server, not authentication of the server: a proxy that forwards
+	// to this server answers with this server's id.
 	instance, err := h.instances(ctx, rec.Server)
 	if err != nil {
 		return fmt.Sprintf("server=%s could not be read as a substrate (%v): point server= at %s", rec.Server, err, issuer)
@@ -158,13 +176,23 @@ func (h *handler) checkDomain(ctx context.Context, repository, proof, issuer str
 	return ""
 }
 
-// underOwnHost reports whether repository is `<label>.<host>` for the host
-// the request reached: a name the server's operator controls the DNS of, so
-// it is verified without a record. host is the Host header, port included.
-func underOwnHost(repository, host string) bool {
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
+// underPublicHost reports whether repository is exactly one label under the
+// host of the configured public URL: a name the operator controls the DNS
+// of, so it is verified without a record. With no public URL there is no
+// such host, and every name needs the record.
+func (h *handler) underPublicHost(repository string) bool {
+	if h.publicURL == "" {
+		return false
 	}
+	u, err := url.Parse(h.publicURL)
+	if err != nil {
+		return false
+	}
+	return underHost(repository, u.Hostname())
+}
+
+// underHost reports whether repository is `<label>.<host>` for one label.
+func underHost(repository, host string) bool {
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	if host == "" {
 		return false

@@ -33,11 +33,19 @@ type domainEnv struct {
 
 func newDomainEnv(t *testing.T, dns domains.Resolver) *domainEnv {
 	t.Helper()
+	return newDomainEnvAt(t, dns, "")
+}
+
+// newDomainEnvAt is newDomainEnv on a server configured with publicURL
+// (SUBSTRATE_PUBLIC_URL); "" configures none.
+func newDomainEnvAt(t *testing.T, dns domains.Resolver, publicURL string) *domainEnv {
+	t.Helper()
 	svc := newFakeService()
 	e := &domainEnv{t: t, svc: svc, dns: dns, instances: map[string]string{domainOrigin: fakeInstanceID}}
 	e.owner = svc.token(fakeRepository)
 	e.h = New(Config{
 		Service:        svc,
+		PublicURL:      publicURL,
 		DomainResolver: resolverFunc(func(ctx context.Context, name string) ([]string, error) { return e.dns.LookupTXT(ctx, name) }),
 		ServerInstances: func(_ context.Context, origin string) (string, error) {
 			id, ok := e.instances[origin]
@@ -188,58 +196,119 @@ func TestVerifyDomainWithNothingPendingSaysToStartOne(t *testing.T) {
 	}
 }
 
-func TestARepositoryUnderTheHostTheRequestReachedIsVerifiedWithoutARecord(t *testing.T) {
-	svc := newFakeService()
-	const own = "ada." + domainHost
-	svc.addRepository(own)
-	h := New(Config{
-		Service: svc,
-		DomainResolver: resolverFunc(func(context.Context, string) ([]string, error) {
-			t.Error("the own-host check looked up DNS")
-			return nil, errors.New("unreachable")
-		}),
-	})
+// verifyAs runs the check for repository with a request naming host.
+func (e *domainEnv) verifyAs(repository, host string) substrate.DomainCheck {
+	e.t.Helper()
+	if _, ok := e.svc.datasets[repository]; !ok {
+		e.svc.addRepository(repository)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1"+domainVerifyRoute, nil)
-	req.Host = domainHost + ":443"
-	req.Header.Set("Authorization", "Bearer "+svc.token(own))
+	req.Host = host
+	req.Header.Set("Authorization", "Bearer "+e.svc.token(repository))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	wantStatus(t, rec, http.StatusOK)
-	if got := decodeJSON[substrate.DomainCheck](t, rec); !got.Verified || got.VerifiedAt == nil {
-		t.Fatalf("verify = %+v, want verified", got)
+	e.h.ServeHTTP(rec, req)
+	wantStatus(e.t, rec, http.StatusOK)
+	return decodeJSON[substrate.DomainCheck](e.t, rec)
+}
+
+// noDNS fails a test that reaches the resolver.
+func noDNS(t *testing.T) domains.Resolver {
+	return resolverFunc(func(context.Context, string) ([]string, error) {
+		t.Error("the check looked up DNS")
+		return nil, errors.New("unreachable")
+	})
+}
+
+func TestARepositoryUnderThePublicURLsHostIsVerifiedWithoutARecord(t *testing.T) {
+	e := newDomainEnvAt(t, noDNS(t), "https://substrate.example.com")
+	// Whatever Host the request names, the public URL decides.
+	for _, host := range []string{"substrate.example.com", "evil.example.org", ""} {
+		if got := e.verifyAs("ada.substrate.example.com", host); !got.Verified || got.VerifiedAt == nil {
+			t.Fatalf("Host %q: verify = %+v, want verified", host, got)
+		}
 	}
 }
 
-func TestUnderOwnHostTakesOneLabelUnderTheRequestsHost(t *testing.T) {
+func TestAForgedHostNeverVerifiesARepositoryWithoutARecord(t *testing.T) {
+	for name, publicURL := range map[string]string{
+		"no public URL":   "",
+		"with public URL": "https://substrate.example.com",
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newDomainEnvAt(t, domains.Static{}, publicURL)
+			// The request names the host the repository sits one label
+			// under, and the name publishes no record.
+			got := e.verifyAs("ada.evil.example.org", "evil.example.org")
+			if got.Verified || got.VerifiedAt != nil || got.Reason == "" {
+				t.Fatalf("verify = %+v, want a refusal", got)
+			}
+		})
+	}
+}
+
+func TestUnderHostTakesOneLabelUnderTheHost(t *testing.T) {
 	for _, tc := range []struct {
 		repository, host string
 		want             bool
 	}{
 		{"ada.example.net", "example.net", true},
-		{"ada.example.net", "Example.NET:8080", true},
-		{"ada.localhost", "localhost:8080", true},
+		{"ada.example.net", "Example.NET", true},
 		{"a.b.example.net", "example.net", false},
 		{"example.net", "example.net", false},
 		{"ada.example.org", "example.net", false},
 		{"adaexample.net", "example.net", false},
 		{"ada.example.net", "", false},
 	} {
-		if got := underOwnHost(tc.repository, tc.host); got != tc.want {
-			t.Errorf("underOwnHost(%q, %q) = %v, want %v", tc.repository, tc.host, got, tc.want)
+		if got := underHost(tc.repository, tc.host); got != tc.want {
+			t.Errorf("underHost(%q, %q) = %v, want %v", tc.repository, tc.host, got, tc.want)
 		}
 	}
 }
 
-func TestAnAppsTokenNeverReachesDomainVerification(t *testing.T) {
+func TestWithAPublicURLServerMustNameItExactly(t *testing.T) {
+	e := newDomainEnvAt(t, domains.Static{}, domainOrigin)
+	// A proxy at another origin relays this server's server.json, so the
+	// instance id alone matches.
+	e.instances["https://relay.example.org"] = fakeInstanceID
+	proof := e.start()
+	e.dns = publish("v=substrate1 server=https://relay.example.org proof=" + proof.Proof)
+	if got := e.verify(); got.Verified || !strings.Contains(got.Reason, "names another substrate: point it at "+domainOrigin) {
+		t.Fatalf("verify through a relay = %+v, want a refusal naming the public URL", got)
+	}
+	e.dns = publish(proof.Record)
+	if got := e.verify(); !got.Verified {
+		t.Fatalf("verify naming the public URL = %+v, want verified", got)
+	}
+}
+
+// Without a public URL the instance comparison is the whole server check: an
+// origin that relays this server's server.json passes, and the proof in DNS is
+// what the name's controller alone can publish (decision 0208).
+func TestWithoutAPublicURLAnOriginReachingThisServerPasses(t *testing.T) {
 	e := newDomainEnv(t, domains.Static{})
-	app := appToken(e.svc, fakeRepository, "read:"+personKind)
+	e.instances["https://relay.example.org"] = fakeInstanceID
+	proof := e.start()
+	e.dns = publish("v=substrate1 server=https://relay.example.org proof=" + proof.Proof)
+	if got := e.verify(); !got.Verified {
+		t.Fatalf("verify = %+v, want verified", got)
+	}
+}
+
+func TestAScopedAppTokenIsRefusedAndAFullAccessOneAdmitted(t *testing.T) {
+	e := newDomainEnv(t, domains.Static{})
+	scoped := appToken(e.svc, fakeRepository, "read:"+personKind)
 	for _, path := range []string{domainRoute, domainVerifyRoute} {
-		rec := e.post(path, app)
+		rec := e.post(path, scoped)
 		wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 	}
 	if ds := e.svc.datasets[fakeRepository]; ds.domainProofs != 0 {
-		t.Errorf("an app's request minted %d proofs", ds.domainProofs)
+		t.Errorf("a scoped app's request minted %d proofs", ds.domainProofs)
 	}
+	// A full-access approval is a token without scopes: a sign-in that acts
+	// as the owner (decision 0204).
+	full := appToken(e.svc, fakeRepository)
+	wantStatus(t, e.post(domainRoute, full), http.StatusOK)
+	wantStatus(t, e.post(domainVerifyRoute, full), http.StatusOK)
 }
 
 func TestDiscoveryServesTheInstanceID(t *testing.T) {

@@ -1,7 +1,7 @@
 /** Settings' Verify domain row (decision 0208): the TXT record that proves the
  * repository's name, to copy into the name's DNS, and a Check that reads it
- * back. A repository named under the server's own host passes the check with
- * no record. */
+ * back. A repository named one label under the server's configured public URL
+ * passes the check with no record. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
@@ -51,7 +51,7 @@ export function VerifyDomainRow() {
       description={
         verifiedAt
           ? `Verified ${when(verifiedAt)}. Your repository’s name points at this server and proved it controls the name’s DNS.`
-          : "Prove you control your repository’s name: add a TXT record to its DNS, then check it. A name under this server’s own address needs no record."
+          : "Prove you control your repository’s name: add a TXT record to its DNS, then check it. A name directly under this server’s public address needs no record."
       }
       control={
         <>
