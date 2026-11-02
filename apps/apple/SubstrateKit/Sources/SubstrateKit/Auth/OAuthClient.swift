@@ -46,10 +46,25 @@ public struct TokenResponse: Decodable, Sendable, Equatable {
 public struct RepositoryMismatch: LocalizedError, Sendable, Equatable {
     public let resolved: String
     public let token: String
+    /// The server that issued the token, which a failed revocation names.
+    public let server: URL?
+    /// What became of the token the app refused.
+    public var revocation: Revocation = .revoked
+
+    public enum Revocation: Sendable, Equatable {
+        /// The server confirmed it.
+        case revoked
+        /// The server did not confirm it, and the app keeps the token only
+        /// to revoke it again (`SessionStore.revokePending`).
+        case pending
+        /// The server did not confirm it, and the device could not keep the
+        /// token to try again: it is live until the owner revokes it.
+        case live
+    }
 
     /// Nil when nothing was resolved or the token is for the resolved
     /// repository; a name compares without case or a trailing dot.
-    public init?(resolved: String?, token: String) {
+    public init?(resolved: String?, token: String, server: URL? = nil) {
         guard let resolved else { return nil }
         let normal = { (name: String) in
             name.lowercased().hasSuffix(".") ? String(name.lowercased().dropLast()) : name.lowercased()
@@ -57,10 +72,22 @@ public struct RepositoryMismatch: LocalizedError, Sendable, Equatable {
         guard normal(resolved) != normal(token) else { return nil }
         self.resolved = resolved
         self.token = token
+        self.server = server
     }
 
     public var errorDescription: String? {
-        "You signed in to \(token), not \(resolved). Sign in to \(resolved), or type \(token) to connect it instead."
+        let refused = "You signed in to \(token), not \(resolved). Sign in to \(resolved), or type \(token) to connect it instead."
+        let host = server.map(ServerAddress.display) ?? "the server"
+        switch revocation {
+        case .revoked:
+            return refused
+        case .pending:
+            return refused + " \(host) didn't confirm revoking the access it gave for \(token). "
+                + "The app keeps that access only to revoke it, and tries again the next time it starts."
+        case .live:
+            return refused + " \(host) didn't confirm revoking the access it gave for \(token), and this device couldn't keep it "
+                + "to try again. Revoke it in \(host)'s Settings, under Apps."
+        }
     }
 }
 
@@ -195,10 +222,12 @@ public struct OAuthClient: Sendable {
     /// the one the owner chose, and the metadata must be its own: an issuer
     /// or an endpoint elsewhere is refused before the browser opens.
     /// `repository` is the name the app found the server from: it is sent as
-    /// `login_hint`, and a token for any other repository is revoked and
-    /// refused. The session it answers is not saved.
+    /// `login_hint`, and a token for any other repository is refused and
+    /// revoked, kept meanwhile in `rejected`'s pending revocations (never as
+    /// the session) so a revocation that fails is tried again by
+    /// `revokePending`. The session it answers is not saved.
     @MainActor
-    public func signIn(server: URL, repository: String? = nil,
+    public func signIn(server: URL, repository: String? = nil, keepingRejectedIn rejected: SessionStore? = nil,
                        now: @escaping @Sendable () -> Date = { Date() }) async throws -> Session
     {
         if let problem = metadata.mismatch(server: server) { throw ServerMismatch(problem) }
@@ -219,11 +248,26 @@ public struct OAuthClient: Sendable {
         }
         let code = try callback(query, state: state)
         let session = try await session(exchanging: code, redirect: redirect, pkce: pkce, server: server, now: now)
-        if let mismatch = RepositoryMismatch(resolved: repository, token: session.repository) {
-            try? await session.revoke(transport: transport)
-            throw mismatch
+        if let mismatch = RepositoryMismatch(resolved: repository, token: session.repository, server: server) {
+            throw await reject(session, mismatch, keepingIn: rejected)
         }
         return session
+    }
+
+    /// Retires a token the app refused: kept for revocation first, so no
+    /// moment holds it nowhere, then revoked, and forgotten once the server
+    /// confirms. The answer says which of the three it came to.
+    func reject(_ session: Session, _ mismatch: RepositoryMismatch, keepingIn store: SessionStore?) async -> RepositoryMismatch {
+        var mismatch = mismatch
+        let kept = store.map { (try? $0.keepForRevocation(session)) != nil } ?? false
+        do {
+            try await session.revoke(transport: transport)
+            if kept { store?.revoked(session) }
+            mismatch.revocation = .revoked
+        } catch {
+            mismatch.revocation = kept ? .pending : .live
+        }
+        return mismatch
     }
 
     static func form(_ url: URL, _ pairs: [(String, String)], timeout: TimeInterval) -> URLRequest {
