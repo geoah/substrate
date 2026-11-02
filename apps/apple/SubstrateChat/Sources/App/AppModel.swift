@@ -68,7 +68,7 @@ final class AppModel {
         guard let oauth = OAuthClient(manifest: ChatManifest.manifest, probe: probe) else {
             throw URLError(.badServerResponse)
         }
-        try await adopt(try await oauth.signIn(server: probe.origin, repository: probe.repository))
+        try await adopt(try await oauth.signIn(server: probe.origin, repository: probe.repository, keepingRejectedIn: .chat))
     }
 
     /// The password door, for a server without app authorization.
