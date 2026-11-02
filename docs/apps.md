@@ -259,12 +259,21 @@ file on this server, not by DNS, and the token records
   the app the page names.
 
 [SubstrateKit](../apps/apple/SubstrateKit/README.md), the Swift package
-Substrate's own Apple apps share, signs in through the loopback redirect, on
-iPhone and Mac alike (RFC 8252); a claimed `https` callback is not in it.
+Substrate's own Apple apps share, signs in through a claimed `https` callback
+in a release that names one, on iPhone and Mac alike, and through the
+loopback redirect (RFC 8252) in a local build. `mise run apple:site`
+publishes the association file, the authority document and each app's
+client document that the claimed callback needs
+([apps/apple](../apps/apple/README.md#releases-and-updates)).
 
 A native app asks the owner for their substrate's address, the way an app
-for a federated service asks for an instance, and reads
-`/.well-known/oauth-authorization-server` there.
+for a federated service asks for an instance, or for their repository's
+name, and reads `/.well-known/oauth-authorization-server` on the server it
+finds. A name that is not itself a server leads to one through its
+`_substrate` TXT record (`v=substrate1 server=https://…`), else its
+`/.well-known/substrate/repository.json`, else its parent host; the app then
+sends the name as `login_hint` and refuses a token for any other
+repository.
 
 ### Discover the server
 

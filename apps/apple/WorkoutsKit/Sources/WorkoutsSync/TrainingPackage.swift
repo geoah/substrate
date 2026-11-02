@@ -113,23 +113,35 @@ public enum PackageManager: Sendable, Hashable {
     /// Who keeps the package, from its row's ownership stamps, or nil when
     /// the row says it is this app's or says nothing. `clientID` is this
     /// app's; without it only a takeover or a package the owner declared is
-    /// told apart. A row an app on this app's host declared before the
-    /// client id was stamped is this app's: its apply claims it.
+    /// told apart.
+    ///
+    /// The full client id in `declaredByClient` decides, as the server's own
+    /// rule does (decision 0205): the `app:` actor in `declaredBy` is a
+    /// display name the server may spell as the verified authority
+    /// (`app:substrate.reamde.dev`), as `app:local` or as the client id's
+    /// host, so it never tells two apps apart. Only a row without the client
+    /// id, which an app declared before the server stamped it, falls back to
+    /// the actor of the client id's host: one this app's host declared is
+    /// this app's, and its apply claims it.
     static func of(_ row: JSONObject, clientID: String?) -> PackageManager? {
         func string(_ key: String) -> String? {
             if case let .string(value)? = row[key], !value.isEmpty { return value }
             return nil
         }
         if let from = string("takenOverFrom") { return .owner(takenOverFrom: from) }
+        if let client = string("declaredByClient") {
+            guard let clientID else { return nil }
+            return client == clientID ? nil : .otherApp(client)
+        }
         guard let by = string("declaredBy") else { return nil }
         guard by.hasPrefix("app:") else { return .owner(takenOverFrom: nil) }
         guard let clientID else { return nil }
-        if let client = string("declaredByClient") { return client == clientID ? nil : .otherApp(client) }
-        return appActor(of: clientID) == by ? nil : .otherApp(by)
+        return hostActor(of: clientID) == by ? nil : .otherApp(by)
     }
 
-    /// The `app:<host[:port]>` actor the server derives from a client id.
-    static func appActor(of clientID: String) -> String? {
+    /// The `app:<host[:port]>` actor a server before verified apps derived
+    /// from a client id: the fallback for a row without `declaredByClient`.
+    static func hostActor(of clientID: String) -> String? {
         guard let url = URL(string: clientID), let host = url.host?.lowercased() else { return nil }
         return "app:" + host + (url.port.map { ":\($0)" } ?? "")
     }

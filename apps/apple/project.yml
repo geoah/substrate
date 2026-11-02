@@ -51,6 +51,22 @@ settings:
     SUBSTRATE_SYNC_CLIENT_ID: ""
     # Substrate Workouts', the same way (WorkoutsManifest.localClientID).
     SUBSTRATE_WORKOUTS_CLIENT_ID: ""
+    # The https redirect each release claims, beside its client id:
+    # `https://<site host>/apps/<app>/callback`, listed in the client
+    # document `apple.sh` publishes. Empty is a local build, which signs in
+    # through a loopback port (AppManifest.claimedRedirect).
+    SUBSTRATE_CONSOLE_REDIRECT: ""
+    SUBSTRATE_CHAT_REDIRECT: ""
+    SUBSTRATE_SYNC_REDIRECT: ""
+    SUBSTRATE_WORKOUTS_REDIRECT: ""
+    # The host of the site `apple.sh site` publishes, whose association file
+    # names every app. With SUBSTRATE_ASSOCIATED_DOMAINS=YES, which the
+    # release sets beside it, each app signs with the `-site` entitlements:
+    # `webcredentials:` and `applinks:` on that host. A local build sets
+    # neither and carries no associated domain, so it needs no provisioning
+    # profile with the capability.
+    SUBSTRATE_SITE_HOST: ""
+    SUBSTRATE_ASSOCIATED_DOMAINS: "NO"
 targets:
   Substrate:
     # One native target for iPhone, iPad and Mac: not Mac Catalyst and not
@@ -75,7 +91,12 @@ targets:
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: Support/Info-iOS.plist
         "INFOPLIST_FILE[sdk=macosx*]": Support/Info-macOS.plist
-        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Support/Substrate-macOS.entitlements
+        CODE_SIGN_ENTITLEMENTS: $(SUBSTRATE_IOS_ENTITLEMENTS_$(SUBSTRATE_ASSOCIATED_DOMAINS))
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": $(SUBSTRATE_MACOS_ENTITLEMENTS_$(SUBSTRATE_ASSOCIATED_DOMAINS))
+        SUBSTRATE_IOS_ENTITLEMENTS_NO: ""
+        SUBSTRATE_IOS_ENTITLEMENTS_YES: Support/Substrate-iOS-site.entitlements
+        SUBSTRATE_MACOS_ENTITLEMENTS_NO: Support/Substrate-macOS.entitlements
+        SUBSTRATE_MACOS_ENTITLEMENTS_YES: Support/Substrate-macOS-site.entitlements
         # The shared target takes iOS's runpath, and a Mac bundle keeps its
         # frameworks beside MacOS/, not in it: without this Sparkle is not
         # found and the app dies at launch.
@@ -137,7 +158,12 @@ targets:
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: Support/Info-Chat-iOS.plist
         "INFOPLIST_FILE[sdk=macosx*]": Support/Info-Chat-macOS.plist
-        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Support/SubstrateChat-macOS.entitlements
+        CODE_SIGN_ENTITLEMENTS: $(SUBSTRATE_IOS_ENTITLEMENTS_$(SUBSTRATE_ASSOCIATED_DOMAINS))
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": $(SUBSTRATE_MACOS_ENTITLEMENTS_$(SUBSTRATE_ASSOCIATED_DOMAINS))
+        SUBSTRATE_IOS_ENTITLEMENTS_NO: ""
+        SUBSTRATE_IOS_ENTITLEMENTS_YES: Support/SubstrateChat-iOS-site.entitlements
+        SUBSTRATE_MACOS_ENTITLEMENTS_NO: Support/SubstrateChat-macOS.entitlements
+        SUBSTRATE_MACOS_ENTITLEMENTS_YES: Support/SubstrateChat-macOS-site.entitlements
         "LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]": ["$(inherited)", "@executable_path/../Frameworks"]
         ENABLE_HARDENED_RUNTIME: "YES"
         SUPPORTS_MACCATALYST: "NO"
@@ -186,7 +212,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.sync
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: Support/Info-Sync.plist
-        CODE_SIGN_ENTITLEMENTS: Support/SubstrateSync.entitlements
+        CODE_SIGN_ENTITLEMENTS: $(SUBSTRATE_ENTITLEMENTS_$(SUBSTRATE_ASSOCIATED_DOMAINS))
+        SUBSTRATE_ENTITLEMENTS_NO: Support/SubstrateSync.entitlements
+        SUBSTRATE_ENTITLEMENTS_YES: Support/SubstrateSync-site.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPPORTS_MACCATALYST: "NO"
@@ -280,7 +308,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.workouts
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: Support/Info-Workouts.plist
-        CODE_SIGN_ENTITLEMENTS: Support/SubstrateWorkouts.entitlements
+        CODE_SIGN_ENTITLEMENTS: $(SUBSTRATE_ENTITLEMENTS_$(SUBSTRATE_ASSOCIATED_DOMAINS))
+        SUBSTRATE_ENTITLEMENTS_NO: Support/SubstrateWorkouts.entitlements
+        SUBSTRATE_ENTITLEMENTS_YES: Support/SubstrateWorkouts-site.entitlements
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
