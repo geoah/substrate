@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-15
 decision-makers: George Antoniadis
+amended-by: 0206
 ---
 
 # 0167. The webhook door answers `202` after a sealed spool write, and a drain records the request

@@ -335,6 +335,11 @@ func readWebhookParts(w http.ResponseWriter, r *http.Request, boundary string, m
 			return nil, http.StatusBadRequest, errors.New("webhook multipart body unreadable")
 		}
 		part := substrate.WebhookPart{Name: p.FormName(), Filename: p.FileName(), MediaType: partType}
+		// An RFC 2231 `name*=` or `filename*=` decodes %00 to a NUL, which
+		// no jsonb row stores: the drain could never record the request.
+		if strings.IndexByte(part.Name, 0) >= 0 || strings.IndexByte(part.Filename, 0) >= 0 {
+			return nil, http.StatusBadRequest, errors.New("webhook multipart part name or filename carries a NUL")
+		}
 		if isFile {
 			if data == nil {
 				data = []byte{}

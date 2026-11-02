@@ -879,6 +879,19 @@ func ReceiveWebhookSpooled(ctx context.Context, svc substrate.Service, authority
 	return svc.(*service).receiveWebhook(ctx, authority, trigger, key, req, webhookFireSpooled)
 }
 
+// SpoolWebhookUnchecked writes a request to the trigger's spool as the door
+// would, without the door's refusal of what no row stores, so a test can
+// hand the drain a file a binary before that refusal spooled.
+func SpoolWebhookUnchecked(ctx context.Context, ds substrate.Dataset, triggerID string, req substrate.WebhookRequest) (string, error) {
+	d := ds.(*dataset)
+	tr, _, err := d.triggerByID(ctx, triggerID)
+	if err != nil {
+		return "", err
+	}
+	_, fid, err := d.writeSpooledWebhook(ctx, tr, req, time.Now().UTC().Truncate(time.Microsecond), false)
+	return fid, err
+}
+
 // WithWebhookSpoolBounds sets the per-repository spool bounds for one test.
 // The bounds are process-wide, so a test that calls it is not parallel.
 func WithWebhookSpoolBounds(t interface{ Cleanup(func()) }, maxEntries int, maxBytes int64) {

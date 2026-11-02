@@ -445,6 +445,33 @@ func TestWebhookMultipartParts(t *testing.T) {
 	}
 }
 
+// A part name or filename that decodes to a NUL (RFC 2231 `name*=`, since
+// the parser refuses a raw NUL byte) is refused with 400 before the service
+// sees the request: no row stores U+0000, and a spooled request the drain
+// cannot record would be answered 202 and never delivered.
+func TestWebhookNULPartNameRefused(t *testing.T) {
+	for name, disposition := range map[string]string{
+		"name":     `form-data; name*=utf-8''bad%00name`,
+		"filename": `form-data; name="f"; filename*=utf-8''evil%00.txt`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, h := webhookHandler("f", nil)
+			var buf bytes.Buffer
+			mw := multipart.NewWriter(&buf)
+			part, _ := mw.CreatePart(textproto.MIMEHeader{"Content-Disposition": {disposition}})
+			_, _ = part.Write([]byte("hello"))
+			_ = mw.Close()
+			rec := postHook(h, "/webhooks/geoah.example.com/t", buf.Bytes(), map[string]string{"Content-Type": mw.FormDataContentType()})
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+			}
+			if len(svc.calls) != 0 {
+				t.Fatalf("a refused request reached the service: %+v", svc.calls)
+			}
+		})
+	}
+}
+
 // A request for no such webhook is refused before the door takes a delivery
 // slot or reads a byte of its body: eight of them whose bodies never finish
 // leave every slot free, and a real delivery behind them is accepted.
