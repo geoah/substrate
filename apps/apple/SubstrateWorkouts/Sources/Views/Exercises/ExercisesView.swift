@@ -1,16 +1,17 @@
 import WorkoutsCore
 import SwiftUI
 
-/// Every exercise, A to Z, searchable by the picker's rules (DESIGN.md
-/// §7.9). Each row: the name, then the equipment and when it was last done.
+/// The owner's exercises, A to Z, and every exercise once searched, by the
+/// picker's rules (DESIGN.md §7.9). Each row: the name, then the equipment
+/// and when it was last done.
 struct ExercisesView: View {
     @Environment(AppModel.self) private var app
     @State private var query = ""
 
     var body: some View {
         NavigationStack {
-            let sections = ExercisePresenter.list(app.exercises, history: app.historyIndex, query: query,
-                                                  settings: app.presenterSettings)
+            let sections = ExercisePresenter.owned(app.exercises, routines: app.catalog?.routines ?? [:], history: app.historyIndex,
+                                                   query: query, settings: app.presenterSettings)
             List {
                 ForEach(sections) { section in
                     Section(section.title) {

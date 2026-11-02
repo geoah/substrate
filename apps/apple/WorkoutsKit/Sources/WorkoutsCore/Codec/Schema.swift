@@ -59,6 +59,35 @@ public struct KindSchema: Sendable, Hashable {
 }
 
 extension RecordCodec {
+    static func movementSchema(_ kinds: KindNames) -> KindSchema {
+        KindSchema(kind: kinds.movement, traits: [], traitProperties: [], properties: [
+            .string("name", required: true),
+            .string("aliases", repeated: true),
+            .enumeration("force", Force.self),
+            .enumeration("mechanic", Mechanic.self),
+            musclesProperty,
+            .enumeration("primaryMuscles", Muscle.self, repeated: true),
+            .enumeration("secondaryMuscles", Muscle.self, repeated: true),
+            codesProperty,
+        ])
+    }
+
+    static var musclesProperty: PropertySchema {
+        .object("muscles", repeated: true, fields: [
+            .enumeration("muscle", MuscleDetail.self, required: true),
+            PropertySchema(name: "involvement", type: .decimal, required: true),
+        ])
+    }
+
+    static var codesProperty: PropertySchema {
+        .object("codes", repeated: true, fields: [
+            .string("system", required: true),
+            .string("code", required: true),
+            .string("version"),
+            .string("display"),
+        ])
+    }
+
     static func exerciseSchema(_ kinds: KindNames) -> KindSchema {
         KindSchema(kind: kinds.exercise, traits: [], traitProperties: [], properties: [
             .string("name", required: true),
@@ -70,14 +99,11 @@ extension RecordCodec {
             .int("implements"),
             .enumeration("primaryMuscles", Muscle.self, repeated: true),
             .enumeration("secondaryMuscles", Muscle.self, repeated: true),
+            musclesProperty,
             .enumeration("restClass", RestClass.self),
             .reference("variationOf", kind: kinds.exercise),
-            .object("codes", repeated: true, fields: [
-                .string("system", required: true),
-                .string("code", required: true),
-                .string("version"),
-                .string("display"),
-            ]),
+            .reference("movement", kind: kinds.movement),
+            codesProperty,
             .quantity("loadBase", .mass),
             .quantity("loadStep", .mass),
             .quantity("loadMax", .mass),

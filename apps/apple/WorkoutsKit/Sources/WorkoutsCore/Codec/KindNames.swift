@@ -15,6 +15,7 @@ public struct KindNames: Sendable, Hashable {
     /// The package's name.
     public static let package = "training"
 
+    public var movement: String
     public var exercise: String
     public var routine: String
     public var session: String
@@ -28,6 +29,7 @@ public struct KindNames: Sendable, Hashable {
 
     public init(authority: String = KindNames.home) {
         let prefix = "\(authority)/\(Self.package)/"
+        movement = prefix + "movement"
         exercise = prefix + "exercise"
         routine = prefix + "routine"
         session = prefix + "session"

@@ -84,10 +84,18 @@ public final class BundledCatalog: CatalogSource, @unchecked Sendable {
     /// every `updates()` stream.
     @discardableResult
     public func addLocalExercise(_ exercise: Exercise) throws -> Catalog {
+        try addLocalExercises([exercise])
+    }
+
+    /// Several exercises added on this phone, in one write: an import's.
+    @discardableResult
+    public func addLocalExercises(_ exercises: [Exercise]) throws -> Catalog {
         guard let localExercises else { throw CatalogError.noLocalStore }
-        var local = exercise
-        local.isLocal = true
-        try localExercises.add(local)
+        try localExercises.add(contentsOf: exercises.map { exercise in
+            var local = exercise
+            local.isLocal = true
+            return local
+        })
         let catalog = try loadNow()
         let listeners = lock.withLock { Array(continuations.values) }
         for continuation in listeners {

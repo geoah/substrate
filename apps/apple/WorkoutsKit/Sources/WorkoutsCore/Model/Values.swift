@@ -111,6 +111,32 @@ extension KeyedDecodingContainer {
     }
 }
 
+/// A list a file written before it existed lacks: a missing key decodes as
+/// empty, so a journal or history file from an older build still reads.
+@propertyWrapper
+public struct AbsentEmpty<Element: Codable & Hashable & Sendable>: Codable, Hashable, Sendable {
+    public var wrappedValue: [Element]
+
+    public init(wrappedValue: [Element] = []) {
+        self.wrappedValue = wrappedValue
+    }
+
+    public init(from decoder: any Decoder) throws {
+        wrappedValue = try decoder.singleValueContainer().decode([Element].self)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(wrappedValue)
+    }
+}
+
+extension KeyedDecodingContainer {
+    func decode<Element>(_ type: AbsentEmpty<Element>.Type, forKey key: Key) throws -> AbsentEmpty<Element> {
+        try decodeIfPresent(type, forKey: key) ?? AbsentEmpty()
+    }
+}
+
 public extension Date {
     /// The instant floored to a whole second (§3.2 "Time"): every instant the
     /// engine stores is, so durations are whole seconds and a record's `at`

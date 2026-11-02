@@ -291,6 +291,10 @@ public actor Outbox {
     private var generation = 0
     /// The entry whose write is on the network.
     private var inFlight: OutboxEntry?
+    /// When the flush last saved after a landed write, and whether a landed
+    /// write since is kept in memory only.
+    private var lastLandedSave: ContinuousClock.Instant?
+    private var landedUnsaved = false
     public private(set) var state: OutboxState = .idle
     /// The file that was there at launch and could not be read, set aside.
     public private(set) var unreadable: UnreadableRecord?
@@ -515,6 +519,7 @@ public actor Outbox {
         defer {
             flushing = false
             inFlight = nil
+            if landedUnsaved { try? save() }
         }
         let run = generation
         var tried = Set<UUID>()
@@ -532,7 +537,7 @@ public actor Outbox {
             guard run == generation else { return state }
             switch outcome {
             case let .success(version):
-                commit { file in
+                commit(replayable: entry.method == .put && entry.baseVersion == nil) { file in
                     if entry.method == .purge {
                         file.versions[entry.key] = nil
                         file.chains[entry.key] = nil
@@ -704,8 +709,19 @@ public actor Outbox {
     /// again with the next change. A failed save is reported in
     /// `saveProblem`; at worst a write is sent again after a relaunch, which
     /// every write here survives.
-    private func commit(_ edit: (inout File) -> Void) {
+    ///
+    /// A landed write that is safe to send again (a PUT that merges, not a
+    /// create that asserts nothing is there) is saved at most once a second
+    /// and when the flush ends: every save rewrites the whole queue, and an
+    /// import queues thousands of them.
+    private func commit(replayable: Bool = false, _ edit: (inout File) -> Void) {
         edit(&file)
+        let now = ContinuousClock.now
+        if replayable, let last = lastLandedSave, now - last < .seconds(1) {
+            landedUnsaved = true
+            return
+        }
+        lastLandedSave = now
         try? save()
     }
 
@@ -716,6 +732,7 @@ public actor Outbox {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try encoder.encode(file).write(to: url, options: writingOptions)
             saveProblem = nil
+            landedUnsaved = false
         } catch {
             saveProblem = error.localizedDescription
             throw error

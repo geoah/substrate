@@ -1,20 +1,25 @@
 import WorkoutsCore
 import SwiftUI
 
-/// A routine before it starts (DESIGN.md §7.3): each exercise's planned sets
-/// in words, groups with their bracket and A1, A2 labels, the rests that
-/// differ from the defaults, tempo and notes. Start floats in a bar of its
-/// own at the bottom of the list, above the tab bar and the session's bar
-/// when one runs: the list scrolls clear of all three, and neither glass
-/// ever lies over Start. A routine on the signed-in substrate has Edit in
-/// the toolbar, and Duplicate and Delete in its menu; signed out, the sample
-/// the app carries cannot be edited, and says so.
+/// A routine's page (DESIGN.md §7.3): its folder, notes and what the plan
+/// holds; the plan, each exercise's planned sets in words, groups under
+/// their header with a bracket, the rests that differ from the defaults,
+/// tempo and notes; then the routine's progress over a period
+/// (`StatsSections`, the Stats tab's sections for this routine's sessions)
+/// and its sessions. Start floats in a bar of its own at the bottom of the
+/// list, above the tab bar and the session's bar when one runs: the list
+/// scrolls clear of all three, and neither glass ever lies over Start. A
+/// routine on the signed-in substrate has Edit in the toolbar, and
+/// Duplicate and Delete in its menu; signed out, the sample the app carries
+/// cannot be edited, and says so.
 struct RoutinePreview: View {
     let routineID: RoutineID
 
     @Environment(AppModel.self) private var app
     @Environment(SubstrateLink.self) private var link
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @AppStorage("stats.period") private var period: StatsPeriod = .threeMonths
     @State private var deleting: RoutineToDelete?
     @State private var editing: RoutineEditRequest?
     @State private var replacingDraft: RoutineEditor?
@@ -23,9 +28,11 @@ struct RoutinePreview: View {
         if let catalog = app.catalog, let routine = catalog.routines[routineID] {
             let preview = RoutinePresenter.preview(routine, catalog: catalog, history: app.historyIndex,
                                                    settings: app.presenterSettings)
-            list(preview)
+            list(preview, routine: routine, catalog: catalog)
                 .navigationTitle(preview.name)
-                .navigationBarTitleDisplayMode(.inline)
+                // A large title truncates a long name at the accessibility
+                // sizes; there the header wraps it instead.
+                .navigationBarTitleDisplayMode(typeSize.isAccessibilitySize ? .inline : .large)
                 .toolbar {
                     if canEdit {
                         ToolbarItem(placement: .topBarTrailing) {
@@ -95,37 +102,39 @@ struct RoutinePreview: View {
         if editor.hasChanges { link.keepDraft(editor) }
     }
 
-    private func list(_ preview: RoutinePreviewPresentation) -> some View {
-        List {
+    private func list(_ preview: RoutinePreviewPresentation, routine: Routine, catalog: Catalog) -> some View {
+        let summary = StatsPresenter.summary(routine, history: app.history, settings: app.presenterSettings)
+        let stats = StatsPresenter.present(app.history, catalog: catalog, scope: .routine(routineID), period: period, now: .now,
+                                           settings: app.presenterSettings)
+        let exercises = Dictionary(routine.slots.map { ($0.key, $0.exercise) }, uniquingKeysWith: { first, _ in first })
+        return List {
             RoutineEditStatus(routineID: routineID) { if let draft = link.draft { open(draft) } }
-            if preview.notes != nil || preview.lastDone != nil {
-                Section {
-                    VStack(alignment: .leading, spacing: 6) {
-                        if let notes = preview.notes {
-                            Text(notes)
-                                .font(.subheadline)
-                        }
-                        if let lastDone = preview.lastDone {
-                            Text(lastDone)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
+            Section {
+                RoutineHeader(name: typeSize.isAccessibilitySize ? preview.name : nil, summary: summary, notes: preview.notes)
             }
-            ForEach(preview.blocks) { block in
-                Section {
-                    ForEach(block.slots) { slot in
-                        SlotLines(slot: slot, color: block.header == nil ? nil : GroupPalette.color(block.colorIndex))
-                    }
-                } header: {
+            Section {
+                if preview.blocks.isEmpty {
+                    Text("No exercises yet.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(preview.blocks) { block in
                     if let header = block.header {
-                        Text(header)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(GroupPalette.color(block.colorIndex))
-                            .textCase(nil)
+                        GroupHeaderRow(text: header)
+                    }
+                    ForEach(block.slots) { slot in
+                        let exercise = exercises[slot.id].flatMap { catalog.exercises[$0] == nil ? nil : $0 }
+                        if let exercise {
+                            NavigationLink(value: exercise) {
+                                SlotLines(slot: slot, color: block.header == nil ? nil : GroupPalette.color(block.colorIndex))
+                            }
+                            .accessibilityHint("Shows the exercise's history")
+                        } else {
+                            SlotLines(slot: slot, color: block.header == nil ? nil : GroupPalette.color(block.colorIndex))
+                        }
                     }
                 }
+            } header: {
+                Text("Plan")
             }
             if case .bundled = app.catalogOrigin {
                 Section {} footer: {
@@ -141,8 +150,69 @@ struct RoutinePreview: View {
                     }
                 }
             }
+            StatsSections(stats: stats, period: $period)
         }
         .listStyle(.insetGrouped)
+    }
+}
+
+/// The routine's folder, its notes, and what the plan holds as label over
+/// value: Exercises, Working sets, Last done.
+private struct RoutineHeader: View {
+    /// Shown when the navigation title is not the large one.
+    let name: String?
+    let summary: RoutineSummaryPresentation
+    let notes: String?
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let name {
+                Text(name)
+                    .font(.title.bold())
+                    .accessibilityAddTraits(.isHeader)
+            }
+            if let folder = summary.folder {
+                Label(folder, systemImage: "folder")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Folder, \(folder)")
+            }
+            if let notes {
+                Text(notes)
+                    .font(.subheadline)
+            }
+            let layout = typeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+            layout {
+                ForEach(summary.facts) { fact in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(fact.label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(fact.value)
+                            .font(.headline)
+                            .monospacedDigit()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// A group's header in the plan: its kind, rounds and rest between rounds.
+private struct GroupHeaderRow: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "link")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(GroupPalette.color(nil))
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -189,12 +259,51 @@ private struct SlotLines: View {
 }
 
 #if DEBUG
-#Preview {
+#Preview("With history") {
     let app = PreviewData.app()
     NavigationStack {
         RoutinePreview(routineID: SampleRoutine.id)
+            .statsDestinations()
     }
     .environment(app)
     .environment(PreviewData.noSession(app))
+    .environment(SubstrateLink.shared)
+}
+
+#Preview("No sessions yet") {
+    let app = AppModel(catalog: PreviewData.catalog, history: [])
+    NavigationStack {
+        RoutinePreview(routineID: SampleRoutine.id)
+            .statsDestinations()
+    }
+    .environment(app)
+    .environment(PreviewData.noSession(app))
+    .environment(SubstrateLink.shared)
+}
+
+#Preview("No exercises") {
+    var catalog = PreviewData.catalog
+    catalog.routines["empty"] = Routine(id: "empty", name: "Empty routine", folder: "Drafts")
+    let app = AppModel(catalog: catalog, history: [])
+    return NavigationStack {
+        RoutinePreview(routineID: "empty")
+            .statsDestinations()
+    }
+    .environment(app)
+    .environment(PreviewData.noSession(app))
+    .environment(SubstrateLink.shared)
+}
+
+#Preview("Largest text, dark") {
+    let app = PreviewData.app()
+    NavigationStack {
+        RoutinePreview(routineID: SampleRoutine.id)
+            .statsDestinations()
+    }
+    .environment(app)
+    .environment(PreviewData.noSession(app))
+    .environment(SubstrateLink.shared)
+    .environment(\.dynamicTypeSize, .accessibility3)
+    .preferredColorScheme(.dark)
 }
 #endif

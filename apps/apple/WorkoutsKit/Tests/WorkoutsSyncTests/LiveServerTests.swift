@@ -83,7 +83,7 @@ struct LiveServerTests {
         let installed = try await installer.ensure()
         #expect(installed == .current(held: installer.manifest.version))
         #expect(try await installer.ensure() == installed)
-        #expect(PackageBaseline.load(from: baseline)?.kinds.count == 6)
+        #expect(PackageBaseline.load(from: baseline)?.kinds.count == 7)
 
         // The next build's upgrade passes the server's additions-only guard
         // over the real stored package.

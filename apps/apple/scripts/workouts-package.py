@@ -40,9 +40,10 @@ import yaml
 APPLE = Path(__file__).resolve().parents[1]
 PACKAGE = APPLE / "SubstrateWorkouts/Package"
 # The apply order: the package and its bundle, then each kind after the kinds
-# it names (a setup names an exercise, a session a routine, a set the rest).
-FILES = ("training", "exercise", "setup", "routine", "session", "set", "memory")
-KINDS = ("exercise", "routine", "session", "set", "setup")
+# it names (an exercise names a movement, a setup an exercise, a session a
+# routine, a set the rest).
+FILES = ("training", "movement", "exercise", "setup", "routine", "session", "set", "memory")
+KINDS = ("movement", "exercise", "routine", "session", "set", "setup")
 RESOURCE = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/training.json"
 COACH = PACKAGE / "coach"
 COACH_RESOURCE = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/coach.json"
@@ -244,10 +245,12 @@ def field_guide(name: str, properties: dict, indent: str = "", skip: tuple = ())
     return lines
 
 
-# Fields the coach never writes, left out of its guide: an exercise's codes,
-# and the suggestion engine's per-exercise tuning, since the app picks loads
-# and reps (instructions.md, "Your job").
-GUIDE_SKIP = ("codes",)
+# Fields the coach never writes, left out of its guide: an exercise's codes;
+# its muscles one by one, whose 34 values would put the prompt past its cap
+# (it writes the two group lists, and the app's exercise library fills the
+# muscles of an exercise it knows); and the suggestion engine's per-exercise
+# tuning, since the app picks loads and reps (instructions.md, "Your job").
+GUIDE_SKIP = ("codes", "muscles")
 EXERCISE_GUIDE_SKIP = ("defaultRPE", "repGain", "dropPercent", "timeStep", "myoStopRule", "myoMaxMiniSets")
 # A group's `pairing` only picks the default transition, which the coach
 # writes outright (mechanics.md).

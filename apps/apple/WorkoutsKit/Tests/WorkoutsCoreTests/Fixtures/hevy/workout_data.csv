@@ -1,0 +1,28 @@
+title,start_time,end_time,description,exercise_title,superset_id,exercise_notes,set_index,set_type,weight_kg,reps,distance_km,duration_seconds,rpe
+"Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","Felt strong,
+slept well","Bench Press (Barbell)",,"Pause at the chest",0,"warmup",40,10,,,
+"Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","Felt strong,
+slept well","Bench Press (Barbell)",,"Pause at the chest",1,"normal",80,8,,,8
+"Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","Felt strong,
+slept well","Bench Press (Barbell)",,"Pause at the chest",2,"failure",80,6,,,10
+"Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","Felt strong,
+slept well","Bench Press (Barbell)",,"Pause at the chest",3,"dropset",60,8,,,
+"Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","Felt strong,
+slept well","Bench Press (Barbell)",,"Pause at the chest",4,"dropset",40,10,,,
+"Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","Felt strong,
+slept well","Chest Press (Machine)",1,"",0,"normal",50,12,,,7.5
+"Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","Felt strong,
+slept well","Chest Press (Machine)",1,"",1,"normal",50,10,,,
+"Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","Felt strong,
+slept well","Lat Pulldown (Cable)",1,"",0,"normal",45,12,,,
+"Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","Felt strong,
+slept well","Lat Pulldown (Cable)",1,"",1,"normal",45,11,,,
+"Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","Felt strong,
+slept well","Plank",,"",0,"normal",,,,60,
+"Push","30 Oct 2026, 13:43","30 Oct 2026, 14:30","Felt strong,
+slept well","Bench Press (Barbell)",,"",0,"normal",70,10,,,
+"Legs","2 Nov 2026, 08:05","2 Nov 2026, 08:50","","Leg Press (Machine)",,"",0,"normal",120.5,10,,,
+"Legs","2 Nov 2026, 08:05","2 Nov 2026, 08:50","","Pull Up (Assisted)",,"",0,"normal",20,8,,,
+"Legs","2 Nov 2026, 08:05","2 Nov 2026, 08:50","","Treadmill",,"",0,"normal",,,1.5,600,
+"Legs","not a date","2 Nov 2026, 08:50","","Leg Press (Machine)",,"",1,"normal",120,10,,,
+"Legs","2 Nov 2026, 08:05","2 Nov 2026, 08:50","","Leg Press (Machine)",,"",1,"normal",heavy,10,,,

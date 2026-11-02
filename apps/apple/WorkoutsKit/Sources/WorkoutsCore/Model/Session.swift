@@ -214,6 +214,8 @@ public struct SessionRecords: Codable, Hashable, Sendable, Identifiable {
 public struct Catalog: Sendable {
     public var exercises: [ExerciseID: Exercise]
     public var routines: [RoutineID: Routine]
+    /// What exercises are versions of; seeded with the exercise library.
+    public var movements: [MovementID: Movement] = [:]
     /// The stations exercises are done on. V1 bundles and writes none.
     public var setups: [SetupID: Setup]
     /// Records the source could not decode; skipped, and listed in Settings.
@@ -226,6 +228,14 @@ public struct Catalog: Sendable {
         self.routines = routines
         self.setups = setups
         self.unreadable = unreadable
+    }
+
+    /// Gives each exercise that names no muscles of its own its movement's,
+    /// which is what it counts from.
+    public mutating func resolveMovements() {
+        for (id, exercise) in exercises {
+            exercises[id]?.inheritedMuscles = exercise.movement.flatMap { movements[$0]?.muscles } ?? []
+        }
     }
 }
 

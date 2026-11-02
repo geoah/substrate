@@ -10,9 +10,9 @@ enum CatalogOrigin: Hashable {
     case server(String)
 }
 
-/// The four tabs (DESIGN.md §7.1).
+/// The five tabs (DESIGN.md §7.1).
 enum AppTab: Hashable {
-    case routines, history, exercises, settings
+    case routines, history, stats, exercises, settings
 }
 
 /// What the app holds outside the session: the catalogue, the finished
@@ -320,17 +320,74 @@ final class AppModel {
     /// catalogue now holds it.
     @discardableResult
     func addLocalExercise(_ exercise: Exercise) throws -> Exercise {
-        var local = exercise
-        local.isLocal = true
+        try addLocalExercises([exercise])
+        return catalog?.exercises[exercise.id] ?? exercise
+    }
+
+    /// Saves exercises added on this phone in one write, all or none.
+    func addLocalExercises(_ exercises: [Exercise]) throws {
+        let local = exercises.map { exercise in
+            var local = exercise
+            local.isLocal = true
+            return local
+        }
         if directory != nil, catalogOrigin == .bundled {
-            catalog = try catalogSource.addLocalExercise(local)
+            catalog = try catalogSource.addLocalExercises(local)
         } else if let directory {
-            try LocalExercises(directory: directory).add(local)
-            catalog?.exercises[local.id] = local
+            try LocalExercises(directory: directory).add(contentsOf: local)
+            for exercise in local { catalog?.exercises[exercise.id] = exercise }
         } else {
-            catalog?.exercises[local.id] = local
+            for exercise in local { catalog?.exercises[exercise.id] = exercise }
         }
         refreshHistorySections()
-        return catalog?.exercises[local.id] ?? local
+    }
+
+    // MARK: - Imports
+
+    /// Sessions from another app's export, and the exercises they name that
+    /// the catalogue lacks, saved first so no session names an exercise the
+    /// phone does not hold. They join the history like a session from the
+    /// server, never saved to Apple Health (the other app may have saved its
+    /// own workout), and the next sync sends them as sessions the server
+    /// never held. A file that cannot be written stops the import there:
+    /// the sessions written before it stay, and the error says how many.
+    func importSessions(_ sessions: [SessionRecords], exercises: [Exercise]) async throws {
+        guard let historyStore else { throw CocoaError(.fileNoSuchFile) }
+        if !exercises.isEmpty { try addLocalExercises(exercises) }
+        let entries = sessions.map { HistoryEntry(records: $0, local: HistoryLocal(health: HealthSaveState(status: .notAvailable))) }
+        let outcome = await Task.detached(priority: .userInitiated) { () -> (written: [HistoryEntry], failure: String?) in
+            var written: [HistoryEntry] = []
+            for entry in entries {
+                do {
+                    try historyStore.write(entry)
+                } catch {
+                    return (written, error.localizedDescription)
+                }
+                written.append(entry)
+            }
+            return (written, nil)
+        }.value
+        let held = Set(history.map(\.id))
+        for entry in outcome.written {
+            if held.contains(entry.id) { history.removeAll { $0.id == entry.id } }
+            history.append(entry)
+            historyIndex.remove(entry.id)
+            historyIndex.insert(entry.records)
+        }
+        history.sort { $0.records.session.at > $1.records.session.at }
+        refreshHistorySections()
+        if let failure = outcome.failure {
+            throw ImportIncomplete(written: outcome.written.count, total: entries.count, reason: failure)
+        }
+    }
+}
+
+/// An import stopped at a history file it could not write.
+struct ImportIncomplete: LocalizedError {
+    let written: Int
+    let total: Int
+    let reason: String
+    var errorDescription: String? {
+        "\(written) of \(total) workouts were imported; the rest could not be saved on this iPhone: \(reason)"
     }
 }

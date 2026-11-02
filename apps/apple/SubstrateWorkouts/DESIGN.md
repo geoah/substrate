@@ -71,7 +71,7 @@ those files disagree about a property, the kind files win and this document is w
 | Writing `substrate.reamde.dev/health/workout`                   | Never                                      |
 | Routine editing in the app                                      | Later; the console's agent writes routines |
 | Watch app (the Live Activity already shows on the watch)        | Later                                      |
-| Imports (Hevy, Strong, FIT) and exports                         | Later                                      |
+| Imports (Strong, FIT, Hevy's API) and exports                   | Later; Hevy's CSV export imports from Settings |
 | EMOM, AMRAP for time, Tabata                                    | Later                                      |
 | An iPhone `HKWorkoutSession`, heart rate, energy                | Later, if ever                             |
 | Rest-pause and cluster sets from the set-kind menu (not a plan) | Later; they run when a routine asks        |

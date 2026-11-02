@@ -1,7 +1,8 @@
 import WorkoutsCore
 import SwiftUI
 
-/// Four tabs in the system's Liquid Glass tab bar (DESIGN.md §7.1). While a
+/// Five tabs in the system's Liquid Glass tab bar (DESIGN.md §7.1), the most
+/// an iPhone shows before it folds the rest under More. While a
 /// session is open its bar rides above them in the tab view's bottom
 /// accessory, and the session itself is a full-screen cover that zooms out
 /// of that bar.
@@ -20,6 +21,9 @@ struct RootView: View {
                 HistoryView()
             }
             .badge(app.historyBadge)
+            Tab("Stats", systemImage: "chart.bar.xaxis", value: AppTab.stats) {
+                StatsView()
+            }
             Tab("Exercises", systemImage: "list.bullet", value: AppTab.exercises) {
                 ExercisesView()
             }
