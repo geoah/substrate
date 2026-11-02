@@ -15,6 +15,9 @@ enum ChatManifest {
     static let clientIDKey = "SubstrateChatClientID"
     /// A local build's client id: a loopback one, which nothing fetches.
     static let localClientID = "http://127.0.0.1/substrate-chat"
+    /// The Info.plist key a release stamps with the https redirect it claims
+    /// through its associated domain (`SUBSTRATE_CHAT_REDIRECT`).
+    static let redirectKey = "SubstrateChatRedirect"
 
     static let scopes = ["agents:*", "decide:*", "read:\(Kinds.provider)", "read:*"]
 
@@ -33,5 +36,6 @@ enum ChatManifest {
         clientID: AppManifest.clientID(infoKey: clientIDKey, localDefault: localClientID),
         scopes: scopes,
         requirement: requirement,
+        claimedRedirect: AppManifest.claimedRedirect(infoKey: redirectKey),
         passwordFallback: .withoutAppAuthorization)
 }

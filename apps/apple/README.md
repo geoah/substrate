@@ -88,6 +88,35 @@ shared endpoint before they build anything (path-style S3 such as
 since anybody could publish a document there that the approval page would
 head with the same name.
 
+**A site gives every app a claimed callback.** With
+`SUBSTRATE_APPLE_SITE_URL` set to an https origin on a host of the
+publisher's own, served at its root (Apple reads the association file from
+the host's root and nowhere else), `mise run apple:site` publishes, and
+every release publishes again:
+
+- `/.well-known/apple-app-site-association`, naming each app id
+  (`SUBSTRATE_APPLE_TEAM_ID` and the bundle id) under `webcredentials` and
+  under `applinks` for its own `/apps/<app>/callback`;
+- `/.well-known/substrate/authority.json`, the authority
+  (`SUBSTRATE_APPLE_SITE_AUTHORITY`, else the site's host) and every app by
+  its client id, with no packages yet;
+- `/apps/<app>/client.json` for `console`, `chat`, `sync` and `workouts`,
+  whose one redirect is `https://<site host>/apps/<app>/callback` and which
+  names the authority as `substrate_authority`.
+
+The files are PUT to `SUBSTRATE_APPLE_SITE_UPLOAD_URL` when that is not the
+site itself (a bucket behind the host), with the release's key. The site
+then is each app's client id, and a release stamps the app's redirect
+(`SUBSTRATE_<APP>_REDIRECT`), the site host (`SUBSTRATE_SITE_HOST`) and
+`SUBSTRATE_ASSOCIATED_DOMAINS=YES`, which signs the app with its `-site`
+entitlements in `Support/`: `webcredentials:` and `applinks:` on the site
+host. The provisioning profile must carry the Associated Domains
+capability. A local build sets none of these, carries no associated domain
+and signs in through a loopback port. The task prints the record the
+authority's DNS needs once:
+`_substrate.<authority>. TXT "v=substrate1 doc=<site>/.well-known/substrate/authority.json"`.
+The release builds stay in the release folder.
+
 The version is the next patch after the last released one, plus the build
 number and the commit, `0.113.1-pre.20261021.153012+ac85863e` (`.dirty`
 when the tree was); the build number is the UTC time, so it only rises, and
@@ -211,7 +240,9 @@ metadata, and takes one of two doors, which make two kinds of session
   device, in its time zone) and the `applehealth-webhook` trigger, whose
   `webhook:` scope the token then carries. The client id is the
   `SubstrateSyncClientID` Info.plist key (`SUBSTRATE_SYNC_CLIENT_ID`), and
-  a local build's loopback `http://127.0.0.1/substrate-sync`. The sign-in
+  a local build's loopback `http://127.0.0.1/substrate-sync`; a release
+  with a site claims the redirect in `SubstrateSyncRedirect`
+  (`SUBSTRATE_SYNC_REDIRECT`). The sign-in
   screen lists what the approval will ask for, in the approval page's
   words, before it opens the sheet.
 - Any other server gets the password form, as before: the repository, the
@@ -495,8 +526,10 @@ the address's discovery document and OAuth metadata, and the system's
 sign-in sheet opens the server's own sign-in and approval page, where the
 owner chooses what the app may do (talk to the agents, `agents:*`; apply
 what they suggest, `decide:*`; read the provider rows; read the records a
-chat links to, `read:*`) and for how long. The redirect comes back to a
-loopback port the app listens on (RFC 8252), and the code is exchanged with
+chat links to, `read:*`) and for how long. The redirect comes back to the
+app's claimed https callback in a release with a site, and to a loopback
+port the app listens on (RFC 8252) in any other build, and the code is
+exchanged with
 its PKCE verifier; the app never sees the password, and its writes are
 recorded as `app:<host>`. A release publishes the app's client ID metadata
 document as `chat/client.json` (see
