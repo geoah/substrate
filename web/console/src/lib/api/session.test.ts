@@ -106,12 +106,31 @@ describe("session in the Apple app", () => {
     expect(localStorage.getItem("substrate.token")).toBeNull()
   })
 
-  it("tells the app when a 401 ends the sign-in", () => {
+  it("tells the app which sign-in a 401 ended, once, and reads it no more", () => {
+    vi.stubGlobal("substrateShell", {
+      platform: "ios",
+      server: "https://substrate.example.com",
+      session: { ...SESSION, secret: "substrate_tok_ended" },
+    })
     const expired = vi.fn()
     setUnauthorizedHandler(expired)
     sessionExpired()
-    expect(post).toHaveBeenCalledWith({ type: "signedOut" })
+    expect(post).toHaveBeenCalledWith({ type: "signedOut", tokenId: "tok-app" })
     expect(expired).toHaveBeenCalledOnce()
+    // The login route reads no session, so it shows the door rather than
+    // sending the page back to a console on a dead token.
+    expect(hasSession()).toBe(false)
+    expect(getToken()).toBeNull()
+    sessionExpired()
+    expect(post).toHaveBeenCalledOnce()
+  })
+
+  it("keeps a kept token it cannot revoke without its id", async () => {
+    localStorage.setItem("substrate.token", "substrate_tok_old")
+    const fetcher = vi.fn<typeof fetch>()
+    await retireStoredSession(fetcher)
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(localStorage.getItem("substrate.token")).toBe("substrate_tok_old")
   })
 
   it("revokes a token the page kept from before, with itself, and drops it", async () => {

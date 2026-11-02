@@ -17,8 +17,7 @@ struct ConsoleConnect: View {
     @State private var address = ""
 
     var body: some View {
-        ConnectView(manifest: ConsoleSignIn.manifest, address: $address,
-                    unrevoked: sessions.unrevoked(on: store.recent))
+        ConnectView(manifest: ConsoleSignIn.manifest, address: $address, unrevoked: sessions.unrevoked)
         {
             ConnectHeader(appName: "Substrate", tagline: "Your substrate's console.", icon: Image("AppMark"))
         } onSignIn: { probe in
@@ -40,7 +39,8 @@ struct ConsoleConnect: View {
 
     /// Servers this device already opens, other than the one in the field.
     private var others: [URL] {
-        store.recent.filter { sessions.opens($0) && $0 != ServerAddress.origin(of: address) }
+        let typed = ServerAddress.origin(of: address)
+        return sessions.servers.filter { $0 != typed }
     }
 
     private var footer: some View {
@@ -49,9 +49,17 @@ struct ConsoleConnect: View {
                 if !others.isEmpty {
                     Menu("Signed In Elsewhere") {
                         ForEach(others, id: \.self) { server in
-                            Button(ServerAddress.display(server)) {
-                                store.use(server)
-                                if cancellable { dismiss() }
+                            Menu(ServerAddress.display(server)) {
+                                Button("Open") {
+                                    store.use(server)
+                                    if cancellable { dismiss() }
+                                }
+                                Button("Sign Out and Forget", role: .destructive) {
+                                    Task {
+                                        await sessions.forget(server)
+                                        store.forget(server)
+                                    }
+                                }
                             }
                         }
                     }

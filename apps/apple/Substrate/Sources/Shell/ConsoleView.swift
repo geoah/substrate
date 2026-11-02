@@ -34,7 +34,7 @@ struct RootView: View {
                 ConsoleConnect(cancellable: false)
             }
         }
-        .task { await sessions.revokePending(on: store.recent) }
+        .task { await sessions.revokePending() }
     }
 }
 
@@ -80,8 +80,8 @@ private struct ConsoleContent: View {
             .onAppear {
                 controller.checkForUpdates = { updates.checkNow() }
                 let server = controller.server
-                controller.signedOut = { [sessions] in
-                    Task { await sessions.signedOut(of: server) }
+                controller.signedOut = { [sessions] tokenID in
+                    Task { await sessions.signedOut(of: server, tokenID: tokenID) }
                 }
             }
     }

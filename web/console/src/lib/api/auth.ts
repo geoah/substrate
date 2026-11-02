@@ -9,7 +9,7 @@
  * IN — the response carries a freshly minted token secret, shown once. */
 
 import { request } from "./http"
-import { clearSession, getToken, getTokenId } from "./session"
+import { appHoldsSession, clearSession, getToken, getTokenId } from "./session"
 import type {
   MintedToken,
   OperationalList,
@@ -185,7 +185,9 @@ export async function revokeToken(id: string): Promise<void> {
  * it believes is live. */
 export async function logout(): Promise<void> {
   const id = getTokenId()
-  if (id && getToken()) {
+  // In the Apple app the app holds the token, and revokes it when the page
+  // says it ended, trying again while the server does not answer.
+  if (id && getToken() && !appHoldsSession()) {
     try {
       await revokeToken(id)
     } catch {
