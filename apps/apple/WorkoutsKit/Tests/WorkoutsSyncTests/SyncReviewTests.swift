@@ -301,7 +301,9 @@ struct PackageOwnershipTests {
 
     func kindPath(_ name: String) -> String { "/api/v1/substrate.reamde.dev/core/kind/ada.example.com%2Ftraining%2F\(name)" }
 
-    func server(held: Int?, kindVersion: @escaping @Sendable (String) -> Int, applied: Locked<Int>) -> ScriptedServer {
+    /// `absent`: kinds the repository does not declare yet, such as one a
+    /// newer package version adds.
+    func server(held: Int?, kindVersion: @escaping @Sendable (String) -> Int, applied: Locked<Int>, absent: Set<String> = []) -> ScriptedServer {
         let server = ScriptedServer()
         server.on { [packagePath] sent in
             guard sent.method == "GET", sent.path == packagePath else { return nil }
@@ -313,6 +315,7 @@ struct PackageOwnershipTests {
         server.on { sent in
             guard sent.method == "GET", sent.path.hasPrefix("/api/v1/substrate.reamde.dev/core/kind/") else { return nil }
             let name = String(sent.path.split(separator: "%2F").last ?? "")
+            if absent.contains(name), applied.value == 0 { return (404, notFound) }
             return (200, #"{"id":"x","kind":"substrate.reamde.dev/core/kind","properties":{},"version":\#(kindVersion(name))}"#)
         }
         server.on { sent in
@@ -338,7 +341,7 @@ struct PackageOwnershipTests {
         #expect(try await first.ensure() == .current(held: 1))
         let baseline = try #require(PackageBaseline.load(from: directory))
         #expect(baseline.kinds["ada.example.com/training/set"] == 1)
-        #expect(baseline.kinds.count == 6)
+        #expect(baseline.kinds.count == 7)
 
         // The owner edited the set kind in the console; this build ships 2.
         let upgraded = Locked(0)
@@ -359,7 +362,7 @@ struct PackageOwnershipTests {
             ("ada.example.com/training/\($0)", 1)
         })).save(to: directory, writingOptions: .atomic)
         let applied = Locked(0)
-        let drifted = server(held: 2, kindVersion: { $0 == "routine" ? 3 : 1 }, applied: applied)
+        let drifted = server(held: 2, kindVersion: { $0 == "routine" ? 3 : 1 }, applied: applied, absent: ["movement"])
         let installer = PackageInstaller(api: api(drifted), manifest: try manifest(version: 2), baselineDirectory: directory)
         let state = try await installer.ensure()
         #expect(state == .edited(held: 2, kinds: ["ada.example.com/training/routine"]))
@@ -377,7 +380,7 @@ struct PackageOwnershipTests {
             ("ada.example.com/training/\($0)", 1)
         })).save(to: directory, writingOptions: .atomic)
         let applied = Locked(0)
-        let installer = PackageInstaller(api: api(server(held: 1, kindVersion: { _ in 1 }, applied: applied)), manifest: try manifest(version: 2),
+        let installer = PackageInstaller(api: api(server(held: 1, kindVersion: { _ in 1 }, applied: applied, absent: ["movement"])), manifest: try manifest(version: 2),
                                          baselineDirectory: directory)
         #expect(try await installer.ensure() == .current(held: 2))
     }

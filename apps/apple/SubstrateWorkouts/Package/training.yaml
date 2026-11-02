@@ -6,9 +6,12 @@
 # before it applies them. The app's README says how it installs, upgrades and
 # reads the package.
 #
-# Six kinds, a catalogue, a plan, a log and the coach's memory:
+# Seven kinds, a catalogue, a plan, a log and the coach's memory:
 #
-#   exercise   one movement, with the settings the next-set suggestion reads
+#   movement   what you search for, such as Chest Press, and the muscles it
+#              works; the app seeds its exercise library into it
+#   exercise   one equipment version of a movement, with the settings the
+#              next-set suggestion reads
 #   setup      one station an exercise is done on, such as a gym's machine,
 #              with its own load grid ("Exercise setup")
 #   routine    the plan the console's agent writes ("Workout routine")
@@ -40,10 +43,12 @@ data:
   authority: "~"
   package: training
   # 1: exercise, setup, routine, session and set. 2: memory, the facts the
-  # workout coach keeps (decision record 0207). The app ships each change as
+  # workout coach keeps (decision record 0207). 3: movement, and an
+  # exercise's muscles one by one with their share of the work, and its
+  # movement. The app ships each change as
   # the next version, additive only, and reads the version a repository
   # holds to decide whether to install, upgrade or stop.
-  version: 2
+  version: 3
 ---
 # ---- the bundle document -----------------------------------------------------
 #
@@ -69,6 +74,7 @@ data:
   requires:
     - substrate.reamde.dev/health
   installs:
+    - ~/training/movement
     - ~/training/exercise
     - ~/training/setup
     - ~/training/routine

@@ -12,11 +12,11 @@ this repository from an app called Spotter; its spec is
 The research, design options, reviews and decisions behind it are in
 [docs/](docs/README.md).
 
-The app has four tabs. **Routines** lists the routines by folder, previews
+The app has five tabs. **Routines** lists the routines by folder, opens
 one and starts it (or an empty session). **History** lists finished sessions,
-newest first. **Exercises** lists every exercise with its history and its
+newest first. **Stats** shows progress across every routine, or one. **Exercises** lists every exercise with its history and its
 estimated 1RM trend. **Settings** holds units, rest defaults, the session
-switches, alerts, Apple Health, the substrate and the update check. A session
+switches, alerts, Apple Health, the substrate, imports and the update check. A session
 runs in a full-screen cover whose default layout, **Rows**, shows each set as
 a line, opens the next set in place with steppers and the planned RPE filled
 in (any other set opens with a tap, in any order), and keeps an island at the
@@ -27,10 +27,29 @@ Dynamic Island.
 
 ```bash
 mise run apple:build:workouts     # the app for the simulator
-mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (405 tests, on the Mac)
+mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (537 tests, on the Mac)
 mise run apple:release:workouts   # archived, signed and published under workouts/
 uv run --with pyyaml apps/apple/scripts/workouts-package.py   # the package's manifests into the app's JSON
+uv run --with pyyaml apps/apple/scripts/exercise-library.py   # the exercise library into the app's JSON
 ```
+
+**A routine's page** opens on its folder, notes and what the plan holds
+(exercises, working sets, last done), then the plan itself, each exercise
+opening its history, and then its progress over a period the owner picks (1W,
+1M, 3M, 6M or 1Y, each against as many days just before): sessions, volume,
+working sets and time trained; volume per day, week or month; each exercise's
+best estimated 1RM (or longest hold, or most reps) with a sparkline, its best
+set and volume, the equipment versions of one movement together; personal
+records, a best above every earlier session in any routine; a body map,
+front and back, each region shaded by its working sets (`BodyMap`), above the
+working sets per muscle group, each set counted by the share of the muscles
+it works, down to the muscle where the exercise names them; and the routine's
+sessions. The body map's figures are react-native-body-highlighter's (MIT),
+written into `Views/Stats/BodyMapShapes.swift` by
+`apps/apple/scripts/body-map.py` at a pinned commit, with its notice.
+**Stats** shows the same for every routine, or one picked from the list.
+`StatsPresenter` works it all out (`StatsPresenterTests`); the screenshots
+are `docs/screenshots/stats-*.jpg`.
 
 ## Layout
 
@@ -205,13 +224,85 @@ A session with a write still waiting is the phone's until the write lands. Nothi
 ever written to `substrate.reamde.dev/health/workout`; the Apple Health save
 works as it always did.
 
+## The exercise library
+
+The app seeds an exercise library into the repository's training package:
+606 movements (`~/training/movement`: Chest Press, with the muscles it works
+and how much) and 807 exercises, one per equipment version (Chest Press
+(Machine), Chest Press (Cable), Chest Press (Band)), each with its
+measurement, equipment and load conventions (two dumbbells count per
+dumbbell, a plate-loaded lever per side). The coach and the console read
+them like any record. `apps/apple/scripts/exercise-library.py` builds it
+(`WorkoutsCore/Resources/Bundled/library.json`) from two sources in
+[`Library/`](Library/):
+
+| Source | What |
+| --- | --- |
+| `movements.yaml` | curated: 305 movements with muscle shares across 34 muscles, and their exercises, each named as Hevy names it and linked to the free-exercise-db entries that are the same exercise and to the Hevy template ids that map onto it (all 451 of Hevy's built-in exercises) |
+| `free-exercise-db.json` | [free-exercise-db](https://github.com/yuhonas/free-exercise-db)'s 678 strength entries (The Unlicense) at a pinned commit; an entry no curated exercise claims is a movement and exercise of its own, with its muscle groups and no shares |
+| `library.lock.json` | the library's version, derived from the records' hash, and the version each record first appeared in |
+
+**Seeding** (`LibraryInstall`) runs at the end of each sync, after the
+sessions are sent. Every library record carries the code
+`substrate-workouts-library` with the version it first appeared in, so the
+repository's library version is the highest one it holds, on any phone. A
+newer build writes only the records that appeared after it, so a record the
+owner deleted never comes back, and on a record the repository already holds
+(the owner's, the coach's or an earlier library's) it fills what the record
+lacks and changes nothing it has. **Exercises** lists the owner's own (done,
+in a routine, or not from the library) until a search, which covers all of
+them.
+
+## Importing from Hevy
+
+Settings → Import → Hevy reads a Hevy account in one of two ways, and
+`HevyImport` turns what it reads into sessions, sets and workout routines as
+the package README's [Importing](Package/README.md#importing) section asks;
+nothing is saved until the owner has seen what it holds and taps Import.
+
+- **An API key** (Hevy Pro: hevy.com → Settings → Developer). `HevyClient`
+  reads the account's workouts, routines and routine folders, and the
+  templates of the exercises the library does not map (the account's own),
+  read only, and the key is not kept. Each exercise is named by Hevy's
+  template id, which the library's `hevy` codes map exactly; each routine
+  becomes a workout routine (folder, exercises, supersets, set types,
+  rests), written through the outbox after the new exercises it names; and
+  each session names the routine it was started from. A routine whose id the
+  repository holds is left as it is. Routines need a substrate: signed out,
+  only the workouts are imported.
+- **The workout export** (`workout_data.csv`, from Hevy's Profile → Settings
+  → Export & Import Data → Export Data → Export Workouts), chosen in Files and
+  read by `HevyCSV`. It holds workouts only, and names exercises by title.
+
+A workout lands at the same session id either way, so importing through the
+API after the file adds only what is new.
+
+| The file | The import |
+| --- | --- |
+| a workout (its title, start and end) | one finished session, `hevy-<yyyyMMdd>-<HHmm>` from its start on the wall, so the same account imported again finds what it wrote; the routine it was started from, through the API |
+| its times, local with no zone | read in the phone's zone, which the screen names |
+| an exercise title | the catalogue's exercise of that name or alias (the seeded library holds every one of Hevy's), else the library's exercise of that name, movement and conventions included, else a new exercise added on the phone, its measurement from what its sets record and its equipment from the title's brackets |
+| neighbouring exercises with one `superset_id` | one group |
+| `warmup`, `normal`, `failure`, `dropset` | a warm-up, a working set, one with `reachedFailure`, a drop of the set before it |
+| the weight and distance columns | the unit their header names (`weight_kg` or `weight_lbs`) |
+| a row that does not read | left out and listed with its line |
+| a weight on an exercise matched to one that counts reps or time only | the set imported without it, and the sets counted on the screen before Import |
+
+A workout is skipped when History holds its session already, when it was
+imported and deleted since, or when its time overlaps a session History
+holds (the same workout logged in this app as well). Imported sessions join
+History, PREVIOUS and the suggestions, are never saved to Apple Health
+(Hevy may have saved its own), and go to the substrate through the history
+exchange like any session the server never held, their new exercises first.
+
 ## Tests
 
 `mise run apple:test:workouts` checks the generated JSON against its YAML,
 then runs both suites on the Mac (CI runs the check, in the `lint` job, and
-not the suites: no workflow builds the Apple apps): WorkoutsCore's 392 (the codec, the engine,
+not the suites: no workflow builds the Apple apps): WorkoutsCore's 442 (the codec, the engine,
 the suggestions against their vectors, the presenters, the stores, the sample
-routine's methods and a session through it to Finish) and WorkoutsSync's 58:
+routine's methods and a session through it to Finish, and the Hevy import
+against `Tests/WorkoutsCoreTests/Fixtures/hevy`, the API's shape included, and the exercise library) and WorkoutsSync's 95:
 the sample written once and never again after a delete, on a second phone or a
 reinstall, a refused sample write that stops nothing, a session logged signed
 out finding its exercises, a routine's delete through the outbox and during a
@@ -240,6 +331,14 @@ read back as the owner.
 WORKOUTS_E2E_SERVER=http://localhost:8080 WORKOUTS_E2E_OWNER_TOKEN=… WORKOUTS_E2E_REPOSITORY=<fresh repository> \
   swift test --package-path apps/apple/WorkoutsKit --filter LiveServer
 ```
+
+`LiveHevyImportTests` seeds the exercise library and sends a Hevy export
+(`WORKOUTS_HEVY_CSV`) the same way, into a repository with health
+installed: every session, set and new exercise
+through the history exchange and the outbox, read back as the import wrote
+them, with nothing left for the phone to send; with `WORKOUTS_HEVY_API_KEY` it reads the
+account through Hevy's API instead, routines included. `WORKOUTS_HEVY_CSV` alone runs
+the export through `HevyImportTests` without a server.
 
 ## Screenshots
 

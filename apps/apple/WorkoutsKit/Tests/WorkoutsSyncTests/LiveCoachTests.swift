@@ -67,7 +67,7 @@ struct LiveCoachTests {
 
         let api = WorkoutsAPI(client: SubstrateClient(session), authority: session.repository)
         let training = try await PackageInstaller(api: api, manifest: try PackageManifest.bundled(), clientID: manifest.clientID).ensure()
-        #expect(training == .current(held: 2))
+        #expect(training == .current(held: 3))
         let coach = CoachInstaller(api: api, manifest: try CoachManifest.bundled(), approval: approvalDetail, clientID: manifest.clientID)
         #expect(try await coach.ensure(training: training) == .applied)
         #expect(try await coach.ensure(training: training) == .current)

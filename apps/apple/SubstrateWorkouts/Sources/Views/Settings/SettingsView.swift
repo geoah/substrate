@@ -3,8 +3,8 @@ import SwiftUI
 import UIKit
 
 /// Settings (DESIGN.md §7.10): units, rest defaults, the session switches,
-/// alerts, Apple Health, where the data comes from, and the build's update
-/// check. A session snapshots the rest and counting settings at Start.
+/// alerts, Apple Health, imports, where the data comes from, and the build's
+/// update check. A session snapshots the rest and counting settings at Start.
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(SessionController.self) private var session
@@ -76,6 +76,7 @@ struct SettingsView: View {
                 SubstrateSection()
                 alertsSection
                 healthSection
+                importSection
                 dataSection
 
                 Section("About") { BuildFooter() }
@@ -182,6 +183,22 @@ struct SettingsView: View {
             app.settings.typedBodyMass = Mass(value: value, unit: app.settings.typedBodyMass?.unit ?? app.settings.defaultUnit)
         } else if let typed = app.settings.typedBodyMass {
             bodyMassText = Format.number(typed.value)
+        }
+    }
+
+    // MARK: - Import
+
+    private var importSection: some View {
+        Section {
+            NavigationLink {
+                HevyImportView()
+            } label: {
+                Label("Hevy", systemImage: "square.and.arrow.down")
+            }
+        } header: {
+            Text("Import")
+        } footer: {
+            Text("Bring in the workout history another app exported. Each imported workout joins History.")
         }
     }
 

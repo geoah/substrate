@@ -14,7 +14,8 @@ Below, `~/training/…` is that name.
 | File | Holds |
 | --- | --- |
 | `training.yaml` | the package document (its version) and the bundle document (`requires`, `installs`) |
-| `exercise.yaml` | `~/training/exercise` |
+| `movement.yaml` | `~/training/movement`: what you search for and the muscles it works |
+| `exercise.yaml` | `~/training/exercise`, one equipment version of a movement |
 | `setup.yaml` | `~/training/setup`, labelled "Exercise setup" |
 | `routine.yaml` | `~/training/routine`, labelled "Workout routine" |
 | `session.yaml` | `~/training/session`, labelled "Training session" |
@@ -61,6 +62,7 @@ left out.
 
 ```text
 routine ──slots[].exercise (mustExist)──► exercise ◄── variationOf (exercise)
+                                         exercise ──movement──► movement
    ▲                                       ▲  ▲  ▲
    │ routine                               │  │  └── setup.exercise (required, mustExist)
    │                                       │  └───── slots[].exercise (mustExist)
@@ -73,8 +75,13 @@ session ──workout──► substrate.reamde.dev/health/workout
   set ──continues (mustExist, cascade)──► set (the head of its chain)
 ```
 
-- **exercise**: a catalogue entry. Ids are readable slugs chosen by the
-  writer (`chest-press-machine`).
+- **movement**: what a person searches for (`chest-press`), with each muscle
+  it works and its share of a set (`muscles[]`: 1 a prime mover, 0.5 a
+  synergist, less for a helper). Ids are the name slugged.
+- **exercise**: a catalogue entry, one equipment version of a movement
+  (`chest-press-machine`, `chest-press-cable`), each with its own history,
+  since their loads never compare. Ids are readable slugs chosen by the
+  writer. It counts from its movement's muscles unless it names its own.
 - **setup**: one station an exercise is done on, such as one gym's chest
   press, with its own load grid. Ids are readable slugs chosen by the writer
   (`hotel-gym-chest-press`).
@@ -913,7 +920,13 @@ target can hold:
 
 ## Importing
 
-Imports come later. What the package expects of a Hevy importer:
+What the package expects of a Hevy importer. Substrate Workouts imports
+Hevy's CSV export (the app's README, "Importing from Hevy"), which carries no
+workout id, template id or set id: its session id is `hevy-<yyyyMMdd>-<HHmm>`
+from the workout's start on the wall and each set's
+`<session id>-<exercise index>-<set index>`, its times are read in the
+phone's zone, and an exercise resolves by name. An importer reading Hevy's
+API keys on the ids below.
 
 - **Ids from upstream keys**: `hevy-<workout id>` for the session and
   `hevy-<workout id>-<exercise index>-<set index>` for each set, indices

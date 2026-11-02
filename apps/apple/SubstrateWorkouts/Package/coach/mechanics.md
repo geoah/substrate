@@ -9,10 +9,10 @@ short form with options; its answer arrives in a later turn).
   for `health/resting_heart_rate`, `health/hrv_sdnn`, `health/hrv_rmssd`,
   `health/body_mass`, `health/steps`, plus `health/sleep` and
   `health/workout` records.
-- Before referencing an exercise, search for it. Create a missing one first
-  (with `measurement`, `equipment`, muscles, `restClass` and a `loadStep`
-  that matches the gym); references must exist. A search can miss: query
-  the exact id first, and never `put` over an exercise that exists.
+- Search before referencing an exercise: the app seeds a library of
+  movements and equipment versions. Create a missing one
+  first (`movement`, `measurement`, `equipment`, muscles, `restClass`, gym
+  `loadStep`). Query the exact id first; never `put` over an existing one.
 - Write a routine with op `put` and a short slug id, after searching for an
   existing one. Edit with op `patch` and the `ifVersion` your read returned.
 - Encode the whole plan. Exercises done together (a superset, a block at

@@ -33,6 +33,8 @@ final class SyncAccount {
     let sample: SampleInstall?
     /// The routine edit not saved yet, kept on every change.
     let drafts: RoutineDrafts?
+    /// Where the exercise library stands in this repository.
+    let library: LibraryInstall?
     /// The session controller's writes into this account's outbox.
     private(set) var sink: OutboxSink<EventEnvelope, SessionState>?
     /// This account's package check, nil until it has run.
@@ -47,6 +49,7 @@ final class SyncAccount {
         remote = directory.map { RemoteCatalog(directory: $0, localExercises: localExercises) }
         sample = directory.map { SampleInstall(directory: $0) }
         drafts = directory.map { RoutineDrafts(directory: $0) }
+        library = directory.map { LibraryInstall(directory: $0) }
         sink = outbox.map { outbox in
             OutboxSink(outbox: outbox, codec: codec, onQueued: { [weak self] in
                 guard let self else { return }
@@ -290,6 +293,14 @@ final class SubstrateLink {
         await run(account)
     }
 
+    /// A sync that starts once any running one ends: a change made while
+    /// one runs (an import) was not in the history it read.
+    func syncAfterRunning() async {
+        guard let account else { return }
+        if let running = syncTask, running.account == ObjectIdentifier(account) { await running.task.value }
+        await sync()
+    }
+
     private func run(_ account: SyncAccount) async {
         let id = ObjectIdentifier(account)
         let task = Task { await runSync(account) }
@@ -331,6 +342,8 @@ final class SubstrateLink {
             await exchangeHistory(account)
             guard isCurrent(account) else { return }
             await flush(account)
+            guard isCurrent(account) else { return }
+            await seedLibrary(account)
         } catch {
             if isCurrent(account) { note(error) }
         }
@@ -348,6 +361,28 @@ final class SubstrateLink {
             logger.info("workout coach: \(String(describing: state), privacy: .public)")
         } catch {
             logger.error("workout coach: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Seeds the exercise library (`LibraryInstall`) where the repository is
+    /// behind this build's, after the sessions are sent so a first seed of a
+    /// thousand records never holds them back, then reads the catalogue
+    /// again. Quiet like the coach: what it meets is logged and tried again
+    /// at the next sync.
+    private func seedLibrary(_ account: SyncAccount) async {
+        guard let installer = account.library, let library = try? ExerciseLibrary.bundled(), let remote = account.remote else { return }
+        do {
+            let outcome = try await installer.ensure(account.api, library: library)
+            logger.info("exercise library \(library.version, privacy: .public): \(outcome.written) written, \(outcome.filled) filled")
+            guard !outcome.current, isCurrent(account) else { return }
+            let outbox = account.outbox
+            let codec = codec
+            let catalog = try await remote.refresh(account.api, hiding: { await outbox?.waitingDeletes ?? [] },
+                                                   waiting: { await outbox?.waitingRoutines(codec: codec) ?? [:] })
+            guard isCurrent(account) else { return }
+            AppModel.shared.showServerCatalog(catalog, host: account.host)
+        } catch {
+            logger.error("exercise library: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -544,6 +579,30 @@ final class SubstrateLink {
         Task { await flush(account) }
     }
 
+    /// Routines from an import (Hevy's): queued as new routines (a create
+    /// that refuses an id another writer took meanwhile), after every new
+    /// exercise they name, since a routine's slots must find theirs; into
+    /// the cached catalogue at once; then sent.
+    func importRoutines(_ routines: [Routine], exercises: [Exercise]) async throws {
+        guard let account, let outbox = account.outbox, let remote = account.remote else {
+            throw OutboxNotSaved(reason: "the app is not signed in to your substrate.")
+        }
+        let named = Set(routines.flatMap { $0.slots.map(\.exercise) })
+        var entries = exercises.filter { named.contains($0.id) }.map { OutboxPlan.exerciseAdded($0, codec: codec) }
+        entries += routines.map { OutboxPlan.routineCreated($0, codec: codec) }
+        try await outbox.enqueue(entries)
+        guard isCurrent(account) else { return }
+        do {
+            var catalog: Catalog?
+            for routine in routines { catalog = try remote.store(routine: routine) }
+            if let catalog { AppModel.shared.showServerCatalog(catalog, host: account.host) }
+        } catch {
+            note(error)
+        }
+        await refreshOutbox(account)
+        Task { await flush(account) }
+    }
+
     static let conflictFirst = "This routine has an edit waiting for your choice after a conflict. Choose Keep My Edit or Use Theirs on its page first."
 
     /// Reads routines again from the server, one by one, into the cache: a
@@ -661,6 +720,10 @@ final class SubstrateLink {
     /// Keeps a delete's tombstone where it belongs: in the signed-in
     /// account's folder, so only that server and repository purge it. False
     /// when signed out (or in previews): the caller keeps it on the phone.
+    /// Sessions deleted on the phone while signed in here, by id: an import
+    /// leaves them out, as the history exchange does.
+    var tombstoneIDs: Set<String> { account?.tombstones?.all ?? [] }
+
     func keepTombstone(_ id: SessionID) throws -> Bool {
         guard let tombstones = account?.tombstones else { return false }
         try tombstones.add(id)

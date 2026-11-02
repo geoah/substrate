@@ -1,0 +1,38 @@
+# Each muscle of exercise.yaml's `muscles[].muscle` and the group it rolls up to,
+# as MuscleDetail.group has it. exercise-library.py derives each library
+# record's primaryMuscles and secondaryMuscles from these.
+
+pecclavicular: chest
+pecsternal: chest
+serratus: chest
+deltfront: shoulders
+deltside: shoulders
+deltrear: shoulders
+rotatorcuff: shoulders
+lats: lats
+trapsupper: traps
+trapsmiddle: upperback
+trapslower: upperback
+rhomboids: upperback
+erectors: lowerback
+bicepsbrachii: biceps
+brachialis: biceps
+brachioradialis: forearms
+forearmflexors: forearms
+forearmextensors: forearms
+tricepslong: triceps
+tricepslateral: triceps
+rectusabdominis: abdominals
+obliques: abdominals
+transverseabdominis: abdominals
+iliopsoas: other
+glutemax: glutes
+glutemed: abductors
+adductors: adductors
+rectusfemoris: quadriceps
+vasti: quadriceps
+hamstrings: hamstrings
+gastrocnemius: calves
+soleus: calves
+tibialis: calves
+neck: neck

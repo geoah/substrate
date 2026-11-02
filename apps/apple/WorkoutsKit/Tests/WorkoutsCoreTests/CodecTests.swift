@@ -92,6 +92,7 @@ private func normalizedValue(_ value: JSONValue, _ property: PropertySchema) -> 
 
 private func roundTrip(_ codec: RecordCodec, _ record: FlatRecord) throws -> (FlatRecord, [String: JSONValue]) {
     switch try codec.decode(record) {
+    case let .movement(value): (codec.encode(value), value.extra)
     case let .exercise(value): (codec.encode(value), value.extra)
     case let .routine(value): (codec.encode(value), value.extra)
     case let .session(value): (codec.encode(value), value.extra)
@@ -177,6 +178,7 @@ struct CodecExampleTests {
         for original in try ExampleFixtures.allRecords() {
             let decoded = try codec.decode(original)
             switch decoded {
+            case let .movement(value): #expect(try decoder.decode(Movement.self, from: encoder.encode(value)) == value)
             case let .exercise(value): #expect(try decoder.decode(Exercise.self, from: encoder.encode(value)) == value)
             case let .routine(value): #expect(try decoder.decode(Routine.self, from: encoder.encode(value)) == value)
             case let .session(value): #expect(try decoder.decode(TrainingSession.self, from: encoder.encode(value)) == value)
@@ -244,7 +246,7 @@ struct CodecDriftTests {
             Issue.record("kinds.json has no kinds")
             return
         }
-        #expect(kindsJSON.count == 5)
+        #expect(kindsJSON.count == 6)
         for entry in kindsJSON {
             let object = try #require(entry.objectValue)
             let kind = try #require(object["kind"]?.stringValue)
