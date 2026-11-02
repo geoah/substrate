@@ -21,6 +21,7 @@ The decisions that shape the server, rather than this app, are decision records 
 - [The build spec's own decisions](#the-build-specs-own-decisions)
 - [Moving into substrate](#moving-into-substrate)
 - [After the reviews of #1100](#after-the-reviews-of-1100)
+- [The sample routine (owner)](#the-sample-routine-owner)
 - [Open questions](#open-questions)
 
 ## What the app is for (owner)
@@ -490,6 +491,44 @@ Two more, from the owner's first sessions with #1110's build, besides closing O1
 - **A `rirstop` set pre-fills its planned reps.** The open Push Up showed "–" while its line
   showed "≈8 reps". The open set now pre-fills the planned value as every other set does, as a
   suggestion rather than as typed, and Log commits it unless the owner types the reps done.
+
+## The sample routine (owner)
+
+### S1. One sample routine that shows every feature, written once, and deletable
+
+- **Decided by** the owner, 2026-11-02; the details by the lead.
+- **What:** the app carries one routine, "Sample: every feature", and the nine exercises it
+  names, in place of the owner's four full-body routines and thirty exercises. Each of its
+  exercises shows one idea and says so in its note: a warm-up at a percentage of body weight,
+  top and back-off sets, rep and RPE ranges at a tempo, a set's own rest, a drop set, a
+  superset with no rest inside it and a rest after each round, an assisted and a bodyweight
+  exercise, an RIR stop, an AMRAP, myo-reps and a myo-rep match, one side at a time, a
+  cluster, rest-pause and to-failure sets, and a circuit with a timed hold on a countdown and
+  on a stopwatch and a carried distance. Signed out it is the whole catalogue. Signed in, the
+  first sync on a repository with no routine writes it and its exercises, and records that it
+  did in `sample.json` in that server and repository's folder, so it happens once. A
+  repository that already has routines gets no sample, and that is recorded too. **Add the
+  Starter Routines** is gone: an empty repository says routines come from the agent, and
+  offers **Add the sample routine** only once the sample was written there and deleted.
+- **Delete:** any routine on the signed-in substrate can be deleted, from a swipe or the menu
+  in Routines or from Delete on its preview, after a confirmation. The routine leaves the
+  cached catalogue at once and is purged on the server through the outbox (`DELETE
+  ?purge=true`, so the sample added back starts a fresh record); a sync before the delete
+  lands leaves it out. The exercises it named stay, since past sessions name them. The model
+  forbids none of this: a routine is nothing's `mustExist` target, so sessions that ran it
+  keep its id. Signed out there is nothing to delete the sample from, so it cannot be.
+- **Left out of the sample, and why:** a triset, giant set or paired sets (the superset and
+  the circuit show grouping; paired sets differ only in their default rests); a percentage of
+  a one-rep max, an e1RM or a training max (the app keeps none, so only `bodymass` resolves to
+  a load); a deload routine and an Apple Health activity type (they change how sessions are
+  counted and saved, not how one is trained). `docs/examples/coverage.yaml` holds each.
+- **Why:** the owner's words: "Only include one sample workout routine with examples for all
+  features when the user installs the app, allow the user to delete it." The four routines
+  were the owner's own folder, which nobody else trains from and which the owner's agent
+  now writes.
+- **Where:** [`examples/sample.yaml`](examples/sample.yaml), the source of the bundled JSON;
+  the owner's routines, exercises and sessions stay in `docs/examples/` as test vectors only,
+  since the engine's tests replay the owner's sessions on them.
 
 ## Open questions
 

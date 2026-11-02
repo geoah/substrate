@@ -1,11 +1,20 @@
-"""Turn Substrate Workouts' package manifests into the JSON the app bundles.
+"""Turn Substrate Workouts' YAML into the JSON the app and its tests read.
 
-The manifests in apps/apple/SubstrateWorkouts/Package/ are the source: YAML
-in `substratectl apply -f` form, the training kinds under the authority `~`
-(decision record 0203). The app applies them as the documents of one
-`POST /api/v1/vocabulary/apply`, so it bundles them as JSON, and its codec
-drift test reads each kind's property names from kinds.json. This script
-writes both:
+Two sources, both YAML in `substratectl apply -f` form under the authority
+`~` (decision record 0203):
+
+- The package's manifests in apps/apple/SubstrateWorkouts/Package/. The app
+  applies them as the documents of one `POST /api/v1/vocabulary/apply`, so it
+  bundles them as JSON, and its codec drift test reads each kind's property
+  names from kinds.json.
+- The example records in apps/apple/SubstrateWorkouts/docs/examples/.
+  sample.yaml is the sample routine and its exercises, the app's bundled
+  catalogue (Resources/Bundled); the other four files are the test vectors
+  (Tests/WorkoutsCoreTests/Fixtures/examples). Each record becomes the flat
+  shape substrate's REST API speaks, `{"kind", "id", "properties"}`. An
+  exercise id in more than one file must be the same record in each.
+
+This script writes all of them:
 
     uv run --with pyyaml apps/apple/scripts/workouts-package.py           # rewrite
     uv run --with pyyaml apps/apple/scripts/workouts-package.py --check   # exit 1 and name each stale file
@@ -30,6 +39,12 @@ FILES = ("training", "exercise", "setup", "routine", "session", "set")
 KINDS = ("exercise", "routine", "session", "set", "setup")
 RESOURCE = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/training.json"
 FIXTURE = APPLE / "WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/kinds.json"
+EXAMPLES = APPLE / "SubstrateWorkouts/docs/examples"
+SAMPLE = "sample"
+BUNDLED = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled"
+# The test vectors: the owner's Hevy history and the methods it leaves out.
+VECTORS = ("exercises", "routines", "sessions", "coverage")
+VECTOR_FIXTURES = APPLE / "WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/examples"
 
 # The keys of a kind's property that kinds.json keeps. Descriptions, labels
 # and bounds are the server's business, not the codec's.
@@ -103,6 +118,48 @@ def kinds() -> dict:
     return {"source": "apps/apple/SubstrateWorkouts/Package", "kinds": out}
 
 
+def example_records(name: str) -> list[dict]:
+    path = EXAMPLES / f"{name}.yaml"
+    with open(path, encoding="utf-8") as handle:
+        docs = [doc for doc in yaml.load_all(handle, Loader=Loader) if doc is not None]
+    out = []
+    for doc in docs:
+        try:
+            out.append({"kind": doc["kind"], "id": doc["metadata"]["id"], "properties": doc["data"]["properties"]})
+        except (KeyError, TypeError) as error:
+            raise GenerateError(f"{path.name}: a record without {error}") from error
+    return out
+
+
+def record_file(name: str, records: list[dict]) -> dict:
+    return {"source": f"apps/apple/SubstrateWorkouts/docs/examples/{name}.yaml", "records": records}
+
+
+def examples() -> dict[Path, dict]:
+    files = {name: example_records(name) for name in (SAMPLE, *VECTORS)}
+    seen: dict[tuple[str, str], tuple[str, dict]] = {}
+    for name, records in files.items():
+        for record in records:
+            if not record["kind"].endswith("/exercise"):
+                continue
+            key = (record["kind"], record["id"])
+            if key in seen and seen[key][1] != record["properties"]:
+                raise GenerateError(f"{name}.yaml: exercise {record['id']} differs from {seen[key][0]}.yaml's")
+            seen.setdefault(key, (name, record["properties"]))
+    sample = files[SAMPLE]
+    exercises = [record for record in sample if record["kind"].endswith("/exercise")]
+    routines = [record for record in sample if record["kind"].endswith("/routine")]
+    if len(exercises) + len(routines) != len(sample):
+        raise GenerateError(f"{SAMPLE}.yaml: only exercises and routines are bundled")
+    out = {
+        BUNDLED / "exercises.json": record_file(SAMPLE, exercises),
+        BUNDLED / "routines.json": record_file(SAMPLE, routines),
+    }
+    for name in VECTORS:
+        out[VECTOR_FIXTURES / f"{name}.json"] = record_file(name, files[name])
+    return out
+
+
 def render(value: dict) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
 
@@ -113,6 +170,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         files = {RESOURCE: render(package()), FIXTURE: render(kinds())}
+        files.update({path: render(value) for path, value in examples().items()})
     except (GenerateError, OSError, yaml.YAMLError) as error:
         print(f"workouts-package.py: {error}", file=sys.stderr)
         return 2

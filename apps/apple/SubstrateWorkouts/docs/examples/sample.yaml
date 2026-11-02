@@ -1,0 +1,500 @@
+# The sample routine Substrate Workouts carries, and the nine exercises it
+# names (decision S1 in ../decisions.md, the owner, 2026-11-02): "Only include
+# one sample workout routine with examples for all features when the user
+# installs the app, allow the user to delete it."
+#
+# This file is the source of the app's bundled catalogue.
+# apps/apple/scripts/workouts-package.py writes it to
+# WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/exercises.json and
+# routines.json, and `mise run apple:test:workouts` fails while they differ.
+# The app shows these records signed out, and writes them into a repository
+# with no routines the first time it signs in there.
+#
+# ONE EXERCISE PER IDEA. Each slot's `notes` says what it shows, so the
+# routine explains itself in the app. What each part shows:
+#   leg-press      a warm-up at a percentage of body weight, a top set and a
+#                  back-off set 10 % lighter; its own warm-up and set rests
+#   chest-press    straight sets with a rep range and an RPE range at a
+#                  tempo; one set's own rest; a drop set with two drops
+#   pull-up, push  a superset: no rest inside it, 1 min 30 s after each
+#                  round; an assisted exercise (in pounds) and a bodyweight
+#                  one; a stop at two to three reps in reserve; an AMRAP
+#   lateral-raise  myo-reps, then a myo-rep match
+#   split-squat    one side at a time: the side order, a pause to switch,
+#                  and the second side matching the first
+#   pushdown       a cluster set, a rest-pause set and a set to failure
+#   plank, carry   a circuit of two rounds: a timed hold on a countdown,
+#                  then on a stopwatch; a load carried over a distance
+#
+# LEFT OUT, with the reason: a triset, giant set or paired sets (the superset
+# and the circuit show grouping; a paired group differs only in its default
+# rests); a percentage of a one-rep max, an e1RM or a training max (V1 keeps
+# none of them, so only `bodymass` resolves to a load, Rows.resolvedLoad);
+# a deload routine and an Apple Health activity type (they change how the
+# sessions are counted and saved, not how one is trained). coverage.yaml has
+# each of them.
+#
+# THE EXERCISES are the test vectors' records, value for value
+# (exercises.yaml and coverage.yaml), so an id means one exercise everywhere
+# in this repository. The loads are a light starting point; the suggestions
+# take over from the first session.
+kind: ~/training/exercise
+metadata:
+  id: leg-press-machine
+data:
+  properties:
+    name: Leg Press (Machine)
+    measurement: weightreps
+    equipment: machine
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [quadriceps]
+    secondaryMuscles: [glutes, hamstrings]
+    restClass: compound
+    loadStep:
+      value: "5"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Leg_Press
+        display: Leg Press
+      - system: healthconnect
+        code: EXERCISE_SEGMENT_TYPE_LEG_PRESS
+---
+kind: ~/training/exercise
+metadata:
+  id: chest-press-machine
+data:
+  properties:
+    name: Chest Press (Machine)
+    measurement: weightreps
+    equipment: machine
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [chest]
+    secondaryMuscles: [shoulders, triceps]
+    restClass: compound
+    loadStep:
+      value: "5"
+      unit: kg
+---
+# A pin-loaded assistance stack in 10 lb steps: a pound exercise in a
+# kilogram gym. The assistance counts down from the whole body.
+kind: ~/training/exercise
+metadata:
+  id: assisted-pull-up-machine
+data:
+  properties:
+    name: Assisted Pull Up (Machine)
+    measurement: bodyweightassistedreps
+    equipment: machine
+    laterality: bilateral
+    primaryMuscles: [lats]
+    secondaryMuscles: [biceps, upperback]
+    restClass: compound
+    loadStep:
+      value: "10"
+      unit: lb
+    loadMax:
+      value: "150"
+      unit: lb
+---
+# Bodyweight: the effective load is bodyShare times the session's body mass.
+kind: ~/training/exercise
+metadata:
+  id: push-up
+data:
+  properties:
+    name: Push Up
+    aliases: [Push-up, Press-up]
+    measurement: bodyweightreps
+    equipment: none
+    laterality: bilateral
+    primaryMuscles: [chest]
+    secondaryMuscles: [shoulders, triceps]
+    restClass: compound
+    bodyShare: "0.65"
+    codes:
+      - system: free-exercise-db
+        code: Pushups
+        display: Pushups
+---
+kind: ~/training/exercise
+metadata:
+  id: lateral-raise-dumbbell
+data:
+  properties:
+    name: Lateral Raise (Dumbbell)
+    measurement: weightreps
+    equipment: dumbbell
+    laterality: bilateral
+    loadBasis: perimplement
+    implements: 2
+    primaryMuscles: [shoulders]
+    restClass: isolation
+    loadStep:
+      value: "2"
+      unit: kg
+    myoStopRule: repdrop
+    codes:
+      - system: free-exercise-db
+        code: Side_Lateral_Raise
+        display: Side Lateral Raise
+      - system: healthconnect
+        code: EXERCISE_SEGMENT_TYPE_DUMBBELL_LATERAL_RAISE
+---
+kind: ~/training/exercise
+metadata:
+  id: bulgarian-split-squat-dumbbell
+data:
+  properties:
+    name: Bulgarian Split Squat (Dumbbell)
+    aliases: [BSS, Rear-foot-elevated split squat]
+    measurement: weightreps
+    equipment: dumbbell
+    laterality: unilateral
+    loadBasis: perimplement
+    implements: 2
+    primaryMuscles: [quadriceps]
+    secondaryMuscles: [glutes, hamstrings]
+    restClass: compound
+    loadStep:
+      value: "2"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Split_Squat_with_Dumbbells
+        display: Split Squat with Dumbbells
+---
+kind: ~/training/exercise
+metadata:
+  id: triceps-pushdown
+data:
+  properties:
+    name: Triceps Pushdown
+    measurement: weightreps
+    equipment: cable
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [triceps]
+    restClass: isolation
+    loadStep:
+      value: "2.5"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Triceps_Pushdown
+        display: Triceps Pushdown
+---
+kind: ~/training/exercise
+metadata:
+  id: plank
+data:
+  properties:
+    name: Plank
+    measurement: duration
+    equipment: none
+    laterality: bilateral
+    primaryMuscles: [abdominals]
+    restClass: timed
+    codes:
+      - system: free-exercise-db
+        code: Plank
+        display: Plank
+      - system: healthconnect
+        code: EXERCISE_SEGMENT_TYPE_PLANK
+---
+# A load and a distance: one dumbbell in each hand, logged per dumbbell.
+kind: ~/training/exercise
+metadata:
+  id: farmers-carry-dumbbell
+data:
+  properties:
+    name: Farmer's Carry (Dumbbell)
+    aliases: [Farmer's walk]
+    measurement: shortdistanceweight
+    equipment: dumbbell
+    laterality: bilateral
+    loadBasis: perimplement
+    implements: 2
+    primaryMuscles: [forearms]
+    secondaryMuscles: [traps, abdominals]
+    restClass: carry
+    loadStep:
+      value: "2"
+      unit: kg
+    codes:
+      - system: fit
+        code: carry/farmers_walk
+---
+# ---- the routine -------------------------------------------------------------
+# Nine exercises and 23 planned sets: about 45 minutes as a light full-body
+# day. The id is fixed, so the app knows its own sample from a routine the
+# agent wrote.
+kind: ~/training/routine
+metadata:
+  id: sample-every-feature
+data:
+  properties:
+    name: "Sample: every feature"
+    folder: Sample
+    position: 1
+    notes: >-
+      A tour of what a routine can hold, one idea per exercise; each exercise's
+      note says what it shows. Train it as a light full-body day. Your agent
+      writes your own routines. When you no longer need this one, delete it:
+      swipe it in Routines, or Delete on this screen. The exercises it added
+      stay, since your sessions name them.
+    groups:
+      - key: a
+        groupKind: superset
+        roundRest: PT1M30S
+      - key: b
+        groupKind: circuit
+        rounds: 2
+        roundRest: PT1M
+    slots:
+      - key: leg-press
+        exercise: ~/training/exercise/leg-press-machine
+        setRest: PT2M30S
+        warmupRest: PT1M
+        notes: >-
+          A warm-up (W) at 50 % of your body weight from Apple Health, a top
+          set and a back-off set 10 % lighter. The warm-up rests 1 min and
+          the working sets 2 min 30 s, this slot's own rests.
+        sets:
+          - key: w1
+            role: warmup
+            loadPercent: "50"
+            loadReference: bodymass
+            repsMin: 12
+            repsMax: 12
+          - key: s1
+            roleLabel: top
+            load:
+              value: "80"
+              unit: kg
+            repsMin: 6
+            repsMax: 6
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            roleLabel: backoff
+            dropPercent: "10"
+            repsMin: 8
+            repsMax: 10
+            rpeMin: "7"
+            rpeMax: "8"
+      - key: chest-press
+        exercise: ~/training/exercise/chest-press-machine
+        setRest: PT2M
+        notes: >-
+          Straight sets of 8 to 12 at RPE 7 to 8, lowered over three seconds
+          (tempo 3-0-1-0). Set 2 rests 3 min, a rest of its own. Set 3 is
+          a drop set: two drops, each 20 % lighter, to failure.
+        sets:
+          - key: s1
+            load:
+              value: "30"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "8"
+            tempo: 3-0-1-0
+          - key: s2
+            load:
+              value: "30"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "8"
+            tempo: 3-0-1-0
+            rest: PT3M
+          - key: s3
+            structure: drop
+            load:
+              value: "30"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "9"
+            rpeMax: "10"
+            drops: 2
+            dropPercent: "20"
+      - key: pull-up
+        exercise: ~/training/exercise/assisted-pull-up-machine
+        group: a
+        transition: PT0S
+        notes: >-
+          A1 of a superset: go straight to A2 with no rest, and rest 1 min
+          30 s after each round. Assisted: the machine takes 60 lb off, and
+          less assistance is harder.
+        sets:
+          - key: s1
+            assistance:
+              value: "60"
+              unit: lb
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            assistance:
+              value: "60"
+              unit: lb
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            assistance:
+              value: "60"
+              unit: lb
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: push-up
+        exercise: ~/training/exercise/push-up
+        group: a
+        notes: >-
+          A2, your body weight: stop with two to three reps in reserve, and
+          do the last round as many reps as possible (AMRAP).
+        sets:
+          - key: s1
+            termination: rirstop
+            rirMin: "2"
+            rirMax: "3"
+          - key: s2
+            termination: rirstop
+            rirMin: "2"
+            rirMax: "3"
+          - key: s3
+            termination: amrap
+      - key: lateral-raise
+        exercise: ~/training/exercise/lateral-raise-dumbbell
+        setRest: PT1M30S
+        notes: >-
+          Myo-reps: 12 to 15, then mini-sets of 4 with 15 s between them until
+          one loses a rep. Set 2 is a myo-rep match: set 1's total reps, in
+          as few mini-sets as it takes.
+        sets:
+          - key: s1
+            structure: myo
+            load:
+              value: "6"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "9"
+            rpeMax: "9"
+            miniSetReps: 4
+            intraSetPause: PT15S
+          - key: s2
+            structure: myomatch
+            load:
+              value: "6"
+              unit: kg
+            miniSetReps: 4
+            intraSetPause: PT15S
+      - key: split-squat
+        exercise: ~/training/exercise/bulgarian-split-squat-dumbbell
+        setRest: PT2M
+        sideOrder: left
+        sideSwitch: PT15S
+        sideMatch: true
+        notes: >-
+          One side at a time: left first, 15 s to switch, and the right side
+          aims for the reps the left side did. The load is per dumbbell.
+        sets:
+          - key: s1
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 8
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 8
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: pushdown
+        exercise: ~/training/exercise/triceps-pushdown
+        setRest: PT1M30S
+        notes: >-
+          Past a straight set, three ways: a cluster set (4 reps, 15 s, three
+          more clusters, two reps in reserve), a rest-pause set (near failure,
+          20 s, two more bouts) and a last set to failure.
+        sets:
+          - key: s1
+            structure: cluster
+            load:
+              value: "20"
+              unit: kg
+            miniSetReps: 4
+            miniSets: 3
+            rirMin: "2"
+            rirMax: "2"
+            intraSetPause: PT15S
+          - key: s2
+            structure: restpause
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 10
+            repsMax: 12
+            rpeMin: "9.5"
+            rpeMax: "9.5"
+            miniSets: 2
+            intraSetPause: PT20S
+          - key: s3
+            termination: failure
+            load:
+              value: "17.5"
+              unit: kg
+            repsMin: 8
+      - key: plank
+        exercise: ~/training/exercise/plank
+        group: b
+        transition: PT15S
+        notes: >-
+          B1 of a circuit of two rounds, a timed hold: round 1 counts down
+          from 45 s to 1 min, round 2 runs a stopwatch for as long as you
+          hold. 15 s to the carry, 1 min after each round.
+        sets:
+          - key: s1
+            durationMin: PT45S
+            durationMax: PT1M
+          - key: s2
+            durationMin: PT45S
+            timerMode: stopwatch
+      - key: carry
+        exercise: ~/training/exercise/farmers-carry-dumbbell
+        group: b
+        notes: >-
+          B2: a load and a distance, 40 m with a dumbbell in each hand. The
+          load is per dumbbell.
+        sets:
+          - key: s1
+            termination: distance
+            load:
+              value: "16"
+              unit: kg
+            distance:
+              value: "40"
+              unit: m
+          - key: s2
+            termination: distance
+            load:
+              value: "16"
+              unit: kg
+            distance:
+              value: "40"
+              unit: m

@@ -15,7 +15,11 @@ public struct RoutineListPresentation: Equatable, Sendable {
     public var isEmpty: Bool { sections.isEmpty }
 
     public static let emptyText =
-        "No routines yet. Routines are written in the substrate console; this build bundles the owner's folder."
+        "No routines yet. Your agent writes them in the substrate console; sign in to train from them."
+    /// A repository with no routines (decision S1): no starter set to copy,
+    /// only the sample once the owner deleted it.
+    public static let serverEmptyText =
+        "Routines come from your agent: ask it for one in the substrate console, and it shows up here."
     public static let otherRoutines = "Other routines"
 }
 
@@ -79,7 +83,8 @@ public struct RoutinePreviewPresentation: Equatable, Sendable, Identifiable {
 /// A plain slot, or a group with its bracket and header.
 public struct RoutinePreviewBlock: Equatable, Sendable, Identifiable {
     public var id: String
-    /// `Superset A, rest 1:00 after each round`; nil for a plain slot.
+    /// `Superset A, rest 1:00 after each round`, with `2 rounds, ` before the
+    /// rest when the group names its rounds; nil for a plain slot.
     public var header: String?
     /// The group's colour, as in the session (`GroupHeader.paletteSize`).
     public var colorIndex: Int?
@@ -179,9 +184,10 @@ public enum RoutinePresenter {
             let rest = group.roundRest ?? RestDefaults.roundRest(
                 kind: group.groupKind, memberRestClasses: members.map { catalog.exercises[$0.exercise]?.restClass })
             let restText = rest > 0 ? "rest \(Format.duration(rest)) after each round" : "no rest between rounds"
+            let roundsText = group.rounds.map { "\(Format.count($0, "round")), " } ?? ""
             blocks.append(RoutinePreviewBlock(
                 id: "group-\(key)",
-                header: "\(group.groupKind.label) \(key.uppercased()), \(restText)",
+                header: "\(group.groupKind.label) \(key.uppercased()), \(roundsText)\(restText)",
                 colorIndex: colors % GroupHeader.paletteSize,
                 slots: members.enumerated().map { index, member in
                     previewSlot(member, routine: routine, catalog: catalog,
@@ -210,7 +216,10 @@ public enum RoutinePresenter {
         let warmups = slot.sets.filter { $0.role == .warmup }
         let working = slot.sets.filter { $0.role == .working }
         for planned in warmups {
-            let text = plannedText(planned, measurement: measurement)
+            var text = plannedText(planned, measurement: measurement)
+            if planned.load == nil, let percent = percentText(planned) {
+                text = text.isEmpty ? percent : text.hasPrefix("\u{00D7}") ? "\(percent) \(text)" : "\(text), \(percent)"
+            }
             lines.append(text.isEmpty ? "Warm-up" : "Warm-up: \(text)")
         }
         // Working sets in runs of the same plan; structures are named after.
@@ -230,8 +239,12 @@ public enum RoutinePresenter {
         }
         if let rest = slot.setRest { lines.append("Rest \(Format.rest(rest))") }
         if let rest = slot.warmupRest { lines.append("Warm-up rest \(Format.rest(rest))") }
+        if let order = slot.sideOrder { lines.append(sideOrderText(order)) }
         if let rest = slot.sideSwitch { lines.append("Switch sides \(Format.rest(rest))") }
-        if let nextLabel, let rest = slot.transition { lines.append("Then \(Format.duration(rest)) to \(nextLabel)") }
+        if slot.sideMatch == true { lines.append("The second side matches the first side\u{2019}s reps") }
+        if let nextLabel, let rest = slot.transition {
+            lines.append(rest == 0 ? "Then straight to \(nextLabel)" : "Then \(Format.duration(rest)) to \(nextLabel)")
+        }
         for (index, planned) in warmups.enumerated() {
             guard let rest = planned.rest else { continue }
             lines.append("Rest after \(warmups.count > 1 ? "warm-up \(index + 1)" : "the warm-up"): \(Format.rest(rest))")
@@ -301,10 +314,23 @@ public enum RoutinePresenter {
         }
         if let load {
             text += ", from \(load)"
-        } else if let percent = planned.loadPercent {
-            text += ", from \(Format.number(percent))% of \(planned.loadReference.map(Format.loadReference) ?? "the reference")"
+        } else if let percent = percentText(planned) {
+            text += ", from \(percent)"
         }
         return text
+    }
+
+    /// A percentage load in words: `50% of body mass`.
+    static func percentText(_ planned: PlannedSet) -> String? {
+        planned.loadPercent.map { "\(Format.number($0))% of \(planned.loadReference.map(Format.loadReference) ?? "the reference")" }
+    }
+
+    static func sideOrderText(_ order: SideOrder) -> String {
+        switch order {
+        case .left: "Left side first"
+        case .right: "Right side first"
+        case .weakerfirst: "Weaker side first"
+        }
     }
 
     /// A working set's method in words: `Set 2 is a drop set: 1 drop`.

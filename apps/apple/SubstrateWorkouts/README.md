@@ -39,14 +39,17 @@ uv run --with pyyaml apps/apple/scripts/workouts-package.py   # the package's ma
 | `SubstrateWorkouts/Sources/` | the app: `App/` (the session controller, the model, `SubstrateLink`), `Platform/` (notifications, the Live Activity, HealthKit, haptics), `Shared/` (compiled into the widget too), `Views/` |
 | `SubstrateWorkouts/Package/` | the training package's manifests and their long form |
 | `SubstrateWorkoutsWidgets/` | the Live Activity extension |
-| `WorkoutsKit/Sources/WorkoutsCore` | Foundation only: the model and its record codec, the session engine, the rest rules, the suggestion engine, the presenters, the files on the phone, the starter routines and the package's manifests |
+| `WorkoutsKit/Sources/WorkoutsCore` | Foundation only: the model and its record codec, the session engine, the rest rules, the suggestion engine, the presenters, the files on the phone, the sample routine and the package's manifests |
 | `WorkoutsKit/Sources/WorkoutsSync` | the app's side of a substrate, over SubstrateKit's client: the package installer, the catalogue, the outbox, the server's history, the manifest |
 
 ## Signing in and sync
 
-Without a server the app runs on the four routines and thirty exercises it
-carries and keeps every session on the phone, so it can be tried before
-anyone signs in.
+Without a server the app runs on the one routine it carries, "Sample: every
+feature", and keeps every session on the phone, so it can be tried before
+anyone signs in. The sample shows each method the app runs, one exercise per
+idea, each with a note saying what it shows
+([`docs/examples/sample.yaml`](docs/examples/sample.yaml), decision
+[S1](docs/decisions.md#s1-one-sample-routine-that-shows-every-feature-written-once-and-deletable)).
 
 **Signing in** is the substrate's app authorization, through SubstrateKit
 under `WorkoutsManifest`: the connect screen probes the address, the system
@@ -116,10 +119,23 @@ server's edge, both ways, and nowhere else.
 
 **Routines** come from the server once the package is in place, and are
 cached for the gym (`catalog.json` in the repository's folder under
-Application Support). A repository without any shows **Add the Starter
-Routines**, which writes the carried exercises, then the routines that name
-them; like every write, only into a package checked at this build's version,
-and the button says why when it is not.
+Application Support). The first sync on a repository with no routine at all
+writes the sample routine, its exercises first, and records that it did in
+`sample.json` in the repository's folder; a repository that already has
+routines gets no sample, and that is recorded too. Either way it happens once
+per server and repository, so a deleted sample never comes back. An empty
+repository says routines come from the agent, and offers **Add the sample
+routine** only when the sample was written there and then deleted; like every
+write, only into a package checked at this build's version, and the button
+says why when it is not.
+
+**A routine can be deleted** from the app: a swipe or the menu in Routines,
+or Delete on its preview, after a confirmation, for any routine on the
+signed-in substrate. It leaves the cached catalogue at once and is purged on
+the server through the outbox (`DELETE ?purge=true`); a sync before the
+delete lands leaves it out. The exercises it named stay, since past sessions
+name them. Signed out there is nothing to delete the sample from, so the
+app offers no delete there.
 
 **Each sign-in is one account**: its own folder, outbox, catalogue and
 package check. Signing out or signing in elsewhere replaces it, and a sync
@@ -175,9 +191,12 @@ works as it always did.
 
 ## Tests
 
-`mise run apple:test:workouts` runs both suites on the Mac: WorkoutsCore's
-356 (the codec, the engine, the suggestions against their vectors, the
-presenters, the stores) and WorkoutsSync's 41: the codec against answers
+`mise run apple:test:workouts` checks the generated JSON against its YAML,
+then runs both suites on the Mac: WorkoutsCore's 392 (the codec, the engine,
+the suggestions against their vectors, the presenters, the stores, the sample
+routine's methods and a session through it to Finish) and WorkoutsSync's 51:
+the sample written once and never after a delete, a routine's delete through
+the outbox, the empty Routines screen's offer, the codec against answers
 recorded from a server built from this tree (`Tests/WorkoutsSyncTests/Fixtures`),
 the outbox's order and its answers to `409`, `422`, `401` and the network, a
 delete, a discard, a reset and a new write while a write is in flight, a
@@ -189,8 +208,9 @@ and status.
 `LiveServerTests` runs the whole path against a real substrate when told
 where: the authorization request, approved through the approval API (which
 installs health), the package declared and upgraded, the owner's edit to
-it refused, the package taken over and the app's apply stopped, the starter
-routines copied, a
+it refused, the package taken over and the app's apply stopped, the sample
+routine written on the first run, deleted through the outbox and not written
+again, a
 finished session and its 20 sets written through the outbox, and all of it
 read back as the owner.
 

@@ -1135,7 +1135,7 @@ the files differ, the files win:
 
 - **The routine and the 30 October session** keep the screenshots' Hevy
   values (exact rep targets, a 1 min 2 s plank).
-  the starter routines (`Resources/Bundled/routines.json`) prescribes for the folder's
+  The owner's routines (`docs/examples/routines.yaml`) prescribe for the folder's
   purpose instead: a 10 to 15 range at RPE 9.5 on the chest press, a 45 s
   to 1 min 30 s plank, and a 1 min round rest on the superset. Do not apply
   this routine over the file's: a PUT replaces `slots` whole, so the file's

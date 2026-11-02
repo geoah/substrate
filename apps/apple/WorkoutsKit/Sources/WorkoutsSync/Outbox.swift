@@ -7,7 +7,8 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
     public enum Method: String, Codable, Sendable {
         case put = "PUT"
         case patch = "PATCH"
-        /// `DELETE ?purge=true`: a discarded or deleted session.
+        /// `DELETE ?purge=true`: a discarded or deleted session, or a
+        /// deleted routine.
         case purge = "DELETE"
     }
 
@@ -125,6 +126,13 @@ public enum OutboxPlan {
 
     public static func deleted(_ session: SessionID, codec: RecordCodec) -> OutboxEntry {
         OutboxEntry(method: .purge, kind: codec.kinds.session, recordID: session.rawValue, guarded: true, session: session.rawValue)
+    }
+
+    /// A routine deleted on the phone. Purged, so the same id written again
+    /// (the sample added back) starts a fresh record. Unguarded: the delete
+    /// is the owner's, whatever the agent wrote since.
+    public static func routineDeleted(_ routine: RoutineID, codec: RecordCodec) -> OutboxEntry {
+        OutboxEntry(method: .purge, kind: codec.kinds.routine, recordID: routine.rawValue)
     }
 
     /// The sets in their order, each chain member after the set it continues.
@@ -281,6 +289,31 @@ public actor Outbox {
         try change { file in
             file.entries.removeAll { $0.session == session.rawValue }
             file.entries.append(OutboxPlan.deleted(session, codec: codec))
+        }
+    }
+
+    /// The records whose delete waits, as `kind/id`, outside any session:
+    /// what a catalogue read leaves out until the delete lands.
+    public var waitingDeletes: Set<String> {
+        Set(file.entries.filter { $0.method == .purge && $0.session == nil }.map(\.key))
+    }
+
+    /// A routine deleted on the phone: any write of it still waiting dropped
+    /// and its purge queued, in one save.
+    public func delete(routine: RoutineID, codec: RecordCodec) throws {
+        let entry = OutboxPlan.routineDeleted(routine, codec: codec)
+        try change { file in
+            file.entries.removeAll { $0.session == nil && $0.key == entry.key }
+            file.entries.append(entry)
+        }
+    }
+
+    /// Takes back a routine's delete that has not gone yet: the sample added
+    /// back before its delete reached the server.
+    public func withdrawDelete(routine: RoutineID, codec: RecordCodec) throws {
+        let key = OutboxPlan.routineDeleted(routine, codec: codec).key
+        try change { file in
+            file.entries.removeAll { $0.method == .purge && $0.session == nil && $0.key == key && $0.id != inFlight?.id }
         }
     }
 

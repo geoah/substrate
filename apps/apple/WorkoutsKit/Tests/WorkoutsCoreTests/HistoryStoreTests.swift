@@ -301,21 +301,21 @@ struct LocalExercisesTests {
 
 @Suite("Bundled catalogue")
 struct BundledCatalogTests {
-    @Test("the bundle holds the owner's 30 exercises and 4 routines, all readable")
+    @Test("the bundle is the sample routine and the nine exercises it names, all readable")
     func bundled() throws {
         let catalog = try BundledCatalog().loadNow()
-        #expect(catalog.exercises.count == 30)
-        #expect(catalog.routines.count == 4)
+        #expect(catalog.routines.keys.map(\.rawValue) == [SampleRoutine.id.rawValue])
+        #expect(catalog.routines[SampleRoutine.id]?.name == "Sample: every feature")
+        #expect(catalog.exercises.count == 9)
         #expect(catalog.unreadable.isEmpty)
         #expect(catalog.exercises.values.allSatisfy { !$0.isLocal })
-        #expect(catalog.routines["fully-body-collection-1"]?.name == "Fully Body Collection #1")
-        // Every routine slot names a bundled exercise.
-        for routine in catalog.routines.values {
-            for slot in routine.slots {
-                #expect(catalog.exercises[slot.exercise] != nil, "\(routine.id) \(slot.key)")
-            }
-        }
-        // The test-only coverage exercises never ship.
+        // Every slot names a bundled exercise, and every bundled exercise is
+        // one the sample names.
+        let named = Set(try #require(catalog.routines[SampleRoutine.id]).slots.map(\.exercise))
+        #expect(named == Set(catalog.exercises.keys))
+        // The owner's routines and the test-only coverage routine never ship.
+        #expect(catalog.routines["fully-body-collection-1"] == nil)
+        #expect(catalog.routines["coverage-every-method"] == nil)
         #expect(catalog.exercises["rowing-machine"] == nil)
     }
 
@@ -329,7 +329,7 @@ struct BundledCatalogTests {
         try catalogSource.addLocalExercise(added)
         var iterator = updates.makeAsyncIterator()
         let update = try #require(await iterator.next())
-        #expect(update.exercises.count == 31)
+        #expect(update.exercises.count == 10)
         #expect(update.exercises["sled-push"]?.isLocal == true)
         let loaded = try await catalogSource.load()
         #expect(loaded.exercises["sled-push"]?.name == "Sled Push")
