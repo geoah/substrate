@@ -493,15 +493,28 @@ func (ds *dataset) buckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggB
 	case bucketCalendar:
 		var out []*aggBucket
 		first := calStart(p.from, s)
-		for start := p.readFrom; start.Before(first); start = calNext(start, s) {
-			out = append(out, &aggBucket{start: start.UTC(), end: calNext(start, s).UTC(), zone: s.loc, lookback: true})
+		for start := p.readFrom; start.Before(first); {
+			if len(out) >= p.lookback {
+				return nil, fmt.Errorf("substrate/engine: the lookback from %s to %s holds more than %d %s buckets", p.readFrom.Format(time.RFC3339), first.Format(time.RFC3339), p.lookback, s.calendar)
+			}
+			end, err := nextBucket(ctx, start, s)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, &aggBucket{start: start.UTC(), end: end.UTC(), zone: s.loc, lookback: true})
+			start = end
 		}
 		looked := len(out)
-		for start := first; start.Before(p.to); start = calNext(start, s) {
+		for start := first; start.Before(p.to); {
 			if len(out)-looked >= limit {
 				return nil, tooMany(len(out) - looked + 1)
 			}
-			out = append(out, clipBucket(start, calNext(start, s), p, s.loc))
+			end, err := nextBucket(ctx, start, s)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, clipBucket(start, end, p, s.loc))
+			start = end
 		}
 		return out, nil
 	case bucketLocal:
@@ -510,12 +523,24 @@ func (ds *dataset) buckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggB
 		from, to := wallOf(p.from, offsetMinutes(p.from)), wallOf(p.to, offsetMinutes(p.to))
 		first := calStart(from, s)
 		var out []*aggBucket
-		for start := calStart(wallOf(p.readFrom, offsetMinutes(p.from)), s); start.Before(first); start = calNext(start, s) {
-			out = append(out, &aggBucket{start: start, end: calNext(start, s), local: true, zone: time.UTC, lookback: true})
+		for start := calStart(wallOf(p.readFrom, offsetMinutes(p.from)), s); start.Before(first); {
+			if len(out) >= p.lookback {
+				return nil, fmt.Errorf("substrate/engine: the lookback from %s to %s holds more than %d %s buckets", p.readFrom.Format(time.RFC3339), first.Format(time.RFC3339), p.lookback, s.calendar)
+			}
+			end, err := nextBucket(ctx, start, s)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, &aggBucket{start: start, end: end, local: true, zone: time.UTC, lookback: true})
+			start = end
 		}
 		n := 0
-		for start := first; start.Before(to); start = calNext(start, s) {
-			b := &aggBucket{start: start, end: calNext(start, s), local: true, zone: time.UTC, outside: s.dates.excludes(start)}
+		for start := first; start.Before(to); {
+			end, err := nextBucket(ctx, start, s)
+			if err != nil {
+				return nil, err
+			}
+			b := &aggBucket{start: start, end: end, local: true, zone: time.UTC, outside: s.dates.excludes(start)}
 			if b.answers() {
 				if n >= limit {
 					return nil, tooMany(n + 1)
@@ -523,6 +548,7 @@ func (ds *dataset) buckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggB
 				n++
 			}
 			out = append(out, b)
+			start = end
 		}
 		return out, nil
 	case bucketRecords:
@@ -613,12 +639,12 @@ func calStart(t time.Time, s bucketSpec) time.Time {
 		// east of UTC, which lies after a t in the first.
 		return t.Add(-(time.Duration(w.Minute())*time.Minute + time.Duration(w.Second())*time.Second + time.Duration(w.Nanosecond())))
 	case "day":
-		start = time.Date(w.Year(), w.Month(), w.Day(), 0, 0, 0, 0, s.loc)
+		start = calMidnight(w.Year(), w.Month(), w.Day(), s.loc)
 	case "week":
 		back := (int(w.Weekday()) - int(s.weekStart) + 7) % 7
-		start = time.Date(w.Year(), w.Month(), w.Day()-back, 0, 0, 0, 0, s.loc)
+		start = calMidnight(w.Year(), w.Month(), w.Day()-back, s.loc)
 	case "month":
-		start = time.Date(w.Year(), w.Month(), 1, 0, 0, 0, 0, s.loc)
+		start = calMidnight(w.Year(), w.Month(), 1, s.loc)
 	}
 	if start.After(t) {
 		start = calPrev(start, s)
@@ -633,12 +659,43 @@ func calStep(start time.Time, s bucketSpec, n int) time.Time {
 	b := start.In(s.loc)
 	switch s.calendar {
 	case "day":
-		return time.Date(b.Year(), b.Month(), b.Day()+n, 0, 0, 0, 0, s.loc)
+		return calMidnight(b.Year(), b.Month(), b.Day()+n, s.loc)
 	case "week":
-		return time.Date(b.Year(), b.Month(), b.Day()+7*n, 0, 0, 0, 0, s.loc)
+		return calMidnight(b.Year(), b.Month(), b.Day()+7*n, s.loc)
 	default:
-		return time.Date(b.Year(), b.Month()+time.Month(n), 1, 0, 0, 0, 0, s.loc)
+		return calMidnight(b.Year(), b.Month()+time.Month(n), 1, s.loc)
 	}
+}
+
+// calMidnight is the first instant of a local date. Where the clocks skip
+// the date's midnight, time.Date resolves it into the day before west of
+// UTC, and a day step from there names the same missing midnight again and
+// never advances; the date's first instant is then the transition, where
+// the zone in effect at that resolved instant ends.
+func calMidnight(year int, month time.Month, day int, loc *time.Location) time.Time {
+	t := time.Date(year, month, day, 0, 0, 0, 0, loc)
+	want := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	got := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	if got.Before(want) {
+		if _, end := t.ZoneBounds(); !end.IsZero() {
+			return end
+		}
+	}
+	return t
+}
+
+// nextBucket is the start of the calendar bucket after start. It refuses a
+// read whose context has ended, and a step that does not advance, which
+// would enumerate the same bucket until the process runs out of memory.
+func nextBucket(ctx context.Context, start time.Time, s bucketSpec) (time.Time, error) {
+	if err := ctx.Err(); err != nil {
+		return time.Time{}, err
+	}
+	next := calNext(start, s)
+	if !next.After(start) {
+		return time.Time{}, fmt.Errorf("substrate/engine: the %s bucket at %s does not advance in %s", s.calendar, start.Format(time.RFC3339), s.loc)
+	}
+	return next, nil
 }
 
 func calNext(start time.Time, s bucketSpec) time.Time { return calStep(start, s, 1) }

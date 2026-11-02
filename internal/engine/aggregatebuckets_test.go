@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"math/bits"
 	"math/rand/v2"
 	"slices"
@@ -251,5 +252,145 @@ func TestAggregateUTCBucketsPlaceAPointInLogSteps(t *testing.T) {
 	}
 	if limit := n * (bits.Len(uint(n)) + 1); int(r.steps) > limit {
 		t.Errorf("%d steps placing %d points among %d buckets, want at most %d", r.steps, n, n, limit)
+	}
+}
+
+// midnightSkips are zones whose clocks jump from 00:00 to 01:00, so the
+// transition day has no midnight: three west of UTC, where Go's time.Date
+// resolves the missing midnight backward into the day before, and Cairo,
+// east of UTC, where it resolves forward. day is the date without a midnight.
+var midnightSkips = []struct {
+	zone, before, day, after string
+}{
+	{"America/Santiago", "2026-09-05T00:00:00-04:00", "2026-09-06", "2026-09-07T00:00:00-03:00"},
+	{"America/Havana", "2026-03-07T00:00:00-05:00", "2026-03-08", "2026-03-09T00:00:00-04:00"},
+	{"Atlantic/Azores", "2026-03-28T00:00:00-01:00", "2026-03-29", "2026-03-30T00:00:00+00:00"},
+	{"Africa/Cairo", "2026-04-23T00:00:00+02:00", "2026-04-24", "2026-04-25T00:00:00+03:00"},
+}
+
+// firstInstantOf fails unless t is the first instant of the local date day:
+// on that date, with the nanosecond before it on the date before.
+func firstInstantOf(t *testing.T, label string, at time.Time, loc *time.Location, day string) {
+	t.Helper()
+	if got := at.In(loc).Format(time.DateOnly); got != day {
+		t.Errorf("%s: starts at %s, on %s, want the first instant of %s", label, at.In(loc).Format(time.RFC3339), got, day)
+	}
+	if prev := at.Add(-time.Nanosecond).In(loc).Format(time.DateOnly); prev == day {
+		t.Errorf("%s: starts at %s, after the first instant of %s", label, at.In(loc).Format(time.RFC3339), day)
+	}
+}
+
+// A calendar day or week starting on a date with no midnight starts at that
+// date's first instant, the transition, and the buckets around it partition
+// the range.
+func TestAggregateDSTMidnightCalendarBuckets(t *testing.T) {
+	for _, x := range midnightSkips {
+		loc, err := time.LoadLocation(x.zone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		label := x.zone + " day"
+		p, bs := planBuckets(t, x.before, x.after, substrate.AggregateBucket{Calendar: "day", Timezone: x.zone})
+		partitions(t, label, p, bs)
+		if len(bs) != 2 {
+			t.Fatalf("%s: %d buckets, want 2", label, len(bs))
+		}
+		firstInstantOf(t, label, bs[1].start, loc, x.day)
+		if got := calStart(bs[1].start.Add(90*time.Minute), p.bucket); !got.Equal(bs[1].start) {
+			t.Errorf("%s: calStart inside %s is %s, want %s", label, x.day, got.In(loc).Format(time.RFC3339), bs[1].start.In(loc).Format(time.RFC3339))
+		}
+
+		day, err := time.Parse(time.DateOnly, x.day)
+		if err != nil {
+			t.Fatal(err)
+		}
+		weekday := strings.ToLower(day.Weekday().String())
+		from, _ := time.Parse(time.RFC3339, x.before)
+		to, _ := time.Parse(time.RFC3339, x.after)
+		label = x.zone + " week from " + weekday
+		p, bs = planBuckets(t, from.AddDate(0, 0, -6).Format(time.RFC3339), to.AddDate(0, 0, 6).Format(time.RFC3339),
+			substrate.AggregateBucket{Calendar: "week", Timezone: x.zone, WeekStart: weekday})
+		partitions(t, label, p, bs)
+		if len(bs) != 2 {
+			t.Fatalf("%s: %d buckets, want 2", label, len(bs))
+		}
+		firstInstantOf(t, label, bs[1].start, loc, x.day)
+	}
+}
+
+// A rolling window whose lookback crosses a date with no midnight reads one
+// bucket per lookback step and ends; it used to step from the missing
+// midnight back onto itself forever.
+func TestAggregateDSTMidnightRollingLookback(t *testing.T) {
+	for _, x := range midnightSkips {
+		loc, err := time.LoadLocation(x.zone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		from, _ := time.Parse(time.RFC3339, x.after)
+		p, err := planAggregate(substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: "a.example.com/observations/metric/m"},
+			Range:    &substrate.AggregateRange{Gte: x.after, Lt: from.AddDate(0, 0, 1).Format(time.RFC3339)},
+			Bucket:   &substrate.AggregateBucket{Calendar: "day", Timezone: x.zone},
+			Reducers: []substrate.AggregateReducer{{Name: substrate.ReducerAvg}},
+			Rolling:  &substrate.AggregateRolling{Buckets: 3, Reducers: []substrate.AggregateReducer{{Name: substrate.ReducerAvg}}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		type result struct {
+			bs  []*aggBucket
+			err error
+		}
+		done := make(chan result, 1)
+		go func() {
+			bs, err := (&dataset{}).buckets(ctx, nil, p)
+			done <- result{bs, err}
+		}()
+		var r result
+		select {
+		case r = <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: the bucket enumeration did not return in 5 s under a 2 s deadline", x.zone)
+		}
+		cancel()
+		if r.err != nil {
+			t.Fatalf("%s: %v", x.zone, r.err)
+		}
+		if len(r.bs) != 3 || !r.bs[0].lookback || !r.bs[1].lookback || r.bs[2].lookback {
+			t.Fatalf("%s: %d buckets, want two lookback buckets and one of the range", x.zone, len(r.bs))
+		}
+		firstInstantOf(t, x.zone+" lookback", r.bs[1].start, loc, x.day)
+		for i := range 2 {
+			if !r.bs[i].end.Equal(r.bs[i+1].start) {
+				t.Errorf("%s: bucket %d ends at %s, the next starts at %s", x.zone, i, r.bs[i].end, r.bs[i+1].start)
+			}
+		}
+	}
+}
+
+// Every calendar enumeration stops when the read's context has ended,
+// lookback included.
+func TestAggregateDSTMidnightEnumerationStopsOnContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, bucket := range []substrate.AggregateBucket{
+		{Calendar: "day", Timezone: "Europe/Athens"},
+		{Calendar: "day"},
+	} {
+		p, err := planAggregate(substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: "a.example.com/observations/metric/m"},
+			Range:    &substrate.AggregateRange{Gte: "2026-09-07T00:00:00-03:00", Lt: "2026-09-08T00:00:00-03:00"},
+			Bucket:   &bucket,
+			Reducers: []substrate.AggregateReducer{{Name: substrate.ReducerAvg}},
+			Rolling:  &substrate.AggregateRolling{Buckets: 3, Reducers: []substrate.AggregateReducer{{Name: substrate.ReducerAvg}}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := (&dataset{}).buckets(ctx, nil, p); !errors.Is(err, context.Canceled) {
+			t.Errorf("timezone %q: the enumeration returned %v under an ended context, want context.Canceled", bucket.Timezone, err)
+		}
 	}
 }
