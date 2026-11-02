@@ -229,7 +229,9 @@ func checkRecorded(migrations []migration, applied map[int]recorded) error {
 			`so a newer binary migrated this database. Nothing is applied or served, because every later boot step `+
 			`writes to a schema this binary does not know. The recorded name is the migration file's name, and the `+
 			`tree's history says which release added it: run that release or a later one, or, to run this binary, `+
-			`restore the database from the copy taken before that release ran. What the database recorded:`+"\n%s",
+			`restore the database and the data root (SUBSTRATE_DATA_ROOT) together from the copies taken before that `+
+			`release ran, under the same credential key. A database restored alone meets the newer release's repository `+
+			`directories at the next boot. What the database recorded:`+"\n%s",
 			ErrDatabaseNewer, len(newer), highest, strings.Join(newer, "\n")))
 	}
 	if len(drift) > 0 {

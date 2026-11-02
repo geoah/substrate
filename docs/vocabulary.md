@@ -348,8 +348,9 @@ against the old shape. The contract has two halves.
 
 **A per-repository vocabulary dialect.** Each repository carries a monotonic
 vocabulary-dialect integer naming the shape its stored declaration rows are
-in. It is 1 today, the shape this release writes, and a fresh repository is
-stamped at the binary's maximum at its first open. A binary whose maximum
+in. It is 2 today. A repository is stamped at the binary's maximum when it
+is created, and one stamped lower is raised to it at its first open. A binary
+whose maximum
 supported dialect is below a repository's stored dialect refuses to open that
 repository with a named error ("the store speaks a newer schema dialect than
 this binary"), rather than opening it and misreading rows written by a newer
@@ -360,9 +361,16 @@ on an operator. A repository's stored dialect is internal to its own store and
 never appears on the wire, and [API discovery](api.md#discovery) does not
 report the binary's maximum either. The next number is spent when a release
 changes what a stored declaration row holds, together with the step that
-rewrites the rows and stamps the new number in the same transaction. A change
-to what a row's values may SAY, with the row's shape as it was, is not a
-dialect: it is a
+rewrites the rows and stamps the new number in the same transaction.
+Dialect 2 changes no row's shape: it marks this release's seeded `core`
+closure (`oneOf` reference properties, the `quantity` type), which the
+v0.113.0 loader refuses. v0.113.0 reads the manifest's dialect only when it
+imports a directory its database has no repository row for, so the stamp
+refuses that case by name. A database restored with the repository row still
+in it imports the directory without reading the manifest, which is why a
+rollback restores the database and the data root together. A change to what
+a row's values may SAY, with the row's shape as it was, is not a dialect: it
+is a
 [repository migration](operations.md#upgrading-the-binary), code that runs
 once per repository at its first open and rewrites the rows through the
 changelog. The first one wrote the full identity into every stored bare name

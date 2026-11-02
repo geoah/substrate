@@ -9,9 +9,15 @@ package engine
 // repository: Authenticate passes it through un-wrapped (it is not an auth
 // failure) and the API maps it to `503` with Retry-After.
 //
-// There is no ladder and nothing to promote: dialect 1 is the shape this
-// binary writes and the only shape any store holds, because no store predates
-// this binary. A NEW DIALECT ADDS A PROMOTION STEP BACK, and the shape such a
+// There is no ladder and nothing to promote: a dialect-1 row is a dialect-2
+// row. Dialect 2 marks this release's seeded closure (`oneOf` reference
+// properties, the `quantity` type), which the v0.113.0 loader refuses. That
+// binary reads the manifest's dialect only when it imports a directory its
+// database has no repository row for, so the stamp refuses that import by
+// name and nothing else; a database restored with the row still in it imports
+// without reading the manifest, and the restore-together text in the
+// ErrDatabaseNewer refusal covers that case. A dialect that DOES change a
+// row's shape adds a promotion step back, and the shape such a
 // step needs is the one this file's stamp already has: content-gated,
 // idempotent, and stamping inside the transaction that does the rewrite where
 // the two must be indivisible.
@@ -29,10 +35,10 @@ import (
 // deploy a substrate whose maximum dialect covers the store.
 var ErrVocabularyDialectNewer = errors.New("substrate/engine: the store speaks a newer schema dialect than this binary")
 
-// maxVocabularyDialect is the newest dialect this binary speaks. A fresh
-// repository is stamped here at its first open; a repository stored above it
-// refuses to open.
-const maxVocabularyDialect = 1
+// maxVocabularyDialect is the newest dialect this binary speaks. A repository
+// is stamped here by its creation, one stored lower is raised here at its
+// first open, and one stored above it refuses to open.
+const maxVocabularyDialect = 2
 
 // MaxSchemaDialect is the newest dialect this binary speaks. No dialect is on
 // the wire: it is exported for the tests outside this package that assert what

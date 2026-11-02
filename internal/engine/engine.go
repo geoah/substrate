@@ -1510,6 +1510,12 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		if err := t.seedShippedSchema(s.base); err != nil {
 			return err
 		}
+		// Stamped with the closure it describes, because the manifest the
+		// creation writes next is read from this table, and a repository that
+		// is never opened must still say which dialect its rows need.
+		if _, err := t.tx.ExecContext(t.ctx, vocabularyDialectStamp, maxVocabularyDialect); err != nil {
+			return fmt.Errorf("substrate/engine: stamp vocabulary dialect %d: %w", maxVocabularyDialect, err)
+		}
 		// The shipped units, onto the kinds the seed just declared. A fresh
 		// repository holds nothing they could contradict.
 		if _, _, err := t.seedUnits(); err != nil {

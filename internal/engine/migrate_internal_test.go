@@ -83,6 +83,24 @@ func TestCheckRecordedRefusesAVersionTheBinaryLacks(t *testing.T) {
 	}
 }
 
+// The way back the refusal names is the database AND the data root, under the
+// same credential key: a database restored alone meets the newer release's
+// repository directories at the next boot, and an older binary either refuses
+// them or imports their rows into the restored copy.
+func TestDatabaseNewerRefusalNamesTheDataRootAndTheKey(t *testing.T) {
+	t.Parallel()
+	err := checkRecorded([]migration{{Version: 1, Name: "0001_init", SHA256: "aaa"}},
+		rows(map[int]string{1: "aaa", 2: "bbb"}))
+	if !errors.Is(err, ErrDatabaseNewer) {
+		t.Fatalf("the refusal is not ErrDatabaseNewer: %v", err)
+	}
+	for _, want := range []string{"restore the database and the data root (SUBSTRATE_DATA_ROOT) together", "same credential key"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the error does not say %q: %v", want, err)
+		}
+	}
+}
+
 // The runner applies in order, so a pending migration BELOW one the database
 // already recorded would land on a schema its successors already changed.
 // Pending migrations above the highest recorded one are the ordinary upgrade.
