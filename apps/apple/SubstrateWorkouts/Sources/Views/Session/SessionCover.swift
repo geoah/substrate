@@ -248,7 +248,7 @@ struct SessionCover: View {
                 finish: beginFinish,
                 addExercise: { cover.sheet = .addExercise(after: nil) }
             )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 12)
             .padding(.bottom, 6)
         } else if layout == .table, let bar = session.presentation?.restBar, bar.isCounting {
             restBar(bar) { path = NavigationPath() }

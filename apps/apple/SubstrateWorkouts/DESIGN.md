@@ -2195,7 +2195,7 @@ nearby steps of the exercise's grid as six chips, 44 pt tall (a tap sets the val
 distances, delete, Cancel, and "Set 120 kg". The field shows what is typed in a box with a caret; a time is typed as
 digits ("107" is 1:07). On a fix it changes the draft.
 
-**The island** (`rowsLayout.island`) replaces the Table's rest bar: one rounded glass shape (corner radius 28), 16 pt
+**The island** (`rowsLayout.island`) replaces the Table's rest bar: one rounded glass shape (corner radius 28), 12 pt
 from the screen's edges, stacking up to three parts with hairlines between them, each drawn only when it applies
 (`RowsIsland.parts(editorInView:)`):
 
@@ -2210,10 +2210,13 @@ from the screen's edges, stacking up to three parts with hairlines between them,
    and then what it logs; play or stop for a timed set, whose clock leads the values): on one row where they fit;
    where they do not, the values take the first row and the RPE the second, with Log at its right edge; with larger
    text each value takes a line of its own, still with its steppers, and on the narrowest line the number shrinks
-   between them. The steppers never give way to the RPE (owner, 2026-11-02). Measured at the default size, two
-   values with their steppers, the RPE and Log need about 385 pt and the island holds 346 pt on a 402 pt phone and
-   384 pt on a 440 pt one, so a load-and-reps set takes two rows on every phone today, and a set with one value
-   (reps alone, a hold) takes one. A tap on the RPE opens the panel's stops in the island, under the values: a stop
+   between them. The steppers never give way to the RPE (owner, 2026-11-02). The single row is packed: 4 pt gaps,
+   Log right-aligned without a spacer, Log exactly 44 pt, the RPE chip 6 pt either side of its text (44 pt at least),
+   no padding beside the number between its steppers, and the part 12 and 10 pt inside an island 12 pt from the
+   screen's edges. Measured at the default size, "60 kg", "8 reps", "@ 8" and Log need 364 pt; the island holds
+   394 pt on a 440 pt phone and 384 pt on a 430 pt one, so a load-and-reps set takes one row on Plus and Pro Max
+   phones (30 and 20 pt to spare, room for a three-digit load or a half-point RPE), and two on a 402 pt phone (356
+   pt) and narrower. A set with one value (reps alone, a hold) takes one row everywhere. A tap on the RPE opens the panel's stops in the island, under the values: a stop
    rates and closes them, `½` keeps them open. The RPE shows as the panel shows it, so a warm-up's or a timed set's
    stays out until opened there. A group's warm-up reads "Warm-up", never a round. Spacing is 6 pt. At the
    accessibility sizes it docks only the name row and Log, or the clock and stop: a tap on the name brings the full

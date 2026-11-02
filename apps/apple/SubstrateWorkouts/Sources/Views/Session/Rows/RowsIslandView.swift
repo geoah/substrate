@@ -261,11 +261,15 @@ struct RowsNextPartView: View {
                 }
             } else {
                 ViewThatFits(in: .horizontal) {
-                    // Wide: the values, the RPE and Log on one row.
-                    HStack(spacing: 6) {
-                        valuesRow
-                        rpeButton
-                        Spacer(minLength: 0)
+                    // Wide: the values, the RPE and Log on one row, packed
+                    // (4 pt gaps, Log right-aligned without a spacer's two
+                    // gaps) so a load and reps fit Plus and Pro Max phones.
+                    HStack(spacing: 4) {
+                        HStack(spacing: 4) {
+                            valuesRow
+                            rpeButton
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         primary
                     }
                     // Narrow: the values, then the RPE with Log at the right edge.
@@ -287,7 +291,7 @@ struct RowsNextPartView: View {
                 }
             }
         }
-        .padding(.leading, 14)
+        .padding(.leading, 12)
         .padding(.trailing, 10)
         .padding(.top, 2)
         .padding(.bottom, 10)
@@ -415,7 +419,7 @@ struct RowsNextPartView: View {
                     .foregroundStyle(next.rpe == nil ? Color.secondary : tint)
                     .lineLimit(1)
                     .fixedSize()
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 6)
                     .frame(minWidth: 44, minHeight: 44)
                     .background(tint.opacity(strip.isRated || open ? 0.13 : 0), in: .capsule)
                     .overlay {
@@ -489,7 +493,8 @@ struct RowsNextPartView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(fitsWidth ? 0.5 : 1)
                 .fixedSize(horizontal: !fitsWidth, vertical: false)
-                .padding(.horizontal, steppers ? 2 : 10)
+                // Between steppers the 44 pt step targets give the number its air.
+                .padding(.horizontal, steppers ? 0 : 10)
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(.rect)
             }
@@ -531,9 +536,10 @@ struct RowsNextPartView: View {
         } label: {
             Image(systemName: next.primary.action.symbol)
                 .font(.body.weight(.bold))
-                .frame(minWidth: 20, minHeight: 20)
+                .frame(width: 20, height: 20)
         }
-        .buttonStyle(RowsFilledButtonStyle(fill: RowsStyle.buttonFill(next.tint), minHeight: 44, horizontalPadding: 13))
+        // Exactly 44 pt wide: 20 for the glyph, 12 either side.
+        .buttonStyle(RowsFilledButtonStyle(fill: RowsStyle.buttonFill(next.tint), minHeight: 44, horizontalPadding: 12))
         .frame(minWidth: 44, minHeight: 44)
         .disabled(!next.primary.isEnabled)
         // "Log", then what it logs: `105 kg × 10 @ 8`.

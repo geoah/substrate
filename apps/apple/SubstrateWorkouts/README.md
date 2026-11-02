@@ -220,9 +220,10 @@ measured alone, so a visible Stop above Cancel docks nothing).
 | ![Done set menu](docs/screenshots/session-after-done-menu.jpg) | ![Island RPE](docs/screenshots/session-after-island-rpe.jpg) | ![Fix](docs/screenshots/session-after-fix.jpg) | ![Then](docs/screenshots/session-after-then.jpg) |
 
 The docked set keeps its − and + beside the RPE (owner, 2026-11-02): the
-values, the RPE and Log share one row where they fit (one value, or a timed
-set, on the iPhone 17); a load and reps take two rows, the RPE and Log under
-the values; larger text puts each value on a line of its own, steppers kept.
+values, the RPE and Log share one row where they fit: a load and reps on Plus
+and Pro Max phones, one value or a timed set on every phone. On a 402 pt phone
+and narrower a load and reps take two rows, the RPE and Log under the values;
+larger text puts each value on a line of its own, steppers kept.
 
 | Two values: two rows | One value: one row | Timed set | Larger text |
 | --- | --- | --- | --- |

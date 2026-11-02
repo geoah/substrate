@@ -131,7 +131,7 @@ struct RowsSessionView: View {
             } else {
                 if let undo = screen.undo {
                     RowsUndoToast(undo: undo) { screen.undoLast(session: session) }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 12)
                 }
                 RowsIslandView(
                     island: layout.island,
@@ -142,7 +142,9 @@ struct RowsSessionView: View {
                     finish: finish,
                     addExercise: { cover.sheet = .addExercise(after: nil) }
                 )
-                .padding(.horizontal, 16)
+                // 12 pt from the screen's edges: on a Plus or Pro Max phone the
+                // docked set's values, RPE and Log then share one row.
+                .padding(.horizontal, 12)
             }
         }
         .padding(.bottom, 6)
