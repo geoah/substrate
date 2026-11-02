@@ -556,6 +556,61 @@ Two more, from the owner's first sessions with #1110's build, besides closing O1
   and sessions stay in `docs/examples/` as test vectors only, since the engine's tests replay
   the owner's sessions on them.
 
+## Editing routines (owner)
+
+### E1. Routines are edited on the phone: Save and Cancel, a draft on disk, a conflict is the owner's
+
+- **Decided by** the owner's request of 2026-11-02 ("rename it, change the order, these kind
+  of things"); the details by the lead.
+- **What:** a routine on the signed-in substrate has **Edit** on its preview, and **Duplicate**
+  and **Delete** in its menu. The editor renames it and changes its folder and notes; drags
+  exercises and groups, and a group's members inside it; groups an exercise with the next one
+  (two plain exercises make a superset, an exercise joins the group beside it, a group takes
+  in the next) and takes one out (a group left with one member is no group); adds exercises
+  from the library or a new one, removes them, replaces one; adds, removes and reorders planned
+  sets; and sets per set the role, top or back-off, AMRAP or failure on a straight set, the rep
+  or time range, an RPE or RIR range and the rest after it, per exercise the rests and notes,
+  and per group its kind, pairing, rounds and round rest. New keys are never ones the routine
+  held when the edit began, since performed sets and session slots name them.
+- **Save and Cancel, not autosave:** an edit is often several steps (out of one group, into
+  another, then its sets), and autosave would send each half-done step to the server, where
+  the coach reads it and each write moves the version another device edits against. One Save
+  is one write. The draft is written to `routine-draft.json` in the server and repository's
+  folder on every change, so an app killed mid-edit offers **Resume** on the preview and at the
+  top of Routines; Cancel drops it.
+- **The write:** a `PATCH` of the top-level properties whose encoding changed (`slots` and
+  `groups` whole and always together, since slots name groups; `null` for a cleared one) with
+  `ifVersion` the version the owner edited, moved along the app's own guarded writes of the
+  routine since (the outbox keeps, per routine, the version each of its edits asserted and the
+  one it made). Another writer's change, and a Keep My Edit sent without a version, break that
+  chain, so a later edit made on the older routine meets a conflict instead of writing over it.
+  Nothing the edit did not change is sent. A duplicate is a `PUT` of the whole routine at a slug
+  of its name with `ifVersion: 0`, so a routine saved at that id meanwhile is refused and
+  parked, never merged into. Edits made offline wait in the outbox and go as one write under the
+  first one's version, but never join a parked write; the cached catalogue shows them at once,
+  and a catalogue read lays waiting writes (asked before and after the read) over the server's
+  routines until they land.
+- **A conflict is the owner's choice, never a merge:** a `409` parks the edit (`conflict`) with
+  no re-read. The preview says the routine changed on the server since the edit began (the
+  coach or another device) and offers **Keep My Edit** (sent again without `ifVersion`: what
+  the edit changed replaces the server's, what it did not change stays as the other writer
+  left it) or **Use Theirs** (the edit is dropped). While the conflict waits, the routine is
+  read again and shows as the server holds it, and Edit and Save are off until the owner
+  chooses.
+- **Nothing it does not show is lost (A2):** the editor changes typed fields only, so every
+  field the app does not know (the coach's, a later package's, the owner's at any level) is
+  written back as read. `RoutineEditTests` reads `floor-first-full-body` (the owner's words
+  replaced, since this repository is public) and `sample-every-feature` as geoah.me answered,
+  writes unknown fields at every level, edits, encodes and diffs: only the edited field moves.
+  `WORKOUTS_REAL_ROUTINES` runs it on the real records.
+- **Sessions:** a session copies its routine at Start (the journal keeps it), so an edit never
+  changes one already running.
+- **Signed out:** the sample the app carries cannot be edited or duplicated, and its preview
+  says to sign in for that.
+- **Not yet:** a set's structure (drop, myo, rest-pause, cluster) and its parameters, loads and
+  percentages, tempo, side settings, deload and the Health activity type, and the routine's
+  place in its folder; each is kept as it is.
+
 ## Open questions
 
 ### Open since #1100

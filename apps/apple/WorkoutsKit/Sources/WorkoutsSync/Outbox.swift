@@ -30,9 +30,17 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
     /// again, so it is not sent until the owner retries it, and the rest of
     /// its session waits behind it. The owner may discard it instead.
     public var parked = false
+    /// An edit the owner made on what they saw at this version (a routine
+    /// edit): sent with it as `ifVersion`, or with the version the app's
+    /// own last write of the record answered when that is newer. A `409`
+    /// is never merged over: the entry is parked as a `conflict` for the
+    /// owner to choose.
+    public var baseVersion: Int?
+    /// Parked because the record changed on the server since `baseVersion`.
+    public var conflict = false
 
     public init(method: Method, kind: String, recordID: String, properties: JSONObject? = nil, guarded: Bool = false,
-                session: String? = nil)
+                session: String? = nil, baseVersion: Int? = nil)
     {
         id = UUID()
         self.method = method
@@ -41,12 +49,13 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
         self.properties = properties
         self.guarded = guarded
         self.session = session
+        self.baseVersion = baseVersion
     }
 
     var key: String { "\(kind)/\(recordID)" }
 
     enum CodingKeys: String, CodingKey {
-        case id, method, kind, recordID, properties, guarded, session, attempts, lastError, parked
+        case id, method, kind, recordID, properties, guarded, session, attempts, lastError, parked, baseVersion, conflict
     }
 
     public init(from decoder: any Decoder) throws {
@@ -62,6 +71,8 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
         lastError = try c.decodeIfPresent(String.self, forKey: .lastError)
         // A file from before parking held every refusal and retried it.
         parked = try c.decodeIfPresent(Bool.self, forKey: .parked) ?? (lastError != nil)
+        baseVersion = try c.decodeIfPresent(Int.self, forKey: .baseVersion)
+        conflict = try c.decodeIfPresent(Bool.self, forKey: .conflict) ?? false
     }
 }
 
@@ -135,6 +146,23 @@ public enum OutboxPlan {
         OutboxEntry(method: .purge, kind: codec.kinds.routine, recordID: routine.rawValue)
     }
 
+    /// A routine edited on the phone: the top-level properties the edit
+    /// changed (`RoutineEditor.patch`), as a PATCH under the version the
+    /// owner edited.
+    public static func routineEdited(_ routine: RoutineID, patch: JSONObject, baseVersion: Int?, codec: RecordCodec) -> OutboxEntry {
+        OutboxEntry(method: .patch, kind: codec.kinds.routine, recordID: routine.rawValue, properties: patch, guarded: true,
+                    baseVersion: baseVersion ?? 0)
+    }
+
+    /// A new routine (a duplicate), written whole at an id nothing holds:
+    /// `ifVersion: 0`, so a routine another writer made at the same id since
+    /// is refused, never merged into.
+    public static func routineCreated(_ routine: Routine, codec: RecordCodec) -> OutboxEntry {
+        let record = codec.encode(routine)
+        return OutboxEntry(method: .put, kind: record.kind, recordID: record.id, properties: record.properties, guarded: true,
+                           baseVersion: 0)
+    }
+
     /// The exercises the outbox must write before `uploads`: every one an
     /// upload names (a slot or a set) that the repository lacks, from
     /// `known` (the phone's exercises, then the ones this build carries), in
@@ -201,6 +229,7 @@ public enum OutboxState: Sendable, Hashable {
 /// The outbox could not keep a change on disk: nothing was queued.
 public struct OutboxNotSaved: LocalizedError, Sendable {
     public let reason: String
+    public init(reason: String) { self.reason = reason }
     public var errorDescription: String? { "The change could not be kept on this iPhone: \(reason)" }
 }
 
@@ -221,6 +250,35 @@ public actor Outbox {
         var entries: [OutboxEntry] = []
         /// The version each record was last written or read at.
         var versions: [String: Int] = [:]
+        /// The app's own guarded edits that landed, per record: the version
+        /// each one asserted and the version it made. An edit made on a
+        /// version the app itself then moved is sent at the end of that
+        /// chain; anything another writer did breaks it, so the edit meets
+        /// a conflict instead of writing over it.
+        var chains: [String: [String: Int]] = [:]
+
+        init() {}
+
+        enum CodingKeys: String, CodingKey { case format, entries, versions, chains }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            format = try c.decodeIfPresent(Int.self, forKey: .format) ?? 1
+            entries = try c.decodeIfPresent([OutboxEntry].self, forKey: .entries) ?? []
+            versions = try c.decodeIfPresent([String: Int].self, forKey: .versions) ?? [:]
+            chains = try c.decodeIfPresent([String: [String: Int]].self, forKey: .chains) ?? [:]
+        }
+
+        /// The version an edit made on `base` asserts: `base`, moved along
+        /// the app's own writes since.
+        func asserted(_ key: String, from base: Int) -> Int {
+            var version = base
+            var seen = Set<Int>()
+            while let next = chains[key]?[String(version)], seen.insert(version).inserted {
+                version = next
+            }
+            return version
+        }
     }
 
     public static let fileName = "outbox.json"
@@ -349,6 +407,74 @@ public actor Outbox {
         }
     }
 
+    /// A routine edit, kept on disk before it returns. The last write of
+    /// the same routine, when it is a guarded edit or create still waiting
+    /// (not on the wire, not parked), takes this one on top, so edits made
+    /// offline go as one write under the first one's version and a
+    /// duplicate not sent yet takes the edit into its body. Anything else (a
+    /// parked conflict or refusal, a Keep My Edit going without a version)
+    /// is left alone, and the edit queues behind it under its own version.
+    public func edit(routine: RoutineID, patch: JSONObject, baseVersion: Int?, codec: RecordCodec) throws {
+        let entry = OutboxPlan.routineEdited(routine, patch: patch, baseVersion: baseVersion, codec: codec)
+        guard !patch.isEmpty else { return }
+        try change { file in
+            if let index = file.entries.lastIndex(where: { $0.session == nil && $0.key == entry.key }),
+               file.entries[index].id != inFlight?.id, !file.entries[index].parked,
+               file.entries[index].baseVersion != nil, file.entries[index].method != .purge
+            {
+                var merged = file.entries[index].properties ?? JSONObject()
+                for (key, value) in patch {
+                    if file.entries[index].method == .put, value == .null { merged[key] = nil } else { merged[key] = value }
+                }
+                file.entries[index].properties = merged
+                return
+            }
+            file.entries.append(entry)
+        }
+    }
+
+    /// The routines whose writes wait, as the properties they will set,
+    /// merged in queue order (`null` clears), and whether the write creates
+    /// the routine: what a catalogue read lays over the server's answer
+    /// until they land.
+    public func waitingRoutines(codec: RecordCodec) -> [String: (creates: Bool, properties: JSONObject)] {
+        var out: [String: (creates: Bool, properties: JSONObject)] = [:]
+        // A parked write is not laid over: during a conflict the routine
+        // shows as the server holds it, which is what Use Theirs keeps.
+        for entry in file.entries where entry.session == nil && entry.kind == codec.kinds.routine && !entry.parked {
+            switch entry.method {
+            case .purge:
+                out[entry.recordID] = nil
+            case .put, .patch:
+                var current = out[entry.recordID] ?? (creates: entry.method == .put, properties: JSONObject())
+                for (key, value) in entry.properties ?? JSONObject() {
+                    current.properties[key] = value
+                }
+                out[entry.recordID] = current
+            }
+        }
+        return out
+    }
+
+    /// The owner's answer to a conflicting edit: `keepMine` sends it again
+    /// without a version, so the properties it changed replace the
+    /// server's and the rest stay as the other writer left them; otherwise
+    /// it is dropped and the server's routine stands.
+    public func resolve(_ id: UUID, keepMine: Bool) throws {
+        try change { file in
+            guard let index = file.entries.firstIndex(where: { $0.id == id }) else { return }
+            if keepMine {
+                file.entries[index].baseVersion = nil
+                file.entries[index].guarded = false
+                file.entries[index].conflict = false
+                file.entries[index].parked = false
+                file.entries[index].lastError = nil
+            } else {
+                file.entries.remove(at: index)
+            }
+        }
+    }
+
     /// Sends a parked write again at the next flush.
     public func retry(_ id: UUID) throws {
         try change { file in
@@ -409,7 +535,13 @@ public actor Outbox {
                 commit { file in
                     if entry.method == .purge {
                         file.versions[entry.key] = nil
+                        file.chains[entry.key] = nil
                     } else if let version {
+                        if let base = entry.baseVersion {
+                            // A create asserted 0 itself; an edit, the end of the chain.
+                            let asserted = entry.method == .put ? base : file.asserted(entry.key, from: base)
+                            file.chains[entry.key, default: [:]][String(asserted)] = version
+                        }
                         file.versions[entry.key] = version
                     }
                     file.entries.removeAll { $0.id == entry.id }
@@ -427,12 +559,14 @@ public actor Outbox {
                         file.entries[index].attempts += 1
                         file.entries[index].lastError = words
                     }
-                case let .park(words):
+                case let .park(words), let .conflict(words):
+                    let conflict = Self.classify(error) == .conflict(words)
                     commit { file in
                         guard let index = file.entries.firstIndex(where: { $0.id == entry.id }) else { return }
                         file.entries[index].attempts += 1
                         file.entries[index].lastError = words
                         file.entries[index].parked = true
+                        file.entries[index].conflict = conflict
                     }
                     refusal = words
                 }
@@ -464,8 +598,25 @@ public actor Outbox {
     /// on the way are kept only while the run is current.
     private func send(_ entry: OutboxEntry, _ api: WorkoutsAPI, run: Int) async throws -> Int? {
         switch entry.method {
+        case .put where entry.baseVersion != nil:
+            // A create at an id the phone chose: refused if one is there.
+            do {
+                return try await api.write("PUT", entry.kind, entry.recordID, properties: entry.properties ?? JSONObject(),
+                                           ifVersion: entry.baseVersion ?? 0)
+            } catch let error as ServerError where error.status == 409 {
+                throw CreateRefused(id: entry.recordID)
+            }
         case .put:
             return try await api.write("PUT", entry.kind, entry.recordID, properties: entry.properties ?? JSONObject())
+        case .patch where entry.baseVersion != nil:
+            // The owner's edit, on what they saw: never merged over.
+            let properties = entry.properties ?? JSONObject()
+            let version = file.asserted(entry.key, from: entry.baseVersion ?? 0)
+            do {
+                return try await api.write("PATCH", entry.kind, entry.recordID, properties: properties, ifVersion: version)
+            } catch let error as ServerError where error.status == 409 {
+                throw EditConflict(kind: entry.kind, id: entry.recordID, server: error.text)
+            }
         case .patch:
             let properties = entry.properties ?? JSONObject()
             do {
@@ -500,6 +651,9 @@ public actor Outbox {
 
     enum Verdict: Equatable {
         case drop
+        /// Parked for the owner to choose: the record changed on the server
+        /// since the version an edit was made on.
+        case conflict(String)
         case stop(OutboxState)
         /// Left queued, its session held for the rest of the run.
         case hold(String)
@@ -513,6 +667,8 @@ public actor Outbox {
             return .stop(.signedOut)
         case is InsufficientScope:
             return .stop(.needsApproval)
+        case let conflict as EditConflict:
+            return .conflict(conflict.localizedDescription)
         case let server as ServerError:
             // A newer write of the record landed first: this one is stale.
             if server.status == 422, server.text.contains("below the stored revision") { return .drop }
@@ -564,5 +720,24 @@ public actor Outbox {
             saveProblem = error.localizedDescription
             throw error
         }
+    }
+}
+
+/// A guarded edit met a newer version on the server: another device or the
+/// coach changed the record since the owner began editing.
+public struct EditConflict: LocalizedError, Sendable {
+    public let kind: String
+    public let id: String
+    public let server: String
+    public var errorDescription: String? {
+        "It changed on your substrate since you began editing it (the coach or another device), so your edit was not sent."
+    }
+}
+
+/// A create met a record already at its id: parked, never merged into.
+public struct CreateRefused: LocalizedError, Sendable {
+    public let id: String
+    public var errorDescription: String? {
+        "Another routine was saved as \u{201C}\(id)\u{201D} meanwhile, so the copy was not written. Discard it and duplicate again."
     }
 }

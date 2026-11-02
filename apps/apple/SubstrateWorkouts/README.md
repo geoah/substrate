@@ -142,6 +142,15 @@ lands, or while it is being made, leaves it out. The exercises it named stay, si
 name them. Signed out there is nothing to delete the sample from, so the
 app offers no delete there.
 
+**A routine can be edited** from Edit on its preview, and duplicated from
+its menu: name, folder, notes, the order of exercises, groups and sets,
+grouping, exercises and sets added and removed, and each set's targets and
+rests ([E1](docs/decisions.md#e1-routines-are-edited-on-the-phone-save-and-cancel-a-draft-on-disk-a-conflict-is-the-owners)).
+Save queues one guarded `PATCH` of what changed in the outbox; the draft is
+kept in `routine-draft.json` on every change, so a killed app resumes it. A
+`409` is parked for the owner (**Keep My Edit** or **Use Theirs**), never
+merged over. Signed out the sample cannot be edited.
+
 **Each sign-in is one account**: its own folder, outbox, catalogue and
 package check. Signing out or signing in elsewhere replaces it, and a sync
 still running for the old one stops at its next step without publishing or

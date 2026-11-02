@@ -338,6 +338,15 @@ gives the CR10 words.
   `lastDone` and `blocks`. A block has a group `header` ("Superset A, rest 1:00 after each round"). Each slot has a
   `groupLabel` and `lines` ("2 sets of 10–15 reps at RPE 8, from 90 kg", "3 sets of 8–12 reps at RPE 7–8, from
   12 kg", "3 sets of 5 reps, from 80% of training max", "Set 2 is a drop set: 1 drop", "Rest 1:30").
+- `RoutineEditor(routine)` edits a routine through its typed fields, keeping every unknown field. It reads the routine
+  as `blocks` (a plain slot, or a group and its members) and has `rename`, `setFolder`, `setNotes`, `moveBlocks`,
+  `moveMembers`, `moveSets`, `groupWithNext`, `leaveGroup`, `ungroup`, `updateGroup`, `addExercise`, `removeBlocks`,
+  `removeMembers`, `removeSlot`, `update`, `addSet`, `removeSets` and `updateSet`. `patch(codec:)` is the PATCH body
+  (what changed, `null` for a cleared property), `problem` what stops a save, and `duplicate(_:taken:)` a copy at a
+  new slug. `RoutineDrafts` keeps one editor on disk.
+- `Outbox.edit(routine:patch:baseVersion:codec:)` queues a guarded routine PATCH; a `409` parks it with `conflict`,
+  which `resolve(_:keepMine:)` answers. `waitingRoutines(codec:)` is what `RemoteCatalog.refresh(_:hiding:waiting:)`
+  lays over the server's routines, and `RemoteCatalog.store(routine:)` keeps an edit in the cache at once.
 
 ## History (§7.8)
 

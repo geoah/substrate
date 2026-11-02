@@ -1,0 +1,466 @@
+{
+ "id": "floor-first-full-body",
+ "kind": "geoah.me/training/routine",
+ "properties": {
+  "activityType": "traditionalstrengthtraining",
+  "folder": "Floor-first programme",
+  "groups": [
+   {
+    "groupKind": "triset",
+    "key": "a",
+    "pairing": "unrelated",
+    "roundRest": "PT1M",
+    "rounds": 2
+   },
+   {
+    "groupKind": "triset",
+    "key": "b",
+    "pairing": "unrelated",
+    "roundRest": "PT1M30S",
+    "rounds": 2
+   },
+   {
+    "groupKind": "paired",
+    "key": "c",
+    "pairing": "antagonist",
+    "roundRest": "PT1M30S",
+    "rounds": 2
+   },
+   {
+    "groupKind": "paired",
+    "key": "d",
+    "pairing": "unrelated",
+    "roundRest": "PT1M15S",
+    "rounds": 2
+   }
+  ],
+  "name": "Floor-first full body",
+  "notes": "Note 1, in place of the owner's words.",
+  "position": 1,
+  "slots": [
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/walking"
+    },
+    "key": "walk",
+    "notes": "Note 2, in place of the owner's words.",
+    "sets": [
+     {
+      "durationMax": "PT3M",
+      "durationMin": "PT3M",
+      "key": "w1",
+      "role": "warmup",
+      "structure": "straight"
+     }
+    ],
+    "warmupRest": "PT0S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/sit-to-stand"
+    },
+    "key": "sit-to-stand",
+    "notes": "Note 3, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "w1",
+      "repsMax": 6,
+      "repsMin": 6,
+      "role": "warmup",
+      "structure": "straight"
+     }
+    ],
+    "warmupRest": "PT0S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/heel-raise"
+    },
+    "key": "heel-raise",
+    "notes": "Note 4, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "w1",
+      "repsMax": 10,
+      "repsMin": 10,
+      "role": "warmup",
+      "structure": "straight"
+     }
+    ],
+    "warmupRest": "PT0S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/shoulder-circles"
+    },
+    "key": "shoulder-circles",
+    "notes": "Note 5, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "w1",
+      "repsMax": 5,
+      "repsMin": 5,
+      "role": "warmup",
+      "structure": "straight"
+     },
+     {
+      "key": "w2",
+      "repsMax": 5,
+      "repsMin": 5,
+      "role": "warmup",
+      "structure": "straight"
+     }
+    ],
+    "warmupRest": "PT0S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/wall-slide"
+    },
+    "key": "wall-slide",
+    "notes": "Note 6, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "w1",
+      "repsMax": 6,
+      "repsMin": 6,
+      "role": "warmup",
+      "structure": "straight"
+     }
+    ],
+    "warmupRest": "PT0S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/glute-bridge"
+    },
+    "group": "a",
+    "key": "glute-bridge",
+    "notes": "Note 7, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "s1",
+      "repsMax": 15,
+      "repsMin": 12,
+      "rirMax": "5",
+      "rirMin": "4",
+      "role": "working",
+      "structure": "straight"
+     },
+     {
+      "key": "s2",
+      "repsMax": 15,
+      "repsMin": 12,
+      "rirMax": "5",
+      "rirMin": "4",
+      "role": "working",
+      "structure": "straight"
+     }
+    ],
+    "transition": "PT25S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/bird-dog"
+    },
+    "group": "a",
+    "key": "bird-dog",
+    "notes": "Note 8, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "s1",
+      "repsMax": 5,
+      "repsMin": 5,
+      "role": "working",
+      "structure": "straight"
+     },
+     {
+      "key": "s2",
+      "repsMax": 5,
+      "repsMin": 5,
+      "role": "working",
+      "structure": "straight"
+     }
+    ],
+    "transition": "PT25S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/crunch"
+    },
+    "group": "a",
+    "key": "crunch",
+    "notes": "Note 9, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "s1",
+      "repsMax": 15,
+      "repsMin": 10,
+      "rirMax": "5",
+      "rirMin": "4",
+      "role": "working",
+      "structure": "straight"
+     },
+     {
+      "key": "s2",
+      "repsMax": 15,
+      "repsMin": 10,
+      "rirMax": "5",
+      "rirMin": "4",
+      "role": "working",
+      "structure": "straight"
+     }
+    ]
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/leg-press-machine"
+    },
+    "group": "b",
+    "key": "leg-press",
+    "notes": "Note 10, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "w1",
+      "repsMax": 8,
+      "repsMin": 8,
+      "role": "warmup",
+      "structure": "straight"
+     },
+     {
+      "key": "s1",
+      "repsMax": 15,
+      "repsMin": 10,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     },
+     {
+      "key": "s2",
+      "repsMax": 15,
+      "repsMin": 10,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     }
+    ],
+    "transition": "PT25S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/seated-leg-curl-machine"
+    },
+    "group": "b",
+    "key": "leg-curl",
+    "notes": "Note 11, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "s1",
+      "repsMax": 15,
+      "repsMin": 10,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     },
+     {
+      "key": "s2",
+      "repsMax": 15,
+      "repsMin": 10,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     }
+    ],
+    "transition": "PT25S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/calf-press-machine"
+    },
+    "group": "b",
+    "key": "calf-press",
+    "notes": "Note 12, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "s1",
+      "repsMax": 20,
+      "repsMin": 12,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     },
+     {
+      "key": "s2",
+      "repsMax": 20,
+      "repsMin": 12,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     }
+    ]
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/chest-press-machine"
+    },
+    "group": "c",
+    "key": "chest-press",
+    "notes": "Note 13, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "w1",
+      "repsMax": 8,
+      "repsMin": 8,
+      "role": "warmup",
+      "structure": "straight"
+     },
+     {
+      "key": "s1",
+      "repsMax": 12,
+      "repsMin": 8,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     },
+     {
+      "key": "s2",
+      "repsMax": 12,
+      "repsMin": 8,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     }
+    ],
+    "transition": "PT25S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/seated-row-machine"
+    },
+    "group": "c",
+    "key": "row",
+    "notes": "Note 14, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "w1",
+      "repsMax": 8,
+      "repsMin": 8,
+      "role": "warmup",
+      "structure": "straight"
+     },
+     {
+      "key": "s1",
+      "repsMax": 15,
+      "repsMin": 10,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     },
+     {
+      "key": "s2",
+      "repsMax": 15,
+      "repsMin": 10,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     }
+    ]
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/lat-pulldown-cable"
+    },
+    "group": "d",
+    "key": "lat-pulldown",
+    "notes": "Note 15, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "w1",
+      "repsMax": 6,
+      "repsMin": 6,
+      "role": "warmup",
+      "structure": "straight"
+     },
+     {
+      "key": "s1",
+      "repsMax": 15,
+      "repsMin": 10,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     },
+     {
+      "key": "s2",
+      "repsMax": 15,
+      "repsMin": 10,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     }
+    ],
+    "transition": "PT25S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/lateral-raise-cable"
+    },
+    "group": "d",
+    "key": "lateral-raise",
+    "notes": "Note 16, in place of the owner's words.",
+    "sets": [
+     {
+      "key": "s1",
+      "repsMax": 20,
+      "repsMin": 12,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     },
+     {
+      "key": "s2",
+      "repsMax": 20,
+      "repsMin": 12,
+      "rirMax": "3",
+      "rirMin": "3",
+      "role": "working",
+      "structure": "straight"
+     }
+    ],
+    "sideOrder": "weakerfirst"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/walking"
+    },
+    "key": "finish-walk",
+    "notes": "Note 17, in place of the owner's words.",
+    "sets": [
+     {
+      "durationMax": "PT2M",
+      "durationMin": "PT1M",
+      "key": "w1",
+      "role": "warmup",
+      "structure": "straight",
+      "timerMode": "stopwatch"
+     }
+    ]
+   }
+  ],
+  "title": "Floor-first full body (Mon/Wed/Fri)"
+ },
+ "version": 1,
+ "kindVersion": 1
+}

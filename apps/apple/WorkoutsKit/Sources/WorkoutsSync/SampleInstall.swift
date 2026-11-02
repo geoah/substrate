@@ -144,11 +144,15 @@ public enum CatalogSync {
                             bundled: @Sendable () throws -> Catalog) async throws -> CatalogRead
     {
         let hiding: @Sendable () async -> Set<String> = { await outbox?.waitingDeletes ?? [] }
-        var catalog = try await remote.refresh(api, hiding: hiding)
+        let codec = remote.codec
+        let waiting: @Sendable () async -> [String: (creates: Bool, properties: JSONObject)] = {
+            await outbox?.waitingRoutines(codec: codec) ?? [:]
+        }
+        var catalog = try await remote.refresh(api, hiding: hiding, waiting: waiting)
         guard let sample, sample.state == nil || sample.state == .installing else { return CatalogRead(catalog: catalog) }
         do {
             if try await sample.firstRun(api, remote: remote, bundled: bundled()) {
-                catalog = try await remote.refresh(api, hiding: hiding)
+                catalog = try await remote.refresh(api, hiding: hiding, waiting: waiting)
             }
             return CatalogRead(catalog: catalog)
         } catch {

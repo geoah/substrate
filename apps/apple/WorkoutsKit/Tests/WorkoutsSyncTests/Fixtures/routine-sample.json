@@ -1,0 +1,456 @@
+{
+ "id": "sample-every-feature",
+ "kind": "geoah.me/training/routine",
+ "properties": {
+  "folder": "Sample",
+  "groups": [
+   {
+    "groupKind": "superset",
+    "key": "a",
+    "roundRest": "PT1M30S"
+   },
+   {
+    "groupKind": "circuit",
+    "key": "b",
+    "roundRest": "PT1M",
+    "rounds": 2
+   }
+  ],
+  "name": "Sample: every feature",
+  "notes": "A tour of what a routine can hold, one idea per exercise or a few; each exercise's note says what it shows. Train it as a full-body day, or do the parts you like. Your agent writes your own routines. Once you are signed in, you can delete this one: swipe it in Routines, or Delete on this screen. The exercises it added stay, since your sessions name them.",
+  "position": 1,
+  "slots": [
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/rowing-machine"
+    },
+    "key": "row",
+    "notes": "A warm-up over a distance: row 500 m at an easy pace. The app keeps your time with the distance.",
+    "sets": [
+     {
+      "distance": {
+       "unit": "m",
+       "value": "500"
+      },
+      "key": "w1",
+      "role": "warmup",
+      "structure": "straight",
+      "termination": "distance"
+     }
+    ]
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/bird-dog"
+    },
+    "key": "bird-dog",
+    "notes": "A warm-up counted in reps only, one side then the other: 8 reps a side.",
+    "sets": [
+     {
+      "key": "w1",
+      "repsMax": 8,
+      "repsMin": 8,
+      "role": "warmup",
+      "structure": "straight"
+     }
+    ]
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/leg-press-machine"
+    },
+    "key": "leg-press",
+    "notes": "A warm-up (W) at 50 % of your body mass, from Apple Health or typed in Settings; with neither, the warm-up has no load and you enter one. Then a top set and a back-off set 10 % lighter. The warm-up rests 1 min and the working sets 2 min 30 s, this slot's own rests.",
+    "setRest": "PT2M30S",
+    "sets": [
+     {
+      "key": "w1",
+      "loadPercent": "50",
+      "loadReference": "bodymass",
+      "repsMax": 12,
+      "repsMin": 12,
+      "role": "warmup",
+      "structure": "straight"
+     },
+     {
+      "key": "s1",
+      "load": {
+       "unit": "kg",
+       "value": "80"
+      },
+      "repsMax": 6,
+      "repsMin": 6,
+      "role": "working",
+      "roleLabel": "top",
+      "rpeMax": "8",
+      "rpeMin": "8",
+      "structure": "straight"
+     },
+     {
+      "dropPercent": "10",
+      "key": "s2",
+      "repsMax": 10,
+      "repsMin": 8,
+      "role": "working",
+      "roleLabel": "backoff",
+      "rpeMax": "8",
+      "rpeMin": "7",
+      "structure": "straight"
+     }
+    ],
+    "warmupRest": "PT1M"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/iso-lateral-chest-press-machine"
+    },
+    "key": "chest-press",
+    "notes": "Each arm has its own plates, so the load is per side. Straight sets of 8 to 12 at RPE 7 to 8, lowered over three seconds (tempo 3-0-1-0). Set 2 rests 3 min, a rest of its own. Set 3 is a drop set: two drops, each 5 kg a side lighter, of 6 reps each.",
+    "setRest": "PT2M",
+    "sets": [
+     {
+      "key": "s1",
+      "load": {
+       "unit": "kg",
+       "value": "20"
+      },
+      "repsMax": 12,
+      "repsMin": 8,
+      "role": "working",
+      "rpeMax": "8",
+      "rpeMin": "7",
+      "structure": "straight",
+      "tempo": "3-0-1-0"
+     },
+     {
+      "key": "s2",
+      "load": {
+       "unit": "kg",
+       "value": "20"
+      },
+      "repsMax": 12,
+      "repsMin": 8,
+      "rest": "PT3M",
+      "role": "working",
+      "rpeMax": "8",
+      "rpeMin": "7",
+      "structure": "straight",
+      "tempo": "3-0-1-0"
+     },
+     {
+      "dropReps": 6,
+      "dropStep": {
+       "unit": "kg",
+       "value": "5"
+      },
+      "drops": 2,
+      "key": "s3",
+      "load": {
+       "unit": "kg",
+       "value": "20"
+      },
+      "repsMax": 12,
+      "repsMin": 8,
+      "role": "working",
+      "rpeMax": "10",
+      "rpeMin": "9",
+      "structure": "drop"
+     }
+    ]
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/assisted-pull-up-machine"
+    },
+    "group": "a",
+    "key": "pull-up",
+    "notes": "A1 of a superset: go straight to A2 with no rest, and rest 1 min 30 s after the round. Assisted: the machine takes 90 lb off, and more assistance is easier.",
+    "sets": [
+     {
+      "assistance": {
+       "unit": "lb",
+       "value": "90"
+      },
+      "key": "s1",
+      "repsMax": 10,
+      "repsMin": 6,
+      "role": "working",
+      "rpeMax": "8",
+      "rpeMin": "8",
+      "structure": "straight"
+     },
+     {
+      "assistance": {
+       "unit": "lb",
+       "value": "90"
+      },
+      "key": "s2",
+      "repsMax": 10,
+      "repsMin": 6,
+      "role": "working",
+      "rpeMax": "8",
+      "rpeMin": "8",
+      "structure": "straight"
+     }
+    ],
+    "transition": "PT0S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/push-up"
+    },
+    "group": "a",
+    "key": "push-up",
+    "notes": "A2, your body weight: stop round 1 with two to three reps in reserve, and do round 2 for as many reps as possible (AMRAP).",
+    "sets": [
+     {
+      "key": "s1",
+      "rirMax": "3",
+      "rirMin": "2",
+      "role": "working",
+      "structure": "straight",
+      "termination": "rirstop"
+     },
+     {
+      "key": "s2",
+      "role": "working",
+      "structure": "straight",
+      "termination": "amrap"
+     }
+    ]
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/lateral-raise-dumbbell"
+    },
+    "key": "lateral-raise",
+    "notes": "Myo-reps: 12 to 15, then mini-sets of 4 with 15 s between them, until one comes in under 4 (this set's own rule; the exercise's is to stop when one loses a rep). Set 2 is a myo-rep match: set 1's total reps, in as few mini-sets as it takes.",
+    "setRest": "PT1M30S",
+    "sets": [
+     {
+      "intraSetPause": "PT15S",
+      "key": "s1",
+      "load": {
+       "unit": "kg",
+       "value": "6"
+      },
+      "miniSetReps": 4,
+      "myoStopRule": "belowtarget",
+      "repsMax": 15,
+      "repsMin": 12,
+      "role": "working",
+      "rpeMax": "9",
+      "rpeMin": "9",
+      "structure": "myo"
+     },
+     {
+      "intraSetPause": "PT15S",
+      "key": "s2",
+      "load": {
+       "unit": "kg",
+       "value": "6"
+      },
+      "miniSetReps": 4,
+      "role": "working",
+      "structure": "myomatch"
+     }
+    ]
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/bulgarian-split-squat-dumbbell"
+    },
+    "key": "split-squat",
+    "notes": "One side at a time: the side that did fewer reps last time goes first (the left, the first time), 15 s to switch, and the second side aims for the reps the first side did. The load is per dumbbell.",
+    "setRest": "PT2M",
+    "sets": [
+     {
+      "key": "s1",
+      "load": {
+       "unit": "kg",
+       "value": "10"
+      },
+      "repsMax": 10,
+      "repsMin": 8,
+      "role": "working",
+      "rpeMax": "8",
+      "rpeMin": "8",
+      "structure": "straight"
+     },
+     {
+      "key": "s2",
+      "load": {
+       "unit": "kg",
+       "value": "10"
+      },
+      "repsMax": 10,
+      "repsMin": 8,
+      "role": "working",
+      "rpeMax": "8",
+      "rpeMin": "8",
+      "structure": "straight"
+     }
+    ],
+    "sideMatch": true,
+    "sideOrder": "weakerfirst",
+    "sideSwitch": "PT15S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/dip-weighted"
+    },
+    "key": "dip",
+    "notes": "Your body weight plus 10 kg on a belt: the load is what you add. Set 2 is rest-pause to a total: 20 reps in as many as three bouts, 20 s apart.",
+    "setRest": "PT2M",
+    "sets": [
+     {
+      "key": "s1",
+      "load": {
+       "unit": "kg",
+       "value": "10"
+      },
+      "repsMax": 10,
+      "repsMin": 6,
+      "role": "working",
+      "rpeMax": "8",
+      "rpeMin": "8",
+      "structure": "straight"
+     },
+     {
+      "intraSetPause": "PT20S",
+      "key": "s2",
+      "load": {
+       "unit": "kg",
+       "value": "10"
+      },
+      "miniSets": 3,
+      "role": "working",
+      "structure": "restpause",
+      "totalReps": 20
+     }
+    ]
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/triceps-pushdown"
+    },
+    "key": "pushdown",
+    "notes": "A cluster set (4 reps, 15 s, three more clusters, two reps in reserve), then a last set to failure.",
+    "setRest": "PT1M30S",
+    "sets": [
+     {
+      "intraSetPause": "PT15S",
+      "key": "s1",
+      "load": {
+       "unit": "kg",
+       "value": "20"
+      },
+      "miniSetReps": 4,
+      "miniSets": 3,
+      "rirMax": "2",
+      "rirMin": "2",
+      "role": "working",
+      "structure": "cluster"
+     },
+     {
+      "key": "s2",
+      "load": {
+       "unit": "kg",
+       "value": "17.5"
+      },
+      "repsMin": 8,
+      "role": "working",
+      "structure": "straight",
+      "termination": "failure"
+     }
+    ]
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/plank"
+    },
+    "group": "b",
+    "key": "plank",
+    "notes": "B1 of a circuit of two rounds, a timed hold. Round 1 is a countdown: hold for 45 s to 1 min. Round 2 runs a stopwatch: hold as long as you can. 15 s to the carry, 1 min after each round.",
+    "sets": [
+     {
+      "durationMax": "PT1M",
+      "durationMin": "PT45S",
+      "key": "s1",
+      "role": "working",
+      "structure": "straight"
+     },
+     {
+      "durationMin": "PT45S",
+      "key": "s2",
+      "role": "working",
+      "structure": "straight",
+      "timerMode": "stopwatch"
+     }
+    ],
+    "transition": "PT15S"
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/farmers-carry-dumbbell"
+    },
+    "group": "b",
+    "key": "carry",
+    "notes": "B2: a load and a distance, 40 m with a dumbbell in each hand. The load is per dumbbell.",
+    "sets": [
+     {
+      "distance": {
+       "unit": "m",
+       "value": "40"
+      },
+      "key": "s1",
+      "load": {
+       "unit": "kg",
+       "value": "16"
+      },
+      "role": "working",
+      "structure": "straight",
+      "termination": "distance"
+     },
+     {
+      "distance": {
+       "unit": "m",
+       "value": "40"
+      },
+      "key": "s2",
+      "load": {
+       "unit": "kg",
+       "value": "16"
+      },
+      "role": "working",
+      "structure": "straight",
+      "termination": "distance"
+     }
+    ]
+   },
+   {
+    "exercise": {
+     "ref": "geoah.me/training/exercise/plank-weighted"
+    },
+    "key": "weighted-plank",
+    "notes": "A load and a time: one hold of 30 to 45 s with a 10 kg plate on your back.",
+    "sets": [
+     {
+      "durationMax": "PT45S",
+      "durationMin": "PT30S",
+      "key": "s1",
+      "load": {
+       "unit": "kg",
+       "value": "10"
+      },
+      "role": "working",
+      "structure": "straight"
+     }
+    ]
+   }
+  ],
+  "title": "Sample: every feature"
+ },
+ "version": 1,
+ "kindVersion": 1
+}

@@ -157,6 +157,68 @@ struct LiveServerTests {
         // writes them before the session, and the server's mustExist takes it.
         try await sample.addBack(api, remote: remote, outbox: outbox, bundled: bundled)
         #expect(try await ownerAPI.get(codec.kinds.routine, SampleRoutine.id.rawValue) != nil)
+
+        // Edited on the phone: renamed, a group's members reordered, an
+        // exercise taken out of its group, a set's reps changed, a set added.
+        // A guarded PATCH of what changed; read back, the server holds the
+        // edit and nothing else moved.
+        let before = try #require(try await ownerAPI.get(codec.kinds.routine, SampleRoutine.id.rawValue))
+        let read = try #require(try await remote.refresh(api).routines[SampleRoutine.id])
+        var editor = RoutineEditor(read)
+        editor.rename("Sample, edited on the phone")
+        let group = try #require(editor.routine.groups.first?.key)
+        let members = editor.members(of: group)
+        editor.moveMembers(of: group, from: [0], to: members.count)
+        let firstSlot = try #require(editor.routine.slots.first { $0.sets.contains { $0.repsMax != nil } })
+        let firstSet = try #require(firstSlot.sets.first { $0.repsMax != nil })
+        editor.updateSet(firstSlot.key, firstSet.key) { $0.repsMax = ($0.repsMax ?? 0) + 2 }
+        editor.addSet(to: firstSlot.key)
+        try await outbox.edit(routine: SampleRoutine.id, patch: editor.patch(codec: codec), baseVersion: editor.baseVersion, codec: codec)
+        #expect(await outbox.flush(api) == .sent)
+        let edited = try #require(try await ownerAPI.get(codec.kinds.routine, SampleRoutine.id.rawValue))
+        #expect(edited.version == (before.version ?? 0) + 1)
+        var expected = editor.routine
+        expected.version = edited.version
+        #expect(try codec.decodeRoutine(edited) == expected, "the server's routine is not the phone's edit")
+        #expect(edited.properties["notes"] == before.properties["notes"])
+
+        // The coach changes the notes meanwhile; the phone's next edit was
+        // made on the version before. It is parked as a conflict, the coach's
+        // change stands, and Keep My Edit sends it over without a version:
+        // the name is the phone's, the notes the coach's.
+        var stale = RoutineEditor(try codec.decodeRoutine(edited))
+        stale.rename("Renamed against a stale version")
+        let coachNotes = "The coach's notes."
+        try await ownerAPI.write("PATCH", codec.kinds.routine, SampleRoutine.id.rawValue, properties: ["notes": .string(coachNotes)],
+                                 ifVersion: edited.version)
+        try await outbox.edit(routine: SampleRoutine.id, patch: stale.patch(codec: codec), baseVersion: stale.baseVersion, codec: codec)
+        guard case .refused = await outbox.flush(api) else { Issue.record("a stale edit was not refused"); return }
+        let conflict = try #require(await outbox.parked.first { $0.conflict })
+        let coached = try #require(try await ownerAPI.get(codec.kinds.routine, SampleRoutine.id.rawValue))
+        #expect(coached.properties["name"] == .string("Sample, edited on the phone"))
+        #expect(coached.properties["notes"] == .string(coachNotes))
+        try await outbox.resolve(conflict.id, keepMine: true)
+        #expect(await outbox.flush(api) == .sent)
+        let kept = try #require(try await ownerAPI.get(codec.kinds.routine, SampleRoutine.id.rawValue))
+        #expect(kept.properties["name"] == .string("Renamed against a stale version"))
+        #expect(kept.properties["notes"] == .string(coachNotes))
+
+        // Duplicated: a new routine, whole.
+        let copy = RoutineEditor.duplicate(try codec.decodeRoutine(kept), taken: [SampleRoutine.id])
+        try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
+        #expect(await outbox.flush(api) == .sent)
+        let duplicated = try #require(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue))
+        #expect(try codec.decodeRoutine(duplicated).slots == copy.routine.slots)
+        // A second copy at the same id (made from a stale catalogue) is
+        // refused by the server and parked, never merged into the first.
+        var clash = copy.routine
+        clash.name = "A clashing copy"
+        try await outbox.enqueue([OutboxPlan.routineCreated(clash, codec: codec)])
+        guard case .refused = await outbox.flush(api) else { Issue.record("a clashing create landed"); return }
+        let refusedCreate = try #require(await outbox.parked.first { !$0.conflict })
+        #expect(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue)?.properties["name"] == duplicated.properties["name"])
+        try await outbox.discard(refusedCreate.id)
+        print("live: routine edited at version \(edited.version ?? 0), conflict kept over the coach's notes, duplicated as \(copy.routine.id)")
         for id in ["bulgarian-split-squat-dumbbell", "triceps-pushdown"] {
             try await owner.send("DELETE", SubstrateClient.recordPath("\(session.repository)/training/exercise", id), query: [("purge", "true")])
         }
