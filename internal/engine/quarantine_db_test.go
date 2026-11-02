@@ -514,3 +514,73 @@ func TestASeededClosureRefusesRatherThanQuarantines(t *testing.T) {
 		t.Fatalf("the refusal does not carry the admission reason: %v", err)
 	}
 }
+
+// A package of another authority the repository already holds stays the
+// owner's to repair after a quarantine takes it out of the live registry: the
+// own-authority rule (decision 0210) is about creating a package, and a
+// quarantined one is stored, not new. A brand-new foreign package is still
+// refused on the same service.
+func TestAQuarantinedForeignPackageIsRepairedUnderTheOwnAuthorityRule(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	open := func(foreign bool) substrate.Service {
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsFS(engine.SeedKinds), engine.WithInsecureForeignPackages(foreign))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		return svc
+	}
+
+	// The repository came to hold the foreign package before the rule.
+	svc := open(true)
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	importVocabulary(t, ds, "tasks")
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
+		t.Fatalf("install bundle: %v", err)
+	}
+	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	if _, err := raw.ExecContext(ctx,
+		`UPDATE records SET props = props - 'inputs' WHERE id = $1`, mbPackage); err != nil {
+		t.Fatalf("corrupt stored closure: %v", err)
+	}
+	_ = svc.Close()
+
+	// Under the rule, the quarantined package is repaired by the owner's apply.
+	svc2 := open(false)
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open the repository: %v", err)
+	}
+	if st := bundleStatusFor(t, ds2, mbPackage); !st.Quarantined {
+		t.Fatalf("the corrupted bundle should be quarantined: %+v", st)
+	}
+	if _, err := ds2.ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
+		t.Fatalf("repairing a quarantined package the repository holds: %v", err)
+	}
+	if st := bundleStatusFor(t, ds2, mbPackage); st.Quarantined || !st.Installed {
+		t.Fatalf("the repaired bundle should be live: %+v", st)
+	}
+
+	// A package of another authority the repository never held is still refused.
+	_, err = ds2.ApplyVocabularyDocuments(ctx, owner, []map[string]any{{
+		"kind":     "substrate.reamde.dev/core/package",
+		"metadata": map[string]any{"id": "never-held.example.org/notes"},
+		"data":     map[string]any{"authority": "never-held.example.org", "package": "notes", "version": 1},
+	}})
+	if !errors.Is(err, substrate.ErrForbidden) {
+		t.Fatalf("a new package under another authority: err %v, want forbidden", err)
+	}
+}

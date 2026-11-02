@@ -67,17 +67,28 @@ import (
 // package nobody has yet (a first declaration) is the user's to create.
 func authorizeDeclarationWrite(actor substrate.Actor, current *vocabulary.Registry, pkg string) error {
 	cur, ok := current.PackageByName(pkg)
-	if !ok || isSubstratePath(actor) {
+	if !ok {
+		return nil
+	}
+	return authorizeBySource(actor, cur.Source, cur.IsAuthority(), pkg)
+}
+
+// authorizeBySource is authorizeDeclarationWrite's rule over a source read
+// anywhere: the live registry's, or the stored row's of a package the registry
+// does not hold because it is quarantined. A quarantined published package is
+// still its publisher's, and repairing it is a reinstall.
+func authorizeBySource(actor substrate.Actor, source string, authority bool, pkg string) error {
+	if isSubstratePath(actor) {
 		return nil
 	}
 	// An authority row is not a package, and saying so in the refusal is the
 	// difference between a message a reader can act on and one that names a
 	// thing that does not exist.
 	what := "package"
-	if cur.IsAuthority() {
+	if authority {
 		what = "authority"
 	}
-	switch cur.Source {
+	switch source {
 	case vocabulary.SourceBuiltin:
 		return fmt.Errorf("%w: %s is a shipped %s: it changes with the substrate (seed, upgrade, install), not through the API",
 			substrate.ErrForbidden, pkg, what)
@@ -99,9 +110,11 @@ func authorizeDeclarationWrite(actor substrate.Actor, current *vocabulary.Regist
 // provider would hold it as `installed`, writable and outside the publisher's
 // upgrades. The rule binds every hand that is not the substrate's own: the
 // owner's doors, an app, an agent, a function. A package already held is
-// left to authorizeDeclarationWrite's source rules.
-func authorizeNewPackage(actor substrate.Actor, current *vocabulary.Registry, own, pkg string) error {
-	if _, held := current.PackageByName(pkg); held || isSubstratePath(actor) {
+// left to the source rules (authorizeBySource). held counts a stored row the
+// live registry does not hold because it is quarantined, so the owner can
+// still repair a package of another authority the repository already has.
+func authorizeNewPackage(actor substrate.Actor, held bool, own, pkg string) error {
+	if held || isSubstratePath(actor) {
 		return nil
 	}
 	authority, _ := vocabulary.SplitPackageRef(pkg)
