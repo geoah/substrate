@@ -75,5 +75,7 @@
 	<string>$(SUBSTRATE_UPDATES_URL)</string>
 	<key>SubstrateWorkoutsClientID</key>
 	<string>$(SUBSTRATE_WORKOUTS_CLIENT_ID)</string>
+	<key>SubstrateWorkoutsRedirect</key>
+	<string>$(SUBSTRATE_WORKOUTS_REDIRECT)</string>
 </dict>
 </plist>

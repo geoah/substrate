@@ -204,7 +204,7 @@ final class AppModel: ObservableObject {
         }
         authorizing = true
         defer { authorizing = false }
-        try await adopt(try await oauth.signIn(server: probe.origin))
+        try await adopt(try await oauth.signIn(server: probe.origin, repository: probe.repository, keepingRejectedIn: .sync))
     }
 
     /// The flow again with the whole manifest: a review of what changed, a

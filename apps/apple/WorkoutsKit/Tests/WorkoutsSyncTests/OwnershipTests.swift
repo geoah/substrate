@@ -56,11 +56,39 @@ struct OwnershipTests {
         }
     }
 
+    /// The server names an app's actor `app:<authority>` once it is verified
+    /// and `app:local` for a loopback client id, neither of which is the
+    /// client id's host: the client id alone says whose package it is.
+    @Test("ownership follows the client id, whatever the actor is called")
+    func clientIDDecides() {
+        func row(_ by: String, _ client: String?) -> JSONObject {
+            var row: JSONObject = ["declaredBy": .string(by)]
+            if let client { row["declaredByClient"] = .string(client) }
+            return row
+        }
+        for by in ["app:substrate.reamde.dev", "app:local", "app:workouts.example.org", "app:other.example.net"] {
+            #expect(PackageManager.of(row(by, Self.clientID), clientID: Self.clientID) == nil, "\(by)")
+            #expect(PackageManager.of(row(by, "https://notes.example.org/client.json"), clientID: Self.clientID)
+                == .otherApp("https://notes.example.org/client.json"), "\(by)")
+        }
+        // A local build's loopback client id is matched the same way.
+        let local = "http://127.0.0.1/substrate-workouts"
+        #expect(PackageManager.of(row("app:local", local), clientID: local) == nil)
+        #expect(PackageManager.of(row("app:local", local), clientID: Self.clientID) == .otherApp(local))
+        // Without the client id stamped, only the host's actor is this app's.
+        #expect(PackageManager.of(row("app:workouts.example.org", nil), clientID: Self.clientID) == nil)
+        #expect(PackageManager.of(row("app:substrate.reamde.dev", nil), clientID: Self.clientID) == .otherApp("app:substrate.reamde.dev"))
+        // Without this app's client id nothing is told apart but the owner.
+        #expect(PackageManager.of(row("app:substrate.reamde.dev", Self.clientID), clientID: nil) == nil)
+        #expect(PackageManager.of(row("console", nil), clientID: nil) == .owner(takenOverFrom: nil))
+    }
+
     @Test("the app's own package, or one its host declared before the client id was stamped, is upgraded")
     func ours() async throws {
         let shipped = try PackageManifest.bundled().version
         for ownership in [
             #""declaredBy":"app:workouts.example.org","declaredByClient":"\#(Self.clientID)""#,
+            #""declaredBy":"app:substrate.reamde.dev","declaredByClient":"\#(Self.clientID)""#,
             #""declaredBy":"app:workouts.example.org""#,
         ] {
             let server = ScriptedServer()

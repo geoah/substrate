@@ -147,13 +147,14 @@ final class SubstrateLink {
 
     /// The app authorization flow on a server the sign-in screen probed: the
     /// server's own sign-in and approval page in the system sheet, the code
-    /// exchanged with its PKCE verifier on a loopback port. Approving sets up
+    /// exchanged with its PKCE verifier. Approving sets up
     /// the health catalogue; the app then installs its own package with the
     /// `declare:` scope the owner approved. A session this replaces (Sign In
     /// Again after the access ended) is revoked like any replaced one.
     func signIn(_ probe: ServerProbe.Result) async throws {
         guard let oauth = OAuthClient(manifest: manifest, probe: probe) else { throw URLError(.badServerResponse) }
-        try await adopt(try await oauth.signIn(server: probe.origin), replacing: session)
+        try await adopt(try await oauth.signIn(server: probe.origin, repository: probe.repository,
+                                                        keepingRejectedIn: .workouts), replacing: session)
     }
 
     /// The flow again with the whole request: Change Access, a renewal, a

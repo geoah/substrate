@@ -32,9 +32,14 @@ public struct AppManifest: Sendable {
 
     private var named: ServerRequirement
     /// The path on the loopback address the authorization redirect comes
-    /// back to (RFC 8252): the kit signs in through a loopback receiver on
-    /// this device, and never through a claimed https callback.
+    /// back to (RFC 8252), for a build without a claimed redirect.
     public var loopbackPath: String
+    /// The https redirect a release claims through its associated domain,
+    /// `https://<site host>/apps/<app>/callback`: the system hands the
+    /// callback only to the signed app the domain's association file names,
+    /// which a loopback port cannot promise. Used only beside an https
+    /// client id, whose document lists it.
+    public var claimedRedirect: URL?
     public var passwordFallback: PasswordFallback
     /// What a person calls a package, an account kind or a trigger, by its
     /// id, where the word built from the id is not the right one.
@@ -57,7 +62,7 @@ public struct AppManifest: Sendable {
 
     public init(appName: String, clientID: String, scopes: [String], details: [AuthorizationDetail] = [],
                 requirement: ServerRequirement = ServerRequirement(), loopbackPath: String = "/oauth/callback",
-                passwordFallback: PasswordFallback = .never, names: [String: String] = [:],
+                claimedRedirect: URL? = nil, passwordFallback: PasswordFallback = .never, names: [String: String] = [:],
                 kindLabels: [String: KindLabel] = [:])
     {
         self.appName = appName
@@ -66,6 +71,7 @@ public struct AppManifest: Sendable {
         self.details = details
         named = requirement
         self.loopbackPath = loopbackPath
+        self.claimedRedirect = claimedRedirect
         self.passwordFallback = passwordFallback
         self.names = names
         self.kindLabels = kindLabels
@@ -77,6 +83,28 @@ public struct AppManifest: Sendable {
         let stamped = (bundle.object(forInfoDictionaryKey: infoKey) as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
         return stamped.isEmpty ? localDefault : stamped
     }
+
+    /// The claimed redirect a release build is stamped with under `infoKey`:
+    /// an https URL with a host and a path, else nil, which signs in through
+    /// the loopback receiver.
+    public static func claimedRedirect(infoKey: String, bundle: Bundle = .main) -> URL? {
+        let stamped = (bundle.object(forInfoDictionaryKey: infoKey) as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+        return claimedRedirect(stamped)
+    }
+
+    static func claimedRedirect(_ text: String) -> URL? {
+        guard let url = URL(string: text), url.scheme?.lowercased() == "https",
+              let host = url.host(percentEncoded: false), !host.isEmpty,
+              url.path(percentEncoded: false).count > 1, url.query(percentEncoded: true) == nil,
+              url.fragment(percentEncoded: true) == nil, url.user(percentEncoded: true) == nil
+        else { return nil }
+        return url
+    }
+
+    /// The claimed redirect this build signs in through: its own, beside an
+    /// https client id. A local build's loopback id has no document to list
+    /// one, so it keeps the loopback receiver.
+    public var signInRedirect: URL? { isLocal ? nil : claimedRedirect }
 
     /// The `scope` parameter.
     public var scope: String { scopes.joined(separator: " ") }

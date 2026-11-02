@@ -14,7 +14,7 @@ it implements is [docs/plans/app-setup.md](../../../docs/plans/app-setup.md).
 
 | Folder | What |
 | --- | --- |
-| `Server/` | `ServerAddress.origin(of:)`, the one normaliser from a typed address to `https://host[:port]`, and `page(_:path:)` for a console path the server gave; `Discovery`, all of `/.well-known/substrate/server.json`; `AuthorizationServerMetadata` (RFC 8414) and `mismatch(server:)`; `ServerVersion`, which orders `v0.113.0`, `v0.113.0-4-gabc1234` and `0.114.0-pre.1`, refuses `dev`, and is said one way on every screen (`display`); `ServerRequirement` and its verdict; `ServerProbe`, which reads both documents |
+| `Server/` | `ServerAddress.origin(of:)`, the one normaliser from a typed address to `https://host[:port]`, and `page(_:path:)` for a console path the server gave; `Discovery`, all of `/.well-known/substrate/server.json`; `AuthorizationServerMetadata` (RFC 8414) and `mismatch(server:)`; `ServerVersion`, which orders `v0.113.0`, `v0.113.0-4-gabc1234` and `0.114.0-pre.1`, refuses `dev`, and is said one way on every screen (`display`); `ServerRequirement` and its verdict; `ServerProbe`, which reads both documents; `ServerLocator`, which finds the server behind a repository's name; `DomainRecord`, the `_substrate` TXT record read by the server's rules, and `DNSServiceTXTResolver`, which looks it up |
 | `API/` | `SubstrateClient` over an `HTTPTransport` (a `URLSession` that never follows a redirect, unless a test scripts one): the bearer token, `Timeout` tiers, `Retry-After` on 429 and 503 for a request that may run twice, `ServerError`, `TransportError`, `SessionExpired`, `InsufficientScope`, `Redirected`, `explain(_:app:server:)`, `segment(_:)`, records, lists, blobs, webhook deliveries, parked deliveries, `/authorizations/check` and the password door |
 | `Auth/` | `AppManifest`, `AuthorizationDetail` and the check's wire shapes, `PKCE`, `OAuthClient`, `LoopbackReceiver`, `WebAuthenticator`, `Session` and its `revoke`, `SessionStore` and its pending revocations, `Grants` and `ScopeWords` |
 | `Status/` | `AppStatusCheck`, which turns discovery, the requirement, the check and the expiry into `AppStatus.issues`; `Change`, one thing an approval would do, in words; `AppStatusModel`, the check kept current |
@@ -65,8 +65,9 @@ required whatever the requirement names, so a server that would ignore
 `passwordFallback` or the too-old screen, and `authorizeURL` throws rather
 than send it a request without them.
 
-**Sign-in.** `ConnectView` takes the address, probes the server when the
-person presses Continue, and then shows one of three doors from
+**Sign-in.** `ConnectView` takes a server's address or a repository's name,
+finds the server when the person presses Continue, and then shows one of
+three doors from
 `manifest.door(for:)`: the browser sign-in, the app's own password form
 (`passwordDoor:`, for a server the app falls back for), or `ServerTooOldView`.
 An app that falls back to the password passes its form as `passwordDoor:`;
@@ -76,24 +77,44 @@ without one, a server it would fall back for reads as too old.
 ConnectView(manifest: manifest, tagline: "Your iPhone, in your substrate.", address: $address,
             unrevoked: store.pendingRevocations()) { probe in
     guard let oauth = OAuthClient(manifest: manifest, probe: probe) else { return }
-    let session = try await oauth.signIn(server: probe.origin)
+    let session = try await oauth.signIn(server: probe.origin, repository: probe.repository)
     try await store.save(session, replacing: nil)
 }
 ```
+
+`ServerLocator` reads what was typed in the order of
+decision 1 of the authorities plan (`docs/plans/authorities.md`, proposed in pull request 1145):
+the address itself when it serves `/.well-known/substrate/server.json`;
+for a bare domain name, the `server=` of its `_substrate` TXT record (read
+through `DNSServiceQueryRecord`, parsed by the rules of the server's
+`internal/domains/record.go`, and refused when malformed), else the
+`server` of `https://<name>/.well-known/substrate/repository.json`, else
+its parent host as a server. The last two run only after DNS answered that
+the name has no record: DNS-SD reports a SERVFAIL as the same NoSuchRecord,
+so a negative answer is asked again of libresolv (the `SubstrateResolv`
+target), and a lookup either one could not finish stops discovery. A server found from a name carries the name as
+`probe.repository`: `signIn` sends it as `login_hint` and revokes and
+refuses a token for any other repository (`RepositoryMismatch`).
 
 An app that is the whole console asks for `scopes: ["full"]` alone (decision
 0204): the server's metadata must list `full`, the approval is whole, and the
 token has no scopes; `Grants.full` reads it as everything.
 
-`OAuthClient.signIn` is a native app's loopback redirect (RFC 8252): it
-listens on a port of this device's loopback address at the manifest's
+`OAuthClient.signIn` takes the redirect one of two ways. A manifest with an
+https client id and a `claimedRedirect` (a release, stamped from its
+Info.plist with `AppManifest.claimedRedirect(infoKey:)`) opens
+`ASWebAuthenticationSession` with `callback: .https(host:path:)`, on iOS and
+macOS alike; the system hands the callback only to the app the host's
+association file names, which the app's associated domains entitlement
+claims. Any other build takes a native app's loopback redirect (RFC 8252):
+it listens on a port of this device's loopback address at the manifest's
 `loopbackPath`, opens the server's approval page (in the default browser on
 macOS, with a Cancel on the connect screen while it waits, and the app
 brought forward when the redirect lands; in the system's Safari sheet on
-iOS, where a backgrounded app's port is suspended), checks
-the redirect's `state` and `iss` (required when the metadata says the server
-sends it), and exchanges the code once, never again: a code is spent on
-first use. A claimed `https` callback (a universal link) is not in the kit.
+iOS, where a backgrounded app's port is suspended). Either way it checks
+the redirect's `state` and `iss` (RFC 9207, required when the metadata says
+the server sends it), and exchanges the code once, never again: a code is
+spent on first use.
 The metadata must be the chosen server's own: an issuer that is not that
 server, or an authorization, token or revocation endpoint off its origin, is
 refused before the browser opens (`ServerMismatch`), since whoever receives

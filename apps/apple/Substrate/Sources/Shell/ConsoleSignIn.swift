@@ -11,11 +11,15 @@ enum ConsoleSignIn {
     /// A local build's client id: a loopback one, which the approval page
     /// says it cannot verify.
     static let localClientID = "http://127.0.0.1/substrate-console"
+    /// The Info key a release stamps with the https redirect it claims
+    /// through its associated domain (`SUBSTRATE_CONSOLE_REDIRECT`).
+    static let redirectKey = "SubstrateConsoleRedirect"
 
     static let manifest = AppManifest(
         appName: "Substrate",
         clientID: AppManifest.clientID(infoKey: clientIDKey, localDefault: localClientID),
         scopes: [ScopeWords.full],
+        claimedRedirect: AppManifest.claimedRedirect(infoKey: redirectKey),
         passwordFallback: .belowRequirement)
 
     struct NoTokenID: LocalizedError {
@@ -31,7 +35,8 @@ enum ConsoleSignIn {
     @MainActor
     static func session(_ probe: ServerProbe.Result) async throws -> Session {
         guard let oauth = OAuthClient(manifest: manifest, probe: probe) else { throw URLError(.badServerResponse) }
-        let session = try await oauth.signIn(server: probe.origin)
+        let session = try await oauth.signIn(server: probe.origin, repository: probe.repository,
+                                             keepingRejectedIn: ConsoleSessions.store(for: probe.origin))
         guard session.tokenID != nil else {
             try? await session.revoke()
             throw NoTokenID(server: probe.origin)

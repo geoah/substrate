@@ -14,6 +14,9 @@ enum SyncManifest {
     static let clientIDKey = "SubstrateSyncClientID"
     /// A local build's client id: a loopback one, which nothing fetches.
     static let localClientID = "http://127.0.0.1/substrate-sync"
+    /// The Info.plist key a release stamps with the https redirect it claims
+    /// through its associated domain (`SUBSTRATE_SYNC_REDIRECT`).
+    static let redirectKey = "SubstrateSyncRedirect"
 
     static let scopes = [
         "write:\(SyncEngine.appleKinds)*",
@@ -80,6 +83,7 @@ enum SyncManifest {
                 .webhook(trigger: SyncEngine.trigger, deliversTo: AppModel.healthProvider),
             ],
             requirement: release,
+            claimedRedirect: AppManifest.claimedRedirect(infoKey: redirectKey, bundle: bundle),
             passwordFallback: .belowRequirement,
             kindLabels: kindLabels)
     }

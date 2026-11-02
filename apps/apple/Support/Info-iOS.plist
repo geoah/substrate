@@ -61,5 +61,7 @@
 	<string>$(SUBSTRATE_UPDATES_URL)</string>
 	<key>SubstrateConsoleClientID</key>
 	<string>$(SUBSTRATE_CONSOLE_CLIENT_ID)</string>
+	<key>SubstrateConsoleRedirect</key>
+	<string>$(SUBSTRATE_CONSOLE_REDIRECT)</string>
 </dict>
 </plist>

@@ -189,13 +189,22 @@ stamp() {
 
 # The URL of an app's client ID metadata document, for the app named in $1.
 # Its host heads the owner's approval page and names the app's actor
-# (`app:<host>`), so it is a host the publisher alone serves:
-# SUBSTRATE_APPLE_CLIENT_URL, an https folder there the same key may write
-# (a custom domain, or a virtual-hosted bucket), else the release folder.
-# Both apps published under one host share that actor. A shared endpoint,
-# where anyone may publish a document under the same host, is refused.
+# (`app:<host>`), so it is a host the publisher alone serves: the site's
+# `/apps/<app>/client.json` when SUBSTRATE_APPLE_SITE_URL is set (see
+# publish_site), else SUBSTRATE_APPLE_CLIENT_URL, an https folder there the
+# same key may write (a custom domain, or a virtual-hosted bucket), else the
+# release folder. Every app published under one host shares that actor. A
+# shared endpoint, where anyone may publish a document under the same host,
+# is refused.
 client_url() {
-	local app="$1" base="${SUBSTRATE_APPLE_CLIENT_URL:-$SUBSTRATE_APPLE_RELEASE_URL}"
+	local app="$1"
+	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then
+		local site
+		site="$(site_url)" || return 1
+		echo "$site/apps/$app/client.json"
+		return
+	fi
+	local base="${SUBSTRATE_APPLE_CLIENT_URL:-$SUBSTRATE_APPLE_RELEASE_URL}"
 	base="${base%/}"
 	case "$base" in
 	https://*) ;;
@@ -230,6 +239,167 @@ shared_host() {
 	return 1
 }
 
+# The apps the site speaks for, by the folder name each is published under.
+readonly APPS="console chat sync workouts"
+
+app_name() {
+	case "$1" in
+	console) echo "Substrate Console" ;;
+	chat) echo "Substrate Chat" ;;
+	sync) echo "Substrate Sync" ;;
+	workouts) echo "Substrate Workouts" ;;
+	esac
+}
+
+# Every app's bundle id is the project's prefix and its folder name.
+app_bundle() {
+	echo "dev.reamde.substrate.$1"
+}
+
+# SUBSTRATE_APPLE_SITE_URL as the origin it must be: https, a host of its
+# own and nothing after it, because Apple reads the association file from
+# `https://<host>/.well-known/apple-app-site-association` and from nowhere
+# else. A shared endpoint is refused as client_url refuses it.
+site_url() {
+	local site="${SUBSTRATE_APPLE_SITE_URL%/}"
+	case "$site" in
+	https://*) ;;
+	*)
+		echo "apple: SUBSTRATE_APPLE_SITE_URL is an https origin: $site" >&2
+		return 1
+		;;
+	esac
+	local host="${site#https://}"
+	case "$host" in
+	"" | */* | *:* | *@*)
+		echo "apple: SUBSTRATE_APPLE_SITE_URL is an origin served at its root, with no path, port or user, because Apple reads the association file from the host's root: $site" >&2
+		return 1
+		;;
+	esac
+	host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
+	host="${host%.}"
+	if shared_host "$host"; then
+		echo "apple: $host is a shared endpoint, where anyone may publish documents under the same host; set SUBSTRATE_APPLE_SITE_URL to a host of your own" >&2
+		return 1
+	fi
+	echo "https://$host"
+}
+
+# The build settings that make a release claim its site's redirect, for the
+# app named in $1, in the global SITE (an array, since bash 3.2 has no
+# mapfile): the redirect the manifest reads, the site host its entitlements
+# name, and the switch to the `-site` entitlements. Empty without a site.
+site_settings() {
+	SITE=()
+	[ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ] || return 0
+	local site upper
+	site="$(site_url)" || return 1
+	upper="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+	SITE=("SUBSTRATE_${upper}_REDIRECT=$site/apps/$1/callback" "SUBSTRATE_SITE_HOST=${site#https://}"
+		SUBSTRATE_ASSOCIATED_DOMAINS=YES)
+}
+
+# The page an app's client document links to: its release folder's install
+# page, else the site's root.
+release_page() {
+	local base="${SUBSTRATE_APPLE_RELEASE_URL:-}"
+	base="${base%/}"
+	if [ -z "$base" ]; then
+		site_url | sed 's|$|/|'
+	elif [ "$1" = console ]; then
+		echo "$base/index.html"
+	else
+		echo "$base/$1/index.html"
+	fi
+}
+
+# The client ID metadata document of the app named in $1, on stdout. With a
+# site, its one redirect is the https callback the app claims there and it
+# names the authority that speaks for it (`substrate_authority`); without
+# one, a loopback redirect (RFC 8252), which any program on the device may
+# also use, so the approval page cannot tell the app from another.
+client_document() {
+	local app="$1" client page
+	client="$(client_url "$app")" || return 1
+	page="$(release_page "$app")" || return 1
+	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then
+		local site
+		site="$(site_url)" || return 1
+		jq -n --arg id "$client" --arg name "$(app_name "$app")" --arg uri "$page" \
+			--arg redirect "$site/apps/$app/callback" \
+			--arg authority "${SUBSTRATE_APPLE_SITE_AUTHORITY:-${site#https://}}" '{
+			client_id: $id, client_name: $name, client_uri: $uri, redirect_uris: [$redirect],
+			token_endpoint_auth_method: "none", substrate_authority: $authority
+		}'
+	else
+		jq -n --arg id "$client" --arg name "$(app_name "$app")" --arg uri "$page" '{
+			client_id: $id, client_name: $name, client_uri: $uri,
+			redirect_uris: ["http://127.0.0.1/oauth/callback"], token_endpoint_auth_method: "none"
+		}'
+	fi
+}
+
+# Publishes one release's client document: the whole site when there is
+# one, since the association file names every app, else the one document.
+publish_client() {
+	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then
+		publish_site
+	else
+		upload "$1" "$2" "no-cache"
+	fi
+}
+
+# The site under SUBSTRATE_APPLE_SITE_URL, an https origin on a host of its
+# own, served at its root: Apple's association file naming every app id
+# for `webcredentials` and for `applinks` on its own callback path, the
+# authority document listing every app by client id (no packages yet), and
+# each app's client document. SUBSTRATE_APPLE_SITE_UPLOAD_URL is where the
+# files are PUT when that is not the site itself (a bucket behind the
+# host), signed with the same key as a release. The authority is
+# SUBSTRATE_APPLE_SITE_AUTHORITY, else the site's host; the team id that
+# signs the apps is SUBSTRATE_APPLE_TEAM_ID. The release builds stay in
+# their own folder.
+publish_site() {
+	: "${SUBSTRATE_APPLE_SITE_URL:?set SUBSTRATE_APPLE_SITE_URL to the https origin of the site}"
+	: "${SUBSTRATE_APPLE_TEAM_ID:?set SUBSTRATE_APPLE_TEAM_ID to the team id that signs the apps}"
+	: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID to a key that may write the site}"
+	: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"
+	local site host authority target out app id
+	site="$(site_url)" || return 1
+	host="${site#https://}"
+	authority="${SUBSTRATE_APPLE_SITE_AUTHORITY:-$host}"
+	target="${SUBSTRATE_APPLE_SITE_UPLOAD_URL:-$site}"
+	target="${target%/}"
+	out="build/site"
+	rm -rf "$out"
+	mkdir -p "$out/.well-known/substrate"
+	local details="[]" ids="[]" apps="[]"
+	for app in $APPS; do
+		id="$SUBSTRATE_APPLE_TEAM_ID.$(app_bundle "$app")"
+		mkdir -p "$out/apps/$app"
+		client_document "$app" >"$out/apps/$app/client.json"
+		details="$(jq -c --arg id "$id" --arg path "/apps/$app/callback" \
+			'. + [{appIDs: [$id], components: [{"/": $path}]}]' <<<"$details")"
+		ids="$(jq -c --arg id "$id" '. + [$id]' <<<"$ids")"
+		apps="$(jq -c --arg client "$site/apps/$app/client.json" --arg name "$(app_name "$app")" --arg id "$id" \
+			'. + [{client_id: $client, name: $name, apple: {appIDs: [$id]}}]' <<<"$apps")"
+	done
+	jq -n --argjson details "$details" --argjson ids "$ids" \
+		'{applinks: {details: $details}, webcredentials: {apps: $ids}}' >"$out/.well-known/apple-app-site-association"
+	jq -n --arg authority "$authority" --argjson apps "$apps" \
+		'{authority: $authority, name: "Substrate", apps: $apps}' >"$out/.well-known/substrate/authority.json"
+
+	upload "$out/.well-known/apple-app-site-association" "$target/.well-known/apple-app-site-association" "no-cache"
+	upload "$out/.well-known/substrate/authority.json" "$target/.well-known/substrate/authority.json" "no-cache"
+	for app in $APPS; do
+		upload "$out/apps/$app/client.json" "$target/apps/$app/client.json" "no-cache"
+	done
+	echo "apple: published $site/.well-known/apple-app-site-association"
+	echo "apple: published $site/.well-known/substrate/authority.json"
+	echo "apple: the authority's DNS needs this record, once:"
+	echo "apple:   _substrate.$authority. TXT \"v=substrate1 doc=$site/.well-known/substrate/authority.json\""
+}
+
 release() {
 	local channel="${1:-prerelease}" short build commit version client
 	stamp "$channel"
@@ -253,14 +423,13 @@ release() {
 	mkdir -p "$stage/$rel"
 	# The console app signs in for the page with full access (decision
 	# 0204), approved on the server's own page that names this host.
-	jq -n --arg id "$client" --arg uri "$base/index.html" '{
-		client_id: $id, client_name: "Substrate Console", client_uri: $uri,
-		redirect_uris: ["http://127.0.0.1/oauth/callback"], token_endpoint_auth_method: "none"
-	}' >"$out/client.json"
+	client_document console >"$out/client.json"
+	site_settings console
 	local settings=(
 		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build"
 		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit"
 		SUBSTRATE_UPDATES_URL="$base/" SUBSTRATE_SPARKLE_KEY="$key" SUBSTRATE_CONSOLE_CLIENT_ID="$client"
+		${SITE[@]+"${SITE[@]}"}
 	)
 	local platform
 	for platform in macOS iOS; do
@@ -300,7 +469,7 @@ release() {
 				smallIcon: "\($rel)/icon-57.png"}
 		}' >"$stage/$rel/release.json"
 
-	upload "$out/client.json" "$client" "no-cache"
+	publish_client "$out/client.json" "$client"
 	publish "$base" "$out" "$stage" "$rel"
 	echo "apple: released $version ($channel)"
 	echo "apple: $base/index.html"
@@ -322,16 +491,14 @@ release_sync() {
 	local stage="$out/stage"
 	rm -rf "$out"
 	mkdir -p "$stage/$rel"
-	jq -n --arg id "$client" --arg uri "$base/index.html" '{
-		client_id: $id, client_name: "Substrate Sync", client_uri: $uri,
-		redirect_uris: ["http://127.0.0.1/oauth/callback"], token_endpoint_auth_method: "none"
-	}' >"$out/client.json"
+	client_document sync >"$out/client.json"
+	site_settings sync
 	xcodebuild -project "$PROJECT" -scheme SubstrateSync -derivedDataPath "$DERIVED" \
 		-allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} -quiet -destination 'generic/platform=iOS' -configuration Release archive \
 		-archivePath "$out/iOS.xcarchive" \
 		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build" \
 		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit" \
-		SUBSTRATE_UPDATES_URL="$base/" SUBSTRATE_SYNC_CLIENT_ID="$client"
+		SUBSTRATE_UPDATES_URL="$base/" SUBSTRATE_SYNC_CLIENT_ID="$client" ${SITE[@]+"${SITE[@]}"}
 	export_archive iOS "${SUBSTRATE_APPLE_EXPORT_IOS:-debugging}" "$out"
 
 	local ipa="$rel/SubstrateSync-${version%%+*}-iOS.ipa"
@@ -355,7 +522,7 @@ release_sync() {
 				smallIcon: "\($rel)/icon-57.png"}
 		}' >"$stage/$rel/release.json"
 
-	upload "$out/client.json" "$client" "no-cache"
+	publish_client "$out/client.json" "$client"
 	publish "$base" "$out" "$stage" "$rel"
 	echo "apple: released Substrate Sync $version ($channel)"
 	echo "apple: $base/index.html"
@@ -379,16 +546,14 @@ release_workouts() {
 	local stage="$out/stage"
 	rm -rf "$out"
 	mkdir -p "$stage/$rel"
-	jq -n --arg id "$client" --arg uri "$base/index.html" '{
-		client_id: $id, client_name: "Substrate Workouts", client_uri: $uri,
-		redirect_uris: ["http://127.0.0.1/oauth/callback"], token_endpoint_auth_method: "none"
-	}' >"$out/client.json"
+	client_document workouts >"$out/client.json"
+	site_settings workouts
 	xcodebuild -project "$PROJECT" -scheme SubstrateWorkouts -derivedDataPath "$DERIVED" \
 		-allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} -quiet -destination 'generic/platform=iOS' -configuration Release archive \
 		-archivePath "$out/iOS.xcarchive" \
 		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build" \
 		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit" \
-		SUBSTRATE_UPDATES_URL="$base/" SUBSTRATE_WORKOUTS_CLIENT_ID="$client"
+		SUBSTRATE_UPDATES_URL="$base/" SUBSTRATE_WORKOUTS_CLIENT_ID="$client" ${SITE[@]+"${SITE[@]}"}
 	export_archive iOS "${SUBSTRATE_APPLE_EXPORT_IOS:-debugging}" "$out"
 
 	local ipa="$rel/SubstrateWorkouts-${version%%+*}-iOS.ipa"
@@ -411,7 +576,7 @@ release_workouts() {
 				smallIcon: "\($rel)/icon-57.png"}
 		}' >"$stage/$rel/release.json"
 
-	upload "$out/client.json" "$client" "no-cache"
+	publish_client "$out/client.json" "$client"
 	publish "$base" "$out" "$stage" "$rel"
 	echo "apple: released Substrate Workouts $version ($channel)"
 	echo "apple: $base/index.html"
@@ -439,17 +604,14 @@ release_chat() {
 	rm -rf "$out"
 	mkdir -p "$stage/$rel"
 	# The app's OAuth client id is its client ID metadata document, so the
-	# approval page names the host that serves it. The redirect is a loopback
-	# one (RFC 8252), which a native app can listen on; the server admits it
-	# on any port.
-	jq -n --arg id "$client" --arg uri "$base/index.html" '{
-		client_id: $id, client_name: "Substrate Chat", client_uri: $uri,
-		redirect_uris: ["http://127.0.0.1/oauth/callback"], token_endpoint_auth_method: "none"
-	}' >"$out/client.json"
+	# approval page names the host that serves it.
+	client_document chat >"$out/client.json"
+	site_settings chat
 	local settings=(
 		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build"
 		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit"
 		SUBSTRATE_UPDATES_URL="$base/" SUBSTRATE_SPARKLE_KEY="$key" SUBSTRATE_CHAT_CLIENT_ID="$client"
+		${SITE[@]+"${SITE[@]}"}
 	)
 	local platform
 	for platform in macOS iOS; do
@@ -489,7 +651,7 @@ release_chat() {
 				smallIcon: "\($rel)/icon-57.png"}
 		}' >"$stage/$rel/release.json"
 
-	upload "$out/client.json" "$client" "no-cache"
+	publish_client "$out/client.json" "$client"
 	publish "$base" "$out" "$stage" "$rel"
 	echo "apple: released Substrate Chat $version ($channel)"
 	echo "apple: $base/index.html"
@@ -545,7 +707,7 @@ upload() {
 	local file="$1" url="$2" cache="$3" type
 	case "$file" in
 	*.html) type="text/html; charset=utf-8" ;;
-	*.json) type="application/json" ;;
+	*.json | */apple-app-site-association) type="application/json" ;;
 	*.xml | *.plist) type="application/xml" ;;
 	*.png) type="image/png" ;;
 	*.zip) type="application/zip" ;;
@@ -628,8 +790,13 @@ release:workouts)
 	project
 	release_workouts "${2:-}"
 	;;
+site)
+	# The site alone: the association file, the authority document and
+	# every client document, with no build.
+	publish_site
+	;;
 *)
-	echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|sim:chat|test:chat|test:kit|test:workouts|install|sim|release|release:sync|release:chat|release:workouts [prerelease|stable]" >&2
+	echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|sim:chat|test:chat|test:kit|test:workouts|install|sim|release|release:sync|release:chat|release:workouts|site [prerelease|stable]" >&2
 	exit 2
 	;;
 esac
