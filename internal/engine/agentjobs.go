@@ -228,6 +228,13 @@ func (l *agentLoop) startJob(tc llm.ToolCall, turn int, row string, started time
 	jl := l.jobLoop(j.hub, p.tool.sub != nil)
 	ds := l.ds
 	ds.jobs.add(j)
+	// A stop of the turn that read the thread's jobs before this add missed
+	// this one; it stopped the turn first, so the job takes it from there.
+	if h := l.in.stopHub; h != nil {
+		if actor := h.stopper(); actor != "" {
+			j.hub.stop(actor)
+		}
+	}
 	if !ds.spawn("agent background job", func(bg context.Context) { ds.runJob(bg, j, jl, p) }) {
 		// The shutdown began: the row stays `working`, and the next open
 		// settles it as interrupted.
@@ -242,7 +249,12 @@ func (ds *dataset) runJob(bg context.Context, j *agentJob, jl *agentLoop, p *pen
 	defer cancel()
 	j.hub.setRun(jctx, cancel)
 	jl.runCtx = jctx
-	out, ok := ds.runJobCall(jctx, jl, p)
+	// A job stopped before it started does no work: it settles canceled.
+	var out string
+	ok := false
+	if j.hub.stopper() == "" {
+		out, ok = ds.runJobCall(jctx, jl, p)
+	}
 	state := jobCompleted
 	if !ok {
 		state = jobFailed
