@@ -367,4 +367,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0207](0207-an-app-declares-one-agent-held-to-its-own-reach.md) | An app declares one approved agent, held to a live approval at every run | proposed |
 | [0208](0208-a-repository-proves-its-name-with-a-txt-record-after-registration.md) | A repository proves its name with a TXT record after registration | proposed |
 | [0209](0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md) | An app is verified by its authority's TXT record and document | proposed |
+| [0210](0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md) | A token declares new packages only under its repository's authority | proposed |
 | [0211](0211-the-console-groups-collections-by-package.md) | The console groups collections by package | proposed |

@@ -171,13 +171,23 @@ and afterwards a `POST …/vocabulary/apply` naming that package is `403`,
 whoever holds the token. The publisher ships each change with a version bump
 and the [upgrade preview](bundles.md#install-and-lifecycle) offers it; the
 RECORDS of a provider's kinds are the repository's as usual, and so is every
-lifecycle verb on its bundle. The same closure applied by hand from the files
-the binary ships carries no tier and lands `installed`, which is the one way to
-hold a provider's declarations open to editing
+lifecycle verb on its bundle
 ([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)).
 
 Everything else, the kinds the repository declares itself and the sample
 packages it imported, is the user's to write.
+
+**A token creates a new package only under the repository's own authority**
+([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)). Every other authority reaches a repository from
+the binary: the seed, the boot upgrade, a catalog install or a sample import,
+which rehomes its closure onto the repository's authority anyway. A `POST
+…/vocabulary/apply` (or `substratectl apply -f`) that would create a package
+under any other authority is `403`, whoever writes it: the owner's doors, an
+app, an agent or a function. The refusal names `substratectl install
+<package>` and `POST /api/v1/catalog/{id}/install`, the door that brings a
+provider or a catalogue. A package the repository already holds under another
+authority keeps the rules above: an `installed` copy applied by hand before
+this rule stays editable, and its next install promotes it to `published`.
 
 Opening a repository rebuilds its registry from the stored declaration
 records, shipped, published and installed alike, each carrying the source its

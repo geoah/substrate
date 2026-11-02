@@ -108,8 +108,8 @@ func whoopCatalogWith(t *testing.T, version int64, rel whoopRelease) *catalog.Ca
 	return c
 }
 
-// handApplyWhoop applies the shipped whoop files by hand with the package
-// header at version, the bundle description edited when edit is set: the
+// handApplyWhoop applies the shipped whoop files as a copy held from before
+// decision 0210 (heldHand), with the package header at version, the bundle description edited when edit is set: the
 // hand applies that run a package past the shipped line. The health
 // catalogue whoop requires is installed first.
 func handApplyWhoop(t *testing.T, ds substrate.Dataset, version int64, edit bool) {
@@ -127,7 +127,7 @@ func handApplyWhoop(t *testing.T, ds substrate.Dataset, version int64, edit bool
 			}
 		}
 	}
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), heldHand(whoopID), docs); err != nil {
 		t.Fatalf("hand apply whoop: %v", err)
 	}
 }
@@ -413,7 +413,7 @@ func TestAChangedPackageHeaderMovesThePackage(t *testing.T) {
 	ds := newDataset(t)
 	ctx := context.Background()
 	installHealth(t, ds)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, heldHand(whoopID), whoopClosure(t)); err != nil {
 		t.Fatalf("apply the whoop closure: %v", err)
 	}
 	first := packageVersion(t, ds, whoopID)

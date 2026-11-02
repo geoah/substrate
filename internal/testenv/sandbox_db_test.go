@@ -15,7 +15,7 @@ import (
 // handed, the engine decides what to hand it, and the API decides who may ask.
 
 const (
-	probeAuthority = "probe.bundles.substrate.reamde.dev"
+	probeAuthority = "probe.example.com"
 	probePackage   = "probe"
 	// probeRef is the package identity every probe declaration lives in: the
 	// first two segments of each kind reference the bundle installs.
@@ -129,7 +129,7 @@ func ref(name string) string { return probeRef + "/" + name }
 // the file cannot be opened at all.
 func TestFunctionCannotReadTheServersEnvironment(t *testing.T) {
 	testenv.RequireSandbox(t)
-	env := testenv.Start(t)
+	env := testenv.Start(t, testenv.WithRepository(probeAuthority))
 	// os.getppid(), NOT pid 1. In this harness the substrate is the TEST
 	// BINARY running an in-process server, so pid 1 is the container's init:
 	// a process this test has no relationship with, whose environ is
@@ -172,7 +172,7 @@ def main(input, host):
 func TestNetworkCapabilityIsEnforcedEndToEnd(t *testing.T) {
 	// Only the syscall layer: denying a socket needs no filesystem rules.
 	testenv.RequireSeccomp(t)
-	env := testenv.Start(t)
+	env := testenv.Start(t, testenv.WithRepository(probeAuthority))
 	const probe = `
 import socket
 def main(input, host):
@@ -200,7 +200,7 @@ def main(input, host):
 // cannot see each other. A shared interpreter made `sys.modules['__main__']` a
 // scratchpad between every body in the substrate.
 func TestTwoFunctionsCannotSeeEachOther(t *testing.T) {
-	env := testenv.Start(t)
+	env := testenv.Start(t, testenv.WithRepository(probeAuthority))
 	env.ApplyVocabularyYAML(probeBundle(
 		probeFn{name: "stash", source: `
 import sys
@@ -231,7 +231,7 @@ def main(input, host):
 // asserting on its own, so a failure above is never first diagnosed as a
 // broken fixture.
 func TestEnvironmentStartsAndAuthenticates(t *testing.T) {
-	env := testenv.Start(t)
+	env := testenv.Start(t, testenv.WithRepository(probeAuthority))
 	if status, body := env.Do("GET", "/healthz", nil); status != 200 {
 		t.Fatalf("healthz: %d %s", status, body)
 	}

@@ -192,6 +192,10 @@ func run() error {
 		slog.Warn("SUBSTRATE_INSECURE_DISABLE_TOTP is set: the second factor is NOT verified — local development only")
 		opts = append(opts, engine.WithInsecureDisableTOTP())
 	}
+	if cfg.InsecureAllowForeignPackages {
+		slog.Warn("SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES is set: a token may declare packages under any authority; local development only")
+		opts = append(opts, engine.WithInsecureForeignPackages(true))
+	}
 	svc, err := engine.Open(ctx, cfg.DatabaseURL, opts...)
 	close(booted)
 	if err != nil {
