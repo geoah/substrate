@@ -6,8 +6,9 @@ import SwiftUI
 /// differ from the defaults, tempo and notes. Start floats in a bar of its
 /// own at the bottom of the list, above the tab bar and the session's bar
 /// when one runs: the list scrolls clear of all three, and neither glass
-/// ever lies over Start. A routine on the signed-in substrate has Delete in
-/// the toolbar, after a confirmation.
+/// ever lies over Start. A routine on the signed-in substrate has Edit in
+/// the toolbar, and Duplicate and Delete in its menu; signed out, the sample
+/// the app carries cannot be edited, and says so.
 struct RoutinePreview: View {
     let routineID: RoutineID
 
@@ -15,6 +16,8 @@ struct RoutinePreview: View {
     @Environment(SubstrateLink.self) private var link
     @Environment(\.dismiss) private var dismiss
     @State private var deleting: RoutineToDelete?
+    @State private var editing: RoutineEditRequest?
+    @State private var replacingDraft: RoutineEditor?
 
     var body: some View {
         if let catalog = app.catalog, let routine = catalog.routines[routineID] {
@@ -24,15 +27,34 @@ struct RoutinePreview: View {
                 .navigationTitle(preview.name)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    if canDelete {
+                    if canEdit {
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button("Delete Routine", systemImage: "trash", role: .destructive) {
-                                deleting = RoutineToDelete(id: routineID, name: preview.name)
+                            Button("Edit") { edit(RoutineEditor(routine)) }
+                                .disabled(link.conflict(for: routineID) != nil)
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Menu("More", systemImage: "ellipsis") {
+                                Button("Duplicate", systemImage: "plus.square.on.square") {
+                                    edit(RoutineEditor.duplicate(routine, taken: Set(catalog.routines.keys)))
+                                }
+                                Button("Delete Routine", systemImage: "trash", role: .destructive) {
+                                    deleting = RoutineToDelete(id: routineID, name: preview.name)
+                                }
                             }
                         }
                     }
                 }
                 .confirmsRoutineDelete($deleting) { dismiss() }
+                .routineEditor($editing)
+                .confirmationDialog(replacingDraft.map { _ in "Discard your unsaved edit of \u{201C}\(link.draft?.routine.name ?? "")\u{201D}?" } ?? "",
+                                    isPresented: Binding { replacingDraft != nil } set: { if !$0 { replacingDraft = nil } },
+                                    titleVisibility: .visible, presenting: replacingDraft) { editor in
+                    Button("Discard and Edit", role: .destructive) {
+                        replacingDraft = nil
+                        open(editor)
+                    }
+                    Button("Cancel", role: .cancel) { replacingDraft = nil }
+                }
                 .safeAreaBar(edge: .bottom) {
                     StartSessionButton(request: .routine(routineID)) {
                         Text("Start routine")
@@ -48,13 +70,34 @@ struct RoutinePreview: View {
         }
     }
 
-    private var canDelete: Bool {
+    /// Routines on the signed-in substrate can be edited, duplicated and
+    /// deleted; the sample the app carries signed out cannot.
+    private var canEdit: Bool {
         guard case .server = app.catalogOrigin else { return false }
         return link.canDeleteRoutines
     }
 
+    /// Opens the editor: the unsaved draft of this routine when there is
+    /// one, else `editor`. A draft of another routine is replaced only
+    /// after the owner says so.
+    private func edit(_ editor: RoutineEditor) {
+        if let draft = link.draft {
+            if !editor.isNew, !draft.isNew, draft.routine.id == routineID { return open(draft) }
+            replacingDraft = editor
+            return
+        }
+        open(editor)
+    }
+
+    private func open(_ editor: RoutineEditor) {
+        editing = RoutineEditRequest(model: RoutineEditorModel(editor) { [link] in link.keepDraft($0) })
+        // A duplicate is a change already: kept before the first edit.
+        if editor.hasChanges { link.keepDraft(editor) }
+    }
+
     private func list(_ preview: RoutinePreviewPresentation) -> some View {
         List {
+            RoutineEditStatus(routineID: routineID) { if let draft = link.draft { open(draft) } }
             if preview.notes != nil || preview.lastDone != nil {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
@@ -82,6 +125,11 @@ struct RoutinePreview: View {
                             .foregroundStyle(GroupPalette.color(block.colorIndex))
                             .textCase(nil)
                     }
+                }
+            }
+            if case .bundled = app.catalogOrigin {
+                Section {} footer: {
+                    Text("This sample comes with the app and can\u{2019}t be changed. Sign in to your substrate to edit routines or make your own copy.")
                 }
             }
             if !preview.unreadable.isEmpty {

@@ -31,6 +31,8 @@ final class SyncAccount {
     /// Whether the sample routine was written here, so a deleted one never
     /// comes back (decision S1).
     let sample: SampleInstall?
+    /// The routine edit not saved yet, kept on every change.
+    let drafts: RoutineDrafts?
     /// The session controller's writes into this account's outbox.
     private(set) var sink: OutboxSink<EventEnvelope, SessionState>?
     /// This account's package check, nil until it has run.
@@ -44,6 +46,7 @@ final class SyncAccount {
         tombstones = directory.map { SessionTombstones(directory: $0) }
         remote = directory.map { RemoteCatalog(directory: $0, localExercises: localExercises) }
         sample = directory.map { SampleInstall(directory: $0) }
+        drafts = directory.map { RoutineDrafts(directory: $0) }
         sink = outbox.map { outbox in
             OutboxSink(outbox: outbox, codec: codec, onQueued: { [weak self] in
                 guard let self else { return }
@@ -75,6 +78,10 @@ final class SubstrateLink {
     /// The writes the server refused, waiting for the owner to retry or
     /// discard them.
     private(set) var parked: [OutboxEntry] = []
+    /// Routines whose edit, create or delete waits for the server, by id.
+    private(set) var waitingRoutines: Set<RoutineID> = []
+    /// The routine edit not saved yet, kept on disk (`keepDraft`).
+    private(set) var draft: RoutineEditor?
     /// Why the outbox could not keep a change on disk, until one is kept.
     private(set) var notKept: String?
     /// Why the last package check or catalogue read did not finish.
@@ -214,10 +221,12 @@ final class SubstrateLink {
         notKept = nil
         outboxState = .idle
         parked = []
+        waitingRoutines = []
         waiting = 0
         syncing = false
         sampleState = account.sample?.state
         sampleProblem = nil
+        draft = loadDraft(account)
         if let remote = account.remote, remote.hasCache, let cached = try? remote.loadNow() {
             AppModel.shared.showServerCatalog(cached, host: account.host)
         }
@@ -241,9 +250,11 @@ final class SubstrateLink {
         outboxState = .idle
         waiting = 0
         parked = []
+        waitingRoutines = []
         syncing = false
         sampleState = nil
         sampleProblem = nil
+        draft = nil
         status.reset()
     }
 
@@ -421,7 +432,9 @@ final class SubstrateLink {
             guard isCurrent(account) else { return }
             sampleState = account.sample?.state
             sampleProblem = nil
-            let catalog = try await remote.refresh(account.api) { await outbox?.waitingDeletes ?? [] }
+            let codec = codec
+            let catalog = try await remote.refresh(account.api, hiding: { await outbox?.waitingDeletes ?? [] },
+                                                   waiting: { await outbox?.waitingRoutines(codec: codec) ?? [:] })
             guard isCurrent(account) else { return }
             AppModel.shared.showServerCatalog(catalog, host: account.host)
         } catch {
@@ -460,6 +473,97 @@ final class SubstrateLink {
             // The cache could not be rewritten; the delete still goes, and
             // the next refresh leaves the routine out until it lands.
             note(error)
+        }
+        await flush(account)
+    }
+
+    // MARK: Editing routines
+
+    /// The routine edit kept on disk and not saved, read when the account
+    /// begins; one that cannot be read is set aside and listed in Settings.
+    private func loadDraft(_ account: SyncAccount) -> RoutineEditor? {
+        guard let drafts = account.drafts else { return nil }
+        do {
+            return try drafts.load()
+        } catch let error as UnreadableDraft {
+            AppModel.shared.noteUnreadable(error.record)
+        } catch {
+            logger.error("routine draft: \(error.localizedDescription, privacy: .public)")
+        }
+        return nil
+    }
+
+    /// Keeps the edit in progress on disk: an edit survives the app being
+    /// killed before Save.
+    func keepDraft(_ editor: RoutineEditor) {
+        draft = editor
+        do {
+            try account?.drafts?.save(editor)
+        } catch {
+            logger.error("routine draft not kept: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func dropDraft() {
+        draft = nil
+        try? account?.drafts?.clear()
+    }
+
+    /// Saves an edited or duplicated routine: queued in the outbox (a
+    /// guarded PATCH of what changed, or a PUT of a new routine), into the
+    /// cached catalogue at once, the draft dropped, and sent. An edit the
+    /// outbox cannot keep on disk changes nothing and throws, and the draft
+    /// stays.
+    func saveRoutine(_ editor: RoutineEditor) async throws {
+        guard let account, let outbox = account.outbox, let remote = account.remote else { throw OutboxNotSaved(reason: "the app is not signed in to your substrate.") }
+        if editor.isNew {
+            try await outbox.enqueue([OutboxPlan.routineCreated(editor.routine, codec: codec)])
+        } else {
+            try await outbox.edit(routine: editor.routine.id, patch: editor.patch(codec: codec), baseVersion: editor.baseVersion,
+                                  codec: codec)
+        }
+        try? account.drafts?.clear()
+        guard isCurrent(account) else { return }
+        draft = nil
+        do {
+            let catalog = try remote.store(routine: editor.routine)
+            AppModel.shared.showServerCatalog(catalog, host: account.host)
+        } catch {
+            // The cache could not be rewritten; the write still goes, and the
+            // next read lays it over the server's routine until it lands.
+            note(error)
+        }
+        await refreshOutbox(account)
+        await flush(account)
+    }
+
+    /// The edit of a routine the server refused because the routine changed
+    /// there since the edit began, waiting for the owner's choice.
+    func conflict(for routine: RoutineID) -> OutboxEntry? {
+        parked.first { $0.conflict && $0.kind == codec.kinds.routine && $0.recordID == routine.rawValue }
+    }
+
+    /// The owner's answer to a conflict: keep their edit (it is sent
+    /// without a version, replacing what it changed), or take the server's
+    /// routine (the edit is dropped and the routines read again).
+    func resolve(_ entry: OutboxEntry, keepMine: Bool) async {
+        guard let account, let outbox = account.outbox else { return }
+        do {
+            try await outbox.resolve(entry.id, keepMine: keepMine)
+        } catch {
+            notKept(error, account)
+            return
+        }
+        await refreshOutbox(account)
+        if !keepMine, let remote = account.remote {
+            do {
+                let codec = codec
+                let catalog = try await remote.refresh(account.api, hiding: { await outbox.waitingDeletes },
+                                                       waiting: { await outbox.waitingRoutines(codec: codec) })
+                if isCurrent(account) { AppModel.shared.showServerCatalog(catalog, host: account.host) }
+            } catch {
+                if isCurrent(account) { note(error) }
+            }
         }
         await flush(account)
     }
@@ -516,6 +620,8 @@ final class SubstrateLink {
         guard isCurrent(account) else { return }
         waiting = entries.count
         parked = entries.filter(\.parked)
+        waitingRoutines = Set(entries.filter { $0.kind == codec.kinds.routine && $0.session == nil && !$0.parked }
+            .map { RoutineID($0.recordID) })
         notKept = saveProblem
     }
 

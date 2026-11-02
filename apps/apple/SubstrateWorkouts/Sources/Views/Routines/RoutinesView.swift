@@ -14,6 +14,7 @@ struct RoutinesView: View {
     @State private var path: [RoutineID] = []
     @State private var collapsed: Set<String> = []
     @State private var deleting: RoutineToDelete?
+    @State private var editing: RoutineEditRequest?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -139,6 +140,20 @@ struct RoutinesView: View {
 
     private func routineList(_ list: RoutineListPresentation) -> some View {
         List {
+            if let draft = link.draft, draft.hasChanges {
+                // An edit the app was closed in the middle of.
+                Section {
+                    HStack {
+                        Label("Unsaved changes to \u{201C}\(draft.routine.name)\u{201D}", systemImage: "pencil.circle")
+                            .font(.subheadline)
+                        Spacer()
+                        Button("Resume") {
+                            editing = RoutineEditRequest(model: RoutineEditorModel(draft) { [link] in link.keepDraft($0) })
+                        }
+                        .font(.subheadline.weight(.semibold))
+                    }
+                }
+            }
             ForEach(list.sections) { section in
                 Section(isExpanded: expanded(section.title)) {
                     ForEach(section.routines) { card in
@@ -186,6 +201,7 @@ struct RoutinesView: View {
         }
         .listStyle(.insetGrouped)
         .confirmsRoutineDelete($deleting)
+        .routineEditor($editing)
     }
 
     /// Routines on the signed-in substrate can be deleted; the sample the

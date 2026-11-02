@@ -56,14 +56,64 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     /// out, so a routine deleted offline does not come back before its
     /// delete lands. `hiding` is asked after the server answers, so a delete
     /// made while the read was on the wire is left out too.
+    ///
+    /// A routine whose edit or create still waits (`waiting`, by id) is
+    /// read with the waiting properties laid over the server's, so an edit
+    /// made offline shows until it lands; the cache keeps the server's
+    /// version, the one the edit asserts.
     @discardableResult
-    public func refresh(_ api: WorkoutsAPI, hiding: @Sendable () async -> Set<String> = { [] }) async throws -> Catalog {
+    public func refresh(_ api: WorkoutsAPI, hiding: @Sendable () async -> Set<String> = { [] },
+                        waiting: @Sendable () async -> [String: (creates: Bool, properties: JSONObject)] = { [:] }) async throws -> Catalog
+    {
         let kinds = codec.kinds
         let listed = try await api.list([kinds.exercise, kinds.setup, kinds.routine])
         let hidden = await hiding()
-        let records = listed.filter { !hidden.contains("\($0.kind)/\($0.id)") }
+        let records = Self.overlay(listed.filter { !hidden.contains("\($0.kind)/\($0.id)") }, waiting: await waiting(), kind: kinds.routine)
         try write(records)
         let catalog = merged(catalog(from: records, source: api.client.server.host() ?? "the server"))
+        publish(catalog)
+        return catalog
+    }
+
+    /// The routine writes still waiting laid over the records: an edit over
+    /// its routine, a create added when the server lacks it.
+    static func overlay(_ records: [FlatRecord], waiting: [String: (creates: Bool, properties: JSONObject)], kind: String) -> [FlatRecord] {
+        guard !waiting.isEmpty else { return records }
+        var out = records
+        var seen = Set<String>()
+        for index in out.indices where out[index].kind == kind {
+            guard let write = waiting[out[index].id] else { continue }
+            seen.insert(out[index].id)
+            out[index].properties = merged(out[index].properties, write.properties)
+        }
+        for (id, write) in waiting.sorted(by: { $0.key < $1.key }) where write.creates && !seen.contains(id) {
+            out.append(FlatRecord(kind: kind, id: id, properties: merged(JSONObject(), write.properties)))
+        }
+        return out
+    }
+
+    static func merged(_ base: JSONObject, _ change: JSONObject) -> JSONObject {
+        var out = base
+        for (key, value) in change {
+            out[key] = value == .null ? nil : value
+        }
+        return out
+    }
+
+    /// Keeps an edited or new routine in the cache at once, before the
+    /// server hears of it, at the version it was read at, and yields the
+    /// catalogue with it.
+    @discardableResult
+    public func store(routine: Routine) throws -> Catalog {
+        var records = hasCache ? try JSONDecoder().decode(RecordFile.self, from: Data(contentsOf: cacheURL)).records : []
+        let record = codec.encode(routine)
+        if let index = records.firstIndex(where: { $0.kind == record.kind && $0.id == record.id }) {
+            records[index] = record
+        } else {
+            records.append(record)
+        }
+        try write(records)
+        let catalog = merged(catalog(from: records, source: Self.fileName))
         publish(catalog)
         return catalog
     }
