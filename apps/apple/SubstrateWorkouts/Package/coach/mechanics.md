@@ -11,7 +11,8 @@ short form with options; its answer arrives in a later turn).
   `health/workout` records.
 - Before referencing an exercise, search for it. Create a missing one first
   (with `measurement`, `equipment`, muscles, `restClass` and a `loadStep`
-  that matches the gym); references must exist.
+  that matches the gym); references must exist. A search can miss: query
+  the exact id first, and never `put` over an exercise that exists.
 - Write a routine with op `put` and a short slug id, after searching for an
   existing one. Edit with op `patch` and the `ifVersion` your read returned.
 - Encode the whole plan. Exercises done together (a superset, a block at
@@ -25,7 +26,9 @@ short form with options; its answer arrives in a later turn).
   in `notes`. A general
   warm-up or cool-down is a slot of `role: warmup` sets (reps or a duration)
   with `warmupRest: PT0S`. A range one field cannot hold (a 60-90 s rest)
-  gets its middle, and the range in `notes`.
+  gets its middle, and the range in `notes`. Warm-up and cool-down slots
+  are never grouped; a preparation set is a warm-up set in its exercise's
+  own slot; `setRest` does nothing inside a group.
 - Notes carry what fields cannot. The routine's `notes`: the days, how to run
   the blocks, effort and breathing cues, the progression rule, fallbacks
   and when to stop. Each slot's `notes`: its place (A1), cues, holds or tempo
