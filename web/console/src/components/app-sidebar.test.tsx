@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-/** The sidebar's collection groups: everyday mode lists a group's primary
- * collections by display plural; technical mode lists the authority /
- * package tree with each kind's own name and can show the supporting ones;
- * provider groups start folded; favorites and folds persist on the console
- * preference record.
+/** The sidebar's collection groups: one per package, one per provider;
+ * everyday mode lists a group's primary collections by display plural;
+ * technical mode lists the authority / package tree with each kind's own
+ * name and can show the supporting ones; provider groups start folded;
+ * favorites and folds persist on the console preference record.
  *
  * The group components are rendered on their own rather than through
  * `AppSidebar`: the whole sidebar pulls the kind registry, the repository and
@@ -61,7 +61,7 @@ function kind(identity: string, purpose?: string): KindInfo {
   }
 }
 
-const [yours, google] = collectionGroups(
+const [people, tasks, google] = collectionGroups(
   [
     kind("ada.example.com/tasks/task"),
     kind("ada.example.com/tasks/project"),
@@ -99,7 +99,8 @@ function renderGroups() {
   return renderTree(
     <>
       <Favorites />
-      <CollectionGroupNav group={yours} />
+      <CollectionGroupNav group={people} />
+      <CollectionGroupNav group={tasks} />
       <CollectionGroupNav group={google} />
     </>
   )
@@ -188,9 +189,19 @@ afterEach(() => {
 })
 
 describe("everyday groups", () => {
-  it("lists a group's primary collections by display plural", async () => {
+  it("heads each package's primary collections with the package", async () => {
     renderGroups()
     expect(await href("Tasks")).toBe("/data/ada.example.com/tasks/task")
+    expect(
+      [...document.querySelectorAll("[data-slot=collection-group]")].map((g) =>
+        g.getAttribute("data-group")
+      )
+    ).toEqual([
+      "group:package:ada.example.com/people",
+      "group:package:ada.example.com/tasks",
+      "group:provider:google",
+    ])
+    expect(screen.getByRole("button", { name: "Tasks" })).toBeTruthy()
     expect(await href("People")).toBe("/data/ada.example.com/people/person")
     expect(screen.queryByRole("link", { name: "Task logs" })).toBeNull()
   })
@@ -224,9 +235,11 @@ describe("everyday groups", () => {
     await waitFor(() =>
       expect(storedPreferences.favorites).toEqual([person, task])
     )
-    await press(/^Your data/)
+    await press(/^Tasks/)
     await waitFor(() =>
-      expect(storedPreferences.collapsed).toEqual(["group:yours"])
+      expect(storedPreferences.collapsed).toEqual([
+        "group:package:ada.example.com/tasks",
+      ])
     )
     first.unmount()
     renderGroups()
@@ -256,7 +269,14 @@ describe("technical groups", () => {
 
   it("lists the authority and package tree, linked to their pages", async () => {
     renderGroups()
-    expect(await href("ada.example.com")).toBe("/data/ada.example.com")
+    // Each package's group names its authority again: a group is one package.
+    const authorities = await screen.findAllByRole("link", {
+      name: "ada.example.com",
+    })
+    expect(authorities.map((a) => a.getAttribute("href"))).toEqual([
+      "/data/ada.example.com",
+      "/data/ada.example.com",
+    ])
     expect(await href("tasks")).toBe("/data/ada.example.com/tasks")
     expect(await href("Tasks task")).toBe("/data/ada.example.com/tasks/task")
   })

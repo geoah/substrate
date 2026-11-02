@@ -46,37 +46,82 @@ const KINDS = [
 describe("collectionGroups", () => {
   const groups = collectionGroups(KINDS, "ada.example.com")
 
-  it("reads yours, then each provider by name, then the substrate", () => {
+  it("reads each package by label, then each provider by name, then the substrate", () => {
     expect(groups.map((g) => g.label)).toEqual([
-      "Your data",
+      "Labs",
+      "Notes",
+      "Observations",
+      "People",
+      "Tasks",
       "From Google",
       "From Linear",
       "Substrate",
     ])
+    expect(groups.map((g) => g.type)).toEqual([
+      "package",
+      "package",
+      "package",
+      "package",
+      "package",
+      "provider",
+      "provider",
+      "system",
+    ])
   })
 
-  it("keeps every authority but the providers and the substrate's machinery in Your data, home first", () => {
-    const yours = groups[0]
-    expect(yours.authorities.map((a) => a.authority)).toEqual([
-      "ada.example.com",
-      "other.example.com",
+  it("gives every package but the providers' and the machinery its own group, keyed by its reference", () => {
+    const tasks = groups.find((g) => g.label === "Tasks")
+    expect(tasks?.id).toBe("group:package:ada.example.com/tasks")
+    expect(tasks?.primary.map((k) => k.identity)).toEqual([
+      "ada.example.com/tasks/task",
+    ])
+    expect(tasks?.hidden.map((k) => k.identity)).toEqual([
+      "ada.example.com/tasks/tasklog",
+    ])
+    const labs = groups.find((g) => g.label === "Labs")
+    expect(labs?.authorities.map((a) => a.authority)).toEqual([
       "substrate.reamde.dev",
     ])
-    expect(yours.primary.map((k) => k.identity).sort()).toEqual([
-      "ada.example.com/people/person",
-      "ada.example.com/tasks/task",
-      "other.example.com/notes/note",
+    expect(labs?.kinds.map((k) => k.identity)).toEqual([
       "substrate.reamde.dev/labs/labreport",
-    ])
-    expect(yours.hidden.map((k) => k.identity).sort()).toEqual([
-      "ada.example.com/tasks/tasklog",
       "substrate.reamde.dev/labs/labresult",
-      "substrate.reamde.dev/observations/observation",
+    ])
+  })
+
+  it("keeps a package with no primary kind, for technical mode", () => {
+    const observations = groups.find((g) => g.label === "Observations")
+    expect(observations?.primary).toEqual([])
+    expect(observations?.hidden).toHaveLength(1)
+  })
+
+  it("names the publisher where two packages share a word, home first", () => {
+    const shared = collectionGroups(
+      [
+        kind("substrate.reamde.dev/training/session"),
+        kind("zed.example.com/training/session"),
+        kind("zed.example.com/tasks/task"),
+      ],
+      "zed.example.com"
+    )
+    expect(shared.map((g) => g.label)).toEqual([
+      "Tasks",
+      "Training (zed.example.com)",
+      "Training (substrate.reamde.dev)",
+    ])
+    expect(shared.map((g) => g.id)).toEqual([
+      "group:package:zed.example.com/tasks",
+      "group:package:zed.example.com/training",
+      "group:package:substrate.reamde.dev/training",
     ])
   })
 
   it("files only the core, llm and console packages under Substrate", () => {
-    expect(groups[3].kinds.map((k) => k.identity).sort()).toEqual([
+    expect(
+      groups
+        .at(-1)
+        ?.kinds.map((k) => k.identity)
+        .sort()
+    ).toEqual([
       "substrate.reamde.dev/console/recordview",
       "substrate.reamde.dev/core/kind",
       "substrate.reamde.dev/llm/thread",
@@ -84,34 +129,40 @@ describe("collectionGroups", () => {
   })
 
   it("lists only primary kinds as primary and core as hidden machinery", () => {
-    const google = groups[1]
-    expect(google.provider?.name).toBe("Google")
-    expect(google.primary.map((k) => k.identity)).toEqual([
+    const google = groups.find((g) => g.type === "provider")
+    expect(google?.provider?.name).toBe("Google")
+    expect(google?.primary.map((k) => k.identity)).toEqual([
       "providers.substrate.reamde.dev/google/contact",
     ])
-    expect(google.hidden).toHaveLength(3)
-    expect(groups[3].primary).toEqual([])
+    expect(google?.hidden).toHaveLength(3)
+    expect(groups.at(-1)?.primary).toEqual([])
   })
 
   it("names a few hidden kinds for the note under a group", () => {
-    expect(hiddenExamples(groups[1])).toBe("email addresses and Gmail labels")
+    const google = groups.find((g) => g.label === "From Google")
+    expect(google && hiddenExamples(google)).toBe(
+      "email addresses and Gmail labels"
+    )
   })
 })
 
 describe("group folding", () => {
   it("starts provider groups folded and every other group open", () => {
-    const yours = { id: "group:yours", type: "yours" as const }
+    const tasks = {
+      id: "group:package:ada.example.com/tasks",
+      type: "package" as const,
+    }
     const google = { id: "group:provider:google", type: "provider" as const }
-    expect(isGroupOpen(yours, [])).toBe(true)
+    expect(isGroupOpen(tasks, [])).toBe(true)
     expect(isGroupOpen(google, [])).toBe(false)
-    expect(isGroupOpen(yours, [groupToggleKey(yours)])).toBe(false)
+    expect(isGroupOpen(tasks, [groupToggleKey(tasks)])).toBe(false)
     expect(isGroupOpen(google, [groupToggleKey(google)])).toBe(true)
   })
 })
 
 describe("authority and package titles", () => {
   it("names an authority where its collections sit", () => {
-    expect(authorityTitle("ada.example.com")).toBe("Your data")
+    expect(authorityTitle("ada.example.com")).toBe("ada.example.com")
     expect(authorityTitle("providers.substrate.reamde.dev")).toBe(
       "From providers"
     )
@@ -128,8 +179,8 @@ describe("authority and package titles", () => {
 })
 
 describe("collectionSource", () => {
-  it("says where a kind comes from", () => {
-    expect(collectionSource("ada.example.com/tasks/task")).toBe("Your data")
+  it("says where a kind comes from: its package, a provider or the substrate", () => {
+    expect(collectionSource("ada.example.com/tasks/task")).toBe("Tasks")
     expect(
       collectionSource("providers.substrate.reamde.dev/google/contact")
     ).toBe("From Google")
@@ -137,11 +188,9 @@ describe("collectionSource", () => {
     expect(collectionSource("substrate.reamde.dev/llm/thread")).toBe(
       "Substrate"
     )
-    expect(collectionSource("substrate.reamde.dev/labs/labreport")).toBe(
-      "Your data"
-    )
+    expect(collectionSource("substrate.reamde.dev/labs/labreport")).toBe("Labs")
     expect(collectionSource("substrate.reamde.dev/clinical/encounter")).toBe(
-      "Your data"
+      "Clinical"
     )
   })
 })

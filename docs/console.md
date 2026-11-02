@@ -46,16 +46,25 @@ measurements),
 the **Technical details** switch. Collapsed, it peeks over the page while the
 pointer rests at the window's left side or on its toggle.
 
-The collections are sorted by where they come from, and every surface that
-lists collections (the sidebar, ⌘K, All data, Home) uses the same sections:
+The collections are sorted by the package that declares them, and every
+surface that lists collections (the sidebar, ⌘K, All data, Home) uses the
+same sections:
 
-- **Your data**: the repository's own authority first, then every other
-  authority that is neither a provider nor the substrate's, and the
-  substrate's packages that hold your records: `observations` and the
-  well-known catalogues (`health`, `labs`, `clinical`,
+- **One section per package** that holds your records, titled by the
+  package's word (**Training**, **Health**, **Tasks**) and ordered by it:
+  your own packages, the samples you imported, any other authority's that is
+  neither a provider's nor the substrate's machinery, and the substrate's
+  packages that hold your records, `observations` and the well-known
+  catalogues (`health`, `labs`, `clinical`,
   [0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
-  This is what you create and change, and what your providers' adapters
-  write for you.
+  Two packages that share a word under different authorities each carry the
+  authority as well (**Training (geoah.me)**, **Training
+  (substrate.reamde.dev)**), the repository's own first. This is what you
+  create and change, and what your providers' adapters write for you. The
+  package is the section because it is what one publisher versions and ships
+  together; an authority publishes unrelated packages, and an app's packages
+  are read and written by other apps and providers too
+  ([0211](decisions/0211-the-console-groups-collections-by-package.md)).
 - **From _Provider_**: one section per provider (**From Google**, **From
   GitHub**), holding the copies that provider keeps up to date.
 - **Substrate**: the substrate's own machinery, the `core`, `llm` and
@@ -90,9 +99,10 @@ collections the way the sidebar does: primary ones in everyday mode, every
 kind with its purpose labelled with Technical details on.
 
 The header above every page is a breadcrumb that reads as where the page sits:
-`Your data / Tasks` or `From Google / Contacts` for a collection, then the
-record's title; with Technical details on it spells the kind reference segment
-by segment and ends in the record id.
+`Health / Workouts` or `From Google / Contacts` for a collection, its first
+crumb opening the package's page, then the record's title; with Technical
+details on it spells the kind reference segment by segment and ends in the
+record id.
 
 ### Technical details
 
@@ -103,9 +113,9 @@ Off, the console speaks in everyday words. On, it adds what a developer or an
 agent author needs, without taking anything away:
 
 - every kind, supporting and internal ones included, and the **Substrate**
-  section; the sidebar becomes the authority → package → kind tree, each kind
-  by its label with its own name in faint mono beside it, and tagged with its
-  purpose when that is not `primary`;
+  section; each section of the sidebar becomes its authority → package →
+  kind tree, each kind by its label with its own name in faint mono beside
+  it, and tagged with its purpose when that is not `primary`;
 - full kind references, record ids and actor ids beside the names, with a
   copy button, and the declaration's own description of a kind instead of the
   one-line summary;
@@ -193,13 +203,13 @@ for this).
 ## All data
 
 **All data** (`/data`) is every collection, in the sidebar's sections, one
-table each: the collection, what it holds and how many records. **Your data**
-is yours to change; a **From _Provider_** section holds copies that provider
-keeps up to date. In everyday mode a section lists its primary collections and
-says how many supporting ones it leaves out and where they are reached from;
-with Technical details on it lists every kind with its full reference and its
-purpose, the **Substrate** section included. A section holding a package an
-agent declared adds a **Made by** column.
+table each: the collection, what it holds and how many records. A package's
+section is yours to change; a **From _Provider_** section holds copies that
+provider keeps up to date. In everyday mode a section lists its primary
+collections and says how many supporting ones it leaves out and where they are
+reached from; with Technical details on it lists every kind with its full
+reference and its purpose, the **Substrate** section included. A section
+holding a package an agent declared adds a **Made by** column.
 
 The two segments above a kind each have a page too: `/data/{authority}`
 tables every kind that authority publishes, package by package, each package

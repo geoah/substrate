@@ -37,7 +37,6 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { providerOfKind } from "@/lib/actor-identity"
 import { splitKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { searchQueryOptions } from "@/lib/api/records"
@@ -148,14 +147,14 @@ export function CommandMenu({
     technical ? [...g.primary, ...g.hidden] : g.primary
   const collections = query
     ? groups
-        .flatMap(shown)
-        .filter((k) =>
+        .flatMap((g) => shown(g).map((kind) => ({ kind, group: g })))
+        .filter(({ kind, group }) =>
           matchesWordPrefixes(
             query,
             [
-              displayPlural(k),
-              providerOfKind(k.identity)?.name ?? "",
-              technical ? k.identity : "",
+              displayPlural(kind),
+              sourceName(group),
+              technical ? kind.identity : "",
             ].join(" ")
           )
         )
@@ -180,7 +179,7 @@ export function CommandMenu({
     ? hits[0]
       ? `record:${hits[0].kind}/${hits[0].id}`
       : collections[0]
-        ? `collection:${collections[0].identity}`
+        ? `collection:${collections[0].kind.identity}`
         : matchedPages[0]
           ? `page:${matchedPages[0].to}`
           : "search"
@@ -283,13 +282,13 @@ export function CommandMenu({
               )}
               {collections.length > 0 && (
                 <CommandGroup heading="Collections">
-                  {collections.map((k) => (
+                  {collections.map(({ kind, group }) => (
                     <CollectionItem
-                      key={k.identity}
-                      kind={k}
+                      key={kind.identity}
+                      kind={kind}
                       technical={technical}
-                      showProvider
-                      onSelect={() => openCollection(k)}
+                      source={group}
+                      onSelect={() => openCollection(kind)}
                     />
                   ))}
                 </CommandGroup>
@@ -357,30 +356,40 @@ export function CommandMenu({
   )
 }
 
-/** One collection: its glyph and plural, the provider it comes from when no
- * group heading says so, its purpose when it is not a primary collection,
- * and its reference in technical mode. */
+/** The name a collection's group is found by and shown as when no heading
+ * says it: the provider's ("Google") or the package's ("Training"). */
+function sourceName(g: CollectionGroup): string {
+  if (g.provider) return g.provider.name
+  return g.type === "package" ? g.label : ""
+}
+
+/** One collection: its glyph and plural, the package or provider it comes
+ * from when no group heading says so, its purpose when it is not a primary
+ * collection, and its reference in technical mode. */
 function CollectionItem({
   kind,
   technical,
-  showProvider = false,
+  source,
   onSelect,
 }: {
   kind: KindInfo
   technical: boolean
-  showProvider?: boolean
+  /** The group it sits in, where the list has no heading for it. */
+  source?: CollectionGroup
   onSelect: () => void
 }) {
   const purpose = kindPurpose(kind)
-  const provider = showProvider ? providerOfKind(kind.identity) : undefined
+  const from = source && sourceName(source)
   return (
     <CommandItem value={`collection:${kind.identity}`} onSelect={onSelect}>
       <KindGlyph kind={kind} size="xs" />
       <span className="truncate">{displayPlural(kind)}</span>
-      {provider && (
+      {from && (
         <span className="inline-flex shrink-0 items-center gap-1 text-[12px] text-faint">
-          <ProviderBadge provider={provider} size="xs" />
-          {provider.name}
+          {source.provider && (
+            <ProviderBadge provider={source.provider} size="xs" />
+          )}
+          {from}
         </span>
       )}
       {purpose !== "primary" && (
