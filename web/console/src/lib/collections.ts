@@ -1,10 +1,14 @@
-/** The collections as a person meets them: "Your data" (the repository's own
- * authority, every other authority that is neither a provider nor the
- * substrate's, and the substrate's packages that hold the owner's records:
- * observations and the well-known catalogues), one "From <Provider>" group
- * per provider package, and the substrate's own machinery (core, llm,
- * console) last. The sidebar, the command menu, All data and Home all read
- * this one grouping, so a kind sits in the same place on every surface. */
+/** The collections as a person meets them: one group per package that holds
+ * the owner's records ("Training", "Health", "Tasks": the repository's own
+ * packages, every other authority's that is neither a provider's nor the
+ * substrate's machinery, and the substrate's observations and well-known
+ * catalogues), one "From <Provider>" group per provider package, and the
+ * substrate's own machinery (core, llm, console) last. The package is the
+ * group because it is the unit one publisher versions and ships together,
+ * while one authority publishes unrelated packages (the substrate publishes
+ * both health and labs, a repository holds every sample it imported). The
+ * sidebar, the command menu, All data, Home and the crumbs all read this one
+ * grouping, so a kind sits in the same place on every surface. */
 
 import {
   PROVIDERS_AUTHORITY,
@@ -18,7 +22,7 @@ import type { KindInfo } from "@/lib/api/types"
 import { kindPurpose } from "@/lib/definition"
 import { displayPlural, lowerFirst, packageDisplayName } from "@/lib/kind-names"
 
-export type CollectionGroupKind = "yours" | "provider" | "system"
+export type CollectionGroupKind = "package" | "provider" | "system"
 
 export interface CollectionPackage {
   authority: string
@@ -39,7 +43,9 @@ export interface CollectionGroup {
    * under. */
   id: string
   type: CollectionGroupKind
-  /** "Your data", "From Google", "Substrate". */
+  /** "Training", "From Google", "Substrate". A package whose word another
+   * package group shares carries its authority too: "Training
+   * (geoah.me)". */
   label: string
   provider?: ProviderInfo
   /** The technical tree under the group. */
@@ -103,14 +109,15 @@ function group(
   }
 }
 
-/** The groups in reading order: yours, then each provider by name, then the
- * substrate's own. A group with no kinds is left out. `home` is the
- * repository's own authority; it leads the tree inside "Your data". */
+/** The groups in reading order: the packages by word, then each provider by
+ * name, then the substrate's own. A group with no kinds is left out. `home`
+ * is the repository's own authority; its package leads others that share its
+ * word. */
 export function collectionGroups(
   kinds: KindInfo[],
   home = ""
 ): CollectionGroup[] {
-  const yours: KindInfo[] = []
+  const packages = new Map<string, KindInfo[]>()
   const system: KindInfo[] = []
   const providers = new Map<string, { info: ProviderInfo; kinds: KindInfo[] }>()
   for (const k of kinds) {
@@ -120,19 +127,34 @@ export function collectionGroups(
       providers.set(provider.key, entry)
       entry.kinds.push(k)
     } else if (isMachinery(k.authority, k.package)) system.push(k)
-    else yours.push(k)
+    else {
+      const id = `${k.authority}/${k.package}`
+      packages.set(id, [...(packages.get(id) ?? []), k])
+    }
   }
-  const out: CollectionGroup[] = []
-  if (yours.length) {
-    const g = group("group:yours", "yours", "Your data", yours)
-    // The repository's own authority reads first; the rest alphabetically.
-    g.authorities.sort(
+  const named = [...packages.entries()]
+    .map(([id, list]) => ({
+      id,
+      list,
+      authority: list[0].authority,
+      word: packageDisplayName(list[0].package),
+    }))
+    .sort(
       (a, b) =>
+        a.word.localeCompare(b.word) ||
         Number(b.authority === home) - Number(a.authority === home) ||
         a.authority.localeCompare(b.authority)
     )
-    out.push(g)
-  }
+  const words = named.map((p) => p.word)
+  const shared = new Set(words.filter((w, i) => words.indexOf(w) !== i))
+  const out: CollectionGroup[] = named.map(({ id, list, authority, word }) =>
+    group(
+      `group:package:${id}`,
+      "package",
+      shared.has(word) ? `${word} (${authority})` : word,
+      list
+    )
+  )
   for (const { info, kinds: list } of [...providers.values()].sort((a, b) =>
     a.info.name.localeCompare(b.info.name)
   )) {
@@ -152,19 +174,21 @@ export function collectionGroups(
   return out
 }
 
-/** Where a kind sits, in words: "Your data", "From Google", "Substrate". */
+/** Where a kind sits, in words: its package ("Training"), "From Google",
+ * "Substrate". */
 export function collectionSource(kind: string): string {
   const provider = providerOfKind(kind)
   if (provider) return `From ${provider.name}`
   const { authority, pkg } = splitKind(kind)
-  return isMachinery(authority, pkg) ? "Substrate" : "Your data"
+  return isMachinery(authority, pkg) ? "Substrate" : packageDisplayName(pkg)
 }
 
-/** An authority as its page and crumb name it, in `collectionSource`'s
- * words: "Your data", "From providers", "Substrate". */
+/** An authority as its page and crumb name it: "From providers",
+ * "Substrate", and any other by its own name, since it is the publisher of
+ * the packages under it and not a place of its own. */
 export function authorityTitle(authority: string): string {
   if (authority === PROVIDERS_AUTHORITY) return "From providers"
-  return authority === CORE_AUTHORITY ? "Substrate" : "Your data"
+  return authority === CORE_AUTHORITY ? "Substrate" : authority
 }
 
 /** A package as its page and crumb name it: a provider by its own name
