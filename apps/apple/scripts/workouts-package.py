@@ -225,10 +225,10 @@ def field_line(name: str, spec: dict) -> str:
     return head if kind == "string" else f"{head}: {kind}"
 
 
-def field_guide(name: str, properties: dict, indent: str = "") -> list[str]:
+def field_guide(name: str, properties: dict, indent: str = "", skip: tuple = ()) -> list[str]:
     plain, said = [], {}
     for prop, spec in properties.items():
-        if "fields" in spec or (name.startswith("groups") and prop in GROUP_GUIDE_SKIP):
+        if "fields" in spec or prop in skip:
             continue
         line = field_line(prop, spec)
         values = line.split(": ", 1)[1] if ": " in line else ""
@@ -239,7 +239,8 @@ def field_guide(name: str, properties: dict, indent: str = "") -> list[str]:
     lines = [f"{indent}{name}: " + "; ".join(plain)]
     for prop, spec in properties.items():
         if "fields" in spec and prop not in GUIDE_SKIP:
-            lines += field_guide(f"{prop}[] (each)", spec["fields"], indent + "  ")
+            nested = GROUP_GUIDE_SKIP if prop == "groups" else ()
+            lines += field_guide(f"{prop}[] (each)", spec["fields"], indent + "  ", nested)
     return lines
 
 
@@ -267,9 +268,13 @@ def coach_guide(version: int) -> str:
     for name in ("routine", "exercise"):
         doc = documents(name)[0]
         properties = doc["data"]["properties"]
-        if name == "exercise":
-            properties = {k: v for k, v in properties.items() if k not in EXERCISE_GUIDE_SKIP}
-        lines += field_guide(doc["metadata"]["id"], properties)
+        # A skip naming a field the kind no longer has would let a renamed
+        # field back into the guide unnoticed, and past the prompt's cap.
+        skips = {"exercise": (properties, EXERCISE_GUIDE_SKIP), "routine": (properties.get("groups", {}).get("fields", {}), GROUP_GUIDE_SKIP)}
+        fields, skip = skips[name]
+        if missing := [prop for prop in skip if prop not in fields]:
+            raise GenerateError(f"the coach's guide skips {missing}, which ~/training/{name} does not declare")
+        lines += field_guide(doc["metadata"]["id"], properties, skip=EXERCISE_GUIDE_SKIP if name == "exercise" else ())
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
