@@ -163,3 +163,57 @@ func TestCheckPendingNamesEveryMigrationTheDatabaseLacks(t *testing.T) {
 		t.Fatalf("an empty database was not refused naming 0001: %v", err)
 	}
 }
+
+// pgvector reports `major.minor.patch`, and some builds `major.minor`. The
+// floor is 0.7.0; anything below it, or anything unreadable, is refused and
+// the refusal names the version, the floor and the command that upgrades.
+func TestVectorFloorComparesPgvectorVersions(t *testing.T) {
+	t.Parallel()
+	for version, ok := range map[string]bool{
+		"":        true, // no pgvector on the server: 0001 refuses with Postgres's own error
+		"0.7.0":   true,
+		"0.7":     true,
+		"0.8.1":   true,
+		"0.10.0":  true,
+		"1.0.0":   true,
+		"0.6.2":   false,
+		"0.6":     false,
+		"0.5.1":   false,
+		"0":       false,
+		"0.x.0":   false,
+		"0.7.0.1": false,
+	} {
+		err := checkVectorFloor(version)
+		if ok {
+			if err != nil {
+				t.Errorf("pgvector %q was refused: %v", version, err)
+			}
+			continue
+		}
+		if !errors.Is(err, ErrVectorTooOld) {
+			t.Errorf("pgvector %q: want ErrVectorTooOld, got %v", version, err)
+			continue
+		}
+		for _, want := range []string{"pgvector " + version + " is installed", "0.7.0", "ALTER EXTENSION vector UPDATE", "Nothing was applied"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("pgvector %q: the refusal does not say %q: %v", version, want, err)
+			}
+		}
+	}
+}
+
+// The floor is read only while 0015 is still to apply: a database that
+// recorded it already passed, and a run stopped below it never reaches it.
+func TestVectorFloorAppliesOnlyWhile0015IsPending(t *testing.T) {
+	t.Parallel()
+	migrations := []migration{{Version: 14}, {Version: vectorFloorMigration}, {Version: 16}}
+	if !pendingThrough(migrations, rows(map[int]string{14: ""}), 1<<30, vectorFloorMigration) {
+		t.Error("0015 pending was not seen as pending")
+	}
+	if pendingThrough(migrations, rows(map[int]string{14: "", 15: ""}), 1<<30, vectorFloorMigration) {
+		t.Error("0015 recorded was seen as pending")
+	}
+	if pendingThrough(migrations, map[int]recorded{}, 14, vectorFloorMigration) {
+		t.Error("a run stopped at 0014 was seen as reaching 0015")
+	}
+}

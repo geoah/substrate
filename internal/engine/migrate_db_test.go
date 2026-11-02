@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -205,5 +206,52 @@ func TestReadOnlyOpenServesAnUpToDateDatabaseBesideTheWriter(t *testing.T) {
 	}
 	if got := indexNames(t, db); got != indexesBefore {
 		t.Fatalf("a read-only open built an index:\n before %s\n after  %s", indexesBefore, got)
+	}
+}
+
+// A pgvector older than 0.7 refuses the boot before any pending migration
+// applies, from empty and from a database the previous release left at 0014:
+// migrations commit one at a time, so anything applied before a failed 0015
+// would leave the database refused by the previous release too.
+func TestVectorFloorRefusesBeforeApplyingAnything(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	for name, staged := range map[string]int{"from empty": 0, "at 0014": 14} {
+		dsn := testdb.NewSchema(t)
+		if staged > 0 {
+			if err := engine.MigrateThrough(ctx, dsn, staged); err != nil {
+				t.Fatalf("%s: stage the database: %v", name, err)
+			}
+		}
+		db := rawDB(t, dsn)
+		var before string
+		if staged > 0 {
+			before = migrationRows(t, db)
+		}
+		err := engine.MigrateThroughWithVectorVersion(ctx, dsn, math.MaxInt, "0.6.0")
+		if !errors.Is(err, engine.ErrVectorTooOld) {
+			t.Fatalf("%s: pgvector 0.6.0 was not refused with ErrVectorTooOld: %v", name, err)
+		}
+		if got := migrationRows(t, db); got != before {
+			t.Fatalf("%s: schema_migrations changed under the refusal:\n before %q\n after  %q", name, before, got)
+		}
+	}
+}
+
+// A database that recorded 0015 already passed the floor, so the check is not
+// read again; the test image's own pgvector passes it.
+func TestVectorFloorPassesTheTestImageAndAnAppliedDatabase(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	version, err := engine.VectorVersion(ctx, dsn)
+	if err != nil || version == "" {
+		t.Fatalf("read the test image's pgvector version: %q, %v", version, err)
+	}
+	if err := engine.MigrateThrough(ctx, dsn, math.MaxInt); err != nil {
+		t.Fatalf("pgvector %s was refused: %v", version, err)
+	}
+	if err := engine.MigrateThroughWithVectorVersion(ctx, dsn, math.MaxInt, "0.6.0"); err != nil {
+		t.Fatalf("a database that applied 0015 was refused for its pgvector: %v", err)
 	}
 }
