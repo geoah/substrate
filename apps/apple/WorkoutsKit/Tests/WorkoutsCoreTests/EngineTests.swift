@@ -593,6 +593,53 @@ struct EngineSetTests {
         script.refuse(.removeSet(row: head), .unknownRow)
     }
 
+    @Test("restoreSet puts a removed set back with its values and place, a done head with its chain, and folds")
+    func restoreSet() throws {
+        var script = EngineScript(at: engineEpoch)
+        let routine = EngineCatalog.routine([
+            EngineCatalog.slot("press", EngineCatalog.press, [
+                PlannedSet(key: "s1", repsMin: 8, repsMax: 12, load: .kg(50)),
+                PlannedSet(key: "s2", structure: .drop, repsMin: 8, repsMax: 12, load: .kg(50), drops: 2),
+                PlannedSet(key: "s3", repsMin: 8, repsMax: 12, load: .kg(50)),
+            ]),
+        ])
+        try script.start(routine, exercises: EngineCatalog.all)
+        let (s1, head, drop1, drop2, s3) = try (script.row("press", 0), script.row("press", 1), script.row("press", 2),
+                                                script.row("press", 3), script.row("press", 4))
+        // A pending set with typed values comes back where it stood, values and all.
+        try script.send(.editSet(.init(row: s1, values: SetValuesPatch(load: .set(.kg(55)), reps: .set(9)))))
+        let before = try script.current
+        let back = try #require(SessionEngine.restoration(of: s1, in: before))
+        #expect(back.position == 0 && back.rows.map(\.id) == [s1])
+        try script.send(.removeSet(row: s1))
+        var state = try script.send(.restoreSet(back))
+        #expect(state.slot("press")?.rows == before.slot("press")?.rows)
+        #expect(state.rows[s1] == before.rows[s1])
+        // A done head comes back with its chain, its tick and the Up next anchor.
+        try script.tick(s1, kgReps(50, 10))
+        try script.tick(head, kgReps(50, 10), at: script.now.addingTimeInterval(120))
+        let done = try script.current
+        let chain = try #require(SessionEngine.restoration(of: head, in: done))
+        #expect(chain.rows.map(\.id) == [head, drop1, drop2] && chain.position == 1)
+        try script.send(.removeSet(row: head))
+        state = try script.send(.restoreSet(chain))
+        #expect(state.slot("press")?.rows == [s1, head, drop1, drop2, s3])
+        #expect(state.rows[head]?.performed == done.rows[head]?.performed)
+        #expect(state.lastCompleted == head)
+        // A tail of segments goes back onto the chain it left, at its end.
+        let tail = try #require(SessionEngine.restoration(of: drop2, in: state))
+        try script.send(.removeSet(row: drop2))
+        state = try script.send(.restoreSet(tail))
+        #expect(state.chain(of: head).map(\.id) == [head, drop1, drop2])
+        // Twice is a duplicate; onto a chain that has gone, refused.
+        script.refuse(.restoreSet(tail), .duplicateID)
+        try script.send(.removeSet(row: head))
+        script.refuse(.restoreSet(tail), .unknownRow)
+        script.refuse(.restoreSet(.init(slot: "nope", position: 0, rows: chain.rows)), .unknownSlot)
+        // The journal of removes and restores survives a relaunch.
+        #expect(try SessionEngine.fold(script.events) == script.current)
+    }
+
     @Test("changeSetKind on pending and completed rows, and what it refuses")
     func changeKind() throws {
         var script = EngineScript(at: engineEpoch)

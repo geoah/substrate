@@ -468,27 +468,51 @@ are decisions:
   list everything the stored bundle lists. A narrowing waits for the owner.
 - **A declared bundle lists its kinds and nothing else.** `modules`, `oauth2` and `inputs` are
   refused with 403, and so are a kind's `indices` and a property's `embed`.
-- **An owner's kind edit stops the app's next upgrade** (`.edited`) until the owner chooses
-  "Update the Package Anyway" ([O1](#o1-update-the-package-anyway)).
+- **An owner's kind edit stops the app's next upgrade** (`.edited`). The "Update the Package
+  Anyway" choice this shipped with is gone ([O1](#o1-update-the-package-anyway)).
 - **A write the server refuses is parked**, holding only its session, and listed in Settings
   with Retry and Discard.
 - **Deletes are respected both ways.** A session the server dropped after this phone sent it
   is deleted on the phone and never re-uploaded. A session deleted on the phone is purged on
-  the server and never imported.
+  the server it belongs to and never imported from it ([O3](#o3-tombstones-apply-on-every-server)).
 - **Each sign-in is one account**, with its own outbox, catalogue and package check. A sync
   run stops publishing once its account is no longer current.
+
+## The owner's answers of 2026-11-02
+
+Two more, from the owner's first sessions with #1110's build, besides closing O1 to O4 below:
+
+- **Delete set saves at once.** The delete is applied to the engine and the journal straight
+  away, so a killed app keeps the set deleted, and the Live Activity moves on at once. The undo
+  toast's Undo sends a `restoreSet` event that puts the set back with its values, ticks and
+  place. Until then the removal waited five seconds behind the toast and was lost if the app was
+  killed in that window.
+- **A `rirstop` set pre-fills its planned reps.** The open Push Up showed "–" while its line
+  showed "≈8 reps". The open set now pre-fills the planned value as every other set does, as a
+  suggestion rather than as typed, and Log commits it unless the owner types the reps done.
 
 ## Open questions
 
 ### Open since #1100
 
-The four questions the fixer left for the owner on 2026-11-01. **All four are open.**
+The four questions the fixer left for the owner on 2026-11-01. **All four were answered by
+the owner on 2026-11-02 and are closed**; the answers follow each question.
 
 #### O1. Update the Package Anyway
 
 "Update the Package Anyway" lets the owner apply the app's package over their own kind edits.
 Edits to labels and descriptions are replaced; additions survive, because the server refuses
 removals. Keep it, or require the owner to settle the package in the console?
+
+**Answer (owner, 2026-11-02): neither.** The training kinds are owned by the app: they are
+Substrate Workouts' authority, and the owner cannot modify them. The button and every path that
+applies over a package changed since the app last wrote it are removed. A package found changed
+outside the app, at its version or behind it, stops every write to that repository, and the app
+says "The Training package on <server> was changed outside Substrate Workouts; it is managed by
+this app." Sessions keep being logged on the phone and wait there. No Reinstall is offered:
+applying the app's kinds over the change is the path being removed. The server enforcement, which
+refuses an owner's edit to an app's kinds, is in progress in a separate change, and makes this
+state rare.
 
 #### O2. The apply race, and an expected-version check
 
@@ -497,15 +521,27 @@ The guard reads the stored package outside the engine's transaction, and
 read and its apply is not seen. Closing that needs an expected-version precondition on
 `/vocabulary/apply`, a server change not made in #1100. 0203 and `docs/apps.md` state the gap.
 
+**Answer (owner, 2026-11-02): as O1.** The kinds are owned by the app and the owner cannot
+modify them, so there is no owner edit to race; the server enforcement of that is in progress.
+The app keeps its baseline comparison as a local check and writes nothing when it finds drift.
+
 #### O3. Tombstones apply on every server
 
 The phone's tombstones are phone-wide, not per repository: a session deleted on the phone is
 purged in every repository it reaches.
 
+**Answer (owner, 2026-11-02): one server per app.** The app works with one server at a time and
+has no multi-server features. Tombstones are kept per server and repository, in the account's
+folder beside its per-repository outbox, so a session deleted on the phone is purged only on the
+server it belongs to. A delete made while signed out (and the phone-wide list earlier builds
+kept) only keeps the session from being imported again; it purges nothing.
+
 #### O4. Re-upload of sessions imported by the old build
 
 Sessions the old build imported carry no record versions. Until this build's first sync
 records them, a session the server deletes would be uploaded again, once.
+
+**Answer (owner, 2026-11-02): accepted.** No code change.
 
 ### Still open from proposal 087
 

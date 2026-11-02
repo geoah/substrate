@@ -705,6 +705,30 @@ struct RowsStructureTests {
     }
 }
 
+@Suite("Rows layout: a rirstop set's open editor")
+struct RowsRirstopEditorTests {
+    @Test("The open push-up pre-fills its planned reps as a suggestion, not as typed, and Log commits them")
+    func pushUpPrefill() throws {
+        var session = try RowsSession.fullyBody()
+        let push = try session.row("push-up", 0)
+        try session.script.send(.touchRow(row: push), at: session.at(5))
+        let layout = try session.layout(at: 6)
+        #expect(layout.openRow == push)
+        let item = try #require(layout.item(push))
+        // The line keeps the approximate mark; the field holds the number itself.
+        #expect(item.values == "≈15 reps")
+        let editor = try #require(item.editor)
+        let reps = try #require(editor.field(.reps))
+        #expect(reps.value == "15" && reps.placeholder == nil && !reps.isChanged && reps.reset == nil && !reps.isMissing)
+        #expect(reps.accessibilityValue == "15, suggested")
+        #expect(editor.primary.isEnabled && editor.primary.title.hasPrefix("Log 15 reps"))
+        // Planned, not entered: nothing is typed into the row until the owner types.
+        #expect(try session.script.current.rows[push]?.entered.reps == nil)
+        try session.log("push-up", 0, at: 30)
+        #expect(try session.script.current.rows[push]?.performed?.values.reps == 15)
+    }
+}
+
 @Suite("Rows layout: words")
 struct RowsWordsTests {
     @Test("Block subtitles: a range and its effort, a hold, reps alone, an effort alone, and the set rest")
@@ -713,7 +737,7 @@ struct RowsWordsTests {
         #expect(layout.block("plank")?.subtitle == "0:45–1:30 holds, rest 0:15")
         #expect(layout.block("crunch")?.subtitle == "12–20 reps, no rest")
         #expect(layout.block("push-up")?.subtitle == "Each set to RPE 9, rest 1:30")
-        // The push-up's reps are a hint (rirstop): shown `≈15`, read "about", never logged.
+        // The push-up's reps are approximate (rirstop): its line shows `≈15`, read "about".
         let push = try #require(layout.block("push-up")?.lines.first)
         #expect(push.values == "≈15 reps" && push.last == "last 14 @ 9")
         #expect(push.sentence == "Set 1, coming up: about 15 reps. Last time 14 reps.")

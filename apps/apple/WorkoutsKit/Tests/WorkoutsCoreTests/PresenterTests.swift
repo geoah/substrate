@@ -222,13 +222,13 @@ struct PresenterGridTests {
             == "Last time 35 kg × 15, top of range; try 40 kg × 11")
     }
 
-    @Test("A rirstop set shows its reps as a hint, outlined, and the tick waits for the reps done")
+    @Test("A rirstop set shows its reps as approximate, and the tick commits them unless the reps done are typed")
     func rirstopHint() throws {
         var session = try NextFullyBody()
         let row = try session.row("push-up", 0)
         var presented = try #require(try session.present().row(row))
-        #expect(presented.cell(.reps)?.text == "≈15")
-        #expect(presented.commitValues == nil && !presented.canTick)
+        #expect(presented.cell(.reps)?.text == "≈15" && presented.cell(.reps)?.isMissing == false)
+        #expect(presented.commitValues == SetValues(reps: 15) && presented.canTick)
         try session.send(.editSet(.init(row: row, values: SetValuesPatch(reps: .set(13)))), at: 10)
         presented = try #require(try session.present(at: 10).row(row))
         #expect(presented.cell(.reps)?.text == "13" && presented.cell(.reps)?.isGhost == false)
@@ -475,7 +475,8 @@ struct PresenterControllerTests {
         #expect(unticked.count == 53)
         // Set 2 follows set 1's 40 kg × 11 at RPE 9 in the session.
         #expect(unticked[try session.row("chest-press", 2)] == .some(SetValues(load: .kg(40), reps: 11)))
-        #expect(unticked[try session.row("push-up", 0)] == .some(nil))
+        // A rirstop set's planned reps are shown, so saved as shown.
+        #expect(unticked[try session.row("push-up", 0)] == .some(SetValues(reps: 15)))
         let end = NextFullyBody.start.addingTimeInterval(47 * 60 + 12)
         let summary = FinishPresenter.summary(try session.script.current, presentation: presentation, policy: .drop, end: end,
                                               healthAllowed: true)

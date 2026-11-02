@@ -27,6 +27,23 @@ public enum SessionEngine {
         return next
     }
 
+    /// What `removeSet(row:)` of `id` takes: a head with its whole chain, a
+    /// segment with the segments after it, in slot order.
+    public static func removed(by id: RowID, in state: SessionState) -> [Row] {
+        guard let row = state.rows[id] else { return [] }
+        let chain = state.chain(of: id)
+        return row.isHead ? chain : chain.filter { $0.chainPosition >= row.chainPosition }
+    }
+
+    /// The event that takes back `removeSet(row: id)` on `state`, read before
+    /// the removal; nil for a row the state does not have.
+    public static func restoration(of id: RowID, in state: SessionState) -> SessionEvent.RestoreSet? {
+        let rows = removed(by: id, in: state)
+        guard let first = rows.first, let slot = state.slot(first.slot),
+              let position = slot.rows.firstIndex(of: first.id) else { return nil }
+        return SessionEvent.RestoreSet(slot: first.slot, position: position, rows: rows)
+    }
+
     /// Folds a journal's events into the state they describe.
     public static func fold(_ events: [EventEnvelope]) throws(EngineError) -> SessionState {
         var state: SessionState?
@@ -201,6 +218,7 @@ struct Reduction {
         case let .uncompleteSet(row): try uncomplete(row)
         case let .addSet(add): try addSet(add)
         case let .removeSet(row): try removeSet(row)
+        case let .restoreSet(restore): try self.restore(restore)
         case let .changeSetKind(change): try changeKind(change)
         case let .setRowRest(row, seconds): try setRowRest(row, seconds)
         case let .addExercise(add): try addExercise(add)
@@ -381,11 +399,28 @@ struct Reduction {
     }
 
     mutating func removeSet(_ id: RowID) throws(EngineError) {
-        let row = try state.requireRow(id)
-        let chain = state.chain(of: id)
-        // A head goes with its whole chain; a segment with the segments after it.
-        let doomed = row.isHead ? chain : chain.filter { $0.chainPosition >= row.chainPosition }
-        state.removeRows(Set(doomed.map(\.id)))
+        _ = try state.requireRow(id)
+        state.removeRows(Set(SessionEngine.removed(by: id, in: state).map(\.id)))
+    }
+
+    /// Puts back what a `removeSet` took. A tail of segments goes back only
+    /// onto the chain it left, still ending where it was cut; the rest
+    /// countdown and clock a removed tick started stay gone.
+    mutating func restore(_ restore: SessionEvent.RestoreSet) throws(EngineError) {
+        let index = try state.requireSlotIndex(restore.slot)
+        guard let first = restore.rows.first, restore.rows.allSatisfy({ $0.slot == restore.slot }) else { throw .unknownRow }
+        guard !restore.rows.contains(where: { state.rows[$0.id] != nil }) else { throw .duplicateID }
+        if !first.isHead {
+            let chain = state.chain(of: first.headID)
+            guard let last = chain.last, last.chainPosition == first.chainPosition - 1, last.structure == first.structure
+            else { throw .unknownRow }
+        }
+        var rows = restore.rows
+        // The countdown that ran a removed timed set is gone, so its timer is too.
+        for i in rows.indices where rows[i].isPending { rows[i].timerStartedAt = nil }
+        let position = first.isHead ? restore.position : (state.positionAfterChain(first.headID) ?? restore.position)
+        try state.insert(rows, inSlot: index, at: position)
+        if rows.contains(where: \.isCompleted) { state.recomputeLastCompleted() }
     }
 
     mutating func changeKind(_ change: SessionEvent.ChangeSetKind) throws(EngineError) {

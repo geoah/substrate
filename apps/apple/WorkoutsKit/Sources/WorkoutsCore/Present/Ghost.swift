@@ -10,8 +10,9 @@ public struct GhostValues: Equatable, Sendable {
     public var reps: Int?
     public var duration: Seconds?
     public var distance: Length?
-    /// The reps are a hint (`≈15`) the tick does not commit: a `rirstop`
-    /// set ends at its effort, and the owner types the reps done (§5.3).
+    /// The reps are approximate (`≈15`): a `rirstop` set ends at its effort.
+    /// They pre-fill as any suggestion does and the tick commits them unless
+    /// the owner types the reps done (owner, 2026-11-02; §5.3).
     public var repsIsHint: Bool
     /// Words in place of a rep count: a drop or an open mini-set goes "to
     /// failure", and nothing is committed for it.
@@ -327,26 +328,25 @@ final class SessionEvaluator {
     }
 
     /// What a row shows: its performed values, else what is typed with the
-    /// ghost values in the gaps (a hint included).
+    /// ghost values in the gaps (an approximate count included).
     func shown(_ id: RowID) -> SetValues {
         guard let row = state.rows[id] else { return SetValues() }
         if let performed = row.performed { return performed.values }
-        return filled(row.entered, ghost(id), hints: true)
+        return filled(row.entered, ghost(id))
     }
 
     /// What a tick of the row commits (§5.5): what it shows, typed or ghost,
-    /// except a `rirstop` hint and a "to failure" placeholder.
+    /// a `rirstop` set's planned reps included; a "to failure" placeholder is
+    /// no value, so nothing is committed for it.
     func commit(_ id: RowID) -> SetValues {
-        guard let row = state.rows[id] else { return SetValues() }
-        if let performed = row.performed { return performed.values }
-        return filled(row.entered, ghost(id), hints: false)
+        shown(id)
     }
 
-    private func filled(_ entered: SetValues, _ ghost: GhostValues, hints: Bool) -> SetValues {
+    private func filled(_ entered: SetValues, _ ghost: GhostValues) -> SetValues {
         var values = entered
         values.load = values.load ?? ghost.load
         values.assistance = values.assistance ?? ghost.assistance
-        values.reps = values.reps ?? (ghost.repsIsHint && !hints ? nil : ghost.reps)
+        values.reps = values.reps ?? ghost.reps
         values.duration = values.duration ?? ghost.duration
         values.distance = values.distance ?? ghost.distance
         return values

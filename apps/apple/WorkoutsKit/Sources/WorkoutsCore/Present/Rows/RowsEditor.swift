@@ -504,8 +504,6 @@ struct RowsEditorSource: Equatable, Sendable {
     var baseline: SetValues
     /// `log`: words an empty reps field shows (`to failure`).
     var repsPlaceholder: String?
-    /// `log`: the baseline's reps are a hint (`≈15`), shown, never logged.
-    var repsHint: Bool
     var previous: SetValues?
     var loadStep: Mass
     var grid: RowsGrid?
@@ -570,7 +568,7 @@ struct RowsEditorSource: Equatable, Sendable {
         guard mode == .log else { return values }
         var shown = values
         for field in fields where FieldAccess.number(field, values) == nil {
-            if field == .reps, repsHint || repsPlaceholder != nil { continue }
+            if field == .reps, repsPlaceholder != nil { continue }
             shown = shown.applying(FieldAccess.restoring(field, from: baseline))
         }
         return shown
@@ -579,8 +577,8 @@ struct RowsEditorSource: Equatable, Sendable {
     func field(_ field: ValueField, values: SetValues, missing: Bool) -> RowsField {
         let typed = FieldAccess.number(field, values)
         let base = FieldAccess.number(field, baseline)
-        // A hint or "to failure" is no suggestion to go back to: it is never logged.
-        let baselineIsHint = mode == .log && field == .reps && (repsHint || repsPlaceholder != nil)
+        // "To failure" is no suggestion to go back to: it is never logged.
+        let baselineIsHint = mode == .log && field == .reps && repsPlaceholder != nil
         let hinted = baselineIsHint && typed == nil
         let current: Decimal? = typed ?? (mode == .log && !hinted ? base : nil)
         let currentUnit = FieldAccess.unit(field, values) ?? FieldAccess.unit(field, baseline) ?? unit
@@ -602,17 +600,13 @@ struct RowsEditorSource: Equatable, Sendable {
                                   patch: FieldAccess.restoring(field, from: baseline))
             }
         }
-        // A hint (`≈15`) shows in the empty field. Words (`to failure`) do
-        // not: a field holds a number, and the header says it once (owner,
-        // 2026-11-02). VoiceOver still hears them with the empty field.
-        var placeholder: String?
+        // Words (`to failure`) do not show in the empty field: a field holds
+        // a number, and the header says it once (owner, 2026-11-02).
+        // VoiceOver still hears them with the empty field. A `rirstop` set's
+        // approximate reps are no placeholder: they pre-fill as planned.
         var words: String?
-        if current == nil, mode == .log, field == .reps {
-            if let repsPlaceholder {
-                words = repsPlaceholder
-            } else if repsHint, let base {
-                placeholder = "\u{2248}\(RowsText.fieldText(.reps, base, unit: unit, withUnit: false))"
-            }
+        if current == nil, mode == .log, field == .reps, let repsPlaceholder {
+            words = repsPlaceholder
         }
         let previousValue = previous.flatMap { FieldAccess.number(field, $0) }
         let previousUnit = previous.flatMap { FieldAccess.unit(field, $0) } ?? unit
@@ -622,7 +616,7 @@ struct RowsEditorSource: Equatable, Sendable {
         let (minus, plus) = steps(field, from: seed, unit: currentUnit)
         let spokenName = RowsText.spokenField(field, measurement: measurement, unit: unit)
         let valueText = current.map { RowsText.fieldText(field, $0, unit: currentUnit, withUnit: false) }
-        var accessibilityValue = valueText ?? (placeholder ?? words).map { "\($0), empty" } ?? (missing ? "required, empty" : "empty")
+        var accessibilityValue = valueText ?? words.map { "\($0), empty" } ?? (missing ? "required, empty" : "empty")
         if let valueText {
             if isChanged, let base {
                 let was = RowsText.fieldText(field, base, unit: FieldAccess.unit(field, baseline) ?? unit, withUnit: false)
@@ -634,7 +628,7 @@ struct RowsEditorSource: Equatable, Sendable {
         return RowsField(
             field: field,
             value: valueText,
-            placeholder: placeholder,
+            placeholder: nil,
             unit: RowsText.unitText(field, measurement: measurement, unit: currentUnit, perSide: perSide, value: current),
             last: last,
             isChanged: isChanged,

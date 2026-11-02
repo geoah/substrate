@@ -29,6 +29,9 @@ public enum SessionEvent: Codable, Equatable, Sendable {
     case uncompleteSet(row: RowID)
     case addSet(AddSet)
     case removeSet(row: RowID)
+    /// A removal taken back: the rows `removeSet` took, as they were, back at
+    /// their place (`SessionEngine.restoration(of:in:)` builds it).
+    case restoreSet(RestoreSet)
     case changeSetKind(ChangeSetKind)
     /// The per-set rest override; nil clears it.
     case setRowRest(row: RowID, seconds: Seconds?)
@@ -68,7 +71,7 @@ public enum SessionEvent: Codable, Equatable, Sendable {
         case .start, .addExercise, .removeExercise, .reorderExercises, .replaceExercise, .groupExercises,
              .ungroupExercise, .setGroup, .setSlotRest, .setNote, .pauseClock, .resumeClock, .finish:
             true
-        case .touchRow, .editSet, .completeSet, .uncompleteSet, .addSet, .removeSet, .changeSetKind, .setRowRest,
+        case .touchRow, .editSet, .completeSet, .uncompleteSet, .addSet, .removeSet, .restoreSet, .changeSetKind, .setRowRest,
              .startRest, .adjustRest, .skipRest, .startTimedSet, .stopTimedSet, .cancelTimedSet, .discard:
             false
         }
@@ -133,6 +136,22 @@ public extension SessionEvent {
             self.values = values
             self.note = note
             self.segmentRowIDs = segmentRowIDs
+        }
+    }
+
+    /// The rows one `removeSet` took, in slot order, and where they stood:
+    /// the Undo after Delete set (§7.6a). The event carries the rows whole,
+    /// values and ticks included, so a fold needs nothing else.
+    struct RestoreSet: Codable, Equatable, Sendable {
+        public var slot: String
+        /// The index in the slot's rows the first of them had.
+        public var position: Int
+        public var rows: [Row]
+
+        public init(slot: String, position: Int, rows: [Row]) {
+            self.slot = slot
+            self.position = position
+            self.rows = rows
         }
     }
 

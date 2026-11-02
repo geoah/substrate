@@ -89,8 +89,7 @@ struct LiveServerTests {
         #expect(try await upgrade.ensure() == .current(held: shipped + 1))
 
         // The owner adds a property to the set kind in the console: the
-        // upgrade after stops for them, and applying over it anyway is refused
-        // by the server, which keeps the owner's property.
+        // app's next upgrade writes nothing over it (O1/O2).
         let ownerAPI = WorkoutsAPI(client: owner, authority: session.repository)
         var setKind = try #require(upgrade.manifest.documents(for: api.rehome).first { document in
             guard case let .object(object) = document, case let .object(metadata)? = object["metadata"] else { return false }
@@ -106,10 +105,6 @@ struct LiveServerTests {
         try await ownerAPI.applyVocabulary([setKind])
         let third = PackageInstaller(api: api, manifest: bumped(installer.manifest, to: shipped + 2), baselineDirectory: baseline)
         #expect(try await third.ensure() == .edited(held: shipped + 1, kinds: ["\(session.repository)/training/set"]))
-        guard case let .refused(_, reason) = try await third.ensure(overwritingEdits: true) else {
-            Issue.record("the app's apply removed the owner's property"); return
-        }
-        #expect(reason.contains("ownersNote"))
 
         // Routines from the server, after the starter copy.
         let directory = temporaryDirectory()

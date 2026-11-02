@@ -207,7 +207,7 @@ struct ExampleProgressionTests {
         #expect(try text("chest-press", 3) == "Drop 20% from 35 kg: 25 kg to failure")
     }
 
-    @Test("Fri 30 Oct: the push-up's reps are a hint the tick does not commit (rirstop)")
+    @Test("Fri 30 Oct: the push-up's reps are approximate, pre-filled as planned (rirstop)")
     func pushUpHint() throws {
         let start = DateText.parse("2026-10-30T13:42:00Z")!
         let history = try Progression.history(before: start)
@@ -216,10 +216,10 @@ struct ExampleProgressionTests {
         let row = try #require(presentation.row(try script.row("push-up", 0)))
         let reps = try #require(row.cell(.reps))
         #expect(reps.text == "\u{2248}15")
-        #expect(reps.isGhost && reps.isHint && reps.isMissing)
-        #expect(row.commitValues == nil)
-        #expect(row.missing == [.reps])
-        #expect(!row.canTick)
+        #expect(reps.isGhost && reps.isHint && !reps.isMissing)
+        #expect(row.commitValues?.reps == 15)
+        #expect(row.missing.isEmpty)
+        #expect(row.canTick)
     }
 
     @Test("Wed 28 Oct, coverage: the back-off set backs off 10 % from the 110 kg top set (§5.3)")

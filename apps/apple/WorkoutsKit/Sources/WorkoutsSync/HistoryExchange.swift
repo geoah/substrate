@@ -8,8 +8,13 @@ import WorkoutsCore
 ///   is there was uploaded to that repository or read from it, so its
 ///   absence on the server later is the owner's delete, never a reason to
 ///   send it again;
-/// - the phone's tombstones (`SessionTombstones`): a session deleted on the
-///   phone is never imported again, and a server copy is purged;
+/// - this repository's tombstones (`SessionTombstones`, kept in the
+///   account's folder like its outbox): a session deleted on the phone while
+///   signed in to this server and repository is never imported from it
+///   again, and its copy there is purged. The app works with one server at
+///   a time, and a delete reaches only the one it belongs to (O3);
+/// - `hidden`: sessions deleted while signed out, or before tombstones were
+///   kept per repository: never imported again, never purged;
 /// - the writes still queued: a session with a write waiting is the phone's
 ///   until the write lands, so the server's copy is neither merged nor read
 ///   as deleted.
@@ -46,7 +51,7 @@ public enum HistoryExchange {
     }
 
     public static func plan(server: ServerSnapshot, local: [SessionRecords], queued: Set<String>, versions: [String: Int],
-                            tombstones: Set<String>, codec: RecordCodec) -> Plan
+                            tombstones: Set<String>, hidden: Set<String> = [], codec: RecordCodec) -> Plan
     {
         var plan = Plan()
         let kinds = codec.kinds
@@ -58,6 +63,7 @@ public enum HistoryExchange {
                 if !queued.contains(id) { plan.purges.append(SessionID(rawValue: id)) }
                 continue
             }
+            if hidden.contains(id), localByID[id] == nil { continue }
             if queued.contains(id) { continue }
             let sets = server.sets[id] ?? []
             let records: SessionRecords

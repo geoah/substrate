@@ -47,8 +47,8 @@ final class RowsScreenModel {
             case logged
             /// Unticked: the Undo logs it again with its values.
             case unticked
-            /// Deleted: the removal is still held (`SessionController.pendingRemoval`); the Undo keeps the set.
-            case deleted
+            /// Deleted: already saved; the Undo puts the set back where it stood.
+            case deleted(SessionEvent.RestoreSet)
         }
 
         var row: RowID
@@ -329,8 +329,8 @@ final class RowsScreenModel {
                 await session.send(.tick(undo.row))
                 if session.state?.rows[undo.row]?.isPending == false { logged(undo.row, text: nil) }
             }
-        case .deleted:
-            session.keepPendingRemoval()
+        case let .deleted(restore):
+            Task { await session.restore(restore) }
         }
     }
 
@@ -353,9 +353,8 @@ final class RowsScreenModel {
         Task {
             if fixing?.row == row { cancelFix() }
             typing = nil
-            await session.removeLater(row)
-            guard session.pendingRemoval == row else { return }
-            offer(Undo(row: row, text: "\(name) deleted", token: next(), kind: .deleted))
+            guard let restore = await session.removeUndoably(row) else { return }
+            offer(Undo(row: row, text: "\(name) deleted", token: next(), kind: .deleted(restore)))
         }
     }
 
@@ -374,7 +373,7 @@ final class RowsScreenModel {
     /// longer done, a keypad on a row no longer open. A Log the entry check
     /// held is offered for undo once its answer logged the row, and dropped
     /// when the answer was Edit.
-    func reconcile(with layout: RowsLayout, entryCheckRow: RowID?, pendingRemoval: RowID?) {
+    func reconcile(with layout: RowsLayout, entryCheckRow: RowID?) {
         if let held = heldLog {
             if layout.item(held.row)?.state == .done {
                 heldLog = nil
@@ -399,7 +398,7 @@ final class RowsScreenModel {
             let stands = switch undo.kind {
             case .logged: state == .done
             case .unticked: state != nil && state != .done
-            case .deleted: pendingRemoval == undo.row
+            case .deleted: state == nil
             }
             if !stands { self.undo = nil }
         }
@@ -421,7 +420,7 @@ final class RowsScreenModel {
         }
     }
 
-    /// The toast, for five seconds (a held removal is sent as it goes).
+    /// The toast, for five seconds.
     private func offer(_ undo: Undo) {
         self.undo = undo
         Task { [weak self] in
