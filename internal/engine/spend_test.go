@@ -150,3 +150,10 @@ func TestSpendLedgerPrunesWhatNoSnapshotNeeds(t *testing.T) {
 		t.Fatalf("states: going %v, committed %v, lost %v", going.state, committed.state, lost.state)
 	}
 }
+
+// A background function job has no spend run, and its shutdown paths finish
+// it anyway: finish takes nil as charge and commit do.
+func TestSpendFinishNilRunReturns(t *testing.T) {
+	var s spendLedger
+	s.finish(nil)
+}
