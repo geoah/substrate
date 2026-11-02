@@ -207,8 +207,12 @@ func (l *agentLoop) jobLoop(hub *turnHub, sub bool) *agentLoop {
 	if root := l.in.tally.spend; sub && root != nil {
 		in.tally.spend = l.ds.spend.open(root.agent, root.thread, 0)
 	}
+	// A job is bounded by its function's own timeout, never by the
+	// foreground cap a turn's calls take (decision record 0200).
+	ag := *l.ag
+	ag.Budgets.ToolTimeoutSeconds = 0
 	return &agentLoop{
-		ds: l.ds, ag: l.ag, provider: l.provider, model: l.model, params: l.params,
+		ds: l.ds, ag: &ag, provider: l.provider, model: l.model, params: l.params,
 		client: l.client, in: in, actor: l.actor, threadID: l.threadID,
 		emit: l.emit, byName: l.byName, toolCalls: l.toolCalls, replyTurn: -1,
 	}

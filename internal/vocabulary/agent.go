@@ -285,7 +285,8 @@ type AgentBudgets struct {
 	DeadlineSeconds int
 	Depth           int
 	// ToolTimeoutSeconds bounds one `query` or function tool call; a call
-	// past it is a tool error the model sees, never a failed run. Zero is
+	// past it is a tool error the model sees, never a failed run. A
+	// background function call ignores it (decision record 0200). Zero is
 	// absent, which is not the same bound for both: a `query` call takes
 	// DefaultAgentToolTimeoutSec, and a function call the function's own
 	// timeout plus 5 s for starting the body, never less than
