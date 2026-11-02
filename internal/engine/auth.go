@@ -913,6 +913,12 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 	if in.ClientName != "" {
 		props["clientName"] = in.ClientName
 	}
+	if in.AppAuthority != "" {
+		props["appAuthority"] = in.AppAuthority
+	}
+	if in.AppLocal {
+		props["appLocal"] = true
+	}
 	if len(in.Agents) > 0 {
 		if in.Scopes == nil {
 			return zero, "", fmt.Errorf("%w: only an app's scoped token carries approved agents", substrate.ErrValidation)
@@ -937,6 +943,7 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 	return substrate.TokenInfo{
 		ID: ent.ID, Label: in.Label, Created: ent.CreatedAt, ExpiresAt: in.ExpiresAt,
 		Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName, Agents: in.Agents,
+		AppAuthority: in.AppAuthority, AppLocal: in.AppLocal,
 	}, secret, nil
 }
 
@@ -945,7 +952,8 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, props->>'label', props->>'expiresAt', props->'scopes',
-		       props->>'clientId', props->>'clientName', props->'agents', created_at
+		       props->>'clientId', props->>'clientName', props->'agents', created_at,
+		       props->>'appAuthority', COALESCE((props->>'appLocal')::boolean, false)
 		FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC, id`, kindToken)
@@ -956,9 +964,9 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 	var out []substrate.TokenInfo
 	for rows.Next() {
 		var info substrate.TokenInfo
-		var label, expires, clientID, clientName sql.NullString
+		var label, expires, clientID, clientName, appAuthority sql.NullString
 		var scopes, agents []byte
-		if err := rows.Scan(&info.ID, &label, &expires, &scopes, &clientID, &clientName, &agents, &info.Created); err != nil {
+		if err := rows.Scan(&info.ID, &label, &expires, &scopes, &clientID, &clientName, &agents, &info.Created, &appAuthority, &info.AppLocal); err != nil {
 			return nil, err
 		}
 		info.Label = label.String
@@ -971,7 +979,7 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 			return nil, fmt.Errorf("%w: token %s: %w", substrate.ErrCorrupt, info.ID, derr)
 		}
 		info.Agents = softAgents(ds.svc.log, info.ID, agents)
-		info.ClientID, info.ClientName = clientID.String, clientName.String
+		info.ClientID, info.ClientName, info.AppAuthority = clientID.String, clientName.String, appAuthority.String
 		out = append(out, info)
 	}
 	return out, rows.Err()
@@ -1123,17 +1131,18 @@ var tokenRepositoryColumns = "p." + strings.ReplaceAll(repositoryColumns, ", ", 
 func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, substrate.TokenInfo, error) {
 	var zero substrate.TokenInfo
 	var info substrate.TokenInfo
-	var label, got, expires, clientID, clientName sql.NullString
+	var label, got, expires, clientID, clientName, appAuthority sql.NullString
 	var scopes, agents []byte
 	row := s.maint.QueryRowContext(ctx, `
 		SELECT `+tokenRepositoryColumns+`,
 		       r.id, r.props->>'label', r.props->>'hash', r.props->>'expiresAt',
-		       r.props->'scopes', r.props->>'clientId', r.props->>'clientName', r.props->'agents', r.created_at
+		       r.props->'scopes', r.props->>'clientId', r.props->>'clientName', r.props->'agents', r.created_at,
+		       r.props->>'appAuthority', COALESCE((r.props->>'appLocal')::boolean, false)
 		FROM records r JOIN repositories p ON p.id = r.repository
 		WHERE r.kind = $1 AND r.deleted_at IS NULL AND r.props @> jsonb_build_object('hash', $2::text)`,
 		kindToken, hash)
 	repo, err := scanRepositoryRow(func(dest ...any) error {
-		return row.Scan(append(dest, &info.ID, &label, &got, &expires, &scopes, &clientID, &clientName, &agents, &info.Created)...)
+		return row.Scan(append(dest, &info.ID, &label, &got, &expires, &scopes, &clientID, &clientName, &agents, &info.Created, &appAuthority, &info.AppLocal)...)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return Repository{}, zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
@@ -1145,7 +1154,7 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, sub
 		return Repository{}, zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
 	}
 	info.Label = label.String
-	info.ClientID, info.ClientName = clientID.String, clientName.String
+	info.ClientID, info.ClientName, info.AppAuthority = clientID.String, clientName.String, appAuthority.String
 	// A grant that cannot be read fails closed: reading it as absent would
 	// hand an app's token full access.
 	if info.Scopes, err = decodeScopes(scopes); err != nil {

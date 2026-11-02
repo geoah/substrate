@@ -113,7 +113,19 @@ export function actorIdentity(actor: string): ActorIdentity {
       description: "The substrate itself: merges, schedules and housekeeping.",
     }
   }
-  // An app the owner approved writes as `app:<host>` (decision 0194): it is
+  // An app whose access went to this device writes as `app:local`: nothing
+  // tells two programs on the owner's device apart (decision 0209).
+  if (actor === "app:local") {
+    return {
+      actor,
+      cls: "app",
+      name: "An app on this device",
+      description:
+        "An app you approved that runs on your device. Nothing confirms which program it is. Settings, under Apps, lists it.",
+    }
+  }
+  // An app the owner approved writes as `app:<authority>` when its publisher
+  // was verified and `app:<host>` otherwise (decisions 0194 and 0209): it is
   // the app, never the owner, even though its token is one of theirs.
   if (actor.startsWith("app:") && actor.length > "app:".length) {
     return {

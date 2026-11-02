@@ -422,6 +422,10 @@ server_start() {
 	# fast one, because its cases wait on the deliveries their writes fire.
 	local tick=()
 	[ -n "${SUBSTRATE_TRIGGER_INTERVAL:-}" ] && tick=("SUBSTRATE_TRIGGER_INTERVAL=${SUBSTRATE_TRIGGER_INTERVAL}")
+	# A local authority document passes through the same way: it is how an
+	# app is tested against a document not published yet (decision 0209).
+	local authdocs=()
+	[ -n "${SUBSTRATE_INSECURE_AUTHORITY_DOCS:-}" ] && authdocs=("SUBSTRATE_INSECURE_AUTHORITY_DOCS=${SUBSTRATE_INSECURE_AUTHORITY_DOCS}")
 	nohup env \
 		"PATH=$(server_path)" \
 		"DATABASE_URL=${DSN}" \
@@ -436,6 +440,7 @@ server_start() {
 		${web[@]+"${web[@]}"} \
 		${egress[@]+"${egress[@]}"} \
 		${tick[@]+"${tick[@]}"} \
+		${authdocs[@]+"${authdocs[@]}"} \
 		bin/substrate >>"$LOGFILE" 2>&1 &
 	echo $! >"$PIDFILE"
 	if ! wait_healthy; then
@@ -491,6 +496,8 @@ cmd_run() {
 	[ -n "${SUBSTRATE_EGRESS_ALLOW:-}" ] && egress=("SUBSTRATE_EGRESS_ALLOW=${SUBSTRATE_EGRESS_ALLOW}")
 	local tick=()
 	[ -n "${SUBSTRATE_TRIGGER_INTERVAL:-}" ] && tick=("SUBSTRATE_TRIGGER_INTERVAL=${SUBSTRATE_TRIGGER_INTERVAL}")
+	local authdocs=()
+	[ -n "${SUBSTRATE_INSECURE_AUTHORITY_DOCS:-}" ] && authdocs=("SUBSTRATE_INSECURE_AUTHORITY_DOCS=${SUBSTRATE_INSECURE_AUTHORITY_DOCS}")
 	exec env \
 		"PATH=$(server_path)" \
 		"DATABASE_URL=${DSN}" \
@@ -505,6 +512,7 @@ cmd_run() {
 		${web[@]+"${web[@]}"} \
 		${egress[@]+"${egress[@]}"} \
 		${tick[@]+"${tick[@]}"} \
+		${authdocs[@]+"${authdocs[@]}"} \
 		bin/substrate
 }
 

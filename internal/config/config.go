@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // Config is the full service configuration.
@@ -123,6 +125,15 @@ type Config struct {
 	// restores the factor the user enrolled.
 	InsecureDisableTOTP bool `envconfig:"SUBSTRATE_INSECURE_DISABLE_TOTP" default:"false"`
 
+	// InsecureAuthorityDocs is a comma-separated list of `authority=path`:
+	// each named authority's document is read from the file, in place of its
+	// `_substrate` TXT record and the fetch, when the approval page decides
+	// whether an app is verified (decision 0209). It exists to test an app
+	// against a document that is not published yet. NEVER set it on a
+	// deployment anybody can reach: whoever writes the file decides which
+	// apps read as published by that authority. AuthorityDocs parses it.
+	InsecureAuthorityDocs string `envconfig:"SUBSTRATE_INSECURE_AUTHORITY_DOCS" default:""`
+
 	// The host OAuth facility (bundles declare auth, the host runs it).
 	// StateKey signs flow state; CallbackURL is the one redirect URI every
 	// provider app registers. Both unset disables the facility.
@@ -225,7 +236,32 @@ func (c Config) Validate() error {
 	if err := originURL("SUBSTRATE_PUBLIC_URL", c.PublicURL); err != nil {
 		return err
 	}
+	if _, err := c.AuthorityDocs(); err != nil {
+		return err
+	}
 	return ValidateCredentialKey(c.CredentialKey)
+}
+
+// AuthorityDocs parses SUBSTRATE_INSECURE_AUTHORITY_DOCS into authority and
+// path, nil when it is unset. Each entry names an authority (the DNS-style
+// grammar of every kind) and a non-empty path, each authority once.
+func (c Config) AuthorityDocs() (map[string]string, error) {
+	if strings.TrimSpace(c.InsecureAuthorityDocs) == "" {
+		return nil, nil
+	}
+	out := map[string]string{}
+	for _, entry := range strings.Split(c.InsecureAuthorityDocs, ",") {
+		authority, path, ok := strings.Cut(strings.TrimSpace(entry), "=")
+		authority, path = strings.TrimSpace(authority), strings.TrimSpace(path)
+		if !ok || path == "" || !vocabulary.ValidRepositoryAuthority(authority) {
+			return nil, fmt.Errorf("SUBSTRATE_INSECURE_AUTHORITY_DOCS entry %q is not authority=path: it is a comma-separated list such as example.org=/path/to/authority.json", entry)
+		}
+		if _, dup := out[authority]; dup {
+			return nil, fmt.Errorf("SUBSTRATE_INSECURE_AUTHORITY_DOCS names %s twice", authority)
+		}
+		out[authority] = path
+	}
+	return out, nil
 }
 
 // ParseLogLevel reads LOG_LEVEL: debug, info, warn or error, in any case.

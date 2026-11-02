@@ -94,6 +94,12 @@ type clientDocuments interface {
 	Fetch(ctx context.Context, c authorize.Client) (authorize.Document, error)
 }
 
+// appPublishers decides who publishes an app (decision 0209). The server's
+// is authorize.Verifier.
+type appPublishers interface {
+	Verify(ctx context.Context, c authorize.Client, doc authorize.Document, redirect string) authorize.Publisher
+}
+
 // --- metadata ---
 
 type authorizationServerMetadata struct {
@@ -186,8 +192,12 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := authorize.RedirectAllowed(client, redirect); err != nil {
-		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
+	// A redirect off the client id's origin is held until the app's
+	// publisher is read below: a verified app's client document may be
+	// served from anywhere, its redirect only from its authority.
+	offOrigin := authorize.RedirectAllowed(client, redirect)
+	if offOrigin != nil && (client.Local || authorize.LocalRedirect(redirect)) {
+		writeAuthorizePage(w, http.StatusBadRequest, offOrigin.Error())
 		return
 	}
 	if rt := q.Get("response_type"); rt != "code" {
@@ -234,6 +244,12 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 	if ok, _ := h.parkRate.allow(costPaired, source+"|authorize"); !ok {
 		writeAuthorizePage(w, http.StatusTooManyRequests, "too many authorization requests from this address; wait a moment and try again")
 		return
+	}
+	if offOrigin != nil {
+		if why := h.offOriginRefusal(r.Context(), client, redirect); why != "" {
+			writeAuthorizePage(w, http.StatusBadRequest, offOrigin.Error()+", unless the app's publisher is verified and the redirect is on its authority: "+why)
+			return
+		}
 	}
 	req, err := h.authz.Park(authorize.Request{
 		Issuer: iss, Client: client, RedirectURI: redirect, AppState: state,
@@ -309,12 +325,40 @@ func writeAuthorizationGone(w http.ResponseWriter) {
 		"this authorization request has expired or was already answered: start again from the app")
 }
 
+// offOriginRefusal says why a redirect off the client id's origin may not be
+// parked, "" when the app's document lists it and its publisher is verified
+// with the redirect on its authority (decision 0209).
+func (h *handler) offOriginRefusal(ctx context.Context, client authorize.Client, redirect string) string {
+	doc, err := h.fetcher.Fetch(ctx, client)
+	if err != nil {
+		var fe *authorize.FetchError
+		if errors.As(err, &fe) {
+			return fe.Error()
+		}
+		return "the app's document could not be read"
+	}
+	if !authorize.RedirectListed(doc.RedirectURIs, redirect) {
+		return "the app's document does not list it"
+	}
+	p := h.verifier.Verify(ctx, client, doc, redirect)
+	if !p.Verified {
+		if p.Reason == "" {
+			return "the app's document names no publisher"
+		}
+		return p.Reason
+	}
+	return ""
+}
+
 // verifiedApp reads a pending request's app: a local app as its URL alone, a
 // web app through its document, whose redirect_uris must list the request's
-// redirect. A refusal is the owner's to read and names no address.
+// redirect, and either with who publishes it. A refusal is the owner's to
+// read and names no address.
 func (h *handler) verifiedApp(ctx context.Context, req authorize.Request) (authorize.Document, error) {
 	if req.Client.Local {
-		return authorize.Document{ClientID: req.Client.ID}, nil
+		doc := authorize.Document{ClientID: req.Client.ID}
+		doc.Publisher = h.verifier.Verify(ctx, req.Client, doc, req.RedirectURI)
+		return doc, nil
 	}
 	doc, err := h.fetcher.Fetch(ctx, req.Client)
 	if err != nil {
@@ -328,7 +372,42 @@ func (h *handler) verifiedApp(ctx context.Context, req authorize.Request) (autho
 		return authorize.Document{}, validation(
 			"the app's document does not list the redirect_uri this request names, " + req.RedirectURI)
 	}
+	doc.Publisher = h.verifier.Verify(ctx, req.Client, doc, req.RedirectURI)
+	// Parked because its publisher was verified then; a publisher that no
+	// longer verifies leaves the redirect off the app's origin unproven.
+	if authorize.RedirectAllowed(req.Client, req.RedirectURI) != nil && !doc.Publisher.Verified {
+		why := doc.Publisher.Reason
+		if why == "" {
+			why = "the app's document names no publisher"
+		}
+		return authorize.Document{}, validation("the redirect_uri is off the app's own origin, and its publisher no longer verifies: " + why)
+	}
 	return doc, nil
+}
+
+// requestActor is the actor a token minted for req writes under, from the
+// publisher the approval page showed.
+func requestActor(req authorize.Request, doc authorize.Document) substrate.Actor {
+	return appActorFor(req.Client.ID, verifiedAuthority(doc), authorize.LocalRedirect(req.RedirectURI))
+}
+
+// approvedName is the name the token keeps for the app: the authority
+// document's name for a verified app, the one its own document claims
+// otherwise.
+func approvedName(doc authorize.Document) string {
+	if doc.Publisher.Verified && doc.Publisher.AppName != "" {
+		return doc.Publisher.AppName
+	}
+	return doc.Name
+}
+
+// verifiedAuthority is the authority doc's publisher was verified as, ""
+// when it was not.
+func verifiedAuthority(doc authorize.Document) string {
+	if doc.Publisher.Verified {
+		return doc.Publisher.Authority
+	}
+	return ""
 }
 
 // getAuthorization answers the approval page. A pending request with no
@@ -489,8 +568,14 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 		ID: req.ID,
 		App: substrate.AuthorizationApp{
 			ClientID: req.Client.ID, Host: req.Client.Host, Local: req.Client.Local,
-			Name: doc.Name, URI: doc.URI, Actor: string(substrate.AppActor(req.Client.Host)),
+			Name: doc.Name, URI: doc.URI, Actor: string(requestActor(req, doc)),
 			URIHostDiffers: doc.URI != "" && hostname(doc.URI) != hostname(req.Client.ID),
+			Verified:       doc.Publisher.Verified,
+			Publisher: substrate.AuthorizationPublisher{
+				Authority: doc.Publisher.Authority, Name: doc.Publisher.Name, AppName: doc.Publisher.AppName,
+				Unconfirmed: doc.Publisher.Reason, Record: doc.Publisher.Record,
+				DocumentURL: doc.Publisher.DocURL, Listed: doc.Publisher.Listed,
+			},
 		},
 		Redirect: substrate.AuthorizationRedirectTo{
 			URI: req.RedirectURI, Host: authorize.HostOf(req.RedirectURI),
@@ -744,8 +829,8 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		}
 		return authorize.Approval{
 			Repository: authority, Dataset: ds, Scopes: scopes,
-			Lifetime: time.Duration(*in.LifetimeDays) * 24 * time.Hour, ClientName: doc.Name,
-			Details: details,
+			Lifetime: time.Duration(*in.LifetimeDays) * 24 * time.Hour, ClientName: approvedName(doc),
+			Details: details, AppAuthority: verifiedAuthority(doc),
 		}, nil
 	}
 	req, err := h.authz.Reserve(id, authority, func(req authorize.Request) error {
@@ -1171,6 +1256,7 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 	info, secret, err := c.Approval.Dataset.MintToken(ctx, substrate.MintTokenInput{
 		Label: c.Request.Client.Host, ExpiresAt: expiresAt, Scopes: scopes,
 		ClientID: c.Request.Client.ID, ClientName: c.Approval.ClientName,
+		AppAuthority: c.Approval.AppAuthority, AppLocal: authorize.LocalRedirect(c.Request.RedirectURI),
 		Agents: approvedAgents(c.Approval.Details, c.Approval.Repository),
 	})
 	if err != nil {

@@ -155,6 +155,12 @@ type TokenInfo struct {
 	// for an app.
 	ClientID   string `json:"clientId,omitempty"`
 	ClientName string `json:"clientName,omitempty"`
+	// AppAuthority is the authority the approval verified as the app's
+	// publisher (decision 0209), and AppLocal is true when the approval sent
+	// the access to a loopback redirect, a program on the owner's device.
+	// Both are what the app's actor is derived from.
+	AppAuthority string `json:"appAuthority,omitempty"`
+	AppLocal     bool   `json:"appLocal,omitempty"`
 	// Agents are the agents the owner approved the app to declare (decision
 	// 0207), each with its reach and cap; absent on every other token.
 	Agents []AgentApproval `json:"agents,omitempty"`
@@ -182,6 +188,10 @@ type MintTokenInput struct {
 	Scopes     []string
 	ClientID   string
 	ClientName string
+	// AppAuthority and AppLocal are TokenInfo's: what the approval proved
+	// about the app.
+	AppAuthority string
+	AppLocal     bool
 	// Agents are the approved agents of a scoped token, none on any other.
 	Agents []AgentApproval
 }
