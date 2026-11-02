@@ -125,9 +125,10 @@ type serverInfo struct {
 	Build   string `json:"build,omitempty"`
 	// Instance is the id this server minted at its first boot. A server
 	// reading a domain's `_substrate` record fetches the `server=` origin's
-	// document and compares it with its own, which is how it knows the record
-	// names it without a configured public URL (decision 0208). Empty on a
-	// read-only process that found none.
+	// document and compares it with its own: a consistency check that the
+	// record reaches this server, not authentication of it, since a proxy
+	// relays the document (decision 0208). Empty on a read-only process that
+	// found none.
 	Instance string `json:"instance,omitempty"`
 }
 
