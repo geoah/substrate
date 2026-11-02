@@ -226,6 +226,9 @@ func (s *spendLedger) commit(r *spendRun, lifetime float64, finished bool) {
 // finish ends a root run. A run no settle committed is lost: no row will
 // carry its charges.
 func (s *spendLedger) finish(r *spendRun) {
+	if r == nil {
+		return
+	}
 	if s.finishing != nil {
 		s.finishing(r)
 	}

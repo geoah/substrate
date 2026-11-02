@@ -128,7 +128,8 @@ data:
   `query` or function call's wall clock, never past the run's own deadline:
   a call past it answers the model a tool error naming the limit, and the
   run goes on. Set, it bounds both, a function below its declared `timeout`
-  too. Absent, a `query` call gets 30 s, and a function call gets the
+  too; a [background](#background-jobs) function call is the exception and
+  takes the absent bound. Absent, a `query` call gets 30 s, and a function call gets the
   function's own `timeout` (5 s where it declares none) plus 5 s for
   starting the body, never less than 30 s. The runner starts the declared
   clock once the body is up, so a body that runs too long fails with the

@@ -11,6 +11,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -400,6 +401,74 @@ func TestStopCancelsBackgroundJobs(t *testing.T) {
 	}
 	if _, err := ds.StopAgentTurn(ctx, substrate.ActorAPI, res.Thread); err == nil {
 		t.Fatal("a second stop found something to stop")
+	}
+}
+
+// A stop that lands after the model named a background call and before its
+// job is registered still cancels the job: it settles `canceled` and the
+// sub-agent never runs.
+func TestAgentStopJobAcceptedInTheStoppedTurn(t *testing.T) {
+	ds, fake := provisionJobAgents(t)
+	ctx := context.Background()
+	fake.script("jlead",
+		fakeTurn{calls: []fakeCall{{name: "digger", args: `{"input":"dig"}`}}},
+		fakeTurn{content: "never"},
+	)
+	fake.script("jdig", fakeTurn{content: "dug"})
+	log := newEventLog()
+	stopped := make(chan *substrate.AgentResult, 1)
+	ds.agentRowWrite = func(_ context.Context, props map[string]any) error {
+		if props["job"] == nil {
+			return nil
+		}
+		// The background call's tool row: its job is not registered yet.
+		thread := log.snapshot()[0].Thread
+		hub, err := ds.runningTurn(ctx, thread)
+		if err != nil {
+			return err
+		}
+		go func() {
+			res, err := ds.StopAgentTurn(ctx, substrate.ActorAPI, thread)
+			if err != nil {
+				t.Errorf("stop: %v", err)
+			}
+			stopped <- res
+		}()
+		deadline := time.Now().Add(10 * time.Second)
+		for hub.stopper() == "" {
+			if time.Now().After(deadline) {
+				return errors.New("the stop never reached the turn")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		return nil
+	}
+	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, jobsPackage+"/lead", substrate.ChatInput{Message: "find the deed"}, log.emit); err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	thread := log.snapshot()[0].Thread
+	if res := <-stopped; res == nil || res.Status != threadStopped {
+		t.Fatalf("stop %+v", res)
+	}
+	waitFor(t, "the job's end", func() bool {
+		return jobStateOf(jobToolRow(t, ds, thread, "call_0")) != jobWorking
+	})
+	if state := jobStateOf(jobToolRow(t, ds, thread, "call_0")); state != jobCanceled {
+		t.Fatalf("job %s, want %s", state, jobCanceled)
+	}
+	done := toolCompletedRows(t, ds, thread)
+	if len(done) != 1 || done[0]["ok"] != false || !strings.Contains(done[0]["output"].(string), "stopped by") {
+		t.Fatalf("toolCompleted %v", done)
+	}
+	if n := len(fake.requestsOf("jdig")); n != 0 {
+		t.Fatalf("the canceled sub-agent made %d model calls", n)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if status, _ := threadStatusOf(t, ds, thread); status != threadStopped {
+		t.Fatalf("thread %s, want stopped", status)
+	}
+	if n := len(fake.requestsOf("jlead")); n != 1 {
+		t.Fatalf("%d lead model calls, want 1", n)
 	}
 }
 

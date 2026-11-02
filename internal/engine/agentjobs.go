@@ -207,8 +207,12 @@ func (l *agentLoop) jobLoop(hub *turnHub, sub bool) *agentLoop {
 	if root := l.in.tally.spend; sub && root != nil {
 		in.tally.spend = l.ds.spend.open(root.agent, root.thread, 0)
 	}
+	// A job is bounded by its function's own timeout, never by the
+	// foreground cap a turn's calls take (decision record 0200).
+	ag := *l.ag
+	ag.Budgets.ToolTimeoutSeconds = 0
 	return &agentLoop{
-		ds: l.ds, ag: l.ag, provider: l.provider, model: l.model, params: l.params,
+		ds: l.ds, ag: &ag, provider: l.provider, model: l.model, params: l.params,
 		client: l.client, in: in, actor: l.actor, threadID: l.threadID,
 		emit: l.emit, byName: l.byName, toolCalls: l.toolCalls, replyTurn: -1,
 	}
@@ -224,6 +228,13 @@ func (l *agentLoop) startJob(tc llm.ToolCall, turn int, row string, started time
 	jl := l.jobLoop(j.hub, p.tool.sub != nil)
 	ds := l.ds
 	ds.jobs.add(j)
+	// A stop of the turn that read the thread's jobs before this add missed
+	// this one; it stopped the turn first, so the job takes it from there.
+	if h := l.in.stopHub; h != nil {
+		if actor := h.stopper(); actor != "" {
+			j.hub.stop(actor)
+		}
+	}
 	if !ds.spawn("agent background job", func(bg context.Context) { ds.runJob(bg, j, jl, p) }) {
 		// The shutdown began: the row stays `working`, and the next open
 		// settles it as interrupted.
@@ -238,7 +249,12 @@ func (ds *dataset) runJob(bg context.Context, j *agentJob, jl *agentLoop, p *pen
 	defer cancel()
 	j.hub.setRun(jctx, cancel)
 	jl.runCtx = jctx
-	out, ok := ds.runJobCall(jctx, jl, p)
+	// A job stopped before it started does no work: it settles canceled.
+	var out string
+	ok := false
+	if j.hub.stopper() == "" {
+		out, ok = ds.runJobCall(jctx, jl, p)
+	}
 	state := jobCompleted
 	if !ok {
 		state = jobFailed

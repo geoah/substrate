@@ -412,6 +412,11 @@ func (ds *dataset) AttachAgentTurn(ctx context.Context, threadID string, emit fu
 // first. A triggered run is not stoppable: it ends within its own budget.
 func (ds *dataset) StopAgentTurn(ctx context.Context, actor substrate.Actor, threadID string) (*substrate.AgentResult, error) {
 	hub, err := ds.runningTurn(ctx, threadID)
+	// The turn is stopped before its jobs are read: a job the turn registers
+	// after that read takes the stop from the turn (startJob).
+	if err == nil {
+		hub.stop(actor)
+	}
 	// A stop of the thread stops its background jobs too, turn or none
 	// (decision record 0200).
 	stopped := ds.jobs.stop(threadID, actor)
@@ -421,7 +426,6 @@ func (ds *dataset) StopAgentTurn(ctx context.Context, actor substrate.Actor, thr
 	if err != nil {
 		return nil, err
 	}
-	hub.stop(actor)
 	return hub.wait(ctx)
 }
 
