@@ -14,7 +14,7 @@ import (
 // trigger's `arguments` (decision 0106), and the refusal names the argument
 // and the allowed set, so the body never receives a typo like `wekly`.
 func TestAnEnumArgumentOutsideItsValuesAnswers422(t *testing.T) {
-	e := testenv.Start(t)
+	e := testenv.Start(t, testenv.WithRepository(probeAuthority))
 	e.ApplyVocabularyYAML(`
 kind: substrate.reamde.dev/core/package
 metadata: {id: ` + probeRef + `}

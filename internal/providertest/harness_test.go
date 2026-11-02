@@ -491,7 +491,9 @@ func installRequired(t *testing.T, ds substrate.Dataset, docs []map[string]any) 
 
 // install applies one shipped closure into a live repository through the
 // batch vocabulary verb, the ONE install path, after the packages it requires
-// (installRequired). rewire, when non-nil, edits the documents first: a
+// (installRequired). It writes as the closure's bundle (closureHand), the
+// hand a catalog install writes under: a token creates packages only under
+// its own repository's authority (decision 0210). rewire, when non-nil, edits the documents first: a
 // static manifest cannot bake a dynamic httptest URL, so the loopback
 // substitutions happen here. The closure's data records, its delivery wiring
 // among them, are the test's to write (installTriggers, putDataDoc).
@@ -506,7 +508,7 @@ func install(t *testing.T, ds substrate.Dataset, dir string, rewire func([]map[s
 	if rewire != nil {
 		rewire(docs)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), closureHand(t, docs), docs); err != nil {
 		if uvProvisionFailed(err) {
 			skipOrFailf(t, "uv could not resolve the closure's PEP 723 dependencies (offline?): %v", err)
 		}
@@ -1048,6 +1050,22 @@ func syncProps(extra map[string]any, toggles ...string) map[string]any {
 	return props
 }
 
+// closureHand is the bundle actor a closure installs under: the one its
+// bundle document names.
+func closureHand(t *testing.T, docs []map[string]any) substrate.Actor {
+	t.Helper()
+	for _, d := range docs {
+		if d["kind"] != typeBundle {
+			continue
+		}
+		meta, _ := d["metadata"].(map[string]any)
+		id, _ := meta["id"].(string)
+		return substrate.BundleActor(vocabulary.SplitPackageRef(id))
+	}
+	t.Fatal("the closure carries no bundle document")
+	return ""
+}
+
 // resyncHandPackage is the test's own bundle-tier hand: a declared function
 // that never runs, installed only so its actor resolves at the bundle tier.
 const (
@@ -1058,7 +1076,7 @@ const (
 // installResyncHand installs the hand resyncAccount writes under.
 func installResyncHand(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI,
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.BundleActor(vocabulary.SplitPackageRef(resyncHandPackage)),
 		[]map[string]any{
 			vocabulary.PackageManifest(resyncHandPackage, 1),
 			vocabulary.FunctionManifest(resyncHandPackage, "clear", map[string]any{

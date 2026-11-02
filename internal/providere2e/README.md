@@ -35,7 +35,11 @@ of a case. The runner:
 2. copies the bundle to a temp directory and rewires the copy at the mock: the
    `oauth2:` endpoints, the API base in the sync body, and the mock's host
    added to `permissions.network`. The files in git are never edited;
-3. applies the rewired copy with `substratectl apply`;
+3. applies the rewired copy with `substratectl apply`, which the server
+   admits because the suite starts it with
+   `SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES=true`: a token otherwise
+   creates packages only under its own repository's authority
+   ([0210](../../docs/decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md));
 4. writes the config record and the account record with every feature on;
 5. completes the OAuth dance against the mock's stub, or writes the token when
    `e2e.json` says `"auth": "token"`;

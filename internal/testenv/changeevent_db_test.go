@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	eventAuthority = "changeevent.example.substrate.reamde.dev"
+	eventAuthority = "changeevent.example.com"
 	eventRef       = eventAuthority + "/feed"
 	itemsPath      = "/api/v1/" + eventRef + "/item"
 )
@@ -100,7 +100,7 @@ func wantEvent(t *testing.T, surface string, row eventRow, wantID string, wantVe
 }
 
 func TestEveryChangeSurfaceServesTheEventAndNoEffects(t *testing.T) {
-	e := testenv.Start(t)
+	e := testenv.Start(t, testenv.WithRepository(eventAuthority))
 	e.ApplyVocabularyYAML(eventVocabulary)
 
 	// A disabled trigger: its creation records its starting cursor as a

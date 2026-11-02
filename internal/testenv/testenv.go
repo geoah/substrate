@@ -122,6 +122,14 @@ func WithUser(repository, password string) Option {
 	return func(o *options) { o.repository, o.password = repository, password }
 }
 
+// WithRepository names the repository Start registers, under the default
+// password. A test that declares kinds names its repository after the
+// fixture's authority: a token creates packages only under its own
+// repository's authority (decision 0210).
+func WithRepository(repository string) Option {
+	return func(o *options) { o.repository = repository }
+}
+
 // WithRecoveryPublicKey registers with a client-minted age recipient, the way
 // substratectl does, so the test holds the identity that opens the
 // repository's sealed files on a host with another credential key.

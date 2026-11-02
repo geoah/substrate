@@ -259,7 +259,10 @@ answer whole.
   input first: every mention of the one authority its declarations are
   written under becomes the one named, which is `import` (below) run
   client-side over files on disk. An input declaring under two authorities is
-  refused naming both. `--hold-waiting-mappings` holds back each suggested
+  refused naming both. A document that would create a package under any
+  authority but the repository's own is `403`
+  ([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)): rehome a sample with `--as-mine`, and take
+  a provider or a catalogue with `install`. `--hold-waiting-mappings` holds back each suggested
   mapping whose source kind this repository does not have, applies the rest,
   and prints one line per mapping held; apply the same files again once the
   provider is installed ([vocabulary](vocabulary.md#how-the-vocabulary-reaches-a-repository)).

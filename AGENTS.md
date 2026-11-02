@@ -348,7 +348,10 @@ its package's; a stored closure the loader refuses parks its package; and
 `authorizeDeclarationWrite` reads the package row's `source`, so a
 repository's token may not write a `builtin` package (the seeded `core`,
 `llm`, `console` and `observations`) or a `published` one (an installed
-provider or catalogue); its own packages and the
+provider or catalogue), and creates a new package only under the
+repository's own authority
+([0210](docs/decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md));
+its own packages and the
 samples it imported are `installed` and writable, except one an app declared
 under its `declare:` scope (`declaredBy: app:<host>`, owned by the full
 client id in `declaredByClient`), whose declarations only that app writes
