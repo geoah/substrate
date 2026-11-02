@@ -8,6 +8,12 @@ import Testing
 // the island stacks up to three parts (the rest, the next set, the one after
 // it), the next set docking only while its editor is out of view.
 
+extension RowsSession {
+    func layoutItem(_ row: RowID, at seconds: Int) -> RowsSetItem? {
+        (try? layout(at: seconds))?.item(row)
+    }
+}
+
 @Suite("Rows island: parts and order")
 struct RowsIslandTests {
     @Test("the parts: rest only while resting, next only while its editor is out of view, after whenever there is one")
@@ -60,14 +66,24 @@ struct RowsIslandTests {
     func timedOnlyTimers() throws {
         let session = try RowsSession.fullyBody()
         let layout = try session.layout(at: 0)
+        let state = try session.script.current
+        var opened = 0
         for block in layout.blocks {
             for item in block.setItems {
-                guard let exercise = try session.script.current.exercise(ofRow: item.id) else { continue }
+                let exercise = try #require(state.exercise(ofRow: item.id), "\(item.title)")
                 let timed = exercise.measurement.hasTimer
                 // Open each set as the owner would, and read its editor.
                 var touched = session
                 try touched.perform(.touch(item.id), at: 1)
-                guard let editor = try touched.layout(at: 2).item(item.id)?.editor else { continue }
+                let opening = touched.layoutItem(item.id, at: 2)?.editor
+                // A link that waits on an earlier one (a second side, a drop, a
+                // cluster's next part) stays closed by design; every other set opens.
+                if state.isLocked(item.id) {
+                    #expect(opening == nil && item.state == .locked, "\(item.title)")
+                    continue
+                }
+                let editor = try #require(opening, "\(item.title) did not open")
+                opened += 1
                 if timed {
                     #expect(editor.timer != nil && editor.primary.action == .startTimedSet(item.id), "\(item.title)")
                 } else {
@@ -76,6 +92,8 @@ struct RowsIslandTests {
                 }
             }
         }
+        // Every pending set the layout shows, less the locked links.
+        #expect(opened == layout.blocks.flatMap(\.setItems).count { !state.isLocked($0.id) } && opened > 30)
     }
 
     @Test("free order across exercises: open and log sets of three exercises out of plan order, each logs and none waits")

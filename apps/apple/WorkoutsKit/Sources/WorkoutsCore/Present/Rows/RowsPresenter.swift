@@ -277,8 +277,7 @@ struct RowsBuilder {
         let name = p.exerciseName(state.slot(row.slot)?.exercise ?? ExerciseID(""))
         let label = views[row.id]?.label
         let ordinal = state.ordinal(of: row.id) ?? 1
-        let warmups = Ordinals.warmupCount(inSlot: row.slot, of: state)
-        let base = head.role == .warmup ? (warmups > 1 ? "Warm-up \(ordinal)" : "Warm-up") : "Set \(ordinal)"
+        let base = head.role == .warmup ? warmupTitle(row) : "Set \(ordinal)"
         if let side = row.side {
             return isGroup ? "\(name), \(side.rawValue)" : "\(base) \(side.rawValue)"
         }
@@ -296,6 +295,12 @@ struct RowsBuilder {
         case .cluster: return "Cluster 1"
         case .straight, .drop: return isGroup ? name : base
         }
+    }
+
+    /// `Warm-up`, or `Warm-up 2` when the exercise has more than one.
+    func warmupTitle(_ row: Row) -> String {
+        let ordinal = state.ordinal(of: row.id) ?? 1
+        return Ordinals.warmupCount(inSlot: row.slot, of: state) > 1 ? "Warm-up \(ordinal)" : "Warm-up"
     }
 
     /// The Log button's words before the values.
@@ -741,10 +746,15 @@ struct RowsBuilder {
         let exercise = p.exerciseName(slot.exercise)
         var label = item.title
         if item.badge != nil {
-            // A group's line is titled by its exercise: say the round, or the part after the name.
+            // A group's line is titled by its exercise: say the warm-up or the
+            // round, or the part after the name.
             let prefix = "\(exercise), "
-            label = label == exercise ? "Round \(max(1, UpNext.round(of: row.id, in: state)))"
-                : label.hasPrefix(prefix) ? String(label.dropFirst(prefix.count)).capitalizedFirst : label
+            if label == exercise {
+                label = item.role == .warmup ? warmupTitle(row)
+                    : "Round \(max(1, UpNext.round(of: row.id, in: state)))"
+            } else if label.hasPrefix(prefix) {
+                label = String(label.dropFirst(prefix.count)).capitalizedFirst
+            }
         }
         let word: String = switch editor.primary.action {
         case .startTimedSet: "Start"
@@ -769,8 +779,16 @@ struct RowsBuilder {
         guard let next = after.next, next != open else { return nil }
         let text = nextText(next, from: open, in: after.state).capitalizedFirst
         let exists = state.rows[next] != nil
-        return RowsAfterPart(row: exists ? next : nil, label: "Then", text: text, action: exists ? .touch(next) : nil,
+        return RowsAfterPart(row: exists ? next : nil, label: "Then", text: text, action: canOpen(next) ? .touch(next) : nil,
                              sentence: "Then \(text)")
+    }
+
+    /// A touch would make `id` the open set now: it exists, is pending, no
+    /// earlier link of its chain waits (a second side, a drop, a cluster's
+    /// next part), and no timed set runs (the running one keeps the editor).
+    func canOpen(_ id: RowID) -> Bool {
+        guard let row = state.rows[id], row.isPending else { return false }
+        return !state.isLocked(id) && p.timedID == nil
     }
 
     func restPart(_ countdown: Countdown, endsAt end: Date) -> RowsRestPart {

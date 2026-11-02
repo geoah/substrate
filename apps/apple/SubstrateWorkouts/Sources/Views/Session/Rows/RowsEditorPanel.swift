@@ -16,6 +16,9 @@ struct RowsEditorPanel: View {
     /// A drop or a mini-set: the line hangs off the one above.
     var role: RowsRowRole = .working
     var groupColor: Color = .accentColor
+    /// The open set's Log button came into view or left it: the island docks
+    /// the set while it is out (§7.6a). Nil for a fix.
+    var onLogVisibility: ((Bool) -> Void)?
 
     @Environment(SessionController.self) private var session
     @Environment(CoverModel.self) private var cover
@@ -64,6 +67,7 @@ struct RowsEditorPanel: View {
                 .padding(.top, 8)
             }
             buttons
+                .modifier(RowsLogVisibility(viewport: screen.listViewport, action: onLogVisibility))
                 .padding(.top, 10)
         }
         .padding(.top, 6)
@@ -335,8 +339,31 @@ struct RowsEditorPanel: View {
     }
 
     private func run(_ action: RowsAction) {
-        let logged = editor.badge.map { "\($0) \(editor.title) logged" } ?? "\(editor.title) logged"
-        screen.perform(action, session: session, cover: cover, loggedText: logged)
+        screen.perform(action, session: session, cover: cover, loggedText: editor.loggedText)
+    }
+}
+
+/// Reports whether the Log button is in the list's viewport, on screen: the
+/// list less its insets, the bars over it (`RowsDock.isInView`). Geometry
+/// reports on appearing too, so a panel laid out again says where it is at
+/// once; a lazy list dropping it counts as out of view.
+private struct RowsLogVisibility: ViewModifier {
+    let viewport: ClosedRange<Double>
+    let action: ((Bool) -> Void)?
+
+    func body(content: Content) -> some View {
+        if let action {
+            content
+                .onGeometryChange(for: Bool.self) { proxy in
+                    let frame = proxy.frame(in: .global)
+                    return RowsDock.isInView(Double(frame.minY) ... Double(frame.maxY), viewport: viewport)
+                } action: { visible in
+                    action(visible)
+                }
+                .onDisappear { action(false) }
+        } else {
+            content
+        }
     }
 }
 
@@ -576,6 +603,11 @@ struct RowsRPEStripView: View {
     /// A stop grows with the text up to 52 pt; past that its digits shrink to fit.
     private var width: CGFloat { min(52, scaledWidth) }
 
+    /// The width `ViewThatFits` judges the row by: 44 pt at the standard sizes,
+    /// so the stops and the `½` (5 × 44 + 8 + 44) fit one row on a 375 pt
+    /// phone, then widen to `width` where the row has room.
+    private var idealWidth: CGFloat { width > 48 ? width : 44 }
+
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
@@ -605,7 +637,7 @@ struct RowsRPEStripView: View {
                         .foregroundStyle(foreground(cell.style))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .frame(minWidth: 44, idealWidth: width, maxWidth: width, minHeight: height)
+                        .frame(minWidth: 44, idealWidth: idealWidth, maxWidth: width, minHeight: height)
                         .background { mark(cell.style) }
                         .contentShape(.rect)
                 }
@@ -616,7 +648,7 @@ struct RowsRPEStripView: View {
             }
         }
         .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 12))
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var half: some View {
@@ -627,7 +659,7 @@ struct RowsRPEStripView: View {
             Text(strip.half.text)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(strip.half.patch == nil ? Color(.tertiaryLabel) : foreground(style))
-                .frame(width: max(44, width), height: height)
+                .frame(minWidth: 44, idealWidth: idealWidth, maxWidth: max(44, width), minHeight: height, maxHeight: height)
                 .background { mark(style) }
                 .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 12))
                 .contentShape(.rect)

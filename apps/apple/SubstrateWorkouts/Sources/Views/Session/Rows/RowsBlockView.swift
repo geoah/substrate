@@ -253,17 +253,11 @@ struct RowsBlockView: View {
             if let fixing = screen.fixing, fixing.row == set.id, let fix = set.fix {
                 RowsEditorPanel(editor: fix.editor(draft: fixing.draft), row: nil, role: set.role, groupColor: groupColor)
             } else if screen.fixing == nil, set.state == .now, let editor = set.editor {
+                // With its Log button out of view, the island docks this set (§7.6a, `RowsDock`).
                 RowsEditorPanel(editor: editor, row: presentation.row(set.id), isResting: isResting, role: set.role,
-                                groupColor: groupColor)
-                    // Scrolled mostly out of view, the island docks this set (§7.6a). A jump
-                    // can drop the panel from the lazy list without a visibility change:
-                    // its disappearance counts as out of view.
-                    .onScrollVisibilityChange(threshold: 0.4) { visible in
-                        screen.editorVisibility(set.id, visible: visible, animation: dockAnimation)
-                    }
-                    .onDisappear {
-                        screen.editorVisibility(set.id, visible: false, animation: dockAnimation)
-                    }
+                                groupColor: groupColor) { visible in
+                    screen.logVisibility(set.id, visible: visible, animation: dockAnimation)
+                }
             } else {
                 RowsSetLine(item: set, collapsed: set.state == .now, isResting: isResting, isFresh: screen.fresh == set.id,
                             groupColor: groupColor) {

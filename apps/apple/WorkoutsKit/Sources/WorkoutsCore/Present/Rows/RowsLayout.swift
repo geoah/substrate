@@ -574,9 +574,15 @@ public struct RowsNextPart: Equatable, Sendable {
         self.timerStartedAt = timerStartedAt
         self.sentence = sentence
     }
+
+    /// The undo offer's words after a Log from the island: `A2 Round 1 logged`, `Set 2 logged`.
+    public var loggedText: String {
+        badge.map { "\($0) \(label) logged" } ?? "\(label) logged"
+    }
 }
 
-/// The island's last line: the set after the next one. A tap opens it.
+/// The island's last line: the set after the next one. A tap opens it
+/// when it can be the open set now; otherwise the line only reads.
 public struct RowsAfterPart: Equatable, Sendable {
     /// Nil when that set does not exist yet (a myo chain's next mini-set
     /// appears only on a tick): the line reads, a tap does nothing.
@@ -585,7 +591,9 @@ public struct RowsAfterPart: Equatable, Sendable {
     public var label: String
     /// `Calf Press (Machine), set 1, 60 kg × 12`, `set 3, 105 kg × 10`, `A2 Bird Dog, 11 per side`.
     public var text: String
-    /// `.touch(row)`; nil with no row.
+    /// `.touch(row)` when a tap would open that set now; nil when it does not
+    /// exist yet, waits on an earlier link of its chain (a second side, a
+    /// drop, a cluster's next part), or a timed set runs and keeps the editor.
     public var action: RowsAction?
     public var sentence: String
 

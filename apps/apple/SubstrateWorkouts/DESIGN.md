@@ -40,7 +40,8 @@ those files disagree about a property, the kind files win and this document is w
 ### 1.1 What V1 does
 
 - Lists the owner's workout routines by folder, previews one, and starts a session from it or from nothing.
-- Runs one session at a time: any set can be ticked in any order, with an Up next pointer.
+- Runs one session at a time: sets are ticked in any order, with an Up next pointer; only the links of one set's chain
+  (a second side, a drop, a cluster's next part, a myo mini-set) wait for the link before them.
 - Supports warm-ups, working sets, failure and AMRAP sets, top and back-off sets, drop sets, myo-reps, myo-rep match,
   rest-pause and cluster sets (the last two only when a routine asks for them), timed holds, distance work, one side at
   a time, supersets, tri-sets, giant sets, circuits and paired sets.
@@ -1783,11 +1784,13 @@ the system's glass). It reads `tabViewBottomAccessoryPlacement`:
 ```text
 expanded:  [ ● Fully Body Collection #1              Rest 1:16 ]
            [   Chest Press (Machine), set 2, 40 kg × 11        ]
-inline:    [ ● Rest 1:16  Fully Body Coll… ]   or   [ ● Chest Press (Machine), set 2, 40 kg × 11 ]
+inline:    [ ● Rest 1:16  Chest Pr…ne), set 2, 40 kg × 11 ]   or   [ ● Chest Press (Machine), set 2, 40 kg × 11 ]
 ```
 
-- It says what helps at a glance, never a bare timer: the session's name with the rest's countdown while one runs,
-  and the next set with its values (`AccessoryPresentation.detail`); "All sets done" once there is none.
+- It says what helps at a glance, never a bare timer: the session's name with the rest's countdown while one runs, or
+  a running timed set's clock counting up ("Plank, set 1, holding"), and the next set with its values
+  (`AccessoryPresentation.set` and `.values`); "All sets done" once there is none. The set truncates in its middle and
+  the values never do, so a long name gives way first.
 - The dot is green while active, grey while the clock is paused ("Paused" under the name when no set is next).
 - The rest is `Text(timerInterval:countsDown: true)` and ticks with no app code.
 - No discard button ([06 §5](docs/research/06-app-teardown.md#5-pain-points-to-avoid) item 8). Tapping opens the session cover with the zoom transition, at the set the bar names
@@ -2030,8 +2033,8 @@ then A to Z. Rows show the name and the equipment label. "New exercise…" at th
 
 The owner's chosen session screen. Each set is one line that reads like a sentence; the open set is in place as a small
 editor; a floating glass island at the bottom stacks the rest, the next set and the one after it. Sets are logged in
-any order: every pending set opens with a tap, and nothing is ever "started" or counts up for a set unless it is timed
-(a plank's Start, its clock and Stop). It is the default; the grid of §7.6
+any order: every set opens with a tap, save the later links of one set's chain (see **Any order**), and nothing is
+ever "started" or counts up for a set unless it is timed (a plank's Start, its clock and Stop). It is the default; the grid of §7.6
 stays as **Table**. Settings > Session > Layout (Rows, Table) picks one, and the session's `…` menu has "Show as table"
 or "Show as rows" (§6.4, §7.10). Both read the same `SessionPresentation` and send the same `SessionCommand`s; the
 toolbar, the sheets, the menus, the dialogs, Finish, the countdown coordinator, the notifications and the Live Activity
@@ -2098,8 +2101,8 @@ session's length and not as a clock running for the set at hand; a tap pauses or
   (a 20 pt disc: `arrow.up.right` green for better, `equal` or `arrow.down.right` grey); on a pending line `last`.
 - When it does not fit on one line, the end moves to a second line; at the largest sizes the title, the values and the
   end each take a line. Nothing is cut to fit.
-- A tap: a done line opens its fix in place; any pending line opens as the editor (`touchRow`), in any order; the open
-  set drawn as a line goes back to it. VoiceOver reads `sentence` as one element, with a hint for the tap.
+- A tap: a done line opens its fix in place; any pending line that is not a locked link opens as the editor
+  (`touchRow`), in any order; the open set drawn as a line goes back to it. VoiceOver reads `sentence` as one element, with a hint for the tap.
 - The set just logged is washed green from the left for five seconds.
 
 **Other lines.** The warm-up fold ("Warm-ups 40 kg × 12, 70 kg × 6", "as last time"; a tap unfolds the warm-ups as set
@@ -2128,7 +2131,7 @@ line when fixing). In order:
   under them.
 - The RPE stops: five whole stops, 6 to 10, on a `tertiarySystemFill` track, then a separate `½` (`RowsRPEStrip.half`)
   that adds or takes off the half point, so every half step is a stop and then `½` and the control stays inside the
-  panel's padding, indented to the values: about 300 pt wide, each target 44 pt tall and 44 to 48 pt wide. The stop
+  panel's padding, indented to the values: about 280 pt wide, each target 44 pt tall and 44 to 52 pt wide. The stop
   holding the value shows it ("8.5"). The plan's value (and a pre-filled or copied value) is outlined and hollow; a
   rating is filled solid with its fill inset. A tap on any stop rates it (the outlined one too, as `entered`); a tap on
   the filled stop clears it; `½` rates the value with the half added or taken off, and is off with no value and at 10.
@@ -2159,8 +2162,15 @@ one edit with only what changed. Cancel drops the draft. While a fix is open the
 its "up next" tag, and the rest keeps running.
 
 **Any order.** A tap on any pending set, in any exercise, opens it at once; it can be edited and logged like the
-suggested one. Sets passed over stay plain pending sets: no tag, no waiting state. After a Log the suggestion picks up
-after the set just logged (§4.6).
+suggested one. Sets passed over stay plain pending sets: no tag, no waiting state. After a Log the suggestion, and the
+island's "Then …", pick up after the set just logged (§4.6 rule 2): a set skipped earlier is not pulled forward, it
+comes back when the plan wraps round to it (the owner's call,
+[decisions U8](docs/decisions.md#u8-after-an-out-of-order-log-then-follows-the-plan-from-that-set)).
+
+What stays in order, by design, is a chain inside one set (§4.9): a second side waits for the first, a drop for its
+set, a cluster's next part for the one before, and a myo chain makes its next mini-set only when the last is logged.
+Those lines are drawn dashed and a tap does nothing. While a timed set runs it keeps the editor: other sets open once
+it is stopped or cancelled.
 
 **Supersets** read top to bottom in the order they are done: Round 1 of 2, A1, A2, Round 2, A1, A2. The rests between
 them show only in the island. **Drops** show as "+ drop" on their set until it is
@@ -2182,15 +2192,22 @@ from the screen's edges, stacking up to three parts with hairlines between them,
    left with the total as its value.
 2. **The next set** (`RowsNextPart`): the exercise and its label ("Leg Press (Machine)  Set 3", "A2 Bird Dog  Round 1")
    with a chevron, then its values each in a tinted capsule with − and + (44 pt targets; a tap on the number opens the
-   keypad), the RPE the Log commits ("@ 8"), and Log; Start, or the running clock and Stop, for a timed set. Too narrow,
-   the steppers go and the numbers stay tappable; at the largest sizes the values stack. A tap on the name or the RPE
-   brings the full editor into view. It is drawn only while the open editor is scrolled out of view (at least 60 % of
-   it hidden, for a quarter of a second, so a Log or a row opening never makes it blink): while the editor is on
-   screen the list already shows the set, and the island never shows it twice. It comes and goes with a fade and a
-   small rise, a fade alone under Reduce Motion, and the list's inset follows it, so it never lands under a finger on
-   the editor.
+   keypad), the RPE the Log commits ("@ 8"), and Log; Start, or the running clock and Stop, for a timed set. A group's
+   warm-up reads "Warm-up", never a round. Too narrow, the steppers go and the numbers stay tappable; narrower still
+   (the accessibility sizes), the clock, each value and Log take a line each. The layout gives way, never the targets:
+   each stepper half, each number and the name row stay at least 44 pt. A tap on the name or the RPE brings the full
+   editor into view; a tap on a number opens the keypad where the list is, without scrolling it. It is drawn only while
+   the open editor's Log button is out of view (less than half of it between the toolbar and the island, for a quarter
+   of a second, so a Log or a row opening never makes it blink): while that button is on screen the list already
+   offers the Log, and the island never shows it twice. `RowsDock` decides it and is tested: a new open row, a fix
+   starting or ending and an Undo all start with the editor in view, and a jump past an editor the list never laid out
+   docks it. It comes and goes with a fade and a small rise, a fade alone under Reduce Motion. The island's bar is the
+   list's bottom inset: it grows at once when the set docks, and when it undocks while the list moves the bar keeps
+   its height until the list is idle, so the content never moves under a finger.
 3. **After that** (`RowsAfterPart`): one line, "Then" in the accent and the set after the next one with its values; a
-   tap opens that set. A myo chain's next mini-set, not made yet, reads without a tap.
+   tap opens that set when it can be the open set now. Otherwise the line only reads, with no chevron: a second side,
+   a drop or a cluster's next part waiting on the open set, anything while a timed set runs, and a myo chain's next
+   mini-set, not made yet.
 
 There is no "… is up", "Rest skipped" or "since the last set" moment: after a Log the island shows the rest (if any)
 and the next set directly, and nothing counts up for a set that is not timed. Every set done: Finish. No exercise: a

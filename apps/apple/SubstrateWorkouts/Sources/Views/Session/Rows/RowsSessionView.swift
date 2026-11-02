@@ -7,7 +7,8 @@ import SwiftUI
 /// `presentation.rowsLayout` and sends the same commands as the Table. After
 /// a Log the list brings the next open set into view, never while a finger
 /// is on it. The island's bar insets the list, so nothing it holds ever
-/// covers the set being edited.
+/// covers the set being edited; it keeps its docked height until the list is
+/// idle, so an undock never moves the content under a finger (`RowsDock`).
 struct RowsSessionView: View {
     let presentation: SessionPresentation
     let finish: () -> Void
@@ -19,16 +20,15 @@ struct RowsSessionView: View {
     @State private var scrollPhase: ScrollPhase = .idle
     /// The open row changed while the list was being dragged: scroll once it settles.
     @State private var scrollPending = false
+    /// The bar's height with the open set docked: held while the list moves.
+    @State private var dockedBarHeight: CGFloat = 0
 
     private var layout: RowsLayout { presentation.rowsLayout }
 
     private var isResting: Bool { layout.island.rest != nil }
 
-    /// The open editor is on screen: the island leaves the next set out.
-    private var editorInView: Bool {
-        guard let open = layout.openRow else { return true }
-        return screen.hiddenEditor != open || screen.fixing != nil
-    }
+    /// The open editor's Log button is on screen: the island leaves the next set out.
+    private var editorInView: Bool { !screen.dock.isDocked }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -64,8 +64,15 @@ struct RowsSessionView: View {
             .background(Color(.systemGroupedBackground))
             .scrollEdgeEffectStyle(.soft, for: .bottom)
             .safeAreaBar(edge: .bottom) { bottomBar(proxy) }
+            .onScrollGeometryChange(for: EdgeInsets.self) { $0.contentInsets } action: { _, insets in
+                screen.listInsets = insets
+            }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                screen.listFrame = frame
+            }
             .onScrollPhaseChange { _, phase in
                 scrollPhase = phase
+                screen.scrollPhase(isIdle: phase == .idle)
                 if phase == .idle, scrollPending {
                     scrollPending = false
                     scrollToOpenRow(proxy)
@@ -78,12 +85,13 @@ struct RowsSessionView: View {
                     scrollPending = true
                 }
             }
-            .onChange(of: presentation) { _, _ in
+            .onChange(of: presentation, initial: true) { _, _ in
                 screen.reconcile(with: layout, entryCheckRow: session.entryCheck?.row)
             }
             .onChange(of: screen.typing?.row) { _, row in
-                // The keypad takes the bottom: keep the field it types into in view.
-                guard let row else { return }
+                // The keypad takes the bottom: keep the field it types into in view,
+                // unless it types into the docked set, which the keypad names.
+                guard let row, screen.typing?.fromIsland != true else { return }
                 Task {
                     try? await Task.sleep(for: .milliseconds(120))
                     withAnimation(.smooth) { proxy.scrollTo(row, anchor: nil) }
@@ -135,6 +143,12 @@ struct RowsSessionView: View {
             }
         }
         .padding(.bottom, 6)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            if screen.dock.isDocked, screen.typing == nil { dockedBarHeight = height }
+        }
+        // Undocked while the list moves: the island shrinks, the inset does not.
+        .frame(minHeight: screen.dock.holdsHeight && !screen.dock.isDocked && screen.typing == nil ? dockedBarHeight : nil,
+               alignment: .bottom)
         .animation(.smooth(duration: 0.25), value: screen.typing?.row)
         .animation(.smooth(duration: 0.25), value: screen.undo)
         .opacity(hidden ? 0 : 1)
@@ -173,6 +187,7 @@ struct RowsSessionView: View {
     /// Finish's way back. The open set takes the least scroll that shows it,
     /// and never while a finger is on the list (§7.6a).
     private func scroll(to target: ScrollTarget, proxy: ScrollViewProxy) {
+        if target.row != layout.openRow { screen.jumped() }
         if let row = target.row, row == layout.openRow {
             if scrollPhase == .idle {
                 scrollToOpenRow(proxy)

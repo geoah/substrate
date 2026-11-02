@@ -11,7 +11,8 @@ import SwiftUI
 ///    Log; Start or Stop and the clock for a timed set. Drawn only while
 ///    the open editor is scrolled out of view, so logging never needs a
 ///    scroll back, and never twice on screen.
-/// 3. The set after that, on one line; a tap opens it.
+/// 3. The set after that, on one line; a tap opens it when it can open now,
+///    else it only reads (no chevron).
 ///
 /// Parts come and go with a fade and a small rise (a fade alone under Reduce
 /// Motion). Nothing here counts up for a set that is not timed.
@@ -26,6 +27,7 @@ struct RowsIslandView: View {
     let addExercise: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var parts: [RowsIslandPart] { island.parts(editorInView: editorInView) }
 
@@ -101,7 +103,7 @@ struct RowsIslandView: View {
             Text(after.text)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
-                .lineLimit(1)
+                .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
                 .truncationMode(.middle)
             Spacer(minLength: 4)
             if after.action != nil {
@@ -216,7 +218,9 @@ struct RowsRestPartView: View {
 
 /// The next set, compact: `A2 Bird Dog  Round 1  @ 8  ⌃` over its values
 /// with steppers and Log. When the row is too narrow the steppers go and a tap
-/// on a number types it; at the largest sizes the values stack.
+/// on a number types it; when even that does not fit (the accessibility
+/// sizes, a narrow phone) the clock, each value and Log take a line each.
+/// Every target stays at least 44 pt: the layout gives way, never the targets.
 struct RowsNextPartView: View {
     let next: RowsNextPart
     let perform: (RowsAction) -> Void
@@ -225,7 +229,10 @@ struct RowsNextPartView: View {
     @Environment(SessionController.self) private var session
     @Environment(CoverModel.self) private var cover
     @Environment(RowsScreenModel.self) private var screen
-    @ScaledMetric(relativeTo: .body) private var stepWidth: CGFloat = 40
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var scaledStepWidth: CGFloat = 44
+
+    private var stepWidth: CGFloat { max(44, scaledStepWidth) }
 
     private var tint: Color { RowsStyle.tint(next.tint) }
 
@@ -235,53 +242,87 @@ struct RowsNextPartView: View {
             ViewThatFits(in: .horizontal) {
                 controls(steppers: true)
                 controls(steppers: false)
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) { values(steppers: false) }
-                    primary
-                }
+                stacked
             }
         }
         .padding(.leading, 14)
         .padding(.trailing, 10)
-        .padding(.top, 8)
+        .padding(.top, 2)
         .padding(.bottom, 10)
+        // Its full height always: the bar never squeezes a stacked set's targets.
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .contain)
     }
 
+    /// The name, the set and its RPE on one line; at the accessibility sizes
+    /// the name takes a line of its own, so it is never cut to nothing.
     private var title: some View {
         Button(action: showOpenRow) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                if let badge = next.badge {
-                    RowsBadge(text: badge, color: tint)
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            badge
+                            exerciseName.lineLimit(2)
+                        }
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            setLabel
+                            Spacer(minLength: 4)
+                            trailing
+                        }
+                    }
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        badge
+                        exerciseName.lineLimit(1)
+                        setLabel
+                        Spacer(minLength: 4)
+                        trailing
+                    }
                 }
-                Text(next.exercise)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(next.label)
-                    .font(.subheadline)
-                    .foregroundStyle(next.tint == .orange ? RowsStyle.orange : Color.secondary)
-                    .lineLimit(1)
-                    .layoutPriority(1)
-                Spacer(minLength: 4)
-                if let rpe = next.rpe {
-                    Text(rpe)
-                        .font(.subheadline.weight(.medium).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
-                        .accessibilityLabel("RPE \(rpe.dropFirst(2))")
-                }
-                Image(systemName: "chevron.up")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
             }
-            .frame(minHeight: 28)
+            .frame(minHeight: 44)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(next.sentence)
         .accessibilityHint("Shows every option for this set")
+    }
+
+    @ViewBuilder
+    private var badge: some View {
+        if let badge = next.badge {
+            RowsBadge(text: badge, color: tint)
+        }
+    }
+
+    private var exerciseName: some View {
+        Text(next.exercise)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+    }
+
+    private var setLabel: some View {
+        Text(next.label)
+            .font(.subheadline)
+            .foregroundStyle(next.tint == .orange ? RowsStyle.orange : Color.secondary)
+            .lineLimit(1)
+            .layoutPriority(1)
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        if let rpe = next.rpe {
+            Text(rpe)
+                .font(.subheadline.weight(.medium).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .fixedSize()
+                .accessibilityLabel("RPE \(rpe.dropFirst(2))")
+        }
+        Image(systemName: "chevron.up")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
     }
 
     private func controls(steppers: Bool) -> some View {
@@ -292,30 +333,53 @@ struct RowsNextPartView: View {
         }
     }
 
+    /// The clock, each value and Log on a line of their own; a value keeps
+    /// its steppers where its line has room for them.
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            clock
+            ForEach(next.fields) { field in
+                ViewThatFits(in: .horizontal) {
+                    compactField(field, steppers: true)
+                    compactField(field, steppers: false)
+                    compactField(field, steppers: false, fitsWidth: true)
+                }
+            }
+            primary
+        }
+    }
+
     @ViewBuilder
     private func values(steppers: Bool) -> some View {
+        clock
+        ForEach(next.fields) { field in
+            compactField(field, steppers: steppers)
+        }
+    }
+
+    @ViewBuilder
+    private var clock: some View {
         if let start = next.timerStartedAt {
             TimelineView(.periodic(from: start, by: 1)) { context in
                 HStack(spacing: 6) {
                     Circle().fill(.red).frame(width: 8, height: 8)
                     Text(Format.duration(max(0, Int(context.date.timeIntervalSince(start)))))
                         .font(.title2.weight(.semibold).monospacedDigit())
+                        .fixedSize()
                 }
             }
             .accessibilityElement(children: .combine)
         }
-        ForEach(next.fields) { field in
-            compactField(field, steppers: steppers)
-        }
     }
 
     /// `− 105 kg +` in one tinted capsule; without steppers the number alone, a tap types it.
-    private func compactField(_ field: RowsField, steppers: Bool) -> some View {
+    /// `fitsWidth`: the last resort on a line of its own, the number shrinks to the line.
+    private func compactField(_ field: RowsField, steppers: Bool, fitsWidth: Bool = false) -> some View {
         let typing = screen.typing.flatMap { $0.row == next.row && $0.field == field.field ? $0.text : nil }
         return HStack(spacing: 0) {
             if steppers { step(field.minus, fallback: "\u{2212}") }
             Button {
-                screen.openKeypad(field, row: next.row, mode: .log)
+                screen.openKeypad(field, row: next.row, mode: .log, fromIsland: true)
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(typing.flatMap { $0.isEmpty ? nil : $0 } ?? field.value ?? field.placeholder ?? "\u{2013}")
@@ -328,9 +392,10 @@ struct RowsNextPartView: View {
                     }
                 }
                 .lineLimit(1)
-                .fixedSize()
+                .minimumScaleFactor(fitsWidth ? 0.5 : 1)
+                .fixedSize(horizontal: !fitsWidth, vertical: false)
                 .padding(.horizontal, steppers ? 2 : 12)
-                .frame(minHeight: 44)
+                .frame(minWidth: 44, minHeight: 44)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -351,7 +416,7 @@ struct RowsNextPartView: View {
         Button {
             if let step { screen.apply(step.patch, row: next.row, mode: .log, session: session) }
         } label: {
-            Text(step.map { String($0.title.prefix(1)) } ?? fallback)
+            Text(step?.symbol ?? fallback)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(step == nil ? Color(.tertiaryLabel) : tint)
                 .frame(width: stepWidth, height: 44)
@@ -366,8 +431,7 @@ struct RowsNextPartView: View {
 
     private var primary: some View {
         Button {
-            let logged = next.badge.map { "\($0) \(next.label) logged" } ?? "\(next.label) logged"
-            screen.perform(next.primary.action, session: session, cover: cover, loggedText: logged)
+            screen.perform(next.primary.action, session: session, cover: cover, loggedText: next.loggedText)
         } label: {
             Label(next.primary.title, systemImage: next.primary.action.symbol)
                 .labelStyle(.titleAndIcon)

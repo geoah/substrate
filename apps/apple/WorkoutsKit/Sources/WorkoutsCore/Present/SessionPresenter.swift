@@ -103,19 +103,28 @@ struct Presenting {
             restBar: restBar(upNext),
             liveActivity: liveActivity(header, upNext, canComplete: canComplete),
             notification: notification(upNext),
-            accessory: AccessoryPresentation(
-                title: title,
-                detail: upNext.map { "\($0.exerciseWithGroup), \($0.label.spoken)" + ($0.values.isEmpty ? "" : ", \($0.values)") },
-                row: upNext?.row,
-                isPaused: header.isPaused,
-                restEndsAt: state.countdown.flatMap { $0.isRestLike && !$0.hasEnded(by: now) ? $0.endsAt : nil }
-            ),
+            accessory: accessory(title: title, upNext: upNext, isPaused: header.isPaused),
             unticked: unticked(),
             completedSets: completed,
             summary: "\(title), started \(started), \(Format.count(completed, "set")) done.",
             timedRow: timedID,
             nextChange: nextChange(),
             rowsLayout: rowsLayout
+        )
+    }
+
+    /// The minimised bar: the next set and its values, or the timed set running with its start.
+    func accessory(title: String, upNext: UpNextPresentation?, isPaused: Bool) -> AccessoryPresentation {
+        let timerStart = timedID.flatMap { state.rows[$0]?.timerStartedAt }
+        let isTiming = timerStart != nil && timedID == upNext?.row
+        return AccessoryPresentation(
+            title: title,
+            set: upNext.map { "\($0.exerciseWithGroup), \($0.label.spoken)" },
+            values: isTiming ? "holding" : upNext.flatMap { $0.values.isEmpty ? nil : $0.values },
+            row: upNext?.row,
+            isPaused: isPaused,
+            restEndsAt: state.countdown.flatMap { $0.isRestLike && !$0.hasEnded(by: now) ? $0.endsAt : nil },
+            timerStartedAt: isTiming ? timerStart : nil
         )
     }
 

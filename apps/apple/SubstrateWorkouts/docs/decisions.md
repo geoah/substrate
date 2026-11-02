@@ -200,6 +200,22 @@ The options, with their screens and rationales, are in [design/](design/README.m
 - **Source:** owner, 2026-11-02;
   [DESIGN.md §7.6a](../DESIGN.md#76a-the-rows-layout-the-default).
 
+### U8. After an out-of-order Log, "Then" follows the plan from that set
+
+- **Decided by** the owner, 2026-11-02, answering the question the reviews of #1110 raised.
+- **What:** after a set is logged out of order, the suggestion and the island's "Then …"
+  line carry on with the plan from the set just logged (§4.6 rule 2), not from the set the
+  plan was on. A set passed over earlier is not pulled forward: it comes back when the plan
+  wraps round to it. Unchanged from #1110.
+- **What stays in order:** the links of one set's chain (a second side, a drop, a cluster's
+  next part, a myo mini-set) and a running timed set, which keeps the editor until it stops
+  ([U7](#u7-any-order-nothing-timed-but-a-timed-set-and-a-three-part-island)). "Then …"
+  offers a tap only when its set can open now.
+- **Why:** the owner moves freely between exercises and wants the plan to follow them, not
+  to keep sending them back to what they skipped.
+- **Source:** owner, 2026-11-02;
+  [DESIGN.md §7.6a](../DESIGN.md#76a-the-rows-layout-the-default).
+
 ## The data model, first draft (lead)
 
 Taken by the lead on 2026-10-30 from the research, for the owner to overturn. They are listed

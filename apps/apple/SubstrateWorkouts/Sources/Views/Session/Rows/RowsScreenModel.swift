@@ -5,8 +5,8 @@ import SwiftUI
 /// The Rows layout's own view state (DESIGN.md §7.6a): which done set is
 /// being fixed and its draft, which field the keypad types into, which
 /// finished blocks and warm-up folds are open, the RPE meaning shown for a
-/// moment, the undo offer after a Log, and whether the open editor is
-/// scrolled out of view (the island then docks the next set). The session lives in
+/// moment, the undo offer after a Log, and what the list reports for the
+/// island's dock (`RowsDock` decides it). The session lives in
 /// `SessionController`; this never holds a rule. Every value it shows and
 /// every change it sends comes from `SessionPresentation.rowsLayout`.
 @MainActor
@@ -26,6 +26,8 @@ final class RowsScreenModel {
         var keypad: RowsKeypad
         /// What was typed; empty shows the field's value until the first key.
         var text = ""
+        /// Opened from the island's docked set: the list stays where the owner scrolled it.
+        var fromIsland = false
 
         var field: ValueField { keypad.field }
     }
@@ -56,10 +58,17 @@ final class RowsScreenModel {
     var undo: Undo?
     /// The set just logged: tinted green for a moment.
     var fresh: RowID?
-    /// The open editor whose panel the owner scrolled out of view: the island
-    /// docks that set while it stays the open one. Set a moment after the
-    /// panel leaves (a Log replaces it at once), cleared as soon as it is back.
-    private(set) var hiddenEditor: RowID?
+    /// Whether the island docks the open set, and holds the docked height.
+    private(set) var dock = RowsDock()
+    /// The list's frame on screen and its insets (the bars over it): its viewport.
+    var listFrame = CGRect.zero
+    var listInsets = EdgeInsets()
+
+    /// Where the list shows content, on screen: its frame less the toolbar and the island.
+    var listViewport: ClosedRange<Double> {
+        let top = Double(listFrame.minY + listInsets.top)
+        return top ... max(top, Double(listFrame.maxY - listInsets.bottom))
+    }
     @ObservationIgnored private var hideTask: Task<Void, Never>?
     /// A Log the entry check holds: once the answer logs the row, it gets the
     /// undo offer and the green wash as any other Log.
@@ -111,26 +120,42 @@ final class RowsScreenModel {
         openKeypad(field, row: editor.row, mode: editor.mode)
     }
 
-    func openKeypad(_ field: RowsField, row: RowID, mode: RowsEditor.Mode) {
-        typing = Typing(row: row, mode: mode, keypad: field.keypad)
+    func openKeypad(_ field: RowsField, row: RowID, mode: RowsEditor.Mode, fromIsland: Bool = false) {
+        typing = Typing(row: row, mode: mode, keypad: field.keypad, fromIsland: fromIsland)
     }
 
     // MARK: - Docking
 
-    /// The open editor's panel came into view or left it. Back in view
+    /// The open editor's Log button came into view or left it. Back in view
     /// undocks at once; out of view docks after a beat, so a panel that only
     /// blinks out (a Log, a row opening) never makes the island jump.
-    func editorVisibility(_ row: RowID, visible: Bool, animation: Animation?) {
+    func logVisibility(_ row: RowID, visible: Bool, animation: Animation?) {
         hideTask?.cancel()
         if visible {
-            if hiddenEditor == row { withAnimation(animation) { hiddenEditor = nil } }
+            withAnimation(animation) { dock.logButton(of: row, isVisible: true) }
             return
         }
         hideTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled, let self else { return }
-            withAnimation(animation) { self.hiddenEditor = row }
+            withAnimation(animation) { self.dock.logButton(of: row, isVisible: false) }
         }
+    }
+
+    func scrollPhase(isIdle: Bool) {
+        dock.scroll(isIdle: isIdle)
+    }
+
+    /// The list jumped to a set other than the open one.
+    func jumped() {
+        dock.jumped()
+    }
+
+    /// The open row or the fix changed: the editor is back in view.
+    private func showEditor(open: RowID?) {
+        guard open != dock.open || (fixing != nil) != dock.isFixing else { return }
+        hideTask?.cancel()
+        dock.show(open: open, isFixing: fixing != nil)
     }
 
     func type(_ key: String) {
@@ -178,14 +203,17 @@ final class RowsScreenModel {
             await session.send(action.command)
             fixing = nil
             typing = nil
+            showEditor(open: dock.open)
         case let .removeSet(row) where session.state?.rows[row]?.isPending == false:
             // A done set asks first, as the Table's does.
             fixing = nil
             typing = nil
+            showEditor(open: dock.open)
             cover.removeDoneRow = row
         case .touch:
             fixing = nil
             typing = nil
+            showEditor(open: dock.open)
             await session.send(action.command)
         default:
             await session.send(action.command)
@@ -197,17 +225,21 @@ final class RowsScreenModel {
         guard let fix = item.fix else { return }
         typing = nil
         fixing = Fixing(row: item.id, draft: fix.logged)
+        showEditor(open: dock.open)
     }
 
     func cancelFix() {
         fixing = nil
         if typing?.mode == .fix { typing = nil }
+        showEditor(open: dock.open)
     }
 
     func undoLast(session: SessionController) {
         guard let undo else { return }
         self.undo = nil
         if fresh == undo.row { fresh = nil }
+        hideTask?.cancel()
+        dock.undo()
         session.run(.untick(undo.row))
     }
 
@@ -227,6 +259,7 @@ final class RowsScreenModel {
         if let fixing, layout.item(fixing.row)?.state != .done {
             self.fixing = nil
         }
+        showEditor(open: layout.openRow)
         if let typing {
             switch typing.mode {
             case .log where layout.item(typing.row)?.editor == nil: self.typing = nil

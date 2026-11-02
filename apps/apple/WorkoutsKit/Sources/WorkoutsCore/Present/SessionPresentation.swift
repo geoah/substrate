@@ -713,19 +713,34 @@ public struct CountdownNotification: Equatable, Sendable {
 public struct AccessoryPresentation: Equatable, Sendable {
     /// The routine's name or "Training session".
     public var title: String
-    /// The next set with its values, `Chest Press (Machine), set 2, 40 kg × 11`; nil when every set is done.
+    /// The next set with its values, `Chest Press (Machine), set 2, 40 kg × 11`, or the
+    /// timed set running, `Plank, set 1, holding`; nil when every set is done.
     public var detail: String?
+    /// `detail`'s set alone, `Chest Press (Machine), set 2`: it gives way first on a narrow bar.
+    public var set: String?
+    /// `detail`'s values alone, `40 kg × 11` or `holding`: never cut.
+    public var values: String?
     /// That set: a tap on the bar opens the session at it.
     public var row: RowID?
     public var isPaused: Bool
     /// A running rest's end, for "Rest 1:16"; nil when none runs or it is over.
+    /// The presentation is made again at the end (`nextChange`), so the bar trusts it.
     public var restEndsAt: Date?
+    /// A timed set's start while it runs: the bar counts up from it in place of the rest.
+    public var timerStartedAt: Date?
 
-    public init(title: String, detail: String?, row: RowID? = nil, isPaused: Bool, restEndsAt: Date?) {
+    public init(title: String, set: String?, values: String?, row: RowID? = nil, isPaused: Bool, restEndsAt: Date?,
+                timerStartedAt: Date? = nil)
+    {
         self.title = title
-        self.detail = detail
+        self.set = set
+        self.values = values
+        detail = set.map { set in values.map { "\(set), \($0)" } ?? set }
         self.row = row
         self.isPaused = isPaused
         self.restEndsAt = restEndsAt
+        self.timerStartedAt = timerStartedAt
     }
+
+    public var isResting: Bool { restEndsAt != nil }
 }

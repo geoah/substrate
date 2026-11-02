@@ -77,6 +77,11 @@ public struct RowsEditor: Equatable, Sendable {
         self.cancelTitle = cancelTitle
     }
 
+    /// The undo offer's words after a Log: `A2 Bird Dog logged`, `Set 2 logged`.
+    public var loggedText: String {
+        badge.map { "\($0) \(title) logged" } ?? "\(title) logged"
+    }
+
     public func field(_ field: ValueField) -> RowsField? {
         fields.first { $0.field == field }
     }
@@ -163,6 +168,11 @@ public struct RowsStep: Equatable, Sendable {
         self.title = title
         self.accessibilityLabel = accessibilityLabel
         self.patch = patch
+    }
+
+    /// The compact stepper's glyph: the sign alone, `−` or `+`.
+    public var symbol: String {
+        String(title.prefix(1))
     }
 }
 
