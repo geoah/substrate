@@ -89,7 +89,10 @@ for a bare domain name, the `server=` of its `_substrate` TXT record (read
 through `DNSServiceQueryRecord`, parsed by the rules of the server's
 `internal/domains/record.go`, and refused when malformed), else the
 `server` of `https://<name>/.well-known/substrate/repository.json`, else
-its parent host as a server. A server found from a name carries the name as
+its parent host as a server. The last two run only after DNS answered that
+the name has no record: DNS-SD reports a SERVFAIL as the same NoSuchRecord,
+so a negative answer is asked again of libresolv (the `SubstrateResolv`
+target), and a lookup either one could not finish stops discovery. A server found from a name carries the name as
 `probe.repository`: `signIn` sends it as `login_hint` and revokes and
 refuses a token for any other repository (`RepositoryMismatch`).
 
