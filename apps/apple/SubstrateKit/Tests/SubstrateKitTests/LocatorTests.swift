@@ -187,8 +187,9 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     @Test func aFailedLookupStopsDiscovery() async throws {
         let failures: [Error] = [
             URLError(.timedOut),
-            // SERVFAIL, as DNS-SD reports it.
             DNSServiceTXTResolver.Failed(name: "_substrate.alice.substrate.example.org", code: -65537),
+            // SERVFAIL: DNS-SD says NoSuchRecord and the plain resolver disagrees.
+            DNSServiceTXTResolver.Unconfirmed(name: "_substrate.alice.substrate.example.org"),
         ]
         for failure in failures {
             let transport = HostTransport().substrate("substrate.example.org").substrate("other.example.net")
