@@ -32,6 +32,14 @@ final class ServerStore: ObservableObject {
         UserDefaults.standard.set(recent.map(\.absoluteString), forKey: Self.recentKey)
     }
 
+    /// Drops `server` from the recent list with its website data: its console
+    /// state and anything the page kept.
+    func forget(_ server: URL) {
+        recent.removeAll { $0 == server }
+        UserDefaults.standard.set(recent.map(\.absoluteString), forKey: Self.recentKey)
+        WKWebsiteDataStore.remove(forIdentifier: Self.storeIdentifier(for: server)) { _ in }
+    }
+
     /// Each server keeps its own website data: its token, its console
     /// preferences. Pointing the app elsewhere and back finds the session
     /// where it was left, and a token never reaches a server it was not

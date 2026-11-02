@@ -24,9 +24,9 @@ final class ConsoleController: NSObject, ObservableObject {
     /// What the page's Check for updates asks for; the window wires it to the
     /// app's one updater.
     var checkForUpdates: (() -> Void)?
-    /// The page said the app's sign-in ended; the window hands it to the
-    /// app's sessions.
-    var signedOut: (() -> Void)?
+    /// The page said the app's sign-in holding this token id ended; the
+    /// window hands it to the app's sessions.
+    var signedOut: ((String?) -> Void)?
 
     private let schemeHandler: ConsoleSchemeHandler
     private var observations: [NSKeyValueObservation] = []
@@ -149,7 +149,7 @@ final class ConsoleController: NSObject, ObservableObject {
         switch type {
         case "changeServer": picking = true
         case "checkForUpdates": checkForUpdates?()
-        case "signedOut": signedOut?()
+        case "signedOut": signedOut?(body["tokenId"] as? String)
         default: break
         }
     }

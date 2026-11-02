@@ -11,7 +11,7 @@
  * their body) and the id of the token record this browser holds (what logging
  * out revokes). */
 
-import { shellSession, signedOut } from "@/lib/shell"
+import { shellSession as givenSession, signedOut } from "@/lib/shell"
 
 // The `substrate.*` keys are the component's name; the tests pin them.
 const TOKEN_KEY = "substrate.token"
@@ -20,6 +20,22 @@ const REPOSITORY_KEY = "substrate.repository"
 const TOKEN_ID_KEY = "substrate.tokenid"
 
 let unauthorizedHandler: (() => void) | null = null
+// The app's sign-in is given to the page once, frozen, and outlives the
+// session it held: once the page ends it, it is never read again, or the
+// login route would read it as still signed in and send the page back.
+let endedSecret: string | null = null
+
+/** The app's sign-in, until the page ends it. */
+function shellSession() {
+  const given = givenSession()
+  return given && given.secret !== endedSecret ? given : undefined
+}
+
+/** Whether the app holds the page's sign-in, now or until the page ended it:
+ * then the app, not the page, revokes the token. */
+export function appHoldsSession(): boolean {
+  return givenSession() !== undefined
+}
 // Every cached answer belongs to ONE repository, and no query key names which:
 // signing in as somebody else in the same tab would otherwise keep answering
 // from the previous repository's cache — a sidebar listing kinds this
@@ -108,7 +124,11 @@ export function saveSession(
  * sign-in, so the app is told to forget it. */
 export function clearSession(): void {
   dropStored()
-  if (shellSession()) signedOut()
+  const shell = shellSession()
+  if (shell) {
+    endedSecret = shell.secret
+    signedOut(shell.tokenId)
+  }
   sessionChanged()
 }
 
@@ -139,7 +159,10 @@ export async function retireStoredSession(
     return
   }
   if (!token) return
-  if (token !== shell.secret && id) {
+  if (token !== shell.secret) {
+    // Without its record's id a kept token cannot be revoked here, and
+    // dropping it would forget a live token: it is left as it is.
+    if (!id) return
     try {
       const res = await fetcher(`/tokens/${encodeURIComponent(id)}`, {
         method: "DELETE",

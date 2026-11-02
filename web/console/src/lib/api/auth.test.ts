@@ -212,6 +212,28 @@ describe("the v1 door", () => {
     expect(getToken()).toBeNull()
   })
 
+  it("logout in the Apple app leaves revoking to the app, and tells it which sign-in ended", async () => {
+    const post = vi.fn()
+    vi.stubGlobal("substrateShell", {
+      platform: "ios",
+      server: "https://substrate.example.com",
+      session: {
+        secret: "substrate_tok_app_logout",
+        repository: "geoah",
+        tokenId: "tok-app",
+      },
+    })
+    vi.stubGlobal("webkit", {
+      messageHandlers: { substrateShell: { postMessage: post } },
+    })
+    await logout()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(post).toHaveBeenCalledWith({ type: "signedOut", tokenId: "tok-app" })
+    expect(getToken()).toBeNull()
+    vi.unstubAllGlobals()
+    vi.stubGlobal("fetch", fetchMock)
+  })
+
   it("surfaces the login rate limit with its Retry-After", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(

@@ -91,10 +91,12 @@ export function shellSession(
     : undefined
 }
 
-/** Tell the app its sign-in ended: the page signed out, or the server
- * refused the token. The app forgets it and asks for a sign-in again. */
-export function signedOut(win: unknown = globalThis): void {
+/** Tell the app the sign-in holding `tokenId` ended: the page signed out,
+ * or the server refused the token. The app revokes it and asks for a sign-in
+ * again; naming the token keeps a late message from ending a newer one. */
+export function signedOut(tokenId: string, win: unknown = globalThis): void {
   ;(win as ShellWindow).webkit?.messageHandlers?.substrateShell?.postMessage({
     type: "signedOut",
+    tokenId,
   })
 }
