@@ -12,7 +12,10 @@ let package = Package(
         .library(name: "SubstrateKit", targets: ["SubstrateKit"]),
     ],
     targets: [
-        .target(name: "SubstrateKit"),
+        .target(name: "SubstrateKit", dependencies: ["SubstrateResolv"]),
+        // The plain resolver's verdict on a TXT query, which tells a SERVFAIL
+        // from a name without the record where DNS-SD cannot.
+        .target(name: "SubstrateResolv", linkerSettings: [.linkedLibrary("resolv")]),
         .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit"]),
     ],
     swiftLanguageModes: [.v5]
