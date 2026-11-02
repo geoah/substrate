@@ -127,9 +127,12 @@ Its records are the repository's to write, delete and purge, disable and
 enable and uninstall work as they do on any bundle, and the upgrade offer is
 the same preview and the same button
 ([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)).
-Applying the same closure by hand from the shipped files lands `installed`
-instead, and stays editable. The four well-known catalogues under
-`substrate.reamde.dev` (`health`, `labs`, `environment` and `clinical`) take
+A token cannot apply the same closure by hand from the shipped files: it
+creates a package only under its own repository's authority
+([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)), so `substratectl install` is the one door. A
+copy a repository already holds as `installed`, applied by hand before that
+rule, stays editable until its next install promotes it. The four well-known
+catalogues under `substrate.reamde.dev` (`health`, `labs`, `environment` and `clinical`) take
 the same door and land published the same way ([the catalog](#the-catalog)).
 
 The upgrade has a read-only **preview** beside it: the catalog compares the
@@ -970,7 +973,7 @@ is conditional**: a suggested mapping (and its `installs:` entry) is admitted
 only where this repository can resolve it, and dropped otherwise. Importing
 `people` onto a repository with no provider lands three kinds and no mapping,
 rather than being refused for vocabulary you never asked for. A hand apply of
-the same files takes only the `waiting` half of this rule, with `substratectl
+the same files, rehomed with `substratectl apply --as-mine`, takes only the `waiting` half of this rule, with `substratectl
 apply --hold-waiting-mappings` (`holdWaitingMappings` on `POST
 /api/v1/vocabulary/apply`): it holds back the mappings whose provider is absent
 and reports them as `waiting`, and a `blocked` mapping still refuses the whole

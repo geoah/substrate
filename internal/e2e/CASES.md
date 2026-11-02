@@ -21,6 +21,12 @@ purpose: it asks the shipped binary for every code the conformance suite asks
 the in-process engine for, and it reads the list from the same source,
 `internal/api`'s `code*` declarations.
 
+Every case needs a server started with
+`SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES=true`, which `test:e2e` sets: the
+cases declare their kinds under fixed `*.e2e.example` authorities, and a
+token otherwise creates packages only under its repository's own
+([decision 0210](../../docs/decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)).
+
 Five preconditions gate individual cases and steps, and the `test:e2e` task
 sets every one it can:
 

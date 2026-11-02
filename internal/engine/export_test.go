@@ -516,8 +516,8 @@ func ClockOf(t *testing.T) *TestClock {
 }
 
 // OpenForTest is the ONE way a test opens a service: Open with the shipped
-// seed, the binary's credential key and the test's TOTP clock, then the
-// caller's options, which win where they name the same thing (a patched
+// seed, the binary's credential key, the test's TOTP clock and decision 0210
+// lifted (WithInsecureForeignPackages), then the caller's options, which win where they name the same thing (a patched
 // kinds tree, another key). It does not close the service: the callers
 // differ on when.
 //
@@ -540,6 +540,10 @@ func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) 
 		WithLLMSampleSeed(false),
 		WithLLMProviderSeed(false),
 		WithUnitSeed(false),
+		// Every fixture here declares fixed `*.example.com` authorities into
+		// a repository named after its test; a test of the rule itself
+		// passes WithInsecureForeignPackages(false).
+		WithInsecureForeignPackages(true),
 	}...)
 	all = append(all, opts...)
 	return Open(ctx, dsn, all...)

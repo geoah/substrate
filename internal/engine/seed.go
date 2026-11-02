@@ -88,19 +88,19 @@ func authorizeDeclarationWrite(actor substrate.Actor, current *vocabulary.Regist
 	return nil
 }
 
-// authorizeNewPackage guards the OTHER half of the chokepoint: a package the
-// registry does not hold yet is the writer's to create, EXCEPT under the
-// publisher's own authority. Nothing is stored there but what this binary
-// seeded, so a token that could declare `substrate.reamde.dev/anything` would
-// mint vocabulary that reads as shipped: `substrate.reamde.dev/core` is
-// refused by the source check above once it exists, and this refuses the
-// sibling package it does not.
-//
-// The check is EQUALITY, never the suffix. `providers.substrate.reamde.dev`
-// and `samples.substrate.reamde.dev` sit under the publisher too, and
-// installing one of their closures by hand (`apply -f` of the files the binary
-// ships) is a sanctioned door; widening this to the suffix would close it.
-func authorizeNewPackage(actor substrate.Actor, current *vocabulary.Registry, pkg string) error {
+// authorizeNewPackage guards the OTHER half of the chokepoint (decision
+// 0210): a package the registry does not hold yet is the writer's to create
+// only under the repository's own authority, own. Every other authority
+// reaches a repository from the binary: the seed and the boot upgrade write
+// as the substrate, a catalog install or a sample import as
+// `bundle:<authority>:<package>`, and an import rehomes its closure onto own
+// anyway. A token that could declare `example.org/anything` would squat a
+// name its holder does not own, and one that could hand-apply a shipped
+// provider would hold it as `installed`, writable and outside the publisher's
+// upgrades. The rule binds every hand that is not the substrate's own: the
+// owner's doors, an app, an agent, a function. A package already held is
+// left to authorizeDeclarationWrite's source rules.
+func authorizeNewPackage(actor substrate.Actor, current *vocabulary.Registry, own, pkg string) error {
 	if _, held := current.PackageByName(pkg); held || isSubstratePath(actor) {
 		return nil
 	}
@@ -108,11 +108,11 @@ func authorizeNewPackage(actor substrate.Actor, current *vocabulary.Registry, pk
 	if authority == "" {
 		authority = pkg // an authority row declares itself
 	}
-	if authority != publisherAuthority {
+	if authority == own {
 		return nil
 	}
-	return fmt.Errorf("%w: %s publishes the substrate's own vocabulary; a repository declares its own kinds under its own authority",
-		substrate.ErrForbidden, publisherAuthority)
+	return fmt.Errorf("%w: %s is not this repository's authority, %s: a token declares new packages only under its own authority; a shipped provider or catalogue arrives through `substratectl install %s` (POST /api/v1/catalog/{id}/install), and your own kinds go under %s",
+		substrate.ErrForbidden, authority, own, pkg, own)
 }
 
 // authorizeAppOwnedWrite is the third rule of the chokepoint (decision 0205):

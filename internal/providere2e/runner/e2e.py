@@ -29,7 +29,12 @@ THE RUN
     the temp copy, exactly as substrate's own provider tests do it
     (`rewriteOAuthEndpoints`). Loopback `http` is admitted by the engine for
     precisely this seam.
- 3. `substratectl apply` the rewired closure into the target repository
+ 3. `substratectl apply` the rewired closure into the target repository.
+    A token creates a package only under its own repository's authority
+    (decision 0210), so the first apply needs a server started with
+    `SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES=true`; the suite's own
+    server sets it, and a repository already holding the package does not
+    need it
  4. write the config record (client id/secret are arbitrary — the mock
     checks nothing) and the account record with every feature on
  5. the OAuth dance: POST …/oauth/start -> the consent URL -> the mock's

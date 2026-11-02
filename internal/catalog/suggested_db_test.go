@@ -356,7 +356,7 @@ func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
 				t.Fatalf("no %s in the shipped catalog", tasksSampleID)
 			}
 			landedMapping := homeAuthority + "/tasks/linearissuetask"
-			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, olderLinear(tc.props)); err != nil {
+			if _, err := ds.ApplyVocabularyDocuments(ctx, heldHand(linearProviderID), olderLinear(tc.props)); err != nil {
 				t.Fatalf("apply the older linear package: %v", err)
 			}
 
@@ -414,7 +414,7 @@ func TestASuggestedMappingFitsASourceThatStillDeclaresTheSlot(t *testing.T) {
 			"type": "reference", "mustExist": true, "subject": true,
 		},
 	})
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, older); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, heldHand(linearProviderID), older); err != nil {
 		t.Fatalf("apply the older linear package: %v", err)
 	}
 	if sm := suggestedState(t, tasks, ds, landedMapping); sm.State != substrate.SuggestedMappingReady {
