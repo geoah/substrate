@@ -653,6 +653,13 @@ func semanticScanSettings(ctx context.Context, tx *sql.Tx, n int) error {
 // producing model is unknown (the empty provenance) is never scored at all.
 // The kind filter reads the chunk's own record_kind, not the record's, so the
 // scan rejects a chunk of another kind as it walks rather than after a join.
+//
+// A tombstoned record keeps its vectors until the purge, so the read skips its
+// chunks as the scan walks, before the LIMIT: filtered after it, more deleted
+// chunks than n nearer the query than any live one leave the arm empty. The
+// check is a scalar subquery, not EXISTS, because the planner never turns one
+// into a join: as a semi-join, a repository with many tombstones plans a hash
+// join and a sort over every vector instead of the graph.
 func semanticCandidateQuery(b *builder, vec string, provider *embedProvider, types []string, restrict bool, n int) string {
 	clause := ""
 	if restrict {
@@ -661,6 +668,7 @@ func semanticCandidateQuery(b *builder, vec string, provider *embedProvider, typ
 	return `SELECT em.record_kind, em.record_id, em.vec
 		FROM embeddings em
 		WHERE em.provider = ` + b.arg(provider.id) + ` AND em.model = ` + b.arg(provider.model) + clause + `
+		  AND (SELECT e.deleted_at IS NULL FROM records e WHERE e.kind = em.record_kind AND e.id = em.record_id)
 		ORDER BY em.vec::halfvec(1536) <=> ` + vec + `::vector::halfvec(1536)
 		LIMIT ` + strconv.Itoa(n)
 }
