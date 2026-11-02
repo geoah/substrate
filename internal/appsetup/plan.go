@@ -572,7 +572,7 @@ func (p *planner) webhookRow(ctx context.Context, d substrate.AuthorizationDetai
 	return row, nil
 }
 
-// agentRow plans an agent detail (decision 0206). Approving sets nothing
+// agentRow plans an agent detail (decision 0207). Approving sets nothing
 // up: the token carries the approval and the app declares the agent with
 // it, so the row's action is none. It names each kind as the repository
 // holds it, or as not held yet: the app declares only the kinds held, since

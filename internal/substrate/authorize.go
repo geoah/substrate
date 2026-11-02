@@ -72,7 +72,7 @@ const (
 )
 
 // AppAgentSpendCeilingCents is the most an app's agent may spend a day, in
-// cents, whatever its approval asks (decision 0206).
+// cents, whatever its approval asks (decision 0207).
 const AppAgentSpendCeilingCents = 200
 
 // The actions a setup row may need: what approving would do to it. SetupNone
@@ -145,7 +145,7 @@ type AuthorizationDetail struct {
 	Trigger string `json:"trigger,omitempty"`
 	URL     string `json:"url,omitempty"`
 	// Agent, Reads, Writes and SpendCentsPerDay: an `agent` detail
-	// (decision 0206), the one agent the app may declare, the exact kinds it
+	// (decision 0207), the one agent the app may declare, the exact kinds it
 	// reads and writes and its daily cap.
 	Agent            string   `json:"agent,omitempty"`
 	Reads            []string `json:"reads,omitempty"`
@@ -258,7 +258,7 @@ type AuthorizationWebhookPlan struct {
 }
 
 // AuthorizationAgentPlan is an agent row: the agent the app may declare
-// and keep (decision 0206), what it may read and write, each kind as the
+// and keep (decision 0207), what it may read and write, each kind as the
 // repository holds it (Held false for one it does not hold yet), and its
 // daily cap. Approving sets nothing up: the token carries the approval, and
 // the app declares the agent with it. Allowed is true when the previous
@@ -271,6 +271,11 @@ type AuthorizationAgentPlan struct {
 	Writes           []AuthorizationAgentKind `json:"writes,omitempty"`
 	SpendCentsPerDay int                      `json:"spendCentsPerDay,omitempty"`
 	Allowed          bool                     `json:"allowed,omitempty"`
+	// TalkedToBy names the apps the owner already let talk to their agents
+	// whose reads cover everything this agent reads: they can ask it
+	// questions and read its chats (decision 0207). Another app reaches it
+	// only once it can read all of that itself.
+	TalkedToBy []string `json:"talkedToBy,omitempty"`
 	// Withheld says why approving leaves the agent out: its package's
 	// declare scope is refused, since another hand keeps the package
 	// (decision 0205). The rest of the request is approved as usual.

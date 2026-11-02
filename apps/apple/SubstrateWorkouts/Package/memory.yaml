@@ -1,5 +1,5 @@
 # memory: one fact about the owner's training that the workout coach keeps
-# (docs/plans/workouts-coach.md §7, decision record 0206). The kind is the
+# (docs/plans/workouts-coach.md §7, decision record 0207). The kind is the
 # "workout" tag and `topic` the sub-tag. The coach pins the active rows into
 # its prompt, newest first, and queries older and retired ones. A memory is
 # the owner's data like every record of the package: the owner reads, edits,

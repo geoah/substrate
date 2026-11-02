@@ -6,13 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// What a `declare:` scope admits of an agent (decision 0206): the one agent
+// What a `declare:` scope admits of an agent (decision 0207): the one agent
 // an `agent` detail approved, in the package the scope declares, held to the
 // approval. The engine holds it again at every run (a live approval, a priced
 // model, a root run); these are the apply's ceilings.
@@ -199,4 +200,72 @@ func (s *scopedDataset) declaresAgent(id string) bool {
 		return false
 	}
 	return s.grant.DeclaresIn(vocabulary.KindPackage(id), s.inner.Repository().Authority)
+}
+
+// talksTo is the grant's agents rule for one agent, with decision 0207's
+// coverage rule on top: an agent an app keeps reads what the owner approved
+// for that app, so another token reaches it (chats with it, reads its row,
+// its threads, messages and interactions) only when its own read scopes
+// cover every kind the agent reads. The agent is then no channel to data the
+// caller could not read itself. Substrate Chat's `read:*` covers a coach that
+// reads no internal kind; a token that does not cover sees no such agent.
+func (s *scopedDataset) talksTo(ctx context.Context, agent string) (bool, error) {
+	if !s.grant.TalksTo(agent) {
+		return false, nil
+	}
+	s.mu.Lock()
+	known, ok := s.agentCovered[agent]
+	s.mu.Unlock()
+	if ok {
+		return known, nil
+	}
+	covered, err := s.coversAppAgent(ctx, agent)
+	if err != nil {
+		return false, err
+	}
+	s.mu.Lock()
+	if s.agentCovered == nil {
+		s.agentCovered = map[string]bool{}
+	}
+	s.agentCovered[agent] = covered
+	s.mu.Unlock()
+	return covered, nil
+}
+
+// coversAppAgent reports whether the grant reads every kind the agent reads,
+// true for an agent no app keeps.
+func (s *scopedDataset) coversAppAgent(ctx context.Context, agent string) (bool, error) {
+	pkg, err := s.inner.Get(ctx, vocabulary.CoreKind(vocabulary.DocPackage), vocabulary.KindPackage(agent))
+	switch {
+	case errors.Is(err, substrate.ErrNotFound):
+		return true, nil
+	case err != nil:
+		return false, err
+	}
+	if pkg.DeletedAt != nil || !substrate.PackageOwnerOf(pkg.Properties).App() {
+		return true, nil
+	}
+	rec, err := s.inner.Get(ctx, vocabulary.CoreKind(vocabulary.DocAgent), agent)
+	if errors.Is(err, substrate.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	reg, err := s.kinds(ctx)
+	if err != nil {
+		return false, err
+	}
+	perms, _ := rec.Properties["permissions"].(map[string]any)
+	readsBlock, _ := perms["reads"].(map[string]any)
+	for _, k := range kindList(readsBlock["kinds"]) {
+		k = strings.TrimPrefix(k, vocabulary.CoreKind(vocabulary.DocKind)+"/")
+		info, held := reg[k]
+		// A kind the registry lacks reads as internal, which a glob never
+		// reaches.
+		if !s.grant.Reads(k, !held || internalKind(info)) {
+			return false, nil
+		}
+	}
+	return true, nil
 }

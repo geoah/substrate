@@ -135,7 +135,7 @@ public extension AppManifest {
             guard let agent = detail.agent else { return nil }
             let name = agent.split(separator: "/").last.map { String($0).splittingWords().joined(separator: " ").lowercased().capitalizedFirst } ?? agent
             if action == AuthorizationSetup.Actions.none { return Change(kind: .install, words: "The AI agent \(name) is approved") }
-            let cap = detail.spendCentsPerDay.map { String(format: "Spends at most $%.2f a day", Double($0) / 100) }
+            let cap = detail.spendCentsPerDay.map { String(format: "Stops for the day once it has spent about $%.2f", Double($0) / 100) }
             return Change(kind: .install, words: "Add the AI agent \(name)", detail: cap)
         default:
             return nil

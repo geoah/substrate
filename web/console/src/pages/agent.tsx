@@ -121,7 +121,7 @@ const STATUS_TONE: Record<RunStatus, PillTone> = {
 const RUNS_PAGE = 50
 
 /** An app's agent's grants, read-only: the app keeps them, held to what the
- * owner approved (decision 0206). */
+ * owner approved (decision 0207). */
 function AppAgentGrants({ agent }: { agent: SubstrateRecord }) {
   const perms = (agent.properties.permissions ?? {}) as {
     reads?: { kinds?: unknown[] }
@@ -173,7 +173,7 @@ export function AgentPage() {
     enabled: agentToolsFrom(agent.data).length > 0,
   })
   const packages = useQuery(packagesQueryOptions)
-  // An app keeps an agent of a package it declared (decision 0206).
+  // An app keeps an agent of a package it declared (decision 0207).
   const agentPackage = id.split("/").slice(0, 2).join("/")
   const app = packageApp(packages.data, agentPackage)
 

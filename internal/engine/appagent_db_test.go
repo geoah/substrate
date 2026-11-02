@@ -12,7 +12,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// An app's agent (decision 0206) runs only while its app holds a live
+// An app's agent (decision 0207) runs only while its app holds a live
 // approval that covers it, on a priced model, as a root run, and stops at
 // its next model call when that ends.
 
@@ -381,4 +381,141 @@ func TestAnAppRemovesOnlyAPackageItKeepsThatHoldsNoKinds(t *testing.T) {
 func fmtJSON(v any) string {
 	raw, _ := json.Marshal(v)
 	return string(raw)
+}
+
+// Every live approval must cover the agent: an older token approving more,
+// or a higher cap, never outlives the owner's newer, narrower approval.
+func TestEveryLiveApprovalMustCoverAnAppsAgent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := openAppAgent(t)
+	f.mintApproval(t, nil, f.approval())
+	cheap := f.approval()
+	cheap.SpendCentsPerDay = 50
+	newer := f.mintApproval(t, nil, cheap)
+	_, err := f.ds.CallAgent(ctx, f.agent, "hello")
+	wantStopped(t, "a newer approval below the agent's cap beside an older one", err, "holds no live approval")
+	f.revoke(t, newer)
+	narrow := f.approval()
+	narrow.Writes = nil
+	f.mintApproval(t, nil, narrow)
+	_, err = f.ds.CallAgent(ctx, f.agent, "hello")
+	wantStopped(t, "a newer, narrower approval beside an older one", err, "holds no live approval")
+	// A token of the app that approves no agent at all (another device's
+	// sign-in without the coach) does not count against it.
+	g := openAppAgent(t)
+	g.mintApproval(t, nil, g.approval())
+	g.mintApproval(t, nil)
+	g.fake.script("coach", fakeTurn{content: "hi"})
+	if res, err := g.ds.CallAgent(ctx, g.agent, "hello"); err != nil || res.Status != threadOK {
+		t.Fatalf("beside a token that approves no agent: %+v, %v", res, err)
+	}
+}
+
+// An unreadable stored approval fails that approval alone: the token still
+// authenticates, every token still lists, and the coach refuses.
+func TestAnUnreadableApprovalFailsOnlyTheApproval(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := openAppAgent(t)
+	info, secret, err := f.ds.MintToken(ctx, substrate.MintTokenInput{
+		Label: "workouts", Scopes: []string{"declare:" + f.coachPkg}, ClientID: aaClientID, Agents: []substrate.AgentApproval{f.approval()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A damaged write, or a later release's narrower rule, as it would sit
+	// in the fold.
+	if _, err := f.ds.db.ExecContext(ctx, `UPDATE records SET props = jsonb_set(props, '{agents}', '[{"agent": "x", "reads": ["*"], "spendCentsPerDay": 900}]') WHERE kind = $1 AND id = $2`,
+		kindToken, info.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, tok, err := f.ds.svc.Authenticate(ctx, secret)
+	if err != nil || len(tok.Agents) != 0 || len(tok.Scopes) != 1 {
+		t.Fatalf("authenticate with an unreadable approval: %+v, %v", tok, err)
+	}
+	if _, err := f.ds.Tokens(ctx); err != nil {
+		t.Fatalf("list tokens beside an unreadable approval: %v", err)
+	}
+	_, err = f.ds.CallAgent(ctx, f.agent, "hello")
+	wantStopped(t, "an unreadable approval", err, "holds no live approval")
+}
+
+// An app's agent runs from a person's chat, its resume or the owner's call,
+// never from a trigger, a function's call or a policy's judge.
+func TestAnAppsAgentRunsOnlyFromAPersonsEntry(t *testing.T) {
+	t.Parallel()
+	ag := &vocabulary.Agent{Package: "ada.example.com/trainingcoach", Name: "workoutCoach"}
+	for _, tc := range []struct {
+		in   agentInvocation
+		want string
+	}{
+		{agentInvocation{mode: agentModeChat}, ""},
+		{agentInvocation{mode: "call", userActor: substrate.ActorAPI}, ""},
+		{agentInvocation{mode: "record", resume: true}, ""},
+		{agentInvocation{mode: "call", userActor: "function:ada.example.com:lib:rollup"}, "a function's call"},
+		{agentInvocation{mode: "record"}, "a trigger"},
+		{agentInvocation{mode: "schedule"}, "a trigger"},
+		{agentInvocation{mode: "judge"}, "a policy's judge"},
+	} {
+		got := appAgentEntry(ag, tc.in)
+		if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
+			t.Errorf("entry %+v: %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// The owner's pause survives the app removing its coach and installing it
+// again.
+func TestTheOwnersPauseSurvivesTheAppsRemoveAndReinstall(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := openAppAgent(t)
+	f.mintApproval(t, nil, f.approval())
+	if err := f.ds.DisableBundle(ctx, f.coachPkg); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ds.UninstallAppBundle(ctx, aaApp, f.coachPkg); err != nil {
+		t.Fatalf("the app removes its coach: %v", err)
+	}
+	if _, err := f.ds.ApplyVocabularyDocuments(ctx, aaApp, f.coachDocs("You coach.", 100)); err != nil {
+		t.Fatalf("the app installs it again: %v", err)
+	}
+	_, err := f.ds.CallAgent(ctx, f.agent, "hello")
+	wantStopped(t, "after the app's remove and reinstall", err, "is disabled")
+}
+
+// The coach the app ships (coach.json's prompt and agent template, pinned
+// memories included) loads against the training kinds it reads.
+func TestTheShippedCoachLoads(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	home := ds.Repository().Authority
+	training, coachPkg := home+"/training", home+"/trainingcoach"
+	memory, routine := training+"/memory", training+"/routine"
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "anthropic", Properties: map[string]any{
+		"wire": "anthropic", "pricing": []any{map[string]any{"model": "claude-sonnet-5-5", "inputPer1M": "2", "outputPer1M": "10"}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	str := map[string]any{"type": "string"}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, aaApp, []map[string]any{
+		vocabulary.PackageManifest(training, 0),
+		vocabulary.BundleManifest(training, map[string]any{"installs": []any{routine, memory}}),
+		vocabulary.KindManifest(training, map[string]any{"singular": "routine"}, map[string]any{"properties": map[string]any{"name": str}}),
+		vocabulary.KindManifest(training, map[string]any{"singular": "memory"}, map[string]any{"properties": map[string]any{
+			"text": map[string]any{"type": "text"}, "topic": str, "source": str, "until": map[string]any{"type": "date"},
+			"exercise": str, "active": map[string]any{"type": "bool", "default": true},
+		}}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, aaApp, []map[string]any{
+		vocabulary.PackageManifest(coachPkg, 0),
+		vocabulary.BundleManifest(coachPkg, map[string]any{"installs": []any{coachPkg + "/workoutCoach"}}),
+		shippedCoach(t, home, "claude-sonnet-5-5", []string{routine, memory}, []string{routine, memory}),
+	}); err != nil {
+		t.Fatalf("the shipped coach does not load: %v", err)
+	}
 }

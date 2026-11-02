@@ -8,11 +8,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// An app's agent (decision 0206): an `agent` detail approves one agent, its
+// An app's agent (decision 0207): an `agent` detail approves one agent, its
 // exact reach and its cap; the approval rides the token, never its scopes;
 // the app's declare apply admits that agent held to the approval, and reads
 // its row.
@@ -63,7 +65,7 @@ func TestAnAgentDetailComesWithItsDeclareScope(t *testing.T) {
 		t.Fatalf("a request without the agent's declare scope: %d %s", rec.Code, rec.Body.String())
 	}
 	// Unchecking it approves the rest and leaves the agent off the token:
-	// the app could never declare it (decisions 0205 and 0206).
+	// the app could never declare it (decisions 0205 and 0207).
 	id := e.park(aaRequest(aaScopes, aaDetail(100)))
 	rec = e.approve(id, []string{"write:" + aaTraining + "/*"}, 30)
 	wantStatus(t, rec, http.StatusOK)
@@ -152,6 +154,25 @@ func TestTheCheckSaysWhenTheAgentNeedsTheOwnerAgain(t *testing.T) {
 	}
 	if got := check(aaDetail(150)); got.Setup[0].Action != substrate.SetupEnable {
 		t.Fatalf("a higher cap checks %+v, want enable", got.Setup[0])
+	}
+	// A request that leaves out the agent's declare scope asks nothing about
+	// it: the owner left it out, and approving would withhold it again.
+	raw, _ := json.Marshal(map[string]any{"scope": "write:~/training/*", "details": json.RawMessage(aaDetail(150))})
+	rec := e.do(http.MethodPost, "/api/v1/authorizations/check", tok, raw, "application/json")
+	wantStatus(t, rec, http.StatusOK)
+	if got := decodeJSON[substrate.AuthorizationCheckResult](t, rec); got.Setup[0].Action != substrate.SetupNone ||
+		!strings.Contains(got.Setup[0].Agent.Withheld, "declare:~/trainingcoach") {
+		t.Fatalf("a check without the declare scope = %+v", got.Setup[0])
+	}
+	// A coach package the owner took over asks nothing either.
+	ds := e.svc.datasets[fakeRepository]
+	ds.mu.Lock()
+	ds.records[aaCoachPkg] = &substrate.Record{Kind: corePackage + "/package", ID: aaCoachPkg, Properties: map[string]any{
+		substrate.PackageDeclaredBy: "console", substrate.PackageTakenOverFrom: appClientID,
+	}}
+	ds.mu.Unlock()
+	if got := check(aaDetail(150)); got.Setup[0].Action != substrate.SetupNone || !strings.Contains(got.Setup[0].Agent.Withheld, "is your package") {
+		t.Fatalf("a check of a taken-over coach = %+v", got.Setup[0])
 	}
 }
 
@@ -277,5 +298,78 @@ func TestAnAppReadsItsAgentsRowAndTheKindsItReadsAndNothingElse(t *testing.T) {
 	}
 	if code := get(aaSleep, "last-night"); code == http.StatusOK {
 		t.Errorf("a record of the agent's read: %d, want refused to the app", code)
+	}
+}
+
+// AN APP'S AGENT IS NO CHANNEL TO MORE THAN A CALLER READS (decision 0207):
+// another app's `agents:*` reaches the coach, its row and its threads only
+// when its own reads cover every kind the coach reads. Substrate Chat's exact
+// scopes do; an app that reads only its notes does not, and the approval row
+// names the app that already could.
+func TestAnotherAppReachesAnAppsAgentOnlyWhenItReadsEverythingTheAgentReads(t *testing.T) {
+	e := newSetupEnv(t).appEnv
+	ds := e.svc.datasets[fakeRepository]
+	ds.mu.Lock()
+	ds.records[aaCoachPkg] = &substrate.Record{Kind: corePackage + "/package", ID: aaCoachPkg, Properties: map[string]any{
+		substrate.PackageDeclaredBy: "app:notes.example.org", substrate.PackageDeclaredByClient: appClientID,
+	}}
+	ds.records[aaAgent] = &substrate.Record{Kind: corePackage + "/agent", ID: aaAgent, Properties: map[string]any{
+		"purpose":     "primary",
+		"permissions": map[string]any{"reads": map[string]any{"kinds": []any{aaSleep, "substrate.reamde.dev/clinical/condition"}}},
+	}}
+	ds.records["coach-thread"] = &substrate.Record{Kind: "substrate.reamde.dev/llm/thread", ID: "coach-thread", Properties: map[string]any{
+		"agent": map[string]any{"ref": corePackage + "/agent/" + aaAgent},
+	}}
+	for _, k := range []string{"agent", "kind", "package"} {
+		ds.types = append(ds.types, substrate.KindInfo{Identity: corePackage + "/" + k, Authority: coreAuthorityName, Package: "core"})
+	}
+	ds.types = append(ds.types, substrate.KindInfo{Identity: "substrate.reamde.dev/llm/thread", Authority: coreAuthorityName, Package: "llm", Name: "thread"})
+	for _, k := range []string{aaSleep, "substrate.reamde.dev/clinical/condition"} {
+		a, p, n := vocabulary.SplitKindRef(k)
+		ds.types = append(ds.types, substrate.KindInfo{Identity: k, Authority: a, Package: p, Name: n})
+	}
+	ds.mu.Unlock()
+	notes := e.grant("agents:* read:~/notes/*", []string{"agents:*", "read:" + fakeRepository + "/notes/*"})
+	chat := e.grant("agents:* decide:* read:substrate.reamde.dev/llm/provider read:*",
+		[]string{"agents:*", "decide:*", "read:substrate.reamde.dev/llm/provider", "read:*"})
+	get := func(tok, kind, id string) int {
+		return e.do(http.MethodGet, "/api/v1/"+kind+"/"+url.PathEscape(id), tok, nil, "").Code
+	}
+	if code := get(notes, corePackage+"/agent", aaAgent); code == http.StatusOK {
+		t.Errorf("an app that reads only its notes reads the coach's row: %d", code)
+	}
+	if code := get(notes, "substrate.reamde.dev/llm/thread", "coach-thread"); code == http.StatusOK {
+		t.Errorf("an app that reads only its notes reads the coach's thread: %d", code)
+	}
+	body, _ := json.Marshal(map[string]any{"message": "List my medications."})
+	if rec := e.do(http.MethodPost, "/api/v1/"+corePackage+"/agent/"+url.PathEscape(aaAgent)+"/chat", notes, body, "application/json"); rec.Code != http.StatusNotFound {
+		t.Errorf("an app that reads only its notes chats with the coach: %d %s", rec.Code, rec.Body.String())
+	}
+	if code := get(chat, corePackage+"/agent", aaAgent); code != http.StatusOK {
+		t.Errorf("Substrate Chat's scopes do not reach the coach: %d", code)
+	}
+	if code := get(chat, "substrate.reamde.dev/llm/thread", "coach-thread"); code != http.StatusOK {
+		t.Errorf("Substrate Chat's scopes do not read the coach's thread: %d", code)
+	}
+}
+
+// The approval row names the apps that would already reach the agent: a
+// full-access app, and an app whose agents scope matches it and whose reads
+// cover it; not one that reads less, an expired one, the requesting app or
+// the owner's own sessions.
+func TestTheAgentRowNamesTheAppsThatCanTalkToIt(t *testing.T) {
+	past := time.Now().Add(-time.Hour)
+	tokens := []substrate.TokenInfo{
+		{ClientID: "https://chat.example.org/c.json", ClientName: "Substrate Chat", Scopes: []string{"agents:*", "read:*"}},
+		{ClientID: "https://notes.example.org/c.json", ClientName: "Notes", Scopes: []string{"agents:*", "read:" + fakeRepository + "/notes/*"}},
+		{ClientID: "https://console.example.org/c.json", ClientName: "Console app"},
+		{ClientID: "https://old.example.org/c.json", ClientName: "Old", Scopes: []string{"agents:*", "read:*"}, ExpiresAt: &past},
+		{ClientID: "https://workouts.example.org/c.json", ClientName: "Substrate Workouts", Scopes: []string{"agents:*", "read:*"}},
+		{Label: "console session"},
+	}
+	kinds := []substrate.KindInfo{{Identity: aaSleep, Authority: "substrate.reamde.dev", Package: "health", Name: "sleep"}}
+	got := agentTalkers(tokens, kinds, substrate.AgentApproval{Agent: aaAgent, Reads: []string{aaSleep}}, "https://workouts.example.org/c.json")
+	if !slices.Equal(got, []string{"Console app", "Substrate Chat"}) {
+		t.Fatalf("talkers = %v", got)
 	}
 }

@@ -3,7 +3,7 @@ import Foundation
 /// One entry of an app's `authorization_details` (RFC 9396), as
 /// internal/substrate's authorize.go carries it: a package the app needs at a
 /// version or later, the account it delivers under, the webhook it
-/// delivers to, or the one agent it may declare (decision 0206). The token response answers the same shape, with `version`
+/// delivers to, or the one agent it may declare (decision 0207). The token response answers the same shape, with `version`
 /// the version now held and `url` where a webhook takes deliveries.
 public struct AuthorizationDetail: Codable, Hashable, Sendable {
     /// The types a substrate takes.
@@ -62,10 +62,19 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
 
     /// The one agent the app may declare in a package of its own, with what
     /// it reads and writes and its daily cap; the owner approves it on the
-    /// approval page and the token carries the approval (decision 0206).
+    /// approval page and the token carries the approval (decision 0207).
     /// Optional: a server without agents takes the rest of the request.
     public static func agent(_ id: String, reads: [String], writes: [String], spendCentsPerDay: Int) -> AuthorizationDetail {
         AuthorizationDetail(type: Types.agent, agent: id, reads: reads, writes: writes, spendCentsPerDay: spendCentsPerDay, optional: true)
+    }
+
+    /// The `declare:` scope an agent detail's agent is declared under,
+    /// `declare:~/<package>`; nil for every other detail.
+    public var declareScope: String? {
+        guard type == Types.agent, let agent else { return nil }
+        let parts = agent.split(separator: "/")
+        guard parts.count == 3 else { return nil }
+        return "declare:\(parts[0])/\(parts[1])"
     }
 
     /// A catalog package at `version` or later, installed or upgraded on

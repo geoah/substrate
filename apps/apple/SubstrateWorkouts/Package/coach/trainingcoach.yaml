@@ -1,5 +1,5 @@
 # trainingcoach: the workout coach Substrate Workouts installs and keeps
-# (docs/plans/workouts-coach.md, decision record 0206). A package of its own,
+# (docs/plans/workouts-coach.md, decision record 0207). A package of its own,
 # so the training package's versions never depend on whether the coach is
 # set up, the owner turns the coach off alone (bundle disable), and the
 # coach's memories stay training data when it is removed.

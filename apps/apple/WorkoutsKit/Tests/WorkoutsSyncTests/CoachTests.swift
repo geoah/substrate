@@ -4,7 +4,7 @@ import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
 
-/// The workout coach's install and update (decision 0206): what the
+/// The workout coach's install and update (decision 0207): what the
 /// sign-in asks for, the prompt this build carries, and what the installer
 /// declares against a scripted server.
 @Suite("The workout coach")
@@ -87,11 +87,11 @@ struct CoachTests {
         #expect(manifest.details(for: old).map(\.type) == [AuthorizationDetail.Types.package])
     }
 
-    @Test("the prompt this build carries is its revision, under 18 KB, rendered from this training version")
+    @Test("the prompt this build carries is its revision, under 20 KB, rendered from this training version")
     func thePrompt() throws {
         let coach = try CoachManifest.bundled()
         #expect(CoachManifest.revision(of: coach.prompt) == coach.revision)
-        #expect(coach.prompt.utf8.count <= 18432)
+        #expect(coach.prompt.utf8.count <= 20480)
         #expect(coach.trainingVersion == (try PackageManifest.bundled()).version)
         #expect(coach.prompt.contains("~/training/memory"))
         #expect(coach.prompt.contains("deload: true"))
@@ -120,6 +120,14 @@ struct CoachTests {
         #expect(!kinds.contains { if case let .string(k) = $0 { k.contains("clinical") } else { true } })
         #expect(writes.contains(.string("substrate.reamde.dev/llm/interaction")))
         #expect(budgets["spendCentsPerDay"] == .number(100))
+        #expect(budgets["maxTurns"] == .number(16), "the template's fixed budgets ride along")
+        // Pinned memories carry their source, and only the owner's and the
+        // coach's are pinned.
+        guard case let .object(context)? = data["context"], case let .array(pins)? = context["pinned"],
+              case let .object(pin)? = pins.first else { Issue.record("no pinned context"); return }
+        #expect(pin["kind"] == .string("ada.example.com/training/memory"))
+        #expect(pin["fields"].map { "\($0)" }?.contains("source") == true)
+        #expect(pin["filter"] == .string(#"{"properties": {"active": {"eq": true}, "source": {"in": ["owner", "coach"]}}}"#))
         let sent = try #require(s.sent.last { $0.method == "POST" }?.body)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
@@ -168,6 +176,19 @@ struct CoachTests {
         #expect(data["provider"] == .string("openai") && data["model"] == .string("gpt-5"))
         guard case let .object(budgets)? = data["budgets"] else { Issue.record("no budgets"); return }
         #expect(budgets["spendCentsPerDay"] == .number(40))
+    }
+
+    @Test("a stored model its provider no longer prices is chosen again")
+    func anUnpricedStoredModel() async throws {
+        let props: JSONObject = [
+            "prompt": .string("Workout coach instructions, revision 0.\n\nolder"),
+            "provider": .object(["ref": .string("substrate.reamde.dev/llm/provider/anthropic-old")]), "model": .string("claude-gone"),
+        ]
+        let row = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.object(["properties": .object(props)])), as: UTF8.self)
+        let s = server(agent: row)
+        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 2)) == .applied)
+        let data = try #require(applied(s))
+        #expect(data["provider"] == .string("anthropic") && data["model"] == .string("claude-sonnet-5-5"))
     }
 
     @Test("a refused apply is a state, not an error")

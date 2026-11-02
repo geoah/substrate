@@ -314,7 +314,7 @@ function agentKindWords(k: AuthorizationAgentKind): string {
   return k.held ? name : `${name} (not on this server yet)`
 }
 
-/** What an app's agent may do (decision 0206): what it reads and writes,
+/** What an app's agent may do (decision 0207): what it reads and writes,
  * that it asks questions, what it spends, where what it reads goes, and who
  * keeps it. Every fact is its own labeled line. */
 function AgentWords({ agent }: { agent: AuthorizationAgentPlan }) {
@@ -352,13 +352,21 @@ function AgentWords({ agent }: { agent: AuthorizationAgentPlan }) {
           <div>
             <dt className="text-muted-foreground">It spends</dt>
             <dd>
-              At most {dollars(agent.spendCentsPerDay)} a day of your AI
-              provider&apos;s credit.
+              It stops for the day once it has spent about{" "}
+              {dollars(agent.spendCentsPerDay)} of your AI provider&apos;s
+              credit in 24 hours.
             </dd>
           </div>
         )}
       </dl>
       <p>It can ask you questions in the chat.</p>
+      <p>
+        Apps you let talk to your agents can ask it questions and read its chats
+        only if they can read everything it reads.
+        {agent.talkedToBy && agent.talkedToBy.length > 0
+          ? ` Already: ${agent.talkedToBy.join(", ")}.`
+          : " None can yet."}
+      </p>
       <p>
         What it reads is sent to the AI provider it runs on. The app writes its
         instructions and keeps them current. It stops when this app&apos;s

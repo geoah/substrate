@@ -432,7 +432,7 @@ authority, a glob or a kind is refused with an error page. A `builtin` or
 ### Declare an agent of your own
 
 An app keeps one AI agent in a package of its own when the owner approves it
-by name ([0206](decisions/0206-an-app-declares-one-agent-held-to-its-own-reach.md)).
+by name ([0207](decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md)).
 It asks with an `agent` authorization detail, beside `declare:~/<package>`
 for the package the agent lives in:
 
@@ -477,9 +477,15 @@ when it declares no kinds, with `PATCH` of its bundle's `uninstalled`, as
 the owner would.
 
 The engine runs the agent only while the app holds an unexpired, unrevoked
-token whose approval covers it, on a priced model, and never as another
-agent's sub-agent; it checks again before every model call, so revoking the
-app or reaching the cap stops a running turn. The owner turns the agent off
+token approving it and every such token's approval covers it, on a priced
+model, from a person's chat or the owner's call (never a trigger, a
+function or a judge), and never as another agent's sub-agent; it checks
+again before every model call, so revoking the app or reaching the cap
+stops a running turn. Another app's `agents:` scope reaches the agent, its
+row and its chats only when that app's reads cover every kind the agent
+reads. `/authorizations/check` answers the agent row `none` when the
+request leaves out its `declare:` scope or that scope would be refused,
+with the reason in `withheld`. One request names one agent detail. The owner turns the agent off
 by pausing its bundle, which the app's next apply keeps paused, and makes it
 their own by taking the package over.
 

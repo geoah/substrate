@@ -4,7 +4,7 @@ date: 2026-11-02
 decision-makers: George Antoniadis
 ---
 
-# 0206. An app declares one approved agent, held to a live approval at every run
+# 0207. An app declares one approved agent, held to a live approval at every run
 
 ## Context and Problem Statement
 
@@ -63,6 +63,14 @@ The rules:
   undeleted token whose approval covers its reach and cap, its model is
   priced, and it is a root run. Otherwise it refuses with words the owner
   can act on, and a running turn stops.
+- **Every live approval** of the app that names the agent must cover it,
+  so the lowest cap and the narrowest reach hold; an unreadable approval
+  fails alone.
+- **A person's entry only:** a chat, its resume, or the owner's call;
+  never a trigger, a function's call or a policy's judge.
+- **No channel to more than a caller reads:** another token reaches the
+  agent, its row and its chats only when its own reads cover every kind
+  the agent reads.
 - **The off switch** is the owner's bundle disable, which the app cannot
   undo and its re-apply keeps.
 
@@ -82,7 +90,9 @@ The rules:
   the prompt, which they read afterwards on the agent's page.
 - Bad, because exact kinds mean a new kind needs an app release and a new
   approval.
-- Bad, because an app's agent cannot be another agent's sub-agent.
+- Bad, because an app's agent cannot be another agent's sub-agent, nor run
+  from a trigger, a function or a judge, and an app whose reads do not cover
+  it cannot talk to it however its `agents:` scope reads.
 - Bad, because `declare:` admits one document type beyond vocabulary, and an
   owner edits the coach's model or cap only through the app or a takeover.
   The app installs it on default provider, model and a $1 daily cap; its

@@ -94,7 +94,7 @@ func (s *scopedDataset) declarable(docs []map[string]any) error {
 			}
 		case vocabulary.CoreKind(vocabulary.DocAgent):
 			// The one document that runs: the agent an `agent` detail
-			// approved, held to its approval (decision 0206).
+			// approved, held to its approval (decision 0207).
 			pkg = vocabulary.KindPackage(id)
 			if err := s.declarableAgent(id, data); err != nil {
 				return err

@@ -848,5 +848,5 @@ All were checked on 2026-11-02 unless marked. Sources already listed in 02 and 0
 
 - `apps/apple/SubstrateWorkouts/docs/research/02-training-methods.md`, `03-progression.md`
 - `apps/apple/SubstrateWorkouts/Package/README.md` and `*.yaml` (routine fields, `deload`, `notes`, the PUT-merge rule)
-- `docs/plans/workouts-coach.md` (§4.3 prompt placeholder, §5 memory kind) and `docs/decisions/0206-an-app-declares-one-agent-held-to-its-own-reach.md`
+- `docs/plans/workouts-coach.md` (§4.3 prompt placeholder, §5 memory kind) and `docs/decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md`
 - `kinds/substrate.reamde.dev/health/metrics.yaml` (metric ids `health/resting_heart_rate`, `health/hrv_sdnn`, `health/hrv_rmssd`, `health/body_mass`, `health/steps`)

@@ -54,7 +54,7 @@ data:
       description: the name the app claimed for itself when the owner approved
         it
     # The agents the owner approved the app to declare (decision record
-    # 0206), each from an `agent` authorization detail: the agent's id, the
+    # 0207), each from an `agent` authorization detail: the agent's id, the
     # exact kinds it reads and writes, and its daily cap. Never a scope: the
     # app's own scopes stay what the app itself uses, and the engine runs the
     # agent only while a live token of its app approves its reach.

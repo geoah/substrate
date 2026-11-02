@@ -351,7 +351,12 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 		}
 		out.Setup[i] = checkRow(row, visible)
 		if row.Type == substrate.DetailAgent {
-			out.Setup[i].Action = agentCheckAction(grant, full, details[i], authority)
+			action, withheld, err := agentCheck(ctx, owner, grant, full, requested, details[i], authority)
+			if err != nil {
+				return substrate.AuthorizationCheckResult{}, err
+			}
+			out.Setup[i].Action = action
+			out.Setup[i].Agent.Withheld = withheld
 		}
 	}
 	if lease := leaseFrom(ctx); lease != nil {
@@ -401,6 +406,40 @@ func checkRow(row substrate.AuthorizationSetup, visible bool) substrate.Authoriz
 		out.Agent = &substrate.AuthorizationAgentPlan{Agent: row.Agent.Agent}
 	}
 	return out
+}
+
+// agentCheck is a check's answer for an agent row, and why approving would
+// leave the agent out: none when the request leaves out the agent package's
+// declare scope, or when 0205 would refuse that scope (the owner or another
+// client id keeps the package), since approving again would withhold the
+// agent again; otherwise agentCheckAction's answer.
+func agentCheck(ctx context.Context, ds substrate.Dataset, grant scope.Grant, full bool, requested []scope.Scope,
+	d substrate.AuthorizationDetail, authority string,
+) (string, string, error) {
+	declare := scope.Scope{Verb: scope.Declare, Pattern: authorize.AgentDeclarePackage(d.Agent)}
+	if !slices.Contains(requested, declare) {
+		return substrate.SetupNone, "the request leaves out " + declare.String() + ", the scope the agent is declared under", nil
+	}
+	if !full {
+		client := clientOf(substrate.ClientIDFrom(ctx))
+		why, err := declareRefusal(ctx, ds, client, declare.Resolve(authority).String())
+		if err != nil {
+			return "", "", err
+		}
+		if why != "" {
+			return substrate.SetupNone, why, nil
+		}
+	}
+	return agentCheckAction(grant, full, d, authority), "", nil
+}
+
+// clientOf is the client a check's token was minted for, by its client id.
+func clientOf(id string) authorize.Client {
+	c := authorize.Client{ID: id}
+	if u, err := url.Parse(id); err == nil {
+		c.Host = u.Host
+	}
+	return c
 }
 
 // agentCheckAction is a check's answer for an agent row: none when the

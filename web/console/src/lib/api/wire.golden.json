@@ -207,6 +207,7 @@
     "allowed": false,
     "reads": false,
     "spendCentsPerDay": false,
+    "talkedToBy": false,
     "withheld": false,
     "writes": false
   },

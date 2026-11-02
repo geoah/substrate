@@ -324,6 +324,33 @@ final class TransportBox: @unchecked Sendable {
         #expect(home.leftOut(by: held).isEmpty)
     }
 
+    /// An agent the owner declined, by leaving out the `declare:` scope it
+    /// is declared under, is never asked about again: the check leaves the
+    /// agent detail out, and a withheld row (`none`) is no change.
+    @Test func anAgentTheOwnerDeclinedIsNotAskedAgain() async throws {
+        let declare = "declare:~/trainingcoach"
+        var manifest = AppManifest(appName: "Workouts", clientID: "https://workouts.example.org/client.json",
+                                   scopes: ["write:~/training/*", declare],
+                                   details: [.agent("~/trainingcoach/workoutCoach", reads: ["~/training/routine"], writes: [], spendCentsPerDay: 100)])
+        var session = appSession()
+        session.scopes = ["write:ada.example.com/training/*"]
+        session.requestedScopes = manifest.scopes
+        #expect(manifest.leftOut(by: session) == [declare])
+        let metadata = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"""
+        {"issuer":"https://ada.example.com","authorization_endpoint":"https://ada.example.com/oauth/authorize","token_endpoint":"https://ada.example.com/oauth/token","authorization_details_types_supported":["package","account","webhook","agent"]}
+        """#.utf8))
+        let check = manifest.check(for: session, metadata: metadata)
+        #expect(check.details.isEmpty)
+        #expect(check.scope == "write:~/training/*")
+        // A session that approved the agent still asks about it.
+        session.scopes = ["write:ada.example.com/training/*", "declare:ada.example.com/trainingcoach"]
+        #expect(manifest.check(for: session, metadata: metadata).details.map(\.type) == ["agent"])
+        // A withheld row answers none, which asks nothing.
+        manifest.scopes = ["write:~/training/*"]
+        let result = AuthorizationCheckResult(setup: [AuthorizationSetup(type: "agent", action: "none")])
+        #expect(manifest.changes(from: result, session: session).changes.isEmpty)
+    }
+
     /// The approval page words a kind by the label it declares, and so does
     /// the app wherever its manifest carries it.
     @Test func aKindIsWordedByItsDeclaredLabel() async {

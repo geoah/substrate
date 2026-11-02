@@ -29,7 +29,7 @@ export function AppManagedSection({
 }: {
   /** The app's actor, `app:<host>`. */
   app: string
-  /** The section heads an app's agent (decision 0206) rather than its
+  /** The section heads an app's agent (decision 0207) rather than its
    * collections. */
   agent?: boolean
   /** The app's client id, where the row carries it. */

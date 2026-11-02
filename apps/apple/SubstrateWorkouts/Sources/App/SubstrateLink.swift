@@ -325,7 +325,7 @@ final class SubstrateLink {
         }
     }
 
-    /// Installs or updates the workout coach (decision 0206) when the token
+    /// Installs or updates the workout coach (decision 0207) when the token
     /// approves it and training is current. Quiet: whatever it meets is
     /// logged, never shown, and never stops the sync.
     private func ensureCoach(_ account: SyncAccount, training: PackageState) async {

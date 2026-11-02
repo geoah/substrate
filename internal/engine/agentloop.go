@@ -753,6 +753,9 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 		return nil, nil, err
 	}
 	if appOwner.App() {
+		if why := appAgentEntry(ag, in); why != "" && root {
+			return nil, nil, fmt.Errorf("%w: %s", errAppAgentStopped, why)
+		}
 		if err := ds.refuseAppAgent(ctx, ag, root); err != nil {
 			return nil, nil, err
 		}

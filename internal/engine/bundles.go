@@ -546,7 +546,7 @@ func (ds *dataset) UninstallBundle(ctx context.Context, id string) error {
 	return err
 }
 
-// UninstallAppBundle is an app removing a package it keeps (decision 0206):
+// UninstallAppBundle is an app removing a package it keeps (decision 0207):
 // the package must declare no kinds, so no record loses its kind, and the
 // batch runs as the app, so the ownership chokepoint (decision 0205) admits
 // the app that owns it and nobody else. Its agents' threads stay, naming the

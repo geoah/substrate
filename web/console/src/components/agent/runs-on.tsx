@@ -65,7 +65,7 @@ export function RunsOn({
   readOnly = false,
 }: {
   agent: SubstrateRecord
-  /** An app keeps the agent (decision 0206): its model is the app's to set. */
+  /** An app keeps the agent (decision 0207): its model is the app's to set. */
   readOnly?: boolean
 }) {
   const registry = useQuery(kindsQueryOptions)

@@ -156,7 +156,7 @@ type TokenInfo struct {
 	ClientID   string `json:"clientId,omitempty"`
 	ClientName string `json:"clientName,omitempty"`
 	// Agents are the agents the owner approved the app to declare (decision
-	// 0206), each with its reach and cap; absent on every other token.
+	// 0207), each with its reach and cap; absent on every other token.
 	Agents []AgentApproval `json:"agents,omitempty"`
 }
 

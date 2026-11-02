@@ -158,7 +158,15 @@ func checkDetails(details []substrate.AuthorizationDetail) error {
 		return fmt.Errorf("authorization_details names more than %d entries", maxDetails)
 	}
 	seen := map[string]bool{}
+	agents := 0
 	for i, d := range details {
+		if d.Type == substrate.DetailAgent {
+			// One app keeps one agent (decision 0207), so its caps never add up
+			// past one ceiling.
+			if agents++; agents > 1 {
+				return fmt.Errorf("authorization_details[%d]: a request names one agent detail at most", i)
+			}
+		}
 		key, err := checkDetail(d)
 		if err != nil {
 			return fmt.Errorf("authorization_details[%d]: %w", i, err)
@@ -243,7 +251,7 @@ func hasAgentMembers(d substrate.AuthorizationDetail) bool {
 	return d.Agent != "" || d.Reads != nil || d.Writes != nil || d.SpendCentsPerDay != 0
 }
 
-// checkAgentDetail holds an agent detail to decision 0206: one agent of the
+// checkAgentDetail holds an agent detail to decision 0207: one agent of the
 // repository's own authority, `~/<package>/<name>`; reads and writes that
 // are each one kind under the effective-permission rule
 // (scope.AgentKindProblem), none twice, every write also a read; and a

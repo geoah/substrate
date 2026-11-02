@@ -4,7 +4,7 @@ import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
 
-/// The workout coach's install against a real substrate (decision 0206),
+/// The workout coach's install against a real substrate (decision 0207),
 /// skipped unless `WORKOUTS_E2E_COACH_SERVER` names one and
 /// `WORKOUTS_E2E_OWNER_TOKEN` holds a full-access token of a repository with
 /// no training package: the app's whole sign-in request with its `agent`

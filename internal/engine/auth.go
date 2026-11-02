@@ -34,6 +34,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime"
 	"slices"
 	"strings"
@@ -969,9 +970,7 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 		if info.Scopes, derr = decodeScopes(scopes); derr != nil {
 			return nil, fmt.Errorf("%w: token %s: %w", substrate.ErrCorrupt, info.ID, derr)
 		}
-		if info.Agents, derr = decodeAgents(agents); derr != nil {
-			return nil, fmt.Errorf("%w: token %s: %w", substrate.ErrCorrupt, info.ID, derr)
-		}
+		info.Agents = softAgents(ds.svc.log, info.ID, agents)
 		info.ClientID, info.ClientName = clientID.String, clientName.String
 		out = append(out, info)
 	}
@@ -1010,7 +1009,7 @@ func decodeScopes(raw []byte) ([]string, error) {
 	return scopes, nil
 }
 
-// decodeAgents reads a token record's `agents` column (decision 0206): nil
+// decodeAgents reads a token record's `agents` column (decision 0207): nil
 // when absent, an error when present and unreadable, so a damaged approval
 // fails closed rather than reading as another.
 func decodeAgents(raw []byte) ([]substrate.AgentApproval, error) {
@@ -1022,6 +1021,19 @@ func decodeAgents(raw []byte) ([]substrate.AgentApproval, error) {
 		return nil, errors.New("token agents are not a list of approvals")
 	}
 	return checkAgentApprovals(list)
+}
+
+// softAgents is a token's approved agents, or none when they cannot be read
+// or are no longer admissible (a damaged write, or a later release that
+// narrowed the rule). Only the approvals fail, and closed: the agent stops,
+// while the token still authenticates and every token still lists.
+func softAgents(log *slog.Logger, token string, raw []byte) []substrate.AgentApproval {
+	agents, err := decodeAgents(raw)
+	if err != nil {
+		log.Warn("substrate: a token's approved agents are unreadable; the token approves none", "token", token, "error", err)
+		return nil
+	}
+	return agents
 }
 
 // checkAgentApprovals holds stored approvals to what an agent detail admits:
@@ -1139,9 +1151,7 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, sub
 	if info.Scopes, err = decodeScopes(scopes); err != nil {
 		return Repository{}, zero, fmt.Errorf("%w: %w", substrate.ErrAuth, err)
 	}
-	if info.Agents, err = decodeAgents(agents); err != nil {
-		return Repository{}, zero, fmt.Errorf("%w: %w", substrate.ErrAuth, err)
-	}
+	info.Agents = softAgents(s.log, info.ID, agents)
 	// Expiry is SERVER-ENFORCED here: a token past its stamp authenticates as
 	// a spent credential, so no dataset is ever handed out for it. An
 	// unreadable stamp fails closed for the same reason.

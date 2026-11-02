@@ -80,7 +80,7 @@ func (m *coachModel) lastSystem() string {
 	return m.systems[len(m.systems)-1]
 }
 
-// A COACH FROM APPROVAL TO REVOCATION, END TO END (decision 0206): an app's
+// A COACH FROM APPROVAL TO REVOCATION, END TO END (decision 0207): an app's
 // authorization request carries an `agent` detail; the owner approves it on
 // the real approval endpoint; the app's token declares training and the
 // coach under its approval, and reads the coach's row; the owner chats with

@@ -52,6 +52,9 @@ type scopedDataset struct {
 	mu           sync.Mutex
 	threadAgents map[string]string
 	seen         map[string]bool
+	// agentCovered is talksTo's answer per agent: whether the grant's reads
+	// cover an app's agent (decision 0207).
+	agentCovered map[string]bool
 }
 
 var _ substrate.Dataset = (*scopedDataset)(nil)
@@ -393,7 +396,7 @@ func (s *scopedDataset) KindByRef(ctx context.Context, ref string) (substrate.Ki
 	}
 	// An approved agent's row resolves for the token that declares it, and
 	// the kinds the agent is approved to read tell their definitions, so the
-	// app declares only kinds the repository holds (decision 0206). Records
+	// app declares only kinds the repository holds (decision 0207). Records
 	// stay held to the scopes.
 	if (ref == vocabulary.CoreKind(vocabulary.DocAgent) && len(s.grant.Agents()) > 0) || s.grant.ApprovesAgentRead(ref) {
 		return s.inner.KindByRef(ctx, ref)
@@ -439,7 +442,7 @@ func (s *scopedDataset) Get(ctx context.Context, typ, id string) (*substrate.Rec
 		return s.inner.Get(ctx, typ, id)
 	}
 	// The agent the owner approved the app to declare, and no other agent:
-	// its version, settings and prompt are what the app keeps (decision 0206).
+	// its version, settings and prompt are what the app keeps (decision 0207).
 	if typ == vocabulary.CoreKind(vocabulary.DocAgent) && s.declaresAgent(id) {
 		return s.inner.Get(ctx, typ, id)
 	}
@@ -1128,7 +1131,9 @@ func (s *scopedDataset) ChatAgent(ctx context.Context, _ substrate.Actor, name s
 		return nil, fmt.Errorf("%w: an app's token names an agent in full, <authority>/<package>/<name>, not %q",
 			substrate.ErrValidation, name)
 	}
-	if !s.grant.TalksTo(name) {
+	if ok, err := s.talksTo(ctx, name); err != nil {
+		return nil, err
+	} else if !ok {
 		return nil, fmt.Errorf("%w: agent %s", substrate.ErrNotFound, name)
 	}
 	if in.Thread != "" {
@@ -1187,7 +1192,7 @@ func (s *scopedDataset) BundleStatus(context.Context, string) (substrate.BundleS
 }
 
 // BundlePackage resolves a bundle of a package the grant declares, which is
-// what the lifecycle PATCH reads before an app's uninstall (decision 0206);
+// what the lifecycle PATCH reads before an app's uninstall (decision 0207);
 // any other bundle is the owner's.
 func (s *scopedDataset) BundlePackage(ctx context.Context, id string) (string, error) {
 	pkg, err := s.inner.BundlePackage(ctx, id)
@@ -1206,7 +1211,7 @@ func (s *scopedDataset) BindBundleInput(context.Context, string, string, string)
 }
 
 // UninstallBundle removes a package the grant declares and that holds no
-// kinds: an app taking away the agent it keeps (decision 0206). Any other
+// kinds: an app taking away the agent it keeps (decision 0207). Any other
 // uninstall is the owner's.
 func (s *scopedDataset) UninstallBundle(ctx context.Context, id string) error {
 	pkg, err := s.inner.BundlePackage(ctx, id)

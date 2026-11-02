@@ -2,7 +2,7 @@ import Foundation
 import SubstrateKit
 import WorkoutsCore
 
-/// The workout coach (decision 0206, docs/plans/workouts-coach.md): an AI
+/// The workout coach (decision 0207, docs/plans/workouts-coach.md): an AI
 /// agent the app declares in a package of its own, `~/trainingcoach`, under
 /// the approval an `agent` authorization detail put on its token. The owner
 /// chats with it in Substrate Chat or the console; this app only installs it
@@ -81,12 +81,16 @@ public struct CoachManifest: Sendable {
     /// one the coach needs.
     public var trainingVersion: Int
     public var prompt: String
+    /// The agent document's fixed part (tools, pinned memories, budgets,
+    /// description), whose every change moves the revision.
+    public var agent: JSONObject
     public var documents: [WorkoutsCore.JSONValue]
 
-    public init(revision: Int, trainingVersion: Int, prompt: String, documents: [WorkoutsCore.JSONValue]) {
+    public init(revision: Int, trainingVersion: Int, prompt: String, agent: JSONObject = [:], documents: [WorkoutsCore.JSONValue]) {
         self.revision = revision
         self.trainingVersion = trainingVersion
         self.prompt = prompt
+        self.agent = agent
         self.documents = documents
     }
 
@@ -102,10 +106,11 @@ public struct CoachManifest: Sendable {
               case let .number(revision)? = object["revision"],
               case let .number(training)? = object["trainingVersion"],
               case let .string(prompt)? = object["prompt"],
-              case let .array(documents)? = object["documents"]
+              case let .array(documents)? = object["documents"],
+              case let .object(agent)? = object["agent"]
         else { throw CatalogError.missingResource("Package/coach.json is not a coach manifest") }
         return CoachManifest(revision: NSDecimalNumber(decimal: revision).intValue, trainingVersion: NSDecimalNumber(decimal: training).intValue,
-                             prompt: prompt, documents: documents)
+                             prompt: prompt, agent: agent, documents: documents)
     }
 
     /// The revision a stored prompt was rendered at, read from its first
@@ -249,12 +254,17 @@ public struct CoachInstaller: Sendable {
         {
             return .newer(revision: revision)
         }
-        // The stored choice stands across releases; a first install takes
+        // The stored choice stands across releases while its provider row
+        // still prices it; a first install, or one whose provider row went
+        // or lost the model's price (the engine stops such a coach), takes
         // this build's default.
+        let providers = try await api.list([Coach.providerKind])
         let model: CoachModel
-        if let stored, let kept = Self.model(of: stored) {
+        if let stored, let kept = Self.model(of: stored),
+           providers.contains(where: { $0.id == kept.provider && CoachModel.priced($0).contains(kept.model) })
+        {
             model = kept
-        } else if let chosen = CoachModel.choose(from: try await api.list([Coach.providerKind])) {
+        } else if let chosen = CoachModel.choose(from: providers) {
             model = chosen
         } else {
             return .noProvider
@@ -280,37 +290,21 @@ public struct CoachInstaller: Sendable {
 
     /// The agent document as the app declares it.
     func agentDocument(model: CoachModel, reads: [String], writes: [String], capCents: Int) -> WorkoutsCore.JSONValue {
-        let memory = Coach.homed("\(Coach.training)/memory", authority: authority)
-        let tools: [WorkoutsCore.JSONValue] = ["query", "write", "ask"].map { .object(["function": .string("substrate.reamde.dev/core/\($0)")]) }
-        var data: JSONObject = [
-            "authority": .string(authority),
-            "package": .string("trainingcoach"),
-            "purpose": .string("primary"),
-            "description": .string("Your strength coach: plans your workout routines from your goals, training and health data, and remembers what you tell it. Kept by Substrate Workouts."),
-            "prompt": .string(Coach.homed(manifest.prompt, authority: authority)),
-            "provider": .string(model.provider),
-            "model": .string(model.model),
-            "tools": .array(tools),
-            "context": .object([
-                "pinned": .array([.object([
-                    "kind": .string(memory),
-                    "filter": .string(#"{"properties": {"active": {"eq": true}}}"#),
-                    "orderBy": .string("createdAt:desc,id"),
-                    "first": .number(60),
-                    "fields": .array(["text", "topic", "exercise", "until"].map { .string($0) }),
-                ])]),
-                "maxBytes": .number(12288),
-            ]),
-            "permissions": .object([
-                "reads": .object(["kinds": .array(reads.map { .string($0) }), "budgets": .object(["calls": .number(40), "rows": .number(5000)])]),
-                "writes": .array(writes.map { .string($0) }),
-            ]),
-            "budgets": .object([
-                "maxTurns": .number(16), "maxToolCalls": .number(48), "maxParallelTools": .number(4),
-                "deadlineSeconds": .number(300), "maxToolResultBytes": .number(65536),
-                "spendCentsPerDay": .number(Decimal(capCents)),
-            ]),
-        ]
+        guard case let .object(template) = Coach.homed(.object(manifest.agent), authority: authority) else { return .null }
+        var data = template
+        data["readBudgets"] = nil
+        var budgets = JSONObject()
+        if case let .object(fixed)? = template["budgets"] { budgets = fixed }
+        budgets["spendCentsPerDay"] = .number(Decimal(capCents))
+        var readsBlock: JSONObject = ["kinds": .array(reads.map { .string($0) })]
+        if let readBudgets = template["readBudgets"] { readsBlock["budgets"] = readBudgets }
+        data["authority"] = .string(authority)
+        data["package"] = .string("trainingcoach")
+        data["prompt"] = .string(Coach.homed(manifest.prompt, authority: authority))
+        data["provider"] = .string(model.provider)
+        data["model"] = .string(model.model)
+        data["permissions"] = .object(["reads": .object(readsBlock), "writes": .array(writes.map { .string($0) })])
+        data["budgets"] = .object(budgets)
         if !model.params.isEmpty { data["params"] = .object(model.params) }
         return .object([
             "kind": .string(Coach.agentKind),

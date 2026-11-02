@@ -1,6 +1,6 @@
 package engine
 
-// An app's agent (decision 0206): an agent of a package an app owns
+// An app's agent (decision 0207): an agent of a package an app owns
 // (decision 0205), which the app declared under the approval an `agent`
 // authorization detail put on its token. The scoped apply held the agent to
 // that approval once; the engine holds it again on every run and before
@@ -8,14 +8,21 @@ package engine
 // the owner approved:
 //
 //   - a live approval: the repository holds a token of the owning app,
-//     unexpired and not deleted, whose approved agent covers this agent's
-//     reads, writes and daily cap. Revoking the app, letting its access end
-//     or approving it narrower stops the agent; signing in again restores
-//     it, with nothing to flip back;
+//     unexpired and not deleted, that approves this agent, and every such
+//     live token's approval covers its reads, writes and daily cap, so the
+//     lowest cap and the narrowest reach hold. Revoking the app, letting its
+//     access end or approving it narrower stops the agent; signing in again
+//     restores it, with nothing to flip back;
 //   - a priced model: an unpriced model records no spend, so no cap would
 //     hold;
 //   - a root run: as another agent's sub-agent it would spend under its
-//     caller's cap.
+//     caller's cap;
+//   - a person's entry: a chat (the owner's, or an app's whose reads cover
+//     it), its resume after a question, or the owner's own call. A
+//     trigger, a function's call or a patch policy's judge would hand its
+//     reply to code that may read far less than it does, which is the
+//     sub-agent path again; they are refused until an app's agent needs
+//     one (decision 0207).
 //
 // A package the owner took over is theirs, and none of this applies.
 
@@ -25,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
@@ -78,10 +86,33 @@ func (ds *dataset) appAgentHold(ctx context.Context, ag *vocabulary.Agent, root 
 		return "", err
 	}
 	if !priced {
-		return fmt.Sprintf("%s is stopped: its model %s has no price on the AI provider %s, so its spend would count as nothing and its daily cap could not hold. Add the model's price to the provider, or choose a priced model in %s",
+		if app == "" {
+			app = owner.String()
+		}
+		return fmt.Sprintf("%s is stopped: its model %s has no price on the AI provider %s, so its spend would count as nothing and its daily cap could not hold. Add the model's price back to the provider on the console's Providers page; %s also picks a priced model again the next time it syncs",
 			name, ag.Model, ag.Provider, app), nil
 	}
 	return "", nil
+}
+
+// appAgentEntry says why an app's agent may not run on this entry, "" when
+// it may: a chat, a resume of its own thread, or the owner's direct call,
+// never a trigger, a function's call or a judge.
+func appAgentEntry(ag *vocabulary.Agent, in agentInvocation) string {
+	switch {
+	case in.mode == agentModeChat || in.resume:
+		return ""
+	case in.mode == "call" && !strings.HasPrefix(string(in.userActor), "function:"):
+		return ""
+	}
+	what := "a trigger"
+	switch {
+	case in.mode == "call":
+		what = "a function's call"
+	case in.mode == "judge":
+		what = "a policy's judge"
+	}
+	return fmt.Sprintf("%s is kept by an app and runs only when a person chats with it, never from %s (decision 0207)", agentLabel(ag), what)
 }
 
 // refuseAppAgent is appAgentHold as a refusal.
@@ -96,8 +127,9 @@ func (ds *dataset) refuseAppAgent(ctx context.Context, ag *vocabulary.Agent, roo
 	return nil
 }
 
-// appApprovalCovers reports whether a live token of owner approves ag as it
-// is declared, and the app's own name for the refusal.
+// appApprovalCovers reports whether owner's live tokens approve ag as it is
+// declared: at least one approves it, and every one that does covers it. It
+// also answers the app's own name for the refusal.
 func (ds *dataset) appApprovalCovers(ctx context.Context, owner substrate.PackageOwner, ag *vocabulary.Agent) (string, bool, error) {
 	rows, err := ds.db.QueryContext(ctx, appAgentTokensQuery, kindToken)
 	if err != nil {
@@ -147,9 +179,16 @@ func (ds *dataset) appApprovalCovers(ctx context.Context, owner substrate.Packag
 			continue
 		}
 		for _, a := range approvals {
-			if a.Agent == ag.Identity() && scope.AgentReachProblem(a, reads, ag.Emit, ask, capCents) == "" {
-				covered = true
+			if a.Agent != ag.Identity() {
+				continue
 			}
+			// Every live approval must cover the agent, not any one: the
+			// lowest cap and the narrowest reach hold, so an older, wider
+			// token never outlives the owner's newer, narrower approval.
+			if scope.AgentReachProblem(a, reads, ag.Emit, ask, capCents) != "" {
+				return app, false, rows.Err()
+			}
+			covered = true
 		}
 	}
 	return app, covered, rows.Err()

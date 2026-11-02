@@ -12,7 +12,7 @@ import WorkoutsCore
 ///   row a finished session was saved to Apple Health as;
 /// - and, set up on approval, `substrate.reamde.dev/health`, the catalogue
 ///   the package requires;
-/// - the workout coach (decision 0206): `declare:~/trainingcoach` and an
+/// - the workout coach (decision 0207): `declare:~/trainingcoach` and an
 ///   `agent` detail with its reach and daily cap, which the owner approves
 ///   on the same page, and `read:` the AI provider rows to pick the model it
 ///   runs on. A server without agents is sent the request without the

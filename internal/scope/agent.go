@@ -9,7 +9,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// An app's agent (decision 0206) is approved by an `agent` authorization
+// An app's agent (decision 0207) is approved by an `agent` authorization
 // detail that names it, the exact kinds it reads and writes and its daily
 // cap. The token stores the approval beside its scopes, never as one: the
 // agent's reach is the agent's, and the app's own scopes stay what the app

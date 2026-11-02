@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The approval page's agent row (decision 0206): what the agent reads and
+/** The approval page's agent row (decision 0207): what the agent reads and
  * changes by name, that it asks questions, its actual daily cap, where what
  * it reads goes, and, in the technical view, every identifier. */
 
@@ -33,6 +33,7 @@ const row: AuthorizationSetup = {
       },
     ],
     spendCentsPerDay: 100,
+    talkedToBy: ["Substrate Chat"],
   },
 }
 
@@ -50,8 +51,13 @@ it("names the agent, its reach, its cap and where its reads go", () => {
       "substrate.reamde.dev/clinical/condition (not on this server yet)"
     )
   ).toBeTruthy()
-  expect(screen.getByText(/At most \$1\.00 a day/)).toBeTruthy()
+  expect(screen.getByText(/once it has spent about \$1\.00/)).toBeTruthy()
   expect(screen.getByText("It can ask you questions in the chat.")).toBeTruthy()
+  expect(
+    screen.getByText(
+      /only if they can read everything it reads\. Already: Substrate Chat\./
+    )
+  ).toBeTruthy()
   expect(screen.getByText(/sent to the AI provider it runs on/)).toBeTruthy()
   expect(screen.queryByText("In place")).toBeNull()
 })
@@ -88,5 +94,5 @@ it("says approving leaves the agent out when another hand keeps its package", ()
   )
   expect(screen.getByText("Left out")).toBeTruthy()
   expect(screen.getByText(/Approving leaves this agent out/)).toBeTruthy()
-  expect(screen.queryByText(/At most \$1\.00 a day/)).toBeNull()
+  expect(screen.queryByText(/once it has spent about/)).toBeNull()
 })

@@ -854,7 +854,7 @@ export interface TokenInfo {
   clientId?: string
   /** The name the app claimed when the owner approved it; unverified. */
   clientName?: string
-  /** The agents the owner approved the app to declare (decision 0206). */
+  /** The agents the owner approved the app to declare (decision 0207). */
   agents?: AgentApproval[]
 }
 
@@ -1023,7 +1023,7 @@ export interface AuthorizationDetail {
   properties?: Record<string, unknown>
   trigger?: string
   url?: string
-  /** An `agent` detail (decision 0206). */
+  /** An `agent` detail (decision 0207). */
   agent?: string
   reads?: string[]
   writes?: string[]
@@ -1046,7 +1046,7 @@ export interface AuthorizationSetup {
 }
 
 /** An agent row: the one agent the app may declare and keep (decision
- * 0206), each kind it reads and writes (`held` false for one the server
+ * 0207), each kind it reads and writes (`held` false for one the server
  * lacks), and its daily cap. Approving sets nothing up; `allowed` is true
  * when the previous token's approval already covers it. */
 export interface AuthorizationAgentPlan {
@@ -1055,6 +1055,9 @@ export interface AuthorizationAgentPlan {
   writes?: AuthorizationAgentKind[]
   spendCentsPerDay?: number
   allowed?: boolean
+  /** The apps that can already ask it questions and read its chats: ones the
+   * owner let talk to their agents whose reads cover everything it reads. */
+  talkedToBy?: string[]
   /** Why approving leaves the agent out: its package's declare scope is
    * refused, since another hand keeps the package (decision 0205). */
   withheld?: string

@@ -68,6 +68,7 @@ func TestAnAgentDetailIsReadStrictly(t *testing.T) {
 		"a package's member":         `[{"type":"agent","agent":"~/trainingcoach/workoutCoach","reads":["~/training/routine"],"spendCentsPerDay":1,"package":"example.com/x"}]`,
 		"an unknown member":          `[{"type":"agent","agent":"~/trainingcoach/workoutCoach","reads":["~/training/routine"],"spendCentsPerDay":1,"tools":["query"]}]`,
 		"a duplicate agent":          `[{"type":"agent","agent":"~/trainingcoach/workoutCoach","reads":["~/training/routine"],"spendCentsPerDay":1},{"type":"agent","agent":"~/trainingcoach/workoutCoach","reads":["~/training/set"],"spendCentsPerDay":2}]`,
+		"a second agent":             `[{"type":"agent","agent":"~/trainingcoach/workoutCoach","reads":["~/training/routine"],"spendCentsPerDay":1},{"type":"agent","agent":"~/trainingcoach/otherCoach","reads":["~/training/set"],"spendCentsPerDay":2}]`,
 		"agent members on a package": `[{"type":"package","package":"example.com/notes","version":1,"agent":"~/trainingcoach/workoutCoach"}]`,
 	}
 	for name, param := range cases {

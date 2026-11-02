@@ -40,7 +40,7 @@ data:
   authority: "~"
   package: training
   # 1: exercise, setup, routine, session and set. 2: memory, the facts the
-  # workout coach keeps (decision record 0206). The app ships each change as
+  # workout coach keeps (decision record 0207). The app ships each change as
   # the next version, additive only, and reads the version a repository
   # holds to decide whether to install, upgrade or stop.
   version: 2

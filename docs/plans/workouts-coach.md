@@ -2,7 +2,7 @@
 
 Status: revised after review (Astra, Fable) and the owner's answers of
 2026-11-02; being built on branch `feat/workouts-coach`. Decision record:
-[0206](../decisions/0206-an-app-declares-one-agent-held-to-its-own-reach.md).
+[0207](../decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md).
 Depends on
 [0205](../decisions/0205-an-app-owns-the-package-it-declares.md) (PR #1112,
 app-owned packages).
@@ -129,8 +129,10 @@ Rules, checked strictly where every detail is read (`internal/authorize`):
   the **effective-permission rule**: an app's agent reaches no machinery,
   however its token is worded (Astra 1). Every write must also be a read.
 - `spendCentsPerDay` is a whole number from 1 to 200, the ceiling of every
-  app's agent.
-- One agent detail per agent id.
+  app's agent. The cap is a rolling 24-hour threshold, so the page says the
+  agent "stops for the day once it has spent about $1.00".
+- One agent detail per request: one app keeps one agent, so caps never add
+  up past one ceiling.
 
 **The approval row.** Under "It will set up on your server" the page shows
 "Add an AI agent: Workout coach" with three labeled lists: "It reads" and
@@ -154,8 +156,26 @@ echoes each approved agent detail.
 
 `/authorizations/check` answers an agent row `none` when the calling token
 holds an approval covering it (same agent, reads and writes at least as
-wide, cap at least as high) and `enable` otherwise, so an app knows when a
-widened reach or a raised cap needs the owner again.
+wide, cap at least as high), and also when the request leaves out the
+agent's `declare:` scope or 0205 would refuse it (the row carries the reason
+in `withheld`), since approving again would withhold the agent again. It
+answers `enable` otherwise, so an app knows when a widened reach or a
+raised cap needs the owner again. SubstrateKit leaves the agent detail out
+of its check when the owner left that `declare:` scope out, so a declined
+coach is never asked about again.
+
+**Who else reaches the agent (the coverage rule).** Under 0195 an `agents:`
+scope talks to the matching agents and reads their chats. An app's agent
+answers another token (chat, its row, its threads, messages and
+interactions) only when that token's own read scopes cover every kind the
+agent reads, so the agent is never a channel to data the caller could not
+read itself. This is stricter than naming the agent exactly, and simpler:
+Substrate Chat's `read:*` covers the coach's kinds (none of them is
+internal), so Chat sees and chats with it with no new approval, while an
+app that reads only its notes sees nothing of it. The approval row says
+"Apps you let talk to your agents can ask it questions and read its chats
+only if they can read everything it reads", and names the apps that already
+can (`talkedToBy`).
 
 ### 4.2 The scoped apply
 
@@ -194,18 +214,29 @@ trigger, wake, retry, judge):
 1. **A live approval.** The repository holds a token of the app that owns
    the package, compared as 0205 compares it (the full client id the row
    stamps; a host-only stamp from an earlier binary admits its host),
-   unexpired and not deleted, whose `agents` approve this agent with reads
-   and writes covering the agent's (interaction aside) and a cap at least
-   the agent's.
+   unexpired and not deleted, that approves this agent, and **every** such
+   live token's approval covers the agent's reads and writes (interaction
+   aside) and cap. The lowest cap and the narrowest reach hold, so an older,
+   wider token never outlives the owner's newer, narrower approval. A token
+   of the app that approves no agent does not count. A stored approval that
+   cannot be read, or is no longer admissible, is dropped from its token
+   alone (logged): the coach stops, and the token and the token list keep
+   working.
 2. **A priced model**, as at apply: an owner who removes the price stops the
    coach rather than uncapping it.
-3. **A root run.** An app's agent never runs as another agent's sub-agent,
-   whose cap would hide its spend.
+3. **A root run, from a person.** An app's agent never runs as another
+   agent's sub-agent, whose cap would hide its spend, and runs only from a
+   chat, its resume after a question, or the owner's direct call; a
+   trigger, a function's call or a policy's judge would hand its reply to
+   code that may read far less, so each is refused until an app's agent
+   needs one.
 
 A refusal is a guard (403) with words the owner can act on: "Workout coach
 is stopped: Substrate Workouts holds no live approval for it. Sign in to
 Substrate Workouts again, or turn the coach off on the Training coach
-package." Signing in again restores it, and nothing flips state (Fable 1;
+package." An unpriced model's refusal points to the console's Providers page
+and says the app picks a priced model again at its next sync, which it does.
+Signing in again restores it, and nothing flips state (Fable 1;
 owner answer 4). A package the owner took over is theirs, and none of this
 applies to it.
 
@@ -371,7 +402,13 @@ checked-in parts, so it is a cacheable prefix and has its own review:
 
 A revision line heads the prompt ("Workout coach instructions, revision N"),
 which the app compares with the stored row to tell an older app from a newer
-one (§8). The rendered prompt stays under 18 KB, which the generator and a test hold.
+one (§8). The revision is derived, never bumped by hand: `coach.json` also
+carries the agent document's fixed part (tools, pinned memories, budgets,
+description), and the generator hashes that with the prompt body into
+`Package/coach/coach.lock.json`. A changed hash moves the revision, and
+`--check` fails until it has, so a change to `maxTurns` or the pin reaches
+every device too. The rendered prompt stays under 20 KB, which the generator
+and a test hold.
 
 ## 7. Memory
 
@@ -386,7 +423,11 @@ one (§8). The rendered prompt stays under 18 KB, which the generator and a test
 | `active` | bool, default true | off retires a fact and keeps its history |
 | `source` | enum, default owner | owner, coach, app |
 
-**Retrieve.** The active rows are pinned newest first, once per thread. The
+**Retrieve.** The active rows whose `source` is `owner` or `coach` are pinned
+newest first, once per thread, each with its `source`. `source` is the
+writer's own claim (a list read carries no engine-stamped writer), so a
+hand the owner let write the kind can still claim `coach`; the prompt reads
+every pinned row as a note, never an order, and the persona test plants one. The
 pin is a snapshot: an edit or a retirement reaches the next chat. Rows past
 `until` are retired by the coach at the next chat. Older or retired facts
 are a `query` away.
@@ -436,7 +477,8 @@ version 2 in every sync):
 1. No approved agent detail in the session's token response: nothing.
 2. Training not yet at version 2: wait for the next sync.
 3. Read the coach's row. A prompt revision above this build's: leave it.
-4. Keep the row's provider, model and cap; on a first install choose a
+4. Keep the row's provider, model and cap while a provider row still prices
+   that model; on a first install, or when it no longer does, choose a
    keyed provider row that prices `claude-sonnet-5-5` (Anthropic,
    `reasoningEffort: medium`) or `gpt-5` (OpenAI, `low`), else a keyed row's
    first priced model, else an unkeyed row's (the coach then installs and
@@ -475,7 +517,7 @@ on and off from the app.
 | S4 | Scoped apply admits the approved agent under §4.2; scoped `UninstallBundle` for a kind-free declared package; scoped `Get`/`KindByRef` of the agent row and of approved read kinds | `internal/api/scopeddeclare.go`, `internal/api/scoped.go` |
 | S5 | Engine admission of an app's agent: live approval, priced model, root only; re-admission before each model call | `internal/engine/appagent.go`, `agentloop.go` |
 | S6 | Console: the approval row; the agent page's "Managed by" section (Pause is the off switch, Take over), read-only model and grants | `web/console` |
-| S7 | Docs: apps.md, agents.md, 0206, the training README | docs |
+| S7 | Docs: apps.md, agents.md, 0207, the training README | docs |
 
 And in the apps: SubstrateKit's optional `agent` detail and its review
 words; Workouts' sign-in request, `Coach.swift` (`CoachInstaller`) and the
@@ -553,9 +595,8 @@ existing suites pass with training version 2.
   denied.
 - When the coach screen comes: should its "Turn off" disable rather than
   remove, once an owner-versus-app disable can be told apart?
-- An install signed in before this build is asked once to review the
-  coach. Is that prompt wanted, or should the coach wait for the owner's
-  next sign-in?
+- None open on this PR. (The owner confirmed 2026-11-02 that existing
+  installs get the one-time review prompt.)
 
 ## 13. Review findings and how this revision answers them
 

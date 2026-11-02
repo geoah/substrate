@@ -1340,13 +1340,14 @@ where they happen:
 An agent in a package an app owns
 ([0205](decisions/0205-an-app-owns-the-package-it-declares.md)) was declared
 by that app under an approval the owner gave by name
-([0206](decisions/0206-an-app-declares-one-agent-held-to-its-own-reach.md),
+([0207](decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md),
 [apps](apps.md#declare-an-agent-of-your-own)). On every entry, chat, call,
 trigger, wake, retry and judge alike, it runs only while the app holds an
 unexpired, undeleted token whose approved agent covers its reads, writes
-and daily cap, while its provider row prices its model above zero, and
-only as a root run: as a sub-agent it is refused, so its own cap always
-holds it. Before every model call after the first it is admitted again (the
+and daily cap (every such live token, so the lowest cap holds), while its
+provider row prices its model above zero, and only as a root run from a
+person: as a sub-agent it is refused, so its own cap always holds it, and
+so are a trigger, a function's call and a policy's judge. Before every model call after the first it is admitted again (the
 approval, the bundle, its cap), and a failure settles the thread `stopped`
 with the reason. The refusal names the app: "… is stopped: Substrate
 Workouts, the app that keeps it, holds no live approval for it." Signing in

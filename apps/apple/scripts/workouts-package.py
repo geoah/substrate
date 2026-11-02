@@ -14,7 +14,7 @@ Two sources, both YAML in `substratectl apply -f` form under the authority
   shape substrate's REST API speaks, `{"kind", "id", "properties"}`. An
   exercise id in more than one file must be the same record in each.
 
-It also renders the workout coach (decision record 0206, Package/coach/): the
+It also renders the workout coach (decision record 0207, Package/coach/): the
 coach package's documents and the agent's prompt, from the instructions, the
 mechanics and a field guide generated from the routine and exercise
 manifests, so the prompt and the kinds cannot drift.
@@ -30,6 +30,7 @@ The output has no timestamps, so a run over unchanged YAML changes nothing.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -45,12 +46,49 @@ KINDS = ("exercise", "routine", "session", "set", "setup")
 RESOURCE = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/training.json"
 COACH = PACKAGE / "coach"
 COACH_RESOURCE = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/coach.json"
-# The coach's prompt revision: bump it with every change to the rendered
-# prompt, so an older app never writes its prompt over a newer one's.
-COACH_REVISION = 1
+# The coach's revision is derived, never bumped by hand: the lock holds the
+# revision and the hash of everything a release declares of the agent (the
+# prompt body and the agent template below). A changed hash moves the
+# revision on the next write, and --check fails until it has, so an older
+# build can always tell a newer build's coach from its own.
+COACH_LOCK = COACH / "coach.lock.json"
+# The agent document's fixed part. The app fills in the authority, the prompt
+# (with its revision line), the provider, model and params it chooses, the
+# reach the owner approved and the daily cap.
+COACH_AGENT = {
+    "purpose": "primary",
+    "description": (
+        "Your strength coach: plans your workout routines from your goals, training and health data, "
+        "and remembers what you tell it. Kept by Substrate Workouts."
+    ),
+    "tools": [{"function": f"substrate.reamde.dev/core/{name}"} for name in ("query", "write", "ask")],
+    "context": {
+        "pinned": [
+            {
+                "kind": "~/training/memory",
+                # Only what the owner wrote or the coach stored from what the
+                # owner said; `source` is the writer's own claim, so the prompt
+                # still reads every pinned row as a note, never an order.
+                "filter": '{"properties": {"active": {"eq": true}, "source": {"in": ["owner", "coach"]}}}',
+                "orderBy": "createdAt:desc,id",
+                "first": 60,
+                "fields": ["text", "topic", "source", "exercise", "until"],
+            }
+        ],
+        "maxBytes": 12288,
+    },
+    "readBudgets": {"calls": 40, "rows": 5000},
+    "budgets": {
+        "maxTurns": 16,
+        "maxToolCalls": 48,
+        "maxParallelTools": 4,
+        "deadlineSeconds": 300,
+        "maxToolResultBytes": 65536,
+    },
+}
 # The coach's prompt is a cacheable prefix beside the kinds list and its
 # pinned memories; past this it crowds them out.
-COACH_PROMPT_MAX = 18432
+COACH_PROMPT_MAX = 20480
 FIXTURE = APPLE / "WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/kinds.json"
 EXAMPLES = APPLE / "SubstrateWorkouts/docs/examples"
 SAMPLE = "sample"
@@ -223,29 +261,36 @@ def coach_guide(version: int) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def coach() -> dict:
+def coach_revision(body: str, check: bool) -> tuple[int, str | None]:
+    """The revision for this release's coach, and the lock to write (None when
+    it stands)."""
+    digest = hashlib.sha256(json.dumps({"prompt": body, "agent": COACH_AGENT}, sort_keys=True).encode("utf-8")).hexdigest()
+    lock = json.loads(COACH_LOCK.read_text(encoding="utf-8")) if COACH_LOCK.exists() else {"revision": 0, "sha256": ""}
+    if lock["sha256"] == digest:
+        return lock["revision"], None
+    revision = lock["revision"] + 1
+    return revision, render({"revision": revision, "sha256": digest})
+
+
+def coach(check: bool = False) -> tuple[dict, str | None]:
     version = package()["version"]
     instructions = (COACH / "instructions.md").read_text(encoding="utf-8").strip()
     mechanics = (COACH / "mechanics.md").read_text(encoding="utf-8").strip()
-    prompt = (
-        f"Workout coach instructions, revision {COACH_REVISION}.\n\n"
-        + instructions
-        + "\n\n"
-        + mechanics
-        + "\n\n"
-        + coach_guide(version)
-    )
+    body = instructions + "\n\n" + mechanics + "\n\n" + coach_guide(version)
+    revision, lock = coach_revision(body, check)
+    prompt = f"Workout coach instructions, revision {revision}.\n\n" + body
     if len(prompt.encode("utf-8")) > COACH_PROMPT_MAX:
         raise GenerateError(f"the coach's prompt is {len(prompt.encode())} bytes, over {COACH_PROMPT_MAX}")
     with open(COACH / "trainingcoach.yaml", encoding="utf-8") as handle:
         docs = [doc for doc in yaml.load_all(handle, Loader=Loader) if doc is not None]
     return {
         "package": docs[0]["metadata"]["id"],
-        "revision": COACH_REVISION,
+        "revision": revision,
         "trainingVersion": version,
         "prompt": prompt,
+        "agent": COACH_AGENT,
         "documents": docs,
-    }
+    }, lock
 
 
 def render(value: dict) -> str:
@@ -257,7 +302,10 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="exit 1 if a generated file is stale")
     args = parser.parse_args()
     try:
-        files = {RESOURCE: render(package()), FIXTURE: render(kinds()), COACH_RESOURCE: render(coach())}
+        coach_file, lock = coach(args.check)
+        files = {RESOURCE: render(package()), FIXTURE: render(kinds()), COACH_RESOURCE: render(coach_file)}
+        if lock is not None:
+            files[COACH_LOCK] = lock
         files.update({path: render(value) for path, value in examples().items()})
     except (GenerateError, OSError, yaml.YAMLError) as error:
         print(f"workouts-package.py: {error}", file=sys.stderr)

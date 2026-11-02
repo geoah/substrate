@@ -122,9 +122,17 @@ public struct AppManifest: Sendable {
     /// The request the check asks about for `session`: every detail, and
     /// every scope but those the owner left out of the last approval. A scope
     /// a later build adds is asked about.
+    ///
+    /// An agent detail whose `declare:` scope the owner left out is left out
+    /// too: the owner declined the agent, and asking again at every check
+    /// would bring back a review they already answered.
     public func check(for session: Session, metadata: AuthorizationServerMetadata? = nil) -> AuthorizationCheck {
         let leftOut = Set(leftOut(by: session))
-        return AuthorizationCheck(scopes: scopes.filter { !leftOut.contains($0) }, details: details(for: metadata))
+        let details = details(for: metadata).filter { detail in
+            guard let declare = detail.declareScope else { return true }
+            return !leftOut.contains(declare)
+        }
+        return AuthorizationCheck(scopes: scopes.filter { !leftOut.contains($0) }, details: details)
     }
 
     /// How the app signs in to a server it probed.

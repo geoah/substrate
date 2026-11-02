@@ -23,7 +23,7 @@ package is in [`Package/`](../Package/README.md).
   why the app keeps its own package under a `declare:` scope, the one server change it
   needed.
 - Decision record
-  [0206](../../../../docs/decisions/0206-an-app-declares-one-agent-held-to-its-own-reach.md)
+  [0207](../../../../docs/decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md)
   and [the coach plan](../../../../docs/plans/workouts-coach.md): the workout coach the app
   installs for the owner to use from Substrate Chat.
 

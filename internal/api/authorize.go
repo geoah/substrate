@@ -380,6 +380,9 @@ type pageReads struct {
 	// refused is why each refused declare scope, resolved, cannot be
 	// approved (declareRefusal).
 	refused map[string]string
+	// tokens are the repository's live tokens, read when the request names
+	// an agent, to say which apps could reach it.
+	tokens []substrate.TokenInfo
 }
 
 // readForPage reads what the approval page's view of req needs of ds.
@@ -394,6 +397,11 @@ func readForPage(ctx context.Context, ds substrate.Dataset, req authorize.Reques
 	}
 	if slices.ContainsFunc(req.Scopes, scope.Scope.OverAgents) {
 		if out.agents, err = agentRows(ctx, ds); err != nil {
+			return out, err
+		}
+	}
+	if slices.ContainsFunc(req.Details, func(d substrate.AuthorizationDetail) bool { return d.Type == substrate.DetailAgent }) {
+		if out.tokens, err = ds.Tokens(ctx); err != nil {
 			return out, err
 		}
 	}
@@ -514,6 +522,9 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 			declare := scope.Scope{Verb: scope.Declare, Pattern: authorize.AgentDeclarePackage(req.Details[i].Agent)}.Resolve(authority).String()
 			if why := p.refused[declare]; why != "" {
 				plan.Withheld = why
+			}
+			if len(want) == 1 {
+				plan.TalkedToBy = agentTalkers(p.tokens, p.kinds, want[0], req.Client.ID)
 			}
 			view.Setup[i].Agent = &plan
 		}
@@ -704,7 +715,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		// it, unchecked by the owner or refused because another hand keeps
 		// the package (decision 0205), the app could never declare the
 		// agent, so the rest is approved and the agent approval left off
-		// the token (decision 0206).
+		// the token (decision 0207).
 		details := withDeclaredAgents(req.Details, scopes, authority)
 		// Only an approved webhook detail puts `webhook:` on a token.
 		for _, d := range req.Details {
@@ -858,6 +869,51 @@ func agentsDeclared(details []substrate.AuthorizationDetail, scopes []scope.Scop
 		}
 	}
 	return nil
+}
+
+// agentTalkers names the apps whose live tokens would reach an app's agent
+// that reads what want reads: a full-access app, or one whose agents scope
+// matches it and whose reads cover every kind it reads (decision 0207). The
+// requesting app is left out; the owner's own sessions are not apps.
+func agentTalkers(tokens []substrate.TokenInfo, kinds []substrate.KindInfo, want substrate.AgentApproval, client string) []string {
+	registry := make(map[string]substrate.KindInfo, len(kinds))
+	for _, k := range kinds {
+		registry[k.Identity] = k
+	}
+	var out []string
+	for _, t := range tokens {
+		if t.ClientID == "" || t.ClientID == client || (t.ExpiresAt != nil && !t.ExpiresAt.After(time.Now())) {
+			continue
+		}
+		name := t.ClientName
+		if name == "" {
+			name = t.ClientID
+		}
+		if slices.Contains(out, name) {
+			continue
+		}
+		if !t.Scoped() {
+			out = append(out, name)
+			continue
+		}
+		g, err := scope.NewGrant(t.Scopes)
+		if err != nil || !g.TalksTo(want.Agent) {
+			continue
+		}
+		covers := true
+		for _, k := range want.Reads {
+			info, held := registry[k]
+			if !g.Reads(k, !held || internalKind(info)) {
+				covers = false
+				break
+			}
+		}
+		if covers {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // withDeclaredAgents is details without the agent details whose package's

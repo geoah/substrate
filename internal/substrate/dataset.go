@@ -235,7 +235,7 @@ type Dataset interface {
 	BindBundleInput(ctx context.Context, id, input, record string) error
 	UninstallBundle(ctx context.Context, id string) error
 	// UninstallAppBundle is an app removing a package it keeps that declares
-	// no kinds, only its agent (decision 0206): the uninstall runs as the
+	// no kinds, only its agent (decision 0207): the uninstall runs as the
 	// app, so the ownership chokepoint admits that app alone, and no record
 	// loses its kind.
 	UninstallAppBundle(ctx context.Context, actor Actor, id string) error

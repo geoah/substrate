@@ -682,6 +682,7 @@ const authorizationAgentPlan: Shape<AuthorizationAgentPlan> = {
   writes: false,
   spendCentsPerDay: false,
   allowed: false,
+  talkedToBy: false,
   withheld: false,
 }
 
