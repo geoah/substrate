@@ -11,6 +11,8 @@
  * their body) and the id of the token record this browser holds (what logging
  * out revokes). */
 
+import { shellSession, signedOut } from "@/lib/shell"
+
 // The `substrate.*` keys are the component's name; the tests pin them.
 const TOKEN_KEY = "substrate.token"
 const REPOSITORY_KEY = "substrate.repository"
@@ -27,6 +29,10 @@ let unauthorizedHandler: (() => void) | null = null
 let sessionChangedHandler: (() => void) | null = null
 
 export function getToken(): string | null {
+  // In the Apple app the app holds the sign-in, in the Keychain, and the page
+  // keeps none of its own.
+  const shell = shellSession()
+  if (shell) return shell.secret
   try {
     return localStorage.getItem(TOKEN_KEY)
   } catch {
@@ -38,6 +44,8 @@ export function getToken(): string | null {
  * password-factor endpoints need in their body, so the account page never has
  * to ask for it. */
 export function getRepository(): string | null {
+  const shell = shellSession()
+  if (shell) return shell.repository
   try {
     return localStorage.getItem(REPOSITORY_KEY)
   } catch {
@@ -48,6 +56,8 @@ export function getRepository(): string | null {
 /** The token record this browser is holding, so the tokens page can mark its
  * own row and logging out can delete it. */
 export function getTokenId(): string | null {
+  const shell = shellSession()
+  if (shell) return shell.tokenId
   try {
     return localStorage.getItem(TOKEN_ID_KEY)
   } catch {
@@ -94,8 +104,15 @@ export function saveSession(
   sessionChanged()
 }
 
-/** Drops everything `hasSession` reads. */
+/** Drops everything `hasSession` reads. In the Apple app that is the app's
+ * sign-in, so the app is told to forget it. */
 export function clearSession(): void {
+  dropStored()
+  if (shellSession()) signedOut()
+  sessionChanged()
+}
+
+function dropStored(): void {
   try {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(REPOSITORY_KEY)
@@ -103,7 +120,38 @@ export function clearSession(): void {
   } catch {
     /* storage disabled — nothing to drop */
   }
-  sessionChanged()
+}
+
+/** In the Apple app, a token this page kept from a password sign-in before
+ * the app held the sign-in is still live: it is revoked with itself, as
+ * signing out does, and dropped. One the server would not revoke now is kept
+ * for the next start, rather than forgotten while live. */
+export async function retireStoredSession(
+  fetcher: typeof fetch = fetch
+): Promise<void> {
+  const shell = shellSession()
+  if (!shell) return
+  let token: string | null, id: string | null
+  try {
+    token = localStorage.getItem(TOKEN_KEY)
+    id = localStorage.getItem(TOKEN_ID_KEY)
+  } catch {
+    return
+  }
+  if (!token) return
+  if (token !== shell.secret && id) {
+    try {
+      const res = await fetcher(`/tokens/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      // A 401 or 404 is a token already gone.
+      if (!res.ok && res.status !== 401 && res.status !== 404) return
+    } catch {
+      return
+    }
+  }
+  dropStored()
 }
 
 export function hasSession(): boolean {

@@ -7,6 +7,7 @@ import "./index.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toast"
 import {
+  retireStoredSession,
   setSessionChangedHandler,
   setUnauthorizedHandler,
 } from "@/lib/api/session"
@@ -18,6 +19,10 @@ import { router } from "@/router"
 // A tab left open across a deploy asks for chunks the server no longer has;
 // one reload picks up the new build.
 reloadOnStaleChunk(window)
+
+// The Apple app holds the sign-in; a token this page kept before it did is
+// revoked, not left live.
+void retireStoredSession()
 
 // A 401 anywhere drops the session (session.ts does that part); this routes
 // what's left of the page to the login door. An app's approval page is

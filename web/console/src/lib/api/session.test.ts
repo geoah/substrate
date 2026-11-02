@@ -3,8 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   clearSession,
+  getRepository,
   getToken,
+  getTokenId,
   hasSession,
+  retireStoredSession,
   saveSession,
   sessionExpired,
   setSessionChangedHandler,
@@ -68,5 +71,82 @@ describe("session", () => {
     sessionExpired()
     expect(changed).toHaveBeenCalledTimes(1)
     expect(hasSession()).toBe(false)
+  })
+})
+
+describe("session in the Apple app", () => {
+  const post = vi.fn()
+  const SESSION = {
+    secret: "substrate_tok_app",
+    repository: "ada.example.com",
+    tokenId: "tok-app",
+  }
+
+  beforeEach(() => {
+    setSessionChangedHandler(null)
+    setUnauthorizedHandler(null)
+    vi.unstubAllGlobals()
+    localStorage.clear()
+    post.mockReset()
+    vi.stubGlobal("substrateShell", {
+      platform: "ios",
+      server: "https://substrate.example.com",
+      session: SESSION,
+    })
+    vi.stubGlobal("webkit", {
+      messageHandlers: { substrateShell: { postMessage: post } },
+    })
+  })
+
+  it("reads the app's sign-in and keeps none of its own", () => {
+    expect(getToken()).toBe("substrate_tok_app")
+    expect(getRepository()).toBe("ada.example.com")
+    expect(getTokenId()).toBe("tok-app")
+    expect(hasSession()).toBe(true)
+    expect(localStorage.getItem("substrate.token")).toBeNull()
+  })
+
+  it("tells the app when a 401 ends the sign-in", () => {
+    const expired = vi.fn()
+    setUnauthorizedHandler(expired)
+    sessionExpired()
+    expect(post).toHaveBeenCalledWith({ type: "signedOut" })
+    expect(expired).toHaveBeenCalledOnce()
+  })
+
+  it("revokes a token the page kept from before, with itself, and drops it", async () => {
+    localStorage.setItem("substrate.token", "substrate_tok_old")
+    localStorage.setItem("substrate.repository", "ada.example.com")
+    localStorage.setItem("substrate.tokenid", "tok-old")
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 204 }))
+    await retireStoredSession(fetcher)
+    expect(fetcher).toHaveBeenCalledWith("/tokens/tok-old", {
+      method: "DELETE",
+      headers: { Authorization: "Bearer substrate_tok_old" },
+    })
+    expect(localStorage.getItem("substrate.token")).toBeNull()
+    expect(localStorage.getItem("substrate.tokenid")).toBeNull()
+  })
+
+  it("keeps a kept token the server would not revoke now, for the next start", async () => {
+    localStorage.setItem("substrate.token", "substrate_tok_old")
+    localStorage.setItem("substrate.tokenid", "tok-old")
+    await retireStoredSession(
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response(null, { status: 503 }))
+    )
+    expect(localStorage.getItem("substrate.token")).toBe("substrate_tok_old")
+  })
+
+  it("leaves a browser's own session alone", async () => {
+    vi.unstubAllGlobals()
+    localStorage.setItem("substrate.token", "substrate_tok_browser")
+    const fetcher = vi.fn<typeof fetch>()
+    await retireStoredSession(fetcher)
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(getToken()).toBe("substrate_tok_browser")
   })
 })

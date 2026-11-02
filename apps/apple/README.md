@@ -37,9 +37,9 @@ base URL.
 
 | Concern         | What the shell does                                                                     |
 | --------------- | --------------------------------------------------------------------------------------- |
-| Which server    | A native picker checks the address's discovery document first; the choice is remembered |
-| Signing in      | The console's sign-in page asks the app, which opens the server's own page in Safari's sheet (the default browser on a Mac) and asks for full access; the session comes back to the page. A server without `full` keeps the console's password form |
-| Sessions        | One website data store per server: its token and console state stay with it             |
+| Which server    | SubstrateKit's connect screen, as in Chat and Sync: the address, checked against its discovery document and OAuth metadata; Change Server opens it over the console |
+| Signing in      | The kit's app authorization asking for `full` (decision 0204): the server's own page in Safari's sheet (the default browser on a Mac). A server without `full` hands over to the console's own sign-in page. Register opens the server's page in the browser |
+| Sessions        | One sign-in per server in the Keychain, handed to the page as `window.substrateShell.session`, which the page reads and never stores; signing out in the console, or a refused token, tells the app, which revokes it and shows the connect screen. One website data store per server keeps the console's own state |
 | The page's view | `window.substrateShell` (`{platform, server}`) is set before any script runs            |
 | Links           | Anything outside `substrate://` opens in the system browser                             |
 | `window.open`   | A provider's OAuth consent opens in the system browser, and its return lands there too  |
@@ -48,8 +48,9 @@ base URL.
 
 The console's side is `web/console/src/lib/shell.ts`: the substrate's origin
 and host come from the shell when there is one (a pasted record link, a bare
-repository label completed at registration), the sign-in and register pages
-name the server with a Change link, and Settings has a Server row. In a
+repository label completed at registration), the session is the app's
+(`shellSession`, and `signedOut` when it ends), the sign-in and register
+pages name the server with a Change link, and Settings has a Server row. In a
 browser there is no shell and none of it renders.
 
 The macOS release build is sandboxed (`Support/Substrate-macOS.entitlements`:
@@ -134,7 +135,8 @@ A debug build carries `DebugDriver`: it watches `automation/` in the app's
 temporary directory, runs an `eval.js` found there in the page as an async
 function body and writes the answer to `result.json`, and answers a `snap`
 file with `snap.png`, the web view's snapshot. `SUBSTRATE_SHELL_SERVER` in
-the environment starts it pointed at a server, past the picker.
+the environment starts it pointed at a server, which still asks for a
+sign-in.
 
 ```bash
 # macOS
@@ -599,9 +601,9 @@ project.yml                 the xcodegen spec, the only project source
 Support/                    Info.plist per platform and per app, the entitlements
 Substrate/Assets.xcassets   the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../../docs/app-icons.md))
 scripts/icons.mjs           draws every icon in the family: Substrate, Sync and Chat
-Substrate/Sources/App/      the app, its macOS menus, ServerStore, the updater
+Substrate/Sources/App/      the app, its macOS menus, ServerStore, ConsoleSessions, the updater
 scripts/feed.swift          a release's index.json, appcast.xml, install page and manifest
-Substrate/Sources/Shell/    the scheme handler, the web view's controller, the picker, the debug driver
+Substrate/Sources/Shell/    the scheme handler, the web view's controller, the connect screen and sign-in, the debug driver
 SubstrateKit/               the apps' shared Swift package: records, values, kind names and glyphs, the linked-record pill and its read-only view ([its README](SubstrateKit/README.md))
 SubstrateChat/Sources/      Substrate Chat: App/, API/, Model/ (the transcript fold, the words), Store/, Voice/, Markdown/, Views/
 SubstrateChatTests/         its tests: the fold, the stream lines, the Markdown parser, the words
