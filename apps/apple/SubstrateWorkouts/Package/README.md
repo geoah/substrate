@@ -20,6 +20,13 @@ Below, `~/training/…` is that name.
 | `session.yaml` | `~/training/session`, labelled "Training session" |
 | `set.yaml` | `~/training/set` |
 
+**It is the app's.** The kinds are Substrate Workouts' authority: the app
+installs and upgrades them, and the owner does not edit them (decisions O1
+and O2, 2026-11-02, in [decisions.md](../docs/decisions.md#open-since-1100)).
+The server's refusal of an owner's edit to an app's kinds is in progress;
+until then the app finds a package changed outside it, writes nothing to that
+repository and says so, and never applies over the change.
+
 **Changing it.** A change ships as the next `version` in `training.yaml`,
 and only additive changes (a new kind, a new optional property, a new enum
 value): the server refuses the app's token an apply that removes anything the

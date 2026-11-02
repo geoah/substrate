@@ -434,9 +434,9 @@ struct RowsBuilder {
                                perSide: exercise?.resolvedLaterality == .alternating)
     }
 
-    /// The ghost as values; a reps hint is no value.
+    /// The ghost as values; a `rirstop` set's approximate reps pre-fill as any other.
     func ghostValues(_ ghost: GhostValues) -> SetValues {
-        SetValues(load: ghost.load, assistance: ghost.assistance, reps: ghost.repsIsHint ? nil : ghost.reps,
+        SetValues(load: ghost.load, assistance: ghost.assistance, reps: ghost.reps,
                   duration: ghost.duration, distance: ghost.distance)
     }
 
@@ -565,7 +565,6 @@ struct RowsBuilder {
             fields: fields,
             baseline: mode == .log ? ghostValues(ghost) : row.performed?.values ?? SetValues(),
             repsPlaceholder: mode == .log ? ghost.repsPlaceholder : nil,
-            repsHint: mode == .log && ghost.repsIsHint,
             previous: view.previous?.values,
             loadStep: card?.loadStep ?? RowsBuilder.fallbackLoadStep(unit),
             grid: exercise.flatMap(grid),

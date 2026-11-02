@@ -78,9 +78,10 @@ public enum SyncStatus: Sendable, Hashable {
     case notKept(String)
     /// The repository holds a newer training package than this build knows.
     case packageNewer(held: Int, known: Int)
-    /// The owner changed these kinds of an older package: the upgrade waits
-    /// for them to choose.
-    case packageEdited(kinds: [String])
+    /// The package on `server` was changed outside the app (these kinds).
+    /// The app manages it and writes nothing there; sessions stay on the
+    /// phone (O1/O2).
+    case packageEdited(server: String, kinds: [String])
     /// The server refused the upgrade, which would remove what the package
     /// holds.
     case packageRefused(String)
@@ -96,7 +97,7 @@ public enum SyncStatus: Sendable, Hashable {
     case failed(String)
 
     public static func derive(signedIn: Bool, package: PackageState?, outbox: OutboxState, waiting: Int, known: Int,
-                              issues: [AppIssue] = [], notKept: String? = nil) -> SyncStatus
+                              issues: [AppIssue] = [], notKept: String? = nil, server: String = "your substrate") -> SyncStatus
     {
         guard signedIn else { return .local }
         if issues.contains(.accessEnded) { return .signedOut }
@@ -111,7 +112,7 @@ public enum SyncStatus: Sendable, Hashable {
         guard let package else { return .preparing }
         switch package {
         case let .newer(held): return .packageNewer(held: held, known: known)
-        case let .edited(_, kinds): return .packageEdited(kinds: kinds)
+        case let .edited(_, kinds): return .packageEdited(server: server, kinds: kinds)
         case let .refused(_, reason): return .packageRefused(reason)
         default: break
         }
@@ -142,8 +143,8 @@ public enum SyncStatus: Sendable, Hashable {
             "Your substrate needs an update before Substrate Workouts can use it. Sessions wait on this iPhone until then."
         case let .notKept(reason):
             "A change could not be kept on this iPhone: \(reason)"
-        case let .packageEdited(kinds):
-            "The training package on your substrate was changed there (\(kinds.joined(separator: ", "))). This app's update would apply over those changes, so it waits for you."
+        case let .packageEdited(server, _):
+            "The Training package on \(server) was changed outside Substrate Workouts; it is managed by this app. Sessions stay on this iPhone."
         case let .packageRefused(reason):
             "Your substrate refused this app's update to the training package: \(reason) Sessions wait on this iPhone until the package is settled on your substrate."
         case let .accessEndsSoon(date, waiting):

@@ -56,7 +56,7 @@ struct FinishProjectionTests {
         let end = NextFullyBody.start.addingTimeInterval(47 * 60)
         let state = try session.script.current
         let incomplete = presentation.unticked.count { $0.values == nil }
-        #expect(incomplete > 0, "the push-ups' hinted reps and the drop's 'to failure' commit nothing")
+        #expect(incomplete == 1, "the drop's 'to failure' commits nothing; the push-ups' planned reps do")
 
         let (dropped, droppedRecords, droppedState) = try save(session.script, presentation: presentation, policy: .drop, at: end)
         #expect(Written(dropped) == Written(droppedRecords, state: droppedState))
@@ -83,8 +83,8 @@ struct FinishProjectionTests {
                                LabelledValue("Volume", Format.volume(marked.volume)),
                                LabelledValue("Exercises", "\(marked.exercises) of 21")])
         #expect(sheet.untickedTitle == "53 sets are not ticked")
-        #expect(sheet.pendingText == "\(marked.markedSets) unticked sets are saved as shown; \(marked.incompleteSets) are left out, a value is missing.")
-        #expect(sheet.untickedMessage == "\(marked.incompleteSets) have a value missing and are left out either way.")
+        #expect(sheet.pendingText == "\(marked.markedSets) unticked sets are saved as shown; 1 is left out, a value is missing.")
+        #expect(sheet.untickedMessage == "1 has a value missing and is left out either way.")
         let dropSheet = FinishPresenter.summary(state, presentation: presentation, policy: .drop, end: end, healthAllowed: true)
         #expect(dropSheet.rows.first == LabelledValue("Working sets", "1"))
         #expect(dropSheet.pendingText == "53 unticked sets are left out.")

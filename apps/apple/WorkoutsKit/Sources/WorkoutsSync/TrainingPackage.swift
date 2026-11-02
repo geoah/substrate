@@ -54,10 +54,13 @@ public enum PackageState: Sendable, Hashable {
     /// an edit on the server. The app writes nothing until it is updated:
     /// what it writes could miss what the newer version requires.
     case newer(held: Int)
-    /// It holds an older version, and the owner changed kinds of it since
-    /// this app last applied it: these kinds, by their repository names. The
-    /// upgrade would apply over the change, so the app waits for the owner
-    /// to choose.
+    /// Kinds of it were changed outside the app since it last applied it:
+    /// these kinds, by their repository names. The training kinds are the
+    /// app's (O1/O2, owner 2026-11-02), so it writes nothing to the
+    /// repository, neither the package nor records, and sessions stay on
+    /// the phone. There is no applying over the change from the app; the
+    /// server is to refuse an owner's edit to an app's kinds, so this
+    /// becomes rare.
     case edited(held: Int, kinds: [String])
     /// The server refused the upgrade, in its words: it would remove what the
     /// package holds, such as a kind or property the owner added. Only the
@@ -121,11 +124,11 @@ public struct PackageBaseline: Codable, Sendable, Equatable {
 ///
 /// The server refuses an apply that would remove anything the package holds
 /// (a kind, property or value the owner added), so an upgrade only ever adds.
-/// What it would still change is the owner's edit to a kind the app ships,
-/// which the app finds by comparing each kind row's version with the one it
-/// recorded after its own last apply (`baselineDirectory`); a moved kind, or
-/// one it never installed, stops the upgrade at `.edited` until the owner
-/// lets it apply over them.
+/// The kinds belong to the app (O1/O2): a package changed outside it since
+/// its last apply, found by comparing each kind row's version with the one
+/// it recorded then (`baselineDirectory`), is `.edited`, and the app writes
+/// nothing, at the same version or behind it. It never applies over such a
+/// change.
 public struct PackageInstaller: Sendable {
     public var api: WorkoutsAPI
     public var manifest: PackageManifest
@@ -178,24 +181,26 @@ public struct PackageInstaller: Sendable {
     }
 
     /// Installs or upgrades as the state asks, and answers the state after.
-    /// A newer version is left alone; an owner's edit stops an upgrade
-    /// unless `overwritingEdits`, which the owner chose; a refusal of the
-    /// server's guard comes back as `.refused`, in its words.
+    /// A newer version is left alone; a package changed outside the app is
+    /// `.edited` and nothing is written; a refusal of the server's guard
+    /// comes back as `.refused`, in its words.
     @discardableResult
-    public func ensure(overwritingEdits: Bool = false) async throws -> PackageState {
+    public func ensure() async throws -> PackageState {
         let before = try await state()
         let baseline = baselineDirectory.flatMap(PackageBaseline.load(from:))
         switch before {
         case .newer, .edited, .refused:
             return before
         case let .current(held):
-            if baseline == nil { try? await record(version: held) }
-            return before
-        case let .behind(held):
-            if !overwritingEdits {
-                let edited = try await edits(since: baseline)
-                if !edited.isEmpty { return .edited(held: held, kinds: edited) }
+            guard let baseline else {
+                try? await record(version: held)
+                return before
             }
+            let edited = try await edits(since: baseline)
+            return edited.isEmpty ? before : .edited(held: held, kinds: edited)
+        case let .behind(held):
+            let edited = try await edits(since: baseline)
+            if !edited.isEmpty { return .edited(held: held, kinds: edited) }
         case .missing:
             break
         }

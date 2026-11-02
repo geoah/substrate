@@ -7,7 +7,6 @@ import WorkoutsSync
 struct SubstrateSection: View {
     @Environment(SubstrateLink.self) private var link
     @State private var signingIn = false
-    @State private var confirmingUpgrade = false
 
     var body: some View {
         Group { content }
@@ -45,20 +44,10 @@ struct SubstrateSection: View {
                 if case .accessEndsSoon = link.syncStatus {
                     Button("Renew Access…") { Task { await link.reauthorize() } }
                 }
-                if case .packageEdited = link.syncStatus {
-                    Button("Update the Package Anyway…") { confirmingUpgrade = true }
-                        .disabled(link.syncing)
-                }
             } header: {
                 Text("Substrate")
             } footer: {
                 Text("Sessions are written to \(link.host ?? "your substrate") when they finish, and wait on this iPhone while it cannot be reached. Routines and exercises come from it and are kept for the gym.")
-            }
-            .confirmationDialog("Update the training package over your changes?", isPresented: $confirmingUpgrade, titleVisibility: .visible) {
-                Button("Update Anyway", role: .destructive) { Task { await link.upgradeOverEdits() } }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This app\u{2019}s version of the kinds you changed replaces yours. Kinds, properties and values you added stay: your substrate refuses an update that would remove them.")
             }
             if !link.parked.isEmpty {
                 Section {
@@ -96,7 +85,7 @@ struct SubstrateSection: View {
         case let .behind(held): "Version \(held), upgrading"
         case let .current(held): "Version \(held)"
         case let .newer(held): "Version \(held), newer than this app"
-        case let .edited(held, _): "Version \(held), changed on your substrate"
+        case let .edited(held, _): "Version \(held), changed outside this app"
         case let .refused(held, _): held.map { "Version \($0), update refused" } ?? "Install refused"
         }
     }

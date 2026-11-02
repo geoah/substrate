@@ -241,6 +241,15 @@ struct HistoryExchangeTests {
         #expect(waiting.isEmpty)
     }
 
+    @Test("a session deleted while signed out is hidden from import everywhere, and purged nowhere")
+    func hiddenNotPurged() throws {
+        let theirs = try finished()
+        let id = theirs.id.rawValue
+        let plan = HistoryExchange.plan(server: snapshot(theirs), local: [], queued: [], versions: [:], tombstones: [],
+                                        hidden: [id], codec: codec)
+        #expect(plan.isEmpty)
+    }
+
     @Test("a finished session the phone lacks is imported, with the versions it was read at")
     func imported() throws {
         let theirs = try finished()
@@ -320,7 +329,7 @@ struct PackageOwnershipTests {
         return manifest
     }
 
-    @Test("an install records each kind's version, and a later upgrade over an owner's kind edit waits for the owner")
+    @Test("an install records each kind's version; a package changed outside the app is never written over (O1/O2)")
     func editedKind() async throws {
         let directory = temporaryDirectory()
         let applied = Locked(0)
@@ -337,9 +346,28 @@ struct PackageOwnershipTests {
         let next = PackageInstaller(api: api(edited), manifest: try manifest(version: 2), baselineDirectory: directory)
         #expect(try await next.ensure() == .edited(held: 1, kinds: ["ada.example.com/training/set"]))
         #expect(upgraded.value == 0, "the app applied over the owner's edit")
-        // The owner chose to let it.
-        #expect(try await next.ensure(overwritingEdits: true) == .current(held: 2))
-        #expect(upgraded.value == 1)
+        // Asked again, it still writes nothing: there is no applying anyway.
+        #expect(try await next.ensure() == .edited(held: 1, kinds: ["ada.example.com/training/set"]))
+        #expect(upgraded.value == 0)
+        #expect(!PackageState.edited(held: 1, kinds: []).writable)
+    }
+
+    @Test("a package changed outside the app at the same version stops the app's writes too")
+    func driftedAtCurrent() async throws {
+        let directory = temporaryDirectory()
+        try PackageBaseline(version: 2, kinds: Dictionary(uniqueKeysWithValues: ["exercise", "setup", "routine", "session", "set"].map {
+            ("ada.example.com/training/\($0)", 1)
+        })).save(to: directory, writingOptions: .atomic)
+        let applied = Locked(0)
+        let drifted = server(held: 2, kindVersion: { $0 == "routine" ? 3 : 1 }, applied: applied)
+        let installer = PackageInstaller(api: api(drifted), manifest: try manifest(version: 2), baselineDirectory: directory)
+        let state = try await installer.ensure()
+        #expect(state == .edited(held: 2, kinds: ["ada.example.com/training/routine"]))
+        #expect(applied.value == 0 && !state.writable)
+        let status = SyncStatus.derive(signedIn: true, package: state, outbox: .idle, waiting: 3, known: 2, server: "geoah.me")
+        #expect(status == .packageEdited(server: "geoah.me", kinds: ["ada.example.com/training/routine"]))
+        #expect(status.sentence.hasPrefix(
+            "The Training package on geoah.me was changed outside Substrate Workouts; it is managed by this app."))
     }
 
     @Test("an upgrade over kinds the app recorded goes through")
@@ -380,5 +408,28 @@ struct TombstoneTests {
         #expect(SessionTombstones(directory: directory, writingOptions: .atomic).contains(SessionID(rawValue: "a")))
         try Data("{".utf8).write(to: directory.appendingPathComponent(SessionTombstones.fileName))
         #expect(SessionTombstones(directory: directory, writingOptions: .atomic).unreadable != nil)
+    }
+
+    @Test("one server only: a delete is kept for its server and repository, and purged there alone (O3)")
+    func scopedToOneRepository() throws {
+        let base = temporaryDirectory()
+        let here = SessionTombstones(directory: base.appendingPathComponent("substrate/a.example-me", isDirectory: true),
+                                     writingOptions: .atomic)
+        let there = SessionTombstones(directory: base.appendingPathComponent("substrate/b.example-me", isDirectory: true),
+                                      writingOptions: .atomic)
+        let phone = SessionTombstones(directory: base, writingOptions: .atomic)
+        let exchange = HistoryExchangeTests()
+        let session = try exchange.finished()
+        try here.add(session.id)
+        #expect(here.contains(session.id) && !there.contains(session.id) && !phone.contains(session.id))
+        let server = exchange.snapshot(session)
+        // The repository it was deleted in purges its copy and imports nothing.
+        let mine = HistoryExchange.plan(server: server, local: [], queued: [], versions: [:], tombstones: here.all,
+                                        hidden: phone.all, codec: codec)
+        #expect(mine.purges == [session.id] && mine.imports.isEmpty)
+        // Another repository's copy is not purged.
+        let other = HistoryExchange.plan(server: server, local: [], queued: [], versions: [:], tombstones: there.all,
+                                         hidden: phone.all, codec: codec)
+        #expect(other.purges.isEmpty)
     }
 }

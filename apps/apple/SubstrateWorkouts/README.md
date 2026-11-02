@@ -76,7 +76,7 @@ foreground, `PackageInstaller` reads
 | --- | --- |
 | none | applies its manifests, `~` written as the repository's authority |
 | an older version, kinds as the app left them | applies them again; the server lands the change at the next version |
-| an older version, a kind the owner changed | stops, names the kinds, and applies over them only when the owner taps Update the Package Anyway |
+| any version it knows, a kind changed outside the app | writes nothing there, keeps sessions on the phone, and says "The Training package on <server> was changed outside Substrate Workouts; it is managed by this app." |
 | this version | does nothing |
 | a newer version | writes nothing more, keeps sessions on the phone, and says to update the app |
 
@@ -86,9 +86,12 @@ package holds, a kind, property or value the owner added included, and a
 lossy change; the app shows that refusal in the server's words and writes
 nothing until the owner settles it. A kind edit moves that kind's version and
 not the package's, so after each apply the app records every kind row's
-version (`package.json` in the repository's folder) and compares them before
-the next upgrade. The apply takes no expected version, so an owner's edit
-that lands between that comparison and the apply is not caught. On the phone the kinds are spelled
+version (`package.json` in the repository's folder) and compares them at
+every check. The training kinds belong to the app and the owner does not edit
+them (decisions O1 and O2, 2026-11-02): there is no applying over a changed
+package from the app, and the server is gaining the refusal of an owner's
+edit to an app's kinds, which closes the window between the app's comparison
+and its apply. On the phone the kinds are spelled
 `~/training/…`; `Rehome` swaps `~` for the repository's authority at the
 server's edge, both ways, and nowhere else.
 
@@ -131,8 +134,12 @@ the outbox cannot keep on disk is refused and said; an unreadable
 **History** is the phone's and the server's (`HistoryExchange`). At each sync
 the app reads every session and set the repository holds and decides from
 the outbox's record versions, which say what this phone sent to or read from
-that repository, and the phone's tombstones (`deleted-sessions.json`, every
-session deleted on the phone):
+that repository, and that repository's tombstones (`deleted-sessions.json`
+in its folder, every session deleted on the phone while signed in to it).
+The app works with one server at a time (decision O3), so a delete is purged
+on the server and repository it belongs to and nowhere else. A session
+deleted while signed out goes in the app's own `deleted-sessions.json`, which
+only keeps it from being imported again:
 
 | The server | The phone | The app |
 | --- | --- | --- |

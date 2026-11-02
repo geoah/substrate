@@ -48,9 +48,6 @@ struct RoutinesView: View {
                 } else if case .signedOut = link.syncStatus {
                     Button("Sign In Again") { signingIn = true }
                         .font(.footnote.weight(.semibold))
-                } else if case .packageEdited = link.syncStatus {
-                    Button("Open Settings") { app.tab = .settings }
-                        .font(.footnote.weight(.semibold))
                 } else if case .refused = link.syncStatus {
                     Button("Review in Settings") { app.tab = .settings }
                         .font(.footnote.weight(.semibold))

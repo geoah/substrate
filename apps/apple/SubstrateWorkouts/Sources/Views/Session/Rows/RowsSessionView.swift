@@ -84,7 +84,7 @@ struct RowsSessionView: View {
                 }
             }
             .onChange(of: presentation, initial: true) { _, _ in
-                screen.reconcile(with: layout, entryCheckRow: session.entryCheck?.row, pendingRemoval: session.pendingRemoval)
+                screen.reconcile(with: layout, entryCheckRow: session.entryCheck?.row)
             }
             .onChange(of: reduceMotion, initial: true) { _, reduce in
                 screen.dockAnimation = reduce ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)

@@ -59,10 +59,14 @@ public struct OutboxSink<Event: Sendable, State: Sendable>: SessionSyncSink {
     }
 }
 
-/// The sessions deleted on this phone, kept for good beside the history, so
-/// no exchange with any repository imports one again or leaves the server's
-/// copy: a session id is a UUIDv7 and never comes back on its own.
-/// Synchronous, so a delete is on disk before the history file goes.
+/// Sessions deleted on this phone, kept for good in one folder: the signed-in
+/// account's (one server and repository, beside its outbox), so the exchange
+/// with that repository never imports one again and purges its copy there,
+/// and no other server is touched (O3, owner 2026-11-02). The app's own
+/// folder keeps the deletes made while signed out, which only hide a
+/// session from import (`HistoryExchange.plan`'s `hidden`). A session id is
+/// a UUIDv7 and never comes back on its own. Synchronous, so a delete is on
+/// disk before the history file goes.
 public final class SessionTombstones: @unchecked Sendable {
     public static let fileName = "deleted-sessions.json"
 

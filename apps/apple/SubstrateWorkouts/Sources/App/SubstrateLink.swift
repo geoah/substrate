@@ -24,6 +24,9 @@ final class SyncAccount {
     /// One folder per server and repository, beside the journal.
     let directory: URL?
     let outbox: Outbox?
+    /// Sessions deleted on the phone while signed in here: purged on this
+    /// server and repository only, and never imported from it again.
+    let tombstones: SessionTombstones?
     let remote: RemoteCatalog?
     /// The session controller's writes into this account's outbox.
     private(set) var sink: OutboxSink<EventEnvelope, SessionState>?
@@ -35,6 +38,7 @@ final class SyncAccount {
         api = WorkoutsAPI(client: SubstrateClient(session), authority: session.repository)
         self.directory = directory
         outbox = directory.map { Outbox(directory: $0) }
+        tombstones = directory.map { SessionTombstones(directory: $0) }
         remote = directory.map { RemoteCatalog(directory: $0, localExercises: localExercises) }
         sink = outbox.map { outbox in
             OutboxSink(outbox: outbox, codec: codec, onQueued: { [weak self] in
@@ -98,7 +102,8 @@ final class SubstrateLink {
     var syncStatus: SyncStatus {
         if let problem, session != nil, package == nil { return .failed(problem) }
         return SyncStatus.derive(signedIn: session != nil, package: package, outbox: outboxState, waiting: waiting,
-                                 known: packageManifest?.version ?? 0, issues: issues, notKept: notKept)
+                                 known: packageManifest?.version ?? 0, issues: issues, notKept: notKept,
+                                 server: host ?? "your substrate")
     }
 
     /// What the kit's check says that the owner can act on. A password
@@ -208,6 +213,7 @@ final class SubstrateLink {
         Task { await status.refresh(force: true) }
         Task {
             if let unreadable = await account.outbox?.unreadable { AppModel.shared.noteUnreadable(unreadable) }
+            if let unreadable = account.tombstones?.unreadable { AppModel.shared.noteUnreadable(unreadable) }
             await refreshOutbox(account)
         }
     }
@@ -256,34 +262,24 @@ final class SubstrateLink {
     func sync() async {
         guard let account else { return }
         if let running = syncTask, running.account == ObjectIdentifier(account) { return await running.task.value }
-        await run(account, overwritingEdits: false)
+        await run(account)
     }
 
-    /// The upgrade the owner chose to let apply over their edits to the
-    /// package's kinds. The server still refuses one that would remove
-    /// anything the package holds.
-    func upgradeOverEdits() async {
-        guard let account else { return }
-        if let running = syncTask, running.account == ObjectIdentifier(account) { await running.task.value }
-        guard isCurrent(account) else { return }
-        await run(account, overwritingEdits: true)
-    }
-
-    private func run(_ account: SyncAccount, overwritingEdits: Bool) async {
+    private func run(_ account: SyncAccount) async {
         let id = ObjectIdentifier(account)
-        let task = Task { await runSync(account, overwritingEdits: overwritingEdits) }
+        let task = Task { await runSync(account) }
         syncTask = (id, task)
         await task.value
         if syncTask?.account == id { syncTask = nil }
     }
 
-    private func runSync(_ account: SyncAccount, overwritingEdits: Bool) async {
+    private func runSync(_ account: SyncAccount) async {
         guard let packageManifest else { return }
         syncing = true
         defer { if self.account === account { syncing = false } }
         do {
             let installer = PackageInstaller(api: account.api, manifest: packageManifest, baselineDirectory: account.directory)
-            let state = try await installer.ensure(overwritingEdits: overwritingEdits)
+            let state = try await installer.ensure()
             guard isCurrent(account) else { return }
             account.package = state
             package = state
@@ -341,7 +337,8 @@ final class SubstrateLink {
             guard isCurrent(account) else { return }
             let app = AppModel.shared
             let plan = HistoryExchange.plan(server: snapshot, local: app.history.map(\.records), queued: queued, versions: versions,
-                                            tombstones: app.tombstones?.all ?? [], codec: codec)
+                                            tombstones: account.tombstones?.all ?? [], hidden: app.tombstones?.all ?? [],
+                                            codec: codec)
             for record in plan.unreadable { app.noteUnreadable(record) }
             app.importServerSessions(plan.imports)
             app.mergeServerSessions(plan.merges)
@@ -448,6 +445,15 @@ final class SubstrateLink {
 
     func discarded(_ id: SessionID) async {
         await account?.sink?.discarded(id)
+    }
+
+    /// Keeps a delete's tombstone where it belongs: in the signed-in
+    /// account's folder, so only that server and repository purge it. False
+    /// when signed out (or in previews): the caller keeps it on the phone.
+    func keepTombstone(_ id: SessionID) throws -> Bool {
+        guard let tombstones = account?.tombstones else { return false }
+        try tombstones.add(id)
+        return true
     }
 
     /// A finished session deleted from History, after its tombstone is kept.

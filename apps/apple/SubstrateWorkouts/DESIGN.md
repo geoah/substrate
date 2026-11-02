@@ -995,6 +995,7 @@ in the event, so a fold is deterministic.
 | `uncompleteSet`             | row                                                                                                                                                 | no                                 |
 | `addSet`                    | slot, new row id, role                                                                                                                              | no                                 |
 | `removeSet`                 | row                                                                                                                                                 | no                                 |
+| `restoreSet`                | slot, position, the removed rows whole                                                                                                              | no                                 |
 | `changeSetKind`             | row, kind (`warmup`, `working`, `failure`, `drop`, `myo`, `myomatch`), ids for generated segment rows                                               | no                                 |
 | `setRowRest`                | row, seconds or nil (the per-set override)                                                                                                          | no                                 |
 | `addExercise`               | slot key, exercise snapshot, rows (role and count from last time, else one working row), slot rests from last time                                  | yes                                |
@@ -1081,6 +1082,11 @@ cache of the fold, so its shape may change freely.
   clock a removed tick started, to the one before the earliest of them, so the next set measures its rest from a set
   that still exists; among removed ticks of one second the one with the earliest prior clock goes first, which keeps
   the fold independent of row order. `removeExercise` does the same.
+- **`restoreSet`.** The Undo after Delete set: the rows one `removeSet` took (`SessionEngine.restoration(of:in:)`,
+  read before the removal), back at their index with their values and ticks; the Up next anchor is recomputed. A tail
+  of segments goes back only onto the chain it was cut from, still ending where it was cut. The countdown and rest
+  clock a removed tick started stay gone, and so does a removed timed set's timer. Refused when a row is already
+  there or its slot has gone.
 - **`changeSetKind`.** On a pending row sets `role`, `structure` and `termination` (`failure` sets termination
   `failure`; `working` restores the planned termination). `drop` creates its drop rows (planned `drops` or 1); `myo` and
   `myomatch` create nothing until the head is ticked. On a completed row only `warmup`, `working` and `failure` are
@@ -1530,8 +1536,9 @@ The engine is re-run after every change and never commits anything ([req 29](doc
 - **Rest-pause and cluster mini-sets** reuse [03 §11.6](docs/research/03-progression.md#116-myo-rep-mini-sets) with the rule switched off: they stop only at the cap or the total;
   rest-pause reps are `miniSetReps` or open; cluster reps are `miniSetReps`. Mini-sets never feed the e1RM.
 - **Myo-rep match** passes `myoTotalReps = T − head reps` and `myoMiniReps = miniSetReps` into [03 §11.6](docs/research/03-progression.md#116-myo-rep-mini-sets).
-- **`rirstop`** (stop at the effort target): the load is suggested as usual; the reps are only a hint, shown as `≈15`, and
-  the tick does not commit them: the owner types the reps done.
+- **`rirstop`** (stop at the effort target): the load is suggested as usual; the reps are approximate, shown as `≈15` on
+  the set's line. The open set pre-fills them as planned, as any other set's suggestion, and the tick commits them unless
+  the owner types the reps done (owner, 2026-11-02; until then the open field showed "–" and the tick waited).
 - **No grid** (equipment with no default step and no `loadStep`): every rule that moves a load keeps the load and works on
   reps as [03 §11.5](docs/research/03-progression.md#115-reps-only-rule) does when no heavier or lighter setting exists. A drop is the exception: the app cannot know a
   band's or a suspension trainer's lighter setting, so the drop leaves the load to the owner (`Drop from 20 kg: a
@@ -1569,8 +1576,8 @@ Each field of a pending row shows, in grey, the first of ([req 28](docs/research
 | distance                     | the target's distance; PREVIOUS                                                                    |
 | RPE                          | never ghosted; the Rows screen's pre-fill (§4.14) is the plan's value, not a ghost                 |
 
-A typed value replaces the ghost in black. The tick commits what the row shows, typed or ghost, except a `rirstop` hint
-(§5.3). If a required field (§4.3) has neither, the tick is disabled and that field is outlined.
+A typed value replaces the ghost in black. The tick commits what the row shows, typed or ghost, a `rirstop` set's
+approximate reps included (§5.3). If a required field (§4.3) has neither, the tick is disabled and that field is outlined.
 
 ### 5.6 Where the output appears
 
@@ -2152,9 +2159,10 @@ line when fixing). In order:
 - **The set's `…`**, on the open set, on a fix and on every done line (owner, 2026-11-02; a lone done warm-up is
   drawn as its own line rather than folded, so it has one too): the Table's set menu items,
   with "Untick set" first on a done set and "Delete set" last. Delete set takes the set off the screen at once and
-  "Set 2 deleted, Undo" floats above the island for five seconds; the removal itself waits that long
-  (`SessionController.pendingRemoval`: the engine has no event that brings a removed set back), and goes before any
-  other command, before Finish and when the app leaves the foreground. Untick set, and a tap on a done line's green
+  "Set 2 deleted, Undo" floats above the island for five seconds. The removal is applied and journaled at once, so a
+  killed app keeps the set deleted and the Live Activity moves on straight away; the Undo sends `restoreSet`, which
+  puts the rows back with their values, ticks and place (`SessionEngine.restoration(of:in:)`, owner, 2026-11-02).
+  Untick set, and a tap on a done line's green
   check (a 44 pt target where the check is drawn), takes the set back as the Undo after a Log does: pending with its
   values, open in place; "Set 2 unticked, Undo" logs it again.
 

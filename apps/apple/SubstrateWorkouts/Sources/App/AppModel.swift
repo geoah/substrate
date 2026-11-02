@@ -64,8 +64,10 @@ final class AppModel {
 
     /// `Application Support/Workouts/`; nil in previews, which write nothing.
     let directory: URL?
-    /// The sessions deleted on this phone, never imported again from any
-    /// repository; nil in previews.
+    /// Sessions deleted while signed out (and the phone-wide list builds
+    /// before 2026-11-02 kept): never imported again, never purged. A delete
+    /// while signed in is kept in that account's folder instead
+    /// (`SubstrateLink.keepTombstone`); nil in previews.
     let tombstones: SessionTombstones?
     /// Files of the substrate sync that could not be read, set aside.
     private(set) var syncUnreadable: [UnreadableRecord] = []
@@ -213,11 +215,13 @@ final class AppModel {
     }
 
     /// Deletes a finished session's file, and the server's copy through the
-    /// outbox. Its Apple Health workout stays. The tombstone is kept first:
-    /// without it a later sync could import the session again, so a delete
-    /// that cannot be recorded is refused.
+    /// outbox. Its Apple Health workout stays. The tombstone is kept first,
+    /// for the signed-in server and repository only (O3), or on the phone
+    /// when signed out: without it a later sync could import the session
+    /// again, so a delete that cannot be recorded is refused.
     func deleteSession(_ id: SessionID) throws {
-        try tombstones?.add(id)
+        let kept = persistsSettings ? try SubstrateLink.shared.keepTombstone(id) : false
+        if !kept { try tombstones?.add(id) }
         try historyStore?.delete(id)
         history.removeAll { $0.id == id }
         historyIndex.remove(id)
