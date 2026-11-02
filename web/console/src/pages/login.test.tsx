@@ -40,9 +40,10 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }))
 
-/** The page's `?redirect=`, as the route validated it. */
+/** The page's `?redirect=` and `?login_hint=`, as the route validated them. */
 const loginSearch = vi.hoisted(() => ({
   redirect: undefined as string | undefined,
+  login_hint: undefined as string | undefined,
 }))
 vi.mock("@/router", () => ({
   loginRoute: { useSearch: () => loginSearch },
@@ -111,6 +112,7 @@ describe("LoginPage", () => {
     policy.totpRequired = true
     policy.live = false
     loginSearch.redirect = undefined
+    loginSearch.login_hint = undefined
   })
 
   afterEach(() => {
@@ -124,6 +126,14 @@ describe("LoginPage", () => {
     expect(screen.getByLabelText("Repository")).toBeTruthy()
     expect(screen.getByLabelText("Password")).toBeTruthy()
     expect(screen.getByLabelText("One-time code")).toBeTruthy()
+  })
+
+  it("fills the repository an app named in its login_hint", () => {
+    loginSearch.login_hint = "ada.example.org"
+    render(<LoginPage />)
+    expect(screen.getByLabelText<HTMLInputElement>("Repository").value).toBe(
+      "ada.example.org"
+    )
   })
 
   it("logs in and stores the minted token, repository and token id", async () => {

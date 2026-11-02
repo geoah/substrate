@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -24,6 +25,7 @@ import (
 	"github.com/geoah/substrate/internal/appsetup"
 	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/domains"
 	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -107,6 +109,13 @@ type Config struct {
 	// (SUBSTRATE_PUBLIC_URL): the issuer of the authorization flow whatever
 	// Host a request names. Empty derives the issuer from the Host.
 	PublicURL string
+	// DomainResolver answers the `_substrate` TXT lookups of domain
+	// verification (decision 0208). Nil is the system resolver.
+	DomainResolver domains.Resolver
+	// ServerInstances reads the instance id a `server=` origin serves. Nil
+	// fetches its server.json through the confined client, which never dials
+	// a loopback or private address; a test answers from memory.
+	ServerInstances serverInstances
 
 	// setUpEnded, when set, is told each set up's request id once its
 	// detached run has returned and nothing more lands for it.
@@ -130,6 +139,10 @@ type handler struct {
 	fetcher   clientDocuments
 	parkRate  *rateLimiter
 	publicURL string
+	// resolver and instances are domain verification's two reads of the
+	// outside world (domain.go).
+	resolver  domains.Resolver
+	instances serverInstances
 	// setups runs approvals' set ups, one per repository at a time, checks
 	// is the last set up check each token got, and checkTurns queues the
 	// checks' plans (appsetup.go).
@@ -168,6 +181,13 @@ func New(cfg Config) http.Handler {
 	}
 	if h.fetcher == nil {
 		h.fetcher = authorize.NewFetcher(now)
+	}
+	h.resolver, h.instances = cfg.DomainResolver, cfg.ServerInstances
+	if h.resolver == nil {
+		h.resolver = net.DefaultResolver
+	}
+	if h.instances == nil {
+		h.instances = fetchServerInstance
 	}
 
 	r := chi.NewRouter()
@@ -436,6 +456,10 @@ func (h *handler) mountResources(r chi.Router) {
 			// surface above). A blob's manifest is an ordinary `blob` record
 			// under /substrate.reamde.dev/core/blob.
 			r.Get("/blobs/{digest}", h.getBlob)
+			// Domain verification (decision 0208): the record to publish,
+			// and the check that stamps the repository record verified.
+			r.Post(domainRoute, h.postDomain)
+			r.Post(domainVerifyRoute, h.postDomainVerify)
 
 			// CORE-RECORD ACTIONS AND SUB-RESOURCES. An ACTION hangs one level
 			// below the record ({name}/call, {id}/bind), where no id can sit, so

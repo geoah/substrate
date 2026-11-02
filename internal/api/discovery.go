@@ -123,6 +123,12 @@ type apiVersionInfo struct {
 type serverInfo struct {
 	Version string `json:"version"`
 	Build   string `json:"build,omitempty"`
+	// Instance is the id this server minted at its first boot. A server
+	// reading a domain's `_substrate` record fetches the `server=` origin's
+	// document and compares it with its own, which is how it knows the record
+	// names it without a configured public URL (decision 0208). Empty on a
+	// read-only process that found none.
+	Instance string `json:"instance,omitempty"`
 }
 
 type changelogInfo struct {
@@ -212,7 +218,7 @@ var features = []featureInfo{
 func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 	doc := discoveryDoc{
 		Versions:  []apiVersionInfo{{Name: APIVersion, Status: "served"}},
-		Server:    serverInfo{Version: build.Version(), Build: build.Commit()},
+		Server:    serverInfo{Version: build.Version(), Build: build.Commit(), Instance: h.svc.InstanceID()},
 		Changelog: changelogInfo{Horizon: retentionHorizon()},
 		Features:  features,
 		Surfaces: surfacesInfo{

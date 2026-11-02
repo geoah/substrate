@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
@@ -1310,4 +1311,16 @@ func (s *scopedDataset) StatBlob(context.Context, string) (*substrate.BlobInfo, 
 
 func (s *scopedDataset) Export(context.Context) (substrate.Export, error) {
 	return nil, errScope("the export")
+}
+
+func (s *scopedDataset) DomainState(context.Context) (substrate.DomainState, error) {
+	return substrate.DomainState{}, errScope("domain verification")
+}
+
+func (s *scopedDataset) StartDomainVerification(context.Context) (substrate.DomainState, error) {
+	return substrate.DomainState{}, errScope("domain verification")
+}
+
+func (s *scopedDataset) MarkDomainVerified(context.Context) (time.Time, error) {
+	return time.Time{}, errScope("domain verification")
 }

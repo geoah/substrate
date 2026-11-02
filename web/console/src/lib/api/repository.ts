@@ -3,9 +3,10 @@
  * row projected inside the repository so a client that only speaks the record
  * API can still say where it is.
  *
- * The Registry reads it for one thing: the AUTHORITY this repository owns
- * (decision record 0046), which is where an imported sample lands (0048) and
- * so what a sample card previews before the button is pressed. */
+ * The Registry reads the AUTHORITY this repository owns (decision record
+ * 0046), which is where an imported sample lands (0048) and so what a sample
+ * card previews before the button is pressed; the account row and the
+ * approval page read whether that name is verified (0208). */
 
 import { queryOptions } from "@tanstack/react-query"
 
@@ -22,6 +23,9 @@ export interface RepositoryInfo {
    * before the column existed, which the caller has to render as "unknown"
    * rather than guess. */
   authority: string
+  /** When the repository last proved its name (decision 0208), or "" while
+   * it never has: the console marks the name unverified until then. */
+  domainVerifiedAt: string
 }
 
 async function fetchRepository(
@@ -41,13 +45,16 @@ async function fetchRepository(
   const record = page.records?.[0]
   if (!record) return undefined
   const properties = record.properties ?? {}
-  return { authority: scalarText(properties.authority) }
+  return {
+    authority: scalarText(properties.authority),
+    domainVerifiedAt: scalarText(properties.domainVerifiedAt),
+  }
 }
 
 export const repositoryQueryOptions = queryOptions({
   queryKey: ["repository"],
   queryFn: ({ signal }) => fetchRepository(signal),
-  // One row that changes never: the authority is chosen at registration and
-  // permanent.
+  // The authority is chosen at registration and permanent; the verified
+  // stamp moves only on the owner's own check, which invalidates this query.
   staleTime: 10 * 60_000,
 })

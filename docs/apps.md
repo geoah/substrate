@@ -182,6 +182,34 @@ the endpoints. `GET /.well-known/oauth-protected-resource` (RFC 9728) names
 the resource, and a `401` from the API carries
 `WWW-Authenticate: Bearer resource_metadata="…"` pointing at it.
 
+An app that starts from a repository name rather than a server address finds
+the server from the name:
+
+1. If the name serves `/.well-known/substrate/server.json`, it is a server,
+   and the sign-in page asks for the repository.
+2. Otherwise read the TXT record at `_substrate.<name>`. Its `server=` is the
+   origin of the server holding the repository:
+
+   ```text
+   _substrate.geoah.example.org.  TXT  "v=substrate1 server=https://substrate.example.net"
+   ```
+
+   With no record, try
+   `https://<name>/.well-known/substrate/repository.json`. When both answer
+   differently, the DNS record wins.
+3. With neither, strip the first label and probe the parent as a server:
+   `ada.substrate.example.net` sits on `substrate.example.net`, whose
+   operator controls the name anyway.
+
+Send the name as `login_hint` on the authorization request, so the sign-in
+page fills the repository field. A hint that is not a valid repository name
+is dropped. Then check the response's `iss` and the token response's
+`repository` against what you resolved.
+
+The record names the server and proves nothing about the repository on its
+own: a repository that proved its name carries `domainVerifiedAt` on its
+`repository` record ([Verify domain](auth.md#verify-domain)).
+
 ### Ask for access
 
 Send the browser to the authorization endpoint:

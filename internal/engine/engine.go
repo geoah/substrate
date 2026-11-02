@@ -469,6 +469,9 @@ type service struct {
 	// dataRoot is the data root (WithDataRoot); <dataRoot>/repositories/<authority>
 	// is one repository's directory (repodir.go).
 	dataRoot string
+	// instanceID names this server to a domain's `_substrate` record
+	// (instance.go, decision 0208).
+	instanceID string
 	// segmentBytes is the size every changelog writer rotates at.
 	segmentBytes int64
 	// conversionCeiling is the most live records one declaration change may
@@ -717,6 +720,10 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if err := os.MkdirAll(filepath.Join(o.dataRoot, changelogfile.RepositoriesDir), 0o700); err != nil {
 		return nil, fmt.Errorf("substrate/engine: create %s under the data root: %w", changelogfile.RepositoriesDir, err)
 	}
+	instanceID, err := loadInstanceID(o.dataRoot, o.dirReadOnly)
+	if err != nil {
+		return nil, err
+	}
 	if o.segmentBytes <= 0 {
 		o.segmentBytes = changelogfile.DefaultSegmentBytes
 	}
@@ -800,6 +807,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		credKey:      credKey,
 		credKeyID:    hostKeyID(credKey),
 		dataRoot:     o.dataRoot,
+		instanceID:   instanceID,
 		segmentBytes: o.segmentBytes,
 		catchUpBatch: o.catchUpBatch,
 		valuesBudget: o.valuesBudget,

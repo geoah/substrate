@@ -40,6 +40,7 @@ import {
   oauthReturnSearch,
   type OAuthReturnSearch,
 } from "@/lib/oauth-return"
+import { loginHint } from "@/lib/login-hint"
 import { safeReturnPath } from "@/lib/return-path"
 import { searchText } from "@/lib/search-params"
 import { ProviderPage } from "@/pages/provider"
@@ -59,13 +60,19 @@ function bundleTarget(id: string): { authority: string; pkg: string } | null {
 }
 
 /** The doors' `?redirect=`: where to go once signed in. Kept as written here;
- * every reader passes it through `safeReturnPath` before following it. */
-function doorSearch(search: Record<string, unknown>): { redirect?: string } {
+ * every reader passes it through `safeReturnPath` before following it.
+ * `?login_hint=` is the repository an app asked for (decision 0208), kept
+ * only when it is a valid repository name. */
+function doorSearch(search: Record<string, unknown>): {
+  redirect?: string
+  login_hint?: string
+} {
   return {
     redirect:
       typeof search.redirect === "string" && search.redirect
         ? search.redirect
         : undefined,
+    login_hint: loginHint(search.login_hint),
   }
 }
 
@@ -103,12 +110,18 @@ export const registerRoute = createRoute({
 export const authorizeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/authorize/$request",
-  beforeLoad: ({ params }) => {
+  // The server adds `?login_hint=` when the app named a repository, and the
+  // sign-in fills its field with it.
+  validateSearch: (search: Record<string, unknown>) => ({
+    login_hint: loginHint(search.login_hint),
+  }),
+  beforeLoad: ({ params, search }) => {
     if (!hasSession()) {
       throw redirect({
         to: "/login",
         search: {
           redirect: `/authorize/${encodeURIComponent(params.request)}`,
+          login_hint: search.login_hint,
         },
       })
     }
