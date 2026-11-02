@@ -1,6 +1,7 @@
 /** Settings (`/settings`): how the console looks (saved on the repository's
  * console preference record, so every browser signed in looks the same),
- * what every agent may spend in a day, the account, where you are signed in,
+ * what every agent may spend in a day, the account and the proof of its
+ * name, where you are signed in,
  * the apps you approved, a download of everything, and for developers the
  * system kinds, the raw tokens and what this server says about itself. */
 
@@ -18,6 +19,7 @@ import {
   WidthPicker,
 } from "@/components/settings-page/setting-row"
 import { SpendCapRow } from "@/components/settings-page/spend-cap-row"
+import { VerifyDomainRow } from "@/components/settings-page/verify-domain-row"
 import { Button } from "@/components/ui/button"
 import { Segmented } from "@/components/ui/segmented"
 import { Spinner } from "@/components/ui/spinner"
@@ -330,6 +332,7 @@ export function ConsoleSettingsPage() {
       </SettingsSection>
       <SettingsSection title="Account">
         <AccountRows />
+        <VerifyDomainRow />
       </SettingsSection>
       <SettingsSection title="Signed in">
         <ShellServerRow />

@@ -23,6 +23,7 @@ import { ScopeRow } from "@/components/authorize/scope-row"
 import { SetupRow } from "@/components/authorize/setup-row"
 import { ConsolePreferencesProvider } from "@/components/console-preferences"
 import { CopyButton } from "@/components/identity/copy-button"
+import { UnverifiedMark } from "@/components/identity/unverified-mark"
 import { ToggleSwitch } from "@/components/nav/toggle-switch"
 import { ShellServer } from "@/components/shell-server"
 import { Button } from "@/components/ui/button"
@@ -269,8 +270,9 @@ function AppFacts({
       </Fact>
 
       <Fact label="Repository">
-        <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
+        <p className="flex flex-wrap items-center gap-2 font-mono text-[13px] [overflow-wrap:anywhere]">
           {request.repository}
+          <UnverifiedMark className="font-sans" />
         </p>
       </Fact>
 

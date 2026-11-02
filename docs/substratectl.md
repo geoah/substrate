@@ -454,4 +454,14 @@ under a stopped server's `SUBSTRATE_DATA_ROOT` and booting, or, on a host
 with another credential key, `repository rewrap` with the recovery key first
 ([restore without the credential key](operations.md#restore-without-the-credential-key)).
 
+## Verifying the repository's name
+
+`substratectl domain show` prints the TXT record that proves the repository's
+name ([Verify domain](auth.md#verify-domain)): its name,
+`_substrate.<repository>`, and its value, carrying this server's origin and a
+one-time proof, minted when none is pending. `substratectl domain verify`
+runs the check; it prints `verified` and the time, or the reason the check
+failed, and exits non-zero until the record passes, so a script can wait on
+DNS propagation. Both take `-o json` and `-o yaml`.
+
 Next: the [web console](console.md), the same repository in a browser.

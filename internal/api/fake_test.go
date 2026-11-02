@@ -272,13 +272,24 @@ func (s *fakeService) Authenticate(_ context.Context, secret string) (substrate.
 
 func (s *fakeService) Close() error { return nil }
 
+// fakeInstanceID is the instance id the fake service answers, the one a
+// server.json fetched in a domain test names to count as this server.
+const fakeInstanceID = "fakeinstance0000000000000a"
+
+func (s *fakeService) InstanceID() string { return fakeInstanceID }
+
 // ---- dataset ------------------------------------------------------------
 
 type fakeDataset struct {
-	mu         sync.Mutex
-	repository substrate.RepositoryInfo
-	types      []substrate.KindInfo
-	records    map[string]*substrate.Record
+	mu sync.Mutex
+	// domain is the repository record's domain verification state, and
+	// domainProofs counts the proofs minted, so a test reads a second start
+	// keeping the first.
+	domain       substrate.DomainState
+	domainProofs int
+	repository   substrate.RepositoryInfo
+	types        []substrate.KindInfo
+	records      map[string]*substrate.Record
 	// meta is per-record property provenance, attached by Get and ONLY by
 	// Get — lists never carry it, exactly like the engine.
 	meta map[string]map[string]substrate.PropertyMeta
@@ -1416,6 +1427,36 @@ func (d *fakeDataset) StatBlob(_ context.Context, digest string) (*substrate.Blo
 
 func (d *fakeDataset) Export(context.Context) (substrate.Export, error) {
 	return nil, errFakeUnmodeled
+}
+
+func (d *fakeDataset) DomainState(context.Context) (substrate.DomainState, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.domain, d.fail("DomainState")
+}
+
+func (d *fakeDataset) StartDomainVerification(context.Context) (substrate.DomainState, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.fail("StartDomainVerification"); err != nil {
+		return substrate.DomainState{}, err
+	}
+	if d.domain.Proof == "" {
+		d.domainProofs++
+		d.domain.Proof = fmt.Sprintf("proof%05d", d.domainProofs)
+	}
+	return d.domain, nil
+}
+
+func (d *fakeDataset) MarkDomainVerified(context.Context) (time.Time, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.fail("MarkDomainVerified"); err != nil {
+		return time.Time{}, err
+	}
+	at := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	d.domain.Proof, d.domain.VerifiedAt = "", &at
+	return at, nil
 }
 
 // The two Service doors that carry no bearer. This fake resolves neither a

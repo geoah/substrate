@@ -15,6 +15,7 @@ import { useState } from "react"
 import { CopyIcon } from "lucide-react"
 
 import { CopyButton } from "@/components/identity/copy-button"
+import { UnverifiedMark } from "@/components/identity/unverified-mark"
 import { SettingRow } from "@/components/settings-page/setting-row"
 import { Button } from "@/components/ui/button"
 import {
@@ -83,8 +84,11 @@ export function AccountRows() {
     <>
       <SettingRow
         title={
-          <span className="[overflow-wrap:anywhere]">
-            {repository || "unknown"}
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <span className="[overflow-wrap:anywhere]">
+              {repository || "unknown"}
+            </span>
+            <UnverifiedMark />
           </span>
         }
         description="The name you sign in with. It’s also the address of your data."

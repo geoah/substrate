@@ -795,6 +795,27 @@ export interface BlobInfo {
   status: "pending" | "stored" | "failed"
 }
 
+/** The TXT record that proves a repository's name (decision 0208): what
+ * `POST /repository/domain` answers. `name` is `_substrate.<repository>` and
+ * `record` the value, carrying this server's origin and the one-time
+ * `proof`. */
+export interface DomainProof {
+  name: string
+  record: string
+  proof: string
+  /** When the name was last verified; absent while it never was. */
+  verifiedAt?: string
+}
+
+/** One check of the repository's `_substrate` record:
+ * `POST /repository/domain/verify`. A failed check carries the `reason` the
+ * owner acts on, and an earlier `verifiedAt` stands. */
+export interface DomainCheck {
+  verified: boolean
+  verifiedAt?: string
+  reason?: string
+}
+
 /** What a client calls one record of a kind and what it calls the
  * collection, as the kind's `label:` declares them. */
 export interface KindLabel {
