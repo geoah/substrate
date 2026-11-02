@@ -317,10 +317,11 @@ token may declare `google.com/anything`. Samples are unaffected, since an
 import rehomes them onto `~`. A repository never installs a published
 package under its own authority, because that repository is the publisher.
 
-With B in place, `declare:` has no remaining use, and development uses [decision 8](#decision-8-development)'s local document.
-0203 and 0205 are superseded. An app whose publisher has no domain of its
-own cannot bring packages; it works with the kinds the repository already
-holds, such as the samples and catalogues.
+With B in place, `declare:` has no remaining use, and development uses
+[decision 8](#decision-8-development)'s local document. 0203 and 0205 are
+superseded. An app whose publisher has no domain of its own cannot bring
+packages; it works with the kinds the repository already holds, such as the
+samples and catalogues.
 
 ## Decision 6: the one document
 
