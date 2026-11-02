@@ -122,7 +122,7 @@ FROM ${ARTIFACTS} AS artifacts
 # are the release's own `.sha256` files for that version; a bumped pin with
 # stale checksums fails this stage rather than shipping an unverified binary.
 # It runs on the native build arch and only downloads, so no stage emulates.
-FROM --platform=$BUILDPLATFORM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS uv
+FROM --platform=$BUILDPLATFORM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS uv
 ARG TARGETARCH
 ARG UV_VERSION=0.11.33
 ARG UV_SHA256_AMD64=3e95b84d8a8b3390c91584d4fd0c4d326e951da2b8fb15a76719368af2795424
@@ -161,7 +161,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
       -X github.com/geoah/substrate/internal/build.commit=${COMMIT}" \
       -o /out/slack-socket ./cmd/slack-socket
 
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS slack-socket
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS slack-socket
 # ca-certificates for the wss:// connection to Slack and an https webhook.
 RUN apk upgrade --no-cache && apk add --no-cache ca-certificates
 COPY --from=slack-socket-build /out/slack-socket /usr/local/bin/slack-socket
@@ -190,7 +190,7 @@ ENTRYPOINT ["/usr/local/bin/slack-socket"]
 # `python3~3.14` holds the minor every function body runs on: an Alpine
 # refresh that moves python3 to another minor fails this build instead of
 # shipping a different Python with no reviewed edit.
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 # Alpine publishes fixed packages before a new base digest carries them.
 RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata python3~3.14
 # The tarball's entries carry the release builder's uid, so the copy sets
