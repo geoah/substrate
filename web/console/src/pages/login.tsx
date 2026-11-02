@@ -85,7 +85,13 @@ export function LoginPage() {
   // filled the repository and password in.
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema(totpRequired)),
-    defaultValues: { repository: "", password: "", code: "" },
+    // An app that named the repository it wants (`login_hint`, already held
+    // to a valid name by the route) fills the field; the owner may change it.
+    defaultValues: {
+      repository: search.login_hint ?? "",
+      password: "",
+      code: "",
+    },
   })
 
   async function onSubmit(values: LoginValues) {

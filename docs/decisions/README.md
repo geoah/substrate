@@ -365,4 +365,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0205](0205-an-app-owns-the-package-it-declares.md) | An app owns the package it declares | proposed |
 | [0206](0206-a-spooled-webhook-request-refused-for-its-own-content-is-set-aside.md) | A spooled webhook request refused for its own content is set aside as `.refused` | accepted |
 | [0207](0207-an-app-declares-one-agent-held-to-its-own-reach.md) | An app declares one approved agent, held to a live approval at every run | proposed |
+| [0208](0208-a-repository-proves-its-name-with-a-txt-record-after-registration.md) | A repository proves its name with a TXT record after registration | proposed |
 | [0211](0211-the-console-groups-collections-by-package.md) | The console groups collections by package | proposed |

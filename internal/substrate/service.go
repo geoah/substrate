@@ -76,5 +76,11 @@ type Service interface {
 	// and whether the request's signature is its only credential.
 	CheckWebhook(ctx context.Context, authority, trigger, key string) (WebhookTarget, error)
 
+	// InstanceID is this server's instance id, minted at its first boot and
+	// kept for good. GET /.well-known/substrate/server.json serves it, so a
+	// server reading a domain's `_substrate` record can tell whether the
+	// `server=` origin it names is itself (decision 0208).
+	InstanceID() string
+
 	Close() error
 }

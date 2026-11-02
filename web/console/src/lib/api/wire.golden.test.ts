@@ -88,6 +88,8 @@ import type {
   AuthorizationAgentKind,
   AgentApproval,
   BlobInfo,
+  DomainCheck,
+  DomainProof,
   BundleClosure,
   BundlePurged,
   BundleStatus,
@@ -309,6 +311,19 @@ const blobInfo: Shape<BlobInfo> = {
   name: false,
   mediaType: false,
   status: true,
+}
+
+const domainProof: Shape<DomainProof> = {
+  name: true,
+  record: true,
+  proof: true,
+  verifiedAt: false,
+}
+
+const domainCheck: Shape<DomainCheck> = {
+  verified: true,
+  verifiedAt: false,
+  reason: false,
 }
 
 const change: Shape<Change> = {
@@ -1178,6 +1193,8 @@ const mirrors: Record<string, Record<string, boolean>> = {
   KindInfo: kindInfo,
   KindLabel: kindLabel,
   BlobInfo: blobInfo,
+  DomainProof: domainProof,
+  DomainCheck: domainCheck,
   Change: change,
   AffectedRecord: affectedRecord,
   PropertyChange: propertyChange,
