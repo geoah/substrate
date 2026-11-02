@@ -4,6 +4,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +40,13 @@ func (s servedFiles) RoundTrip(r *http.Request) (*http.Response, error) {
 // newPublishedEnv is newAppEnv with the workouts app beside notes, and a
 // verifier over example.org's record and a document listing listed.
 func newPublishedEnv(t *testing.T, listed ...string) *appEnv {
+	e, _ := newPublishedEnvWithDNS(t, listed...)
+	return e
+}
+
+// newPublishedEnvWithDNS is newPublishedEnv, answering the fixed DNS answers
+// too, which a test may change after the page reads a request.
+func newPublishedEnvWithDNS(t *testing.T, listed ...string) (*appEnv, domains.Static) {
 	t.Helper()
 	e := newAppEnv(t)
 	e.docs.docs[pubClientID] = authorize.Document{
@@ -48,14 +57,15 @@ func newPublishedEnv(t *testing.T, listed ...string) *appEnv {
 	for _, c := range listed {
 		apps = append(apps, `{"client_id": "`+c+`", "name": "Example Workouts"}`)
 	}
+	dns := domains.Static{"_substrate.example.org.": {"v=substrate1 doc=" + pubDocURL}}
 	verifier := authorize.NewVerifier(authorize.PublisherOptions{
-		Resolver: domains.Static{"_substrate.example.org.": {"v=substrate1 doc=" + pubDocURL}},
+		Resolver: dns,
 		Client: &http.Client{Transport: servedFiles{
 			pubDocURL: `{"authority": "example.org", "name": "Example", "apps": [` + strings.Join(apps, ",") + `]}`,
 		}},
 	})
 	e.h = New(Config{Service: e.svc, ClientDocuments: e.docs, Publishers: verifier, AuthInterval: time.Nanosecond})
-	return e
+	return e, dns
 }
 
 func workoutsRequest(scopes, redirect string) map[string]string {
@@ -169,5 +179,78 @@ func TestTheActorFollowsWhatTheApprovalProved(t *testing.T) {
 	}
 	if !substrate.ReservedActor(substrate.AppActorLocal) {
 		t.Fatal("app:local is claimable by a request")
+	}
+}
+
+func workoutsForm(code, redirect string) url.Values {
+	return url.Values{
+		"grant_type": {"authorization_code"}, "code": {code}, "client_id": {pubClientID},
+		"redirect_uri": {redirect}, "code_verifier": {appVerifier},
+	}
+}
+
+// A record withdrawn after the page showed the app as verified refuses the
+// approval: the owner is asked to look again, and no code exists.
+func TestAPublisherWithdrawnAfterThePageViewRefusesTheApproval(t *testing.T) {
+	e, dns := newPublishedEnvWithDNS(t, pubClientID)
+	id := e.park(workoutsRequest("full", pubRedirect))
+	view := e.show(id)
+	wantStatus(t, view, http.StatusOK)
+	if !decodeJSON[substrate.AuthorizationRequest](t, view).App.Verified {
+		t.Fatal("the page did not show the app as verified")
+	}
+	delete(dns, "_substrate.example.org.")
+	rec := e.approveShown(id, []string{"full"}, 30)
+	wantStatus(t, rec, http.StatusConflict)
+	if body := rec.Body.String(); !strings.Contains(body, "no longer verifies") || !strings.Contains(body, "Reload the page") {
+		t.Fatalf("the refusal reads %s", body)
+	}
+	if len(e.svc.tokens) != 1 {
+		t.Fatalf("a refused approval minted a token: %d tokens", len(e.svc.tokens))
+	}
+}
+
+// A record withdrawn after the approval refuses the exchange: the code is
+// spent, and no token is minted as anything the owner did not approve.
+func TestAPublisherWithdrawnAfterTheApprovalRefusesTheExchange(t *testing.T) {
+	e, dns := newPublishedEnvWithDNS(t, pubClientID)
+	id := e.park(workoutsRequest("full", pubRedirect))
+	wantStatus(t, e.show(id), http.StatusOK)
+	rec := e.approveShown(id, []string{"full"}, 30)
+	wantStatus(t, rec, http.StatusOK)
+	code := codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect)
+	before := len(e.svc.tokens)
+	delete(dns, "_substrate.example.org.")
+	tok := e.exchange(workoutsForm(code, pubRedirect))
+	wantStatus(t, tok, http.StatusBadRequest)
+	if body := tok.Body.String(); !strings.Contains(body, "invalid_grant") || !strings.Contains(body, "no longer verifies") {
+		t.Fatalf("the exchange answered %s", body)
+	}
+	if len(e.svc.tokens) != before {
+		t.Fatal("a refused exchange minted a token")
+	}
+	// Restoring the record does not bring the spent code back.
+	dns["_substrate.example.org."] = []string{"v=substrate1 doc=" + pubDocURL}
+	wantStatus(t, e.exchange(workoutsForm(code, pubRedirect)), http.StatusBadRequest)
+}
+
+// An authority a local file vouches for is shown and minted as such.
+func TestAPublisherALocalFileVouchesForSaysSo(t *testing.T) {
+	e := newAppEnv(t)
+	e.docs.docs[pubClientID] = authorize.Document{
+		ClientID: pubClientID, RedirectURIs: []string{pubRedirect}, Name: "Workouts", Authority: pubAuthority,
+	}
+	path := filepath.Join(t.TempDir(), "authority.json")
+	if err := os.WriteFile(path, []byte(`{"authority": "example.org", "name": "Example", "apps": [{"client_id": "`+pubClientID+`", "name": "Example Workouts"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	verifier := authorize.NewVerifier(authorize.PublisherOptions{Resolver: domains.Static{}, LocalDocuments: map[string]string{pubAuthority: path}})
+	e.h = New(Config{Service: e.svc, ClientDocuments: e.docs, Publishers: verifier, AuthInterval: time.Nanosecond})
+	page, minted, _ := e.grantWorkouts("write:"+taskKind, pubRedirect, []string{"write:" + taskKind})
+	if !page.App.Verified || !page.App.Publisher.FromFile || page.App.Actor != "app:example.org" {
+		t.Fatalf("a file-vouched app reads %+v", page.App)
+	}
+	if minted.AppAuthority != pubAuthority || !minted.AppAuthorityFromFile {
+		t.Fatalf("the minted token reads %+v", minted)
 	}
 }

@@ -600,6 +600,7 @@ const tokenInfo: Shape<TokenInfo> = {
   clientId: false,
   clientName: false,
   appAuthority: false,
+  appAuthorityFromFile: false,
   appLocal: false,
   agents: false,
 }
@@ -652,6 +653,7 @@ const authorizationPublisher: Shape<AuthorizationPublisher> = {
   record: false,
   documentUrl: false,
   listed: true,
+  fromFile: false,
 }
 
 const authorizationRedirectTo: Shape<AuthorizationRedirectTo> = {

@@ -879,6 +879,9 @@ export interface TokenInfo {
   /** The authority the approval verified as the app's publisher (decision
    * 0209). */
   appAuthority?: string
+  /** A file this server reads (`SUBSTRATE_INSECURE_AUTHORITY_DOCS`), not the
+   * authority's DNS, vouched for `appAuthority`. */
+  appAuthorityFromFile?: boolean
   /** The approval sent the access to a program on the owner's device. */
   appLocal?: boolean
   /** The agents the owner approved the app to declare (decision 0207). */
@@ -995,6 +998,9 @@ export interface AuthorizationPublisher {
   record?: string
   documentUrl?: string
   listed: boolean
+  /** A file this server was configured to read stood in for the
+   * authority's DNS record and document. */
+  fromFile?: boolean
 }
 
 /** Where the code goes on approval. */
