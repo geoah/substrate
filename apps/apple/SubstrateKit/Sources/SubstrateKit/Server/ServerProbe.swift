@@ -17,14 +17,19 @@ public struct ServerProbe: Sendable {
         /// answered 404, and only the password door is open.
         public var metadata: AuthorizationServerMetadata?
         public var verdict: ServerRequirement.Verdict
+        /// The repository name the server was found from (`ServerLocator`),
+        /// which the sign-in sends as `login_hint` and holds the token to;
+        /// nil when the person typed the server itself.
+        public var repository: String?
 
         public init(origin: URL, discovery: Discovery, metadata: AuthorizationServerMetadata?,
-                    verdict: ServerRequirement.Verdict)
+                    verdict: ServerRequirement.Verdict, repository: String? = nil)
         {
             self.origin = origin
             self.discovery = discovery
             self.metadata = metadata
             self.verdict = verdict
+            self.repository = repository
         }
 
         public var host: String { ServerAddress.display(origin) }

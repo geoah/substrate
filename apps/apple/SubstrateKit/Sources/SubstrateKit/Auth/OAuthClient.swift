@@ -39,6 +39,31 @@ public struct TokenResponse: Decodable, Sendable, Equatable {
     public var scopes: [String] { scope.split(separator: " ").map(String.init) }
 }
 
+/// A token for another repository than the one the app found the server
+/// from: the person signed in to a different repository on that server. The
+/// app never keeps it, since its records are not the ones the name the
+/// person typed points at.
+public struct RepositoryMismatch: LocalizedError, Sendable, Equatable {
+    public let resolved: String
+    public let token: String
+
+    /// Nil when nothing was resolved or the token is for the resolved
+    /// repository; a name compares without case or a trailing dot.
+    public init?(resolved: String?, token: String) {
+        guard let resolved else { return nil }
+        let normal = { (name: String) in
+            name.lowercased().hasSuffix(".") ? String(name.lowercased().dropLast()) : name.lowercased()
+        }
+        guard normal(resolved) != normal(token) else { return nil }
+        self.resolved = resolved
+        self.token = token
+    }
+
+    public var errorDescription: String? {
+        "You signed in to \(token), not \(resolved). Sign in to \(resolved), or type \(token) to connect it instead."
+    }
+}
+
 /// The authorization server's refusal: RFC 6749's error object, or the
 /// redirect's `error`.
 public struct OAuthRefusal: LocalizedError, Sendable, Equatable {
@@ -85,8 +110,10 @@ public struct OAuthClient: Sendable {
     /// manifest's details as compact JSON. A server that does not list every
     /// type they use would approve the scopes alone, so it is refused here
     /// rather than sent the request without them, and so is metadata whose
-    /// endpoints are not on its issuer's origin.
-    public func authorizeURL(redirect: String, pkce: PKCE, state: String) throws -> URL {
+    /// endpoints are not on its issuer's origin. `loginHint` is the
+    /// repository the app found the server from, which the sign-in page
+    /// fills in.
+    public func authorizeURL(redirect: String, pkce: PKCE, state: String, loginHint: String? = nil) throws -> URL {
         if let problem = metadata.mismatch(server: nil) { throw ServerMismatch(problem) }
         guard manifest.takesDetails(metadata) else {
             throw ServerMismatch("\(ServerAddress.display(metadata.issuerOrigin ?? metadata.authorizationEndpoint)) can't set up what \(manifest.appName) asks for: it needs an update first.")
@@ -100,6 +127,7 @@ public struct OAuthClient: Sendable {
             ("code_challenge_method", "S256"),
             ("state", state),
         ]
+        if let loginHint, !loginHint.isEmpty { items.append(("login_hint", loginHint)) }
         let details = manifest.details(for: metadata)
         if !details.isEmpty { items.append(("authorization_details", try AuthorizationDetail.json(details))) }
         guard var parts = URLComponents(url: metadata.authorizationEndpoint, resolvingAgainstBaseURL: false) else {
@@ -160,24 +188,42 @@ public struct OAuthClient: Sendable {
                        requested: manifest.scopes, now: now())
     }
 
-    /// The whole flow: a loopback receiver for the redirect (RFC 8252), the
-    /// browser on the server's own sign-in and approval page, the
-    /// redirect checked and the code exchanged. `server` is the one the
-    /// owner chose, and the metadata must be its own: an issuer or an
-    /// endpoint elsewhere is refused before the browser opens. The session
-    /// it answers is not saved.
+    /// The whole flow: the browser on the server's own sign-in and approval
+    /// page, the redirect taken through the app's claimed https callback
+    /// where its manifest names one and a loopback receiver (RFC 8252)
+    /// otherwise, the redirect checked and the code exchanged. `server` is
+    /// the one the owner chose, and the metadata must be its own: an issuer
+    /// or an endpoint elsewhere is refused before the browser opens.
+    /// `repository` is the name the app found the server from: it is sent as
+    /// `login_hint`, and a token for any other repository is revoked and
+    /// refused. The session it answers is not saved.
     @MainActor
-    public func signIn(server: URL, now: @escaping @Sendable () -> Date = { Date() }) async throws -> Session {
+    public func signIn(server: URL, repository: String? = nil,
+                       now: @escaping @Sendable () -> Date = { Date() }) async throws -> Session
+    {
         if let problem = metadata.mismatch(server: server) { throw ServerMismatch(problem) }
-        let receiver = try await LoopbackReceiver.start(appName: manifest.appName, path: manifest.loopbackPath)
-        defer { receiver.stop() }
         let pkce = try PKCE()
         let state = try PKCE.state()
-        let redirect = receiver.redirect
-        let url = try authorizeURL(redirect: redirect, pkce: pkce, state: state)
-        let query = try await WebAuthenticator().run(url, receiver: receiver)
+        let redirect: String
+        let query: [String: String]
+        if let claimed = manifest.signInRedirect {
+            redirect = claimed.absoluteString
+            let url = try authorizeURL(redirect: redirect, pkce: pkce, state: state, loginHint: repository)
+            query = try await WebAuthenticator().run(url, claimed: claimed)
+        } else {
+            let receiver = try await LoopbackReceiver.start(appName: manifest.appName, path: manifest.loopbackPath)
+            defer { receiver.stop() }
+            redirect = receiver.redirect
+            let url = try authorizeURL(redirect: redirect, pkce: pkce, state: state, loginHint: repository)
+            query = try await WebAuthenticator().run(url, receiver: receiver)
+        }
         let code = try callback(query, state: state)
-        return try await session(exchanging: code, redirect: redirect, pkce: pkce, server: server, now: now)
+        let session = try await session(exchanging: code, redirect: redirect, pkce: pkce, server: server, now: now)
+        if let mismatch = RepositoryMismatch(resolved: repository, token: session.repository) {
+            try? await session.revoke(transport: transport)
+            throw mismatch
+        }
+        return session
     }
 
     static func form(_ url: URL, _ pairs: [(String, String)], timeout: TimeInterval) -> URLRequest {
