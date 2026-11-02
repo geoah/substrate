@@ -36,16 +36,18 @@ struct SignInView: View {
                     .onSubmit(check)
                     .onChange(of: address) { _, typed in
                         // Writing the checked origin back is not a new address.
-                        if let probe, typed == probe.origin.absoluteString { return }
+                        if let probe, typed == (probe.repository ?? probe.origin.absoluteString) { return }
                         probe = nil
                     }
             } header: {
                 Text("Server")
             } footer: {
-                if probe != nil {
+                if let probe, let repository = probe.repository {
+                    Label("Server found for \(repository): \(probe.host).", systemImage: "checkmark.circle")
+                } else if probe != nil {
                     Label("Server found.", systemImage: "checkmark.circle")
                 } else {
-                    Text("Your Substrate server's address. A name alone is read as https://.")
+                    Text("Your repository's name, or your Substrate server's address. A name alone is read as https://.")
                 }
             }
 
@@ -127,8 +129,9 @@ struct SignInView: View {
     }
 
     private func check() {
-        guard let origin = ServerAddress.origin(of: address) else {
-            problem = "That is not an http or https address."
+        let typed = address
+        guard let origin = ServerAddress.origin(of: typed) else {
+            problem = "That is not a server address or a repository name."
             return
         }
         busy = true
@@ -136,9 +139,9 @@ struct SignInView: View {
         Task {
             defer { busy = false }
             do {
-                let found = try await ServerProbe(transport: Client.transport)
-                    .probe(origin, requirement: SyncManifest.requirement, app: SyncManifest.appName)
-                address = origin.absoluteString
+                let found = try await ServerLocator(probe: ServerProbe(transport: Client.transport))
+                    .locate(typed, requirement: SyncManifest.requirement, app: SyncManifest.appName)
+                address = found.repository ?? found.origin.absoluteString
                 probe = found
             } catch {
                 problem = (error as? LocalizedError)?.errorDescription ?? explain(error, server: origin)

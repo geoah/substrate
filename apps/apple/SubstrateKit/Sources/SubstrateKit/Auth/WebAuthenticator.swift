@@ -13,6 +13,13 @@ import UIKit
 /// site and fills passwords, since an app the person switched away from is
 /// suspended and its loopback port with it. Either way the receiver takes
 /// the redirect, never the sheet or the browser.
+///
+/// A release that claims an https redirect (`AppManifest.claimedRedirect`)
+/// signs in through the session on both platforms instead: the system hands
+/// the callback on the claimed host and path to this app alone, because the
+/// host's association file names it, and on macOS the session opens the
+/// default browser where it supports callback matching and Safari where it
+/// does not.
 @MainActor
 public final class WebAuthenticator {
     public struct Cancelled: LocalizedError, Sendable {
@@ -78,6 +85,65 @@ public final class WebAuthenticator {
         #endif
     }
 
+    /// Runs the sign-in at `url` and answers the query of the callback on
+    /// `redirect`, which the system delivers only to the app its host's
+    /// association file names. Cancelling the task closes the session.
+    public func run(_ url: URL, claimed redirect: URL) async throws -> [String: String] {
+        guard let host = redirect.host(percentEncoded: false) else { throw TransportError(text: "The sign-in redirect has no host.") }
+        let path = redirect.path(percentEncoded: false)
+        guard let window = Self.window() else { throw TransportError(text: "The sign-in sheet couldn't open: no window is showing.") }
+        let anchor = Anchor(window)
+        self.anchor = anchor
+        defer { self.anchor = nil }
+        let gate = ResumeGate<URL>()
+        let holder = SessionHolder()
+        let returned = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+                gate.set(continuation)
+                let session = ASWebAuthenticationSession(url: url, callback: .https(host: host, path: path)) { callback, error in
+                    if let callback {
+                        gate.resume(.success(callback))
+                    } else {
+                        gate.resume(.failure(error.map { ($0 as? ASWebAuthenticationSessionError)?.code == .canceledLogin ? Cancelled() : $0 }
+                                ?? Cancelled()))
+                    }
+                }
+                session.presentationContextProvider = anchor
+                session.prefersEphemeralWebBrowserSession = false
+                holder.session = session
+                if Task.isCancelled {
+                    gate.resume(.failure(CancellationError()))
+                } else if !session.start() {
+                    gate.resume(.failure(TransportError(text: "The sign-in sheet couldn't open.")))
+                }
+            }
+        } onCancel: {
+            gate.resume(.failure(CancellationError()))
+            Task { @MainActor in holder.session?.cancel() }
+        }
+        holder.session = nil
+        #if os(macOS)
+        NSApplication.shared.activate()
+        #endif
+        return try Self.query(returned, redirect: redirect)
+    }
+
+    /// The query of a callback on the claimed redirect. The system matches
+    /// the host and path before it calls back; this holds the URL to them
+    /// again, so a query is never read from anywhere else.
+    nonisolated static func query(_ callback: URL, redirect: URL) throws -> [String: String] {
+        guard callback.scheme?.lowercased() == "https",
+              callback.host(percentEncoded: false)?.lowercased() == redirect.host(percentEncoded: false)?.lowercased(),
+              callback.port == redirect.port,
+              callback.path(percentEncoded: false) == redirect.path(percentEncoded: false)
+        else { throw OAuthRefusal(code: "invalid_request", text: "The sign-in came back to another address. Try again.") }
+        var query: [String: String] = [:]
+        for item in URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? [] {
+            query[item.name] = item.value ?? ""
+        }
+        return query
+    }
+
     /// The window the sheet shows over: the key one, else any.
     static func window() -> ASPresentationAnchor? {
         #if os(macOS)
@@ -98,6 +164,11 @@ public final class WebAuthenticator {
 
         func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor { window }
     }
+}
+
+/// The session a cancellation handler closes, set and read on the main actor.
+private final class SessionHolder: @unchecked Sendable {
+    var session: ASWebAuthenticationSession?
 }
 
 /// A continuation resumed by whichever of its racers gets there first.

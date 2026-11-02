@@ -75,5 +75,7 @@
 	<string>$(SUBSTRATE_UPDATES_URL)</string>
 	<key>SubstrateChatClientID</key>
 	<string>$(SUBSTRATE_CHAT_CLIENT_ID)</string>
+	<key>SubstrateChatRedirect</key>
+	<string>$(SUBSTRATE_CHAT_REDIRECT)</string>
 </dict>
 </plist>

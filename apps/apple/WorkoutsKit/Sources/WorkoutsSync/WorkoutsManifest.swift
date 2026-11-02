@@ -24,6 +24,9 @@ public enum WorkoutsManifest {
     public static let clientIDKey = "SubstrateWorkoutsClientID"
     /// A local build's client id: a loopback one, which nothing fetches.
     public static let localClientID = "http://127.0.0.1/substrate-workouts"
+    /// The Info.plist key a release stamps with the https redirect it
+    /// claims through its associated domain (`SUBSTRATE_WORKOUTS_REDIRECT`).
+    public static let redirectKey = "SubstrateWorkoutsRedirect"
 
     public static let healthPackage = "substrate.reamde.dev/health"
     public static let healthWorkout = "substrate.reamde.dev/health/workout"
@@ -47,13 +50,14 @@ public enum WorkoutsManifest {
     /// request, whatever it calls its build; one that cannot is too old.
     public static let requirement = ServerRequirement(scopeVerbs: ["declare", "write"], detailTypes: [AuthorizationDetail.Types.package])
 
-    public static func manifest(clientID: String) -> AppManifest {
+    public static func manifest(clientID: String, claimedRedirect: URL? = nil) -> AppManifest {
         AppManifest(
             appName: appName,
             clientID: clientID,
             scopes: scopes,
             details: details,
             requirement: requirement,
+            claimedRedirect: claimedRedirect,
             passwordFallback: .never,
             names: [healthPackage: "Health"],
             kindLabels: [
@@ -62,9 +66,11 @@ public enum WorkoutsManifest {
             ])
     }
 
-    /// This build's manifest: a release's stamped client id, else the local one.
+    /// This build's manifest: a release's stamped client id and claimed
+    /// redirect, else the local client id and the loopback receiver.
     public static var current: AppManifest {
-        manifest(clientID: AppManifest.clientID(infoKey: clientIDKey, localDefault: localClientID))
+        manifest(clientID: AppManifest.clientID(infoKey: clientIDKey, localDefault: localClientID),
+                 claimedRedirect: AppManifest.claimedRedirect(infoKey: redirectKey))
     }
 }
 
