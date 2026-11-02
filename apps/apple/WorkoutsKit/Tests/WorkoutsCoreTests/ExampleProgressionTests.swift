@@ -8,7 +8,7 @@ import Testing
 // from its records (`ExampleReplay`); before each set's first event the
 // suggestion for its row is read from the state at that moment, with only
 // the sessions that started earlier as history. Every text below is quoted
-// from the comments in research/workouts/substrate/examples/sessions.yaml.
+// from the comments in apps/apple/SubstrateWorkouts/docs/examples/sessions.yaml.
 
 /// The suggestions an example session's sets were offered, in the order done.
 struct ReplayedSuggestions {

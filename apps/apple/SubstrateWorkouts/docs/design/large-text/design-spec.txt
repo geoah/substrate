@@ -1,0 +1,188 @@
+SPOTTER — SESSION CONCEPTS
+Design proposal, 31 October 2026. No repository changes.
+
+Read: screenshots 01–18, all 13 owner-attached Hevy references, SpotterKit/API.md, SessionPresentation.swift, DESIGN.md §4, §5 and §7.6, SessionEvent.swift, Previous.swift, bundled routines and example progression tests.
+
+The problem is hierarchy, not decoration. In both apps the exercise card is the primary object and a tiny tick advances a row. A gym screen should instead answer three questions, in order: what do I do, why this target, what happens afterwards? History and the entire plan remain available without making every field equally prominent.
+
+THREE DIRECTIONS
+
+1. BEAT — One instruction, then the next
+Core idea: Put one executable set in the foreground, with a short, literal “then” sequence underneath. After logging, the same stage becomes a rest clock and a preview of the next set, so the screen follows the rhythm of training.
+(a) Now: exercise at 36 pt, load/reps at 76–88 pt; “Suggested”, routine target and the presenter's reason are explicit. One large bottom action opens an acceptance tray, then “Save set” commits; no compulsory RPE.
+(b) Last time: an editorial line below the suggestion, labelled with the matched set number, with full load/reps/RPE and a separate “Use last” action in the tray. Never substitute best set or exercise aggregate.
+(c) Rest: countdown becomes the hero; next exercise and target remain beneath it. Labels distinguish warm-up rest, intra-set pause, transition, round rest, side switch and ordinary rest. ±15 and Skip stay at the bottom.
+(d) Superset: a compact A1 → A2 → Rest rail with round number; the active member fills the stage. Zero transition means “Go to A2”, not a momentary 0:00 timer. Warm-ups appear before round 1.
+(e) Chain: a connected receipt shows the head and completed segments; only the current generated mini-set is actionable. A drop shows new load + “to failure”, then asks for actual reps. Myo pauses use the same stage with “Mini-set pause”; stopText ends the chain without inventing future sets.
+(f) Hold: target then Start; running stage is a huge countdown, +overtime after zero, and Stop & save. Last matched duration stays visible.
+(g) Corrections and freedom: Session button opens the map. Tap a pending set to choose it, including a different exercise; tap a completed receipt to edit without moving Up next. Locked segments explain their dependency. No forced carousel or prescribed workout order.
+(h) Overview: a vertically scrollable map of exercise chapters, set tokens and expanded round paths. Completed sets expose receipts on expansion; current position remains easy to find.
+Trade-offs: excellent glance readability and thumb logging, but comparing many sets requires opening the map. There is less simultaneous density; a stable “Session” control and visible local progress counteract tunnel vision.
+Cost estimate: 7–10 engineer-days including presenter additions, SwiftUI, Live Activity refinement and focused verification. Most values and all progression/rest rules already exist. Main new work is a typed flow projection, target/laterality copy and an acceptance tray; no new training algorithm or persistent record format.
+
+2. ROUTE — The workout as a traversable path
+Core idea: Make the session a vertical route, with each set a stop and every rest a labelled connector. The current stop expands into a large instruction while everything completed remains behind it and upcoming work remains ahead.
+(a) Now: one expanded stop with target/reason; the bottom dock logs the selected stop in two taps.
+(b) Last time: a small adjacent reference under the expanded stop; expand other stops to compare their matching previous values.
+(c) Rest: the connector between the completed stop and its expected successor becomes a live countdown.
+(d) Superset: interleave A1 and A2 stops by round, with a wide labelled rest connector after A2. Do not draw the group as parallel exercise lists.
+(e) Chain: inset branches below their head, with tiny-pause connectors and an open-ended continuation for dynamically generated myo mini-sets. Actual selectable targets stay at least 48 pt.
+(f) Hold: the stop expands vertically into its timer; target reached is marked on the timeline but never auto-completes.
+(g) Corrections and freedom: tap any existing stop; a “Do this next” action explicitly changes focus. Scroll back to edit; current action is pinned so it is never lost. Locked links remain locked.
+(h) Overview: collapse all expanded stops to chapter markers; jump by exercise or round. “Return to now” restores the current viewport.
+Trade-offs: best explanation of order and excellent editing context, but a 40-set route is long, auto-following can fight a user scrolling, and paths can imply a compulsory order. Needs careful accessibility and explicit optional-order language.
+Cost estimate: 10–14 engineer-days. Reuses the same row/rest values but requires the complete typed execution sequence and rest-edge projection, stable anchors under dynamic insertion, collapse state and scroll-follow interruption. Greater layout and VoiceOver burden than Beat.
+
+3. BENCH — A working surface with exercise stations
+Core idea: Give each exercise a persistent station with three areas: last visit, the next effort, and today's receipts. A bottom switcher moves between stations, while a superset becomes one shared station with alternating member tabs and a visible round loop.
+(a) Now: a large central target and reason above the station's logging controls; current member and set remain named.
+(b) Last time: a persistent reference band showing this ordinal, with expandable other ordinals.
+(c) Rest: a floating countdown above the station switcher; the next station/member is named while the last exercise stays in view.
+(d) Superset: one station titled “A”, with A1/A2 tabs and an explicit A1 → A2 → Rest loop. It changes member after completion, not after a swipe.
+(e) Chain: a fan of receipts under one working set, expanding only generated mini-sets. The active follow-up fills the station's target area.
+(f) Hold: replaces the station target with a countdown, retaining history and receipts.
+(g) Corrections and freedom: tap any receipt to fix it; tap another station and “Do next” to change focus. Swiping stations browses only and cannot accidentally change the engine's order.
+(h) Overview: the switcher expands into a station board with progress and pending sets, optionally ordered by the routine.
+Trade-offs: familiar exercise ownership and good within-exercise comparisons, but users must learn browse-versus-do-next. The bottom switcher competes with one-thumb logging, and multi-exercise groups can look like tabs rather than a sequence. Most likely to drift back into card grids.
+Cost estimate: 8–12 engineer-days. Existing cards provide station content; additions for grouped flow, chain identity and explicit selected-versus-active state are necessary. More navigation state than Beat, less route layout work than Route.
+
+Estimates are design-level ranges for an engineer familiar with this code, not measured commitments; include accessibility/device passes but exclude a watch app and release operations.
+
+RECOMMENDATION — BEAT, WITH ROUTE'S SESSION MAP
+
+Choose Beat's single-set stage and use Route only as the overview. A person standing a metre away can distinguish “Leg Press / 110 kg / 8 reps” from “Rest / 1:42” without reading column headings. At arm's length the reason and the exact previous set explain the recommendation. The control remains in the same bottom location through readiness, review and rest; the map preserves freedom without weakening the default action.
+
+Originality comes from making work, recovery and transitions first-class states, and rendering round/chain boundaries as visible instructions. It does not require invented performance scores, prediction graphics, or a new suggestion algorithm. The session can still be done in any order.
+
+SCREENS AND STATES
+
+Session cover: NavigationStack, a scrollable opaque content stage, and a bottom safe-area floating control container. Top glass controls: Minimise, routine title/menu, Finish; bottom: Session (overview), History for current exercise, and the primary action. Use native system glass for these controls and sheets, not the target, history, instruction rail or receipts.
+
+Ready, working or warm-up: status label, exercise name, set/role/side, suggested values, routine target, reason, previous, plan note, then next flow. Warm-up says “Warm-up 2” and uses a W badge; working progress never increments for it. Suggestion is a label, not faint placeholder text; typed changes show “Your target”. Added-load and assistance must retain +/− and units; never split a formatted value string to recover numbers.
+
+Two-tap common logging path: AFTER performing the set, tap “Log 110 kg × 8”; a bottom review tray shows those exact values and “Save set”. Tap Save. The first tap opens the tray and sends touchRow to the chosen pending row; it does not edit or complete it. Save checks current values and entry validation, then sends completeSet with commitValues. Taps are separated by a release and tray opening; no double-tap commits two sets. Save becomes disabled while the command is being journaled. Optional RPE is a secondary “Add effort” button, never a mandatory question. Tap load/reps in the tray to edit, with big stepper controls and a numeric keyboard. Common acceptance requires no text entry, scrolling or RPE selection.
+
+The tray is not a pretend start-set clock. “Log” means the set has been performed. An optional “Begin set” action under More sends touchRow at real start; this preserves existing rest-measurement semantics without adding a required third tap. If the owner never touches the set at its start, restBefore can include lifting time, as the current design explicitly documents. Do not silently claim precise rep-set work/rest timing. A future persistent rep-start feature would be separate scope.
+
+Review values are bound to the row ID and a captured value snapshot. If an external completion, edit or timer event invalidates that snapshot, refresh it visibly and require a fresh Save; never silently confirm new values. Dismissing without changes discards local drafts, not the set. Explicit edits use editSet; “Use last” uses previous.copy (no RPE or failure flags).
+
+Rest: rest label and large countdown, then next exercise, next target, next reason, and a “Just logged” receipt with Edit and Rate effort. Control row: −15, +15, Skip. “Log next” remains available from a secondary bottom action while resting; selecting/editing the next set does not skip the rest. Rest counts across session-clock pauses. At expiry, re-present and show “Ready” for the next set; no compulsory notification acknowledgement.
+
+Transition: 0 seconds shows the next action immediately, with “Go to A2 / No rest between exercises”. Positive transition displays its own label/countdown. Round rest is visually explicit as “Round 1 complete / Round rest”; next is A1, round 2. After the last group member of the final round, use the engine's actual block-rest decision, not an invented further group round.
+
+Chain: head and completed segments are connected receipts belonging to one working set. Active follow-up gets the hero. Future myo mini-sets do not exist until generated; show “Another mini-set only if needed”, never five guaranteed circles. stopText appears as a persistent just-completed-chain message until the next action. Do not show “Stop chain” without an engine action for it; owner can choose another exercise or explicitly remove the pending row through the existing menu. Drop “to failure” and RIR-stop ≈reps are hints; canTick is false until actual reps exist. Entering actual reps is an exception to two-tap acceptance. A drop at the load floor may disappear after its parent is logged; render the new presentation, not stale rail nodes.
+
+Sides: unilateral sides are separate linked actions with labels LEFT / RIGHT and side-switch rest. Bird Dog is alternating, one record with reps per side, so show “10 each side”, not fabricated left/right set records. Its previous 10-per-side value need not equal today's suggested 11; the mockup explicitly shows an owner-chosen 10 and the engine's suggestion separately.
+
+Timed ready: last duration plus suggested duration, target range, Start hold. Start sends startTimedSet with row.timer.ready target. Running: countdown/stopwatch at 100+ pt, context and Stop & save in the dock. Stop sends stopTimedSet using stopValues, allowing the engine to fill elapsed duration. Zero triggers existing effects and overtime, not completion. No pause-timer feature is invented. Cancel timer is also available as a visible menu item. If a required load/distance is absent, collect it before Stop can commit; preserve engine entry checks. These are Start + Stop, two taps total for the ordinary hold, rather than the rep-set confirmation tray.
+
+Overview: a separate scroll position in the same cover with a stable Return to now dock. For the five-exercise Day 1 routine the whole map fits on one screen. The longer Fully Body routine scrolls; never shrink 21 exercises to fit. Group expansions show each round in execution order, warm-ups before round 1, chains attached to their head, and replacements continuing the original lane. Set tokens are 48 pt targets, and badges alone never require tapping. Pending token: touchRow and return to the stage. Done token: open edit receipt; no touchRow or auto-jump. Locked token: explain prerequisite. Completed edits send editSet directly, no untick/re-tick; keep the rest alive. A genuine Undo completion uses uncompleteSet and respects the last-chain-link restriction. New ordering uses the existing reorder sheet and reorderExercises. Map browsing itself never changes focus.
+
+Empty, allDone, finished: use existing restBar.empty, allDone and isFinished. Finish remains available early but opens existing FinishPresenter policy UI; do not auto-mark pending work done. A live timed set must be stopped/cancelled before finishing. Keep journal-write and notification-permission banners; saving failures never masquerade as success.
+
+COMPONENT / FIELD CONTRACT — EXISTING DATA
+
+Use p = SessionPresentation, u = p.upNext, r = p.row(u.row), c = p.card(u.slot). For timed mode resolve p.timedRow / TimedSetBar.row instead of assuming Up next is the running row.
+
+• Toolbar title: p.title. Session status: p.isFinished; elapsed: p.header.clockStart, clockPausedAt, durationText, isPaused. Map stats: p.header.setsText, setsDone, setsPlanned, volumeText. “Working sets” is SessionHeaderStats.setsTitle, not completedSets.
+• Exercise identity: u.exercise (or c.name), c.measurement, c.unit; exercise detail destination c.exercise. Group badge c.groupLabel/u.groupLabel; colour c.colorIndex. Display full exercise name with wrapping; short screenshot names are visual examples, not a string truncation rule.
+• Set heading: r.label.short, spoken, roleText, failureBadge, r.state and r.kind. Progress c.workingDone / workingPlanned / progress; no inference from row count because chains/sides count once.
+• Hero target: r.cells filtered by field/column for the measurement; each uses GridCell.text, field, entered, isGhost, isHint, isMissing and accessibilityLabel/accessibilityValue(draft:). c.unit and columns/columnTitles provide labels and units, but the screen does not render a table. u.values is the already formatted combined CTA/next summary. Display suggested vs entered from the cells; mixed values say “Your load, suggested reps”. Never format directly from Suggestion.load's Double or infer committability from visible text.
+• Reason: u.reason / r.reason for Up next, r.suggestion?.text for a browsed row; optional. Render full text, wrapping beyond one line when needed. Aim for one concise line, never ellipsize the reason into meaninglessness. No suggestion => honest “Choose your load”; do not invent encouragement as evidence.
+• Previous: r.previous.text, .deload and .date (date via Format with calendar). .copy for explicit reuse. nil => “No matching set last time”. Its ordinal/side correspondence is supplied by Previous, not a UI lookup. It can differ from the evidence used by suggestion; show both unchanged.
+• Notes: c.planNotes, c.notes and r.notes, with session notes through existing controller surface. A full note is available by tap, not just a clipped instruction.
+• Current action: r.commitValues, canTick, missing; timed Stop uses stopValues. EntryCheck remains in controller. Values typed using c.loadStep / timeStep; RPE uses r.rpeText, r.rpeAccessibilityLabel, r.rpeAccessibilityValue and RPEScaleText. canRateEffort is only the existing no-RPE-column menu flag; do not use it to disable effort entry on weight/reps rows. RPE remains editable on every permitted row, locked rows excluded.
+• Rest hero: switch exhaustively over p.restBar. .resting supplies label, slot, startedAt, endsAt, next, notifies; slot == nil means manual timer. Use native timer rendering and p.nextChange to re-present at boundaries. .restOver and .go strings come from core; .timedSet supplies row,label,startedAt,endsAt; .empty/.allDone are explicit. Never classify a rest by comparing its displayed English label.
+• Superset base: p.blocks[].group.key, kind, pairing, rounds, roundRest, title, colorIndex, members; c.groupLabel and c.restChip; u.round. c.rests[].kind/seconds/text/defaultSeconds/defaultText/isSetInGym feed rest editing. These fields alone do NOT provide every row's round or the execution-order rail.
+• Chain base: r.isSegment, label, state, stopText and suggestion. These do NOT safely identify its head, structure or generated continuation; see additions below. Never parse '2a' or 'M'.
+• Timer hero: r.timer ready(target), running(startedAt, endsAt), done(duration). nil endsAt means stopwatch; elapsed beyond endsAt uses Format.overtime. Coordinator owns notifications; no independent view timer engine.
+• Map: p.blocks / cards / rows, group header and card progress; row ID is navigation identity. Existing rows can give actual receipt values from cells and rpeText. Existing allDone and unticked feed Finish; summary and discardQuestion retain existing semantics.
+• Cross-surface: p.accessory.title/detail/isPaused/restEndsAt. p.liveActivity.title, clockStart, clockPausedAt, exercise, groupLabel, next, nextRowID, canComplete, countdown.kind/label/startedAt/endsAt, setsDone/setsPlanned. p.notification.title/body/fireDate unchanged.
+
+NEW PURE PRESENTATION DATA — PROPOSED, NOT PRESENT TODAY
+
+Add Foundation-only Equatable, Sendable structs to Present; do not put a second scheduler in SwiftUI. Names below are a proposed concrete contract. All strings use Format and presenter's calendar; enums/IDs carry semantics, strings do not.
+
+SessionPresentation.flow: SessionFlowPresentation
+struct SessionFlowPresentation {
+    var orderedRows: [RowID]       // full engine plan sequence, including done and locked
+    var upcoming: [FlowStep]       // current focus + known following steps, wrapping as engine does
+    var lastCompleted: RowID?      // exact just-logged receipt, not last display row
+    var recentChainStop: String?   // latest stopText made persistently available after Up next advances
+}
+struct FlowStep {
+    var id: String                // stable row/edge key
+    var kind: FlowStepKind
+    var title: String
+    var detail: String?
+}
+enum FlowStepKind {
+    case set(row: RowID)
+    case rest(after: RowID, before: RowID, slot: RestSlot?, seconds: Seconds)
+    case conditionalContinuation(head: RowID)
+}
+
+Rest edges are projected by core from its existing sequencing and RestRules helpers, without calling apply or minting records. They describe “if you do these next” and may change after a completion/edit. Explicit focus only changes upcoming ordering, not an already-running rest. Future unknown myo reps cannot be simulated: terminate projection at a conditionalContinuation node. Reconcile edges after every real event. Do not sum them into an estimated finish time.
+
+SetRowPresentation.context: SetContextPresentation
+struct SetContextPresentation {
+    var head: RowID               // self for standalone/head; resolved chainHead otherwise
+    var structure: Structure      // existing domain enum
+    var chainPosition: Int
+    var side: Side?               // existing domain enum
+    var isPerSide: Bool           // alternating reps too, independent of side != nil
+    var round: Int?               // resolved lane-aware group round, nil for warm-up/ungrouped
+    var targetText: String?       // e.g. 'Plan: 6–10 reps at RPE 8', includes termination semantics
+    var nextRequiredText: String? // locked prerequisite or missing-value instruction
+    var canUndoCompletion: Bool   // true only where uncompleteSet permits it
+}
+
+SetRowPresentation.chain: ChainPresentation? // identical shared context for rows in that chain
+struct ChainPresentation {
+    var head: RowID
+    var title: String             // 'Set 2, drop chain' / 'Set 2, myo-reps'
+    var rows: [RowID]             // actual generated rows only, in chain order
+    var canGenerateMore: Bool    // based on structure/stop state, no guaranteed future count
+    var stopText: String?
+}
+
+These are projections of Row.target, structure, chainHead, chainPosition, side, exercise laterality, existing ordinals and stop computation. Most could be calculated today in app code, but that would violate “views compute no rule” and fail on replacement lanes or changing chains. Existing group.rounds plus context.round are enough for round title; no separate UI-owned round counter.
+
+LiveActivityContent additions for contextual parity (all optional to decode older content):
+    var roundText: String?
+    var lastTimeText: String?
+    var reasonText: String?
+The app copies them into widget ContentState because the widget does not link SpotterKit. Use the full reason only in expanded Lock Screen layout; compact layouts keep exercise, next and time. No additional payload needed for the progress counter.
+
+No new engine event is required for the recommended first version. Review tray state (selected row, draft, presented values, committing flag) is ephemeral app UI state. Do not persist 'working' simply because the focus screen is visible. If future watch logging needs a durable started-rep-set phase, design that separately with a compatible journal schema.
+
+GESTURES, MOTION, HAPTICS, ACCESSIBILITY
+
+Primary controls 60 pt high, minimum other hit targets 48×48 pt, 12 pt separation. Dock within bottom thumb zone, with safe-area clearance; numeric value itself is also a large edit target in the review tray. No swipe-to-complete, long-press-only editing, mandatory drag, precise sliders or horizontally swiping pages. Lists can scroll normally. Swipe-down dismisses sheets; every sheet has Cancel/Done as applicable. Destructive actions remain labelled menu items with existing confirmation.
+
+Transition: 180–220 ms opacity/position change of at most 12 pt, stable header and dock. Completed set settles into its receipt; rest clock replaces hero in place. The A1/A2 rail advances one highlighted node, not an entire scrolling page. Do not wait for an animation to accept input. Reduce Motion => crossfade, no travelling elements. When a sheet is open, do not move underlying content; re-resolve state when it closes.
+
+Use existing completion haptic once on successful journaled completion; light selection on focus/value steps; warning on engine/entry errors; coordinator's rest-end and timed-target haptics once, deduplicated across render updates. No celebratory pulse after every rep or ticking haptic every second. Distinct text and shapes communicate states without haptics or colour.
+
+Large 80 pt targets and 108 pt timer at default size, 17 pt secondary text, 34–38 pt name. Never put a timer inside a narrow chip. Use scalable system text; at accessibility sizes content scrolls and the dock stacks. Never shrink values to fit a fixed screenshot. VoiceOver reads exercise, set, state, target, reason, previous, then action; announces state change once, never each timer second. Use existing GridCell accessibility strings. Reduce Transparency => opaque high-contrast dock; Increase Contrast strengthens borders and secondary text. Do not rely on the CSS glass approximation as validation of native contrast.
+
+LOCK SCREEN AND LATER WATCH
+
+Lock Screen follows Beat's same grammar: Rest label + dominant countdown; Next: A1 Glute Bridge, round 2, ×16. Expanded ready state may include matched last time and reason. Rest buttons remain −15/+15/Skip. For reps, use 'Review set' deep link to the same iPhone tray for consistent two-tap logging; direct legacy Done may remain only if the product intentionally keeps that faster one-tap surface, gated by canComplete and entry validation. Timed Stop remains direct, gated by canComplete. If reps are missing, 'Enter reps' opens the app, never a dead Done button. Round rest and transition use countdown.kind, not colour alone. Do not render the next exercise as the currently running timed exercise; the timed bar's label supplies current context.
+
+Future watch: one target, one preceding reference and the same next rail reduced to one line; crown for editing, no grids. Reuse the semantic projection and controller commands; cross-device ownership, event deduplication and sync are explicitly outside this screen build and must be designed before watch writes are enabled.
+
+IMPLEMENTATION ORDER AND ACCEPTANCE
+
+1. Add pure context/flow projections, tests for unequal group rounds/replacement lanes, zero transitions, side pairs, warm-ups, dynamically generated/stopped chains and focus outside plan order.
+2. Build ready/review/rest with existing commands. Verify exactly two taps for accepting a complete suggestion, no accidental re-log, no compulsory RPE, typed values surviving focus changes, previous.copy excluding effort, missing/hint reps not silently committed.
+3. Build map/receipt editing and timed mode. Verify edits during rest do not restart the clock; chain edits add/remove pending links; timers survive foreground/background, overtime and app relaunch; countdowns never coexist; pause session clock does not pause rest.
+4. Update Live Activity display and deep links with optional new payload fields. Verify canComplete and entry-warning gating, round labels and a timed Stop.
+5. Device pass: one thumb, floor glance, large Dynamic Type, VoiceOver, Reduce Motion/Transparency, dark/light appearance. Check all measurement modes, not just kg/reps. Only then consider motion polish.
+
+The HTML is a static visual specification, not a runnable app or proof of SwiftUI behaviour. All screens are exactly 440×956 CSS px. Horizontal gallery preserves full-size screens, with no remote assets. Values from the owner's history are real; displayed active-state snapshots are illustrative, not a replay of a single live session. Day 1 and Fully Body are intentionally labelled separately. Historical Chest Press drop 35×8 is shown unchanged; the next computed drop 25 kg is different because core floors a 20% reduction to its machine grid. Plank 1:02 and 0:53 remain different ordinals; suggestions 1:07 and 0:58 come from documented vectors. Bird Dog 10 each side is explicitly owner-entered while the shown suggestion is 11. The two-tap Leg Press example uses the screenshot's next-session 110×8 recommendation from 105×10 at RPE 8; verify all target strings through production presenter fixtures when implementing.
+
+ARTIFACTS
+/tmp/spotter-concepts/index.html — six required states plus confirmation, round rest, Lock Screen and chest-history detail.
+/tmp/spotter-concepts/design-spec.txt — this full design and implementation contract.
+/tmp/spotter-concepts/spotter-references.jpg and hevy-references.jpg — local inspection contact sheets.
