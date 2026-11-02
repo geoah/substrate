@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct SubstrateApp: App {
     @StateObject private var store = ServerStore()
+    @StateObject private var sessions = ConsoleSessions()
     @StateObject private var updates = Updater()
     @Environment(\.scenePhase) private var phase
 
@@ -10,6 +11,7 @@ struct SubstrateApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(store)
+                .environmentObject(sessions)
                 .environmentObject(updates)
                 .updateOffer(updates)
                 #if os(macOS)

@@ -664,7 +664,8 @@ scope reaches:
 `full` is a scope with no pattern: everything a password sign-in gets
 ([0204](decisions/0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md)).
 The Console app asks for it, so the owner signs in on the server's own page
-in Safari rather than typing a password into the app. A request names it
+in Safari rather than typing a password into the app, and the app holds the
+session in the Keychain and hands it to the console it runs. A request names it
 alone, with no `authorization_details`; anything beside it is refused. The
 approval page leads with a warning, offers nothing to uncheck, and takes the
 approval only through a human door. Approving mints a token without scopes,

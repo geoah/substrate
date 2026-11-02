@@ -18,6 +18,10 @@ final class ConsoleSchemeHandler: NSObject, WKURLSchemeHandler {
     /// Tasks WebKit has not stopped. A scheme task must not be answered once
     /// it is stopped (WebKit raises), so every answer checks here first.
     private var live: [ObjectIdentifier: URLSessionDataTask] = [:]
+    /// The window closed: a session made no task after it is invalidated,
+    /// and creating one throws, so a page still running its last script is
+    /// answered without the server.
+    private var invalidated = false
 
     init(server: URL) {
         self.server = server
@@ -34,6 +38,7 @@ final class ConsoleSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     func invalidate() {
+        invalidated = true
         session.invalidateAndCancel()
     }
 
@@ -120,6 +125,10 @@ final class ConsoleSchemeHandler: NSObject, WKURLSchemeHandler {
     // MARK: the substrate
 
     private func forward(_ task: any WKURLSchemeTask, url: URL) {
+        guard !invalidated else {
+            task.didFailWithError(URLError(.cancelled))
+            return
+        }
         var target = URLComponents(url: server, resolvingAgainstBaseURL: false)!
         let asked = URLComponents(url: url, resolvingAgainstBaseURL: false)
         // Percent-encoded as asked: a declaration id's `/` travels as `%2F`

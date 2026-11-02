@@ -1,3 +1,4 @@
+import SubstrateKit
 import SwiftUI
 import WebKit
 
@@ -23,9 +24,11 @@ final class ConsoleController: NSObject, ObservableObject {
     /// What the page's Check for updates asks for; the window wires it to the
     /// app's one updater.
     var checkForUpdates: (() -> Void)?
+    /// The page said the app's sign-in ended; the window hands it to the
+    /// app's sessions.
+    var signedOut: (() -> Void)?
 
     private let schemeHandler: ConsoleSchemeHandler
-    private let signIn: ConsoleSignIn
     private var observations: [NSKeyValueObservation] = []
     /// Windows the page opened (`window.open`), held until they navigate
     /// somewhere the system browser should show instead.
@@ -35,10 +38,11 @@ final class ConsoleController: NSObject, ObservableObject {
     private var driver: DebugDriver?
     #endif
 
-    init(server: URL) {
+    /// `session` is the app's sign-in to `server`, which the page reads and
+    /// keeps none of; nil where the console's own page signs in.
+    init(server: URL, session: Session?) {
         self.server = server
         schemeHandler = ConsoleSchemeHandler(server: server)
-        signIn = ConsoleSignIn(server: server)
 
         let config = WKWebViewConfiguration()
         config.websiteDataStore = ServerStore.dataStore(for: server)
@@ -49,7 +53,8 @@ final class ConsoleController: NSObject, ObservableObject {
         #endif
         let content = WKUserContentController()
         content.addUserScript(WKUserScript(
-            source: Self.shellScript(server: server), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            source: Self.shellScript(server: server, session: session), injectionTime: .atDocumentStart,
+            forMainFrameOnly: true))
         config.userContentController = content
 
         webView = WKWebView(frame: .zero, configuration: config)
@@ -66,7 +71,6 @@ final class ConsoleController: NSObject, ObservableObject {
         super.init()
 
         content.add(WeakMessageHandler(self), name: "substrateShell")
-        content.addScriptMessageHandler(signIn, contentWorld: .page, name: ConsoleSignIn.handlerName)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         observations = [
@@ -91,31 +95,30 @@ final class ConsoleController: NSObject, ObservableObject {
         driver?.stop()
         #endif
         observations.removeAll()
-        signIn.cancel()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "substrateShell")
-        webView.configuration.userContentController.removeScriptMessageHandler(
-            forName: ConsoleSignIn.handlerName, contentWorld: .page)
         webView.stopLoading()
         schemeHandler.invalidate()
     }
 
     /// What the page reads before any of its own script runs.
-    private static func shellScript(server: URL) -> String {
+    private static func shellScript(server: URL, session: Session?) -> String {
         #if os(macOS)
         let platform = "macos"
         #else
         let platform = "ios"
         #endif
         let build = BuildInfo.current
-        let info: [String: Any] = [
+        var info: [String: Any] = [
             "platform": platform,
             "server": server.absoluteString.trimmingCharacters(in: ["/"]),
             "version": build.version,
             "updates": build.updates != nil,
-            // The sign-in page asks the app to sign in where the server can
-            // grant it full access (ConsoleSignIn).
-            "signIn": true,
         ]
+        // The app's sign-in, which the page reads (`shellSession` in
+        // web/console/src/lib/shell.ts) and never stores.
+        if let session, let tokenID = session.tokenID {
+            info["session"] = ["secret": session.secret, "repository": session.repository, "tokenId": tokenID]
+        }
         let json = String(data: try! JSONSerialization.data(withJSONObject: info, options: [.sortedKeys]), encoding: .utf8)!
         return "window.substrateShell = Object.freeze(\(json));"
     }
@@ -146,7 +149,7 @@ final class ConsoleController: NSObject, ObservableObject {
         switch type {
         case "changeServer": picking = true
         case "checkForUpdates": checkForUpdates?()
-        case "cancelSignIn": signIn.cancel()
+        case "signedOut": signedOut?()
         default: break
         }
     }

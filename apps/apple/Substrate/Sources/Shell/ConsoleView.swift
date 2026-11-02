@@ -1,3 +1,4 @@
+import SubstrateKit
 import SwiftUI
 import WebKit
 
@@ -15,17 +16,25 @@ struct ConsoleWebView: UIViewRepresentable {
 }
 #endif
 
-/// A window: the server picker until a server is chosen, the console after,
-/// and the picker again over the console when the page or the menu asks.
+/// A window: the connect screen until the app opens a server, the console
+/// after, and the connect screen again over the console when the page or the
+/// menu asks to change servers, and in its place when the sign-in ends.
 struct RootView: View {
     @EnvironmentObject private var store: ServerStore
+    @EnvironmentObject private var sessions: ConsoleSessions
 
     var body: some View {
-        if let server = store.current {
-            ConsoleWindow(server: server).id(server)
-        } else {
-            ServerPicker(cancellable: false)
+        Group {
+            if let server = store.current, sessions.opens(server) {
+                let session = sessions.session(for: server)
+                // A new sign-in is a new page: the session is read before any
+                // of the page's script runs.
+                ConsoleWindow(server: server, session: session).id("\(server.absoluteString) \(session?.tokenID ?? "page")")
+            } else {
+                ConsoleConnect(cancellable: false)
+            }
         }
+        .task { await sessions.revokePending(on: store.recent) }
     }
 }
 
@@ -35,8 +44,8 @@ private struct ConsoleWindow: View {
     // runs once per identity, and RootView keys the identity on the server.
     @StateObject private var controller: ConsoleController
 
-    init(server: URL) {
-        _controller = StateObject(wrappedValue: ConsoleController(server: server))
+    init(server: URL, session: Session?) {
+        _controller = StateObject(wrappedValue: ConsoleController(server: server, session: session))
     }
 
     var body: some View {
@@ -48,6 +57,7 @@ private struct ConsoleWindow: View {
 private struct ConsoleContent: View {
     @ObservedObject var controller: ConsoleController
     @EnvironmentObject private var updates: Updater
+    @EnvironmentObject private var sessions: ConsoleSessions
 
     var body: some View {
         ConsoleWebView(controller: controller)
@@ -59,16 +69,20 @@ private struct ConsoleContent: View {
             .ignoresSafeArea(.container, edges: .bottom)
             #endif
             .sheet(isPresented: $controller.picking) {
-                ServerPicker(cancellable: true)
+                ConsoleConnect(cancellable: true)
                     // An alert from the window under a sheet never shows, so
-                    // the picker's own check answers from the sheet.
+                    // the sheet's own update check answers from it.
                     .updateOffer(updates)
                     #if os(macOS)
-                    .frame(width: 460)
+                    .frame(width: 460, height: 640)
                     #endif
             }
             .onAppear {
                 controller.checkForUpdates = { updates.checkNow() }
+                let server = controller.server
+                controller.signedOut = { [sessions] in
+                    Task { await sessions.signedOut(of: server) }
+                }
             }
     }
 }
