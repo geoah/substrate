@@ -214,21 +214,24 @@ def examples() -> dict[Path, dict]:
 
 
 def field_line(name: str, spec: dict) -> str:
+    """One field as `name[]*: type`; a string field is the name alone, which
+    the guide's legend says, to keep the prompt under its cap."""
     kind = spec["type"]
     if "values" in spec:
         kind = "|".join(entry["value"] if isinstance(entry, dict) else str(entry) for entry in spec["values"])
     elif kind == "reference":
         kind = "ref " + spec.get("kind", "")
-    return f"{name}{'[]' if spec.get('repeated') else ''}{'*' if spec.get('required') else ''}: {kind}"
+    head = f"{name}{'[]' if spec.get('repeated') else ''}{'*' if spec.get('required') else ''}"
+    return head if kind == "string" else f"{head}: {kind}"
 
 
 def field_guide(name: str, properties: dict, indent: str = "") -> list[str]:
     plain, said = [], {}
     for prop, spec in properties.items():
-        if "fields" in spec:
+        if "fields" in spec or (name.startswith("groups") and prop in GROUP_GUIDE_SKIP):
             continue
         line = field_line(prop, spec)
-        values = line.split(": ", 1)[1]
+        values = line.split(": ", 1)[1] if ": " in line else ""
         if "|" in values and values in said:
             line = line.split(": ", 1)[0] + f": as {said[values]}"
         said.setdefault(values, prop)
@@ -240,15 +243,22 @@ def field_guide(name: str, properties: dict, indent: str = "") -> list[str]:
     return lines
 
 
-# Fields the coach never writes, left out of its guide.
+# Fields the coach never writes, left out of its guide: an exercise's codes,
+# and the suggestion engine's per-exercise tuning, since the app picks loads
+# and reps (instructions.md, "Your job").
 GUIDE_SKIP = ("codes",)
+EXERCISE_GUIDE_SKIP = ("defaultRPE", "repGain", "dropPercent", "timeStep", "myoStopRule", "myoMaxMiniSets")
+# A group's `pairing` only picks the default transition, which the coach
+# writes outright (mechanics.md).
+GROUP_GUIDE_SKIP = ("pairing",)
 
 
 def coach_guide(version: int) -> str:
     lines = [
         f"# Fields you write (training package version {version})",
         "",
-        "`*` required, `[]` a list. A reference is a record path such as",
+        "Fields go under `input.properties`. `*` required, `[]` a list, no type a",
+        "string. A reference is a record path such as",
         "`<authority>/training/exercise/bench-press`; a quantity is",
         '`{value: "60", unit: kg}`; a decimal is a string ("7.5"); a duration is',
         "ISO 8601 (`PT2M30S`). Clear a property with a patch naming it `null`.",
@@ -256,7 +266,10 @@ def coach_guide(version: int) -> str:
     ]
     for name in ("routine", "exercise"):
         doc = documents(name)[0]
-        lines += field_guide(doc["metadata"]["id"], doc["data"]["properties"])
+        properties = doc["data"]["properties"]
+        if name == "exercise":
+            properties = {k: v for k, v in properties.items() if k not in EXERCISE_GUIDE_SKIP}
+        lines += field_guide(doc["metadata"]["id"], properties)
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
