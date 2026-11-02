@@ -1,5 +1,6 @@
 import dnssd
 import Foundation
+import SubstrateResolv
 
 /// TXT lookups through the system resolver (`DNSServiceQueryRecord`), which
 /// is what an app reads `_substrate.<name>` with: Foundation has no TXT
@@ -20,6 +21,14 @@ public struct DNSServiceTXTResolver: TXTResolver {
         public var errorDescription: String? {
             code == 0 ? "Looking up \(name) took too long." : "Looking up \(name) failed (DNS-SD error \(code))."
         }
+    }
+
+    /// The system resolver said the name has no record and the DNS servers,
+    /// asked again, did not agree: a SERVFAIL, a refusal, or a record DNS-SD
+    /// missed.
+    public struct Unconfirmed: LocalizedError, Sendable {
+        public let name: String
+        public var errorDescription: String? { "Looking up \(name) failed: the DNS servers did not answer it." }
     }
 
     public func txt(_ name: String) async throws -> [String]? {
@@ -57,6 +66,7 @@ private final class TXTQuery: @unchecked Sendable {
     private var answers: [String] = []
     private var continuation: CheckedContinuation<[String]?, Error>?
     private var done = false
+    private var confirming = false
 
     init(name: String) {
         self.name = name
@@ -107,7 +117,7 @@ private final class TXTQuery: @unchecked Sendable {
         // ReturnIntermediates delivers a negative answer as this error rather
         // than waiting out the timeout.
         if error == DNSServiceErrorType(kDNSServiceErr_NoSuchRecord) || error == DNSServiceErrorType(kDNSServiceErr_NoSuchName) {
-            finish(.success(nil))
+            confirmNegative()
             return
         }
         guard error == DNSServiceErrorType(kDNSServiceErr_NoError) else {
@@ -120,6 +130,27 @@ private final class TXTQuery: @unchecked Sendable {
         }
         if flags & DNSServiceFlags(kDNSServiceFlagsMoreComing) == 0, !answers.isEmpty {
             finish(.success(answers))
+        }
+    }
+
+    /// DNS-SD answers a SERVFAIL with the same NoSuchRecord as a name that has
+    /// no record, and only the second may let discovery go on to the web
+    /// host, so the negative answer is asked again of the plain resolver,
+    /// whose answer tells them apart. The query's own timeout still bounds it.
+    private func confirmNegative() {
+        guard !confirming, !done else { return }
+        confirming = true
+        let name = name
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let outcome = substrate_txt_outcome(name, 2)
+            queue.async { [self] in
+                switch outcome {
+                case SubstrateTXTNoSuchName, SubstrateTXTNoData:
+                    finish(.success(nil))
+                default:
+                    finish(.failure(DNSServiceTXTResolver.Unconfirmed(name: name)))
+                }
+            }
         }
     }
 
