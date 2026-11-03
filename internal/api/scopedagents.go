@@ -717,7 +717,7 @@ func (s *scopedDataset) coversAgentReads(ctx context.Context, agent string) (boo
 		}
 		info, held := reg[r.Pattern]
 		internal := !vocabulary.IsTypeGlob(r.Pattern) && (!held || internalKind(info))
-		if !s.grant.Covers(scope.Scope{Verb: scope.Read, Pattern: r.Pattern}, internal) {
+		if !s.grant.ReachCovered(scope.Read, r.Pattern, internal, internalKinds(reg)...) {
 			return false, nil
 		}
 	}

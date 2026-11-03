@@ -627,7 +627,7 @@ func (p *planner) reach(ctx context.Context, b *catalog.Bundle, chain []*catalog
 		for _, by := range r.By {
 			entry.By = append(entry.By, substrate.AuthorizationReachBy{Type: by.Type, ID: by.ID})
 		}
-		entry.Covered = p.opts.Approved.Covers(r.Pattern, r.Write, !vocabulary.IsTypeGlob(r.Pattern) && internal(r.Pattern))
+		entry.Covered = p.opts.Approved.Covers(r.Pattern, r.Write, !vocabulary.IsTypeGlob(r.Pattern) && internal(r.Pattern), p.internalKinds(chain)...)
 		out = append(out, entry)
 	}
 	return out, nil
@@ -639,14 +639,14 @@ func (p *planner) reach(ctx context.Context, b *catalog.Bundle, chain []*catalog
 // up check reads a kind the repository lacks.
 func (p *planner) internalIn(chain []*catalog.Bundle) func(kind string) bool {
 	return func(kind string) bool {
-		if k, held := p.kinds[kind]; held {
-			purpose, _ := k.Definition["purpose"].(string)
-			return purpose == vocabulary.PurposeInternal
-		}
 		for _, b := range chain {
 			if k, ok := b.Kind(kind); ok {
 				return k.Purpose == vocabulary.PurposeInternal
 			}
+		}
+		if k, held := p.kinds[kind]; held {
+			purpose, _ := k.Definition["purpose"].(string)
+			return purpose == vocabulary.PurposeInternal
 		}
 		return true
 	}
@@ -901,4 +901,24 @@ func (p *planner) triggerProperties(ctx context.Context, id string) (map[string]
 		}
 	}
 	return nil, nil
+}
+
+// Candidate purposes take precedence: an upgrade may make a public kind internal.
+func (p *planner) internalKinds(chain []*catalog.Bundle) []string {
+	purposes := map[string]bool{}
+	for ref, k := range p.kinds {
+		purposes[ref] = k.Definition["purpose"] == vocabulary.PurposeInternal
+	}
+	for _, b := range chain {
+		for _, k := range b.Kinds() {
+			purposes[k.Identity] = k.Purpose == vocabulary.PurposeInternal
+		}
+	}
+	var out []string
+	for ref, internal := range purposes {
+		if internal {
+			out = append(out, ref)
+		}
+	}
+	return out
 }

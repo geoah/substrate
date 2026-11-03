@@ -541,23 +541,26 @@ func (g Grant) Calls(function string) bool {
 // CallsAny reports whether the grant holds any call scope.
 func (g Grant) CallsAny() bool { return g.has(Call) }
 
-// ReachCovered reports whether the grant's read and write scopes cover one
-// entry of a function's declared reach: a kind it reads (verb Read) or
-// writes (verb Write), named in full or as a glob (decision 0219). An exact
-// kind is covered when the grant reads or writes it under every rule a
-// scope keeps, internal being its declared purpose; a glob is covered when
-// a scope of the verb (or a write, for a read) is at least as wide, and a
-// write glob never, where it reaches the core or llm package, since no scope
-// writes those and a function writing `*` reaches further than any approval.
-func (g Grant) ReachCovered(verb Verb, pattern string, internal bool) bool {
+// ReachCovered compares code's effective reach with the token's. Code globs
+// can read internal kinds that scope globs exclude. Core and llm globs need
+// full access even before new kinds arrive; other globs need exact scopes
+// for every currently matched internal kind, supplied in internalKinds.
+// Callers must recheck against the live registry on every admission.
+func (g Grant) ReachCovered(verb Verb, pattern string, internal bool, internalKinds ...string) bool {
 	if !vocabulary.IsTypeGlob(pattern) {
 		if verb == Write {
 			return g.Writes(pattern, internal)
 		}
 		return g.Reads(pattern, internal)
 	}
-	if verb == Write && globReachesUnwritable(pattern) {
+	if globReachesUnwritable(pattern) {
 		return false
+	}
+	for _, kind := range internalKinds {
+		if vocabulary.MatchTypeGlob(pattern, kind) && !vocabulary.AuthKinds[kind] &&
+			!g.ReachCovered(verb, kind, true) {
+			return false
+		}
 	}
 	return g.Covers(Scope{Verb: verb, Pattern: pattern}, false)
 }
