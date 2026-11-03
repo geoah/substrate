@@ -156,7 +156,9 @@ func (c *Catalog) publishedUpgrade(ctx context.Context, b *Bundle, ds substrate.
 		return plan, nil
 	}
 	narrows, additive := CompareClosures(old, b)
-	plan.ReviewRequired = !additive
+	// Code whose reach grows past the held closure's waits for the owner
+	// (decision 0215), whatever else the comparison concludes.
+	plan.ReviewRequired = !additive || len(ReachGrows(old.Reach(), b.Reach())) > 0
 	if narrows {
 		tokens, err := ds.Tokens(ctx)
 		if err != nil {
