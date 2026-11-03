@@ -37,7 +37,7 @@ public struct SettingsRow: Codable, Hashable, Sendable, Identifiable {
         /// A button; `destructive` for one that gives something up.
         case action(destructive: Bool, enabled: Bool)
         /// Words of their own, a status or a warning.
-        case note(Tone)
+        case note(ScreenTone)
         /// A problem in words, and what fixes it.
         case problem(ProblemPresentation)
     }

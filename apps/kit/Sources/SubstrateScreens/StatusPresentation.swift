@@ -4,7 +4,7 @@
 public struct StatusPresentation: Codable, Hashable, Sendable {
     public var title: String
     public var symbol: ScreenSymbol
-    public var tone: Tone
+    public var tone: ScreenTone
     public var sentence: String
     public var rows: [LabeledValue]
     public var actions: [ActionButton<StatusAction>]
@@ -13,7 +13,7 @@ public struct StatusPresentation: Codable, Hashable, Sendable {
     public var footer: String?
     public var refused: RefusedWrites?
 
-    public init(title: String, symbol: ScreenSymbol, tone: Tone, sentence: String, rows: [LabeledValue], actions: [ActionButton<StatusAction>],
+    public init(title: String, symbol: ScreenSymbol, tone: ScreenTone, sentence: String, rows: [LabeledValue], actions: [ActionButton<StatusAction>],
                 busy: Bool, footer: String?, refused: RefusedWrites?)
     {
         self.title = title

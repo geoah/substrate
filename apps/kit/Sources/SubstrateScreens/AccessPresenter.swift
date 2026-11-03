@@ -95,7 +95,7 @@ public enum AccessPresenter {
         }
     }
 
-    private static func lineWithChanges(symbol: ScreenSymbol, tone: Tone, title: String, message: String, changes: [Change],
+    private static func lineWithChanges(symbol: ScreenSymbol, tone: ScreenTone, title: String, message: String, changes: [Change],
                                         action: ActionButton<AccessAction>?) -> IssueLine
     {
         IssueLine(symbol: symbol, tone: tone, title: title, message: message, changes: changes.prefix(shownChanges).map(ChangeLine.init),

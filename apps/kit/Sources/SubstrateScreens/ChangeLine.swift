@@ -7,13 +7,13 @@ import SubstrateAuth
 public struct ChangeLine: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var symbol: ScreenSymbol
-    public var tone: Tone
+    public var tone: ScreenTone
     public var words: String
     public var detail: String?
     /// The detail is the reason the change is blocked, drawn in full contrast.
     public var detailStands: Bool
 
-    public init(id: String, symbol: ScreenSymbol, tone: Tone, words: String, detail: String? = nil, detailStands: Bool = false) {
+    public init(id: String, symbol: ScreenSymbol, tone: ScreenTone, words: String, detail: String? = nil, detailStands: Bool = false) {
         self.id = id
         self.symbol = symbol
         self.tone = tone
@@ -26,7 +26,7 @@ public struct ChangeLine: Codable, Hashable, Sendable, Identifiable {
     /// mark an allowed one does.
     public init(_ change: Change) {
         let symbol: ScreenSymbol
-        let tone: Tone
+        let tone: ScreenTone
         if change.blocked {
             (symbol, tone) = (.warning, .caution)
         } else if change.leftOut {

@@ -37,12 +37,12 @@ private func take(_ count: Int, from stream: AsyncStream<WatchEvent>) async -> [
 @Suite("The watch")
 struct WatchTests {
     @Test func aLineIsABookmarkARowOrATerminalFrameAndAHeartbeatIsNothing() {
-        #expect(WatchLine.parse(#"{"bookmark":41,"generation":"g1"}"#) == .bookmark(WatchCursor(seq: 41, generation: "g1")))
-        #expect(WatchLine.parse(row(42, "a", "delete")) == .row(WatchRow(seq: 42, kind: taskKind, recordID: "a", op: "delete")))
-        #expect(WatchLine.parse(#"{"error":{"code":"compacted","message":"gone"}}"#) == .failed(code: "compacted", message: "gone"))
-        #expect(WatchLine.parse("{}") == nil)
-        #expect(WatchLine.parse("") == nil)
-        #expect(WatchLine.parse("not json") == nil)
+        #expect(WatchFrame.parse(#"{"bookmark":41,"generation":"g1"}"#) == .bookmark(WatchCursor(seq: 41, generation: "g1")))
+        #expect(WatchFrame.parse(row(42, "a", "delete")) == .row(WatchRow(seq: 42, kind: taskKind, recordID: "a", op: "delete")))
+        #expect(WatchFrame.parse(#"{"error":{"code":"compacted","message":"gone"}}"#) == .failed(code: "compacted", message: "gone"))
+        #expect(WatchFrame.parse("{}") == nil)
+        #expect(WatchFrame.parse("") == nil)
+        #expect(WatchFrame.parse("not json") == nil)
     }
 
     @Test func itFollowsFromTheLiveHeadThroughHeartbeats() async throws {

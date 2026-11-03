@@ -125,7 +125,7 @@ public struct WatchFollower: Sendable {
                 return .interrupted(explain(refusal, app: app, server: client.server), progressed: false)
             }
             for try await line in stream.lines {
-                guard let parsed = WatchLine.parse(line) else { continue }
+                guard let parsed = WatchFrame.parse(line) else { continue }
                 progressed = true
                 switch parsed {
                 case let .bookmark(opened):

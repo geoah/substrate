@@ -2,10 +2,10 @@
 public struct AccessBanner: Codable, Hashable, Sendable {
     /// Orange when any issue stops the app, or will, or blocks an approval;
     /// blue otherwise.
-    public var tone: Tone
+    public var tone: ScreenTone
     public var lines: [IssueLine]
 
-    public init(tone: Tone, lines: [IssueLine]) {
+    public init(tone: ScreenTone, lines: [IssueLine]) {
         self.tone = tone
         self.lines = lines
     }
@@ -14,7 +14,7 @@ public struct AccessBanner: Codable, Hashable, Sendable {
 /// One issue: what needs the owner, in words, and the one thing to press.
 public struct IssueLine: Codable, Hashable, Sendable {
     public var symbol: ScreenSymbol
-    public var tone: Tone
+    public var tone: ScreenTone
     public var title: String
     public var message: String
     /// The first few changes an approval would make.
@@ -23,7 +23,7 @@ public struct IssueLine: Codable, Hashable, Sendable {
     public var more: String?
     public var action: ActionButton<AccessAction>?
 
-    public init(symbol: ScreenSymbol, tone: Tone, title: String, message: String, changes: [ChangeLine] = [], more: String? = nil,
+    public init(symbol: ScreenSymbol, tone: ScreenTone, title: String, message: String, changes: [ChangeLine] = [], more: String? = nil,
                 action: ActionButton<AccessAction>? = nil)
     {
         self.symbol = symbol

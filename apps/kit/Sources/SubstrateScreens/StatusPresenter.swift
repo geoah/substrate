@@ -14,7 +14,7 @@ public enum StatusPresenter {
                                sending: Bool, waiting: Int, parked: [ParkedWrite], kindLabels: [String: String] = [:],
                                locale: Locale, timeZone: TimeZone) -> StatusPresentation
     {
-        let (symbol, tone): (ScreenSymbol, Tone) = switch status {
+        let (symbol, tone): (ScreenSymbol, ScreenTone) = switch status {
         case .ready(0): (.upToDate, .positive)
         case .ready, .preparing: (.sending, .informative)
         case .offline: (.offline, .caution)

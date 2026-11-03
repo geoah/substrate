@@ -1,8 +1,8 @@
 import Foundation
 import SubstrateCore
 
-/// One line of the watch's ndjson.
-public enum WatchLine: Equatable, Sendable {
+/// One line of the watch's ndjson: a frame.
+public enum WatchFrame: Equatable, Sendable {
     /// The opening control frame: the head the stream starts after, and the
     /// history generation every later resume must name beside a seq.
     case bookmark(WatchCursor)
@@ -12,7 +12,7 @@ public enum WatchLine: Equatable, Sendable {
     case failed(code: String, message: String)
 
     /// A line, or nil for a blank line, the `{}` heartbeat or anything else.
-    public static func parse(_ line: String) -> WatchLine? {
+    public static func parse(_ line: String) -> WatchFrame? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, let value = try? JSONDecoder().decode(JSONValue.self, from: Data(trimmed.utf8)),
               case let .object(object) = value

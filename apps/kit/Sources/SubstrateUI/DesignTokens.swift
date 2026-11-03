@@ -6,7 +6,7 @@ import SubstrateScreens
 // writes the same table for Android's renderers later; nothing else in the
 // renderers names a colour or a symbol.
 
-public extension Tone {
+public extension ScreenTone {
     var color: Color {
         switch self {
         case .quiet: .secondary

@@ -4,11 +4,11 @@
 public struct ProblemPresentation: Codable, Hashable, Sendable {
     public var title: String?
     public var message: String
-    public var tone: Tone
+    public var tone: ScreenTone
     public var symbol: ScreenSymbol
     public var fix: ProblemFix?
 
-    public init(title: String? = nil, message: String, tone: Tone = .critical, symbol: ScreenSymbol = .warning, fix: ProblemFix? = nil) {
+    public init(title: String? = nil, message: String, tone: ScreenTone = .critical, symbol: ScreenSymbol = .warning, fix: ProblemFix? = nil) {
         self.title = title
         self.message = message
         self.tone = tone
