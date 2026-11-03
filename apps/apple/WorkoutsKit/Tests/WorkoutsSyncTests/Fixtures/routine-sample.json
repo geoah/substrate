@@ -1,6 +1,6 @@
 {
  "id": "sample-every-feature",
- "kind": "geoah.me/training/routine",
+ "kind": "substrate.reamde.dev/training/routine",
  "properties": {
   "folder": "Sample",
   "groups": [
@@ -22,7 +22,7 @@
   "slots": [
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/rowing-machine"
+     "ref": "substrate.reamde.dev/training/exercise/rowing-machine"
     },
     "key": "row",
     "notes": "A warm-up over a distance: row 500 m at an easy pace. The app keeps your time with the distance.",
@@ -41,7 +41,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/bird-dog"
+     "ref": "substrate.reamde.dev/training/exercise/bird-dog"
     },
     "key": "bird-dog",
     "notes": "A warm-up counted in reps only, one side then the other: 8 reps a side.",
@@ -57,7 +57,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/leg-press-machine"
+     "ref": "substrate.reamde.dev/training/exercise/leg-press-machine"
     },
     "key": "leg-press",
     "notes": "A warm-up (W) at 50 % of your body mass, from Apple Health or typed in Settings; with neither, the warm-up has no load and you enter one. Then a top set and a back-off set 10 % lighter. The warm-up rests 1 min and the working sets 2 min 30 s, this slot's own rests.",
@@ -102,7 +102,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/iso-lateral-chest-press-machine"
+     "ref": "substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine"
     },
     "key": "chest-press",
     "notes": "Each arm has its own plates, so the load is per side. Straight sets of 8 to 12 at RPE 7 to 8, lowered over three seconds (tempo 3-0-1-0). Set 2 rests 3 min, a rest of its own. Set 3 is a drop set: two drops, each 5 kg a side lighter, of 6 reps each.",
@@ -160,7 +160,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/assisted-pull-up-machine"
+     "ref": "substrate.reamde.dev/training/exercise/assisted-pull-up-machine"
     },
     "group": "a",
     "key": "pull-up",
@@ -197,7 +197,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/push-up"
+     "ref": "substrate.reamde.dev/training/exercise/push-up"
     },
     "group": "a",
     "key": "push-up",
@@ -221,7 +221,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/lateral-raise-dumbbell"
+     "ref": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell"
     },
     "key": "lateral-raise",
     "notes": "Myo-reps: 12 to 15, then mini-sets of 4 with 15 s between them, until one comes in under 4 (this set's own rule; the exercise's is to stop when one loses a rep). Set 2 is a myo-rep match: set 1's total reps, in as few mini-sets as it takes.",
@@ -258,7 +258,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/bulgarian-split-squat-dumbbell"
+     "ref": "substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell"
     },
     "key": "split-squat",
     "notes": "One side at a time: the side that did fewer reps last time goes first (the left, the first time), 15 s to switch, and the second side aims for the reps the first side did. The load is per dumbbell.",
@@ -297,7 +297,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/dip-weighted"
+     "ref": "substrate.reamde.dev/training/exercise/dip-weighted"
     },
     "key": "dip",
     "notes": "Your body weight plus 10 kg on a belt: the load is what you add. Set 2 is rest-pause to a total: 20 reps in as many as three bouts, 20 s apart.",
@@ -332,7 +332,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/triceps-pushdown"
+     "ref": "substrate.reamde.dev/training/exercise/triceps-pushdown"
     },
     "key": "pushdown",
     "notes": "A cluster set (4 reps, 15 s, three more clusters, two reps in reserve), then a last set to failure.",
@@ -367,7 +367,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/plank"
+     "ref": "substrate.reamde.dev/training/exercise/plank"
     },
     "group": "b",
     "key": "plank",
@@ -392,7 +392,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/farmers-carry-dumbbell"
+     "ref": "substrate.reamde.dev/training/exercise/farmers-carry-dumbbell"
     },
     "group": "b",
     "key": "carry",
@@ -430,7 +430,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/plank-weighted"
+     "ref": "substrate.reamde.dev/training/exercise/plank-weighted"
     },
     "key": "weighted-plank",
     "notes": "A load and a time: one hold of 30 to 45 s with a 10 kg plate on your back.",

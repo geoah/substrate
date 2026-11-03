@@ -55,8 +55,12 @@ public struct HistoryLoad: Sendable {
 }
 
 /// Finished sessions, one file each: `history/<session id>.json`, holding
-/// `{"format": 2, "records": [session, sets...], "local": {"health": ...}}`
+/// `{"format": 3, "records": [session, sets...], "local": {"health": ...}}`
 /// (§2.3). The records are the codec's flat records, exactly what V2 uploads.
+/// A file from before the package was published (format 2 and below)
+/// spells its kinds `~/training/…`; it is read through `LegacyKinds` and
+/// written back once at this format, so the next launch has nothing to
+/// respell.
 public struct HistoryStore: Sendable {
     public static let directoryName = "history"
 
@@ -84,7 +88,11 @@ public struct HistoryStore: Sendable {
         var unreadable: [UnreadableRecord] = []
         for file in files where file.pathExtension == "json" {
             do {
-                try entries.append(decode(Data(contentsOf: file)))
+                let (entry, respelled) = try decode(Data(contentsOf: file))
+                entries.append(entry)
+                // Written back once in the published spelling, best effort:
+                // a write that fails reads the same way next launch.
+                if respelled { try? write(entry) }
             } catch {
                 let name = "\(Self.directoryName)/\(file.lastPathComponent)"
                 unreadable.append(UnreadableRecord(source: name, kind: codec.kinds.session, id: file.deletingPathExtension().lastPathComponent, reason: String(describing: error)))
@@ -96,7 +104,7 @@ public struct HistoryStore: Sendable {
     }
 
     public func read(_ id: SessionID) throws -> HistoryEntry {
-        try decode(Data(contentsOf: url(for: id)))
+        try decode(Data(contentsOf: url(for: id))).entry
     }
 
     /// Writes the session's file whole, at Finish and when the Health save returns.
@@ -128,19 +136,24 @@ public struct HistoryStore: Sendable {
         try WorkoutsFiles.remove(url(for: id))
     }
 
-    private func decode(_ data: Data) throws -> HistoryEntry {
+    /// The file's entry, and whether it was read from a format before the
+    /// package was published, through `LegacyKinds`.
+    private func decode(_ data: Data) throws -> (entry: HistoryEntry, respelled: Bool) {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let header = try decoder.decode(Header.self, from: data)
-        guard header.format == WorkoutsFormats.historyFormat || header.format == 1 else {
+        guard header.format >= 1, header.format <= WorkoutsFormats.historyFormat else {
             throw HistoryError.unsupportedFormat(header.format)
         }
         let file = try decoder.decode(File.self, from: data)
-        let flat = header.format == 1 ? HistoryMigration.fromFormat1(file.records, kinds: codec.kinds) : file.records
+        // The spelling first: the format 1 migration matches kinds by name.
+        let respelled = header.format < 3
+        var flat = respelled ? file.records.map(LegacyKinds.respell) : file.records
+        if header.format == 1 { flat = HistoryMigration.fromFormat1(flat, kinds: codec.kinds) }
         let sessions = try codec.sessionRecords(from: flat)
         guard sessions.count == 1, let records = sessions.first else { throw HistoryError.notOneSession(sessions.count) }
         guard records.sets.count == flat.count - 1 else { throw HistoryError.strayRecords }
-        return HistoryEntry(records: records, local: file.local ?? HistoryLocal())
+        return (HistoryEntry(records: records, local: file.local ?? HistoryLocal()), respelled)
     }
 
     static func newestFirst(_ lhs: HistoryEntry, _ rhs: HistoryEntry) -> Bool {

@@ -1,14 +1,14 @@
 # Carried into substrate on 2026-11-02 from rxtx.dev, where it was
 # research/workouts/substrate/examples/sessions.yaml, the kinds were the draft
 # mneme.rxtx.dev/training and the app was called Spotter. The kinds are now
-# the app's own ~/training (decision record 0203) and the adapter is
+# the app's own substrate.reamde.dev/training (decision record 0203) and the adapter is
 # substrate-workouts; nothing else changed, so where the comments below
 # mention Mneme they describe the plan of the time. README.md beside this
 # file says how these records relate to the JSON the app bundles.
 #
 # Example records: three finished training sessions and every set done in
-# them, as records of ~/training/session and
-# ~/training/set (research draft of 2026-10-30).
+# them, as records of substrate.reamde.dev/training/session and
+# substrate.reamde.dev/training/set (research draft of 2026-10-30).
 #
 # Apply after exercises.yaml and routines.yaml. The sessions come first and
 # the sets after them: a set's `session` must exist (`mustExist`), and
@@ -146,7 +146,7 @@
 # start from the routine's seed load. The Romanian deadlift's first set
 # stopped at 7 reps, short of 8 with no RPE (the lower back), so the engine
 # took the next set down to 12 kg. Its Health workout id is illustrative.
-kind: ~/training/session
+kind: substrate.reamde.dev/training/session
 metadata:
   id: 01a16363-cf80-73ed-85fd-704f6ce38d73
 data:
@@ -158,12 +158,12 @@ data:
     utcOffsetStart: 60
     utcOffsetEnd: 60
     timezone: Europe/London
-    routine: ~/training/routine/day-1-strength-foundation
+    routine: substrate.reamde.dev/training/routine/day-1-strength-foundation
     routineVersion: 1
     sport: strength
     slots:
       - key: leg-press
-        exercise: ~/training/exercise/leg-press-machine
+        exercise: substrate.reamde.dev/training/exercise/leg-press-machine
         routineSlot: leg-press
         sets:
           - key: w1
@@ -206,7 +206,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: iso-lateral-chest-press
-        exercise: ~/training/exercise/iso-lateral-chest-press-machine
+        exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
         routineSlot: iso-lateral-chest-press
         sets:
           - key: s1
@@ -234,7 +234,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: seated-row
-        exercise: ~/training/exercise/seated-row-machine
+        exercise: substrate.reamde.dev/training/exercise/seated-row-machine
         routineSlot: seated-row
         sets:
           - key: s1
@@ -262,7 +262,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: lateral-raise
-        exercise: ~/training/exercise/lateral-raise-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
         routineSlot: lateral-raise
         sets:
           - key: s1
@@ -284,7 +284,7 @@ data:
             structure: myo
             intraSetPause: PT15S
       - key: romanian-deadlift
-        exercise: ~/training/exercise/romanian-deadlift-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
         routineSlot: romanian-deadlift
         notes: "Set 1 stopped at 7: the lower back. Down to 12 kg for the
           rest."
@@ -330,7 +330,7 @@ data:
 # rep to the first lateral raise, and starts the Romanian deadlift at 12 kg.
 # One pause: a phone call between the row and the raises, inside the rest
 # before the first raise.
-kind: ~/training/session
+kind: substrate.reamde.dev/training/session
 metadata:
   id: 01a17831-8a38-7502-a232-81e9c175d65e
 data:
@@ -342,12 +342,12 @@ data:
     utcOffsetStart: 0
     utcOffsetEnd: 0
     timezone: Europe/London
-    routine: ~/training/routine/day-1-strength-foundation
+    routine: substrate.reamde.dev/training/routine/day-1-strength-foundation
     routineVersion: 1
     sport: strength
     slots:
       - key: leg-press
-        exercise: ~/training/exercise/leg-press-machine
+        exercise: substrate.reamde.dev/training/exercise/leg-press-machine
         routineSlot: leg-press
         sets:
           - key: w1
@@ -390,7 +390,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: iso-lateral-chest-press
-        exercise: ~/training/exercise/iso-lateral-chest-press-machine
+        exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
         routineSlot: iso-lateral-chest-press
         sets:
           - key: s1
@@ -418,7 +418,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: seated-row
-        exercise: ~/training/exercise/seated-row-machine
+        exercise: substrate.reamde.dev/training/exercise/seated-row-machine
         routineSlot: seated-row
         sets:
           - key: s1
@@ -446,7 +446,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: lateral-raise
-        exercise: ~/training/exercise/lateral-raise-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
         routineSlot: lateral-raise
         sets:
           - key: s1
@@ -468,7 +468,7 @@ data:
             structure: myo
             intraSetPause: PT15S
       - key: romanian-deadlift
-        exercise: ~/training/exercise/romanian-deadlift-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
         routineSlot: romanian-deadlift
         sets:
           - key: s1
@@ -517,7 +517,7 @@ data:
 # squat and push-ups. The superset's two rests differ: nothing from bridge
 # to bird dog, a minute after the round. No session RPE: the owner skipped
 # it at Finish.
-kind: ~/training/session
+kind: substrate.reamde.dev/training/session
 metadata:
   id: 01a17d8d-afc0-7a2b-bc4d-5e6f70819203
 data:
@@ -529,12 +529,12 @@ data:
     utcOffsetStart: 0
     utcOffsetEnd: 0
     timezone: Europe/London
-    routine: ~/training/routine/fully-body-collection-1
+    routine: substrate.reamde.dev/training/routine/fully-body-collection-1
     routineVersion: 1
     sport: strength
     slots:
       - key: chest-press
-        exercise: ~/training/exercise/chest-press-machine
+        exercise: substrate.reamde.dev/training/exercise/chest-press-machine
         routineSlot: chest-press
         sets:
           - key: w1
@@ -563,7 +563,7 @@ data:
             structure: drop
             drops: 1
       - key: bulgarian-split-squat
-        exercise: ~/training/exercise/bulgarian-split-squat-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell
         routineSlot: bulgarian-split-squat
         sets:
           - key: s1
@@ -583,7 +583,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: plank
-        exercise: ~/training/exercise/plank
+        exercise: substrate.reamde.dev/training/exercise/plank
         routineSlot: plank
         sets:
           - key: s1
@@ -593,7 +593,7 @@ data:
             durationMin: PT45S
             durationMax: PT1M30S
       - key: crunch
-        exercise: ~/training/exercise/crunch
+        exercise: substrate.reamde.dev/training/exercise/crunch
         routineSlot: crunch
         sets:
           - key: s1
@@ -603,7 +603,7 @@ data:
             repsMin: 12
             repsMax: 20
       - key: lumbar-extension-stretch
-        exercise: ~/training/exercise/lumbar-extension-stretch
+        exercise: substrate.reamde.dev/training/exercise/lumbar-extension-stretch
         routineSlot: lumbar-extension-stretch
         sets:
           - key: s1
@@ -613,7 +613,7 @@ data:
             repsMin: 10
             repsMax: 10
       - key: glute-bridge
-        exercise: ~/training/exercise/glute-bridge
+        exercise: substrate.reamde.dev/training/exercise/glute-bridge
         group: a
         routineSlot: glute-bridge
         sets:
@@ -624,7 +624,7 @@ data:
             repsMin: 12
             repsMax: 20
       - key: bird-dog
-        exercise: ~/training/exercise/bird-dog
+        exercise: substrate.reamde.dev/training/exercise/bird-dog
         group: a
         routineSlot: bird-dog
         sets:
@@ -635,7 +635,7 @@ data:
             repsMin: 8
             repsMax: 10
       - key: pallof-press
-        exercise: ~/training/exercise/cable-core-pallof-press
+        exercise: substrate.reamde.dev/training/exercise/cable-core-pallof-press
         routineSlot: pallof-press
         sets:
           - key: s1
@@ -655,7 +655,7 @@ data:
             rpeMin: "7"
             rpeMax: "7"
       - key: push-up
-        exercise: ~/training/exercise/push-up
+        exercise: substrate.reamde.dev/training/exercise/push-up
         routineSlot: push-up
         sets:
           - key: s1
@@ -679,13 +679,13 @@ data:
 ---
 # ---- sets: Day 1 – Strength Foundation, Thu 22 Oct ------------------------
 # Leg Press (Machine), W1: 40 kg x 12.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16365-cb50-77df-a3b0-674947da373f
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/leg-press-machine
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/leg-press-machine
     slot: leg-press
     order: 1
     ordinal: 1
@@ -714,13 +714,13 @@ data:
     revision: 1
 ---
 # Leg Press (Machine), W2: 70 kg x 6.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16366-f048-7d25-8ece-ab06c4283a1b
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/leg-press-machine
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/leg-press-machine
     slot: leg-press
     order: 2
     ordinal: 2
@@ -753,13 +753,13 @@ data:
 ---
 # Leg Press (Machine), 1: 100 kg x 10 at RPE 7.5. Suggested: "First time;
 # routine load, try 100 kg × 6".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16369-0770-7d84-b8fb-2bdec3590e78
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/leg-press-machine
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/leg-press-machine
     slot: leg-press
     order: 3
     ordinal: 1
@@ -795,13 +795,13 @@ data:
 ---
 # Leg Press (Machine), 2: 100 kg x 10 at RPE 8. Suggested: "Set 1: 100 kg × 10
 # at RPE 7.5; try 100 kg × 10".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a1636c-0510-75ad-9ce4-51528dc18dc7
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/leg-press-machine
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/leg-press-machine
     slot: leg-press
     order: 4
     ordinal: 2
@@ -837,13 +837,13 @@ data:
 ---
 # Leg Press (Machine), 3: 100 kg x 9 at RPE 8.5. Suggested: "Set 2: 100 kg ×
 # 10 at RPE 8; try 100 kg × 10".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a1636e-e370-7a30-a66f-2b0ab3ff8d25
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/leg-press-machine
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/leg-press-machine
     slot: leg-press
     order: 5
     ordinal: 3
@@ -879,13 +879,13 @@ data:
 ---
 # Iso-Lateral Chest Press (Machine), 1: 20 kg x 10 at RPE 7. Suggested: "First
 # time; routine load, try 20 kg × 6".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16372-2b48-710a-b6f1-c7c308eae613
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/iso-lateral-chest-press-machine
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
     slot: iso-lateral-chest-press
     order: 1
     ordinal: 1
@@ -921,13 +921,13 @@ data:
 ---
 # Iso-Lateral Chest Press (Machine), 2: 22.5 kg x 9 at RPE 8. Suggested: "Set
 # 1: 20 kg × 10 at RPE 7, easier than RPE 8; try 22.5 kg × 8".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16374-9478-745b-8557-4da0a0b3f28a
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/iso-lateral-chest-press-machine
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
     slot: iso-lateral-chest-press
     order: 2
     ordinal: 2
@@ -963,13 +963,13 @@ data:
 ---
 # Iso-Lateral Chest Press (Machine), 3: 22.5 kg x 8 at RPE 8.5. Suggested:
 # "Set 2: 22.5 kg × 9 at RPE 8; try 22.5 kg × 9".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16376-78d8-741d-8b7f-3e01a0258499
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/iso-lateral-chest-press-machine
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
     slot: iso-lateral-chest-press
     order: 3
     ordinal: 3
@@ -1006,13 +1006,13 @@ data:
 ---
 # Seated Row (Machine), 1: 45 kg x 12 at RPE 8. Suggested: "First time;
 # routine load, try 45 kg × 8".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16379-3be0-76ae-ab20-15657eb9eaba
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/seated-row-machine
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/seated-row-machine
     slot: seated-row
     order: 1
     ordinal: 1
@@ -1048,13 +1048,13 @@ data:
 ---
 # Seated Row (Machine), 2: 45 kg x 11 at RPE 8.5. Suggested: "Set 1: 45 kg ×
 # 12 at RPE 8; try 45 kg × 12".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a1637b-a128-7cf6-bb24-98e53f8706ac
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/seated-row-machine
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/seated-row-machine
     slot: seated-row
     order: 2
     ordinal: 2
@@ -1090,13 +1090,13 @@ data:
 ---
 # Seated Row (Machine), 3: 45 kg x 10. Suggested: "Set 2: 45 kg × 11 at RPE
 # 8.5; try 45 kg × 10".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a1637e-19f8-7e3f-b121-d89b167c37e0
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/seated-row-machine
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/seated-row-machine
     slot: seated-row
     order: 3
     ordinal: 3
@@ -1130,13 +1130,13 @@ data:
 ---
 # Lateral Raise (Dumbbell), 1: 6 kg x 13 at RPE 7. Suggested: "First time;
 # routine load, try 6 kg × 12".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16380-c590-7593-bbda-70c3efa9c660
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 1
     ordinal: 1
@@ -1172,13 +1172,13 @@ data:
 ---
 # Lateral Raise (Dumbbell), 2: 6 kg x 16 at RPE 9. Suggested: "Set 1: 6 kg ×
 # 13 at RPE 7; try 6 kg × 15".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16382-c548-71ac-a569-ac1b45b1dada
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 2
     ordinal: 2
@@ -1217,18 +1217,18 @@ data:
     revision: 1
 ---
 # Lateral Raise (Dumbbell), M: 6 kg x 4. Suggested: "Mini-set 1: 6 kg × 4".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16383-26f0-7c10-a755-ebce0af42ce6
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 3
     ordinal: 2
     structure: myo
-    continues: ~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada
+    continues: substrate.reamde.dev/training/set/01a16382-c548-71ac-a569-ac1b45b1dada
     chainPosition: 2
     at: "2026-10-22T12:08:22Z"
     timeBasis: completion
@@ -1251,18 +1251,18 @@ data:
     revision: 1
 ---
 # Lateral Raise (Dumbbell), M: 6 kg x 4. Suggested: "Mini-set 2: 6 kg × 4".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16383-8c80-72b6-a1b4-cecab1ae7059
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 4
     ordinal: 2
     structure: myo
-    continues: ~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada
+    continues: substrate.reamde.dev/training/set/01a16382-c548-71ac-a569-ac1b45b1dada
     chainPosition: 3
     at: "2026-10-22T12:08:48Z"
     timeBasis: completion
@@ -1285,18 +1285,18 @@ data:
     revision: 1
 ---
 # Lateral Raise (Dumbbell), M: 6 kg x 4. Suggested: "Mini-set 3: 6 kg × 4".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16383-ee28-7a87-86f6-dde468e24116
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 5
     ordinal: 2
     structure: myo
-    continues: ~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada
+    continues: substrate.reamde.dev/training/set/01a16382-c548-71ac-a569-ac1b45b1dada
     chainPosition: 4
     at: "2026-10-22T12:09:13Z"
     timeBasis: completion
@@ -1320,18 +1320,18 @@ data:
 ---
 # Lateral Raise (Dumbbell), M: 6 kg x 3. Suggested: "Mini-set 4: 6 kg × 4".
 # Then: "Stop: mini-set 4 got 3, first was 4".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16384-53b8-7ed4-9acc-b7d0fd226ca2
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 6
     ordinal: 2
     structure: myo
-    continues: ~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada
+    continues: substrate.reamde.dev/training/set/01a16382-c548-71ac-a569-ac1b45b1dada
     chainPosition: 5
     at: "2026-10-22T12:09:39Z"
     timeBasis: completion
@@ -1355,13 +1355,13 @@ data:
 ---
 # Romanian Deadlift (Dumbbell), 1: 16 kg x 7. Suggested: "First time; routine
 # load, try 16 kg × 8".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a16387-39e8-7cad-b710-a7f8b93e58d2
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/romanian-deadlift-dumbbell
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
     slot: romanian-deadlift
     order: 1
     ordinal: 1
@@ -1396,13 +1396,13 @@ data:
 ---
 # Romanian Deadlift (Dumbbell), 2: 12 kg x 10 at RPE 7. Suggested: "Set 1: 16
 # kg × 7, harder than RPE 7; try 12 kg × 10".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a1638a-0c90-7f2f-a99d-261db05c9348
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/romanian-deadlift-dumbbell
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
     slot: romanian-deadlift
     order: 2
     ordinal: 2
@@ -1439,13 +1439,13 @@ data:
 ---
 # Romanian Deadlift (Dumbbell), 3: 12 kg x 11 at RPE 7.5. Suggested: "Set 2:
 # 12 kg × 10 at RPE 7; try 12 kg × 10".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a1638c-cbb0-7e5e-a151-93be43a614f1
 data:
   properties:
-    session: ~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
-    exercise: ~/training/exercise/romanian-deadlift-dumbbell
+    session: substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73
+    exercise: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
     slot: romanian-deadlift
     order: 3
     ordinal: 3
@@ -1483,13 +1483,13 @@ data:
 # ---- sets: Day 1 – Strength Foundation, Mon 26 Oct ------------------------
 # Leg Press (Machine), W1: 40 kg x 12. Suggested: "Warm-up, as last time: 40
 # kg × 12".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17833-7280-7689-95f5-6c64778ab254
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/leg-press-machine
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/leg-press-machine
     slot: leg-press
     order: 1
     ordinal: 1
@@ -1519,13 +1519,13 @@ data:
 ---
 # Leg Press (Machine), W2: 70 kg x 6. Suggested: "Warm-up, as last time: 70 kg
 # × 6".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17834-83f0-75cb-955f-0757d93f0f5f
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/leg-press-machine
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/leg-press-machine
     slot: leg-press
     order: 2
     ordinal: 2
@@ -1559,13 +1559,13 @@ data:
 # Leg Press (Machine), 1: 105 kg x 9, logged with the plan's RPE 8 shown
 # pre-filled and untouched (`rpeMethod: prefilled`). Suggested: "Last time
 # 100 kg × 10 at RPE 7.5, top of range; try 105 kg × 9".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17836-7bd8-7d5c-b263-6bdf3a64d6ba
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/leg-press-machine
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/leg-press-machine
     slot: leg-press
     order: 3
     ordinal: 1
@@ -1602,13 +1602,13 @@ data:
 # Leg Press (Machine), 2: 105 kg x 9 at RPE 8.5. Suggested: "Set 1: 105 kg × 9,
 # assuming RPE 8; try 105 kg × 9" (set 1's RPE was pre-filled, so it is read
 # as no rating, at the target).
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17839-69d8-7018-a49f-1e9eb2bca3c9
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/leg-press-machine
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/leg-press-machine
     slot: leg-press
     order: 4
     ordinal: 2
@@ -1644,13 +1644,13 @@ data:
 ---
 # Leg Press (Machine), 3: 105 kg x 8 at RPE 9. Suggested: "Set 2: 105 kg × 9
 # at RPE 8.5; try 105 kg × 8".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a1783c-6390-7960-8ef0-f464f0528594
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/leg-press-machine
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/leg-press-machine
     slot: leg-press
     order: 5
     ordinal: 3
@@ -1687,13 +1687,13 @@ data:
 # Iso-Lateral Chest Press (Machine), 1: 22.5 kg x 10 at RPE 8. Suggested:
 # "Last time 20 kg × 10 at RPE 7, top of range; try 22.5 kg × 8". Ticked at
 # the suggested 8 reps, then corrected to the 10 done, so revision 2.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a1783f-70d0-7cbb-8ad0-d58d6a65ad2d
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/iso-lateral-chest-press-machine
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
     slot: iso-lateral-chest-press
     order: 1
     ordinal: 1
@@ -1729,13 +1729,13 @@ data:
 ---
 # Iso-Lateral Chest Press (Machine), 2: 22.5 kg x 9 at RPE 8.5. Suggested:
 # "Set 1: 22.5 kg × 10 at RPE 8; try 22.5 kg × 10".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17841-ca60-7273-bf90-50f0510bb085
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/iso-lateral-chest-press-machine
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
     slot: iso-lateral-chest-press
     order: 2
     ordinal: 2
@@ -1771,13 +1771,13 @@ data:
 ---
 # Iso-Lateral Chest Press (Machine), 3: 22.5 kg x 8 at RPE 8.5. Suggested:
 # "Set 2: 22.5 kg × 9 at RPE 8.5; try 22.5 kg × 8".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17844-3f48-78be-8ca2-a98fc5ee24f7
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/iso-lateral-chest-press-machine
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
     slot: iso-lateral-chest-press
     order: 3
     ordinal: 3
@@ -1813,13 +1813,13 @@ data:
 ---
 # Seated Row (Machine), 1: 50 kg x 10 at RPE 8. Suggested: "Last time 45 kg ×
 # 12 at RPE 8, top of range; try 50 kg × 9".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17847-0a20-7911-a88c-991ff491f800
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/seated-row-machine
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/seated-row-machine
     slot: seated-row
     order: 1
     ordinal: 1
@@ -1855,13 +1855,13 @@ data:
 ---
 # Seated Row (Machine), 2: 50 kg x 10 at RPE 8.5. Suggested: "Set 1: 50 kg ×
 # 10 at RPE 8; try 50 kg × 10".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17849-6798-7c5e-a0ed-16ef51844755
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/seated-row-machine
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/seated-row-machine
     slot: seated-row
     order: 2
     ordinal: 2
@@ -1897,13 +1897,13 @@ data:
 ---
 # Seated Row (Machine), 3: 50 kg x 9 at RPE 9. Suggested: "Set 2: 50 kg × 10
 # at RPE 8.5; try 50 kg × 9".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a1784b-d0c8-7223-817f-0109bb9d5539
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/seated-row-machine
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/seated-row-machine
     slot: seated-row
     order: 3
     ordinal: 3
@@ -1939,13 +1939,13 @@ data:
 ---
 # Lateral Raise (Dumbbell), 1: 6 kg x 14 at RPE 7. Suggested: "Last time 6 kg
 # × 13 at RPE 7; try 6 kg × 15".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17852-54c0-7fe2-9bcf-fd968468291c
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 1
     ordinal: 1
@@ -1981,13 +1981,13 @@ data:
 ---
 # Lateral Raise (Dumbbell), 2: 6 kg x 17 at RPE 9. Suggested: "Set 1: 6 kg ×
 # 14 at RPE 7; try 6 kg × 16".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17854-6418-7b23-8030-fa43110a976e
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 2
     ordinal: 2
@@ -2026,18 +2026,18 @@ data:
     revision: 1
 ---
 # Lateral Raise (Dumbbell), M: 6 kg x 4. Suggested: "Mini-set 1: 6 kg × 4".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17854-c5c0-7e45-bfb5-24b7d1effc50
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 3
     ordinal: 2
     structure: myo
-    continues: ~/training/set/01a17854-6418-7b23-8030-fa43110a976e
+    continues: substrate.reamde.dev/training/set/01a17854-6418-7b23-8030-fa43110a976e
     chainPosition: 2
     at: "2026-10-26T13:09:44Z"
     timeBasis: completion
@@ -2060,18 +2060,18 @@ data:
     revision: 1
 ---
 # Lateral Raise (Dumbbell), M: 6 kg x 4. Suggested: "Mini-set 2: 6 kg × 4".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17855-2b50-7f73-b66e-f6a04a8a5979
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 4
     ordinal: 2
     structure: myo
-    continues: ~/training/set/01a17854-6418-7b23-8030-fa43110a976e
+    continues: substrate.reamde.dev/training/set/01a17854-6418-7b23-8030-fa43110a976e
     chainPosition: 3
     at: "2026-10-26T13:10:10Z"
     timeBasis: completion
@@ -2094,18 +2094,18 @@ data:
     revision: 1
 ---
 # Lateral Raise (Dumbbell), M: 6 kg x 4. Suggested: "Mini-set 3: 6 kg × 4".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17855-8cf8-760c-9c47-744bdd8d7bb2
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 5
     ordinal: 2
     structure: myo
-    continues: ~/training/set/01a17854-6418-7b23-8030-fa43110a976e
+    continues: substrate.reamde.dev/training/set/01a17854-6418-7b23-8030-fa43110a976e
     chainPosition: 4
     at: "2026-10-26T13:10:35Z"
     timeBasis: completion
@@ -2128,18 +2128,18 @@ data:
     revision: 1
 ---
 # Lateral Raise (Dumbbell), M: 6 kg x 4. Suggested: "Mini-set 4: 6 kg × 4".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17855-f670-76d5-a61b-fdb3bb0ea912
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 6
     ordinal: 2
     structure: myo
-    continues: ~/training/set/01a17854-6418-7b23-8030-fa43110a976e
+    continues: substrate.reamde.dev/training/set/01a17854-6418-7b23-8030-fa43110a976e
     chainPosition: 5
     at: "2026-10-26T13:11:02Z"
     timeBasis: completion
@@ -2163,18 +2163,18 @@ data:
 ---
 # Lateral Raise (Dumbbell), M: 6 kg x 4. Suggested: "Mini-set 5: 6 kg × 4".
 # Then: "Stop: 5 mini-sets done".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17856-5c00-7f11-b376-a0554bdceff4
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/lateral-raise-dumbbell
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
     slot: lateral-raise
     order: 7
     ordinal: 2
     structure: myo
-    continues: ~/training/set/01a17854-6418-7b23-8030-fa43110a976e
+    continues: substrate.reamde.dev/training/set/01a17854-6418-7b23-8030-fa43110a976e
     chainPosition: 6
     at: "2026-10-26T13:11:28Z"
     timeBasis: completion
@@ -2198,13 +2198,13 @@ data:
 ---
 # Romanian Deadlift (Dumbbell), 1: 12 kg x 12 at RPE 7. Suggested: "Last time
 # 16 kg × 7, below target; try 12 kg × 11".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17859-55b8-74dd-8d8a-b4788c7a7a4e
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/romanian-deadlift-dumbbell
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
     slot: romanian-deadlift
     order: 1
     ordinal: 1
@@ -2241,13 +2241,13 @@ data:
 ---
 # Romanian Deadlift (Dumbbell), 2: 12 kg x 12 at RPE 7.5. Suggested: "Set 1:
 # 12 kg × 12 at RPE 7; try 12 kg × 12".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a1785c-2860-7e3d-8e04-08cadbd7c1ff
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/romanian-deadlift-dumbbell
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
     slot: romanian-deadlift
     order: 2
     ordinal: 2
@@ -2284,13 +2284,13 @@ data:
 ---
 # Romanian Deadlift (Dumbbell), 3: 12 kg x 12 at RPE 8. Suggested: "Set 2: 12
 # kg × 12 at RPE 7.5; try 12 kg × 11".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a1785e-e780-7a95-92c5-cb1e4806968d
 data:
   properties:
-    session: ~/training/session/01a17831-8a38-7502-a232-81e9c175d65e
-    exercise: ~/training/exercise/romanian-deadlift-dumbbell
+    session: substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e
+    exercise: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
     slot: romanian-deadlift
     order: 3
     ordinal: 3
@@ -2327,13 +2327,13 @@ data:
 ---
 # ---- sets: Fully Body Collection #1, Tue 27 Oct ----------------------------
 # Plank, 1: 1:02. Suggested: "First time: hold for 0:45".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d93-ab00-7312-a888-075faa684ab4
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/plank
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/plank
     slot: plank
     order: 1
     ordinal: 1
@@ -2353,13 +2353,13 @@ data:
     revision: 1
 ---
 # Plank, 2: 0:53. Suggested: "First time: hold for 0:45".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d94-f708-797f-9387-d4893d457dfa
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/plank
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/plank
     slot: plank
     order: 2
     ordinal: 2
@@ -2382,13 +2382,13 @@ data:
     revision: 1
 ---
 # Crunch, 1: 15 reps.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d96-0c60-7bb3-a536-16069b31abb8
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/crunch
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/crunch
     slot: crunch
     order: 1
     ordinal: 1
@@ -2410,13 +2410,13 @@ data:
     revision: 1
 ---
 # Crunch, 2: 15 reps.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d96-b070-74a4-8e0e-f4fa201fe018
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/crunch
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/crunch
     slot: crunch
     order: 2
     ordinal: 2
@@ -2438,13 +2438,13 @@ data:
     revision: 1
 ---
 # Lumbar Extension Stretch, 1: 10 reps.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d97-ae58-7d82-a0f9-e99515636a7e
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/lumbar-extension-stretch
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/lumbar-extension-stretch
     slot: lumbar-extension-stretch
     order: 1
     ordinal: 1
@@ -2466,13 +2466,13 @@ data:
     revision: 1
 ---
 # Lumbar Extension Stretch, 2: 10 reps.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d98-71a8-7309-8435-5b5e847b187c
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/lumbar-extension-stretch
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/lumbar-extension-stretch
     slot: lumbar-extension-stretch
     order: 2
     ordinal: 2
@@ -2494,13 +2494,13 @@ data:
     revision: 1
 ---
 # Glute Bridge, 1: 15 reps.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d99-5c08-77aa-a9ee-2eacefb8fd7b
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/glute-bridge
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/glute-bridge
     slot: glute-bridge
     order: 1
     ordinal: 1
@@ -2522,13 +2522,13 @@ data:
     revision: 1
 ---
 # Bird Dog, 1: 10 reps with each side, slowly (1 min 15 s).
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d9a-a428-764e-ac70-c6e1d40de631
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/bird-dog
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/bird-dog
     slot: bird-dog
     order: 1
     ordinal: 1
@@ -2550,13 +2550,13 @@ data:
     revision: 1
 ---
 # Glute Bridge, 2: 15 reps.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d9c-3a68-7d92-b30f-89c5c2b0437d
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/glute-bridge
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/glute-bridge
     slot: glute-bridge
     order: 2
     ordinal: 2
@@ -2578,13 +2578,13 @@ data:
     revision: 1
 ---
 # Bird Dog, 2: 10 reps with each side.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d9d-7ea0-7e9c-bf22-f010eea505ef
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/bird-dog
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/bird-dog
     slot: bird-dog
     order: 2
     ordinal: 2
@@ -2606,13 +2606,13 @@ data:
     revision: 1
 ---
 # Cable Core Pallof Press, 1 left: 10 kg x 12 at RPE 7.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d9f-2c50-74dd-89aa-1c8eef1b8492
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/cable-core-pallof-press
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/cable-core-pallof-press
     slot: pallof-press
     order: 1
     ordinal: 1
@@ -2649,17 +2649,17 @@ data:
     revision: 1
 ---
 # Cable Core Pallof Press, 1 right: 10 kg x 12 at RPE 7.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17d9f-e3e8-7ba0-bfae-d46d6a4d1451
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/cable-core-pallof-press
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/cable-core-pallof-press
     slot: pallof-press
     order: 2
     ordinal: 1
-    continues: ~/training/set/01a17d9f-2c50-74dd-89aa-1c8eef1b8492
+    continues: substrate.reamde.dev/training/set/01a17d9f-2c50-74dd-89aa-1c8eef1b8492
     chainPosition: 2
     side: right
     at: "2026-10-27T13:49:53Z"
@@ -2685,13 +2685,13 @@ data:
     revision: 1
 ---
 # Cable Core Pallof Press, 2 left: 10 kg x 12 at RPE 7.5.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17da1-6a88-75c5-a6cc-08343c707cde
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/cable-core-pallof-press
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/cable-core-pallof-press
     slot: pallof-press
     order: 3
     ordinal: 2
@@ -2728,17 +2728,17 @@ data:
     revision: 1
 ---
 # Cable Core Pallof Press, 2 right: 10 kg x 11 at RPE 7.5.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17da2-1e38-7e69-8a08-5758af4062c0
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/cable-core-pallof-press
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/cable-core-pallof-press
     slot: pallof-press
     order: 4
     ordinal: 2
-    continues: ~/training/set/01a17da1-6a88-75c5-a6cc-08343c707cde
+    continues: substrate.reamde.dev/training/set/01a17da1-6a88-75c5-a6cc-08343c707cde
     chainPosition: 2
     side: right
     at: "2026-10-27T13:52:19Z"
@@ -2764,13 +2764,13 @@ data:
     revision: 1
 ---
 # Chest Press (Machine), W1: 25 kg x 15.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17da6-8720-72d0-a1c5-dc879426875a
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/chest-press-machine
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/chest-press-machine
     slot: chest-press
     order: 1
     ordinal: 1
@@ -2803,13 +2803,13 @@ data:
 ---
 # Chest Press (Machine), 1: 35 kg x 15. Suggested: "First time; routine load,
 # try 35 kg × 10".
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17da8-2918-7803-beb8-3cf24a5598ee
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/chest-press-machine
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/chest-press-machine
     slot: chest-press
     order: 2
     ordinal: 1
@@ -2844,13 +2844,13 @@ data:
 # Chest Press (Machine), 2: 35 kg x 13 at RPE 9.5. Suggested: "Set 1: 35 kg ×
 # 15; try 35 kg × 14". The head of a drop chain; id and time as in the package
 # README's excerpt.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17daa-4040-7b3c-8d5e-6f7081920314
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/chest-press-machine
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/chest-press-machine
     slot: chest-press
     order: 3
     ordinal: 2
@@ -2890,18 +2890,18 @@ data:
 ---
 # Chest Press (Machine), 2a: 35 kg x 8 at RPE 9.5. Suggested: "Drop 20% from
 # 35 kg: 25 kg to failure". Hevy's D row: the owner kept the 35 kg pin.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17daa-f3f0-7c4d-9e6f-708192031425
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/chest-press-machine
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/chest-press-machine
     slot: chest-press
     order: 4
     ordinal: 2
     structure: drop
-    continues: ~/training/set/01a17daa-4040-7b3c-8d5e-6f7081920314
+    continues: substrate.reamde.dev/training/set/01a17daa-4040-7b3c-8d5e-6f7081920314
     chainPosition: 2
     at: "2026-10-27T14:01:58Z"
     timeBasis: completion
@@ -2926,13 +2926,13 @@ data:
     revision: 1
 ---
 # Bulgarian Split Squat (Dumbbell), 1 left: 10 kg x 10 at RPE 8.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17dad-b310-75fd-9ef1-3eca26f5abe6
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/bulgarian-split-squat-dumbbell
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell
     slot: bulgarian-split-squat
     order: 1
     ordinal: 1
@@ -2969,17 +2969,17 @@ data:
     revision: 1
 ---
 # Bulgarian Split Squat (Dumbbell), 1 right: 10 kg x 10 at RPE 8.5.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17dae-91b8-7ca7-a45b-5300978bb517
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/bulgarian-split-squat-dumbbell
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell
     slot: bulgarian-split-squat
     order: 2
     ordinal: 1
-    continues: ~/training/set/01a17dad-b310-75fd-9ef1-3eca26f5abe6
+    continues: substrate.reamde.dev/training/set/01a17dad-b310-75fd-9ef1-3eca26f5abe6
     chainPosition: 2
     side: right
     at: "2026-10-27T14:05:55Z"
@@ -3005,13 +3005,13 @@ data:
     revision: 1
 ---
 # Bulgarian Split Squat (Dumbbell), 2 left: 10 kg x 10 at RPE 8.5.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17db1-1640-74a9-813b-40b4b5398571
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/bulgarian-split-squat-dumbbell
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell
     slot: bulgarian-split-squat
     order: 3
     ordinal: 2
@@ -3048,17 +3048,17 @@ data:
     revision: 1
 ---
 # Bulgarian Split Squat (Dumbbell), 2 right: 10 kg x 9 at RPE 9.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17db1-f8d0-7deb-896c-c3d649029cc0
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/bulgarian-split-squat-dumbbell
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell
     slot: bulgarian-split-squat
     order: 4
     ordinal: 2
-    continues: ~/training/set/01a17db1-1640-74a9-813b-40b4b5398571
+    continues: substrate.reamde.dev/training/set/01a17db1-1640-74a9-813b-40b4b5398571
     chainPosition: 2
     side: right
     at: "2026-10-27T14:09:38Z"
@@ -3084,13 +3084,13 @@ data:
     revision: 1
 ---
 # Push Up, 1: 14 reps at RPE 9.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17db4-1bb0-72fb-9acc-6fb2f2d09ad5
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/push-up
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/push-up
     slot: push-up
     order: 1
     ordinal: 1
@@ -3118,13 +3118,13 @@ data:
     revision: 1
 ---
 # Push Up, 2: 11 reps at RPE 9.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17db5-f070-7100-b756-6d9878913863
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/push-up
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/push-up
     slot: push-up
     order: 2
     ordinal: 2

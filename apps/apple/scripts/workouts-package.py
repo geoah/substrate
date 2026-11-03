@@ -1,12 +1,15 @@
-"""Turn Substrate Workouts' YAML into the JSON the app and its tests read.
+"""Turn Substrate Workouts' YAML into the JSON the app and its tests read,
+and into the closures its site publishes.
 
 Two sources, both YAML in `substratectl apply -f` form under the authority
-`~` (decision record 0203):
+`substrate.reamde.dev`, the publisher's (decision record 0214):
 
-- The package's manifests in apps/apple/SubstrateWorkouts/Package/. The app
-  applies them as the documents of one `POST /api/v1/vocabulary/apply`, so it
-  bundles them as JSON, and its codec drift test reads each kind's property
-  names from kinds.json.
+- The packages' manifests in apps/apple/SubstrateWorkouts/Package/: training,
+  and the workout coach under Package/coach/. The app carries each package's
+  documents as JSON (Resources/Package/training.json and coach.json) for the
+  version its approval asks for, and its codec drift test reads each kind's
+  property names from kinds.json. The app applies none of them: a repository
+  installs a package from the authority document, under this very name.
 - The example records in apps/apple/SubstrateWorkouts/docs/examples/.
   sample.yaml is the sample routine and its exercises, the app's bundled
   catalogue (Resources/Bundled); the other four files are the test vectors
@@ -14,15 +17,21 @@ Two sources, both YAML in `substratectl apply -f` form under the authority
   shape substrate's REST API speaks, `{"kind", "id", "properties"}`. An
   exercise id in more than one file must be the same record in each.
 
-It also renders the workout coach (decision record 0207, Package/coach/): the
-coach package's documents and the agent's prompt, from the instructions, the
-mechanics and a field guide generated from the routine and exercise
-manifests, so the prompt and the kinds cannot drift.
+It renders the workout coach's agent document (Package/coach/workoutcoach.yaml)
+from the instructions, the mechanics and a field guide generated from the
+routine and exercise manifests, so the prompt and the kinds cannot drift, and
+it builds each package's closure, the multi-document YAML a bundle directory
+ships, for `mise run apple:site` (`--closures DIR` writes
+`DIR/<package>-<version>.yaml`). A published version is immutable, so
+closures.lock.json keeps each package's version and the closure's sha256: a
+closure that changed under an unmoved version is refused here, before the
+site could refuse it.
 
 This script writes all of them:
 
     uv run --with pyyaml apps/apple/scripts/workouts-package.py           # rewrite
     uv run --with pyyaml apps/apple/scripts/workouts-package.py --check   # exit 1 and name each stale file
+    uv run --with pyyaml apps/apple/scripts/workouts-package.py --closures build/site/packages
 
 The output has no timestamps, so a run over unchanged YAML changes nothing.
 """
@@ -47,26 +56,63 @@ KINDS = ("movement", "exercise", "routine", "session", "set", "setup")
 RESOURCE = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/training.json"
 COACH = PACKAGE / "coach"
 COACH_RESOURCE = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/coach.json"
-# The coach's revision is derived, never bumped by hand: the lock holds the
-# revision and the hash of everything a release declares of the agent (the
-# prompt body and the agent template below). A changed hash moves the
-# revision on the next write, and --check fails until it has, so an older
-# build can always tell a newer build's coach from its own.
-COACH_LOCK = COACH / "coach.lock.json"
-# The agent document's fixed part. The app fills in the authority, the prompt
-# (with its revision line), the provider, model and params it chooses, the
-# reach the owner approved and the daily cap.
+# The rendered agent document, committed beside its sources so a diff shows
+# what a release changes of the coach, and read back into the closure.
+COACH_AGENT_FILE = COACH / "workoutcoach.yaml"
+# The order the trainingcoach closure ships: the package and its bundle, then
+# the agent.
+COACH_FILES = (COACH / "trainingcoach.yaml", COACH_AGENT_FILE)
+# A published version is immutable (decision record 0212): the lock holds,
+# per package, the newest version `mise run apple:site` published and that
+# closure's sha256, written by the publish and committed after it. A closure
+# that changed under the version the lock holds is refused here, offline,
+# before the site refuses it against the live document.
+CLOSURES_LOCK = PACKAGE / "closures.lock.json"
+AUTHORITY = "substrate.reamde.dev"
+TRAINING = f"{AUTHORITY}/training"
+COACH_PACKAGE = f"{AUTHORITY}/trainingcoach"
+COACH_AGENT_ID = f"{COACH_PACKAGE}/workoutCoach"
+# What the coach reads: everything the app logs, its memories, the health
+# catalogue's workouts and sleep, every observation and what a metric read
+# needs beside it, and the clinical record where the owner holds one (owner,
+# 2026-11-02). The clinical catalogue is not required, so its kinds are a
+# glob (decision record 0080): nothing until the owner installs it, and
+# every clinical kind after.
+COACH_READS = [f"{TRAINING}/{name}" for name in ("exercise", "setup", "routine", "session", "set", "memory")] + [
+    f"{AUTHORITY}/health/workout",
+    f"{AUTHORITY}/health/sleep",
+    f"{AUTHORITY}/observations/observation",
+    f"{AUTHORITY}/observations/metric",
+    f"{AUTHORITY}/observations/source",
+    f"{AUTHORITY}/observations/sourcelink",
+    f"{AUTHORITY}/observations/trace",
+    f"{AUTHORITY}/clinical/*",
+]
+# What it writes: routines and what they reference, its memories, and the
+# interaction the ask tool lands. Never sessions or sets, the app's log.
+COACH_WRITES = [f"{TRAINING}/{name}" for name in ("exercise", "setup", "routine", "memory")] + [f"{AUTHORITY}/llm/interaction"]
+# The models the coach runs on, best first, matched exactly or behind a
+# gateway's prefix on the provider row the owner binds to the `model` input
+# (decision record 0217).
+COACH_MODELS = ["claude-sonnet-5-5", "claude-sonnet-5", "gpt-5"]
+# The most the coach spends a day, in cents; a published agent declares one.
+COACH_SPEND_CENTS_PER_DAY = 100
+# The agent document, less its prompt, which `coach()` renders.
 COACH_AGENT = {
     "purpose": "primary",
+    "authority": AUTHORITY,
+    "package": "trainingcoach",
     "description": (
         "Your strength coach: plans your workout routines from your goals, training and health data, "
-        "and remembers what you tell it. Kept by Substrate Workouts."
+        "and remembers what you tell it. Installed by Substrate Workouts."
     ),
+    "providerInput": "model",
+    "models": COACH_MODELS,
     "tools": [{"function": f"substrate.reamde.dev/core/{name}"} for name in ("query", "write", "ask")],
     "context": {
         "pinned": [
             {
-                "kind": "~/training/memory",
+                "kind": f"{TRAINING}/memory",
                 # Only what the owner wrote or the coach stored from what the
                 # owner said; `source` is the writer's own claim, so the prompt
                 # still reads every pinned row as a note, never an order.
@@ -78,13 +124,17 @@ COACH_AGENT = {
         ],
         "maxBytes": 12288,
     },
-    "readBudgets": {"calls": 40, "rows": 5000},
+    "permissions": {
+        "reads": {"kinds": COACH_READS, "budgets": {"calls": 40, "rows": 5000}},
+        "writes": COACH_WRITES,
+    },
     "budgets": {
         "maxTurns": 16,
         "maxToolCalls": 48,
         "maxParallelTools": 4,
         "deadlineSeconds": 300,
         "maxToolResultBytes": 65536,
+        "spendCentsPerDay": COACH_SPEND_CENTS_PER_DAY,
     },
 }
 # The coach's prompt is a cacheable prefix beside the kinds list and its
@@ -127,13 +177,26 @@ def documents(name: str) -> list[dict]:
     return docs
 
 
-def package() -> dict:
-    docs = [doc for name in FILES for doc in documents(name)]
+def manifest(docs: list[dict], where: str, expected: str) -> dict:
+    """A package's manifest file: its id, its version and every document."""
     headers = [doc for doc in docs if doc["kind"] == "substrate.reamde.dev/core/package"]
     if len(headers) != 1:
-        raise GenerateError("training.yaml: expected one package document")
+        raise GenerateError(f"{where}: expected one package document")
     header = headers[0]
-    return {"package": header["metadata"]["id"], "version": header["data"]["version"], "documents": docs}
+    if header["metadata"]["id"] != expected or header["data"].get("authority") != AUTHORITY:
+        raise GenerateError(f"{where}: the package is {expected}, published under {AUTHORITY}")
+    version = header["data"].get("version")
+    if not isinstance(version, int) or version < 1:
+        raise GenerateError(f"{where}: data.version is a positive integer")
+    for doc in docs:
+        text = json.dumps(doc)
+        if "~/" in text or '"~"' in text:
+            raise GenerateError(f"{where}: a published package names its authority in full, never `~`")
+    return {"package": header["metadata"]["id"], "version": version, "documents": docs}
+
+
+def package() -> dict:
+    return manifest([doc for name in FILES for doc in documents(name)], "training.yaml", TRAINING)
 
 
 def property_spec(name: str, spec: dict, where: str) -> dict:
@@ -262,10 +325,10 @@ def coach_guide(version: int) -> str:
         f"# Fields you write (training package version {version})",
         "",
         "Fields go under `input.properties`. `*` required, `[]` a list, no type a",
-        "string. A reference is a record path such as",
-        "`<authority>/training/exercise/bench-press`; a quantity is",
+        "string. A reference is a record path",
+        "(`substrate.reamde.dev/training/exercise/bench-press`); a quantity is",
         '`{value: "60", unit: kg}`; a decimal is a string ("7.5"); a duration is',
-        "ISO 8601 (`PT2M30S`). Clear a property with a patch naming it `null`.",
+        "ISO 8601 (`PT2M30S`). Clear a property by patching it `null`.",
         "",
     ]
     for name in ("routine", "exercise"):
@@ -276,42 +339,104 @@ def coach_guide(version: int) -> str:
         skips = {"exercise": (properties, EXERCISE_GUIDE_SKIP), "routine": (properties.get("groups", {}).get("fields", {}), GROUP_GUIDE_SKIP)}
         fields, skip = skips[name]
         if missing := [prop for prop in skip if prop not in fields]:
-            raise GenerateError(f"the coach's guide skips {missing}, which ~/training/{name} does not declare")
+            raise GenerateError(f"the coach's guide skips {missing}, which {TRAINING}/{name} does not declare")
         lines += field_guide(doc["metadata"]["id"], properties, skip=EXERCISE_GUIDE_SKIP if name == "exercise" else ())
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
-def coach_revision(body: str, check: bool) -> tuple[int, str | None]:
-    """The revision for this release's coach, and the lock to write (None when
-    it stands)."""
-    digest = hashlib.sha256(json.dumps({"prompt": body, "agent": COACH_AGENT}, sort_keys=True).encode("utf-8")).hexdigest()
-    lock = json.loads(COACH_LOCK.read_text(encoding="utf-8")) if COACH_LOCK.exists() else {"revision": 0, "sha256": ""}
-    if lock["sha256"] == digest:
-        return lock["revision"], None
-    revision = lock["revision"] + 1
-    return revision, render({"revision": revision, "sha256": digest})
+class Dumper(yaml.SafeDumper):
+    """The tree's YAML shape (.yamlfmt), so `mise run fmt:check` finds nothing
+    to change: sequences indented under their key, and a block scalar for
+    any string the formatter would otherwise rewrap (the prompt, and a line
+    past its 72 columns)."""
+
+    def increase_indent(self, flow=False, indentless=False):
+        return super().increase_indent(flow, False)
 
 
-def coach(check: bool = False) -> tuple[dict, str | None]:
+def _text(dumper: yaml.SafeDumper, value: str):
+    style = "|" if "\n" in value or len(value) > 72 else None
+    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
+
+
+Dumper.add_representer(str, _text)
+
+
+def coach_agent() -> dict:
+    """The agent document, its prompt rendered from the sources."""
     version = package()["version"]
     instructions = (COACH / "instructions.md").read_text(encoding="utf-8").strip()
     mechanics = (COACH / "mechanics.md").read_text(encoding="utf-8").strip()
-    body = instructions + "\n\n" + mechanics + "\n\n" + coach_guide(version)
-    revision, lock = coach_revision(body, check)
-    prompt = f"Workout coach instructions, revision {revision}.\n\n" + body
+    prompt = instructions + "\n\n" + mechanics + "\n\n" + coach_guide(version)
     if len(prompt.encode("utf-8")) > COACH_PROMPT_MAX:
         raise GenerateError(f"the coach's prompt is {len(prompt.encode())} bytes, over {COACH_PROMPT_MAX}")
+    data = {"purpose": COACH_AGENT["purpose"], "authority": AUTHORITY, "package": "trainingcoach", "description": COACH_AGENT["description"], "prompt": prompt}
+    data.update({key: value for key, value in COACH_AGENT.items() if key not in data})
+    return {"kind": "substrate.reamde.dev/core/agent", "metadata": {"id": COACH_AGENT_ID}, "data": data}
+
+
+def coach_agent_yaml(agent: dict) -> str:
+    head = (
+        "# The workout coach's agent document, RENDERED by\n"
+        "# apps/apple/scripts/workouts-package.py from instructions.md, mechanics.md,\n"
+        "# the routine and exercise manifests and the script's agent template; edit\n"
+        "# those and run the script. Its provider is the bundle's `model` input and\n"
+        "# its models are tried best first (decision record 0217).\n"
+    )
+    return head + yaml.dump(agent, Dumper=Dumper, sort_keys=False, allow_unicode=True, width=10000)
+
+
+def coach() -> dict:
+    """The trainingcoach manifest: the package, its bundle and the agent."""
     with open(COACH / "trainingcoach.yaml", encoding="utf-8") as handle:
         docs = [doc for doc in yaml.load_all(handle, Loader=Loader) if doc is not None]
+    agent = coach_agent()
+    out = manifest(docs + [agent], "trainingcoach.yaml", COACH_PACKAGE)
+    bundle = next(doc for doc in docs if doc["kind"] == "substrate.reamde.dev/core/bundle")
+    inputs = bundle["data"].get("inputs") or {}
+    if inputs.get(agent["data"]["providerInput"], {}).get("kind") != "substrate.reamde.dev/llm/provider":
+        raise GenerateError("trainingcoach.yaml: the bundle's inputs lack the agent's providerInput, of kind substrate.reamde.dev/llm/provider")
+    if bundle["data"].get("installs") != [COACH_AGENT_ID]:
+        raise GenerateError(f"trainingcoach.yaml: the bundle installs {COACH_AGENT_ID} and nothing else")
+    return out
+
+
+def closure_text(files: tuple[Path, ...], rendered: dict[Path, str]) -> str:
+    """The closure as the site publishes it: the source files, in apply order,
+    one YAML document stream. `rendered` stands in for a file this run writes."""
+    parts = []
+    for path in files:
+        text = rendered[path] if path in rendered else path.read_text(encoding="utf-8")
+        parts.append(text if text.endswith("\n") else text + "\n")
+    return "---\n".join(parts)
+
+
+def closures(rendered: dict[Path, str]) -> dict[str, tuple[int, str]]:
+    """Each package's version and closure text, by package id."""
     return {
-        "package": docs[0]["metadata"]["id"],
-        "revision": revision,
-        "trainingVersion": version,
-        "prompt": prompt,
-        "agent": COACH_AGENT,
-        "documents": docs,
-    }, lock
+        TRAINING: (package()["version"], closure_text(tuple(PACKAGE / f"{name}.yaml" for name in FILES), rendered)),
+        COACH_PACKAGE: (coach()["version"], closure_text(COACH_FILES, rendered)),
+    }
+
+
+def sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def check_lock(built: dict[str, tuple[int, str]]) -> None:
+    """Refuses a closure that changed under the version the lock says is
+    published, or a version below it."""
+    held = json.loads(CLOSURES_LOCK.read_text(encoding="utf-8")) if CLOSURES_LOCK.exists() else {}
+    for package_id in sorted(built):
+        version, text = built[package_id]
+        before = held.get(package_id)
+        if not before:
+            continue
+        if version < before["version"]:
+            raise GenerateError(f"{package_id}: version {version} is below the published {before['version']}")
+        if version == before["version"] and sha256(text) != before["sha256"]:
+            raise GenerateError(f"{package_id}: the closure changed under the published version {version}; bump data.version, a published version never changes")
 
 
 def render(value: dict) -> str:
@@ -321,12 +446,26 @@ def render(value: dict) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="exit 1 if a generated file is stale")
+    parser.add_argument("--closures", metavar="DIR", help="write each package's closure as DIR/<package>-<version>.yaml and exit")
     args = parser.parse_args()
     try:
-        coach_file, lock = coach(args.check)
-        files = {RESOURCE: render(package()), FIXTURE: render(kinds()), COACH_RESOURCE: render(coach_file)}
-        if lock is not None:
-            files[COACH_LOCK] = lock
+        agent = coach_agent()
+        rendered = {COACH_AGENT_FILE: coach_agent_yaml(agent)}
+        built = closures(rendered)
+        # The lock first on every path: a closure the site is about to
+        # publish is held to it before the site reads the live document.
+        check_lock(built)
+        if args.closures:
+            out = Path(args.closures)
+            out.mkdir(parents=True, exist_ok=True)
+            for package_id, (version, text) in built.items():
+                path = out / f"{package_id.rsplit('/', 1)[1]}-{version}.yaml"
+                path.write_text(text, encoding="utf-8")
+                print(f"{path} {sha256(text)}")
+            return 0
+        check_lock(built)
+        files = {RESOURCE: render(package()), FIXTURE: render(kinds()), COACH_RESOURCE: render(coach())}
+        files.update(rendered)
         files.update({path: render(value) for path, value in examples().items()})
     except (GenerateError, OSError, yaml.YAMLError) as error:
         print(f"workouts-package.py: {error}", file=sys.stderr)

@@ -37,7 +37,7 @@ struct HistoryStoreTests {
         #expect(try store.read(fullyBody).records.sets.count == 24)
     }
 
-    @Test("the file is format 2 with the session record first, then its sets")
+    @Test("the file is format 3 with the session record first, then its sets")
     func fileShape() throws {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
@@ -45,8 +45,8 @@ struct HistoryStoreTests {
         let records = try #require(try exampleSessions().first { $0.session.id == fullyBody })
         try store.write(HistoryEntry(records: records))
         let file = try #require(try JSONValue(data: Data(contentsOf: store.url(for: fullyBody))).objectValue)
-        #expect(WorkoutsFormats.historyFormat == 2)
-        #expect(file["format"] == .number(2))
+        #expect(WorkoutsFormats.historyFormat == 3)
+        #expect(file["format"] == .number(3))
         let flat = try #require(file["records"]?.arrayValue).map { try FlatRecord(json: $0) }
         #expect(flat.first?.kind == RecordCodec().kinds.session)
         #expect(flat.dropFirst().allSatisfy { $0.kind == RecordCodec().kinds.set })
@@ -77,7 +77,7 @@ struct HistoryStoreTests {
         try JSONValue.object(bad).data().write(to: history.appendingPathComponent("refused.json"))
         // A later format.
         var future = try #require(try JSONValue(data: Data(contentsOf: store.url(for: day1First))).objectValue)
-        future["format"] = .number(3)
+        future["format"] = .number(Decimal(WorkoutsFormats.historyFormat + 1))
         try JSONValue.object(future).data().write(to: history.appendingPathComponent("future.json"))
         try Data("ignored".utf8).write(to: history.appendingPathComponent("notes.txt"))
 
@@ -280,7 +280,7 @@ struct LocalExercisesTests {
         #expect(load.exercises.first?.laterality == .bilateral)
         // Stored as flat exercise records, which never carry isLocal.
         let file = try JSONDecoder().decode(RecordFile.self, from: Data(contentsOf: store.url))
-        #expect(file.format == 1)
+        #expect(file.format == WorkoutsFormats.recordFileFormat)
         #expect(file.records.allSatisfy { $0.kind == RecordCodec().kinds.exercise && $0.properties["isLocal"] == nil })
     }
 

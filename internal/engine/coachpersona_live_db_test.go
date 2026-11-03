@@ -25,12 +25,14 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// coachManifestFile is what the app ships (apps/apple/scripts/
-// workouts-package.py), read from the tree so the personas run it.
+// coachManifestFile is the trainingcoach closure the app carries
+// (apps/apple/scripts/workouts-package.py), read from the tree so the
+// personas run it.
 const coachManifestFile = "../../apps/apple/WorkoutsKit/Sources/WorkoutsCore/Resources/Package/coach.json"
 
-// shippedCoach is the coach document the app declares, homed under home,
-// with the reach and the model a test gives it.
+// shippedCoach is the agent the trainingcoach closure publishes, its training
+// kinds homed under home's own training package, on the test's provider and
+// model, with the reach a test gives it.
 func shippedCoach(t *testing.T, home, model string, reads, writes []string) map[string]any {
 	t.Helper()
 	raw, err := os.ReadFile(coachManifestFile)
@@ -38,24 +40,49 @@ func shippedCoach(t *testing.T, home, model string, reads, writes []string) map[
 		t.Fatalf("read the coach manifest: %v", err)
 	}
 	var manifest struct {
-		Prompt string         `json:"prompt"`
-		Agent  map[string]any `json:"agent"`
+		Documents []struct {
+			Kind string         `json:"kind"`
+			Data map[string]any `json:"data"`
+		} `json:"documents"`
 	}
-	if err := json.Unmarshal([]byte(strings.ReplaceAll(string(raw), "~/", home+"/")), &manifest); err != nil {
+	homed := strings.ReplaceAll(string(raw), "substrate.reamde.dev/training/", home+"/training/")
+	if err := json.Unmarshal([]byte(homed), &manifest); err != nil {
 		t.Fatal(err)
 	}
-	data := manifest.Agent
-	readBudgets := data["readBudgets"]
-	delete(data, "readBudgets")
+	var data map[string]any
+	for _, d := range manifest.Documents {
+		if d.Kind == kindAgent {
+			data = d.Data
+		}
+	}
+	if data == nil {
+		t.Fatalf("%s carries no agent", coachManifestFile)
+	}
+	var readBudgets any
+	if permissions, ok := data["permissions"].(map[string]any); ok {
+		if r, ok := permissions["reads"].(map[string]any); ok {
+			readBudgets = r["budgets"]
+		}
+	}
+	for _, k := range []string{"authority", "package", "providerInput", "models"} {
+		delete(data, k)
+	}
 	budgets, _ := data["budgets"].(map[string]any)
+	if budgets == nil {
+		budgets = map[string]any{}
+		data["budgets"] = budgets
+	}
 	budgets["spendCentsPerDay"] = 100
 	budgets["maxTurns"] = 6
 	budgets["maxToolCalls"] = 10
-	data["prompt"] = manifest.Prompt
 	data["provider"] = "anthropic"
 	data["model"] = model
+	readsBlock := map[string]any{"kinds": anySlice(reads)}
+	if readBudgets != nil {
+		readsBlock["budgets"] = readBudgets
+	}
 	data["permissions"] = map[string]any{
-		"reads":  map[string]any{"kinds": anySlice(reads), "budgets": readBudgets},
+		"reads":  readsBlock,
 		"writes": anySlice(append(append([]string(nil), writes...), "substrate.reamde.dev/llm/interaction")),
 	}
 	return vocabulary.AgentManifest(home+"/trainingcoach", "workoutCoach", data)

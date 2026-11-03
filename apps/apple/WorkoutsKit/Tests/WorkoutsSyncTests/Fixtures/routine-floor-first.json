@@ -1,6 +1,6 @@
 {
  "id": "floor-first-full-body",
- "kind": "geoah.me/training/routine",
+ "kind": "substrate.reamde.dev/training/routine",
  "properties": {
   "activityType": "traditionalstrengthtraining",
   "folder": "Floor-first programme",
@@ -40,7 +40,7 @@
   "slots": [
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/walking"
+     "ref": "substrate.reamde.dev/training/exercise/walking"
     },
     "key": "walk",
     "notes": "Note 2, in place of the owner's words.",
@@ -57,7 +57,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/sit-to-stand"
+     "ref": "substrate.reamde.dev/training/exercise/sit-to-stand"
     },
     "key": "sit-to-stand",
     "notes": "Note 3, in place of the owner's words.",
@@ -74,7 +74,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/heel-raise"
+     "ref": "substrate.reamde.dev/training/exercise/heel-raise"
     },
     "key": "heel-raise",
     "notes": "Note 4, in place of the owner's words.",
@@ -91,7 +91,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/shoulder-circles"
+     "ref": "substrate.reamde.dev/training/exercise/shoulder-circles"
     },
     "key": "shoulder-circles",
     "notes": "Note 5, in place of the owner's words.",
@@ -115,7 +115,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/wall-slide"
+     "ref": "substrate.reamde.dev/training/exercise/wall-slide"
     },
     "key": "wall-slide",
     "notes": "Note 6, in place of the owner's words.",
@@ -132,7 +132,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/glute-bridge"
+     "ref": "substrate.reamde.dev/training/exercise/glute-bridge"
     },
     "group": "a",
     "key": "glute-bridge",
@@ -161,7 +161,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/bird-dog"
+     "ref": "substrate.reamde.dev/training/exercise/bird-dog"
     },
     "group": "a",
     "key": "bird-dog",
@@ -186,7 +186,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/crunch"
+     "ref": "substrate.reamde.dev/training/exercise/crunch"
     },
     "group": "a",
     "key": "crunch",
@@ -214,7 +214,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/leg-press-machine"
+     "ref": "substrate.reamde.dev/training/exercise/leg-press-machine"
     },
     "group": "b",
     "key": "leg-press",
@@ -250,7 +250,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/seated-leg-curl-machine"
+     "ref": "substrate.reamde.dev/training/exercise/seated-leg-curl-machine"
     },
     "group": "b",
     "key": "leg-curl",
@@ -279,7 +279,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/calf-press-machine"
+     "ref": "substrate.reamde.dev/training/exercise/calf-press-machine"
     },
     "group": "b",
     "key": "calf-press",
@@ -307,7 +307,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/chest-press-machine"
+     "ref": "substrate.reamde.dev/training/exercise/chest-press-machine"
     },
     "group": "c",
     "key": "chest-press",
@@ -343,7 +343,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/seated-row-machine"
+     "ref": "substrate.reamde.dev/training/exercise/seated-row-machine"
     },
     "group": "c",
     "key": "row",
@@ -378,7 +378,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/lat-pulldown-cable"
+     "ref": "substrate.reamde.dev/training/exercise/lat-pulldown-cable"
     },
     "group": "d",
     "key": "lat-pulldown",
@@ -414,7 +414,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/lateral-raise-cable"
+     "ref": "substrate.reamde.dev/training/exercise/lateral-raise-cable"
     },
     "group": "d",
     "key": "lateral-raise",
@@ -443,7 +443,7 @@
    },
    {
     "exercise": {
-     "ref": "geoah.me/training/exercise/walking"
+     "ref": "substrate.reamde.dev/training/exercise/walking"
     },
     "key": "finish-walk",
     "notes": "Note 17, in place of the owner's words.",

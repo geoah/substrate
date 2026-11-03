@@ -6,7 +6,7 @@ import WorkoutsCore
 /// movements and their exercises, written into the training package as
 /// ordinary records the coach and the console read (decision L1).
 ///
-/// THE SERVER IS THE MARKER. The repository's `~/training/library/exercises`
+/// THE SERVER IS THE MARKER. The repository's `substrate.reamde.dev/training/library/exercises`
 /// record holds the library version it has whole, written only after a run
 /// that left nothing behind; a run names the version it writes in
 /// `seeding` before its first write. A run writes the records that first appeared
@@ -39,7 +39,7 @@ public final class LibraryInstall: @unchecked Sendable {
     }
 
     public static let fileName = "library.json"
-    /// The marker's id in `~/training/library`.
+    /// The marker's id in `substrate.reamde.dev/training/library`.
     public static let markerID = "exercises"
     /// The fields a held record may gain: what it is and what it works,
     /// nothing that changes how its sets are counted or run.

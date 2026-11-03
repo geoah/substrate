@@ -66,9 +66,9 @@
 # method without an app release.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: ~/training/routine
+  id: substrate.reamde.dev/training/routine
 data:
-  authority: "~"
+  authority: substrate.reamde.dev
   package: training
   description: >-
     A workout routine: the plan for one gym session, written in the console
@@ -202,7 +202,7 @@ data:
         # refused when the routine is written, not found missing at the gym.
         exercise:
           type: reference
-          kind: ~/training/exercise
+          kind: substrate.reamde.dev/training/exercise
           required: true
           mustExist: true
           description: the exercise done in this slot

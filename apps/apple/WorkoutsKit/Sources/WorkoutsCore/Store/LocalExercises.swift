@@ -1,8 +1,10 @@
 import Foundation
 
 /// `local-exercises.json`: exercises the owner added on the phone, as flat
-/// exercise records (`{"format": 1, "records": [...]}`), written on add
-/// (§2.3). V2 writes each to substrate before anything names it.
+/// exercise records (`{"format": 2, "records": [...]}`), written on add
+/// (§2.3). V2 writes each to substrate before anything names it. A format 1
+/// file, from before the package was published, is read through
+/// `LegacyKinds` and written back once at this format.
 public struct LocalExercises: Sendable {
     public static let fileName = "local-exercises.json"
 
@@ -51,13 +53,21 @@ public struct LocalExercises: Sendable {
                 records.append(record)
             }
         }
-        let file = RecordFile(format: 1, records: records)
+        try write(records)
+    }
+
+    private func write(_ records: [FlatRecord]) throws {
+        let file = RecordFile(format: WorkoutsFormats.recordFileFormat, records: records)
         try WorkoutsFiles.write(file.json.data(), to: url, options: writingOptions)
     }
 
     private func records() throws -> [FlatRecord] {
         guard let data = try WorkoutsFiles.read(url) else { return [] }
-        return try JSONDecoder().decode(RecordFile.self, from: data).records
+        let file = try JSONDecoder().decode(RecordFile.self, from: data)
+        guard let respelled = LegacyKinds.respell(file, current: WorkoutsFormats.recordFileFormat) else { return file.records }
+        // Written back once in the published spelling, best effort.
+        try? write(respelled.records)
+        return respelled.records
     }
 }
 

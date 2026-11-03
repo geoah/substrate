@@ -7,9 +7,9 @@ import WorkoutsCore
 /// A Hevy export imported and sent as the app sends it, against a real
 /// substrate: skipped unless `WORKOUTS_E2E_SERVER` names one,
 /// `WORKOUTS_E2E_OWNER_TOKEN` holds a full-access token of a repository
-/// (`WORKOUTS_E2E_REPOSITORY`) with the health catalogue installed, and
-/// `WORKOUTS_HEVY_CSV` names the export. The token declares the training
-/// package itself when the repository lacks it. The import's sessions go
+/// (`WORKOUTS_E2E_REPOSITORY`) holding the training package (installed
+/// through the app's approval or `substratectl install`), and
+/// `WORKOUTS_HEVY_CSV` names the export. The import's sessions go
 /// through the history exchange and the outbox, every write lands, and a
 /// second phone reading the repository back finds exactly them.
 ///
@@ -25,10 +25,9 @@ struct LiveHevyImportTests {
         let server = try #require(environment["WORKOUTS_E2E_SERVER"].flatMap(URL.init(string:)))
         let repository = try #require(environment["WORKOUTS_E2E_REPOSITORY"])
         let client = SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? "")
-        let api = WorkoutsAPI(client: client, authority: repository)
+        let api = WorkoutsAPI(client: client)
         let codec = RecordCodec()
-        let installer = PackageInstaller(api: api, manifest: try PackageManifest.bundled(), baselineDirectory: temporaryDirectory())
-        #expect(try await installer.ensure().writable)
+        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(KindNames.packageID) in \(repository) first")
 
         // The exercise library, seeded as the sync seeds it, and read back as
         // the catalogue; a second run writes nothing.
@@ -111,9 +110,9 @@ struct LiveHevyImportTests {
     func importFromAPI() async throws {
         let server = try #require(environment["WORKOUTS_E2E_SERVER"].flatMap(URL.init(string:)))
         let repository = try #require(environment["WORKOUTS_E2E_REPOSITORY"])
-        let api = WorkoutsAPI(client: SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""), authority: repository)
+        let api = WorkoutsAPI(client: SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""))
         let codec = RecordCodec()
-        #expect(try await PackageInstaller(api: api, manifest: try PackageManifest.bundled(), baselineDirectory: temporaryDirectory()).ensure().writable)
+        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(KindNames.packageID) in \(repository) first")
         let library = try ExerciseLibrary.bundled()
         try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic).ensure(api, library: library)
         let catalog = try await RemoteCatalog(directory: temporaryDirectory(), writingOptions: .atomic).refresh(api)
@@ -156,46 +155,29 @@ struct LiveHevyImportTests {
         #expect(sessions.count { $0.session.routine != nil } == linked)
     }
 
-    /// The upgrade a user of the last release takes (`WORKOUTS_UPGRADE_FROM`,
-    /// a folder holding that release's `training-v3.json` and
-    /// `library-v1.json`): package 3 and library 1 written as that build
-    /// wrote them (no marker), an owner's own exercise beside them, then this
-    /// build's package, its library and an account read through Hevy's API
-    /// with its routines and body measurements. Nothing the old build or the
-    /// owner wrote changes, and everything the account holds lands.
-    @Test("an upgrade from the last release, then a whole Hevy account",
-          .enabled(if: ProcessInfo.processInfo.environment["WORKOUTS_UPGRADE_FROM"] != nil
-              && ProcessInfo.processInfo.environment["WORKOUTS_HEVY_API_KEY"] != nil))
-    func upgradeThenImport() async throws {
+    /// What a repository holding this build's published package already
+    /// had, then the library and a whole account read through Hevy's API
+    /// with its routines and body measurements: an owner's own exercise at a
+    /// library id stays as the owner wrote it, a record the library
+    /// recognises only gains what it is, and everything the account holds
+    /// lands.
+    @Test("the library over an owner's exercise, then a whole Hevy account",
+          .enabled(if: ProcessInfo.processInfo.environment["WORKOUTS_HEVY_API_KEY"] != nil))
+    func seedThenImport() async throws {
         let server = try #require(environment["WORKOUTS_E2E_SERVER"].flatMap(URL.init(string:)))
         let repository = try #require(environment["WORKOUTS_E2E_REPOSITORY"])
-        let api = WorkoutsAPI(client: SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""), authority: repository)
+        let api = WorkoutsAPI(client: SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""))
         let codec = RecordCodec()
-        let old = URL(fileURLWithPath: try #require(environment["WORKOUTS_UPGRADE_FROM"]))
+        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(KindNames.packageID) in \(repository) first")
 
-        // The last release: package 3, library 1 by plain PUTs, no marker,
-        // and an owner's exercise at a library id with no load basis.
-        let v3 = try PackageManifest.decode(Data(contentsOf: old.appendingPathComponent("training-v3.json")))
-        // The owner's token declares the package as the owner's, which the
-        // installer then leaves alone; the server's admission of 4 over 3 is
-        // what this checks, so both are applied directly.
-        try await api.applyVocabulary(v3.documents(for: api.rehome))
-        struct File: Decodable { var version: Int; var records: [FlatRecord] }
-        let v1 = try JSONDecoder().decode(File.self, from: Data(contentsOf: old.appendingPathComponent("library-v1.json")))
-        for record in v1.records where record.id != "bench-press-dumbbell" {
-            try await api.write("PUT", record.kind, record.id, properties: record.properties)
-        }
+        // An owner's exercise at a library id, with no load basis.
         try await api.write("PUT", codec.kinds.exercise, "bench-press-dumbbell",
                             properties: ["name": .string("Bench Press (Dumbbell)"), "measurement": .string("weightreps")])
         let before = Dictionary(uniqueKeysWithValues: try await api.list([codec.kinds.exercise, codec.kinds.movement]).map { ("\($0.kind)/\($0.id)", $0) })
 
-        // This build.
-        try await api.applyVocabulary(try PackageManifest.bundled().documents(for: api.rehome))
-        let row = try await api.packageRow(KindNames.packageID(authority: repository))
-        #expect(row?["version"] == .number(Decimal(try PackageManifest.bundled().version)))
         let library = try ExerciseLibrary.bundled()
         let seeded = try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic).ensure(api, library: library)
-        print("live upgrade: library \(library.version) over 1: \(seeded.written) written, \(seeded.filled) filled, \(seeded.deferred) deferred")
+        print("live library: \(library.version): \(seeded.written) written, \(seeded.filled) filled, \(seeded.deferred) deferred")
         #expect(seeded.deferred == 0)
         let after = Dictionary(uniqueKeysWithValues: try await api.list([codec.kinds.exercise, codec.kinds.movement]).map { ("\($0.kind)/\($0.id)", $0) })
         // Nothing held changes; a record the library recognises only gains
@@ -203,7 +185,7 @@ struct LiveHevyImportTests {
         for (key, record) in before {
             let now = try #require(after[key]?.properties, "\(key) is gone")
             for (name, value) in record.properties where name != "codes" {
-                #expect(now[name] == value, "\(key).\(name) changed in the upgrade")
+                #expect(now[name] == value, "\(key).\(name) changed in the seeding")
             }
             let added = Set(now.keys).subtracting(record.properties.keys)
             #expect(added.isSubset(of: ["movement", "muscles", "codes", "aliases", "force", "mechanic", "primaryMuscles", "secondaryMuscles"]),
@@ -220,7 +202,7 @@ struct LiveHevyImportTests {
         let export = try await HevyClient(apiKey: environment["WORKOUTS_HEVY_API_KEY"] ?? "").export(known: known)
         let plan = HevyImport.plan(export, exercises: catalog.exercises, routines: catalog.routines, history: [], deleted: [],
                                    timeZone: TimeZone(identifier: "Europe/London")!, adapter: "substrate-workouts@test", library: libraryExercises)
-        print("live upgrade: \(export.workouts.count) workouts, \(export.routines.count) routines, \(export.measurements.count) body measurements, "
+        print("live import: \(export.workouts.count) workouts, \(export.routines.count) routines, \(export.measurements.count) body measurements, "
             + "\(export.templates.count) own exercises, missing \(export.missingTemplates); \(plan.sessions.count) sessions, problems \(plan.problems.count)")
         #expect(plan.sessions.count == export.workouts.count && plan.routines.count == export.routines.count)
         #expect(plan.measurements.count == export.measurements.count)
