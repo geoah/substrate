@@ -16,6 +16,7 @@ let package = Package(
         .library(name: "SubstrateDevice", targets: ["SubstrateDevice"]),
         .library(name: "SubstrateAPI", targets: ["SubstrateAPI"]),
         .library(name: "SubstrateAuth", targets: ["SubstrateAuth"]),
+        .library(name: "SubstrateRuntime", targets: ["SubstrateRuntime"]),
         .library(name: "SubstrateTesting", targets: ["SubstrateTesting"]),
         .library(name: "SubstrateDeviceApple", targets: ["SubstrateDeviceApple"]),
         .library(name: "SubstrateUI", targets: ["SubstrateUI"]),
@@ -38,8 +39,13 @@ let package = Package(
             "SubstrateCore", "SubstrateDevice", "SubstrateAPI",
             .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .android])),
         ]),
-        // The scripted server and the fake device services tests use.
-        .target(name: "SubstrateTesting", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth"]),
+        // The loop every screen runs: command, controller, engine, journal,
+        // presenter, effects; keyed children, epochs, coalescing.
+        .target(name: "SubstrateRuntime", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateAPI"]),
+        // The scripted server, the fake device services and the harness tests use.
+        .target(name: "SubstrateTesting", dependencies: [
+            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime",
+        ]),
         // The plain resolver's verdict on a TXT query, which tells a SERVFAIL
         // from a name without the record where DNS-SD cannot.
         .target(name: "SubstrateResolv", linkerSettings: [.linkedLibrary("resolv", .when(platforms: [.macOS, .iOS]))]),
@@ -47,10 +53,11 @@ let package = Package(
         .target(name: "SubstrateDeviceApple", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateResolv"]),
         // The SwiftUI screens and record views.
         .target(name: "SubstrateUI", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateDeviceApple",
+            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateDeviceApple",
         ]),
         .target(name: "SubstrateKit", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateDeviceApple", "SubstrateUI",
+            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateDeviceApple",
+            "SubstrateUI",
         ]),
         .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateTesting"]),
     ],
