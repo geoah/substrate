@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 31
+  version: 32
   purpose: internal
   names:
     singular: agent
@@ -67,12 +67,17 @@ data:
     provider:
       type: reference
       kind: substrate.reamde.dev/llm/provider
-      required: true
       description: the provider row this agent's loop completes against
     model:
       type: string
-      required: true
       description: the model id sent on every completion
+    providerInput:
+      type: string
+      description: the llm/provider input of this agent's own bundle
+    models:
+      type: string
+      repeated: true
+      description: one to eight model ids, best first, for providerInput
     params:
       type: object
       description: this agent's request knobs; the provider row's defaults

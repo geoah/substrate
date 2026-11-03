@@ -14,7 +14,7 @@
  * `form-action 'self'`, so a form post that redirects off the origin would
  * be blocked. An error never navigates anywhere. */
 
-import { useEffect, useState, type ReactNode } from "react"
+import { Fragment, useEffect, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { BoxesIcon, ChevronRightIcon } from "lucide-react"
 
@@ -24,6 +24,7 @@ import {
   PublisherLines,
 } from "@/components/authorize/publisher"
 import { ScopeRow } from "@/components/authorize/scope-row"
+import { ProviderPicker } from "@/components/authorize/provider-picker"
 import { SetupRow } from "@/components/authorize/setup-row"
 import { ConsolePreferencesProvider } from "@/components/console-preferences"
 import { CopyButton } from "@/components/identity/copy-button"
@@ -354,6 +355,9 @@ function Approval({
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(
     () => new Set()
   )
+  const [providerChoices, setProviderChoices] = useState<
+    Record<string, string>
+  >({})
   const [lifetime, setLifetime] = useState(request.defaultLifetimeDays)
   // What moved when the server refused the plan the page had shown.
   const [moved, setMoved] = useState<string[] | null>(null)
@@ -365,6 +369,13 @@ function Approval({
   const full = request.scopes.some((s) => s.verb === "full")
   const { previous } = request
   const webhooks = webhookTriggers(request.setup)
+  const providerInputs = request.setup.flatMap(
+    (r) => r.package?.providerInputs ?? []
+  )
+  const missingProvider = providerInputs.some(
+    (input) =>
+      !(providerChoices[input.package + "/" + input.input] ?? input.selected)
+  )
   const blocked = fold.blocks.length > 0
 
   const settingUp = request.state === "setting-up"
@@ -444,6 +455,18 @@ function Approval({
         scopes: chosen,
         lifetimeDays: lifetime,
         ...(request.planHash ? { planHash: request.planHash } : {}),
+        ...(providerInputs.length
+          ? {
+              providerChoices: providerInputs.map((input) => ({
+                package: input.package,
+                input: input.input,
+                provider:
+                  providerChoices[input.package + "/" + input.input] ??
+                  input.selected ??
+                  "",
+              })),
+            }
+          : {}),
       },
     })
   }
@@ -460,14 +483,34 @@ function Approval({
     />
   )
   const setupRow = ({ row, index, grantHeld }: SetupLine) => (
-    <SetupRow
-      key={index}
-      row={row}
-      webhooks={webhooks}
-      grantHeld={grantHeld}
-      failure={failure?.row === index ? failure.message : undefined}
-      technical={technical}
-    />
+    <Fragment key={index}>
+      <SetupRow
+        row={row}
+        webhooks={webhooks}
+        grantHeld={grantHeld}
+        failure={failure?.row === index ? failure.message : undefined}
+        technical={technical}
+      />
+      {(row.package?.providerInputs ?? []).map((input) => (
+        <li key={input.package + "/" + input.input}>
+          <ProviderPicker
+            input={input}
+            value={
+              providerChoices[input.package + "/" + input.input] ??
+              input.selected ??
+              ""
+            }
+            disabled={settled}
+            onChange={(value) =>
+              setProviderChoices((previous) => ({
+                ...previous,
+                [input.package + "/" + input.input]: value,
+              }))
+            }
+          />
+        </li>
+      ))}
+    </Fragment>
   )
   const appTitle = titleOf(request)
 
@@ -699,7 +742,9 @@ function Approval({
               Deny
             </Button>
             <Button
-              disabled={settled || chosen.length === 0 || blocked}
+              disabled={
+                settled || chosen.length === 0 || blocked || missingProvider
+              }
               onClick={approve}
             >
               {pendingVerdict === "approve" && <Spinner />}

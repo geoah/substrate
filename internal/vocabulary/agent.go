@@ -177,7 +177,9 @@ type Agent struct {
 	// Provider is an llm/provider data-record id (`openai` or a custom row):
 	// WHERE the loop buys completions. Data rows are runtime state, so the
 	// reference resolves at dispatch, never at load.
-	Provider string
+	Provider      string
+	ProviderInput string
+	Models        []string
 	// Model is WHAT the loop asks that provider for, sent verbatim on every
 	// completion.
 	Model string
@@ -351,7 +353,7 @@ var reToolName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 
 var agentDataKeys = map[string]bool{
 	"authority": true, "package": true, "description": true, "prompt": true,
-	"provider": true, "model": true, "params": true,
+	"provider": true, "model": true, "providerInput": true, "models": true, "params": true,
 	"tools": true, "toolsFrom": true, "subagents": true, "budgets": true, "permissions": true,
 	"hiddenFromChat": true, "resume": true, "purpose": true, "compaction": true,
 	"context": true,
@@ -463,18 +465,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 	}
 	// `provider` is a REFERENCE at llm/provider: a manifest authors the bare
 	// record id and the row stores the full path, and the loop resolves the id.
-	a.Provider = ReferentID(d.Data["provider"], LLMKind("provider"))
-	if a.Provider == "" {
-		l.errf("%s: data.provider is required — an llm/provider record id (default, or a custom row)", where)
-		return nil
-	}
-	if !ValidID(a.Provider) {
-		l.errf("%s: data.provider: %q is not a record id", where, a.Provider)
-		return nil
-	}
-	a.Model = strings.TrimSpace(mstr(d.Data, "model"))
-	if a.Model == "" {
-		l.errf("%s: data.model is required — the model id sent to the provider on every completion", where)
+	if !l.parseAgentProvider(where, d.Data, a) {
 		return nil
 	}
 	a.HiddenFromChat = mbool(d.Data, "hiddenFromChat")
@@ -931,6 +922,11 @@ func (r *Registry) resolvePackageAgents(g *Package) []string {
 	for _, an := range g.AgentOrder {
 		a := g.Agents[an]
 		where := DocAgent + " " + a.Identity()
+		if a.ProviderInput != "" {
+			if g.Bundle == nil || g.Bundle.Inputs[a.ProviderInput].Kind != LLMKind("provider") {
+				problems = append(problems, fmt.Sprintf("%s: data.providerInput must name an llm/provider input of its own bundle", where))
+			}
+		}
 		for _, t := range a.Emit {
 			// A glob resolves to nothing on purpose (record 0080).
 			if IsTypeGlob(t) {

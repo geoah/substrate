@@ -203,6 +203,9 @@ type AuthorizationPackage struct {
 	// Publisher is present for a package an authority document publishes
 	// rather than this server's catalog ships (decision 0212).
 	Publisher *AuthorizationPackagePublisher `json:"publisher,omitempty"`
+
+	// ProviderInputs are the provider rows the owner chooses for this package and its requirements.
+	ProviderInputs []AuthorizationProviderInput `json:"providerInputs,omitempty"`
 }
 
 // AuthorizationPackagePublisher is where a document-published package comes
@@ -432,6 +435,9 @@ type AuthorizationApproval struct {
 	// PlanHash is the request's planHash as the page read it; required
 	// when the request has setup to run.
 	PlanHash string `json:"planHash,omitempty"`
+
+	// ProviderChoices are validated against the plan before the package inputs are bound.
+	ProviderChoices []AuthorizationProviderChoice `json:"providerChoices,omitempty"`
 }
 
 // AuthorizationAnswer is an approval's or a denial's answer: the URL the

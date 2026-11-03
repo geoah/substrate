@@ -106,6 +106,11 @@ func Plan(ctx context.Context, ds substrate.Dataset, cat Catalog, details []subs
 			return nil, "", err
 		}
 	}
+	for i := range rows {
+		if err := p.providerInputs(ctx, &rows[i]); err != nil {
+			return nil, "", err
+		}
+	}
 	hash, err := Hash(rows)
 	if err != nil {
 		return nil, "", err
