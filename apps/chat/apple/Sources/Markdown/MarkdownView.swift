@@ -1,5 +1,6 @@
-import SwiftUI
+import ChatKit
 import SubstrateKit
+import SwiftUI
 
 /// Parsed blocks, memoized by text: a settled reply is parsed once, and only
 /// the streaming one parses again on each flush.
@@ -53,17 +54,6 @@ struct MarkdownView: View {
 extension EnvironmentValues {
     /// The paths a reply links that name no record (`MarkdownView.missing`).
     @Entry var missingRecords: Set<String> = []
-}
-
-/// The record a `substrate://<kind>/<id>` link names (decision 0137), or
-/// one in the legacy `ref:<kind>/<id>` spelling; nil for any other link.
-func linkedRecord(_ url: URL) -> RecordReference? {
-    let raw = url.absoluteString
-    for scheme in ["substrate://", "ref:"] where raw.lowercased().hasPrefix(scheme) {
-        let path = String(raw.dropFirst(scheme.count))
-        return RecordReference(path: path.removingPercentEncoding ?? path)
-    }
-    return nil
 }
 
 /// Inline Markdown, with links limited to http, https, mailto and record

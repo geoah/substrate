@@ -1,4 +1,5 @@
 import AppIntents
+import ChatKit
 import SubstrateKit
 
 /// An assistant a chat can go to: the agents offered in Settings → Agents.
@@ -18,7 +19,7 @@ struct AgentEntity: AppEntity {
 struct AgentQuery: EntityQuery {
     @MainActor
     private func offered() -> [AgentEntity] {
-        (AppModel.shared.store?.offered ?? []).map {
+        (ChatHost.shared.chats?.offered ?? []).map {
             AgentEntity(id: $0.id, name: $0.name, summary: $0.description)
         }
     }
@@ -60,7 +61,7 @@ struct NewChatIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        AppModel.shared.route(.newChat(agent: assistant?.id, listen: listen))
+        ChatHost.shared.route(.newChat(agent: assistant?.id, listen: listen))
         return .result()
     }
 }
@@ -82,7 +83,7 @@ struct TalkIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        AppModel.shared.route(.newChat(agent: assistant?.id, listen: true))
+        ChatHost.shared.route(.newChat(agent: assistant?.id, listen: true))
         return .result()
     }
 }

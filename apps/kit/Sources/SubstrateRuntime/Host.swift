@@ -136,7 +136,7 @@ final class Host<C: Controller>: @unchecked Sendable {
             state = next
             transient = controller.transient(after: event, applied: next, from: transient)
             dirty = true
-            if controller.resetting(of: event) {
+            if controller.resetting(of: event, on: next) {
                 generation += 1
                 cancelAll()
             }

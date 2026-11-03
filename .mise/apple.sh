@@ -1073,6 +1073,9 @@ test:kit)
 	swift test --package-path ../kit
 	;;
 test:chat)
+	# ChatKit is a Swift package: the chat's rules, on the Mac with swift
+	# test; then what only the Apple app holds, in its test target.
+	swift test --package-path ../chat/ChatKit
 	project
 	chat -destination 'platform=macOS' test
 	;;

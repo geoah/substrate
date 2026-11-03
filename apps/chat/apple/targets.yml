@@ -1,9 +1,11 @@
 targets:
   SubstrateChat:
     # The agent chat, native: iPhone, iPad and Mac from one target like the
-    # console app's, speaking only the API like Substrate Sync. Markdown and
-    # speech are its own code and the system's; Sparkle is the Mac's updater
-    # alone, and the updater is the shared file in apps/xcode/Shared.
+    # console app's, speaking only the API like Substrate Sync. It draws
+    # ChatKit's presentations and sends its commands; the speech, the
+    # notifications and the background work are the device's. Sparkle is
+    # the Mac's updater alone, and the updater is the shared file in
+    # apps/xcode/Shared.
     type: application
     platform: auto
     supportedDestinations: [iOS, macOS]
@@ -18,6 +20,7 @@ targets:
       - package: Sparkle
         destinationFilters: [macOS]
       - package: SubstrateKit
+      - package: ChatKit
     settings:
       base:
         PRODUCT_NAME: SubstrateChat
@@ -40,8 +43,10 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
   SubstrateChatTests:
-    # The chat's rules, which are platform-free: run on the Mac, no
-    # simulator needed (`mise run apple:test:chat`).
+    # What only the Apple app holds: the loopback receiver, the Keychain item
+    # every build kept the session in, inline Markdown. The chat's rules are
+    # ChatKit's, tested by `swift test` there (`mise run apple:test:chat`
+    # runs both).
     type: bundle.unit-test
     platform: auto
     supportedDestinations: [macOS, iOS]

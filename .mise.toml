@@ -850,7 +850,7 @@ description = "Build Substrate Chat and run it on a simulator"
 run = ".mise/apple.sh sim:chat"
 
 [tasks."apple:test:chat"]
-description = "Run Substrate Chat's unit tests on the Mac"
+description = "Run Substrate Chat's tests on the Mac: ChatKit's, then the app target's"
 run = ".mise/apple.sh test:chat"
 
 [tasks."apps:gallery"]
@@ -905,7 +905,7 @@ description = "Run WorkoutsKit's tests (Substrate Workouts' model, session and s
 run = ".mise/apple.sh test:workouts"
 
 [tasks."apps:test:linux"]
-description = "The kit and WorkoutsKit, built and tested on Linux in the swift container"
+description = "The kit, WorkoutsKit and ChatKit, built and tested on Linux in the swift container"
 # Android's Swift runs on the same open-source Foundation as Linux, so a
 # package that imports an Apple framework, or uses a part Foundation leaves
 # out there, fails here first, on a laptop with Docker as in CI. The image is
@@ -916,7 +916,7 @@ description = "The kit and WorkoutsKit, built and tested on Linux in the swift c
 run = """
 docker run --rm -v "$PWD:/src:ro" -w /src/apps \
   swift:6.4@sha256:119ff7d833ea622851b459513333bb4bda5ebb32b7acd05dd05077d5b0383129 \
-  bash -euc 'for p in kit workouts/WorkoutsKit; do
+  bash -euc 'for p in kit workouts/WorkoutsKit chat/ChatKit; do
     swift build --package-path "$p" --scratch-path "/tmp/$p"
     swift test --package-path "$p" --scratch-path "/tmp/$p"
   done'
@@ -1259,7 +1259,7 @@ description = "CI job `console test`: the console's vitest suite"
 depends = ["console:test"]
 
 [tasks."ci:apps"]
-description = "CI job `apps linux`: the kit and WorkoutsKit built and tested on Linux"
+description = "CI job `apps linux`: the kit, WorkoutsKit and ChatKit built and tested on Linux"
 # Gated on `changes`' `apps` answer: only a change to apps/, the console
 # fixture the kit's tests read, or this pipeline's own definition runs it.
 depends = ["apps:test:linux"]

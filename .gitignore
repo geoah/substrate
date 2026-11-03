@@ -24,6 +24,7 @@ dist/
 /build/gallery/
 /apps/kit/.swiftpm/
 /apps/workouts/WorkoutsKit/.build/
+/apps/chat/ChatKit/.build/
 /apps/workouts/WorkoutsKit/.swiftpm/
 /apps/kit/Tools/BridgeGen/.build/
 /apps/kit/Tools/BridgeGen/.swiftpm/

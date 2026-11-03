@@ -1,111 +1,143 @@
-import SwiftUI
+import ChatKit
 import SubstrateKit
+import SwiftUI
 
-/// One turn of the transcript, by role. Equatable, so a flush of the live
-/// turn redraws that turn and not every one above it.
+/// One turn of the transcript, by what it shows. Equatable, so a flush of
+/// the live turn redraws that turn and not every one above it.
 struct TurnView: View, Equatable {
-    let turn: Turn
-    let agent: Agent?
-    /// The assistant turn the stream is writing.
-    var live = false
-    /// The suggestions a later turn decided: their card shows there, under
-    /// the decision, rather than twice.
-    var decided: Set<String> = []
-    /// On a decision: the `propose` call that made the suggestion.
-    var proposal: ToolCall?
+    let turn: TurnPresentation
+    /// The cards the turns land, by id: a card draws as its record now
+    /// stands, which a turn does not hold.
+    let cards: [String: CardPresentation]
+    let expandThinking: Bool
 
-    var body: some View {
-        switch turn.role {
-        case .user: UserTurn(turn: turn)
-        case .assistant: AssistantTurn(turn: turn, agent: agent, live: live, decided: decided)
-        case .summary: SummaryLine(turn: turn)
-        case .system: SystemLine(turn: turn, proposal: proposal)
+    static func == (lhs: TurnView, rhs: TurnView) -> Bool {
+        lhs.turn == rhs.turn && lhs.expandThinking == rhs.expandThinking && lhs.cardsShown == rhs.cardsShown
+    }
+
+    /// The cards this turn shows, as they stand.
+    private var cardsShown: [CardPresentation?] {
+        switch turn.body {
+        case let .assistant(assistant): assistant.tools.compactMap(\.cardID).map { cards[$0] }
+        case let .decision(_, suggestion): [cards[suggestion]]
+        default: []
         }
     }
-}
-
-private struct UserTurn: View {
-    let turn: Turn
 
     var body: some View {
-        if let delivery = deliveryNotice(turn) {
-            Label("When \(delivery.title ?? kindDisplayName(delivery.kind)) changed", systemImage: "bolt.fill")
+        switch turn.body {
+        case let .user(user): UserTurnView(turn: user)
+        case let .trigger(words):
+            Label(words, systemImage: "bolt.fill")
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
-        } else {
-            VStack(alignment: .trailing, spacing: 6) {
-                if let about = turn.contextRecords, !about.isEmpty {
-                    ContextChips(records: about)
-                }
-                HStack {
-                    Spacer(minLength: 48)
-                    Text(turn.content)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(Color.accentColor.opacity(0.16), in: .rect(cornerRadius: 20))
-                        .opacity(turn.pending ? 0.7 : 1)
-                        .contextMenu {
-                            Button("Copy", systemImage: "doc.on.doc") { copyToPasteboard(turn.content) }
-                        }
-                }
-                .accessibilityLabel("You: \(turn.content)")
+        case let .assistant(assistant): AssistantTurnView(turn: assistant, cards: cards, expandThinking: expandThinking)
+        case let .summary(summary): SummaryLine(turn: summary)
+        case let .decision(line, suggestion):
+            VStack(alignment: .leading, spacing: 10) {
+                OutcomeRow(line: line)
+                if let card = cards[suggestion]?.suggestion { SuggestionCardView(id: suggestion, card: card) }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        case let .answer(line): OutcomeRow(line: line)
+        case let .system(text):
+            Text(text)
+                .lineLimit(3)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
         }
     }
 }
 
-/// The records a message is about, as pills above it.
-private struct ContextChips: View {
-    let records: [RecordReference]
+extension ToolRowPresentation {
+    var cardID: String? {
+        switch attachment {
+        case let .suggestion(id)?, let .questions(id)?: id
+        default: nil
+        }
+    }
+}
+
+private struct UserTurnView: View {
+    let turn: UserTurn
 
     var body: some View {
-        HStack(spacing: 6) {
-            Spacer(minLength: 48)
-            Text("About").font(.caption).foregroundStyle(.secondary)
-            ForEach(records) { RecordPill($0) }
+        VStack(alignment: .trailing, spacing: 6) {
+            if !turn.about.isEmpty {
+                HStack(spacing: 6) {
+                    Spacer(minLength: 48)
+                    Text(turn.aboutLabel).font(.caption).foregroundStyle(.secondary)
+                    ForEach(turn.about) { RecordPill($0) }
+                }
+                .font(.footnote)
+                .accessibilityElement(children: .combine)
+            }
+            HStack {
+                Spacer(minLength: 48)
+                Text(turn.text)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.accentColor.opacity(0.16), in: .rect(cornerRadius: 20))
+                    .opacity(turn.pending ? 0.7 : 1)
+                    .contextMenu {
+                        Button("Copy", systemImage: "doc.on.doc") { copyToPasteboard(turn.text) }
+                    }
+            }
+            .accessibilityLabel("You: \(turn.text)")
         }
-        .font(.footnote)
-        .accessibilityElement(children: .combine)
     }
 }
 
-private struct AssistantTurn: View {
-    @Environment(ChatStore.self) private var store
-    let turn: Turn
-    let agent: Agent?
-    let live: Bool
-    let decided: Set<String>
+private struct AssistantTurnView: View {
+    let turn: AssistantTurn
+    let cards: [String: CardPresentation]
+    let expandThinking: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let reasoning = turn.reasoning, !reasoning.isEmpty {
-                ReasoningView(text: reasoning, millis: turn.reasoningMillis, thinking: turn.thinking && live)
+            if let reasoning = turn.reasoning {
+                ReasoningView(reasoning: reasoning, expandByDefault: expandThinking)
             }
-            if !turn.content.isEmpty {
-                MarkdownView(text: turn.content, live: live,
-                             missing: Set((turn.mentions ?? []).filter(\.missing).map(\.path)))
+            if let text = turn.text {
+                MarkdownView(text: text, live: turn.live, missing: Set(turn.missing))
                     .textSelection(.enabled)
-                    .accessibilityAddTraits(live ? .updatesFrequently : [])
+                    .accessibilityAddTraits(turn.live ? .updatesFrequently : [])
                     .contextMenu {
-                        Button("Copy", systemImage: "doc.on.doc") { copyToPasteboard(turn.content) }
-                        ShareLink(item: turn.content)
+                        Button("Copy", systemImage: "doc.on.doc") { copyToPasteboard(text) }
+                        ShareLink(item: text)
                     }
-            } else if live, turn.tools.isEmpty, turn.reasoning == nil {
+            } else if turn.typing {
                 TypingDots()
             }
-            if !live, let mentions = turn.mentions?.filter({ !$0.missing }), !mentions.isEmpty {
-                LinkedRecords(mentions: mentions)
+            if !turn.linked.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(turn.linkedLabel)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    WrapLayout(spacing: 6) {
+                        ForEach(turn.linked) { RecordPill($0) }
+                    }
+                    .font(.footnote)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(turn.linkedLabel)
             }
-            ForEach(Array(turn.tools.enumerated()), id: \.offset) { _, call in
-                ToolCallRow(call: call, agent: agent)
-                if let request = requestID(of: call) {
-                    if !decided.contains(request) { ProposalCard(id: request, call: call) }
-                } else if let interaction = interactionID(of: call) {
-                    InteractionCard(id: interaction)
-                } else {
-                    CallChanges(call: call, agent: agent)
+            ForEach(turn.tools) { tool in
+                ToolCallRow(tool: tool)
+                switch tool.attachment {
+                case let .suggestion(id)?:
+                    if let card = cards[id]?.suggestion { SuggestionCardView(id: id, card: card) }
+                case let .questions(id)?:
+                    if let card = cards[id]?.question { QuestionCardView(id: id, card: card) }
+                case let .change(panel)?:
+                    ChangePanel(panel: panel)
+                case let .changes(list)?:
+                    ChangeList(list: list)
+                case nil:
+                    EmptyView()
                 }
             }
         }
@@ -113,69 +145,25 @@ private struct AssistantTurn: View {
     }
 }
 
-/// The records a settled reply links, as pills under it: the reply's links
-/// are text, and this is where each is its record.
-private struct LinkedRecords: View {
-    let mentions: [Mention]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Linked records")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-            WrapLayout(spacing: 6) {
-                ForEach(mentions, id: \.self) { m in
-                    RecordPill(RecordReference(kind: m.kind, id: m.id))
-                }
-            }
-            .font(.footnote)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Linked records")
-    }
-}
-
-/// What a settled call changed, as panels: a write's record and values, or
-/// the records a function or a sub-agent wrote.
-private struct CallChanges: View {
-    let call: ToolCall
-    let agent: Agent?
-
-    var body: some View {
-        let resolved = resolveTool(agent: agent, name: call.name, callable: call.callable)
-        if resolved.function == HostFunction.write {
-            if let change = writeChange(call) { ChangePanel(change: change) }
-        } else if call.ok == true {
-            let stamped = stampedChanges(call)
-            let wrote = call.subagentWrites.flatMap { $0.records > 0 ? wroteSentence(records: $0.records, kinds: $0.kinds, moreKinds: $0.moreKinds) : nil }
-            if !stamped.isEmpty || wrote != nil {
-                ChangeList(changes: stamped, wrote: wrote)
-            }
-        }
-    }
-}
-
 /// "Thinking…" while the model reasons, then "Thought for 6 s", folded.
 struct ReasoningView: View {
-    @Environment(ChatStore.self) private var store
-    let text: String
-    let millis: Int?
-    let thinking: Bool
+    let reasoning: ReasoningPresentation
+    let expandByDefault: Bool
     @State private var open: Bool?
 
     var body: some View {
-        let expanded = open ?? store.prefs.expandThinking
+        let expanded = open ?? expandByDefault
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 withAnimation(.snappy) { open = !expanded }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "brain")
-                        .symbolEffect(.pulse, isActive: thinking)
-                    if thinking {
-                        Text("Thinking…").shimmer()
+                        .symbolEffect(.pulse, isActive: reasoning.thinking)
+                    if reasoning.thinking {
+                        Text(reasoning.label).shimmer()
                     } else {
-                        Text(thoughtFor)
+                        Text(reasoning.label)
                     }
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
@@ -187,7 +175,7 @@ struct ReasoningView: View {
             }
             .buttonStyle(.plain)
             if expanded {
-                Text(text)
+                Text(reasoning.text)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
@@ -198,30 +186,16 @@ struct ReasoningView: View {
             }
         }
     }
-
-    private var thoughtFor: String {
-        guard let millis, millis > 0 else { return "Thought" }
-        let seconds = max(1, Int((Double(millis) / 1000).rounded()))
-        return seconds < 60 ? "Thought for \(seconds) s" : "Thought for \(seconds / 60) min \(seconds % 60) s"
-    }
 }
 
 /// One tool call in the console's words, opening to what it found, changed
 /// or failed on.
 struct ToolCallRow: View {
-    let call: ToolCall
-    let agent: Agent?
+    let tool: ToolRowPresentation
     @State private var open = false
     @State private var raw = false
 
     var body: some View {
-        let resolved = resolveTool(agent: agent, name: call.name, callable: call.callable)
-        let details = toolDetails(call, resolved).filter {
-            switch $0 {
-            case .changed, .wrote: false
-            default: true
-            }
-        }
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 withAnimation(.snappy) { open.toggle() }
@@ -229,7 +203,7 @@ struct ToolCallRow: View {
                 HStack(spacing: 8) {
                     status
                         .frame(width: 18)
-                    Text(toolSummary(call, resolved))
+                    Text(tool.summary)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
@@ -245,12 +219,19 @@ struct ToolCallRow: View {
             .accessibilityHint(open ? "Hides the details" : "Shows the details")
             if open {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(details.enumerated()), id: \.offset) { _, detail in DetailLine(detail: detail) }
+                    ForEach(Array(tool.details.enumerated()), id: \.offset) { _, detail in DetailLine(detail: detail) }
                     DisclosureGroup("Details", isExpanded: $raw) {
                         VStack(alignment: .leading, spacing: 6) {
-                            LabeledRaw(label: "Tool", value: call.callable ?? call.name)
-                            if !call.arguments.isEmpty { LabeledRaw(label: "Arguments", value: pretty(call.arguments)) }
-                            if let output = call.output { LabeledRaw(label: "Output", value: pretty(output)) }
+                            ForEach(tool.raw, id: \.self) { line in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(line.label).font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+                                    Text(line.value)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
+                                        .lineLimit(40)
+                                }
+                            }
                         }
                     }
                     .font(.caption)
@@ -261,52 +242,42 @@ struct ToolCallRow: View {
     }
 
     @ViewBuilder private var status: some View {
-        switch call.ok {
-        case nil: ProgressView().controlSize(.mini)
-        case true?: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case false?: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+        switch tool.status {
+        case .running: ProgressView().controlSize(.mini)
+        case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
         }
-    }
-
-    private func pretty(_ text: String) -> String {
-        guard let value = JSONValue.parse(text), case .object = value,
-              let data = try? JSONSerialization.data(withJSONObject: value.any, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        else { return text }
-        return String(decoding: data, as: UTF8.self)
     }
 }
 
 private struct DetailLine: View {
-    let detail: ToolDetail
+    let detail: ToolDetailPresentation
 
     var body: some View {
         switch detail {
         case let .failed(reason):
-            Label(reason ?? "It failed.", systemImage: "xmark.octagon")
+            Label(reason, systemImage: "xmark.octagon")
                 .font(.footnote)
                 .foregroundStyle(.red)
-        case let .found(records, total):
+        case let .found(words, records):
             VStack(alignment: .leading, spacing: 6) {
-                Text(total == 0 ? "Found nothing." : "Found \(plural(total, "record")).")
-                    .font(.footnote).foregroundStyle(.secondary)
+                Text(words).font(.footnote).foregroundStyle(.secondary)
                 WrapLayout(spacing: 6) {
-                    ForEach(records, id: \.self) { r in RecordPill(RecordReference(kind: r.kind, id: r.id)) }
+                    ForEach(records) { RecordPill($0) }
                 }
                 .font(.footnote)
             }
-        case let .changed(records):
+        case let .changed(lines):
             VStack(alignment: .leading, spacing: 3) {
-                ForEach(records, id: \.self) { r in
-                    Label("\(verb(r.op)) \(kindDisplayName(r.kind).lowercasedFirst) \(r.id)", systemImage: "square.and.pencil")
-                        .font(.footnote).foregroundStyle(.secondary)
+                ForEach(lines, id: \.self) { line in
+                    Label(line, systemImage: "square.and.pencil").font(.footnote).foregroundStyle(.secondary)
                 }
             }
-        case let .wrote(records, kinds, more):
-            Text(wroteSentence(records: records, kinds: kinds, moreKinds: more))
-                .font(.footnote).foregroundStyle(.secondary)
-        case let .reply(agent, text):
+        case let .wrote(words):
+            Text(words).font(.footnote).foregroundStyle(.secondary)
+        case let .reply(heading, text):
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(agentName(agent)) said").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text(heading).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 MarkdownView(text: text).font(.footnote)
             }
             .card()
@@ -314,34 +285,10 @@ private struct DetailLine: View {
             Text(raw).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(12).textSelection(.enabled)
         }
     }
-
-    private func verb(_ op: String?) -> String {
-        switch op {
-        case "put": "Saved"
-        case "delete": "Deleted"
-        default: "Changed"
-        }
-    }
-}
-
-private struct LabeledRaw: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
-            Text(value)
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .lineLimit(40)
-        }
-    }
 }
 
 private struct SummaryLine: View {
-    let turn: Turn
+    let turn: SummaryTurn
     @State private var open = false
 
     var body: some View {
@@ -351,7 +298,7 @@ private struct SummaryLine: View {
                 Button {
                     withAnimation(.snappy) { open.toggle() }
                 } label: {
-                    Label("Earlier messages were summarized", systemImage: "rectangle.compress.vertical")
+                    Label(turn.label, systemImage: "rectangle.compress.vertical")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize()
@@ -367,42 +314,17 @@ private struct SummaryLine: View {
     }
 }
 
-private struct SystemLine: View {
-    let turn: Turn
-    let proposal: ToolCall?
-
-    var body: some View {
-        if let decision = decisionNotice(turn) {
-            VStack(alignment: .leading, spacing: 10) {
-                OutcomeRow(text: decision.accepted ? (decision.adjusted ? "You applied the suggestion, with your changes" : "You applied the suggestion")
-                    : "You dismissed the suggestion", done: decision.accepted)
-                ProposalCard(id: decision.requestID, call: proposal, outcome: decision)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } else if let answer = interactionNotice(turn) {
-            OutcomeRow(text: answer.answered ? "You answered" : "You dismissed the questions", done: answer.answered)
-        } else {
-            Text(turn.content)
-                .lineLimit(3)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-        }
-    }
-}
-
 /// What the owner did with a card, in the tool rows' shape: a mark, then
 /// the words.
 private struct OutcomeRow: View {
-    let text: String
-    let done: Bool
+    let line: OutcomeLine
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: done ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(done ? Color.green : Color.secondary)
+            Image(systemName: line.done ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(line.done ? Color.green : Color.secondary)
                 .frame(width: 18)
-            Text(text)
+            Text(line.text)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)

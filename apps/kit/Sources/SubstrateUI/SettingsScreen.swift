@@ -15,17 +15,31 @@ public struct SettingsScreen: View {
 
     public var body: some View {
         Form {
-            ForEach(presentation.sections) { section in
-                Section {
-                    ForEach(section.rows) { row in SettingsRowView(row: row, send: send) }
-                } header: {
-                    if let title = section.title { Text(title) }
-                } footer: {
-                    if let footer = section.footer { Text(footer) }
-                }
-            }
+            ForEach(presentation.sections) { section in SettingsSectionView(section, send: send) }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// One section of a settings presentation, for a form that draws rows of
+/// the app's own beside the kit's.
+public struct SettingsSectionView: View {
+    let section: SettingsSection
+    let send: (SettingsCommand) -> Void
+
+    public init(_ section: SettingsSection, send: @escaping (SettingsCommand) -> Void) {
+        self.section = section
+        self.send = send
+    }
+
+    public var body: some View {
+        Section {
+            ForEach(section.rows) { row in SettingsRowView(row: row, send: send) }
+        } header: {
+            if let title = section.title { Text(title) }
+        } footer: {
+            if let footer = section.footer { Text(footer) }
+        }
     }
 }
 

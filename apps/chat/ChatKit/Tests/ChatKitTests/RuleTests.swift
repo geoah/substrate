@@ -1,0 +1,287 @@
+import Foundation
+@testable import ChatKit
+import SubstrateCore
+import SubstrateRuntime
+import SubstrateTesting
+import Testing
+
+/// DESIGN.md's seven rules ("The store and its concurrency rules"), one
+/// test each by its number, against a scripted server on the kit's runtime.
+@Suite("The seven rules")
+struct SevenRules {
+    @Test func rule1_aConversationIsKeyedByItsClientIDAndTheThreadEventBindsIt() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream))])
+        try await rig.signIn()
+        // Another window opened the thread the new chat's send will name.
+        await rig.harness.send(.show(thread: "t1", scene: "b"))
+        let other = try #require(await rig.harness.state.scenes["b"]?.current)
+        let key = try await rig.newChat("a")
+        #expect(key != other)
+        try await rig.send(.draft("Hi"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { await $0.state.conversations[key]?.thread == "t1" }
+        // The key is the one the list minted; the server's thread is bound to
+        // it, and the other conversation on that thread is gone, its window
+        // showing this one.
+        let state = await rig.harness.state
+        #expect(state.conversations[other] == nil)
+        #expect(state.scenes["b"]?.current == key)
+        #expect(state.key(of: "t1") == key)
+        await rig.harness.send(.show(thread: "t1", scene: "c"))
+        #expect(await rig.harness.state.scenes["c"]?.current == key)
+    }
+
+    @Test func rule2_oneStreamPerConversation() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 2))])
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        try await rig.send(.draft("Hi"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { await $0.state.conversations[key]?.thread == "t1" }
+        // Opening the chat the app streams, in another window, opens nothing.
+        await rig.harness.send(.show(thread: "t1", scene: "other"))
+        try await rig.send(.open, to: key)
+        await rig.harness.settle()
+        #expect(rig.server.count("/events") == 0)
+        #expect(rig.server.count("/chat") == 1)
+        rig.server.release()
+        try await rig.harness.until { await $0.runtime.state(of: key)?.settles == 1 }
+    }
+
+    @Test func rule3_noRowsPublishUnderALiveOverlay() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 2))])
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        try await rig.send(.draft("Hi"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.overlay.turns.contains { $0.role == .assistant } == true }
+        // An ordinary read of the thread while it streams: refused outright.
+        await rig.harness.send(.show(thread: "t1", scene: "other"))
+        await rig.harness.settle()
+        #expect(rig.server.count("/api/v1/records", query: "llm/message") == 0)
+        #expect(await rig.harness.state.transcripts["t1"] == nil)
+        rig.server.release()
+        // Its own handover read does.
+        try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
+        #expect(await rig.turns(key) == ["Hi", "Hello"])
+    }
+
+    @Test func rule4_aReadIsDroppedWhenItsThreadsEpochMoved() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = ChatAppState()
+        state.session = ChatSession(LinkSnapshot(phase: .signedIn, server: origin, repository: repository))
+        state.readEpochs["t1"] = 1
+        let rows = [Record(id: "m", kind: Kinds.message, properties: ["role": "user", "content": "x"])]
+        // Started under epoch 0: a send moved it since.
+        let late = try app.apply(.init(.rowsRead(thread: "t1", epoch: 0, version: 3, rows: rows, full: false)), to: state)
+        #expect(late.transcripts["t1"] == nil)
+        let current = try app.apply(.init(.rowsRead(thread: "t1", epoch: 1, version: 3, rows: rows, full: false)), to: state)
+        #expect(current.transcripts["t1"]?.records == rows)
+    }
+
+    @Test func rule5_aNewRunDropsWhatAnOlderRunStillDelivers() async throws {
+        let rig = ChatRig(baseRoutes(threads: #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3, status: "running"))]}"#,
+                                     status: "running")
+                + [.init(method: "GET", path: "/events", answer: .stream([#"{"kind":"idle","status":"running"}"#]))])
+        try await rig.signIn()
+        // The attach's first read is held on the wire.
+        rig.server.hold("/llm/thread/t1")
+        await rig.harness.send(.show(thread: "t1", scene: "s"))
+        let key = try #require(await rig.harness.state.scenes["s"]?.current)
+        try await rig.harness.until { _ in rig.server.count("/llm/thread/t1") == 1 }
+        // Back in front: the conversation attaches again, a run of its own.
+        await rig.harness.send(.phase(.active))
+        try await rig.harness.until { _ in rig.server.count("/llm/thread/t1") == 2 }
+        rig.server.letGo("/llm/thread/t1")
+        try await rig.harness.until { _ in await rig.live(key)?.phase == .background }
+        await rig.harness.settle()
+        // The older run's read came back too, and did nothing: had it landed,
+        // it would have attached a second stream.
+        #expect(rig.server.count("/events") == 1)
+    }
+
+    @Test func rule6_aSignOutDropsEverythingStillOnItsWay() async throws {
+        let rig = ChatRig()
+        try await rig.signIn()
+        _ = try await rig.newChat()
+        rig.server.hold("/api/v1/records")
+        await rig.harness.send(.refresh)
+        try await rig.harness.until { await $0.state.refreshing }
+        await rig.signOut()
+        rig.server.letGo("/api/v1/records")
+        try await rig.harness.until { await $0.runtime.counters.droppedByGeneration >= 1 }
+        let state = await rig.harness.state
+        #expect(state.session == nil)
+        #expect(state.agents.isEmpty)
+        #expect(state.conversations.isEmpty)
+        // Sign Out forgets the saved chats, and every notification.
+        try await rig.harness.until { _ in !FileManager.default.fileExists(atPath: rig.base.appendingPathComponent(ChatStorage.hash(identity)).path) }
+        #expect(rig.notifications.cancellations.contains("all"))
+    }
+
+    @Test func rule7_cachedRowsAreCurrentOnlyWhileTheirThreadIsSettledAndUnmoved() {
+        var state = ChatAppState()
+        let thread = Record(id: "t1", kind: Kinds.thread, properties: ["mode": "chat", "status": "ok"], version: 3)
+        state.chats = [thread]
+        state.transcripts["t1"] = .init(records: [], turns: [], version: 3, full: false)
+        #expect(state.isCurrent("t1"))
+        // Read under another version: not current.
+        state.chats[0].version = 4
+        #expect(!state.isCurrent("t1"))
+        // A running thread's rows are incomplete by definition.
+        state.chats[0].version = 3
+        state.chats[0].properties["status"] = "running"
+        #expect(!state.isCurrent("t1"))
+        // A window that filled is read whole when opened.
+        state.chats[0].properties["status"] = "ok"
+        state.transcripts["t1"]?.full = true
+        #expect(!state.isCurrent("t1"))
+    }
+}
+
+@Suite("The conversation's run")
+struct ConversationRuns {
+    @Test func aSendStreamsThenHandsOverInOneStepWithoutDoubling() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream))])
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        let presentations = await rig.runtime.presentations()
+        let seen = Seen()
+        let watching = Task {
+            for await tree in presentations {
+                if let screen = tree.conversations[key] { seen.add(screen.turns.count) }
+            }
+        }
+        defer { watching.cancel() }
+        try await rig.send(.draft("Hi"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
+        #expect(await rig.turns(key) == ["Hi", "Hello"])
+        let live = try #require(await rig.live(key))
+        #expect(live.phase == .idle && live.overlay.turns.isEmpty)
+        // The rows landed and the overlay cleared in one step: no tree ever
+        // held the turn twice.
+        await rig.harness.settle()
+        #expect(seen.counts.allSatisfy { $0 <= 2 })
+    }
+
+    @Test func aRefusalGivesTheTextBackAndNothingRuns() async throws {
+        let refusal = #"{"error":{"code":"conflict","message":"a turn is already running on this thread"}}"#
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .json(409, refusal))])
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        try await rig.send(.draft("Hi"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.outcomes.isEmpty == false }
+        let live = try #require(await rig.live(key))
+        #expect(live.outcomes.first?.kind == .refused)
+        #expect(live.outcomes.first?.reason == "a turn is already running on this thread")
+        #expect(live.draft == "Hi")
+        #expect(live.phase == .idle && live.overlay.turns.isEmpty && live.thread == nil)
+        // The field takes the text it gave back.
+        #expect(await rig.conversation(key)?.composer.draft == "Hi")
+    }
+
+    @Test func aGatewaysAnswerIsUnknownDeliveryNeverARefusal() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .json(502, "<html>bad gateway</html>"))])
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        try await rig.send(.draft("Hi"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.checking == true }
+        // The check reads a second later.
+        try await rig.harness.until { harness in
+            await harness.advance(by: 1)
+            return await rig.live(key)?.outcomes.contains { $0.kind == .unknown } == true
+        }
+        #expect(await rig.live(key)?.outcomes.contains { $0.kind == .refused } == false)
+        // Nothing is sent again on its own.
+        #expect(rig.server.count("/chat") == 1)
+    }
+
+    @Test func streamedTextPresentsWithinItsWindowAndStructureAtOnce() throws {
+        let conversation = Conversation(key: ChildKey("k"), seed: .init(thread: nil, agent: helper, draft: "", listen: false), facts: nil,
+                                        online: true, keyless: nil, newestTurn: nil, visible: true, pollNudge: 0, resumeNudge: 0,
+                                        continuing: nil)
+        var delta = AgentEvent(kind: .delta)
+        delta.text = "a"
+        #expect(conversation.coalescing(of: .init(.streamed(delta, at: Date()))) == .within(.milliseconds(50)))
+        #expect(conversation.coalescing(of: .init(.streamed(AgentEvent(kind: .toolStarted), at: Date()))) == .now)
+    }
+}
+
+@Suite("The list")
+struct ListRules {
+    @Test func olderRowsNeverReplaceNewerOnes() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = ChatAppState()
+        state.session = ChatSession(LinkSnapshot(phase: .signedIn, server: origin, repository: repository))
+        let newer = [Record(id: "a", kind: Kinds.message, properties: ["role": "user", "content": "new"])]
+        let older = [Record(id: "b", kind: Kinds.message, properties: ["role": "user", "content": "old"])]
+        state = try app.apply(.init(.rowsRead(thread: "t1", epoch: 0, version: 5, rows: newer, full: false)), to: state)
+        state = try app.apply(.init(.rowsRead(thread: "t1", epoch: 0, version: 3, rows: older, full: false)), to: state)
+        #expect(state.transcripts["t1"]?.records.first?.id == "a")
+    }
+
+    @Test func anAppTokenListsTheCardsUnderTheThreadsItKnows() async throws {
+        let interaction = #"{"head":10,"generation":"g","records":[{"id":"i1","kind":"substrate.reamde.dev/llm/interaction","version":1,"createdAt":"2026-10-31T10:00:02Z","updatedAt":"2026-10-31T10:00:02Z","properties":{"state":"pending","thread":{"ref":"substrate.reamde.dev/llm/thread/t1"}}}]}"#
+        let named = #""thread":{"in":["t1"]}"#
+        let forbidden = #"{"error":{"code":"forbidden","message":"an app's token lists it under filter.properties.thread"}}"#
+        let threads = #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3))]}"#
+        let rig = ChatRig([
+            .init(method: "GET", path: "/api/v1/records", query: named, answer: .json(200, interaction)),
+            .init(method: "GET", path: "/api/v1/records", query: "llm/interaction", answer: .json(403, forbidden)),
+        ] + baseRoutes(threads: threads), scopes: ["agents:*"])
+        try await rig.signIn()
+        #expect(await rig.harness.state.refreshError == nil)
+        #expect(await rig.harness.state.interactions.map(\.id) == ["i1"])
+        let cards = rig.server.requests.filter { $0.contains("/api/v1/records") && $0.contains("llm/interaction") }
+        #expect(!cards.isEmpty && cards.allSatisfy { $0.contains(named) })
+        // Without `decide:` the suggestions are not asked for at all.
+        #expect(rig.server.count("/api/v1/records", query: "recordpatchrequest") == 0)
+    }
+
+    @Test func aWindowLeavingKeepsAConversationAnotherShows() async throws {
+        let rig = ChatRig()
+        try await rig.signIn()
+        await rig.harness.send(.show(thread: "t1", scene: "a"))
+        await rig.harness.send(.show(thread: "t1", scene: "b"))
+        let key = try #require(await rig.harness.state.scenes["a"]?.current)
+        #expect(await rig.harness.state.scenes["b"]?.current == key)
+        await rig.harness.send(.sceneGone(scene: "a"))
+        #expect(await rig.harness.state.conversations[key] != nil)
+        await rig.harness.send(.sceneGone(scene: "b"))
+        #expect(await rig.harness.state.conversations[key] == nil)
+    }
+
+    @Test func aReplyThatSettlesOffScreenNotifiesOnce() async throws {
+        let rig = ChatRig(baseRoutes(threads: emptyPage))
+        try await rig.signIn()
+        let settled = Record(id: "t1", kind: Kinds.thread, properties: [
+            "mode": "chat", "status": "ok", "finishedAt": "2026-10-31T10:00:05Z", "lastReply": "Hello",
+            "agent": ["ref": .string("\(Kinds.agent)/\(helper)")],
+        ], version: 4)
+        await rig.harness.deliver(.init(.threadsRead(.init(chats: [settled], automated: []))))
+        await rig.harness.deliver(.init(.threadsRead(.init(chats: [settled], automated: []))))
+        try await rig.harness.until { _ in rig.notifications.scheduled.count == 1 }
+        await rig.harness.settle()
+        let note = try #require(rig.notifications.scheduled.first)
+        #expect(note.title == "Helper")
+        #expect(note.body == "Hello")
+        #expect(note.payload == ["thread": "t1"])
+        // A tap opens the chat in the window that claims it.
+        rig.notifications.tap(note.payload)
+        try await rig.harness.until { await $0.presentation.routePending }
+        await rig.harness.send(.claimRoute(scene: "s"))
+        let key = try #require(await rig.harness.state.scenes["s"]?.current)
+        #expect(await rig.harness.state.conversations[key]?.thread == "t1")
+    }
+}
+
+/// What a test watched go by.
+final class Seen: @unchecked Sendable {
+    private let lock = NSLock()
+    private var kept: [Int] = []
+    func add(_ count: Int) { lock.withLock { kept.append(count) } }
+    var counts: [Int] { lock.withLock { kept } }
+}

@@ -99,8 +99,9 @@ public protocol Controller: Sendable {
     /// generation moves, so every effect running under it is cancelled and
     /// every result still on its way dropped, and its children are closed
     /// and made again from the state the event left (a sign-out). The
-    /// engine makes that state; the event's own effects start after.
-    func resetting(of event: Event) -> Bool
+    /// engine makes that state, and `on` it is the state it made; the
+    /// event's own effects start after.
+    func resetting(of event: Event, on state: State) -> Bool
     /// The transient state after an event the engine applied.
     func transient(after event: Event, applied state: State, from transient: Transient) -> Transient
     /// The transient state after an event the engine refused.
@@ -140,7 +141,7 @@ public extension Controller {
     func event(fromChild key: ChildKey, _ event: Child.Event) -> Event? { nil }
     func event(fromChild key: ChildKey, _ event: Child.Event, after state: Child.State) -> Event? { self.event(fromChild: key, event) }
     func event(replacing previous: Self) -> Event? { nil }
-    func resetting(of event: Event) -> Bool { false }
+    func resetting(of event: Event, on state: State) -> Bool { false }
     func journaling(of event: Event) -> Journaling { .skip }
     func transient(after event: Event, applied state: State, from transient: Transient) -> Transient { transient }
     func transient(afterRefusing event: Event, because error: any Error, from transient: Transient) -> Transient { transient }

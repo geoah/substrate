@@ -69,7 +69,7 @@ struct Desk: Controller {
         Presentation(answers: input.state.answers, busy: input.state.busy.sorted(), clerks: input.children)
     }
 
-    func resetting(of event: Event) -> Bool { event == .cleared }
+    func resetting(of event: Event, on state: State) -> Bool { event == .cleared }
 
     func children(in state: State) -> [ChildKey: Clerk] {
         Dictionary(uniqueKeysWithValues: state.clerks.map { ($0, Clerk(notice: state.notice, gates: gates)) })

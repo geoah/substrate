@@ -29,6 +29,10 @@ packages:
   # libraries alone.
   WorkoutsKit:
     path: ../workouts/WorkoutsKit
+  # Substrate Chat below its views: the list and its conversations on the
+  # kit's runtime, the transcript fold, the words, what the device keeps.
+  ChatKit:
+    path: ../chat/ChatKit
 settings:
   base:
     DEVELOPMENT_TEAM: KFA5J8GDWJ
