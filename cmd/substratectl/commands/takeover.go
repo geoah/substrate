@@ -9,25 +9,22 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// pathVocabularyTakeover is the owner's takeover of a package an app keeps
-// under its `declare:` scope (decision 0205).
+// pathVocabularyTakeover is the owner's takeover of a package whose row still
+// names the app that declared it under an earlier server's `declare:` scope
+// (decision 0205, retired by 0214).
 const pathVocabularyTakeover = apiPrefix + "/vocabulary/takeover"
 
 func (a *app) takeoverCommand() *cobra.Command {
 	var confirm string
 	cmd := &cobra.Command{
 		Use:   "takeover <authority>/<package> --confirm <authority>/<package>",
-		Short: "Make a package an app manages yours, so you can edit its kinds; requires --confirm",
-		Long: `A package an app declared under its declare: scope is the app's: its package,
-bundle and kind documents change only through that app, and every other apply,
-put, patch, delete or uninstall of them is refused. Its records stay yours.
-
-takeover makes the package yours. Nothing else moves: no kind, no record, no
-token. The app keeps its token and its scope, and its next change to the package
-is refused, so take a package over only when you mean to manage its kinds
-yourself from now on. It cannot be handed back. --confirm repeats the package
-identity. The answer, and the package row from then on, name the app it was
-taken from.`,
+		Short: "Make a package an app declared yours by name; requires --confirm",
+		Long: `A package an app declared under an earlier server's declare: scope still names
+that app on its package row. Its declarations are already yours to change, as
+every package of your own is; takeover rewrites the row so it names you as its
+declarer and the app it was taken from, and nothing else moves: no kind, no
+record, no token. It cannot be handed back. --confirm repeats the package
+identity.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pkg := args[0]
