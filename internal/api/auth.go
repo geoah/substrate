@@ -116,7 +116,6 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		if gerr != nil {
 			return nil, http.StatusUnauthorized, codeAuth, "invalid token", nil
 		}
-		grant = grant.WithAgents(tok.Agents)
 		ctx = substrate.WithScopes(ctx, tok.Scopes)
 		// A stream outlives this check: the lease reads the token again
 		// before the stream writes on, so a revoked or expired app token
@@ -134,8 +133,9 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		}}
 		ctx = withTokenLease(ctx, lease)
 		actor := appActorOf(tok)
-		// The full client id beside the actor: what a package the app
-		// declares is owned by (decision 0205).
+		// The full client id beside the actor: the label and annotation
+		// namespace the app keeps, which its host-only actor does not tell
+		// apart from another app's on the same host.
 		if actor != substrate.ActorAPI {
 			ctx = substrate.WithClientID(ctx, tok.ClientID)
 		}
