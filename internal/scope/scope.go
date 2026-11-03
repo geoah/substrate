@@ -155,6 +155,18 @@ const (
 	retiredDeclareWords = "`declare:` is retired (decision 0214): an app that needs a package of its own installed names it in a `package` authorization detail, published under its authority"
 )
 
+// ErrRetired marks a scope whose verb a later decision retired. A stored
+// grant holding one no longer authenticates, but it is not damage: the token
+// is still the owner's to see and revoke.
+var ErrRetired = errors.New("the scope's verb is retired")
+
+// retiredError is a retired verb's refusal: its words, and ErrRetired for a
+// caller that tells retirement from damage.
+type retiredError struct{ raw string }
+
+func (e retiredError) Error() string        { return fmt.Sprintf("scope %q: %s", e.raw, retiredDeclareWords) }
+func (e retiredError) Is(target error) bool { return target == ErrRetired }
+
 // Parse reads one scope, in a request or as stored: `~` is allowed, and
 // `webhook:` parses (ParseRequest refuses it in a request).
 func Parse(raw string) (Scope, error) {
@@ -166,7 +178,7 @@ func Parse(raw string) (Scope, error) {
 	switch s.Verb {
 	case Read, Write, Agents, Decide, Call, Webhook:
 	case retiredDeclare:
-		return Scope{}, fmt.Errorf("scope %q: %s", raw, retiredDeclareWords)
+		return Scope{}, retiredError{raw}
 	default:
 		return Scope{}, fmt.Errorf("scope %q: %q is not %s", raw, verb, storedVerbs)
 	}
@@ -324,7 +336,7 @@ func ParseRequest(param string) ([]Scope, error) {
 		switch Verb(verb) {
 		case Read, Write, Agents, Decide, Call:
 		case retiredDeclare:
-			return nil, fmt.Errorf("scope %q: %s", raw, retiredDeclareWords)
+			return nil, retiredError{raw}
 		case Webhook:
 			return nil, fmt.Errorf("scope %q: an app asks for a webhook with a `webhook` authorization detail, never in scope", raw)
 		default:

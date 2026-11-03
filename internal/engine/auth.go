@@ -983,8 +983,11 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 		// A damaged grant is refused here as at Authenticate: listing it
 		// without scopes would show an app's token as a full-access one. The
 		// refusal names the token, which the owner can still revoke by id.
+		// A grant a later decision retired is not damage: it lists with the
+		// scopes it was approved with, so one such token never fails the
+		// owner's list, and Authenticate still refuses it.
 		var derr error
-		if info.Scopes, derr = decodeScopes(scopes); derr != nil {
+		if info.Scopes, derr = decodeScopes(scopes); derr != nil && !errors.Is(derr, scope.ErrRetired) {
 			return nil, fmt.Errorf("%w: token %s: %w", substrate.ErrCorrupt, info.ID, derr)
 		}
 		if err := readAppBuild(build, &info); err != nil {
@@ -999,7 +1002,9 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 // decodeScopes reads a token record's `scopes` column: nil when the
 // property is absent (full access), an error when it is present and not a
 // non-empty list of strings, which Authenticate turns into a refusal rather
-// than reading a damaged grant as no grant at all.
+// than reading a damaged grant as no grant at all. A list that does not pass
+// the stored check comes back beside its error, for the listing to show a
+// retired grant as it was approved.
 func decodeScopes(raw []byte) ([]string, error) {
 	// Only an ABSENT property is full access: SQL NULL from `props->'scopes'`
 	// when the key is missing. A JSON null is a property that is present and
@@ -1023,7 +1028,7 @@ func decodeScopes(raw []byte) ([]string, error) {
 		return nil, errors.New("token scopes are empty")
 	}
 	if err := scope.CheckStored(scopes); err != nil {
-		return nil, fmt.Errorf("token scopes unreadable: %w", err)
+		return scopes, fmt.Errorf("token scopes unreadable: %w", err)
 	}
 	return scopes, nil
 }
