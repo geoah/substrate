@@ -160,11 +160,6 @@ public extension JSONValue {
         switch any {
         case nil, is NSNull: self = .null
         case let n as NSNumber: self = JSONValue.number(n)
-        #if !canImport(Darwin)
-        // Off Apple systems JSONSerialization answers a Swift Bool, which
-        // does not bridge to NSNumber.
-        case let b as Bool: self = .bool(b)
-        #endif
         case let s as String: self = .string(s)
         case let a as [Any]: self = .array(a.map { JSONValue(any: $0) })
         case let o as [String: Any]: self = .object(JSONObject(o.mapValues { JSONValue(any: $0) }))
@@ -186,10 +181,14 @@ public extension JSONValue {
         }
     }
 
-    /// A Bool arrives as an NSNumber too, and only its type tells them apart.
+    /// A Bool arrives as an NSNumber too, and only its type tells them
+    /// apart: CFBoolean on Apple systems; elsewhere a `char`, which
+    /// JSONSerialization never answers for a number.
     private static func number(_ n: NSNumber) -> JSONValue {
         #if canImport(Darwin)
         if CFGetTypeID(n) == CFBooleanGetTypeID() { return .bool(n.boolValue) }
+        #else
+        if String(cString: n.objCType) == "c" { return .bool(n.boolValue) }
         #endif
         if let decimal = n as? NSDecimalNumber { return .number(decimal.decimalValue) }
         return .number(Decimal(digitsOf: n.doubleValue))
