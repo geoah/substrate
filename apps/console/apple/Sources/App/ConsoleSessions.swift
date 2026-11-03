@@ -1,5 +1,8 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateCore
+import SubstrateDeviceApple
 
 /// The Console app's sign-ins, one per server, in the Keychain: the app holds
 /// the session and hands it to the page (decision 0204), so pointing the app
@@ -37,7 +40,7 @@ final class ConsoleSessions: ObservableObject {
     /// The Keychain item of the app's sign-in to `server`, and of the tokens
     /// kept beside it to revoke.
     static func store(for server: URL) -> SessionStore {
-        SessionStore(service: service, account: "session " + server.absoluteString)
+        SessionStore(account: "session " + server.absoluteString, storage: KeychainStorage(service: service))
     }
 
     private func store(for server: URL) -> SessionStore {
