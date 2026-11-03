@@ -38,8 +38,18 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     /// The cached catalogue; empty before the first refresh.
     public func loadNow() throws -> Catalog {
         guard hasCache else { return merged(Catalog()) }
+        let records = try fileLock.withLock { try cached() }
+        return merged(catalog(from: records, source: Self.fileName))
+    }
+
+    /// The cache file's records. A cache from before the package was
+    /// published (format 1) is read through `LegacyKinds` and written back
+    /// once at the current format, best effort. Called under `fileLock`.
+    private func cached() throws -> [FlatRecord] {
         let file = try JSONDecoder().decode(RecordFile.self, from: Data(contentsOf: cacheURL))
-        return merged(catalog(from: file.records, source: Self.fileName))
+        guard let respelled = LegacyKinds.respell(file, current: WorkoutsFormats.recordFileFormat) else { return file.records }
+        try? write(respelled.records)
+        return respelled.records
     }
 
     public func updates() -> AsyncStream<Catalog> {
@@ -120,7 +130,7 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     @discardableResult
     public func store(record: FlatRecord?, removing id: RoutineID? = nil) throws -> Catalog {
         let records = try fileLock.withLock { () throws -> [FlatRecord] in
-            var records = hasCache ? try JSONDecoder().decode(RecordFile.self, from: Data(contentsOf: cacheURL)).records : []
+            var records = hasCache ? try cached() : []
             if let record {
                 if let index = records.firstIndex(where: { $0.kind == record.kind && $0.id == record.id }) {
                     records[index] = record
@@ -144,8 +154,7 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     public func remove(routine id: RoutineID) throws -> Catalog {
         guard hasCache else { return try loadNow() }
         let records = try fileLock.withLock { () throws -> [FlatRecord] in
-            let file = try JSONDecoder().decode(RecordFile.self, from: Data(contentsOf: cacheURL))
-            let records = file.records.filter { !($0.kind == codec.kinds.routine && $0.id == id.rawValue) }
+            let records = try cached().filter { !($0.kind == codec.kinds.routine && $0.id == id.rawValue) }
             try write(records)
             return records
         }
@@ -180,7 +189,7 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
         try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
-        try encoder.encode(RecordFile(format: 1, records: records)).write(to: cacheURL, options: writingOptions)
+        try encoder.encode(RecordFile(format: WorkoutsFormats.recordFileFormat, records: records)).write(to: cacheURL, options: writingOptions)
     }
 
     private func publish(_ catalog: Catalog) {

@@ -755,7 +755,7 @@ struct ReviewHealthAndHistoryTests {
         #expect(session.healthEffortScore == 10)
     }
 
-    @Test("a format 1 history file loads: timezone, sport, target ranges and tapped RPEs; it is written back as format 2")
+    @Test("a format 1 history file loads: timezone, sport, target ranges and tapped RPEs; it is written back at the current format")
     func formatOne() throws {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
@@ -792,7 +792,7 @@ struct ReviewHealthAndHistoryTests {
         #expect(set.extra.isEmpty && set.target?.extra.isEmpty == true)
         try store.write(entry)
         let written = try #require(try JSONValue(data: Data(contentsOf: store.url(for: session))).objectValue)
-        #expect(written["format"] == .number(2))
+        #expect(written["format"] == .number(Decimal(WorkoutsFormats.historyFormat)))
         #expect(try store.read(session).records == entry.records)
         #expect(RecordCodec().encode(entry.records.session).properties["timeZone"] == nil)
     }

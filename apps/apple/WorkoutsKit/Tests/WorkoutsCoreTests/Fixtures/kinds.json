@@ -2,7 +2,7 @@
   "source": "apps/apple/SubstrateWorkouts/Package",
   "kinds": [
     {
-      "kind": "~/training/movement",
+      "kind": "substrate.reamde.dev/training/movement",
       "source": "movement.yaml",
       "traits": [],
       "properties": [
@@ -168,7 +168,7 @@
       ]
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "source": "exercise.yaml",
       "traits": [],
       "properties": [
@@ -360,12 +360,12 @@
         {
           "name": "variationOf",
           "type": "reference",
-          "kind": "~/training/exercise"
+          "kind": "substrate.reamde.dev/training/exercise"
         },
         {
           "name": "movement",
           "type": "reference",
-          "kind": "~/training/movement"
+          "kind": "substrate.reamde.dev/training/movement"
         },
         {
           "name": "codes",
@@ -447,7 +447,7 @@
       ]
     },
     {
-      "kind": "~/training/routine",
+      "kind": "substrate.reamde.dev/training/routine",
       "source": "routine.yaml",
       "traits": [],
       "properties": [
@@ -540,7 +540,7 @@
               "name": "exercise",
               "type": "reference",
               "required": true,
-              "kind": "~/training/exercise"
+              "kind": "substrate.reamde.dev/training/exercise"
             },
             {
               "name": "group",
@@ -754,7 +754,7 @@
       ]
     },
     {
-      "kind": "~/training/session",
+      "kind": "substrate.reamde.dev/training/session",
       "source": "session.yaml",
       "traits": [
         "substrate.reamde.dev/core/temporal(range)",
@@ -776,7 +776,7 @@
         {
           "name": "routine",
           "type": "reference",
-          "kind": "~/training/routine"
+          "kind": "substrate.reamde.dev/training/routine"
         },
         {
           "name": "routineVersion",
@@ -839,7 +839,7 @@
               "name": "exercise",
               "type": "reference",
               "required": true,
-              "kind": "~/training/exercise"
+              "kind": "substrate.reamde.dev/training/exercise"
             },
             {
               "name": "group",
@@ -1160,7 +1160,7 @@
       ]
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "source": "set.yaml",
       "traits": [
         "substrate.reamde.dev/core/temporal(point)",
@@ -1171,13 +1171,13 @@
           "name": "session",
           "type": "reference",
           "required": true,
-          "kind": "~/training/session"
+          "kind": "substrate.reamde.dev/training/session"
         },
         {
           "name": "exercise",
           "type": "reference",
           "required": true,
-          "kind": "~/training/exercise"
+          "kind": "substrate.reamde.dev/training/exercise"
         },
         {
           "name": "slot",
@@ -1196,7 +1196,7 @@
         {
           "name": "setup",
           "type": "reference",
-          "kind": "~/training/setup"
+          "kind": "substrate.reamde.dev/training/setup"
         },
         {
           "name": "role",
@@ -1231,7 +1231,7 @@
         {
           "name": "continues",
           "type": "reference",
-          "kind": "~/training/set"
+          "kind": "substrate.reamde.dev/training/set"
         },
         {
           "name": "chainPosition",
@@ -1561,7 +1561,7 @@
       ]
     },
     {
-      "kind": "~/training/setup",
+      "kind": "substrate.reamde.dev/training/setup",
       "source": "setup.yaml",
       "traits": [],
       "properties": [
@@ -1574,7 +1574,7 @@
           "name": "exercise",
           "type": "reference",
           "required": true,
-          "kind": "~/training/exercise"
+          "kind": "substrate.reamde.dev/training/exercise"
         },
         {
           "name": "gym",

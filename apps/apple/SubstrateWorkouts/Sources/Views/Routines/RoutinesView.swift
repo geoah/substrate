@@ -42,7 +42,7 @@ struct RoutinesView: View {
     @ViewBuilder
     private var banner: some View {
         switch link.syncStatus {
-        case .packageNewer, .packageEdited, .packageRefused, .needsApproval, .signedOut, .serverTooOld, .notKept, .refused, .failed:
+        case .packageBehind, .needsApproval, .signedOut, .serverTooOld, .notKept, .refused, .failed:
             VStack(alignment: .leading, spacing: 8) {
                 Label(link.syncStatus.sentence, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)

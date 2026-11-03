@@ -2,7 +2,7 @@
   "source": "apps/apple/SubstrateWorkouts/docs/examples/sample.yaml",
   "records": [
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "rowing-machine",
       "properties": {
         "name": "Rowing (Machine)",
@@ -30,7 +30,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "bird-dog",
       "properties": {
         "name": "Bird Dog",
@@ -50,7 +50,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "leg-press-machine",
       "properties": {
         "name": "Leg Press (Machine)",
@@ -84,7 +84,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "iso-lateral-chest-press-machine",
       "properties": {
         "name": "Iso-Lateral Chest Press (Machine)",
@@ -100,7 +100,7 @@
           "triceps"
         ],
         "restClass": "compound",
-        "variationOf": "~/training/exercise/chest-press-machine",
+        "variationOf": "substrate.reamde.dev/training/exercise/chest-press-machine",
         "loadStep": {
           "value": "2.5",
           "unit": "kg"
@@ -108,7 +108,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "assisted-pull-up-machine",
       "properties": {
         "name": "Assisted Pull Up (Machine)",
@@ -134,7 +134,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "push-up",
       "properties": {
         "name": "Push Up",
@@ -164,7 +164,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "lateral-raise-dumbbell",
       "properties": {
         "name": "Lateral Raise (Dumbbell)",
@@ -196,7 +196,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "bulgarian-split-squat-dumbbell",
       "properties": {
         "name": "Bulgarian Split Squat (Dumbbell)",
@@ -231,7 +231,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "dip-weighted",
       "properties": {
         "name": "Chest Dip (Weighted)",
@@ -256,7 +256,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "triceps-pushdown",
       "properties": {
         "name": "Triceps Pushdown",
@@ -282,7 +282,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "plank",
       "properties": {
         "name": "Plank",
@@ -307,7 +307,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "farmers-carry-dumbbell",
       "properties": {
         "name": "Farmer's Carry (Dumbbell)",
@@ -340,7 +340,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "plank-weighted",
       "properties": {
         "name": "Plank (Weighted)",
@@ -351,7 +351,7 @@
           "abdominals"
         ],
         "restClass": "timed",
-        "variationOf": "~/training/exercise/plank",
+        "variationOf": "substrate.reamde.dev/training/exercise/plank",
         "loadStep": {
           "value": "5",
           "unit": "kg"

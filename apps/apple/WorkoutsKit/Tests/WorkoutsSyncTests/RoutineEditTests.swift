@@ -63,11 +63,6 @@ struct RoutineEditTests {
         return .object(record)
     }
 
-    static func authority(of json: WorkoutsCore.JSONValue) -> String {
-        guard case let .object(object) = json, case let .string(kind)? = object["kind"] else { return "ada.example.com" }
-        return String(kind.split(separator: "/").first ?? "ada.example.com")
-    }
-
     /// The declared defaults the server stores into every planned set
     /// (`role: working`, `structure: straight`) and the codec leaves out
     /// (§3.4 rule 4), filled in on both sides: the same record either way.
@@ -106,9 +101,9 @@ struct RoutineEditTests {
         }
     }
 
-    /// Reads a server answer as the app does: rehomed, decoded.
+    /// Reads a server answer as the app does.
     func read(_ json: WorkoutsCore.JSONValue) throws -> (FlatRecord, Routine) {
-        let record = try WorkoutsAPI.record(json, rehome: Rehome(authority: Self.authority(of: json)))
+        let record = try WorkoutsAPI.record(json)
         return (record, try codec.decodeRoutine(record))
     }
 
@@ -198,7 +193,7 @@ struct RoutineEditTests {
         ("day-1", patch, base)
     }
 
-    static let path = "/api/v1/ada.example.com/training/routine/day-1"
+    static let path = "/api/v1/substrate.reamde.dev/training/routine/day-1"
 
     @Test("an edit is a PATCH of what changed under the version the owner edited")
     func guardedPatch() async throws {
@@ -341,7 +336,7 @@ struct RoutineEditTests {
     @Test("a duplicate is created only where nothing is: ifVersion 0, and a refusal is parked, not merged")
     func createOnly() async throws {
         let server = ScriptedServer()
-        server.answer("PUT", "/api/v1/ada.example.com/training/routine/day-1-copy", 409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
+        server.answer("PUT", "/api/v1/substrate.reamde.dev/training/routine/day-1-copy", 409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
         let copy = RoutineEditor.duplicate(RoutineEditorFixture.routine, taken: ["day-1"])
         try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])

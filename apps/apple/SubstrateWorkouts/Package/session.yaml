@@ -75,9 +75,9 @@
 # the console) is titled by its routine, else by its id.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: ~/training/session
+  id: substrate.reamde.dev/training/session
 data:
-  authority: "~"
+  authority: substrate.reamde.dev
   package: training
   description: >-
     A training session: one visit to the gym as Substrate Workouts ran it,
@@ -118,7 +118,7 @@ data:
     # nothing, which is what happened.
     routine:
       type: reference
-      kind: ~/training/routine
+      kind: substrate.reamde.dev/training/routine
       description: the workout routine it was started from; absent for a session
         started empty
     routineVersion:
@@ -215,7 +215,7 @@ data:
         # no columns to show.
         exercise:
           type: reference
-          kind: ~/training/exercise
+          kind: substrate.reamde.dev/training/exercise
           required: true
           mustExist: true
           description: the exercise done in this slot

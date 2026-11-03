@@ -4,14 +4,16 @@ import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
 
-/// The workout coach's install against a real substrate (decision 0207),
-/// skipped unless `WORKOUTS_E2E_COACH_SERVER` names one and
-/// `WORKOUTS_E2E_OWNER_TOKEN` holds a full-access token of a repository with
-/// no training package: the app's whole sign-in request with its `agent`
-/// detail, approved through the approval API the console's page calls, the
-/// code exchanged, training installed, then the coach installed by the
-/// installer the app runs, applied once, and read back with the owner's
-/// token. The coach is left installed, for Substrate Chat to find.
+/// The workout coach's install against a real substrate, skipped unless
+/// `WORKOUTS_E2E_COACH_SERVER` names one and `WORKOUTS_E2E_OWNER_TOKEN` holds
+/// a full-access token of a repository with no training package. The server
+/// must read the publisher's authority document, live or through
+/// `SUBSTRATE_INSECURE_AUTHORITY_DOCS`, and hold a provider row that prices
+/// one of the coach's models: the app's whole sign-in request, approved
+/// through the approval API the console's page calls with that row bound to
+/// the coach's `model` input, the code exchanged, and the agent read back
+/// with the owner's token as the closure declares it. The coach is left
+/// installed, for Substrate Chat to find.
 ///
 ///     WORKOUTS_E2E_COACH_SERVER=http://localhost:8097 WORKOUTS_E2E_OWNER_TOKEN=… swift test --filter LiveCoach
 @Suite("Live coach", .enabled(if: ProcessInfo.processInfo.environment["WORKOUTS_E2E_COACH_SERVER"] != nil))
@@ -20,12 +22,12 @@ struct LiveCoachTests {
     let ownerToken = ProcessInfo.processInfo.environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""
     let redirect = "http://127.0.0.1:53112/oauth/callback"
 
-    @Test("sign in with the coach, approve, install training and the coach, read it back")
+    @Test("sign in with the coach's package, approve, read the agent back")
     func theCoach() async throws {
         let manifest = WorkoutsManifest.manifest(clientID: WorkoutsManifest.localClientID)
         let probe = try await ServerProbe().probe(server, requirement: manifest.requirement, app: manifest.appName)
         let metadata = try #require(probe.metadata)
-        #expect(manifest.details(for: metadata).map(\.type) == ["package", "agent"])
+        #expect(manifest.details(for: metadata).map(\.package) == [WorkoutsManifest.healthPackage, KindNames.packageID, Coach.package])
         let oauth = OAuthClient(manifest: manifest, metadata: metadata)
         let pkce = try PKCE()
         let state = try PKCE.state()
@@ -41,13 +43,20 @@ struct LiveCoachTests {
             Issue.record("no scopes")
             return
         }
-        #expect(setup.contains { if case let .object(row) = $0 { row["type"] == .string("agent") } else { false } })
+        // The coach's package row, blocked by nothing: its reach is inside
+        // the scopes asked for (decision 0215).
+        let coachRow = setup.compactMap { row -> JSONObject? in
+            guard case let .object(row) = row, case let .object(package)? = row["package"], package["id"] == .string(Coach.package) else { return nil }
+            return row
+        }.first
+        #expect(coachRow != nil && coachRow?["blocked"] == nil, "the coach's row: \(String(describing: coachRow))")
         let approved = scopes.compactMap { scope -> WorkoutsCore.JSONValue? in
             guard case let .object(row) = scope else { return nil }
             return row["scope"]
         }
         var approval: JSONObject = ["scopes": .array(approved), "lifetimeDays": .number(30)]
         if let hash = fields["planHash"] { approval["planHash"] = hash }
+        if let inputs = fields["inputs"] { approval["inputs"] = inputs }
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
         var answer = try await owner.send("POST", "api/v1/authorizations/\(id)", body: .json(encoder.encode(WorkoutsCore.JSONValue.object(approval))),
@@ -61,25 +70,21 @@ struct LiveCoachTests {
         let back = try #require(next.flatMap(URLComponents.init(string:)))
         let query = Dictionary(uniqueKeysWithValues: (back.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         let session = try await oauth.session(exchanging: try oauth.callback(query, state: state), redirect: redirect, pkce: pkce, server: server)
-        let approvalDetail = try #require(CoachInstaller.approval(in: session.details, authority: session.repository))
-        #expect(approvalDetail.spendCentsPerDay == 100)
-        #expect(session.scopes?.contains { $0.contains("health/sleep") } == false, "the app's own scopes gained the coach's reach")
+        #expect(session.scopes?.contains(Coach.agentsScope) == true)
 
-        let api = WorkoutsAPI(client: SubstrateClient(session), authority: session.repository)
-        let training = try await PackageInstaller(api: api, manifest: try PackageManifest.bundled(), clientID: manifest.clientID).ensure()
-        #expect(training == .current(held: 4))
-        let coach = CoachInstaller(api: api, manifest: try CoachManifest.bundled(), approval: approvalDetail, clientID: manifest.clientID)
-        #expect(try await coach.ensure(training: training) == .applied)
-        #expect(try await coach.ensure(training: training) == .current)
+        let api = WorkoutsAPI(client: SubstrateClient(session))
+        let training = try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state()
+        #expect(training.writable, "training: \(training)")
 
         let row = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: try await owner.send(
-            "GET", SubstrateClient.recordPath("substrate.reamde.dev/core/agent", coach.agentID)).data)
+            "GET", SubstrateClient.recordPath(Coach.agentKind, Coach.agent)).data)
         guard case let .object(record) = row, case let .object(properties)? = record["properties"] else {
             Issue.record("no agent row")
             return
         }
         #expect(properties["purpose"] == .string("primary"))
-        print("coach installed:", coach.agentID, properties["provider"] ?? .null, properties["model"] ?? .null)
+        #expect(properties["providerInput"] == .string("model"))
+        print("coach installed:", Coach.agent, properties["models"] ?? .null)
     }
 
     private func redirectOf(_ data: Data) -> String? {

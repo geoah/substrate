@@ -15,9 +15,9 @@
 # library record the repository lacks.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: ~/training/library
+  id: substrate.reamde.dev/training/library
 data:
-  authority: "~"
+  authority: substrate.reamde.dev
   package: training
   description: >-
     What Substrate Workouts has seeded into this package, such as the exercise

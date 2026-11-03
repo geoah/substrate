@@ -13,9 +13,9 @@
 # the same record.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: ~/training/bodymeasurement
+  id: substrate.reamde.dev/training/bodymeasurement
 data:
-  authority: "~"
+  authority: substrate.reamde.dev
   package: training
   description: >-
     One day's body measurements: body mass, lean mass, body fat and circumferences,

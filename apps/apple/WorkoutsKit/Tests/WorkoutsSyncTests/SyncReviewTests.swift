@@ -18,8 +18,8 @@ struct OutboxInFlightTests {
     @Test("a session deleted while another's create is in flight loses none of the other's writes")
     func dropWhileSending() async throws {
         let server = ScriptedServer()
-        let gate = server.hold("PUT", "/api/v1/ada.example.com/training/session/a")
-        server.answer("PUT", "/api/v1/ada.example.com/training/session/b", 422, #"{"error":{"code":"validation","message":"props.sport: no"}}"#)
+        let gate = server.hold("PUT", "/api/v1/substrate.reamde.dev/training/session/a")
+        server.answer("PUT", "/api/v1/substrate.reamde.dev/training/session/b", 422, #"{"error":{"code":"validation","message":"props.sport: no"}}"#)
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
         server.on { $0.method == "DELETE" ? (200, "{}") : nil }
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
@@ -35,15 +35,15 @@ struct OutboxInFlightTests {
         gate.release()
         #expect(await flush.value == .sent)
         #expect(await outbox.entries.isEmpty)
-        let sentSets = server.methodsAndPaths.filter { $0.hasPrefix("PUT /api/v1/ada.example.com/training/set/a-") }
+        let sentSets = server.methodsAndPaths.filter { $0.hasPrefix("PUT /api/v1/substrate.reamde.dev/training/set/a-") }
         #expect(sentSets.count == 5, "a set of A was lost: \(server.methodsAndPaths)")
-        #expect(server.methodsAndPaths.last == "DELETE /api/v1/ada.example.com/training/session/b")
+        #expect(server.methodsAndPaths.last == "DELETE /api/v1/substrate.reamde.dev/training/session/b")
     }
 
     @Test("a session discarded while its create is in flight is purged after the create lands, at the version it answered")
     func discardWhileItsCreateIsInFlight() async throws {
         let server = ScriptedServer()
-        let gate = server.hold("PUT", "/api/v1/ada.example.com/training/session/a")
+        let gate = server.hold("PUT", "/api/v1/substrate.reamde.dev/training/session/a")
         server.on { $0.method == "PUT" ? (200, record(4)) : nil }
         server.on { $0.method == "DELETE" ? (200, "{}") : nil }
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
@@ -55,8 +55,8 @@ struct OutboxInFlightTests {
         gate.release()
         #expect(await flush.value == .sent)
         #expect(server.methodsAndPaths == [
-            "PUT /api/v1/ada.example.com/training/session/a",
-            "DELETE /api/v1/ada.example.com/training/session/a",
+            "PUT /api/v1/substrate.reamde.dev/training/session/a",
+            "DELETE /api/v1/substrate.reamde.dev/training/session/a",
         ])
         #expect(server.sent.last?.query?.contains("ifVersion=4") == true)
         #expect(await outbox.entries.isEmpty)
@@ -66,7 +66,7 @@ struct OutboxInFlightTests {
     @Test("a reset while a write is in flight empties the queue for good and does not trap")
     func resetWhileSending() async throws {
         let server = ScriptedServer()
-        let gate = server.hold("PUT", "/api/v1/ada.example.com/training/session/a")
+        let gate = server.hold("PUT", "/api/v1/substrate.reamde.dev/training/session/a")
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
         let directory = temporaryDirectory()
         let outbox = Outbox(directory: directory, writingOptions: .atomic)
@@ -78,14 +78,14 @@ struct OutboxInFlightTests {
         _ = await flush.value
         #expect(await outbox.entries.isEmpty)
         #expect(await outbox.versions.isEmpty, "the landed create came back after the reset")
-        #expect(server.methodsAndPaths == ["PUT /api/v1/ada.example.com/training/session/a"])
+        #expect(server.methodsAndPaths == ["PUT /api/v1/substrate.reamde.dev/training/session/a"])
         #expect(await Outbox(directory: directory, writingOptions: .atomic).entries.isEmpty)
     }
 
     @Test("a write queued while a flush runs goes in the same run")
     func enqueueWhileSending() async throws {
         let server = ScriptedServer()
-        let gate = server.hold("PUT", "/api/v1/ada.example.com/training/session/a")
+        let gate = server.hold("PUT", "/api/v1/substrate.reamde.dev/training/session/a")
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([entry(.put, codec.kinds.session, "a", session: "a")])
@@ -95,8 +95,8 @@ struct OutboxInFlightTests {
         gate.release()
         #expect(await flush.value == .sent)
         #expect(server.methodsAndPaths == [
-            "PUT /api/v1/ada.example.com/training/session/a",
-            "PUT /api/v1/ada.example.com/training/exercise/row",
+            "PUT /api/v1/substrate.reamde.dev/training/session/a",
+            "PUT /api/v1/substrate.reamde.dev/training/exercise/row",
         ])
     }
 }
@@ -156,7 +156,7 @@ struct ParkedTests {
     @Test("a Finish for a session purged on the server is parked, retried on request, and discarded with its session")
     func purgedOnTheServer() async throws {
         let server = ScriptedServer()
-        server.answer("GET", "/api/v1/ada.example.com/training/session/a", 404, notFound)
+        server.answer("GET", "/api/v1/substrate.reamde.dev/training/session/a", 404, notFound)
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([
@@ -168,12 +168,12 @@ struct ParkedTests {
         #expect(words.contains("not on your substrate"))
         let parked = try #require(await outbox.parked.first)
         #expect(parked.recordID == "a")
-        #expect(server.methodsAndPaths.contains("PUT /api/v1/ada.example.com/training/session/b"))
+        #expect(server.methodsAndPaths.contains("PUT /api/v1/substrate.reamde.dev/training/session/b"))
         #expect(!server.methodsAndPaths.contains { $0.contains("PATCH") }, "a guarded patch went out for a record that is gone")
 
         try await outbox.retry(parked.id)
         await outbox.flush(api(server))
-        #expect(server.methodsAndPaths.filter { $0 == "GET /api/v1/ada.example.com/training/session/a" }.count == 2)
+        #expect(server.methodsAndPaths.filter { $0 == "GET /api/v1/substrate.reamde.dev/training/session/a" }.count == 2)
 
         try await outbox.discard(try #require(await outbox.parked.first).id)
         #expect(await outbox.entries.isEmpty)
@@ -187,9 +187,8 @@ struct ParkedTests {
 @Suite("History exchange")
 struct HistoryExchangeTests {
     func finished() throws -> SessionRecords {
-        let rehome = Rehome(authority: recordedAuthority)
         func records(_ name: String) throws -> [FlatRecord] {
-            try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0, rehome: rehome) }
+            try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0) }
         }
         return try #require(codec.sessionRecords(from: records("list-sessions") + records("list-sets")).first)
     }
@@ -287,150 +286,6 @@ struct HistoryExchangeTests {
         #expect(finish.method == .patch && finish.guarded)
         #expect(finish.properties?["revision"] == .number(10))
         #expect(plan.uploads.isEmpty && plan.removals.isEmpty && plan.merges.isEmpty)
-    }
-}
-
-/// The package's owner (PR #1100 review): an owner's edit to a kind moves the
-/// kind's version, not the package's, so the app compares each kind with
-/// what it recorded after its own apply, and a refusal of the server's guard
-/// reads as one.
-@Suite("Package ownership")
-struct PackageOwnershipTests {
-    let packagePath = "/api/v1/substrate.reamde.dev/core/package/ada.example.com%2Ftraining"
-    let bundlePath = "/api/v1/substrate.reamde.dev/core/bundle/ada.example.com%2Ftraining"
-
-    func kindPath(_ name: String) -> String { "/api/v1/substrate.reamde.dev/core/kind/ada.example.com%2Ftraining%2F\(name)" }
-
-    /// `absent`: kinds the repository does not declare yet, such as one a
-    /// newer package version adds.
-    func server(held: Int?, kindVersion: @escaping @Sendable (String) -> Int, applied: Locked<Int>, absent: Set<String> = []) -> ScriptedServer {
-        let server = ScriptedServer()
-        server.on { [packagePath] sent in
-            guard sent.method == "GET", sent.path == packagePath else { return nil }
-            let version = applied.value > 0 ? (held ?? 0) + 1 : held
-            guard let version else { return (404, notFound) }
-            return (200, #"{"id":"ada.example.com/training","kind":"substrate.reamde.dev/core/package","properties":{"version":\#(version)},"version":1}"#)
-        }
-        server.answer("GET", bundlePath, 404, notFound)
-        server.on { sent in
-            guard sent.method == "GET", sent.path.hasPrefix("/api/v1/substrate.reamde.dev/core/kind/") else { return nil }
-            let name = String(sent.path.split(separator: "%2F").last ?? "")
-            if absent.contains(name), applied.value == 0 { return (404, notFound) }
-            return (200, #"{"id":"x","kind":"substrate.reamde.dev/core/kind","properties":{},"version":\#(kindVersion(name))}"#)
-        }
-        server.on { sent in
-            guard sent.method == "POST" else { return nil }
-            applied.value += 1
-            return (200, #"{"records":[]}"#)
-        }
-        return server
-    }
-
-    func manifest(version: Int) throws -> PackageManifest {
-        var manifest = try PackageManifest.bundled()
-        manifest.version = version
-        return manifest
-    }
-
-    @Test("an install records each kind's version; a package changed outside the app is never written over (O1/O2)")
-    func editedKind() async throws {
-        let directory = temporaryDirectory()
-        let applied = Locked(0)
-        let installing = server(held: nil, kindVersion: { _ in 1 }, applied: applied)
-        let first = PackageInstaller(api: api(installing), manifest: try manifest(version: 1), baselineDirectory: directory)
-        #expect(try await first.ensure() == .current(held: 1))
-        let baseline = try #require(PackageBaseline.load(from: directory))
-        #expect(baseline.kinds["ada.example.com/training/set"] == 1)
-        #expect(baseline.kinds.count == 9)
-
-        // The owner edited the set kind in the console; this build ships 2.
-        let upgraded = Locked(0)
-        let edited = server(held: 1, kindVersion: { $0 == "set" ? 2 : 1 }, applied: upgraded)
-        let next = PackageInstaller(api: api(edited), manifest: try manifest(version: 2), baselineDirectory: directory)
-        #expect(try await next.ensure() == .edited(held: 1, kinds: ["ada.example.com/training/set"]))
-        #expect(upgraded.value == 0, "the app applied over the owner's edit")
-        // Asked again, it still writes nothing: there is no applying anyway.
-        #expect(try await next.ensure() == .edited(held: 1, kinds: ["ada.example.com/training/set"]))
-        #expect(upgraded.value == 0)
-        #expect(!PackageState.edited(held: 1, kinds: []).writable)
-    }
-
-    @Test("a package changed outside the app at the same version stops the app's writes too")
-    func driftedAtCurrent() async throws {
-        let directory = temporaryDirectory()
-        try PackageBaseline(version: 2, kinds: Dictionary(uniqueKeysWithValues: ["exercise", "setup", "routine", "session", "set", "memory"].map {
-            ("ada.example.com/training/\($0)", 1)
-        })).save(to: directory, writingOptions: .atomic)
-        let applied = Locked(0)
-        let drifted = server(held: 2, kindVersion: { $0 == "routine" ? 3 : 1 }, applied: applied, absent: ["movement", "library", "bodymeasurement"])
-        let installer = PackageInstaller(api: api(drifted), manifest: try manifest(version: 2), baselineDirectory: directory)
-        let state = try await installer.ensure()
-        #expect(state == .edited(held: 2, kinds: ["ada.example.com/training/routine"]))
-        #expect(applied.value == 0 && !state.writable)
-        let status = SyncStatus.derive(signedIn: true, package: state, outbox: .idle, waiting: 3, known: 2, server: "geoah.me")
-        #expect(status == .packageEdited(server: "geoah.me", kinds: ["ada.example.com/training/routine"]))
-        #expect(status.sentence.hasPrefix(
-            "The Training package on geoah.me was changed outside Substrate Workouts; it is managed by this app."))
-    }
-
-    @Test("an upgrade over kinds the app recorded goes through")
-    func unchangedKinds() async throws {
-        let directory = temporaryDirectory()
-        try PackageBaseline(version: 1, kinds: Dictionary(uniqueKeysWithValues: ["exercise", "setup", "routine", "session", "set", "memory"].map {
-            ("ada.example.com/training/\($0)", 1)
-        })).save(to: directory, writingOptions: .atomic)
-        let applied = Locked(0)
-        let installer = PackageInstaller(api: api(server(held: 1, kindVersion: { _ in 1 }, applied: applied, absent: ["movement", "library", "bodymeasurement"])), manifest: try manifest(version: 2),
-                                         baselineDirectory: directory)
-        #expect(try await installer.ensure() == .current(held: 2))
-    }
-
-    @Test("another of the owner's devices upgraded the package under this app's client id: adopted, not read as an edit")
-    func upgradedElsewhere() async throws {
-        let client = "https://workouts.example.org/client.json"
-        let directory = temporaryDirectory()
-        try PackageBaseline(version: 2, kinds: Dictionary(uniqueKeysWithValues: ["exercise", "setup", "routine", "session", "set", "memory"].map {
-            ("ada.example.com/training/\($0)", 1)
-        })).save(to: directory, writingOptions: .atomic)
-        func upgraded(declaredByClient: String?) -> ScriptedServer {
-            let server = ScriptedServer()
-            server.on { [packagePath] sent in
-                guard sent.method == "GET", sent.path == packagePath else { return nil }
-                let owner = declaredByClient.map { #","declaredBy":"app:workouts.example.org","declaredByClient":"\#($0)""# } ?? ""
-                return (200, #"{"id":"ada.example.com/training","kind":"substrate.reamde.dev/core/package","properties":{"version":4\#(owner)},"version":3}"#)
-            }
-            server.answer("GET", bundlePath, 404, notFound)
-            server.on { sent in
-                guard sent.method == "GET", sent.path.hasPrefix("/api/v1/substrate.reamde.dev/core/kind/") else { return nil }
-                return (200, #"{"id":"x","kind":"substrate.reamde.dev/core/kind","properties":{},"version":2}"#)
-            }
-            return server
-        }
-        let mine = PackageInstaller(api: api(upgraded(declaredByClient: client)), manifest: try manifest(version: 4), baselineDirectory: directory,
-                                    clientID: client)
-        #expect(try await mine.ensure() == .current(held: 4))
-        #expect(PackageBaseline.load(from: directory)?.version == 4)
-        // Without the app's own client on the row, a moved kind is still an edit.
-        let fresh = temporaryDirectory()
-        try PackageBaseline(version: 2, kinds: ["ada.example.com/training/exercise": 1]).save(to: fresh, writingOptions: .atomic)
-        let unknown = PackageInstaller(api: api(upgraded(declaredByClient: nil)), manifest: try manifest(version: 4), baselineDirectory: fresh,
-                                       clientID: client)
-        guard case .edited = try await unknown.ensure() else { Issue.record("a package not declared by this app was adopted"); return }
-    }
-
-    @Test("an apply the server refuses for removing what the package holds reads as refused, in its words")
-    func refusedByTheGuard() async throws {
-        let server = ScriptedServer()
-        server.answer("GET", packagePath, 200, #"{"id":"ada.example.com/training","kind":"substrate.reamde.dev/core/package","properties":{"version":1},"version":1}"#)
-        server.answer("GET", bundlePath, 404, notFound)
-        server.on { $0.method == "GET" ? (404, notFound) : nil }
-        server.answer("POST", "/api/v1/vocabulary/apply", 409,
-                      #"{"error":{"code":"conflict","message":"an app's token only adds to a package, and this apply would remove what the repository holds: ada.example.com/training/set: properties.notes"}}"#)
-        let installer = PackageInstaller(api: api(server), manifest: try manifest(version: 2), baselineDirectory: temporaryDirectory())
-        guard case let .refused(held, reason) = try await installer.ensure() else { Issue.record("not refused"); return }
-        #expect(held == 1)
-        #expect(reason.contains("properties.notes"))
-        #expect(!PackageState.refused(held: 1, reason: reason).writable)
     }
 }
 

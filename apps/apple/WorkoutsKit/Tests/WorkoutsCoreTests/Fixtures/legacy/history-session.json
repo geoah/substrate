@@ -1,0 +1,1262 @@
+{
+ "format": 2,
+ "records": [
+  {
+   "kind": "~/training/session",
+   "id": "01a16363-cf80-73ed-85fd-704f6ce38d73",
+   "properties": {
+    "adapter": "substrate-workouts@0.1.0",
+    "at": "2026-10-22T11:34:08Z",
+    "bodyMass": {
+     "unit": "kg",
+     "value": "82.6"
+    },
+    "endsAt": "2026-10-22T12:21:04Z",
+    "healthKitWorkout": "4B3F4AC1-C072-4728-9776-A9F76432BDF6",
+    "name": "Day 1 – Strength Foundation, Thu 22 Oct 12:34",
+    "revision": 3,
+    "routine": {
+     "ref": "~/training/routine/day-1-strength-foundation"
+    },
+    "routineVersion": 1,
+    "sessionRPE": "7",
+    "slots": [
+     {
+      "exercise": {
+       "ref": "~/training/exercise/leg-press-machine"
+      },
+      "key": "leg-press",
+      "routineSlot": "leg-press",
+      "sets": [
+       {
+        "key": "w1",
+        "load": {
+         "unit": "kg",
+         "value": "40"
+        },
+        "repsMax": 12,
+        "repsMin": 12,
+        "role": "warmup",
+        "structure": "straight"
+       },
+       {
+        "key": "w2",
+        "load": {
+         "unit": "kg",
+         "value": "70"
+        },
+        "repsMax": 6,
+        "repsMin": 6,
+        "rest": "PT1M30S",
+        "role": "warmup",
+        "structure": "straight"
+       },
+       {
+        "key": "s1",
+        "load": {
+         "unit": "kg",
+         "value": "100"
+        },
+        "repsMax": 10,
+        "repsMin": 6,
+        "role": "working",
+        "rpeMax": "8",
+        "rpeMin": "8",
+        "structure": "straight"
+       },
+       {
+        "key": "s2",
+        "load": {
+         "unit": "kg",
+         "value": "100"
+        },
+        "repsMax": 10,
+        "repsMin": 6,
+        "role": "working",
+        "rpeMax": "8",
+        "rpeMin": "8",
+        "structure": "straight"
+       },
+       {
+        "key": "s3",
+        "load": {
+         "unit": "kg",
+         "value": "100"
+        },
+        "repsMax": 10,
+        "repsMin": 6,
+        "role": "working",
+        "rpeMax": "8",
+        "rpeMin": "8",
+        "structure": "straight"
+       }
+      ]
+     },
+     {
+      "exercise": {
+       "ref": "~/training/exercise/iso-lateral-chest-press-machine"
+      },
+      "key": "iso-lateral-chest-press",
+      "routineSlot": "iso-lateral-chest-press",
+      "sets": [
+       {
+        "key": "s1",
+        "load": {
+         "unit": "kg",
+         "value": "20"
+        },
+        "repsMax": 10,
+        "repsMin": 6,
+        "role": "working",
+        "rpeMax": "8",
+        "rpeMin": "8",
+        "structure": "straight"
+       },
+       {
+        "key": "s2",
+        "load": {
+         "unit": "kg",
+         "value": "20"
+        },
+        "repsMax": 10,
+        "repsMin": 6,
+        "role": "working",
+        "rpeMax": "8",
+        "rpeMin": "8",
+        "structure": "straight"
+       },
+       {
+        "key": "s3",
+        "load": {
+         "unit": "kg",
+         "value": "20"
+        },
+        "repsMax": 10,
+        "repsMin": 6,
+        "role": "working",
+        "rpeMax": "8",
+        "rpeMin": "8",
+        "structure": "straight"
+       }
+      ]
+     },
+     {
+      "exercise": {
+       "ref": "~/training/exercise/seated-row-machine"
+      },
+      "key": "seated-row",
+      "routineSlot": "seated-row",
+      "sets": [
+       {
+        "key": "s1",
+        "load": {
+         "unit": "kg",
+         "value": "45"
+        },
+        "repsMax": 12,
+        "repsMin": 8,
+        "role": "working",
+        "rpeMax": "8",
+        "rpeMin": "8",
+        "structure": "straight"
+       },
+       {
+        "key": "s2",
+        "load": {
+         "unit": "kg",
+         "value": "45"
+        },
+        "repsMax": 12,
+        "repsMin": 8,
+        "role": "working",
+        "rpeMax": "8",
+        "rpeMin": "8",
+        "structure": "straight"
+       },
+       {
+        "key": "s3",
+        "load": {
+         "unit": "kg",
+         "value": "45"
+        },
+        "repsMax": 12,
+        "repsMin": 8,
+        "role": "working",
+        "rpeMax": "8",
+        "rpeMin": "8",
+        "structure": "straight"
+       }
+      ]
+     },
+     {
+      "exercise": {
+       "ref": "~/training/exercise/lateral-raise-dumbbell"
+      },
+      "key": "lateral-raise",
+      "routineSlot": "lateral-raise",
+      "sets": [
+       {
+        "key": "s1",
+        "load": {
+         "unit": "kg",
+         "value": "6"
+        },
+        "repsMax": 15,
+        "repsMin": 12,
+        "role": "working",
+        "rpeMax": "8",
+        "rpeMin": "8",
+        "structure": "straight"
+       },
+       {
+        "intraSetPause": "PT15S",
+        "key": "s2",
+        "load": {
+         "unit": "kg",
+         "value": "6"
+        },
+        "repsMax": 20,
+        "repsMin": 12,
+        "role": "working",
+        "rpeMax": "9",
+        "rpeMin": "9",
+        "structure": "myo"
+       }
+      ]
+     },
+     {
+      "exercise": {
+       "ref": "~/training/exercise/romanian-deadlift-dumbbell"
+      },
+      "key": "romanian-deadlift",
+      "notes": "Set 1 stopped at 7: the lower back. Down to 12 kg for the rest.",
+      "routineSlot": "romanian-deadlift",
+      "sets": [
+       {
+        "key": "s1",
+        "load": {
+         "unit": "kg",
+         "value": "16"
+        },
+        "repsMax": 12,
+        "repsMin": 8,
+        "role": "working",
+        "rpeMax": "7",
+        "rpeMin": "7",
+        "structure": "straight",
+        "tempo": "3-1-1-0"
+       },
+       {
+        "key": "s2",
+        "load": {
+         "unit": "kg",
+         "value": "16"
+        },
+        "repsMax": 12,
+        "repsMin": 8,
+        "role": "working",
+        "rpeMax": "7",
+        "rpeMin": "7",
+        "structure": "straight",
+        "tempo": "3-1-1-0"
+       },
+       {
+        "key": "s3",
+        "load": {
+         "unit": "kg",
+         "value": "16"
+        },
+        "repsMax": 12,
+        "repsMin": 8,
+        "role": "working",
+        "rpeMax": "7",
+        "rpeMin": "7",
+        "structure": "straight",
+        "tempo": "3-1-1-0"
+       }
+      ]
+     }
+    ],
+    "sport": "strength",
+    "status": "finished",
+    "timezone": "Europe/London",
+    "title": "Day 1 – Strength Foundation, Thu 22 Oct 12:34",
+    "utcOffsetEnd": 60,
+    "utcOffsetStart": 60,
+    "workout": {
+     "ref": "substrate.reamde.dev/health/workout/applehealth/substrate-sync-5e2b9c41/4B3F4AC1-C072-4728-9776-A9F76432BDF6"
+    }
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a1638c-cbb0-7e5e-a151-93be43a614f1",
+   "properties": {
+    "at": "2026-10-22T12:18:54Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/romanian-deadlift-dumbbell"
+    },
+    "implements": 2,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "12"
+    },
+    "loadBasis": "perimplement",
+    "loadMode": "external",
+    "order": 3,
+    "ordinal": 3,
+    "reps": 11,
+    "repsBasis": "total",
+    "restBefore": "PT2M",
+    "restMethod": "interaction",
+    "restPlanned": "PT2M",
+    "revision": 1,
+    "role": "working",
+    "rpe": "7.5",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "romanian-deadlift",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "16"
+     },
+     "plannedSet": "s3",
+     "repsMax": 12,
+     "repsMin": 8,
+     "rpeMax": "7",
+     "rpeMin": "7",
+     "tempo": "3-1-1-0",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Romanian Deadlift (Dumbbell)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a1638a-0c90-7f2f-a99d-261db05c9348",
+   "properties": {
+    "at": "2026-10-22T12:15:54Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/romanian-deadlift-dumbbell"
+    },
+    "implements": 2,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "12"
+    },
+    "loadBasis": "perimplement",
+    "loadMode": "external",
+    "order": 2,
+    "ordinal": 2,
+    "reps": 10,
+    "repsBasis": "total",
+    "restBefore": "PT2M10S",
+    "restMethod": "interaction",
+    "restPlanned": "PT2M",
+    "revision": 1,
+    "role": "working",
+    "rpe": "7",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "romanian-deadlift",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "16"
+     },
+     "plannedSet": "s2",
+     "repsMax": 12,
+     "repsMin": 8,
+     "rpeMax": "7",
+     "rpeMin": "7",
+     "tempo": "3-1-1-0",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Romanian Deadlift (Dumbbell)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16387-39e8-7cad-b710-a7f8b93e58d2",
+   "properties": {
+    "at": "2026-10-22T12:12:49Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/romanian-deadlift-dumbbell"
+    },
+    "implements": 2,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "16"
+    },
+    "loadBasis": "perimplement",
+    "loadMode": "external",
+    "order": 1,
+    "ordinal": 1,
+    "reps": 7,
+    "repsBasis": "total",
+    "restBefore": "PT2M30S",
+    "restMethod": "interaction",
+    "restPlanned": "PT1M30S",
+    "revision": 1,
+    "role": "working",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "romanian-deadlift",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "16"
+     },
+     "plannedSet": "s1",
+     "repsMax": 12,
+     "repsMin": 8,
+     "rpeMax": "7",
+     "rpeMin": "7",
+     "tempo": "3-1-1-0",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Romanian Deadlift (Dumbbell)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16384-53b8-7ed4-9acc-b7d0fd226ca2",
+   "properties": {
+    "at": "2026-10-22T12:09:39Z",
+    "chainPosition": 5,
+    "completionMethod": "individual",
+    "continues": {
+     "ref": "~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada"
+    },
+    "exercise": {
+     "ref": "~/training/exercise/lateral-raise-dumbbell"
+    },
+    "implements": 2,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "6"
+    },
+    "loadBasis": "perimplement",
+    "loadMode": "external",
+    "order": 6,
+    "ordinal": 2,
+    "reps": 3,
+    "repsBasis": "total",
+    "restBefore": "PT17S",
+    "restMethod": "interaction",
+    "restPlanned": "PT15S",
+    "revision": 1,
+    "role": "working",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "lateral-raise",
+    "structure": "myo",
+    "target": {
+     "plannedSet": "s2"
+    },
+    "timeBasis": "completion",
+    "title": "Lateral Raise (Dumbbell)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16383-ee28-7a87-86f6-dde468e24116",
+   "properties": {
+    "at": "2026-10-22T12:09:13Z",
+    "chainPosition": 4,
+    "completionMethod": "individual",
+    "continues": {
+     "ref": "~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada"
+    },
+    "exercise": {
+     "ref": "~/training/exercise/lateral-raise-dumbbell"
+    },
+    "implements": 2,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "6"
+    },
+    "loadBasis": "perimplement",
+    "loadMode": "external",
+    "order": 5,
+    "ordinal": 2,
+    "reps": 4,
+    "repsBasis": "total",
+    "restBefore": "PT15S",
+    "restMethod": "interaction",
+    "restPlanned": "PT15S",
+    "revision": 1,
+    "role": "working",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "lateral-raise",
+    "structure": "myo",
+    "target": {
+     "plannedSet": "s2"
+    },
+    "timeBasis": "completion",
+    "title": "Lateral Raise (Dumbbell)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16383-8c80-72b6-a1b4-cecab1ae7059",
+   "properties": {
+    "at": "2026-10-22T12:08:48Z",
+    "chainPosition": 3,
+    "completionMethod": "individual",
+    "continues": {
+     "ref": "~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada"
+    },
+    "exercise": {
+     "ref": "~/training/exercise/lateral-raise-dumbbell"
+    },
+    "implements": 2,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "6"
+    },
+    "loadBasis": "perimplement",
+    "loadMode": "external",
+    "order": 4,
+    "ordinal": 2,
+    "reps": 4,
+    "repsBasis": "total",
+    "restBefore": "PT16S",
+    "restMethod": "interaction",
+    "restPlanned": "PT15S",
+    "revision": 1,
+    "role": "working",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "lateral-raise",
+    "structure": "myo",
+    "target": {
+     "plannedSet": "s2"
+    },
+    "timeBasis": "completion",
+    "title": "Lateral Raise (Dumbbell)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16383-26f0-7c10-a755-ebce0af42ce6",
+   "properties": {
+    "at": "2026-10-22T12:08:22Z",
+    "chainPosition": 2,
+    "completionMethod": "individual",
+    "continues": {
+     "ref": "~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada"
+    },
+    "exercise": {
+     "ref": "~/training/exercise/lateral-raise-dumbbell"
+    },
+    "implements": 2,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "6"
+    },
+    "loadBasis": "perimplement",
+    "loadMode": "external",
+    "order": 3,
+    "ordinal": 2,
+    "reps": 4,
+    "repsBasis": "total",
+    "restBefore": "PT15S",
+    "restMethod": "interaction",
+    "restPlanned": "PT15S",
+    "revision": 1,
+    "role": "working",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "lateral-raise",
+    "structure": "myo",
+    "target": {
+     "plannedSet": "s2"
+    },
+    "timeBasis": "completion",
+    "title": "Lateral Raise (Dumbbell)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16382-c548-71ac-a569-ac1b45b1dada",
+   "properties": {
+    "at": "2026-10-22T12:07:57Z",
+    "chainPosition": 1,
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/lateral-raise-dumbbell"
+    },
+    "implements": 2,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "6"
+    },
+    "loadBasis": "perimplement",
+    "loadMode": "external",
+    "order": 2,
+    "ordinal": 2,
+    "reps": 16,
+    "repsBasis": "total",
+    "restBefore": "PT1M31S",
+    "restMethod": "interaction",
+    "restPlanned": "PT1M30S",
+    "revision": 1,
+    "role": "working",
+    "rpe": "9",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "lateral-raise",
+    "structure": "myo",
+    "target": {
+     "intraSetPause": "PT15S",
+     "load": {
+      "unit": "kg",
+      "value": "6"
+     },
+     "myoStopRule": "repdrop",
+     "plannedSet": "s2",
+     "repsMax": 20,
+     "repsMin": 12,
+     "rpeMax": "9",
+     "rpeMin": "9",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Lateral Raise (Dumbbell)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16380-c590-7593-bbda-70c3efa9c660",
+   "properties": {
+    "at": "2026-10-22T12:05:46Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/lateral-raise-dumbbell"
+    },
+    "implements": 2,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "6"
+    },
+    "loadBasis": "perimplement",
+    "loadMode": "external",
+    "order": 1,
+    "ordinal": 1,
+    "reps": 13,
+    "repsBasis": "total",
+    "restBefore": "PT2M20S",
+    "restMethod": "interaction",
+    "restPlanned": "PT2M",
+    "revision": 1,
+    "role": "working",
+    "rpe": "7",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "lateral-raise",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "6"
+     },
+     "plannedSet": "s1",
+     "repsMax": 15,
+     "repsMin": 12,
+     "rpeMax": "8",
+     "rpeMin": "8",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Lateral Raise (Dumbbell)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a1637e-19f8-7e3f-b121-d89b167c37e0",
+   "properties": {
+    "at": "2026-10-22T12:02:51Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/seated-row-machine"
+    },
+    "implements": 1,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "45"
+    },
+    "loadBasis": "total",
+    "loadMode": "external",
+    "order": 3,
+    "ordinal": 3,
+    "reps": 10,
+    "repsBasis": "total",
+    "restBefore": "PT2M12S",
+    "restMethod": "interaction",
+    "restPlanned": "PT2M",
+    "revision": 1,
+    "role": "working",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "seated-row",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "45"
+     },
+     "plannedSet": "s3",
+     "repsMax": 12,
+     "repsMin": 8,
+     "rpeMax": "8",
+     "rpeMin": "8",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Seated Row (Machine)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a1637b-a128-7cf6-bb24-98e53f8706ac",
+   "properties": {
+    "at": "2026-10-22T12:00:09Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/seated-row-machine"
+    },
+    "implements": 1,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "45"
+    },
+    "loadBasis": "total",
+    "loadMode": "external",
+    "order": 2,
+    "ordinal": 2,
+    "reps": 11,
+    "repsBasis": "total",
+    "restBefore": "PT2M4S",
+    "restMethod": "interaction",
+    "restPlanned": "PT2M",
+    "revision": 1,
+    "role": "working",
+    "rpe": "8.5",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "seated-row",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "45"
+     },
+     "plannedSet": "s2",
+     "repsMax": 12,
+     "repsMin": 8,
+     "rpeMax": "8",
+     "rpeMin": "8",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Seated Row (Machine)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16379-3be0-76ae-ab20-15657eb9eaba",
+   "properties": {
+    "at": "2026-10-22T11:57:32Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/seated-row-machine"
+    },
+    "implements": 1,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "45"
+    },
+    "loadBasis": "total",
+    "loadMode": "external",
+    "order": 1,
+    "ordinal": 1,
+    "reps": 12,
+    "repsBasis": "total",
+    "restBefore": "PT2M25S",
+    "restMethod": "interaction",
+    "restPlanned": "PT2M",
+    "revision": 1,
+    "role": "working",
+    "rpe": "8",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "seated-row",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "45"
+     },
+     "plannedSet": "s1",
+     "repsMax": 12,
+     "repsMin": 8,
+     "rpeMax": "8",
+     "rpeMin": "8",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Seated Row (Machine)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16376-78d8-741d-8b7f-3e01a0258499",
+   "properties": {
+    "at": "2026-10-22T11:54:31Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/iso-lateral-chest-press-machine"
+    },
+    "implements": 1,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "22.5"
+    },
+    "loadBasis": "perside",
+    "loadMode": "external",
+    "order": 3,
+    "ordinal": 3,
+    "reps": 8,
+    "repsBasis": "total",
+    "restBefore": "PT1M38S",
+    "restMethod": "interaction",
+    "restPlanned": "PT2M",
+    "restSkipped": true,
+    "revision": 1,
+    "role": "working",
+    "rpe": "8.5",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "iso-lateral-chest-press",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "20"
+     },
+     "plannedSet": "s3",
+     "repsMax": 10,
+     "repsMin": 6,
+     "rpeMax": "8",
+     "rpeMin": "8",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Iso-Lateral Chest Press (Machine)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16374-9478-745b-8557-4da0a0b3f28a",
+   "properties": {
+    "at": "2026-10-22T11:52:27Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/iso-lateral-chest-press-machine"
+    },
+    "implements": 1,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "22.5"
+    },
+    "loadBasis": "perside",
+    "loadMode": "external",
+    "order": 2,
+    "ordinal": 2,
+    "reps": 9,
+    "repsBasis": "total",
+    "restBefore": "PT2M10S",
+    "restMethod": "interaction",
+    "restPlanned": "PT2M",
+    "revision": 1,
+    "role": "working",
+    "rpe": "8",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "iso-lateral-chest-press",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "20"
+     },
+     "plannedSet": "s2",
+     "repsMax": 10,
+     "repsMin": 6,
+     "rpeMax": "8",
+     "rpeMin": "8",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Iso-Lateral Chest Press (Machine)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16372-2b48-710a-b6f1-c7c308eae613",
+   "properties": {
+    "at": "2026-10-22T11:49:49Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/iso-lateral-chest-press-machine"
+    },
+    "implements": 1,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "20"
+    },
+    "loadBasis": "perside",
+    "loadMode": "external",
+    "order": 1,
+    "ordinal": 1,
+    "reps": 10,
+    "repsBasis": "total",
+    "restBefore": "PT3M5S",
+    "restMethod": "interaction",
+    "restPlanned": "PT2M30S",
+    "revision": 1,
+    "role": "working",
+    "rpe": "7",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "iso-lateral-chest-press",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "20"
+     },
+     "plannedSet": "s1",
+     "repsMax": 10,
+     "repsMin": 6,
+     "rpeMax": "8",
+     "rpeMin": "8",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Iso-Lateral Chest Press (Machine)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a1636e-e370-7a30-a66f-2b0ab3ff8d25",
+   "properties": {
+    "at": "2026-10-22T11:46:14Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/leg-press-machine"
+    },
+    "implements": 1,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "100"
+    },
+    "loadBasis": "total",
+    "loadMode": "external",
+    "order": 5,
+    "ordinal": 3,
+    "reps": 9,
+    "repsBasis": "total",
+    "restBefore": "PT2M35S",
+    "restMethod": "interaction",
+    "restPlanned": "PT2M30S",
+    "revision": 1,
+    "role": "working",
+    "rpe": "8.5",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "leg-press",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "100"
+     },
+     "plannedSet": "s3",
+     "repsMax": 10,
+     "repsMin": 6,
+     "rpeMax": "8",
+     "rpeMin": "8",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Leg Press (Machine)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a1636c-0510-75ad-9ce4-51528dc18dc7",
+   "properties": {
+    "at": "2026-10-22T11:43:06Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/leg-press-machine"
+    },
+    "implements": 1,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "100"
+    },
+    "loadBasis": "total",
+    "loadMode": "external",
+    "order": 4,
+    "ordinal": 2,
+    "reps": 10,
+    "repsBasis": "total",
+    "restBefore": "PT2M41S",
+    "restMethod": "interaction",
+    "restPlanned": "PT2M30S",
+    "revision": 1,
+    "role": "working",
+    "rpe": "8",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "leg-press",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "100"
+     },
+     "plannedSet": "s2",
+     "repsMax": 10,
+     "repsMin": 6,
+     "rpeMax": "8",
+     "rpeMin": "8",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Leg Press (Machine)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16369-0770-7d84-b8fb-2bdec3590e78",
+   "properties": {
+    "at": "2026-10-22T11:39:50Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/leg-press-machine"
+    },
+    "implements": 1,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "100"
+    },
+    "loadBasis": "total",
+    "loadMode": "external",
+    "order": 3,
+    "ordinal": 1,
+    "reps": 10,
+    "repsBasis": "total",
+    "restBefore": "PT1M42S",
+    "restMethod": "interaction",
+    "restPlanned": "PT1M30S",
+    "revision": 1,
+    "role": "working",
+    "rpe": "7.5",
+    "rpeMethod": "entered",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "leg-press",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "100"
+     },
+     "plannedSet": "s1",
+     "repsMax": 10,
+     "repsMin": 6,
+     "rpeMax": "8",
+     "rpeMin": "8",
+     "termination": "reprange"
+    },
+    "timeBasis": "completion",
+    "title": "Leg Press (Machine)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16366-f048-7d25-8ece-ab06c4283a1b",
+   "properties": {
+    "at": "2026-10-22T11:37:33Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/leg-press-machine"
+    },
+    "implements": 1,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "70"
+    },
+    "loadBasis": "total",
+    "loadMode": "external",
+    "order": 2,
+    "ordinal": 2,
+    "reps": 6,
+    "repsBasis": "total",
+    "restBefore": "PT55S",
+    "restMethod": "interaction",
+    "restPlanned": "PT45S",
+    "revision": 1,
+    "role": "warmup",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "leg-press",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "70"
+     },
+     "plannedSet": "w2",
+     "repsMax": 6,
+     "repsMin": 6,
+     "termination": "reps"
+    },
+    "timeBasis": "completion",
+    "title": "Leg Press (Machine)"
+   }
+  },
+  {
+   "kind": "~/training/set",
+   "id": "01a16365-cb50-77df-a3b0-674947da373f",
+   "properties": {
+    "at": "2026-10-22T11:36:18Z",
+    "completionMethod": "individual",
+    "exercise": {
+     "ref": "~/training/exercise/leg-press-machine"
+    },
+    "implements": 1,
+    "laterality": "bilateral",
+    "load": {
+     "unit": "kg",
+     "value": "40"
+    },
+    "loadBasis": "total",
+    "loadMode": "external",
+    "order": 1,
+    "ordinal": 1,
+    "reps": 12,
+    "repsBasis": "total",
+    "revision": 1,
+    "role": "warmup",
+    "rpeScale": "rirbased",
+    "session": {
+     "ref": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73"
+    },
+    "slot": "leg-press",
+    "structure": "straight",
+    "target": {
+     "load": {
+      "unit": "kg",
+      "value": "40"
+     },
+     "plannedSet": "w1",
+     "repsMax": 12,
+     "repsMin": 12,
+     "termination": "reps"
+    },
+    "timeBasis": "completion",
+    "title": "Leg Press (Machine)"
+   }
+  }
+ ],
+ "local": {
+  "health": {
+   "status": "saved",
+   "updatedAt": "2026-10-22T12:21:30Z"
+  }
+ }
+}
