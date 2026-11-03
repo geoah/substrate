@@ -214,15 +214,16 @@ private struct LegacySession: Codable {
 
     @Test func theKeychainItemIsWhereEveryBuildKeptIt() throws {
         let store = SessionStore.chat
-        #expect(store.service == "dev.reamde.substrate.chat")
+        let keychain = try #require(store.storage as? KeychainStorage)
+        #expect(keychain.service == "dev.reamde.substrate.chat")
         #expect(store.account == "session")
-        #expect(store.accessGroup == nil)
-        #expect(store.accessibility == .afterFirstUnlockThisDeviceOnly)
-        #expect(!store.dataProtection)
+        #expect(keychain.accessGroup == nil)
+        #expect(keychain.accessibility == .afterFirstUnlockThisDeviceOnly)
+        #expect(!keychain.dataProtection)
 
         // The bytes an earlier build wrote, read back through the kit's store
         // under the same service.
-        let scratch = SessionStore(service: store.service, account: "test-\(UUID().uuidString)")
+        let scratch = SessionStore(account: "test-\(UUID().uuidString)", storage: store.storage)
         defer { scratch.clear() }
         try scratch.write(JSONEncoder().encode(app), account: scratch.account)
         guard case let .found(session) = scratch.read() else {

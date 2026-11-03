@@ -3,46 +3,22 @@ import SubstrateAPI
 import SubstrateCore
 import SubstrateDevice
 
-/// The session in the device's secure store: one item per app, readable
-/// after the first unlock so background work (a sync, a refresh) can use it,
-/// never synced off the device by default, and shared with the app's other
-/// targets (a share sheet, a widget) through an access group. On an Apple
-/// device the store is the Keychain (`KeychainStorage`).
+/// The session in the device's secure store, under one account of it. Where
+/// and how the items are kept (the Keychain's service, access group and
+/// accessibility on an Apple device) is the storage's alone
+/// (`KeychainStorage`), so two stores over one storage share its items.
 public struct SessionStore: Sendable {
     public typealias Accessibility = SecureAccessibility
     public typealias Item = StoredItem
     public typealias NotSaved = SecureStoreRefused
 
-    public let service: String
-    /// The `keychain-access-groups` entry the app's targets share, in full
-    /// (`<team>.dev.reamde.substrate.sync`); nil is the app's default group.
-    public let accessGroup: String?
     public let account: String
-    public let accessibility: Accessibility
-    /// On macOS, the data protection keychain, which an access group needs.
-    /// Off keeps the item where a build without it left one.
-    public let dataProtection: Bool
     /// Where the items are.
-    private let storage: any SessionStorage
+    public let storage: any SessionStorage
 
-    /// A store over `storage`, whose items it keeps under `service`,
-    /// `accessGroup`, `accessibility` and `dataProtection`.
-    public init(service: String, accessGroup: String?, account: String, accessibility: Accessibility,
-                dataProtection: Bool, storage: any SessionStorage)
-    {
-        self.service = service
-        self.accessGroup = accessGroup
+    public init(account: String = "session", storage: any SessionStorage) {
         self.account = account
-        self.accessibility = accessibility
-        self.dataProtection = dataProtection
         self.storage = storage
-    }
-
-    /// A store over `storage` of the caller's, such as a test's that refuses
-    /// to write.
-    public init(service: String, account: String = "session", storage: any SessionStorage) {
-        self.init(service: service, accessGroup: nil, account: account, accessibility: .afterFirstUnlockThisDeviceOnly,
-                  dataProtection: false, storage: storage)
     }
 
     public enum Read: Sendable {
@@ -192,7 +168,7 @@ public struct SessionStore: Sendable {
 
     /// What the store's transitions are serialised on: one item, wherever
     /// the store value was made.
-    private var key: String { "\(service)|\(accessGroup ?? "")|\(account)" }
+    private var key: String { "\(storage.location)|\(account)" }
 
     /// Kept for revocation, or else revoked now: never neither.
     private func retire(_ session: Session, transport: any HTTPTransport) async throws {

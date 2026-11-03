@@ -384,7 +384,7 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
         let mismatch = try #require(RepositoryMismatch(resolved: "ada.example.com", token: session.repository, server: server))
 
         let failing = StubTransport().on("POST", "/oauth/revoke", status: 503, json: "")
-        let store = SessionStore(service: "test", storage: MemoryStorage())
+        let store = SessionStore(storage: MemoryStorage())
         let pending = await OAuthClient(manifest: syncManifest(), metadata: meta, transport: failing)
             .reject(session, mismatch, keepingIn: store)
         #expect(failing.sent("POST", "/oauth/revoke").count == 1)
@@ -407,7 +407,7 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
         #expect(revoked.errorDescription?.contains("didn't confirm") == false)
 
         // Neither kept nor revoked: the person is told to revoke it.
-        let refusing = SessionStore(service: "test", storage: MemoryStorage(refusing: ["session.revocations"]))
+        let refusing = SessionStore(storage: MemoryStorage(refusing: ["session.revocations"]))
         let live = await OAuthClient(manifest: syncManifest(), metadata: meta, transport: failing)
             .reject(session, mismatch, keepingIn: refusing)
         #expect(live.revocation == .live)

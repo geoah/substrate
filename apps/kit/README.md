@@ -33,7 +33,8 @@ compile to nothing elsewhere. The package is in Swift 6 language mode.
 with the Apple device services as the defaults the single module had: a
 `ServerLocator(probe:)` reads DNS through DNS-SD, `OAuthClient.signIn`
 without a `browser:` signs in through `WebAuthenticator`, and
-`SessionStore(service:accessGroup:…)` keeps the session in the Keychain.
+`SessionStore(service:accessGroup:…)` keeps the session in the Keychain
+through a `KeychainStorage` made of those settings.
 The console, Chat and Sync import it. Code that must build for Linux or
 Android (an app's core: WorkoutsCore and WorkoutsSync) imports the
 portable libraries it uses instead and passes its device services in.
@@ -149,9 +150,10 @@ when they end (counted from the exchange, however long the approval took),
 and each webhook's delivery URL. An app that drives its own sheet uses
 `authorizeURL`, `callback` and `session(exchanging:…)`.
 
-**The session.** `SessionStore` keeps it in the Keychain, readable after the
-first unlock so background work can use it; an access group shares it with
-the app's share sheet. `Session` reads every shape an app wrote before it
+**The session.** `SessionStore` keeps it under one account of a
+`SessionStorage`, which alone says where and how: on an Apple device a
+`KeychainStorage`, readable after the first unlock so background work can
+use it, whose access group shares it with the app's share sheet. `Session` reads every shape an app wrote before it
 (Sync's `{server, repository, secret, tokenID}`, Chat's with `grants`), and
 writes those fields as well, so a rollback keeps the sign-in. A session with
 `scopes == nil` is a password one: full access, and its own token id.
@@ -219,8 +221,8 @@ dropped. A kept token stays in `pendingRevocations()` until
 `store.revokePending(current:)` gets the server's word, so a revocation cut
 short is tried again at the next launch; `UnrevokedNotices` (in
 `AccountSection` and `ConnectView`) says so while one waits, once per server
-and repository. A store made over `SessionStorage` of the caller's stands in
-for the Keychain in a test.
+and repository. `SessionStore(account:storage:)` over a storage of the
+caller's stands in for the Keychain in a test.
 
 **Errors.** `explain(error, app:, server:)` says any error as a sentence. A
 403 with `insufficient_scope` is `InsufficientScope`, which reads as needing

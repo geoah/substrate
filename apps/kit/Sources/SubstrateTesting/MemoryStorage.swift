@@ -12,6 +12,8 @@ public final class MemoryStorage: SessionStorage, @unchecked Sendable {
     private let lock = NSLock()
     private var items: [String: Data] = [:]
     public let refusing: Set<String>
+    /// Each instance's own: two never share an item.
+    public let location = "memory|" + UUID().uuidString
 
     public init(refusing: Set<String> = []) {
         self.refusing = refusing
