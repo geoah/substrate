@@ -7,7 +7,7 @@ import SubstrateScreens
 
 /// What the app's root holds: the records as `LinkedRecords` keeps them,
 /// and where the owner is in the app.
-public struct TasksState: Codable, Equatable, Sendable {
+public struct TasksState: Codable, Equatable, Sendable, LinkedRecordsHolding {
     public var linked = LinkedRecordsState()
     /// Moved by every event that changes what a list's rows are made of
     /// (the records, the settings, the selection): the keyed lists'

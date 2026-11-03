@@ -30,8 +30,9 @@ is the kit's ([its README](../kit/README.md)):
   with `completedAt: null` on a reopen. A test holds its property names to
   the closure the app carries (`Resources/Package/tasks.json`, written by
   `.mise/closures.py --json`), and `dueAt` to the temporal trait's point.
-- **`TasksApp`**, the root under `LinkController<TasksApp>`: its tasks and
-  lists are the kit's `LinkedRecords` over the two kinds, so a change made
+- **`TasksApp`**, the root under `LinkController<TasksApp>`, a
+  `LinkedRecordsApp`: its tasks and lists are the kit's `LinkedRecords` over
+  the two kinds, whose stages it writes none of, so a change made
   offline shows at once and stays shown until its record is read again, and
   only a write the outbox says landed is shown as landed. Every write goes
   through the outbox (`TaskWrites`, over the kit's `RecordWrites`): a create
@@ -42,8 +43,9 @@ is the kit's ([its README](../kit/README.md)):
   record is there (`TasksState.tapped`), and keeps the settings in the
   repository's folder.
 - **`TaskEditor`**, a child kept by the root under a key it minted, made in
-  the device's time zone: one task's form, or a new one's, whose Save hands
-  the write up.
+  the device's time zone: one task's form, or a new one's, whose Save is two
+  of the root's events (`events(fromChild:_:)`): the editor closed, and the
+  write, as any other the owner makes.
 - **The presenters**: `TasksPresenter` writes every word the screens show
   (the App menu, the lists column, a list's keyed rows and their menus, the
   open task with its list and priority as the choices that change them, the

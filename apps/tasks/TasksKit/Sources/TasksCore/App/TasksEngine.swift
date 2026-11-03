@@ -4,16 +4,16 @@ import SubstrateLocal
 import SubstrateRuntime
 import SubstrateScreens
 
-/// The root's engine: every event applied to the state, purely; the records'
-/// own events by the kit's `LinkedRecords`.
+/// The root's engine: every event applied to the state, purely, after the
+/// records' own events are applied by the kit's `LinkedRecords`
+/// (`LinkedRecordsApp`): `state` holds them, `previous` is from before.
 public extension TasksApp {
-    func apply(_ event: Event, to state: TasksState) throws -> TasksState {
+    func apply(_ event: Event, to state: TasksState, from previous: TasksState) throws -> TasksState {
         var next = state
         switch event {
-        case let .records(event):
-            next.linked = linked.apply(event, to: state.linked)
-            if case let .notQueued(_, words) = event { next.problem = words }
-        case .opening:
+        case let .records(.notQueued(_, words)):
+            next.problem = words
+        case .records:
             break
         case let .settingsRead(settings, usage):
             next.settings = settings
@@ -40,9 +40,6 @@ public extension TasksApp {
             next.tapped = nil
         case let .editorOpened(key, seed):
             next.editors[key] = seed
-        case let .editorSaved(key, write, _):
-            next.editors[key] = nil
-            next.linked = linked.apply(.wrote(write), to: next.linked)
         case let .editorClosed(key):
             next.editors[key] = nil
         case let .asked(confirmation):
@@ -65,7 +62,7 @@ public extension TasksApp {
             next.problem = nil
         }
         openTapped(&next)
-        if next.records != state.records || next.settings != state.settings || next.selection != state.selection {
+        if next.records != previous.records || next.settings != previous.settings || next.selection != previous.selection {
             next.revision += 1
         }
         return next

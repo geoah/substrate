@@ -12,7 +12,7 @@ import SubstrateScreens
 /// with the tasks, the settings, where the owner is, and the task editors as
 /// its children. Its presentation is every screen of the app; the link's is
 /// the connection's, beside it.
-public struct TasksApp: LinkedApp {
+public struct TasksApp: LinkedRecordsApp {
     public enum Command: Codable, Equatable, Sendable {
         case select(section: String)
         /// A list shown, or none: on a phone, back to the lists.
@@ -48,15 +48,13 @@ public struct TasksApp: LinkedApp {
         case dismissProblem
     }
 
-    public enum Event: Codable, Equatable, Sendable {
+    public enum Event: Codable, Equatable, Sendable, LinkedRecordsEvent {
         case records(LinkedRecords.Event)
-        case opening
         case settingsRead(SettingsValues, usage: [AreaUsage])
         case sectionSelected(String)
         case shown(ListSelection?)
         case opened(String?)
         case editorOpened(ChildKey, EditorSeed)
-        case editorSaved(ChildKey, LocalWrite, task: String)
         case editorClosed(ChildKey)
         case asked(Confirmation)
         case answered
@@ -69,7 +67,7 @@ public struct TasksApp: LinkedApp {
         case problemDismissed
     }
 
-    public enum Effect: Equatable, Sendable {
+    public enum Effect: Equatable, Sendable, LinkedRecordsEffect {
         case records(LinkedRecords.Effect)
         case readSettings
         case readPermission
@@ -105,26 +103,13 @@ public struct TasksApp: LinkedApp {
 
     public var initialState: TasksState { TasksState() }
 
-    public func event(atOpen replayed: Bool) -> Event? { .opening }
-
-    public func event(forLink link: LinkSnapshot) -> Event? { .records(.linked(link)) }
-
-    public func event(fromChild key: ChildKey, _ event: TaskEditor.Event) -> Event? {
+    /// A save closes its editor and is the owner's write, as any other.
+    public func events(fromChild key: ChildKey, _ event: TaskEditor.Event) -> [Event] {
         switch event {
-        case let .saved(write, task): .editorSaved(key, write, task: task)
-        case .cancelled: .editorClosed(key)
-        default: nil
+        case let .saved(write, _): [.editorClosed(key), .records(.wrote(write))]
+        case .cancelled: [.editorClosed(key)]
+        default: []
         }
-    }
-
-    public func report(of event: Event) -> LinkReport? {
-        guard case let .records(event) = event else { return nil }
-        return linked.report(of: event)
-    }
-
-    public func coalescing(of event: Event) -> Coalescing {
-        guard case let .records(event) = event else { return .now }
-        return linked.coalescing(of: event)
     }
 
     public func nextChange(of presentation: TasksPresentation) -> Date? { presentation.nextChange }
