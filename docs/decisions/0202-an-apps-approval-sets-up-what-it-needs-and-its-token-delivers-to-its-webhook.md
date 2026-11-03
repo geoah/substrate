@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-01
 decision-makers: George Antoniadis
+amended-by: 0215
 ---
 
 # 0202. An app's approval sets up what it needs, and its token delivers to its webhook

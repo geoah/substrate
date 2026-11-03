@@ -130,7 +130,11 @@ may sit on only one of the two lists ([running an agent](#running-an-agent)).
 `permissions.network` is enforced as a
 **binary** gate: a function declaring none is denied IPv4 and IPv6 sockets by the
 sandbox, while the host patterns themselves are still only documentation (see
-[the sandbox](#the-sandbox)). `permissions.mutations` gates the `merge` and
+[the sandbox](#the-sandbox)); an app's approval page shows them beside each
+function it installs, and holds what `writes` and `reads.kinds` reach to the
+scopes the owner approves
+([0215](decisions/0215-code-an-approval-installs-reaches-no-further-than-the-scopes-it-approves.md)).
+`permissions.mutations` gates the `merge` and
 `split` effects, which are refused without it. Every entry in `writes`,
 `reads.kinds`, `call` and `agents` is a full reference, `<authority>/<package>/<name>`.
 The two KIND lists also take a glob — `*`, `<authority>/*` or
