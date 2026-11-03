@@ -141,7 +141,7 @@ The apps' code is under `apps/`, and the plan for it is
 each screen as one loop: a command, a controller that enriches it into an
 event, then, in this order, an engine that applies the event, a journal
 written before anything can suspend, a presenter, and the effects.
-Workouts' session is built so; Chat and Sync are not converted yet. These
+Workouts' session, Chat and Tasks are built so; Sync is not converted yet. These
 words mean that loop's parts "in an app", and three of them are not the
 server's: an app's **engine** is not `internal/engine`, its **effect** is
 not a function's returned effects, and its **link** is not a reference.
@@ -166,6 +166,11 @@ account for a name of its own.
 | **watch generation** | In an app: the `generation` a records page hands over with its `head`, which a **watch** resumed from them must match; a watch answered with another relists. |
 | **handle generation** | In an app: the number an Android bridge handle carries, so a message for a closed handle, or one opened again, is dropped. |
 | **controller generation** | In an app: the number closing or resetting a controller moves, so every result still outstanding for it is dropped, whatever its key. |
+| **linked records** | In an app: the records of the kinds it shows, read once and then followed through the **watch**, with the outbox's waiting writes laid over them, kept by the app's root through the kit's `LinkedRecords`. |
+| **record cache** | In an app: the records it last read and where its watch resumes, kept in the repository's folder on the device, so the app opens on them before the server answers; the server's, read again on demand. |
+| **fold** | In an app: the records as the owner sees them, the server's as last read with the outbox's waiting writes applied in order over them; a refused write is not laid over. Not `internal/engine/fold.go`, the server's one path from the changelog to the records table. |
+| **read again** | In an app: one record read from the server after the watch named it or a write of it left the outbox, so the fold holds the server's copy; one that fails waits for the network. |
+| **App menu** | In an app: its top level as data, its sections drawn as a tab bar on a phone and as a sidebar on a tablet, a computer and a wide Android screen, which section is open its presentation's. |
 | **link generation** | In an app: the number a sign-out moves, kept in the repository's folder on the device, which background work names when it is scheduled and checks before every write, so a job from before a sign-out writes nothing. |
 
 ## Words that mean something narrower than they look
