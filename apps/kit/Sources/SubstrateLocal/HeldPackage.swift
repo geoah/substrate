@@ -42,7 +42,7 @@ public enum HeldPackage: Codable, Hashable, Sendable {
         guard let row = try await client.record("substrate.reamde.dev/core/package", package) else { return .missing }
         let held = ["shippedVersion", "version"].lazy.compactMap { key -> Int? in
             guard case let .number(version)? = row.properties[key] else { return nil }
-            return NSDecimalNumber(decimal: version).intValue
+            return version.int
         }.first
         return HeldPackage(held: held, needed: needed)
     }

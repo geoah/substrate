@@ -18,11 +18,11 @@ public enum WatchLine: Equatable, Sendable {
               case let .object(object) = value
         else { return nil }
         if case let .number(seq)? = object["seq"], case .string? = object["ts"] {
-            return .row(WatchRow(seq: NSDecimalNumber(decimal: seq).intValue, kind: object["kind"]?.stringValue ?? "",
+            return .row(WatchRow(seq: (seq.int ?? 0), kind: object["kind"]?.stringValue ?? "",
                                  recordID: object["recordId"]?.stringValue ?? "", op: object["op"]?.stringValue ?? ""))
         }
         if case let .number(seq)? = object["bookmark"] {
-            return .bookmark(WatchCursor(seq: NSDecimalNumber(decimal: seq).intValue, generation: object["generation"]?.stringValue ?? ""))
+            return .bookmark(WatchCursor(seq: (seq.int ?? 0), generation: object["generation"]?.stringValue ?? ""))
         }
         if case let .object(error)? = object["error"] {
             return .failed(code: error["code"]?.stringValue ?? "internal", message: error["message"]?.stringValue ?? "The watch stopped.")

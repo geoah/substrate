@@ -29,7 +29,7 @@ extension SubstrateClient: RecordWriter {
         guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: response.data),
               case let .number(version)? = object["version"]
         else { return 0 }
-        return NSDecimalNumber(decimal: version).intValue
+        return (version.int ?? 0)
     }
 
     public func version(_ kind: String, _ id: String) async throws -> Int? {

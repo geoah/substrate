@@ -311,7 +311,7 @@ struct OutboxEditTests {
             guard sent.method == "PATCH", case let .object(body)? = sent.body else { return nil }
             switch body["ifVersion"] {
             case nil: return (200, answered(6))
-            case .number(6)?: return (200, answered(7))
+            case let .number(version)? where version.exactInt == 6: return (200, answered(7))
             default: return (409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
             }
         }
