@@ -247,9 +247,10 @@ public struct OutboxNotSaved: LocalizedError, Sendable {
 public actor Outbox {
     /// The file's `format`: 2 since the package was published. A format 1
     /// file, from a build that spelled the package `~/training` on the
-    /// phone, is read through `LegacyKinds`, every entry's kind and
-    /// properties and every version and chain key, and written back once at
-    /// this format.
+    /// phone, is read through `LegacyKinds` and written back once at this
+    /// format, and nothing it knew about that package carries over: its
+    /// versions, its chains and its queued session writes go, and its other
+    /// writes go unguarded (`File.init(from:)`).
     public static let fileFormat = 2
 
     struct File: Codable {
@@ -275,12 +276,30 @@ public actor Outbox {
             versions = try c.decodeIfPresent([String: Int].self, forKey: .versions) ?? [:]
             chains = try c.decodeIfPresent([String: [String: Int]].self, forKey: .chains) ?? [:]
             guard format < Outbox.fileFormat else { return }
-            for index in entries.indices {
-                entries[index].kind = LegacyKinds.respell(entries[index].kind)
-                entries[index].properties = entries[index].properties.map(LegacyKinds.respell)
+            // What the old build knew about `~/training` says nothing about
+            // the published package, which may be empty or hold copies the
+            // owner made: a version carried over reads a session the package
+            // lacks as deleted on the server (`HistoryExchange`), and the
+            // exchange then deletes the phone's history; a guard under it is
+            // refused. So the old package's versions and chains go, a write
+            // of it goes without its guard, and a session's writes go
+            // altogether: the exchange derives them again from the history
+            // and the tombstones, which is the one path that writes a session
+            // the package lacks whole and leaves one it holds alone. A purge
+            // stays, since the server takes one of nothing. Nothing in the
+            // published spelling already is touched.
+            entries = entries.compactMap { entry in
+                var entry = entry
+                guard LegacyKinds.respell(entry.kind) != entry.kind else { return entry }
+                if entry.session != nil, entry.method != .purge { return nil }
+                entry.kind = LegacyKinds.respell(entry.kind)
+                entry.properties = entry.properties.map(LegacyKinds.respell)
+                entry.guarded = false
+                entry.baseVersion = nil
+                return entry
             }
-            versions = Dictionary(versions.map { (LegacyKinds.respell($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
-            chains = Dictionary(chains.map { (LegacyKinds.respell($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
+            versions = versions.filter { LegacyKinds.respell($0.key) == $0.key }
+            chains = chains.filter { LegacyKinds.respell($0.key) == $0.key }
             format = Outbox.fileFormat
             respelled = true
         }
