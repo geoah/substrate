@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-10-31
 decision-makers: George Antoniadis
+amended-by: 0219
 ---
 
 # 0195. An app talks to agents, decides their requests and tails the feed it reads
