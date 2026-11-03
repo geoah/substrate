@@ -102,7 +102,7 @@ func (b *Bundle) readFacts() {
 			b.agents = append(b.agents, AgentFact{
 				ID:     docID(d),
 				Reads:  kindGrants(docID(d), mslice(mmap(perms, "reads"), "kinds")),
-				Writes: kindGrants(docID(d), mslice(perms, "writes")),
+				Writes: askless(data, kindGrants(docID(d), mslice(perms, "writes"))),
 			})
 		case vocabulary.DocRecordMapping:
 			b.mappings = append(b.mappings, MappingFact{
@@ -203,6 +203,30 @@ func AgentProviderInputs(pkg string, docs []map[string]any) []substrate.Authoriz
 		}
 		if !found {
 			out = append(out, substrate.AuthorizationProviderInput{Package: pkg, Input: input, Agents: []substrate.AuthorizationProviderAgent{agent}})
+		}
+	}
+	return out
+}
+
+// askless drops the interaction kind from an agent's writes when the agent
+// asks: the `ask` tool needs it granted, and what it writes is the agent's
+// questions to the owner, which the owner answers, not the owner's data. No
+// app scope writes `llm`, so counting it would block every app whose agent
+// asks, the case 0207 already admitted beside `ask`.
+func askless(data map[string]any, writes []string) []string {
+	asks := false
+	for _, t := range mslice(data, "tools") {
+		if tool, _ := t.(map[string]any); tool != nil && vocabulary.ReferentID(tool["function"], vocabulary.CoreKind(vocabulary.DocFunction)) == vocabulary.HostFunctionAsk {
+			asks = true
+		}
+	}
+	if !asks {
+		return writes
+	}
+	out := writes[:0:0]
+	for _, w := range writes {
+		if w != vocabulary.KindLLMInteraction {
+			out = append(out, w)
 		}
 	}
 	return out
