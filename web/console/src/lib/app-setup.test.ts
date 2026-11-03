@@ -724,9 +724,9 @@ describe("a document-published package", () => {
       publisher,
     },
   }
-  it("says what it installs and who publishes it", () => {
+  it("names the version it installs, as a catalog row does, and who publishes it", () => {
     expect(publishedWords(training)).toBe(
-      "Installs Training 3, published by Substrate (substrate.reamde.dev)"
+      "Version 3, published by Substrate (substrate.reamde.dev)"
     )
     expect(
       publishedWords({
@@ -734,9 +734,7 @@ describe("a document-published package", () => {
         action: "upgrade",
         package: { ...training.package!, held: 2 },
       })
-    ).toBe(
-      "Updates Training from version 2 to 3, published by Substrate (substrate.reamde.dev)"
-    )
+    ).toBe("From version 2 to 3, published by Substrate (substrate.reamde.dev)")
     expect(publishedWords({ ...training, action: "none" })).toBe(
       "Published by Substrate (substrate.reamde.dev)"
     )
@@ -748,7 +746,7 @@ describe("a document-published package", () => {
           publisher: { ...publisher, name: undefined },
         },
       })
-    ).toBe("Installs Training 3, published by substrate.reamde.dev")
+    ).toBe("Version 3, published by substrate.reamde.dev")
     expect(versionWords(training)).toBeUndefined()
     expect(publishedWords(HEALTH)).toBeUndefined()
   })
