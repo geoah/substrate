@@ -32,7 +32,10 @@ import (
 // preview of one, and the install door both sources take. catalog.Catalog is
 // one; a test substitutes one that publishes from memory.
 type Catalog interface {
-	Resolve(ctx context.Context, id string, atLeast int64) (*catalog.Bundle, error)
+	// ResolveFor is Resolve for one repository: a package under the
+	// repository's own authority is its own to declare, never installed
+	// from its own document (decision 0212).
+	ResolveFor(ctx context.Context, id string, atLeast int64, ds substrate.Dataset) (*catalog.Bundle, error)
 	Requirements(ctx context.Context, id string, ds substrate.Dataset) ([]*catalog.Bundle, []catalog.Unmet, error)
 	Upgrade(ctx context.Context, id string, ds substrate.Dataset, held *substrate.BundleStatus) (*substrate.BundleUpgrade, error)
 	InstallConfirmed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*catalog.Bundle, []substrate.SuggestedMapping, error)
@@ -223,7 +226,7 @@ func (p *planner) resolve(ctx context.Context, id string, floor int64) (*catalog
 	if r, done := p.resolved[key]; done {
 		return r.bundle, r.problem, nil
 	}
-	b, err := p.cat.Resolve(ctx, id, floor)
+	b, err := p.cat.ResolveFor(ctx, id, floor, p.ds)
 	switch {
 	case errors.Is(err, catalog.ErrNotPublished):
 		p.resolved[key] = resolvedPackage{problem: notPublished(err)}

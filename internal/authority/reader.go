@@ -29,8 +29,12 @@ const (
 	fetchTimeout = 5 * time.Second
 	cacheFor     = 10 * time.Minute
 	maxCached    = 256
-	maxNameLen   = 200
-	MaxClosure   = 4 << 20
+	// maxCachedClosureBytes bounds the closures kept by digest: a closure
+	// is immutable under its sha256, so a hit is always the bytes a fetch
+	// would return, and the bound is only memory.
+	maxCachedClosureBytes = 32 << 20
+	maxNameLen            = 200
+	MaxClosure            = 4 << 20
 )
 
 func refuse(format string, args ...any) error { return fmt.Errorf(format, args...) }
@@ -159,6 +163,12 @@ type Reader struct {
 
 	mu    sync.Mutex
 	cache map[string]cachedAuthority
+	// closures are the verified closure bytes by their sha256, oldest first
+	// in closureOrder: the approval page plans on every read, and each plan
+	// resolves its published packages again.
+	closures     map[string][]byte
+	closureOrder []string
+	closureBytes int
 }
 
 type cachedAuthority struct {
@@ -171,6 +181,7 @@ func NewReader(o Options) *Reader {
 	v := &Reader{
 		resolver: o.Resolver, client: o.Client, now: o.Now, local: o.LocalDocuments,
 		slots: make(chan struct{}, fetchSlots), cache: map[string]cachedAuthority{},
+		closures: map[string][]byte{},
 	}
 	if v.resolver == nil {
 		v.resolver = net.DefaultResolver
@@ -406,13 +417,31 @@ func readFile(path string, limit int) ([]byte, error) {
 
 // Closure reads only the bytes the document pins.
 func (v *Reader) Closure(ctx context.Context, source Source, version AuthorityPackageVersion) ([]byte, error) {
-	var body []byte
-	var err error
+	// Where the closure is listed is checked before the cache is asked: a
+	// document naming a location this server refuses resolves nothing, even
+	// for bytes it already holds under the same digest.
 	if source.FromFile {
 		if !filepath.IsLocal(version.Closure) {
 			return nil, errors.New("a development closure must stay in the document's directory")
 		}
-
+	} else if u, e := url.Parse(version.Closure); e != nil || !validHTTPS(u) {
+		return nil, errors.New("a published closure needs an HTTPS URL")
+	}
+	// Only a fetched closure is cached: a development file is cheap to read
+	// again, and reading it is what holds it inside the document's
+	// directory.
+	digest := strings.ToLower(version.SHA256)
+	if !source.FromFile {
+		v.mu.Lock()
+		cached, hit := v.closures[digest]
+		v.mu.Unlock()
+		if hit {
+			return cached, nil
+		}
+	}
+	var body []byte
+	var err error
+	if source.FromFile {
 		root, openErr := os.OpenRoot(filepath.Dir(strings.TrimPrefix(source.DocURL, "file:")))
 		if openErr != nil {
 			return nil, openErr
@@ -428,10 +457,6 @@ func (v *Reader) Closure(ctx context.Context, source Source, version AuthorityPa
 			return nil, fmt.Errorf("closure exceeds %d bytes", MaxClosure)
 		}
 	} else {
-		u, e := url.Parse(version.Closure)
-		if e != nil || !validHTTPS(u) {
-			return nil, errors.New("a published closure needs an HTTPS URL")
-		}
 		body, err = v.fetch(ctx, version.Closure, MaxClosure)
 	}
 	if err != nil {
@@ -441,5 +466,30 @@ func (v *Reader) Closure(ctx context.Context, source Source, version AuthorityPa
 	if !strings.EqualFold(hex.EncodeToString(sum[:]), version.SHA256) {
 		return nil, errors.New("the closure does not match its published sha256")
 	}
+	if !source.FromFile {
+		v.keepClosure(digest, body)
+	}
 	return body, nil
+}
+
+// keepClosure caches verified closure bytes by digest, dropping the oldest
+// past maxCachedClosureBytes.
+func (v *Reader) keepClosure(digest string, body []byte) {
+	if len(body) > maxCachedClosureBytes {
+		return
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if _, ok := v.closures[digest]; ok {
+		return
+	}
+	for v.closureBytes+len(body) > maxCachedClosureBytes && len(v.closureOrder) > 0 {
+		oldest := v.closureOrder[0]
+		v.closureOrder = v.closureOrder[1:]
+		v.closureBytes -= len(v.closures[oldest])
+		delete(v.closures, oldest)
+	}
+	v.closures[digest] = body
+	v.closureOrder = append(v.closureOrder, digest)
+	v.closureBytes += len(body)
 }
