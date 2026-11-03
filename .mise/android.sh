@@ -118,9 +118,20 @@ cmd_sdk() {
   printf 'android: SDK at %s, NDK %s, Swift SDK %s\n' "$ANDROID_HOME" "$ndk_version" "$bundle"
 }
 
+# Swift for this host, not for Android: Xcode's on a Mac, whose SDK the
+# kit's Apple libraries and their macros need and whose .build the apple:*
+# tasks share; the task's open-source one elsewhere.
+host_swift() {
+  if [[ $(uname -s) == Darwin ]]; then
+    xcrun swift "$@"
+  else
+    swift "$@"
+  fi
+}
+
 bridgegen() {
-  swift build --package-path apps/kit/Tools/BridgeGen --product bridgegen --quiet
-  "$(swift build --package-path apps/kit/Tools/BridgeGen --show-bin-path)/bridgegen" "$@" apps/kit/android/bridge.json
+  host_swift build --package-path apps/kit/Tools/BridgeGen --product bridgegen --quiet
+  "$(host_swift build --package-path apps/kit/Tools/BridgeGen --show-bin-path)/bridgegen" "$@" apps/kit/android/bridge.json
 }
 
 cmd_build() {
@@ -134,16 +145,15 @@ cmd_test() {
   need_sdk
   need_swift
   bridgegen --check
-  swift test --package-path apps/kit/Tools/BridgeGen
+  host_swift test --package-path apps/kit/Tools/BridgeGen
   # The bridge's envelope, handles, calls, streams and keyed lists, and the
   # Swift half of the round trip, on this host.
-  swift test --package-path apps/kit --filter SubstrateBridgeTests
-  local kotlin_out=$root/apps/kit/android/kit-core/build/roundtrip/kotlin.json
-  rm -f "$kotlin_out"
+  host_swift test --package-path apps/kit --filter SubstrateBridgeTests
+  local kotlin_out=$root/apps/kit/android/kit-core/build/roundtrip/testDebugUnitTest/kotlin.json
   # kit-core's RoundTripTest writes Kotlin's encoding of the fixtures there.
   gradle :kit-core:testDebugUnitTest :kit-device:testDebugUnitTest
   [[ -f $kotlin_out ]] || die "the Kotlin round trip wrote nothing to $kotlin_out"
-  SUBSTRATE_ROUNDTRIP_KOTLIN=$kotlin_out swift test --package-path apps/kit --filter KotlinRoundTrip
+  SUBSTRATE_ROUNDTRIP_KOTLIN=$kotlin_out host_swift test --package-path apps/kit --filter KotlinRoundTrip
 }
 
 cmd_smoke() {
