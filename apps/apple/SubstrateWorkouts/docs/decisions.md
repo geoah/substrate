@@ -639,6 +639,22 @@ Two more, from the owner's first sessions with #1110's build, besides closing O1
   Hevy's own tags are not copied. A free-exercise-db entry no curated movement claims comes in
   with its groups and no shares.
 
+### L1, revised 2026-11-03 after the reviews of #1156
+
+- **The marker is a record, not the newest code.** Fable and Astra showed the newest library code
+  on any record could not tell a finished seeding from one cut short, nor from an import that
+  copied a library exercise onto the server. `~/training/library/exercises` (package 4) names the
+  version a run writes before its first write and the version held whole only after a run that
+  left nothing behind; a repository seeded before the marker existed reads its version from the
+  library's movements. Creates go with `ifVersion: 0`.
+- **A fill changes nothing about how sets count.** A held record is enriched once, only when it is
+  plainly the library's exercise, and only with its movement, muscles and codes: filling a load
+  basis onto an exercise whose older sets carry no copy of their own re-read their volume. An
+  exercise's own group lists win over its movement's muscles when they differ.
+- **Hevy's ids are the import's identity**: workouts, routines and templates, so two of one name
+  stay two and an import again, in any order, finds its own. Body measurements come in as
+  `~/training/bodymeasurement` (package 4).
+
 ## Open questions
 
 ### Open since #1100

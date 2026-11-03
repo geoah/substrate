@@ -155,5 +155,90 @@ struct LiveHevyImportTests {
         #expect(sessions.count == plan.sessions.count)
         #expect(sessions.count { $0.session.routine != nil } == linked)
     }
+
+    /// The upgrade a user of the last release takes (`WORKOUTS_UPGRADE_FROM`,
+    /// a folder holding that release's `training-v3.json` and
+    /// `library-v1.json`): package 3 and library 1 written as that build
+    /// wrote them (no marker), an owner's own exercise beside them, then this
+    /// build's package, its library and an account read through Hevy's API
+    /// with its routines and body measurements. Nothing the old build or the
+    /// owner wrote changes, and everything the account holds lands.
+    @Test("an upgrade from the last release, then a whole Hevy account",
+          .enabled(if: ProcessInfo.processInfo.environment["WORKOUTS_UPGRADE_FROM"] != nil
+              && ProcessInfo.processInfo.environment["WORKOUTS_HEVY_API_KEY"] != nil))
+    func upgradeThenImport() async throws {
+        let server = try #require(environment["WORKOUTS_E2E_SERVER"].flatMap(URL.init(string:)))
+        let repository = try #require(environment["WORKOUTS_E2E_REPOSITORY"])
+        let api = WorkoutsAPI(client: SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""), authority: repository)
+        let codec = RecordCodec()
+        let old = URL(fileURLWithPath: try #require(environment["WORKOUTS_UPGRADE_FROM"]))
+
+        // The last release: package 3, library 1 by plain PUTs, no marker,
+        // and an owner's exercise at a library id with no load basis.
+        let v3 = try PackageManifest.decode(Data(contentsOf: old.appendingPathComponent("training-v3.json")))
+        // The owner's token declares the package as the owner's, which the
+        // installer then leaves alone; the server's admission of 4 over 3 is
+        // what this checks, so both are applied directly.
+        try await api.applyVocabulary(v3.documents(for: api.rehome))
+        struct File: Decodable { var version: Int; var records: [FlatRecord] }
+        let v1 = try JSONDecoder().decode(File.self, from: Data(contentsOf: old.appendingPathComponent("library-v1.json")))
+        for record in v1.records where record.id != "bench-press-dumbbell" {
+            try await api.write("PUT", record.kind, record.id, properties: record.properties)
+        }
+        try await api.write("PUT", codec.kinds.exercise, "bench-press-dumbbell",
+                            properties: ["name": .string("Bench Press (Dumbbell)"), "measurement": .string("weightreps")])
+        let before = Dictionary(uniqueKeysWithValues: try await api.list([codec.kinds.exercise, codec.kinds.movement]).map { ("\($0.kind)/\($0.id)", $0) })
+
+        // This build.
+        try await api.applyVocabulary(try PackageManifest.bundled().documents(for: api.rehome))
+        let row = try await api.packageRow(KindNames.packageID(authority: repository))
+        #expect(row?["version"] == .number(Decimal(try PackageManifest.bundled().version)))
+        let library = try ExerciseLibrary.bundled()
+        let seeded = try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic).ensure(api, library: library)
+        print("live upgrade: library \(library.version) over 1: \(seeded.written) written, \(seeded.filled) filled, \(seeded.deferred) deferred")
+        #expect(seeded.deferred == 0)
+        let after = Dictionary(uniqueKeysWithValues: try await api.list([codec.kinds.exercise, codec.kinds.movement]).map { ("\($0.kind)/\($0.id)", $0) })
+        // Nothing held changes; a record the library recognises only gains
+        // what it is (its movement, muscles and codes).
+        for (key, record) in before {
+            let now = try #require(after[key]?.properties, "\(key) is gone")
+            for (name, value) in record.properties where name != "codes" {
+                #expect(now[name] == value, "\(key).\(name) changed in the upgrade")
+            }
+            let added = Set(now.keys).subtracting(record.properties.keys)
+            #expect(added.isSubset(of: ["movement", "muscles", "codes", "aliases", "force", "mechanic", "primaryMuscles", "secondaryMuscles"]),
+                    "\(key) gained \(added)")
+        }
+        #expect(after["\(codec.kinds.exercise)/bench-press-dumbbell"]?.properties["loadBasis"] == nil)
+        let marker = try await api.get(codec.kinds.library, LibraryInstall.markerID)
+        #expect(marker?.properties["version"] == .number(Decimal(library.version)))
+
+        // A whole account.
+        let catalog = try await RemoteCatalog(directory: temporaryDirectory(), writingOptions: .atomic).refresh(api)
+        let libraryExercises = try library.catalog().exercises
+        let known = Set(libraryExercises.values.flatMap { $0.codes.filter { $0.system == "hevy" }.map(\.code) })
+        let export = try await HevyClient(apiKey: environment["WORKOUTS_HEVY_API_KEY"] ?? "").export(known: known)
+        let plan = HevyImport.plan(export, exercises: catalog.exercises, routines: catalog.routines, history: [], deleted: [],
+                                   timeZone: TimeZone(identifier: "Europe/London")!, adapter: "substrate-workouts@test", library: libraryExercises)
+        print("live upgrade: \(export.workouts.count) workouts, \(export.routines.count) routines, \(export.measurements.count) body measurements, "
+            + "\(export.templates.count) own exercises, missing \(export.missingTemplates); \(plan.sessions.count) sessions, problems \(plan.problems.count)")
+        #expect(plan.sessions.count == export.workouts.count && plan.routines.count == export.routines.count)
+        #expect(plan.measurements.count == export.measurements.count)
+        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let held = Set(try await api.list([codec.kinds.exercise]).map(\.id))
+        var entries = plan.exercises.filter { !held.contains($0.id.rawValue) }.map { OutboxPlan.exerciseAdded($0, codec: codec) }
+        entries += plan.routines.map { OutboxPlan.routineCreated($0, codec: codec) }
+        entries += plan.measurements.map { OutboxEntry(method: .put, kind: $0.kind, recordID: $0.id, properties: $0.properties) }
+        for records in plan.sessions { entries += OutboxPlan.finished(records, codec: codec) }
+        try await outbox.enqueue(entries)
+        let state = await outbox.flush(api)
+        let parked = await outbox.parked.prefix(3).map { "\($0.kind)/\($0.recordID): \($0.lastError ?? "")" }
+        #expect(state == .sent, "\(parked)")
+        #expect(try await api.list([codec.kinds.bodyMeasurement]).count == export.measurements.count)
+        let sessions = HistoryExchange.plan(server: try await ServerHistory(api: api, codec: codec).snapshot(), local: [], queued: [],
+                                            versions: [:], tombstones: [], codec: codec).imports
+        #expect(sessions.count == plan.sessions.count)
+        #expect(sessions.count { $0.session.bodyMass != nil } == plan.sessions.count { $0.session.bodyMass != nil })
+    }
 }
 

@@ -44,14 +44,21 @@ final class AppModel {
     }
 
     /// Nil until the catalogue decodes (normally at once).
-    private(set) var catalog: Catalog?
+    private(set) var catalog: Catalog? {
+        didSet { dataRevision &+= 1 }
+    }
     /// Where the routines and exercises come from: this build, or the
     /// substrate the app is signed in to (its host).
     private(set) var catalogOrigin: CatalogOrigin = .bundled
     /// Set when a bundled file is missing, a build fault.
     private(set) var catalogFailure: String?
     /// Finished sessions, newest first.
-    private(set) var history: [HistoryEntry] = []
+    private(set) var history: [HistoryEntry] = [] {
+        didSet { dataRevision &+= 1 }
+    }
+    /// Moves on every change to `history` or `catalog`: what a presentation
+    /// worked out from both (the stats) is kept against.
+    private(set) var dataRevision = 0
     private(set) var historyIndex = HistoryIndex()
     private(set) var historyUnreadable: [UnreadableRecord] = []
     /// A session journal that did not load at launch, set aside (§2.3).
@@ -297,11 +304,14 @@ final class AppModel {
     }
 
     /// Sessions the server held from this phone and deleted since: deleted
-    /// here too. Their Apple Health workouts stay.
+    /// here too. Their Apple Health workouts stay. An imported one (`hevy-`)
+    /// is also kept from the next import of the same account or file, as a
+    /// delete on this phone is.
     func removeSessionsDeletedOnServer(_ ids: [SessionID]) {
         guard let historyStore, !ids.isEmpty else { return }
         for id in ids {
             do {
+                if id.rawValue.hasPrefix("hevy-") { try tombstones?.add(id) }
                 try historyStore.delete(id)
                 history.removeAll { $0.id == id }
                 historyIndex.remove(id)

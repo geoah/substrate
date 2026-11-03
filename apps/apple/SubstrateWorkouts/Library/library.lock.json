@@ -1,6 +1,6 @@
 {
- "version": 1,
- "sha256": "ddbd5fc2ed520c1cbb32a9ae9ab0d6d6bdd1de7a8c6a0e0ba37e8c114be7e964",
+ "version": 2,
+ "sha256": "74a3373067c1f41007eba3746f41c43ed290df6ede924bdeeddd1f059f20b5ec",
  "since": {
   "~/training/exercise/21s-bicep-curl": 1,
   "~/training/exercise/3-4-sit-up": 1,

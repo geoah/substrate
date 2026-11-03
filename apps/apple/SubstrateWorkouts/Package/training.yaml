@@ -6,7 +6,8 @@
 # before it applies them. The app's README says how it installs, upgrades and
 # reads the package.
 #
-# Seven kinds, a catalogue, a plan, a log and the coach's memory:
+# Nine kinds, a catalogue, a plan, a log, the coach's memory, what the app
+# seeded, and body measurements:
 #
 #   movement   what you search for, such as Chest Press, and the muscles it
 #              works; the app seeds its exercise library into it
@@ -18,6 +19,8 @@
 #   session    one visit to the gym, as the app ran it ("Training session")
 #   set        one performed set, its own record
 #   memory     one fact the workout coach keeps ("Coach memory")
+#   library    what the app has seeded whole, such as the exercise library
+#   bodymeasurement  one day's body measurements, such as Hevy's
 #
 # ONE RECORD PER SET. A list filter and the aggregate read reach only a
 # kind's top-level properties, so a set's load, reps and effort are
@@ -45,10 +48,11 @@ data:
   # 1: exercise, setup, routine, session and set. 2: memory, the facts the
   # workout coach keeps (decision record 0207). 3: movement, and an
   # exercise's muscles one by one with their share of the work, and its
-  # movement. The app ships each change as
+  # movement. 4: library, what the app has seeded whole, and
+  # bodymeasurement, a day's body measurements. The app ships each change as
   # the next version, additive only, and reads the version a repository
   # holds to decide whether to install, upgrade or stop.
-  version: 3
+  version: 4
 ---
 # ---- the bundle document -----------------------------------------------------
 #
@@ -81,3 +85,5 @@ data:
     - ~/training/session
     - ~/training/set
     - ~/training/memory
+    - ~/training/library
+    - ~/training/bodymeasurement

@@ -1,0 +1,48 @@
+# library: what the app has seeded into the package, one record per seeded
+# collection. Its one record today is `exercises`, the exercise library
+# (decision L1): the library version this repository holds whole.
+#
+# WHY A RECORD. The seeding writes a thousand records and can be cut short
+# (the app sent to the background, the network), and the owner may delete
+# any of them. A run names the version it writes in `seeding` before its
+# first write, and the version on this record is written only after a run
+# that left nothing behind, so the next run, on any device, writes what appeared
+# after it and nothing older: a record the owner deleted never comes back,
+# and a run cut short is finished. An import that copies a library exercise
+# onto the server moves nothing here.
+#
+# DELETING IT is asking for the library again: the next run writes every
+# library record the repository lacks.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ~/training/library
+data:
+  authority: "~"
+  package: training
+  description: >-
+    What Substrate Workouts has seeded into this package, such as the exercise
+    library, and the version of it this repository holds whole.
+  purpose: internal
+  names:
+    singular: library
+  label:
+    singular: Seeded library
+    plural: Seeded libraries
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: what was seeded, such as Exercise library
+    version:
+      type: int
+      min: 1
+      description: the library version this repository holds whole; absent
+        until a first run finishes
+    # Written when a run begins and cleared when it finishes, so a run cut
+    # short is told from a repository an earlier build seeded without this
+    # record, and the next run, on any device, starts again from `version`.
+    seeding:
+      type: int
+      min: 1
+      description: the library version a run is writing, until it finishes

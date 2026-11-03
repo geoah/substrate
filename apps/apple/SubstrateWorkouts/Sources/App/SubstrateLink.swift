@@ -579,17 +579,20 @@ final class SubstrateLink {
         Task { await flush(account) }
     }
 
-    /// Routines from an import (Hevy's): queued as new routines (a create
-    /// that refuses an id another writer took meanwhile), after every new
-    /// exercise they name, since a routine's slots must find theirs; into
-    /// the cached catalogue at once; then sent.
-    func importRoutines(_ routines: [Routine], exercises: [Exercise]) async throws {
+    /// What an import (Hevy's) writes beside the sessions: routines, queued
+    /// as new routines (a create that refuses an id another writer took
+    /// meanwhile) after every new exercise they name, since a routine's slots
+    /// must find theirs, and into the cached catalogue at once; and body
+    /// measurements, each a PUT at the source's id, so an import again
+    /// rewrites the same record. Then sent.
+    func importRecords(routines: [Routine], measurements: [FlatRecord], exercises: [Exercise]) async throws {
         guard let account, let outbox = account.outbox, let remote = account.remote else {
             throw OutboxNotSaved(reason: "the app is not signed in to your substrate.")
         }
         let named = Set(routines.flatMap { $0.slots.map(\.exercise) })
         var entries = exercises.filter { named.contains($0.id) }.map { OutboxPlan.exerciseAdded($0, codec: codec) }
         entries += routines.map { OutboxPlan.routineCreated($0, codec: codec) }
+        entries += measurements.map { OutboxEntry(method: .put, kind: $0.kind, recordID: $0.id, properties: $0.properties) }
         try await outbox.enqueue(entries)
         guard isCurrent(account) else { return }
         do {

@@ -2556,7 +2556,7 @@
   exercises:
     - name: Hip Thrust
       equipment: none
-      measurement: repsonly
+      measurement: bodyweightreps
       restClass: compound
       hevy: [92B8C7E1]
     - name: Hip Thrust (Barbell)
@@ -4365,7 +4365,7 @@
       hevy: [56808FD2]
       fedb: [Band_Assisted_Pull-Up]
     - name: Pull Up (Weighted)
-      equipment: other
+      equipment: none
       measurement: weightedbodyweightreps
       restClass: compound
       hevy: [729237D1]

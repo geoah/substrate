@@ -1,6 +1,6 @@
 {
  "source": "apps/apple/SubstrateWorkouts/Library",
- "version": 1,
+ "version": 2,
  "freeExerciseDB": {
   "repository": "yuhonas/free-exercise-db",
   "commit": "f00c92c7dcf1216a928a52c3706c7ce8e2f71ed5"
@@ -28770,7 +28770,7 @@
    "id": "hip-thrust",
    "properties": {
     "name": "Hip Thrust",
-    "measurement": "repsonly",
+    "measurement": "bodyweightreps",
     "equipment": "none",
     "primaryMuscles": [
      "glutes"
@@ -32802,7 +32802,7 @@
    "properties": {
     "name": "Pull Up (Weighted)",
     "measurement": "weightedbodyweightreps",
-    "equipment": "other",
+    "equipment": "none",
     "primaryMuscles": [
      "lats"
     ],

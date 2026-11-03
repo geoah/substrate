@@ -15,22 +15,39 @@ public struct HevyClient: Sendable {
         self.session = session
     }
 
-    /// The account's workouts, routines and routine folders, and the
-    /// templates of the exercises they name that `known` does not map (the
-    /// account's own custom exercises). `progress` hears each step.
+    /// The account's workouts, routines, routine folders and body
+    /// measurements, its own exercises (every one, used or not), and any
+    /// other template the workouts and routines name that `known` (the
+    /// library's Hevy ids) does not map. A template Hevy no longer serves is
+    /// listed in `missingTemplates`; its sets come in under the workout's
+    /// own title. `progress` hears each step.
     public func export(known: Set<String>, progress: @escaping @Sendable (String) -> Void = { _ in }) async throws -> HevyAPI.Export {
         progress("Reading workouts")
         let workouts: [HevyAPI.Workout] = try await pages("workouts", key: "workouts", pageSize: 10, progress: progress)
         progress("Reading routines")
         let routines: [HevyAPI.Routine] = try await pages("routines", key: "routines", pageSize: 10)
         let folders: [HevyAPI.Folder] = try await pages("routine_folders", key: "routine_folders", pageSize: 10)
+        progress("Reading body measurements")
+        let measurements: [HevyAPI.BodyMeasurement] = try await pages("body_measurements", key: "body_measurements", pageSize: 10)
+        progress("Reading your exercises")
+        let all: [HevyAPI.Template] = try await pages("exercise_templates", key: "exercise_templates", pageSize: 100)
+        var templates = Dictionary(all.filter { $0.isCustom == true }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let served = Set(all.map(\.id))
         let named = Set(workouts.flatMap { $0.exercises.map(\.exerciseTemplateId) } + routines.flatMap { $0.exercises.map(\.exerciseTemplateId) })
-        var templates: [String: HevyAPI.Template] = [:]
-        for id in named.subtracting(known).sorted() {
-            progress("Reading exercise \(templates.count + 1) of \(named.subtracting(known).count)")
-            templates[id] = try await get("exercise_templates/\(id)")
+        var missing: [String] = []
+        for id in named.subtracting(known).subtracting(templates.keys).sorted() {
+            if let template = all.first(where: { $0.id == id }) {
+                templates[id] = template
+            } else if !served.contains(id) {
+                do {
+                    templates[id] = try await get("exercise_templates/\(id)")
+                } catch HevyError.answered(404, _) {
+                    missing.append(id)
+                }
+            }
         }
-        return HevyAPI.Export(workouts: workouts, routines: routines, folders: folders, templates: templates)
+        return HevyAPI.Export(workouts: workouts, routines: routines, folders: folders, templates: templates, measurements: measurements,
+                              missingTemplates: missing)
     }
 
     func pages<T: Decodable>(_ path: String, key: String, pageSize: Int, progress: (@Sendable (String) -> Void)? = nil) async throws -> [T] {

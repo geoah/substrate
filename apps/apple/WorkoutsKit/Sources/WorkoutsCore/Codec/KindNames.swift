@@ -21,6 +21,9 @@ public struct KindNames: Sendable, Hashable {
     public var session: String
     public var set: String
     public var setup: String
+    /// What the app has seeded whole (`library.yaml`).
+    public var library: String
+    public var bodyMeasurement: String
     public var healthWorkout = "substrate.reamde.dev/health/workout"
     public var observationSource = "substrate.reamde.dev/observations/source"
 
@@ -35,6 +38,8 @@ public struct KindNames: Sendable, Hashable {
         session = prefix + "session"
         set = prefix + "set"
         setup = prefix + "setup"
+        library = prefix + "library"
+        bodyMeasurement = prefix + "bodymeasurement"
     }
 
     /// `<authority>/training`, the package's id under `authority`.

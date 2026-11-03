@@ -341,7 +341,7 @@ struct PackageOwnershipTests {
         #expect(try await first.ensure() == .current(held: 1))
         let baseline = try #require(PackageBaseline.load(from: directory))
         #expect(baseline.kinds["ada.example.com/training/set"] == 1)
-        #expect(baseline.kinds.count == 7)
+        #expect(baseline.kinds.count == 9)
 
         // The owner edited the set kind in the console; this build ships 2.
         let upgraded = Locked(0)
@@ -362,7 +362,7 @@ struct PackageOwnershipTests {
             ("ada.example.com/training/\($0)", 1)
         })).save(to: directory, writingOptions: .atomic)
         let applied = Locked(0)
-        let drifted = server(held: 2, kindVersion: { $0 == "routine" ? 3 : 1 }, applied: applied, absent: ["movement"])
+        let drifted = server(held: 2, kindVersion: { $0 == "routine" ? 3 : 1 }, applied: applied, absent: ["movement", "library", "bodymeasurement"])
         let installer = PackageInstaller(api: api(drifted), manifest: try manifest(version: 2), baselineDirectory: directory)
         let state = try await installer.ensure()
         #expect(state == .edited(held: 2, kinds: ["ada.example.com/training/routine"]))
@@ -380,9 +380,42 @@ struct PackageOwnershipTests {
             ("ada.example.com/training/\($0)", 1)
         })).save(to: directory, writingOptions: .atomic)
         let applied = Locked(0)
-        let installer = PackageInstaller(api: api(server(held: 1, kindVersion: { _ in 1 }, applied: applied, absent: ["movement"])), manifest: try manifest(version: 2),
+        let installer = PackageInstaller(api: api(server(held: 1, kindVersion: { _ in 1 }, applied: applied, absent: ["movement", "library", "bodymeasurement"])), manifest: try manifest(version: 2),
                                          baselineDirectory: directory)
         #expect(try await installer.ensure() == .current(held: 2))
+    }
+
+    @Test("another of the owner's devices upgraded the package under this app's client id: adopted, not read as an edit")
+    func upgradedElsewhere() async throws {
+        let client = "https://workouts.example.org/client.json"
+        let directory = temporaryDirectory()
+        try PackageBaseline(version: 2, kinds: Dictionary(uniqueKeysWithValues: ["exercise", "setup", "routine", "session", "set", "memory"].map {
+            ("ada.example.com/training/\($0)", 1)
+        })).save(to: directory, writingOptions: .atomic)
+        func upgraded(declaredByClient: String?) -> ScriptedServer {
+            let server = ScriptedServer()
+            server.on { [packagePath] sent in
+                guard sent.method == "GET", sent.path == packagePath else { return nil }
+                let owner = declaredByClient.map { #","declaredBy":"app:workouts.example.org","declaredByClient":"\#($0)""# } ?? ""
+                return (200, #"{"id":"ada.example.com/training","kind":"substrate.reamde.dev/core/package","properties":{"version":4\#(owner)},"version":3}"#)
+            }
+            server.answer("GET", bundlePath, 404, notFound)
+            server.on { sent in
+                guard sent.method == "GET", sent.path.hasPrefix("/api/v1/substrate.reamde.dev/core/kind/") else { return nil }
+                return (200, #"{"id":"x","kind":"substrate.reamde.dev/core/kind","properties":{},"version":2}"#)
+            }
+            return server
+        }
+        let mine = PackageInstaller(api: api(upgraded(declaredByClient: client)), manifest: try manifest(version: 4), baselineDirectory: directory,
+                                    clientID: client)
+        #expect(try await mine.ensure() == .current(held: 4))
+        #expect(PackageBaseline.load(from: directory)?.version == 4)
+        // Without the app's own client on the row, a moved kind is still an edit.
+        let fresh = temporaryDirectory()
+        try PackageBaseline(version: 2, kinds: ["ada.example.com/training/exercise": 1]).save(to: fresh, writingOptions: .atomic)
+        let unknown = PackageInstaller(api: api(upgraded(declaredByClient: nil)), manifest: try manifest(version: 4), baselineDirectory: fresh,
+                                       clientID: client)
+        guard case .edited = try await unknown.ensure() else { Issue.record("a package not declared by this app was adopted"); return }
     }
 
     @Test("an apply the server refuses for removing what the package holds reads as refused, in its words")

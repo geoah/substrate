@@ -42,7 +42,7 @@ PACKAGE = APPLE / "SubstrateWorkouts/Package"
 # The apply order: the package and its bundle, then each kind after the kinds
 # it names (an exercise names a movement, a setup an exercise, a session a
 # routine, a set the rest).
-FILES = ("training", "movement", "exercise", "setup", "routine", "session", "set", "memory")
+FILES = ("training", "movement", "exercise", "setup", "routine", "session", "set", "memory", "library", "bodymeasurement")
 KINDS = ("movement", "exercise", "routine", "session", "set", "setup")
 RESOURCE = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/training.json"
 COACH = PACKAGE / "coach"

@@ -266,11 +266,22 @@ public struct PackageInstaller: Sendable {
                 try? await record(version: held)
                 return before
             }
+            // Another of the owner's devices upgraded it: the server keeps the
+            // package this app's alone (decision 0205), so a newer version
+            // under this client id is the app's own apply, not an edit.
+            if baseline.version < held, try await declaredByThisApp() {
+                try? await record(version: held)
+                return before
+            }
             let edited = try await edits(since: baseline)
             return edited.isEmpty ? before : .edited(held: held, kinds: edited)
         case let .behind(held):
-            let edited = try await edits(since: baseline)
-            if !edited.isEmpty { return .edited(held: held, kinds: edited) }
+            if let baseline, baseline.version < held, try await declaredByThisApp() {
+                try? await record(version: held)
+            } else {
+                let edited = try await edits(since: baseline)
+                if !edited.isEmpty { return .edited(held: held, kinds: edited) }
+            }
         case .missing:
             break
         }
@@ -289,6 +300,16 @@ public struct PackageInstaller: Sendable {
         let after = try await state()
         if let held = after.held { try? await record(version: held) }
         return after
+    }
+
+    /// Whether the package row names this app's client id as the one that
+    /// declared it. A package an owner took over, or one declared before the
+    /// server recorded the client, answers false.
+    func declaredByThisApp() async throws -> Bool {
+        guard let clientID, let row = try await api.packageRow(packageID) else { return false }
+        guard case let .string(by)? = row["declaredByClient"], case .string? = row["declaredBy"], row["takenOverFrom"] == nil
+        else { return false }
+        return by == clientID
     }
 
     /// Whether the server refused an apply because the package is not this

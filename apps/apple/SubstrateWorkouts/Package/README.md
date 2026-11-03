@@ -16,6 +16,8 @@ Below, `~/training/…` is that name.
 | `training.yaml` | the package document (its version) and the bundle document (`requires`, `installs`) |
 | `movement.yaml` | `~/training/movement`: what you search for and the muscles it works |
 | `exercise.yaml` | `~/training/exercise`, one equipment version of a movement |
+| `library.yaml` | `~/training/library`, what the app has seeded whole (internal) |
+| `bodymeasurement.yaml` | `~/training/bodymeasurement`, one day's body measurements |
 | `setup.yaml` | `~/training/setup`, labelled "Exercise setup" |
 | `routine.yaml` | `~/training/routine`, labelled "Workout routine" |
 | `session.yaml` | `~/training/session`, labelled "Training session" |
@@ -920,13 +922,13 @@ target can hold:
 
 ## Importing
 
-What the package expects of a Hevy importer. Substrate Workouts imports
-Hevy's CSV export (the app's README, "Importing from Hevy"), which carries no
-workout id, template id or set id: its session id is `hevy-<yyyyMMdd>-<HHmm>`
-from the workout's start on the wall and each set's
-`<session id>-<exercise index>-<set index>`, its times are read in the
-phone's zone, and an exercise resolves by name. An importer reading Hevy's
-API keys on the ids below.
+What the package expects of a Hevy importer. Substrate Workouts reads
+Hevy's API and Hevy's CSV export (the app's README, "Importing from Hevy"):
+an API session is `hevy-<workout id>`, a CSV one `hevy-<yyyyMMdd>-<HHmm>`
+from the workout's start on the wall in the zone the owner picks, each set
+`<session id>-<exercise index>-<set index>`, a routine `hevy-<routine id>`
+and a body measurement `hevy-<entry id>`; an exercise resolves by its Hevy
+template id in `codes`, else by name.
 
 - **Ids from upstream keys**: `hevy-<workout id>` for the session and
   `hevy-<workout id>-<exercise index>-<set index>` for each set, indices
