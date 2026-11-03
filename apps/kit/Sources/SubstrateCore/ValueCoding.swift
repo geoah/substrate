@@ -1,5 +1,4 @@
 import Foundation
-import SubstrateCore
 
 /// Any `Codable` to and from a `JSONValue`, as `JSONEncoder` and
 /// `JSONDecoder` do with their default strategies, but with a `JSONValue`
@@ -11,13 +10,31 @@ import SubstrateCore
 /// never through Foundation's coders. A keyed container's keys are written
 /// sorted, so a message is comparable byte for byte; a `JSONValue` object
 /// keeps its own order.
-enum ValueCoding {
-    static func encode(_ value: some Encodable) throws -> JSONValue {
-        try ValueEncoder.box(value, codingPath: []).resolved()
+///
+/// Three types are written as the bridge's restricted model reads them
+/// (`Bridged`), whatever their own coding: a `Date` as an RFC 3339 string
+/// (`Timestamp`, milliseconds where it has a fraction), a `URL` as its
+/// absolute string, a `UUID` as its string. The runtime encodes a
+/// presentation and decodes a command through here too, so what crosses
+/// to Android is the same whichever side wrote it.
+public enum ValueCoding {
+    /// `userInfo` reaches every `encode(to:)` (a `KeyedList` finds where
+    /// it goes there).
+    public static func encode(_ value: some Encodable, userInfo: [CodingUserInfoKey: any Sendable] = [:]) throws -> JSONValue {
+        try ValueEncoder.box(value, codingPath: [], userInfo: userInfo).resolved()
     }
 
-    static func decode<T: Decodable>(_ type: T.Type, from value: JSONValue) throws -> T {
+    public static func decode<T: Decodable>(_ type: T.Type, from value: JSONValue) throws -> T {
         try ValueDecoder(value: value, codingPath: []).unbox(type)
+    }
+}
+
+extension ValueCoding {
+    /// Whole seconds where the instant has no fraction, so a presenter's
+    /// instant reads as it was written; milliseconds otherwise.
+    static func timestamp(_ date: Date) -> String {
+        let seconds = date.timeIntervalSince1970
+        return Timestamp.format(date, precision: seconds == seconds.rounded(.down) ? .seconds : .milliseconds)
     }
 }
 
@@ -25,6 +42,12 @@ enum ValueCoding {
 
 /// A value being written: a container's slot, filled once or by its container.
 private final class Slot {
+    let userInfo: [CodingUserInfoKey: any Sendable]
+
+    init(userInfo: [CodingUserInfoKey: any Sendable]) {
+        self.userInfo = userInfo
+    }
+
     enum Content {
         case empty
         case value(JSONValue)
@@ -49,7 +72,7 @@ private final class Slot {
     func objectSlot(_ key: String) -> Slot {
         var slots: [String: Slot] = [:]
         if case let .object(existing) = content { slots = existing }
-        let slot = slots[key] ?? Slot()
+        let slot = slots[key] ?? Slot(userInfo: userInfo)
         slots[key] = slot
         content = .object(slots)
         return slot
@@ -58,7 +81,7 @@ private final class Slot {
     func appendSlot() -> Slot {
         var slots: [Slot] = []
         if case let .array(existing) = content { slots = existing }
-        let slot = Slot()
+        let slot = Slot(userInfo: userInfo)
         slots.append(slot)
         content = .array(slots)
         return slot
@@ -84,7 +107,7 @@ private struct AnyKey: CodingKey {
 private struct ValueEncoder: Encoder {
     let slot: Slot
     let codingPath: [any CodingKey]
-    var userInfo: [CodingUserInfoKey: Any] { [:] }
+    var userInfo: [CodingUserInfoKey: Any] { slot.userInfo }
 
     func container<Key: CodingKey>(keyedBy _: Key.Type) -> KeyedEncodingContainer<Key> {
         if case .empty = slot.content { slot.content = .object([:]) }
@@ -102,8 +125,8 @@ private struct ValueEncoder: Encoder {
 
     /// One value into a new slot, the types JSONEncoder treats apart treated
     /// as it does, and a `JSONValue` kept as it is.
-    static func box(_ value: some Encodable, codingPath: [any CodingKey]) throws -> Slot {
-        let slot = Slot()
+    static func box(_ value: some Encodable, codingPath: [any CodingKey], userInfo: [CodingUserInfoKey: any Sendable]) throws -> Slot {
+        let slot = Slot(userInfo: userInfo)
         switch value {
         case let json as JSONValue: slot.content = .value(json)
         case let object as JSONObject: slot.content = .value(.object(object))
@@ -113,6 +136,8 @@ private struct ValueEncoder: Encoder {
             }
             slot.content = .value(.number(JSONNumber(decimal)))
         case let url as URL: slot.content = .value(.string(url.absoluteString))
+        case let date as Date: slot.content = .value(.string(ValueCoding.timestamp(date)))
+        case let uuid as UUID: slot.content = .value(.string(uuid.uuidString))
         case let data as Data: slot.content = .value(.string(data.base64EncodedString()))
         default: try value.encode(to: ValueEncoder(slot: slot, codingPath: codingPath))
         }
@@ -160,7 +185,7 @@ private struct KeyedEncoder<Key: CodingKey>: KeyedEncodingContainerProtocol {
     mutating func encode(_ value: UInt64, forKey key: Key) throws { set(ValueEncoder.number(value), key) }
 
     mutating func encode(_ value: some Encodable, forKey key: Key) throws {
-        let boxed = try ValueEncoder.box(value, codingPath: codingPath + [key])
+        let boxed = try ValueEncoder.box(value, codingPath: codingPath + [key], userInfo: slot.userInfo)
         slot.objectSlot(key.stringValue).content = boxed.content
     }
 
@@ -221,7 +246,7 @@ private struct UnkeyedEncoder: UnkeyedEncodingContainer {
     mutating func encode(_ value: UInt64) throws { append(ValueEncoder.number(value)) }
 
     mutating func encode(_ value: some Encodable) throws {
-        let boxed = try ValueEncoder.box(value, codingPath: codingPath + [nextKey])
+        let boxed = try ValueEncoder.box(value, codingPath: codingPath + [nextKey], userInfo: slot.userInfo)
         slot.appendSlot().content = boxed.content
     }
 
@@ -274,7 +299,7 @@ private struct SingleEncoder: SingleValueEncodingContainer {
     mutating func encode(_ value: UInt64) throws { set(ValueEncoder.number(value)) }
 
     mutating func encode(_ value: some Encodable) throws {
-        slot.content = try ValueEncoder.box(value, codingPath: codingPath).content
+        slot.content = try ValueEncoder.box(value, codingPath: codingPath, userInfo: slot.userInfo).content
     }
 }
 
@@ -325,6 +350,16 @@ private struct ValueDecoder: Decoder {
             guard case let .string(text) = value else { throw mismatch(type) }
             guard let url = URL(string: text) else { throw corrupted("not a URL") }
             return url as! T
+        }
+        if type == Date.self {
+            guard case let .string(text) = value else { throw mismatch(type) }
+            guard let date = Timestamp.parse(text) else { throw corrupted("not an RFC 3339 instant") }
+            return date as! T
+        }
+        if type == UUID.self {
+            guard case let .string(text) = value else { throw mismatch(type) }
+            guard let uuid = UUID(uuidString: text) else { throw corrupted("not a UUID") }
+            return uuid as! T
         }
         if type == Data.self {
             guard case let .string(text) = value else { throw mismatch(type) }

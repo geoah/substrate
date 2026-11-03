@@ -209,5 +209,6 @@ public extension CheckRoot {
             return IdleRoot()
         }
         registry.register("counter") { _, context in (Counter(), context.appEnvironment()) }
+        registry.register("ledger") { _, context in (Ledger(), context.appEnvironment()) }
     }
 }

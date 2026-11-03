@@ -3,6 +3,7 @@ import Foundation
 @testable import SubstrateBridgeCheck
 import SubstrateCore
 import SubstrateDevice
+import SubstrateRuntime
 import Testing
 
 /// One value of the round trip (app-kit.md §5.5): Swift encodes it into the
@@ -84,6 +85,12 @@ enum Fixtures {
         .of("RouteCommand", RouteCommand(path: ["a"], command: ["amount": JSONValue.number(JSONNumber("1e-200")!)])),
         .of("CheckResult", CheckResult.ok(name: "double", detail: "", millis: 1e-300)),
         .of("NetworkPath", NetworkPath(online: true, expensive: false)),
+        // A keyed list whole, as a presentation holds it once Kotlin has put
+        // its rows back, and a command that hands a value on with every digit.
+        .of("Ledger.Presentation", Ledger.Presentation(rows: KeyedList([LedgerRow(id: "a", text: unicode), LedgerRow(id: "b", text: "B")],
+                                                                       revision: 7),
+                                                       count: "2 rows", drawn: "Tuesday", note: nil)),
+        .of("Ledger.Command", Ledger.Command.note(value: ["n": JSONValue.number(JSONNumber("1234567890123456789012345678901234567890.5")!)])),
     ]
 
     struct Entry: Codable, Equatable {

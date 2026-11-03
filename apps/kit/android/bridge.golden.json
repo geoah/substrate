@@ -330,6 +330,59 @@
       ]
     },
     {
+      "name": "Ledger.Command",
+      "module": "SubstrateBridgeCheck",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "add",
+          "fields": [
+            {"name": "id", "type": "String"},
+            {"name": "text", "type": "String"}
+          ]
+        },
+        {
+          "name": "change",
+          "fields": [
+            {"name": "id", "type": "String"},
+            {"name": "text", "type": "String"}
+          ]
+        },
+        {
+          "name": "remove",
+          "fields": [
+            {"name": "id", "type": "String"}
+          ]
+        },
+        {
+          "name": "note",
+          "fields": [
+            {"name": "value", "type": "JSON"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Ledger.Presentation",
+      "module": "SubstrateBridgeCheck",
+      "kind": "struct",
+      "fields": [
+        {"name": "rows", "type": "KeyedList<LedgerRow>"},
+        {"name": "count", "type": "String"},
+        {"name": "drawn", "type": "String"},
+        {"name": "note", "type": "JSON?"}
+      ]
+    },
+    {
+      "name": "LedgerRow",
+      "module": "SubstrateBridgeCheck",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "text", "type": "String"}
+      ]
+    },
+    {
       "name": "ListMessage",
       "module": "SubstrateBridge",
       "kind": "enum",

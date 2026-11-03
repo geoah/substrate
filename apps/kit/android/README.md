@@ -37,6 +37,22 @@ Messages are read and written with `JSONValue`'s exact reader and writer,
 so a number crosses with every digit. The host tests
 (`SubstrateBridgeTests`) hold each of those rules.
 
+A runtime root's presentation crosses without its keyed lists' rows. The
+runtime encodes each tree (`Runtime.encodedFrames()`) with every
+`KeyedList` in it written as `{"$list": "app/tasks", "revision": 4}`, the
+list named by where it sits in the tree, and hands over beside it the lists
+whose rows moved, at a revision of the crossing's own that only moves
+forward. `RuntimeRoot` publishes those first, whole the first time and as
+deltas after, then the tree, so a tree always follows the rows it names.
+Kotlin applies the lists to the handle's state, and `HandleSnapshot.tree`
+is the presentation with each reference replaced by its list's
+`{"revision", "rows"}` (`KeyedListTree`), made again only when every list
+it names is at the revision it names; `BridgeHandle.presentations` decodes
+that, so the generated `KeyedList<Row>` reads it as Swift presented it. A
+command is read with the exact reader and decoded by `ValueCoding`, so a
+`JSONValue` in it keeps its digits, and a new locale or time zone has
+`Runtime.environmentChanged` present the whole tree again.
+
 A body too large for a message is a file under `noBackupFilesDir/bridge`,
 deleted by whichever side holds it last and swept when kit-device's
 `Transport` is made; a credential exchange's never is. A locale or time

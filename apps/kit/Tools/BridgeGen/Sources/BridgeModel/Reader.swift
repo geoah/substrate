@@ -9,6 +9,7 @@ public struct Reader {
     /// The leaf types a field may name besides the declarations themselves.
     static let leaves: [String: BridgedType] = [
         "String": .string, "Bool": .bool, "Int": .int, "Double": .double, "JSONValue": .json,
+        "Date": .date, "URL": .url, "UUID": .uuid,
     ]
 
     /// Names Swift and the JSON agree on but Kotlin's generated code would
@@ -20,16 +21,26 @@ public struct Reader {
     /// they extend: refused once every file is read, for the bridged ones.
     private var extensionCoding: [(extended: String, location: String, what: String)] = []
     public private(set) var errors: [ModelError] = []
+    /// Types outside the model a field may still name, crossing as their
+    /// own JSON (`BridgedType.opaque`).
+    let opaque: Set<String>
 
-    public init() {}
+    public init(opaque: Set<String> = []) {
+        self.opaque = opaque
+    }
 
-    /// Reads one file. `module` is its target's name, `path` how errors name it.
-    public mutating func read(source: String, module: String, path: String) {
+    /// Reads one file. `module` is its target's name, `path` how errors name
+    /// it; `external` marks what another configuration generates.
+    public mutating func read(source: String, module: String, path: String, external: Bool = false) {
         let tree = Parser.parse(source: source)
         let converter = SourceLocationConverter(fileName: path, tree: tree)
         let visitor = Visitor(module: module, path: path, converter: converter)
         visitor.walk(tree)
-        pending += visitor.found
+        pending += visitor.found.map { item in
+            var item = item
+            item.declaration.external = external
+            return item
+        }
         extensionCoding += visitor.extensionCoding
         errors += visitor.errors
     }
@@ -51,11 +62,13 @@ public struct Reader {
             guard let name = candidates.first(where: { names[$0] != nil }) else { continue }
             errors.append(ModelError(location: item.location, message: "\(name) \(item.what) in an extension; a bridged value keeps the synthesized coding"))
         }
+        var arity: [String: Int] = [:]
+        for item in pending { arity[item.declaration.name] = item.declaration.parameters.count }
         var declarations: [Declaration] = []
         for item in pending {
             var declaration = item.declaration
             func resolve(_ raw: RawType, _ what: String) -> BridgedType? {
-                switch Self.resolve(raw, scope: item.scope, names: Set(names.keys)) {
+                switch Self.resolve(raw, scope: item.scope, names: arity, parameters: Set(declaration.parameters), opaque: opaque) {
                 case let .success(type): return type
                 case let .failure(refusal):
                     errors.append(ModelError(location: item.location, message: "\(declaration.name).\(what): \(refusal.text)"))
@@ -83,30 +96,67 @@ public struct Reader {
         return Model(declarations: declarations.sorted { $0.name < $1.name })
     }
 
-    static func resolve(_ raw: RawType, scope: [String], names: Set<String>) -> Result<BridgedType, Refusal> {
+    /// - Parameters:
+    ///   - names: every declaration's qualified name, with how many type
+    ///     parameters it takes.
+    ///   - parameters: the type parameters of the declaration being read.
+    static func resolve(_ raw: RawType, scope: [String], names: [String: Int], parameters: Set<String> = [],
+                        opaque: Set<String> = []) -> Result<BridgedType, Refusal>
+    {
+        func again(_ raw: RawType) -> Result<BridgedType, Refusal> {
+            resolve(raw, scope: scope, names: names, parameters: parameters, opaque: opaque)
+        }
+        // Inner scopes first, as Swift looks a name up.
+        func declared(_ name: String) -> String? {
+            for depth in stride(from: scope.count, through: 0, by: -1) {
+                let candidate = (scope.prefix(depth) + [name]).joined(separator: ".")
+                if names[candidate] != nil { return candidate }
+            }
+            return nil
+        }
         switch raw {
         case let .optional(wrapped):
             if case .optional = wrapped { return .failure(Refusal("an optional of an optional, which JSON cannot tell from one")) }
-            return resolve(wrapped, scope: scope, names: names).map(BridgedType.optional)
+            return again(wrapped).map(BridgedType.optional)
         case let .array(element):
-            return resolve(element, scope: scope, names: names).map(BridgedType.array)
+            return again(element).map(BridgedType.array)
         case let .dictionary(key, value):
             guard case .name("String") = key else { return .failure(Refusal("a dictionary keyed by other than String")) }
             if case .optional = value { return .failure(Refusal("a dictionary of optionals, whose nil JSON cannot tell from absent")) }
-            return resolve(value, scope: scope, names: names).map(BridgedType.dictionary)
-        case let .name(name):
-            if let leaf = leaves[name] { return .success(leaf) }
-            // Inner scopes first, as Swift looks a name up.
-            for depth in stride(from: scope.count, through: 0, by: -1) {
-                let candidate = (scope.prefix(depth) + [name]).joined(separator: ".")
-                if names.contains(candidate) { return .success(.named(candidate)) }
+            return again(value).map(BridgedType.dictionary)
+        case let .generic("KeyedList", arguments):
+            guard arguments.count == 1 else { return .failure(Refusal("a KeyedList takes one row type")) }
+            switch again(arguments[0]) {
+            case let .success(.named(row)): return .success(.keyedList(.named(row)))
+            case .success: return .failure(Refusal("a KeyedList's row is a Bridged struct with a String id"))
+            case let .failure(refusal): return .failure(refusal)
             }
+        case let .generic(name, arguments):
+            guard let qualified = declared(name) else { return .failure(Refusal("\(name) is neither in the model nor declared Bridged")) }
+            guard names[qualified] == arguments.count else {
+                return .failure(Refusal("\(qualified) takes \(names[qualified] ?? 0) type arguments, not \(arguments.count)"))
+            }
+            var resolved: [BridgedType] = []
+            for argument in arguments {
+                switch again(argument) {
+                case let .success(type): resolved.append(type)
+                case let .failure(refusal): return .failure(refusal)
+                }
+            }
+            return .success(.generic(qualified, resolved))
+        case let .name(name):
+            if parameters.contains(name) { return .success(.parameter(name)) }
+            if let leaf = leaves[name] { return .success(leaf) }
+            if let qualified = declared(name) {
+                guard names[qualified] == 0 else { return .failure(Refusal("\(qualified) is generic; name its type arguments")) }
+                return .success(.named(qualified))
+            }
+            if opaque.contains(name) { return .success(.opaque(name)) }
             switch name {
             case "Decimal": return .failure(Refusal("Decimal encodes as a JSON number; carry it as a String (DecimalText)"))
-            case "Date": return .failure(Refusal("Date encodes as seconds since 2001; carry it as an RFC 3339 String (Timestamp)"))
             case "Float", "Int8", "Int16", "Int32", "Int64", "UInt", "UInt8", "UInt16", "UInt32", "UInt64":
                 return .failure(Refusal("\(name) is not in the model; use Int or Double"))
-            case "Data", "URL", "UUID": return .failure(Refusal("\(name) is not in the model; carry it as a String"))
+            case "Data": return .failure(Refusal("\(name) is not in the model; carry it as a String"))
             default: return .failure(Refusal("\(name) is neither in the model nor declared Bridged"))
             }
         case let .refused(spelling, why):
@@ -125,6 +175,7 @@ struct Refusal: Error {
 
 indirect enum RawType: Equatable {
     case name(String)
+    case generic(String, [RawType])
     case optional(RawType)
     case array(RawType)
     case dictionary(RawType, RawType)
@@ -216,7 +267,9 @@ private final class Visitor: SyntaxVisitor {
 
     override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
         if Self.inherits(node.inheritanceClause).contains("Bridged") {
-            if node.genericParameterClause != nil { refuse(node, "\(node.name.text) is generic; a bridged value is not") }
+            // A generic struct's parameters are its fields' types as Kotlin's
+            // generic data class takes them (`ActionButton<Action>`).
+            let parameters = node.genericParameterClause?.parameters.map(\.name.text) ?? []
             let name = (scope + [node.name.text]).joined(separator: ".")
             for (member, what) in Self.handwritten(node.memberBlock) { refuse(member, "\(name) \(what)") }
             var fields: [RawField] = []
@@ -255,8 +308,8 @@ private final class Visitor: SyntaxVisitor {
                     fields.append(RawField(name: field, type: Self.raw(type)))
                 }
             }
-            found.append((Declaration(name: name, module: module, kind: .struct, fields: [], cases: []), location(node), scope + [node.name.text],
-                          .fields(fields)))
+            found.append((Declaration(name: name, module: module, kind: .struct, fields: [], cases: [], parameters: parameters), location(node),
+                          scope + [node.name.text], .fields(fields)))
         }
         scope.append(node.name.text)
         return .visitChildren
@@ -294,13 +347,12 @@ private final class Visitor: SyntaxVisitor {
                         }
                     }
                     var fields: [RawField] = []
-                    for parameter in element.parameterClause?.parameters ?? [] {
-                        guard let label = parameter.firstName, label.tokenKind != .wildcard else {
-                            refuse(parameter, "\(name).\(element.name.text) has an unlabelled payload, which encodes as _0; label it")
-                            continue
-                        }
-                        if parameter.defaultValue != nil { refuse(parameter, "\(name).\(element.name.text).\(label.text) has a default") }
-                        fields.append(RawField(name: label.text, type: Self.raw(parameter.type)))
+                    for (index, parameter) in (element.parameterClause?.parameters ?? []).enumerated() {
+                        // An unlabelled value is keyed by its place, as the
+                        // synthesized coding writes it: `_0`, `_1`.
+                        let label = parameter.firstName.flatMap { $0.tokenKind == .wildcard ? nil : $0.text } ?? "_\(index)"
+                        if parameter.defaultValue != nil { refuse(parameter, "\(name).\(element.name.text).\(label) has a default") }
+                        fields.append(RawField(name: label, type: Self.raw(parameter.type)))
                     }
                     cases.append(RawCase(name: element.name.text, rawValue: rawValue, fields: fields))
                 }
@@ -357,7 +409,7 @@ private final class Visitor: SyntaxVisitor {
             case ("Array", 1): return .array(raw(arguments[0]))
             case ("Dictionary", 2): return .dictionary(raw(arguments[0]), raw(arguments[1]))
             case (_, 0): return .name(name)
-            default: return .refused(type.trimmedDescription, "a generic type")
+            default: return .generic(name, arguments.map(raw))
             }
         }
         return .refused(type.trimmedDescription, "a type the model does not hold")

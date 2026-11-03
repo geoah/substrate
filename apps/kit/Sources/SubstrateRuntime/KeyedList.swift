@@ -2,9 +2,29 @@
 /// id with a revision (§5.5), so a change goes over the Android bridge as a
 /// delta of the rows it touched instead of the whole list again. The
 /// revision moves only when a row or the order changes.
+///
+/// Encoded for the bridge (`KeyedListCrossing` in the encoder's `userInfo`),
+/// a list writes only where it went, `{"$list": name, "revision": n}`, and
+/// the crossing hands the rows over apart; encoded anywhere else (a journal,
+/// a fixture), it writes its revision and rows.
 public struct KeyedList<Row: Codable & Equatable & Sendable & Identifiable>: Codable, Equatable, Sendable where Row.ID == String {
     public private(set) var revision: Int
     public private(set) var rows: [Row]
+
+    enum CodingKeys: String, CodingKey { case revision, rows }
+
+    public func encode(to encoder: any Encoder) throws {
+        if let crossing = encoder.userInfo[KeyedListCrossing.userInfoKey] as? KeyedListCrossing {
+            let reference = crossing.carry(self, at: encoder.codingPath)
+            var container = encoder.container(keyedBy: KeyedListReference.CodingKeys.self)
+            try container.encode(reference.list, forKey: .list)
+            try container.encode(reference.revision, forKey: .revision)
+            return
+        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(revision, forKey: .revision)
+        try container.encode(rows, forKey: .rows)
+    }
 
     /// A row whose id came earlier in `rows` is left out.
     public init(_ rows: [Row] = [], revision: Int = 0) {

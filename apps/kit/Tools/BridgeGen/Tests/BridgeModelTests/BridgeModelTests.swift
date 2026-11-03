@@ -42,7 +42,6 @@ struct BridgeModelTests {
 
     @Test func refusesWhatTheModelDoesNotHold() {
         let cases: [(String, String)] = [
-            ("struct A: Bridged { var at: Date }", "Date"),
             ("struct A: Bridged { var amount: Decimal }", "Decimal"),
             ("struct A: Bridged { var n = 0 }", "no written type"),
             ("struct A: Bridged { let n: Int = 0 }", "let with a value"),
@@ -51,8 +50,6 @@ struct BridgeModelTests {
             ("struct A: Bridged { var double: String?? }", "optional of an optional"),
             ("struct A: Bridged { var a: Int; enum CodingKeys: String, CodingKey { case a } }", "CodingKeys"),
             ("struct A: Bridged { var a: Int; func encode(to encoder: Encoder) throws {} }", "encode(to:)"),
-            ("struct A<T>: Bridged { var a: Int }", "generic"),
-            ("enum E: Bridged { case one(String) }", "unlabelled payload"),
             ("enum E: Int, Bridged { case one }", "raw value is a String"),
             ("enum E: Bridged { case name }", "Kotlin reserves"),
             ("struct A {}\nextension A: Bridged {}", "in an extension"),
@@ -66,6 +63,11 @@ struct BridgeModelTests {
             ("extension Bridged { func encode(to encoder: Encoder) throws {} }", "every bridged value"),
             ("struct A: Bridged { typealias CodingKeys = K; var a: Int }", "CodingKeys"),
             ("struct A: Bridged { @Clamped var a: Int }", "property wrapper"),
+            ("enum E<T>: Bridged { case one(value: T) }", "generic"),
+            ("struct B<T>: Bridged { var t: T }\nstruct A: Bridged { var b: B }", "name its type arguments"),
+            ("struct B<T>: Bridged { var t: T }\nstruct A: Bridged { var b: B<Int, Int> }", "takes 1 type arguments"),
+            ("struct A: Bridged { var rows: KeyedList<Int> }", "KeyedList's row"),
+            ("struct A: Bridged { var probe: Probe }", "neither in the model"),
         ]
         for (source, words) in cases {
             let (model, errors) = model(source)
@@ -93,6 +95,71 @@ struct BridgeModelTests {
         let kotlin = try Kotlin.write(try #require(model), package: "p", fingerprint: "f", generatedBy: "test")
         #expect(kotlin.contains("public object Counter {\n    @Serializable(with = Counter.Command.Serializer::class)"))
         #expect(kotlin.contains("    public data class Presentation(\n        val count: Long,\n    )"))
+    }
+
+    @Test func instantsAddressesAndIdsCrossAsStrings() throws {
+        let (model, errors) = model("struct A: Bridged { var at: Date; var url: URL?; var id: UUID }")
+        #expect(errors.isEmpty, "\(errors)")
+        #expect(model?.declaration("A")?.fields.map(\.type) == [.date, .optional(.url), .uuid])
+        let kotlin = try Kotlin.write(try #require(model), package: "p", fingerprint: "f", generatedBy: "test")
+        #expect(kotlin.contains("    val at: String,\n    val url: String? = null,\n    val id: String,"))
+    }
+
+    @Test func anUnlabelledPayloadIsKeyedByItsPlaceAndNamedValueInKotlin() throws {
+        let (model, errors) = model("enum E: Bridged { case one(String); case two(String, verbatim: Bool); case three(Int, Int) }")
+        #expect(errors.isEmpty, "\(errors)")
+        #expect(model?.declaration("E")?.cases.map { $0.fields.map(\.name) } == [["_0"], ["_0", "verbatim"], ["_0", "_1"]])
+        let kotlin = try Kotlin.write(try #require(model), package: "p", fingerprint: "f", generatedBy: "test")
+        #expect(kotlin.contains("public data class One(\n        @SerialName(\"_0\") val value: String,\n    ) : E"))
+        #expect(kotlin.contains("@SerialName(\"_0\") val value: String,\n        val verbatim: Boolean,"))
+        #expect(kotlin.contains("@SerialName(\"_0\") val value0: Long,\n        @SerialName(\"_1\") val value1: Long,"))
+    }
+
+    @Test func aGenericStructIsAGenericDataClass() throws {
+        let (model, errors) = model("""
+        struct Button<Action: Codable & Sendable>: Bridged { var title: String; var action: Action }
+        enum Go: String, Bridged { case on }
+        struct Screen<App: Codable>: Bridged { var go: Button<Go>?; var app: App?; var all: [Button<Go>] }
+        """)
+        #expect(errors.isEmpty, "\(errors)")
+        #expect(model?.declaration("Button")?.parameters == ["Action"])
+        #expect(model?.declaration("Screen")?.fields.map(\.type.spelling) == ["Button<Go>?", "App?", "[Button<Go>]"])
+        let kotlin = try Kotlin.write(try #require(model), package: "p", fingerprint: "f", generatedBy: "test")
+        #expect(kotlin.contains("public data class Button<Action>(\n    val title: String,\n    val action: Action,\n)"))
+        #expect(kotlin.contains("val go: Button<Go>? = null,\n    val app: App? = null,"))
+        // A generic one takes its arguments' serializers, so the round trip's map leaves it out.
+        #expect(!kotlin.contains("\"Button\" to"))
+        #expect(Golden.write(try #require(model)).contains("\"parameters\": [\"Action\"]"))
+    }
+
+    @Test func aKeyedListAndAnOpaqueTypeAreKnownByName() throws {
+        var reader = Reader(opaque: ["Probe.Result"])
+        reader.read(source: """
+        struct Row: Bridged { var id: String }
+        struct A: Bridged { var rows: KeyedList<Row>; var found: Probe.Result? }
+        """, module: "M", path: "M.swift")
+        let read = reader.model()
+        let model = try #require(read, "\(reader.errors)")
+        #expect(model.declaration("A")?.fields.map(\.type.spelling) == ["KeyedList<Row>", "JSON(Probe.Result)?"])
+        let kotlin = try Kotlin.write(model, package: "p", fingerprint: "f", generatedBy: "test")
+        #expect(kotlin.contains("val rows: KeyedList<Row>,\n    val found: @Serializable(with = ExactJson::class) JsonElement? = null,"))
+    }
+
+    @Test func aConfigurationThatUsesAnotherGeneratesOnlyItsOwnAndImportsTheRest() throws {
+        var reader = Reader()
+        reader.read(source: "struct Kit { enum Tone: String, Bridged { case calm } }\nstruct Button<A: Codable>: Bridged { var action: A }",
+                    module: "Kit", path: "Kit.swift", external: true)
+        reader.read(source: "struct Mine: Bridged { var tone: Kit.Tone; var button: Button<Kit.Tone> }", module: "App", path: "App.swift")
+        let read = reader.model()
+        let model = try #require(read, "\(reader.errors)")
+        let kotlin = try Kotlin.write(model, package: "app", fingerprint: "f", generatedBy: "test", uses: ["kit"])
+        #expect(kotlin.contains("import kit.*"))
+        #expect(kotlin.contains("public data class Mine(\n    val tone: Kit.Tone,\n    val button: Button<Kit.Tone>,\n)"))
+        #expect(!kotlin.contains("enum class Tone"))
+        #expect(!kotlin.contains("object Kit"))
+        #expect(!kotlin.contains("object ExactJson"))
+        #expect(Golden.write(model.own).contains("\"Mine\""))
+        #expect(!Golden.write(model.own).contains("\"name\": \"Kit.Tone\""))
     }
 
     @Test func theFingerprintIsTheGoldensSHA256() {

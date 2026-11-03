@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "c03b41d05af3e1af84fc3b9740c7326d741343717674202925e522ba00091bb5"
+    public const val VALUE: String = "9f1d49f32b5991b09878f146b24325ac610bc970c719a39feabd0829b408ad2b"
 }
 
 /**
@@ -66,6 +66,17 @@ public object ExactJson : KSerializer<JsonElement> {
         is JsonArray -> JsonArray(element.map(::exact))
     }
 }
+
+/**
+ * SubstrateRuntime's `KeyedList`: its rows and the revision they are at.
+ * A presentation crosses with each one as a reference to the list sent
+ * apart, and `KeyedListTree` puts the rows back before it is decoded.
+ */
+@Serializable
+public data class KeyedList<Row>(
+    val revision: Long,
+    val rows: List<Row>,
+)
 
 /** Swift's synthesized enum coding: an object of one key, the case, holding its payload. */
 public class SwiftEnumSerializer<T : Any>(
@@ -385,6 +396,12 @@ public data class Handle(
     val generation: Long,
 )
 
+@Serializable
+public data class LedgerRow(
+    val id: String,
+    val text: String,
+)
+
 @Serializable(with = ListMessage.Serializer::class)
 public sealed interface ListMessage {
     @Serializable
@@ -656,6 +673,51 @@ public object Counter {
     )
 }
 
+public object Ledger {
+    @Serializable(with = Ledger.Command.Serializer::class)
+    public sealed interface Command {
+        @Serializable
+        public data class Add(
+            val id: String,
+            val text: String,
+        ) : Command
+
+        @Serializable
+        public data class Change(
+            val id: String,
+            val text: String,
+        ) : Command
+
+        @Serializable
+        public data class Remove(
+            val id: String,
+        ) : Command
+
+        @Serializable
+        public data class Note(
+            val value: @Serializable(with = ExactJson::class) JsonElement,
+        ) : Command
+
+        public object Serializer : KSerializer<Ledger.Command> by SwiftEnumSerializer(
+            "Ledger.Command",
+            listOf(
+                SwiftEnumSerializer.Case("add", Add::class, Add.serializer()),
+                SwiftEnumSerializer.Case("change", Change::class, Change.serializer()),
+                SwiftEnumSerializer.Case("remove", Remove::class, Remove.serializer()),
+                SwiftEnumSerializer.Case("note", Note::class, Note.serializer()),
+            ),
+        )
+    }
+
+    @Serializable
+    public data class Presentation(
+        val rows: KeyedList<LedgerRow>,
+        val count: String,
+        val drawn: String,
+        val note: @Serializable(with = ExactJson::class) JsonElement? = null,
+    )
+}
+
 /** Every bridged value's serializer by its Swift name, for the round-trip fixtures. */
 public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "BridgeFailure" to BridgeFailure.serializer(),
@@ -674,6 +736,9 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "Envelope" to Envelope.serializer(),
     "EnvironmentUpdate" to EnvironmentUpdate.serializer(),
     "Handle" to Handle.serializer(),
+    "Ledger.Command" to Ledger.Command.Serializer,
+    "Ledger.Presentation" to Ledger.Presentation.serializer(),
+    "LedgerRow" to LedgerRow.serializer(),
     "ListMessage" to ListMessage.Serializer,
     "ListRow" to ListRow.serializer(),
     "NetworkPath" to NetworkPath.serializer(),
