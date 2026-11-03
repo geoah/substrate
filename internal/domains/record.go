@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Label is the DNS label the record lives under: `_substrate.<name>`.
@@ -166,6 +167,26 @@ type Resolver interface {
 	LookupTXT(ctx context.Context, name string) ([]string, error)
 }
 
+// LookupTimeout bounds one lookup of a `_substrate` record, retries
+// included, so a slow or unreachable resolver cannot hold an approval, a
+// token exchange or a check open for the resolver's own retry schedule.
+const LookupTimeout = 5 * time.Second
+
+// NewResolver is the resolver every `_substrate` lookup asks: the system's
+// when addr is empty, else the DNS server at addr (`host:port`,
+// SUBSTRATE_DNS_RESOLVER), so an operator can point the proofs at a
+// validating resolver. A TXT answer is only as trustworthy as the resolver
+// that fetched it, and few zones are signed.
+func NewResolver(addr string) Resolver {
+	if addr == "" {
+		return net.DefaultResolver
+	}
+	return &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		d := net.Dialer{Timeout: LookupTimeout}
+		return d.DialContext(ctx, network, addr)
+	}}
+}
+
 // Lookup resolves and parses the record of name. A name with no record, or
 // whose label does not exist, answers found false and no error: absence is
 // the common case, not a failure. Any other resolver error is returned, so a
@@ -178,6 +199,8 @@ func Lookup(ctx context.Context, r Resolver, name string) (Record, bool, error) 
 	if name == "" || len(name) > maxName || strings.ContainsAny(name, "/:@ ") || !strings.Contains(name, ".") {
 		return Record{}, false, fmt.Errorf("%q is not a domain name", name)
 	}
+	ctx, cancel := context.WithTimeout(ctx, LookupTimeout)
+	defer cancel()
 	txts, err := r.LookupTXT(ctx, Label+"."+name+".")
 	if err != nil {
 		var dnsErr *net.DNSError

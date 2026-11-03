@@ -406,3 +406,22 @@ func TestInsecureAuthorityDocsIsAListOfAuthorityAndPath(t *testing.T) {
 		}
 	}
 }
+
+// SUBSTRATE_DNS_RESOLVER names a DNS server as host:port, or nothing for
+// the system's resolver; anything else refuses the boot, naming the
+// variable.
+func TestTheDNSResolverIsHostAndPort(t *testing.T) {
+	good := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	base := Config{
+		Port: "8080", CredentialKey: good, Data: Data{Root: t.TempDir(), ChangelogSegmentBytes: MinChangelogSegmentBytes},
+		RepositoryConnections: 16, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour,
+	}
+	for value, ok := range map[string]bool{"": true, "127.0.0.1:53": true, "[::1]:5353": true, "dns.example.net:53": true, "127.0.0.1": false, ":53": false, "dns.example.net:": false} {
+		c := base
+		c.DNSResolver = value
+		err := c.Validate()
+		if ok != (err == nil) || (err != nil && !strings.Contains(err.Error(), "SUBSTRATE_DNS_RESOLVER")) {
+			t.Errorf("SUBSTRATE_DNS_RESOLVER=%q: Validate = %v", value, err)
+		}
+	}
+}
