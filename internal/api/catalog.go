@@ -3,9 +3,11 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
@@ -25,6 +27,24 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 		home := homeAuthority(r.Context())
 		for _, b := range h.catalog.Bundles() {
 			items = append(items, h.catalogItemFor(r, b, installed.copyOf(b, home)))
+		}
+		for _, id := range installed.ids {
+			if _, binary := h.catalog.ByID(id); binary {
+				continue
+			}
+			ds := DatasetFrom(r.Context())
+			row, err := ds.Get(r.Context(), "substrate.reamde.dev/core/package", id)
+			if err != nil || row.Properties["publishedFrom"] == nil {
+				continue
+			}
+			b, err := h.catalog.ResolveFor(r.Context(), id, 0, ds)
+			if err != nil {
+				st := installed.byID[id]
+				from, _ := row.Properties["publishedFrom"].(string)
+				items = append(items, substrate.CatalogItem{CatalogBundle: substrate.CatalogBundle{ID: id, Name: st.Name, Authority: st.Authority, Package: st.Package, Tier: substrate.TierProvider, Publisher: &substrate.AuthorizationPackagePublisher{Authority: st.Authority, DocumentURL: from, FromFile: strings.HasPrefix(from, "file:")}}, Installed: true, Upgrade: &substrate.BundleUpgrade{Blockers: []string{err.Error()}}})
+				continue
+			}
+			items = append(items, h.catalogItemFor(r, b, installed.byID[id]))
 		}
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(items))
@@ -49,9 +69,9 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, codeNotFound, "no catalog is shipped")
 		return
 	}
-	b, ok := h.catalog.ByID(pathParam(r, "id"))
-	if !ok {
-		writeError(w, http.StatusNotFound, codeNotFound, "unknown bundle "+pathParam(r, "id"))
+	b, err := h.catalog.ResolveFor(r.Context(), pathParam(r, "id"), 0, DatasetFrom(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusNotFound, codeNotFound, err.Error())
 		return
 	}
 	installed, err := h.installedBundles(r.Context())
@@ -211,6 +231,11 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 	ctx := r.Context()
 	b, suggested, err := take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx), req.Confirm)
 	if err != nil {
+		if errors.Is(err, catalog.ErrNotPublished) {
+			writeError(w, http.StatusNotFound, codeNotFound, err.Error())
+			return
+		}
+
 		writeSubstrateError(w, r, err)
 		return
 	}

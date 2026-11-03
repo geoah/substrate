@@ -1040,3 +1040,20 @@ triggers), are the [Bundles catalog](bundles-catalog.md).
 
 Next: [functions](functions.md), the callables a bundle ships, and the
 host SDK.
+
+## Packages published through authority documents
+
+The catalog also resolves a package id through its publisher's authority
+document. Use the same install command or catalog install endpoint as for a
+shipped provider. Requirements can come from either source; shipped ids
+always use the binary. The package page identifies the publisher and its
+document, or says that it came from a file on this server.
+
+Published packages keep their release version and closure digest.
+Reinstalling a held version with different bytes or installing an older
+release is refused. Additive kinds-only releases may refresh automatically;
+other changes remain an upgrade offer. An offer names connected app builds
+holding a narrowing release back.
+
+**Take over…** makes a document-published package yours to edit and stops
+publisher upgrades. Your records remain in the package.

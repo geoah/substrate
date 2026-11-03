@@ -203,6 +203,7 @@ var wireTypes = map[string]any{
 	// The upgrade preview: a catalog entry carries one for an installed
 	// provider. The Registry renders the motion and the blockers.
 	"BundleUpgrade":       BundleUpgrade{},
+	"BundleUpgradeHolder": BundleUpgradeHolder{},
 	"BundleUpgradeChange": BundleUpgradeChange{},
 	// The conversion plan every upgrade preview carries flattened, the step it
 	// lists, the consent a lossy plan needs, and the apply's own preview.

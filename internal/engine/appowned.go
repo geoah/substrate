@@ -131,7 +131,8 @@ func (ds *dataset) TakeOverPackage(ctx context.Context, actor substrate.Actor, p
 			return fmt.Errorf("%w: package %s", substrate.ErrNotFound, pkg)
 		}
 		owner := substrate.PackageOwnerOf(row.Props)
-		if !owner.App() {
+		published, _ := row.Props["publishedFrom"].(string)
+		if !owner.App() && published == "" {
 			return fmt.Errorf("%w: %s is not managed by an app: its declarations are already yours to change", substrate.ErrConflict, pkg)
 		}
 		ty, err := ds.resolveType(kindPackage)
@@ -149,6 +150,12 @@ func (ds *dataset) TakeOverPackage(ctx context.Context, actor substrate.Actor, p
 		}
 		if ty.Props[propPackageDeclaredByClient] != nil {
 			props[propPackageDeclaredByClient] = nil
+		}
+		if published != "" {
+			authority, _ := vocabulary.SplitPackageRef(pkg)
+			props["source"] = "installed"
+			props["takenOverFrom"] = authority
+			props["publishedFrom"] = nil
 		}
 		out, err = t.putKind(ty, substrate.PutInput{Kind: kindPackage, ID: pkg, Properties: props})
 		return err

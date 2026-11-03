@@ -1,5 +1,7 @@
 package substrate
 
+import "time"
+
 // BundleStatus is one installed bundle's runtime state, computed on read:
 // lifecycle (Installed/Enabled), each declared input's resolution, and the
 // setup steps that stand between the bundle and every runtime path it ships.
@@ -84,6 +86,8 @@ type BundleStatus struct {
 // preview, so the console can offer the upgrade, or explain why it would be
 // refused, before anyone asks for it.
 type BundleUpgrade struct {
+	Holders        []BundleUpgradeHolder `json:"holders,omitempty"`
+	ReviewRequired bool                  `json:"reviewRequired,omitempty"`
 	// Available reports the shipped closure moves at least one stored
 	// declaration: a declaration this repository lacks, one whose shipped
 	// version is newer, or one the closure stopped shipping (which a
@@ -342,9 +346,22 @@ type BundleInstall struct {
 	// apply may have run past the shipped line (issue #642). Zero stamps
 	// nothing: the import door carries OriginVersion instead, and a
 	// verbatim sample install and a hand apply neither.
-	ShippedVersion int64
+	ShippedVersion           int64
+	PublishedFrom            string
+	PublishedDigest          string
+	ExpectedPublishedVersion int64
+	PublishedNarrows         bool
 	// Confirm is the caller's consent to a lossy conversion plan, or nil. The
 	// install refuses a lossy plan without one and a lossless plan ignores it
 	// (decision 0067).
 	Confirm *ConversionConfirm
+}
+
+// BundleUpgradeHolder is a connected build holding a narrowing release back.
+type BundleUpgradeHolder struct {
+	ClientName      string     `json:"clientName"`
+	ClientID        string     `json:"clientId"`
+	SoftwareVersion string     `json:"softwareVersion,omitempty"`
+	CheckedAt       *time.Time `json:"checkedAt,omitempty"`
+	Floor           int64      `json:"floor"`
 }

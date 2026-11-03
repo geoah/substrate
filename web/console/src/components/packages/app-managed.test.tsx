@@ -90,3 +90,27 @@ it("words an app's agent as the app's to keep, and its pause as the off switch",
   expect(screen.getByText(/Pause it to turn it off/)).toBeTruthy()
   expect(screen.queryByText(/manages these collections/)).toBeNull()
 })
+
+it("offers takeover of a publisher's package and explains that updates stop", () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("{}", { status: 404 }))
+  )
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <AppManagedSection
+        app="bundle:publisher.example:notes"
+        publisher="publisher.example"
+        packageId="publisher.example/notes"
+      />
+    </QueryClientProvider>
+  )
+  expect(screen.getByText("publisher.example")).toBeTruthy()
+  expect(screen.getByText(/stop receiving updates/)).toBeTruthy()
+  fireEvent.click(screen.getByRole("button", { name: "Take over…" }))
+  expect(screen.getByText("Take over from publisher.example?")).toBeTruthy()
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Take over" })
+      .disabled
+  ).toBe(true)
+})

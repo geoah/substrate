@@ -1640,6 +1640,8 @@ export interface ConversionConfirm {
  * the door's verb (install for a provider, import for a sample); this is its
  * preview. */
 export interface BundleUpgrade extends ConversionPlan {
+  holders?: BundleUpgradeHolder[]
+  reviewRequired?: boolean
   available: boolean
   /** Stored and shipped versions of the bundle's owned package; absent
    * (0 is omitted on the wire) where none is stored. */
@@ -1691,6 +1693,7 @@ export type CatalogTier = "provider" | "sample"
  * `installed` and `upgrade`, which the API adds around it, live on
  * CatalogItem instead. */
 export interface CatalogBundle {
+  publisher?: AuthorizationPackagePublisher
   /** The bundle's id — the PACKAGE identity it owns
    * (`providers.substrate.reamde.dev/google`), matching BundleStatus.id once
    * installed. A SAMPLE lands under this repository's authority, so its
@@ -1966,4 +1969,12 @@ export interface UnitConversion {
   unit: string
   /** False where `value` was rounded. */
   exact: boolean
+}
+
+export interface BundleUpgradeHolder {
+  clientName: string
+  clientId: string
+  softwareVersion?: string
+  checkedAt?: string
+  floor: number
 }
