@@ -158,6 +158,8 @@ var wireTypes = map[string]any{
 	"AuthorizationPackagePublisher": AuthorizationPackagePublisher{},
 	"AppAddon":                      AppAddon{},
 	"AuthorizationFunction":         AuthorizationFunction{},
+	"AuthorizationReach":            AuthorizationReach{},
+	"AuthorizationReachBy":          AuthorizationReachBy{},
 	"AuthorizationTrigger":          AuthorizationTrigger{},
 	"AuthorizationAccount":          AuthorizationAccount{},
 	"AuthorizationWebhookPlan":      AuthorizationWebhookPlan{},

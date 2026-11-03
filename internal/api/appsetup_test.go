@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -31,8 +33,15 @@ const (
 	healthAccount  = appleHealthPkg + "/account"
 	healthWebhook  = "applehealth-webhook"
 	syncAccountID  = "substrate-sync-1a2b3c4d"
-	syncScopes     = "write:" + applePkg + "/* read:" + healthAccount + " read:" + appleHealthPkg + "/export"
+	// What the code the applehealth package runs reaches (decision 0215),
+	// as the scopes that cover it, the two internal kinds by their exact
+	// scopes; and what Substrate Sync asks for: its own kinds and those.
+	appleHealthScopes = "write:" + appleHealthPkg + "/* write:" + healthAccount + " write:" + appleHealthPkg + "/export" +
+		" write:" + healthPkg + "/* write:substrate.reamde.dev/observations/*"
+	syncScopes = "write:" + applePkg + "/* " + appleHealthScopes
 )
+
+func appleHealthApproval() []string { return strings.Fields(appleHealthScopes) }
 
 // syncDetails is what Substrate Sync asks to have set up.
 var syncDetails = `[
@@ -247,11 +256,14 @@ func newSetupEnv(t *testing.T) *setupEnv {
 	svc := newFakeService()
 	var mu sync.Mutex
 	repos := map[string]*setupRepo{}
+	// A repository holds the seeded observations kinds from registration,
+	// which applehealth's adapter writes.
+	seeded := seededKinds(t, kinds.SeedObservationsPackage)
 	repoFor := func(name string) *setupRepo {
 		mu.Lock()
 		defer mu.Unlock()
 		if repos[name] == nil {
-			repos[name] = &setupRepo{statuses: map[string]substrate.BundleStatus{}, fail: map[string]error{}}
+			repos[name] = &setupRepo{statuses: map[string]substrate.BundleStatus{}, fail: map[string]error{}, kinds: slices.Clone(seeded)}
 		}
 		return repos[name]
 	}
@@ -268,6 +280,44 @@ func newSetupEnv(t *testing.T) *setupEnv {
 	return &setupEnv{appEnv: e, repo: repoFor(fakeRepository), repos: repoFor, catalog: cat}
 }
 
+// seededKinds reads one seeded package's kind declarations as a registry
+// holds them, from the seed tree.
+func seededKinds(t *testing.T, pkg string) []substrate.KindInfo {
+	t.Helper()
+	var out []substrate.KindInfo
+	err := fs.WalkDir(kinds.Seed(), pkg, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".yaml") {
+			return err
+		}
+		raw, err := fs.ReadFile(kinds.Seed(), path)
+		if err != nil {
+			return err
+		}
+		docs, err := vocabulary.ParseStream(raw)
+		if err != nil {
+			return err
+		}
+		for _, doc := range docs {
+			if doc.Kind != vocabulary.DocKind {
+				continue
+			}
+			authority, pkg, name := vocabulary.SplitKindRef(doc.ID)
+			out = append(out, substrate.KindInfo{
+				Identity: doc.ID, Name: name, Authority: authority, Package: pkg, Version: 1,
+				Source: vocabulary.SourceBuiltin, Definition: doc.Data,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("read the seed: %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatalf("the seed declares no kind under %s", pkg)
+	}
+	return out
+}
+
 func setupRequest(scopes, details string) map[string]string {
 	p := appRequest(scopes)
 	p["authorization_details"] = details
@@ -277,6 +327,14 @@ func setupRequest(scopes, details string) map[string]string {
 func (e *setupEnv) view(id string) substrate.AuthorizationRequest {
 	e.t.Helper()
 	rec := e.show(id)
+	wantStatus(e.t, rec, http.StatusOK)
+	return decodeJSON[substrate.AuthorizationRequest](e.t, rec)
+}
+
+// viewWith reads a request as the page does with only scopes left checked.
+func (e *setupEnv) viewWith(id string, scopes []string) substrate.AuthorizationRequest {
+	e.t.Helper()
+	rec := e.do(http.MethodGet, "/api/v1/authorizations/"+id+"?"+url.Values{"scope": scopes}.Encode(), e.owner, nil, "")
 	wantStatus(e.t, rec, http.StatusOK)
 	return decodeJSON[substrate.AuthorizationRequest](e.t, rec)
 }
@@ -304,9 +362,7 @@ func (e *setupEnv) settle(id string) substrate.AuthorizationRequest {
 	}
 }
 
-func resolvedSyncScopes() []string {
-	return []string{"write:" + applePkg + "/*", "read:" + healthAccount, "read:" + appleHealthPkg + "/export"}
-}
+func resolvedSyncScopes() []string { return strings.Fields(syncScopes) }
 
 func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 	e := newSetupEnv(t)
@@ -389,7 +445,7 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 	for _, s := range v.Scopes {
 		byScope[s.Scope] = s
 	}
-	accountScope := byScope["read:"+healthAccount]
+	accountScope := byScope["write:"+healthAccount]
 	if len(accountScope.Kinds) != 1 || !accountScope.Kinds[0].Added || accountScope.Kinds[0].Purpose != vocabulary.PurposeInternal {
 		t.Fatalf("the account scope reaches %+v", accountScope.Kinds)
 	}
@@ -777,8 +833,8 @@ func (e *setupEnv) holdTurn() (string, chan struct{}) {
 	e.repo.gate = gate
 	e.repo.mu.Unlock()
 	details := `[{"type":"package","package":"` + appleHealthPkg + `","version":5}]`
-	id := e.park(setupRequest("read:"+healthAccount, details))
-	wantStatus(e.t, e.approveWith(id, []string{"read:" + healthAccount}, e.view(id).PlanHash), http.StatusAccepted)
+	id := e.park(setupRequest(appleHealthScopes, details))
+	wantStatus(e.t, e.approveWith(id, appleHealthApproval(), e.view(id).PlanHash), http.StatusAccepted)
 	deadline := time.Now().Add(10 * time.Second)
 	for progress(e.view(id)) != substrate.ProgressRunning {
 		if time.Now().After(deadline) {
@@ -879,8 +935,8 @@ func TestASetUpThatPanicsFailsItsRequestAlone(t *testing.T) {
 	e.repo.explode = appleHealthPkg
 	e.repo.mu.Unlock()
 	details := `[{"type":"package","package":"` + appleHealthPkg + `","version":5}]`
-	id := e.park(setupRequest("read:"+healthAccount, details))
-	wantStatus(t, e.approveWith(id, []string{"read:" + healthAccount}, e.view(id).PlanHash), http.StatusAccepted)
+	id := e.park(setupRequest(appleHealthScopes, details))
+	wantStatus(t, e.approveWith(id, appleHealthApproval(), e.view(id).PlanHash), http.StatusAccepted)
 	failed := e.settle(id)
 	if failed.State != substrate.AuthorizationPending || failed.Failure == nil || failed.Failure.Row != nil ||
 		!strings.Contains(failed.Failure.Message, "server") || progress(failed) != substrate.ProgressFailed {
@@ -889,7 +945,7 @@ func TestASetUpThatPanicsFailsItsRequestAlone(t *testing.T) {
 	e.repo.mu.Lock()
 	e.repo.explode = ""
 	e.repo.mu.Unlock()
-	wantStatus(t, e.approveWith(id, []string{"read:" + healthAccount}, failed.PlanHash), http.StatusAccepted)
+	wantStatus(t, e.approveWith(id, appleHealthApproval(), failed.PlanHash), http.StatusAccepted)
 	if done := e.settle(id); done.State != substrate.AuthorizationApproved {
 		t.Fatalf("trying again after a panic ended %+v", done.Failure)
 	}
@@ -909,8 +965,8 @@ func TestASetUpStopsWithItsRequest(t *testing.T) {
 	}, setUpEnded: func(id string) { ended <- id }})
 	holder, gate := e.holdTurn()
 	details := `[{"type":"package","package":"` + applePkg + `","version":3}]`
-	id := e.park(setupRequest("read:"+healthAccount, details))
-	wantStatus(t, e.approveWith(id, []string{"read:" + healthAccount}, e.view(id).PlanHash), http.StatusAccepted)
+	id := e.park(setupRequest(appleHealthScopes, details))
+	wantStatus(t, e.approveWith(id, appleHealthApproval(), e.view(id).PlanHash), http.StatusAccepted)
 	mu.Lock()
 	now = now.Add(authorize.SetUpTTL)
 	mu.Unlock()
@@ -972,7 +1028,7 @@ func TestAnApprovedRequestIsHandedOverWithoutReadingTheRepository(t *testing.T) 
 
 	done := e.view(id)
 	if done.State != substrate.AuthorizationApproved || !strings.HasPrefix(done.Next, appRedirect+"?") || progress(done) != "done,done,done,done" ||
-		len(done.Scopes) != 3 || done.PlanHash != v.PlanHash || done.App.Name != "Sync" || done.Failure != nil {
+		len(done.Scopes) != len(resolvedSyncScopes()) || done.PlanHash != v.PlanHash || done.App.Name != "Sync" || done.Failure != nil {
 		t.Fatalf("the approved request = state %q next %q progress %q, %d scopes, hash %q", done.State, done.Next, progress(done), len(done.Scopes), done.PlanHash)
 	}
 	e.repo.mu.Lock()
@@ -1037,15 +1093,15 @@ func TestAnAccountAlreadyThereIsLeftAlone(t *testing.T) {
 	e := newSetupEnv(t)
 	details := `[{"type":"package","package":"` + appleHealthPkg + `","version":5},
 	{"type":"account","kind":"` + healthAccount + `","id":"` + syncAccountID + `","properties":{"displayName":"new"}}]`
-	id := e.park(setupRequest("read:"+healthAccount, details))
+	id := e.park(setupRequest(appleHealthScopes, details))
 	v := e.view(id)
-	wantStatus(t, e.approveWith(id, []string{"read:" + healthAccount}, v.PlanHash), http.StatusAccepted)
+	wantStatus(t, e.approveWith(id, appleHealthApproval(), v.PlanHash), http.StatusAccepted)
 	e.settle(id)
 	ds := e.svc.datasets[fakeRepository]
 	ds.mu.Lock()
 	ds.records[syncAccountID].Properties["displayName"] = "the owner's"
 	ds.mu.Unlock()
-	live := e.park(setupRequest("read:"+healthAccount, details))
+	live := e.park(setupRequest(appleHealthScopes, details))
 	if row := e.view(live).Setup[1]; row.Action != substrate.SetupNone || row.Blocked != nil {
 		t.Fatalf("a live account = %+v", row)
 	}
@@ -1055,13 +1111,13 @@ func TestAnAccountAlreadyThereIsLeftAlone(t *testing.T) {
 	deleted := time.Unix(10, 0).UTC()
 	ds.records[syncAccountID].DeletedAt = &deleted
 	ds.mu.Unlock()
-	again := e.park(setupRequest("read:"+healthAccount, details))
+	again := e.park(setupRequest(appleHealthScopes, details))
 	v = e.view(again)
 	row := v.Setup[1]
 	if row.Action != substrate.SetupCreate || row.Blocked == nil || row.Blocked.Reason != substrate.BlockAccountDeleted || row.Blocked.Fix != "" {
 		t.Fatalf("a deleted account = %+v %+v", row, row.Blocked)
 	}
-	wantErrorCode(t, e.approveWith(again, []string{"read:" + healthAccount}, v.PlanHash), http.StatusUnprocessableEntity, codeValidation)
+	wantErrorCode(t, e.approveWith(again, appleHealthApproval(), v.PlanHash), http.StatusUnprocessableEntity, codeValidation)
 	ds.mu.Lock()
 	delete(ds.records, syncAccountID)
 	ds.mu.Unlock()
@@ -1131,7 +1187,7 @@ func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 	// A token that reaches none of it learns nothing of it.
 	narrow := e.grant("read:"+personKind, []string{"read:" + personKind})
 	got = e.check(narrow, checkRequest(syncScopes, newer))
-	if len(got.Scopes.Missing) != 3 {
+	if len(got.Scopes.Missing) != len(resolvedSyncScopes()) {
 		t.Fatalf("a narrow token is missing %v", got.Scopes.Missing)
 	}
 	for i, row := range got.Setup {
@@ -1360,4 +1416,95 @@ func TestACheckPlanWaitsItsTurn(t *testing.T) {
 func jsonString(s string) string {
 	raw, _ := json.Marshal(s)
 	return string(raw)
+}
+
+// Installed code reaches no further than the approval (decision 0215): the
+// page plans against the scopes left checked, so unchecking one the
+// applehealth package's code needs blocks its row, naming each uncovered
+// reach and the scope that covers it, and checking it back unblocks it. The
+// approval plans against the scopes it names, so the hash the page read
+// with those scopes is the plan the approval is held to, and an approval
+// that names fewer is refused. A token's check is held to the token's own
+// scopes.
+func TestUncheckingAScopeBlocksTheCodeItCoversAndCheckingItBackUnblocks(t *testing.T) {
+	e := newSetupEnv(t)
+	id := e.park(setupRequest(syncScopes, syncDetails))
+	all := e.view(id)
+	if all.Setup[1].Blocked != nil {
+		t.Fatalf("every scope checked, applehealth = %+v", all.Setup[1].Blocked)
+	}
+	reach := all.Setup[1].Package.Reach
+	if len(reach) == 0 || slices.ContainsFunc(reach, func(r substrate.AuthorizationReach) bool { return !r.Covered || r.Scope == "" || len(r.By) == 0 }) {
+		t.Fatalf("applehealth's reach = %+v, want every entry covered with its scope and what reaches it", reach)
+	}
+	sleep := slices.IndexFunc(reach, func(r substrate.AuthorizationReach) bool { return r.Pattern == healthPkg+"/sleep" && r.Write })
+	if sleep < 0 || reach[sleep].Scope != "write:"+healthPkg+"/sleep" || reach[sleep].By[0].Type != vocabulary.DocFunction || reach[sleep].By[0].ID != appleHealthPkg+"/adaptapplehealth" {
+		t.Fatalf("the sleep write = %+v", reach)
+	}
+	adapter := slices.IndexFunc(all.Setup[1].Package.Functions, func(f substrate.AuthorizationFunction) bool { return f.ID == appleHealthPkg+"/adaptapplehealth" })
+	if adapter < 0 || !slices.Contains(all.Setup[1].Package.Functions[adapter].Reads, healthPkg+"/sleep") || all.Setup[1].Package.Functions[adapter].Network != nil {
+		t.Fatalf("the adapter = %+v", all.Setup[1].Package.Functions)
+	}
+
+	// Without the health write, the adapter's reads and writes of sleep
+	// and workout are uncovered: the row blocks and says which scope
+	// covers each.
+	fewer := slices.DeleteFunc(resolvedSyncScopes(), func(s string) bool { return s == "write:"+healthPkg+"/*" })
+	narrowed := e.viewWith(id, fewer)
+	row := narrowed.Setup[1]
+	if row.Action != substrate.SetupInstall || row.Blocked == nil || row.Blocked.Reason != substrate.BlockReachesPastScopes || row.Blocked.Fix != "" ||
+		!strings.Contains(row.Blocked.Problem, "it writes "+healthPkg+"/sleep (write:"+healthPkg+"/sleep covers it)") ||
+		!strings.Contains(row.Blocked.Problem, "it writes "+healthPkg+"/workout (write:"+healthPkg+"/workout covers it)") ||
+		strings.Contains(row.Blocked.Problem, "observations") {
+		t.Fatalf("without the health write, applehealth = %+v %+v", row, row.Blocked)
+	}
+	if narrowed.PlanHash == all.PlanHash || narrowed.Setup[0].Blocked != nil {
+		t.Fatalf("narrowed = hash %q (all %q), apple %+v", narrowed.PlanHash, all.PlanHash, narrowed.Setup[0].Blocked)
+	}
+	uncovered := 0
+	for _, r := range row.Package.Reach {
+		if !r.Covered {
+			uncovered++
+		}
+	}
+	if uncovered != 4 || !strings.Contains(row.Blocked.Problem, "it reads "+healthPkg+"/sleep (read:"+healthPkg+"/sleep covers it)") {
+		t.Fatalf("%d entries uncovered, want the two health reads and writes: %+v", uncovered, row.Package.Reach)
+	}
+	// Approving with those scopes is held to the same plan, blocked.
+	wantErrorCode(t, e.approveWith(id, fewer, narrowed.PlanHash), http.StatusUnprocessableEntity, codeValidation)
+	// Approving with fewer scopes than the page read is not the plan the
+	// page showed.
+	wantErrorCode(t, e.approveWith(id, fewer, all.PlanHash), http.StatusConflict, codeConflict)
+	// Checked back, the plan is the first read's.
+	back := e.viewWith(id, resolvedSyncScopes())
+	if back.PlanHash != all.PlanHash || back.Setup[1].Blocked != nil {
+		t.Fatalf("checked back = hash %q (all %q) %+v", back.PlanHash, all.PlanHash, back.Setup[1].Blocked)
+	}
+	// Nothing checked covers nothing: every package with code blocks, and
+	// apple, which ships none, does not.
+	none := e.viewWith(id, []string{""})
+	if none.Setup[0].Blocked != nil || none.Setup[1].Blocked == nil || none.Setup[1].Blocked.Reason != substrate.BlockReachesPastScopes {
+		t.Fatalf("nothing checked = apple %+v applehealth %+v", none.Setup[0].Blocked, none.Setup[1].Blocked)
+	}
+	// A scope the app did not ask for is refused on the read.
+	rec := e.do(http.MethodGet, "/api/v1/authorizations/"+id+"?scope=read:"+personKind, e.owner, nil, "")
+	wantErrorCode(t, rec, http.StatusBadRequest, codeValidation)
+	// The approval of what the page showed runs.
+	wantStatus(t, e.approveWith(id, resolvedSyncScopes(), all.PlanHash), http.StatusAccepted)
+	if done := e.settle(id); done.State != substrate.AuthorizationApproved {
+		t.Fatalf("the set up ended %+v", done.Failure)
+	}
+
+	// A token's check is held to the token's own scopes: one that names the
+	// package but not everything its code reaches is told the row blocks.
+	narrow := e.grant("write:"+appleHealthPkg+"/*", []string{"write:" + appleHealthPkg + "/*"})
+	got := e.check(narrow, checkRequest(syncScopes, syncDetails))
+	if row := got.Setup[1]; row.Action != substrate.SetupNone || row.Blocked != nil {
+		t.Fatalf("a package in place = %+v", row)
+	}
+	newer := strings.Replace(syncDetails, `"version": 5`, `"version": 99`, 1)
+	got = e.check(narrow, checkRequest(syncScopes, newer))
+	if row := got.Setup[1]; row.Action != substrate.SetupUpgrade || row.Blocked == nil || row.Blocked.Reason != substrate.BlockServerUpdate {
+		t.Fatalf("a version the server lacks = %+v %+v", row, row.Blocked)
+	}
 }

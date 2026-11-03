@@ -11,6 +11,7 @@ import (
 	"testing/fstest"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -28,6 +29,8 @@ const (
 	needsSample  = "example.com/needssample"
 	needsMissing = "example.com/needsmissing"
 	samplePkg    = "samples.example.com/notes"
+	coachPkg     = "example.com/coach"
+	pinnerPkg    = "example.com/pinner"
 	appAccount   = appPkg + "/account"
 	appHook      = "app-webhook"
 	signedHook   = "app-signed"
@@ -76,9 +79,30 @@ func kindDoc(ref, body string) string {
 }
 
 func functionDoc(ref, writes string) string {
+	return codeDoc(vocabulary.DocFunction, ref, "", writes, "")
+}
+
+// codeDoc is a function or an agent document with its grants: reads and
+// writes as YAML lists, and for a function the hosts it declares.
+func codeDoc(doc, ref, reads, writes, network string) string {
 	authority, pkg, name := vocabulary.SplitKindRef(ref)
-	return fmt.Sprintf("kind: substrate.reamde.dev/core/function\nmetadata:\n  id: %s\ndata:\n  authority: %s\n  package: %s\n  name: %s\n  permissions:\n    writes: %s\n",
-		ref, authority, pkg, name, writes)
+	var b strings.Builder
+	fmt.Fprintf(&b, "kind: substrate.reamde.dev/core/%s\nmetadata:\n  id: %s\ndata:\n  authority: %s\n  package: %s\n  name: %s\n  permissions:\n",
+		doc, ref, authority, pkg, name)
+	if reads != "" {
+		fmt.Fprintf(&b, "    reads:\n      kinds: %s\n", reads)
+	}
+	fmt.Fprintf(&b, "    writes: %s\n", writes)
+	if network != "" {
+		fmt.Fprintf(&b, "    network: %s\n", network)
+	}
+	return b.String()
+}
+
+func mappingDoc(ref, from, to string) string {
+	authority, pkg, name := vocabulary.SplitKindRef(ref)
+	return fmt.Sprintf("kind: substrate.reamde.dev/core/recordmapping\nmetadata:\n  id: %s\ndata:\n  authority: %s\n  package: %s\n  name: %s\n  from: %s\n  to: %s\n  property: subject\n",
+		ref, authority, pkg, name, from, to)
 }
 
 func triggerDoc(id, source, callable string, enabled bool) string {
@@ -86,7 +110,11 @@ func triggerDoc(id, source, callable string, enabled bool) string {
 		id, enabled, source, callable)
 }
 
-func testCatalog(t *testing.T) *catalog.Catalog {
+func testCatalog(t *testing.T) *catalog.Catalog { return testCatalogWith(t, nil) }
+
+// testCatalogWith is the fixture catalog with more provider closures, by
+// path.
+func testCatalogWith(t *testing.T, more map[string]string) *catalog.Catalog {
 	t.Helper()
 	providers := fstest.MapFS{
 		"example.com/base/bundle.yaml": {Data: []byte(closure(basePkg, 2, nil,
@@ -109,11 +137,28 @@ func testCatalog(t *testing.T) *catalog.Catalog {
 			triggerDoc(signedHook, "      webhook:\n        signature:\n          algorithm: hmac-sha256\n", appFunction, true),
 			triggerDoc("app-records", "      record:\n        kinds: [example.com/app/item]\n", appFunction, true),
 		))},
-		"example.com/hooks/bundle.yaml":        {Data: []byte(closure(hooksPkg, 2, nil, functionDoc(hooksPkg+"/relay", "[]")))},
+		"example.com/hooks/bundle.yaml": {Data: []byte(closure(hooksPkg, 2, nil,
+			codeDoc(vocabulary.DocFunction, hooksPkg+"/relay", "[example.com/base/thing]", "[]", "[api.example.com, 10.0.0.1:8443]"),
+		))},
+		// coach ships an agent, a mapping and a record trigger, and base's
+		// thing is what they reach; pinner's function writes a kind no
+		// scope writes.
+		"example.com/coach/bundle.yaml": {Data: []byte(closure(coachPkg, 1, map[string]int{basePkg: 2},
+			kindDoc(coachPkg+"/plan", "  properties:\n    note: {type: string}\n"),
+			codeDoc(vocabulary.DocAgent, coachPkg+"/coach", "[example.com/base/*]", "[plan]", ""),
+			mappingDoc(coachPkg+"/fromthing", basePkg+"/thing", coachPkg+"/plan"),
+			triggerDoc("coach-on-thing", "      record:\n        kinds: [example.com/base/thing]\n", vocabulary.PackageCore+"/agent/"+coachPkg+"/coach", true),
+		))},
+		"example.com/pinner/bundle.yaml": {Data: []byte(closure(pinnerPkg, 1, nil,
+			functionDoc(pinnerPkg+"/pin", "[substrate.reamde.dev/llm/memory]"),
+		))},
 		"example.com/needshooks/bundle.yaml":   {Data: []byte(closure(needsHooks, 1, map[string]int{hooksPkg: 2}))},
 		"example.com/newerbase/bundle.yaml":    {Data: []byte(closure(newerBasePkg, 1, map[string]int{basePkg: 3}))},
 		"example.com/needssample/bundle.yaml":  {Data: []byte(closure(needsSample, 1, map[string]int{samplePkg: 1}))},
 		"example.com/needsmissing/bundle.yaml": {Data: []byte(closure(needsMissing, 1, map[string]int{"example.com/gone": 1}))},
+	}
+	for path, manifest := range more {
+		providers[path] = &fstest.MapFile{Data: []byte(manifest)}
 	}
 	samples := fstest.MapFS{
 		"samples.example.com/notes/bundle.yaml": {Data: []byte(closure(samplePkg, 1, nil))},
@@ -362,9 +407,26 @@ func webhookDetail(trigger string) substrate.AuthorizationDetail {
 	return substrate.AuthorizationDetail{Type: substrate.DetailWebhook, Trigger: trigger}
 }
 
+// everything is a plan held to full access, where no reach blocks.
+func everything() Options { return Options{Approved: scope.FullApproval()} }
+
+// planWith plans details held to the resolved scopes left checked.
+func planWith(t *testing.T, ds substrate.Dataset, cat *catalog.Catalog, scopes []string, details ...substrate.AuthorizationDetail) []substrate.AuthorizationSetup {
+	t.Helper()
+	approved, err := scope.ApprovalOf(scopes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err := Plan(context.Background(), ds, cat, details, Options{Approved: approved})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rows
+}
+
 func plan(t *testing.T, ds substrate.Dataset, cat *catalog.Catalog, details ...substrate.AuthorizationDetail) []substrate.AuthorizationSetup {
 	t.Helper()
-	rows, _, err := Plan(context.Background(), ds, cat, details, Options{})
+	rows, _, err := Plan(context.Background(), ds, cat, details, everything())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,13 +434,16 @@ func plan(t *testing.T, ds substrate.Dataset, cat *catalog.Catalog, details ...s
 }
 
 // wantBlocked fails unless block is reason, with fix, its sentence one the
-// owner reads as one: a capital, no id, a full stop.
+// owner reads as one: a capital, a full stop, and no id, except that a
+// reach block names each uncovered kind and the scope that covers it, which
+// have no other name (decision 0215).
 func wantBlocked(t *testing.T, what string, block *substrate.AuthorizationBlock, reason, fix string) {
 	t.Helper()
 	if block == nil || block.Reason != reason || block.Fix != fix {
 		t.Fatalf("%s blocked = %+v, want %s with fix %q", what, block, reason, fix)
 	}
-	if p := block.Problem; p == "" || p[0] < 'A' || p[0] > 'Z' || !strings.HasSuffix(p, ".") || strings.ContainsAny(p, ":/") {
+	ids := reason == substrate.BlockReachesPastScopes
+	if p := block.Problem; p == "" || p[0] < 'A' || p[0] > 'Z' || !strings.HasSuffix(p, ".") || (!ids && strings.ContainsAny(p, ":/")) {
 		t.Fatalf("%s says %q, not a sentence free of ids", what, p)
 	}
 }

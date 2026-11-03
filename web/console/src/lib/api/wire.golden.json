@@ -274,6 +274,8 @@
   },
   "AuthorizationFunction": {
     "id": true,
+    "network": false,
+    "reads": false,
     "writes": false
   },
   "AuthorizationKind": {
@@ -289,6 +291,7 @@
     "id": true,
     "kinds": false,
     "publisher": false,
+    "reach": false,
     "required": true,
     "requires": false,
     "shipped": false,
@@ -309,6 +312,7 @@
     "held": false,
     "id": true,
     "kinds": false,
+    "reach": false,
     "shipped": false,
     "triggers": false
   },
@@ -327,6 +331,17 @@
     "name": false,
     "record": false,
     "unconfirmed": false
+  },
+  "AuthorizationReach": {
+    "by": true,
+    "covered": false,
+    "pattern": true,
+    "scope": true,
+    "write": false
+  },
+  "AuthorizationReachBy": {
+    "id": true,
+    "type": true
   },
   "AuthorizationRedirectTo": {
     "host": true,

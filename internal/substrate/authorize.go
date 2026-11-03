@@ -120,6 +120,12 @@ const (
 	// version the app needs, or the package's authority publishes no
 	// document this server can read (decision 0212).
 	BlockNotPublished = "not-published"
+	// BlockReachesPastScopes: the package's code, or a requirement's,
+	// reads or writes a kind the scopes left checked do not cover, so
+	// approving would install code reaching past the approval (decision
+	// 0215). The problem names each uncovered reach and the scope that
+	// would cover it.
+	BlockReachesPastScopes = "reaches-past-scopes"
 	// BlockUnsupported: what the row names is not something this door sets
 	// up: a kind that is no account, a property it may not set, a trigger
 	// that takes no webhook, or one its provider signs.
@@ -209,6 +215,9 @@ type AuthorizationPackage struct {
 	Kinds     []AuthorizationKind        `json:"kinds,omitempty"`
 	Functions []AuthorizationFunction    `json:"functions,omitempty"`
 	Triggers  []AuthorizationTrigger     `json:"triggers,omitempty"`
+	// Reach is every kind this package's own code reads or writes, held to
+	// the scopes left checked (decision 0215).
+	Reach []AuthorizationReach `json:"reach,omitempty"`
 	// Publisher is present for a package an authority document publishes
 	// rather than this server's catalog ships (decision 0212).
 	Publisher *AuthorizationPackagePublisher `json:"publisher,omitempty"`
@@ -239,13 +248,40 @@ type AuthorizationPackageStep struct {
 	Kinds       []AuthorizationKind     `json:"kinds,omitempty"`
 	Functions   []AuthorizationFunction `json:"functions,omitempty"`
 	Triggers    []AuthorizationTrigger  `json:"triggers,omitempty"`
+	Reach       []AuthorizationReach    `json:"reach,omitempty"`
 }
 
 // AuthorizationFunction is code a package ships: what runs on the owner's
-// server once it is installed, and the kinds it may write.
+// server once it is installed, the kinds it may read and write, and the
+// hosts its `permissions.network` declares, none for a body the sandbox
+// denies every socket.
 type AuthorizationFunction struct {
-	ID     string   `json:"id"`
-	Writes []string `json:"writes,omitempty"`
+	ID      string   `json:"id"`
+	Reads   []string `json:"reads,omitempty"`
+	Writes  []string `json:"writes,omitempty"`
+	Network []string `json:"network,omitempty"`
+}
+
+// AuthorizationReach is one kind, or one glob over kinds, a package's code
+// reads or writes once installed (decision 0215): what reaches it, whether
+// the scopes left checked cover it, and the scope that would.
+type AuthorizationReach struct {
+	Pattern string `json:"pattern"`
+	Write   bool   `json:"write,omitempty"`
+	// By is what reaches it: each a function, agent, trigger or mapping of
+	// the package, in document order.
+	By []AuthorizationReachBy `json:"by"`
+	// Covered is whether a scope left checked covers it; Scope is the one
+	// that would, `full` where no scope can.
+	Covered bool   `json:"covered,omitempty"`
+	Scope   string `json:"scope"`
+}
+
+// AuthorizationReachBy is one piece of code that reaches a kind: Type is
+// `function`, `agent`, `trigger` or `recordmapping`, and ID its id.
+type AuthorizationReachBy struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
 }
 
 // AuthorizationTrigger is a trigger a package ships. Enabled is how it ships:

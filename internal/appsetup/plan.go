@@ -35,6 +35,11 @@ var packageKind = vocabulary.CoreKind(vocabulary.DocPackage)
 
 // Options narrows a plan.
 type Options struct {
+	// Approved is the scopes the approval leaves checked, which every
+	// closure the plan installs or upgrades is held to (decision 0215): a
+	// package whose code reaches past them is blocked. The zero value
+	// covers nothing.
+	Approved scope.Approved
 	// ActionOnly names packages whose rows are planned no further than their
 	// action, their requirements and what blocks them: no closure facts and
 	// no upgrade preview, which a reader that may not see the row has no
@@ -281,9 +286,14 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 	if !actionOnly {
 		info.Kinds, info.Functions, info.Triggers = p.facts(b)
 	}
-	if info.Requires, problem, err = p.chain(ctx, b, steps, unmet, actionOnly); err != nil || problem != nil || actionOnly {
+	if info.Requires, problem, err = p.chain(ctx, b, steps, unmet, actionOnly); err != nil || problem != nil {
 		row.Blocked = problem.needsFirst()
 		return row, err
+	}
+	// Every closure the approval installs is held to the scopes left
+	// checked, the package's own first, then what it brings (decision 0215).
+	if row.Blocked = p.reachBlock(b, info, actionOnly); row.Blocked != nil || actionOnly {
+		return row, nil
 	}
 	// The preview runs last and stops at the first package it blocks: it
 	// stages a closure against the owner's data.
@@ -355,6 +365,96 @@ func (p *planner) chain(ctx context.Context, b *catalog.Bundle, steps []*catalog
 	return out, first, nil
 }
 
+// reachBlock fills the reach of b and of each requirement its row brings,
+// and is why the row cannot run when any of that code reaches past the
+// scopes left checked: the package's own reach first, else the first
+// requirement's, each step carrying its own block. actionOnly leaves the
+// reach off the rows and keeps the block.
+func (p *planner) reachBlock(b *catalog.Bundle, info *substrate.AuthorizationPackage, actionOnly bool) *substrate.AuthorizationBlock {
+	chain := []*catalog.Bundle{b}
+	for _, step := range info.Requires {
+		if dep := p.bundle(step.ID); dep != nil {
+			chain = append(chain, dep)
+		}
+	}
+	internal := p.internalIn(chain)
+	var first *substrate.AuthorizationBlock
+	for i := range info.Requires {
+		step := &info.Requires[i]
+		dep := p.bundle(step.ID)
+		if dep == nil {
+			continue
+		}
+		reach := p.reach(dep, internal)
+		if !actionOnly {
+			step.Reach = reach
+		}
+		if problem := reachesPast(reach); problem != nil {
+			step.Blocked = problem.own()
+			if first == nil {
+				first = problem.needsFirst()
+			}
+		}
+	}
+	reach := p.reach(b, internal)
+	if !actionOnly {
+		info.Reach = reach
+	}
+	if problem := reachesPast(reach); problem != nil {
+		return problem.own()
+	}
+	return first
+}
+
+// reachesPast is the block a reach earns, nil when every entry is covered.
+func reachesPast(reach []substrate.AuthorizationReach) *packageProblem {
+	var uncovered []substrate.AuthorizationReach
+	for _, r := range reach {
+		if !r.Covered {
+			uncovered = append(uncovered, r)
+		}
+	}
+	if len(uncovered) == 0 {
+		return nil
+	}
+	return reachesPastScopes(uncovered)
+}
+
+// reach is what b's code reaches, each entry held to the scopes left
+// checked. internal says whether a kind's declared purpose is `internal`,
+// which a glob scope never reaches.
+func (p *planner) reach(b *catalog.Bundle, internal func(kind string) bool) []substrate.AuthorizationReach {
+	var out []substrate.AuthorizationReach
+	for _, r := range b.Reach() {
+		entry := substrate.AuthorizationReach{Pattern: r.Pattern, Write: r.Write, Scope: scope.Covering(r.Pattern, r.Write)}
+		for _, by := range r.By {
+			entry.By = append(entry.By, substrate.AuthorizationReachBy{Type: by.Type, ID: by.ID})
+		}
+		entry.Covered = p.opts.Approved.Covers(r.Pattern, r.Write, !vocabulary.IsTypeGlob(r.Pattern) && internal(r.Pattern))
+		out = append(out, entry)
+	}
+	return out
+}
+
+// internalIn answers whether a kind's declared purpose is `internal`: as the
+// registry holds it, else as a closure of chain declares it. A kind neither
+// holds is read as internal, so only its exact scope covers it, as the set
+// up check reads a kind the repository lacks.
+func (p *planner) internalIn(chain []*catalog.Bundle) func(kind string) bool {
+	return func(kind string) bool {
+		if k, held := p.kinds[kind]; held {
+			purpose, _ := k.Definition["purpose"].(string)
+			return purpose == vocabulary.PurposeInternal
+		}
+		for _, b := range chain {
+			if k, ok := b.Kind(kind); ok {
+				return k.Purpose == vocabulary.PurposeInternal
+			}
+		}
+		return true
+	}
+}
+
 // stepAction is what an install does to a requirement it brings first: an
 // upgrade of one the repository holds, else an install.
 func (p *planner) stepAction(id string) string {
@@ -405,8 +505,8 @@ func (p *planner) upgradeBlock(ctx context.Context, id string) (*packageProblem,
 }
 
 // facts lists what installing b brings of its own: the kinds the repository
-// does not hold yet, every function with what it may write, and every
-// trigger as it ships.
+// does not hold yet, every function with what it may read and write and the
+// hosts it declares, and every trigger as it ships.
 func (p *planner) facts(b *catalog.Bundle) ([]substrate.AuthorizationKind, []substrate.AuthorizationFunction, []substrate.AuthorizationTrigger) {
 	var kinds []substrate.AuthorizationKind
 	for _, k := range b.Kinds() {
@@ -417,7 +517,9 @@ func (p *planner) facts(b *catalog.Bundle) ([]substrate.AuthorizationKind, []sub
 	}
 	var functions []substrate.AuthorizationFunction
 	for _, f := range b.Functions() {
-		functions = append(functions, substrate.AuthorizationFunction{ID: f.ID, Writes: slices.Clone(f.Writes)})
+		functions = append(functions, substrate.AuthorizationFunction{
+			ID: f.ID, Reads: slices.Clone(f.Reads), Writes: slices.Clone(f.Writes), Network: slices.Clone(f.Network),
+		})
 	}
 	var triggers []substrate.AuthorizationTrigger
 	for _, t := range b.Triggers() {

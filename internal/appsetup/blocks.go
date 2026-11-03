@@ -2,7 +2,9 @@ package appsetup
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -94,6 +96,32 @@ func upgradeConfirm(id string) *packageProblem {
 		reason: substrate.BlockUpgradeNeedsReview, fix: ProviderPage(id),
 		itself:   "Updating this package would change records in a way its provider page asks you to confirm first.",
 		requirer: "Updating a package it needs first would change records in a way its provider page asks you to confirm first.",
+	}
+}
+
+// reachesPastScopes is a package whose code reads or writes what the scopes
+// left checked do not cover (decision 0215), each uncovered reach named
+// with the scope that would cover it. There is no fix: the app asks for
+// that access, and the owner leaves it checked, or the package is not
+// installed.
+func reachesPastScopes(uncovered []substrate.AuthorizationReach) *packageProblem {
+	parts := make([]string, 0, len(uncovered))
+	for _, r := range uncovered {
+		verb := "reads"
+		if r.Write {
+			verb = "writes"
+		}
+		covers := r.Scope + " covers it"
+		if r.Scope == scope.FullScope.String() {
+			covers = "only full access covers it"
+		}
+		parts = append(parts, fmt.Sprintf("it %s %s (%s)", verb, r.Pattern, covers))
+	}
+	list := strings.Join(parts, "; ")
+	return &packageProblem{
+		reason:   substrate.BlockReachesPastScopes,
+		itself:   fmt.Sprintf("Its code reaches past the access you are approving: %s. The app has to ask for that access, and you have to allow it.", list),
+		requirer: fmt.Sprintf("It needs a package first whose code reaches past the access you are approving: %s. The app has to ask for that access, and you have to allow it.", list),
 	}
 }
 

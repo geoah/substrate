@@ -77,10 +77,12 @@ func (r *Runner) turn(ctx context.Context, authority string) (func(), error) {
 // what runs is what the page showed. Packages land first, then accounts,
 // then webhooks, so an account's kind and a webhook's trigger are there by
 // the time their rows run. What landed before a stop stays, as it does when
-// the owner installs from the provider page. report records each row's
-// progress, in details' order, and answers false once the request is gone.
+// the owner installs from the provider page. opts is the plan's: the scopes
+// the approval left checked, which the plan is held to again. report
+// records each row's progress, in details' order, and answers false once
+// the request is gone.
 func (r *Runner) Run(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, details []substrate.AuthorizationDetail,
-	approved []substrate.AuthorizationSetup, report func(progress []string) bool,
+	approved []substrate.AuthorizationSetup, opts Options, report func(progress []string) bool,
 ) Outcome {
 	progress := make([]string, len(approved))
 	for i, row := range Started(approved, approved) {
@@ -98,7 +100,7 @@ func (r *Runner) Run(ctx context.Context, ds substrate.Dataset, actor substrate.
 		return Outcome{Failure: &substrate.AuthorizationFailure{Message: "Another set up in this repository did not finish in time. Try again."}}
 	}
 	defer release()
-	rows, _, err := Plan(ctx, ds, r.catalog, details, Options{})
+	rows, _, err := Plan(ctx, ds, r.catalog, details, opts)
 	if err != nil {
 		return Outcome{Failure: &substrate.AuthorizationFailure{Message: FailureWords("Reading what to set up", err)}}
 	}

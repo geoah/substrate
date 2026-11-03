@@ -35,7 +35,7 @@ import (
 // pending again with why it stopped. approved is the rows the approval was
 // checked against.
 func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, req authorize.Request, approved []substrate.AuthorizationSetup,
-	approve func(authorize.Request) (authorize.Approval, error),
+	opts appsetup.Options, approve func(authorize.Request) (authorize.Approval, error),
 ) {
 	if h.setUpEnded != nil {
 		defer h.setUpEnded(req.ID)
@@ -63,7 +63,7 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 			stop(&substrate.AuthorizationFailure{Message: "The set up failed on the server. Try again, and if it fails again the server log says why."}, false)
 		}
 	}()
-	out := h.setups.Run(ctx, ds, actor, req.Details, approved, func(progress []string) bool {
+	out := h.setups.Run(ctx, ds, actor, req.Details, approved, opts, func(progress []string) bool {
 		if err := h.authz.Progress(req.ID, authority, progress); err != nil {
 			slog.Warn("authorize: a set up outlived its request", "request", req.ID, "error", err)
 			return false
@@ -320,10 +320,13 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 			missing = append(missing, resolved.String())
 		}
 	}
-	// A package row the token will see as `unknown` is planned no further
-	// than its action, which the account and webhook rows it admits read.
-	opts := appsetup.Options{}
+	// The code the packages install is held to what the token itself may
+	// do (decision 0215). A package row the token will see as `unknown` is
+	// planned no further than its action, which the account and webhook
+	// rows it admits read.
+	opts := appsetup.Options{Approved: scope.FullApproval()}
 	if !full {
+		opts.Approved = scope.ApprovalFrom(grant)
 		opts.ActionOnly = map[string]bool{}
 		for _, d := range details {
 			if d.Type == substrate.DetailPackage && !grant.NamesPackage(d.Package) {

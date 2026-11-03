@@ -452,27 +452,34 @@ func (g Grant) NamesPackage(pkg string) bool {
 // it means nothing for a glob or for the agent and webhook verbs. A webhook
 // scope covers its own trigger alone.
 func (g Grant) Covers(want Scope, internal bool) bool {
-	return slices.ContainsFunc(g.scopes, func(held Scope) bool {
-		switch {
-		case held.Verb == want.Verb:
-		case held.Verb == Write && want.Verb == Read:
-		default:
-			return false
-		}
-		if held.Pattern == want.Pattern {
-			return true
-		}
-		if want.Verb == Webhook || !vocabulary.IsTypeGlob(held.Pattern) {
-			return false
-		}
-		if vocabulary.IsTypeGlob(want.Pattern) {
-			return strings.HasPrefix(globPrefix(want.Pattern), globPrefix(held.Pattern))
-		}
-		if internal && !want.OverAgents() {
-			return false
-		}
-		return vocabulary.MatchTypeGlob(held.Pattern, want.Pattern)
-	})
+	return slices.ContainsFunc(g.scopes, func(held Scope) bool { return Covers(held, want, internal) })
+}
+
+// Covers reports whether one held scope covers what want asks for, by the
+// rule Grant.Covers applies to each of a grant's scopes. It is the one
+// comparison of two scopes by reach, so a closure's reach held to a scope
+// (Approved.Covers) and to an earlier closure's reach (catalog.ReachGrows)
+// cannot disagree with the page's own folding.
+func Covers(held, want Scope, internal bool) bool {
+	switch {
+	case held.Verb == want.Verb:
+	case held.Verb == Write && want.Verb == Read:
+	default:
+		return false
+	}
+	if held.Pattern == want.Pattern {
+		return true
+	}
+	if want.Verb == Webhook || !vocabulary.IsTypeGlob(held.Pattern) {
+		return false
+	}
+	if vocabulary.IsTypeGlob(want.Pattern) {
+		return strings.HasPrefix(globPrefix(want.Pattern), globPrefix(held.Pattern))
+	}
+	if internal && !want.OverAgents() {
+		return false
+	}
+	return vocabulary.MatchTypeGlob(held.Pattern, want.Pattern)
 }
 
 // globPrefix is what every name a glob matches starts with: nothing for `*`,

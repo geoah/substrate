@@ -3,6 +3,8 @@ package appsetup
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 	"github.com/geoah/substrate/samples"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -59,7 +62,7 @@ func TestTheChainCarriesEachPackagesOwnFacts(t *testing.T) {
 	// A row planned for its action alone keeps its chain and what blocks it,
 	// and carries no facts.
 	ds = newFakeDataset()
-	rows, _, err := Plan(context.Background(), ds, cat, []substrate.AuthorizationDetail{pkgDetail(appPkg, 4)}, Options{ActionOnly: map[string]bool{appPkg: true}})
+	rows, _, err := Plan(context.Background(), ds, cat, []substrate.AuthorizationDetail{pkgDetail(appPkg, 4)}, Options{Approved: scope.FullApproval(), ActionOnly: map[string]bool{appPkg: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +423,7 @@ func TestTheShippedSignedWebhookIsNeverAnApps(t *testing.T) {
 // The hash names what each row does, never the progress a run reports.
 func TestAPlansHashIsItsRowsWithoutTheirProgress(t *testing.T) {
 	cat := testCatalog(t)
-	rows, hash, err := Plan(context.Background(), newFakeDataset(), cat, []substrate.AuthorizationDetail{pkgDetail(appPkg, 4)}, Options{})
+	rows, hash, err := Plan(context.Background(), newFakeDataset(), cat, []substrate.AuthorizationDetail{pkgDetail(appPkg, 4)}, everything())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +431,167 @@ func TestAPlansHashIsItsRowsWithoutTheirProgress(t *testing.T) {
 	if again, _ := Hash(started); again != hash || started[0].Progress != substrate.ProgressWaiting {
 		t.Fatalf("a started row hashes %q, want %q", again, hash)
 	}
-	if _, empty, _ := Plan(context.Background(), newFakeDataset(), cat, nil, Options{}); empty != "" {
+	if _, empty, _ := Plan(context.Background(), newFakeDataset(), cat, nil, everything()); empty != "" {
 		t.Fatalf("no details hash %q", empty)
+	}
+}
+
+// Installed code reaches no further than the approval (decision 0215): a
+// package whose functions, agents, triggers and mappings read and write only
+// what the scopes left checked cover is admitted; one reaching past them is
+// blocked, naming each uncovered reach and the scope that would cover it,
+// on the package asked for and on one it needs first.
+func TestInstalledCodeIsHeldToTheScopesLeftChecked(t *testing.T) {
+	cat := testCatalog(t)
+	ds := newFakeDataset()
+	// app's function writes its item and every base kind; base's writes its
+	// thing; app's record trigger watches item.
+	row := planWith(t, ds, cat, []string{"write:" + appPkg + "/*", "write:" + basePkg + "/*"}, pkgDetail(appPkg, 4))[0]
+	if row.Blocked != nil {
+		t.Fatalf("covered code blocked: %+v", row.Blocked)
+	}
+	reach := row.Package.Reach
+	if len(reach) != 3 || slices.ContainsFunc(reach, func(r substrate.AuthorizationReach) bool { return !r.Covered }) {
+		t.Fatalf("app's reach = %+v, want three entries, all covered", reach)
+	}
+	byPattern := map[string]substrate.AuthorizationReach{}
+	for _, r := range reach {
+		byPattern[r.Pattern+"/"+fmt.Sprint(r.Write)] = r
+	}
+	if r := byPattern[appPkg+"/item/true"]; r.Scope != "write:"+appPkg+"/item" || len(r.By) != 1 || r.By[0].Type != vocabulary.DocFunction || r.By[0].ID != appPkg+"/ingest" {
+		t.Fatalf("the item write = %+v", r)
+	}
+	if r := byPattern[appPkg+"/item/false"]; r.Scope != "read:"+appPkg+"/item" || len(r.By) != 1 || r.By[0].Type != "trigger" || r.By[0].ID != "app-records" {
+		t.Fatalf("the trigger's read = %+v", r)
+	}
+	if r := byPattern[basePkg+"/*/true"]; r.Scope != "write:"+basePkg+"/*" {
+		t.Fatalf("the base glob = %+v", r)
+	}
+	step := row.Package.Requires[0]
+	if step.Blocked != nil || len(step.Reach) != 1 || !step.Reach[0].Covered || step.Reach[0].Pattern != basePkg+"/thing" || !step.Reach[0].Write {
+		t.Fatalf("base's reach = %+v %+v", step.Blocked, step.Reach)
+	}
+	// Without base's write, both the package and what it needs first reach
+	// past the approval, and the package's own reach is what the row says.
+	row = planWith(t, ds, cat, []string{"write:" + appPkg + "/*"}, pkgDetail(appPkg, 4))[0]
+	wantBlocked(t, "app", row.Blocked, substrate.BlockReachesPastScopes, "")
+	if want := "Its code reaches past the access you are approving: it writes " + basePkg + "/* (write:" + basePkg + "/* covers it). The app has to ask for that access, and you have to allow it."; row.Blocked.Problem != want {
+		t.Fatalf("app says %q, want %q", row.Blocked.Problem, want)
+	}
+	step = row.Package.Requires[0]
+	wantBlocked(t, "base", step.Blocked, substrate.BlockReachesPastScopes, "")
+	if !strings.Contains(step.Blocked.Problem, "it writes "+basePkg+"/thing (write:"+basePkg+"/thing covers it)") || step.Reach[0].Covered {
+		t.Fatalf("base says %q with %+v", step.Blocked.Problem, step.Reach)
+	}
+	// A write covers a read, and an exact scope covers the kind but not the
+	// glob the function also names.
+	row = planWith(t, ds, cat, []string{"write:" + appPkg + "/*", "write:" + basePkg + "/thing"}, pkgDetail(appPkg, 4))[0]
+	if row.Package.Requires[0].Blocked != nil || row.Blocked == nil || !strings.Contains(row.Blocked.Problem, "it writes "+basePkg+"/*") {
+		t.Fatalf("with the exact write: step %+v, row %+v", row.Package.Requires[0].Blocked, row.Blocked)
+	}
+	// A requirement's code counts on its own: hooks' relay reads base's
+	// thing and declares hosts, and needshooks ships nothing.
+	row = planWith(t, ds, cat, []string{"read:" + basePkg + "/thing"}, pkgDetail(needsHooks, 1))[0]
+	if row.Blocked != nil || len(row.Package.Reach) != 0 {
+		t.Fatalf("needshooks = %+v %+v", row.Blocked, row.Package.Reach)
+	}
+	hooks := row.Package.Requires[0]
+	if len(hooks.Functions) != 1 || strings.Join(hooks.Functions[0].Network, ",") != "api.example.com,10.0.0.1:8443" ||
+		strings.Join(hooks.Functions[0].Reads, ",") != basePkg+"/thing" || len(hooks.Reach) != 1 || hooks.Reach[0].Write {
+		t.Fatalf("hooks = %+v %+v", hooks.Functions, hooks.Reach)
+	}
+	row = planWith(t, ds, cat, []string{"write:" + needsHooks + "/*"}, pkgDetail(needsHooks, 1))[0]
+	wantBlocked(t, "needshooks", row.Blocked, substrate.BlockReachesPastScopes, "")
+	if !strings.HasPrefix(row.Blocked.Problem, "It needs a package first whose code reaches past the access you are approving: it reads "+basePkg+"/thing (read:"+basePkg+"/thing covers it).") {
+		t.Fatalf("needshooks says %q", row.Blocked.Problem)
+	}
+	wantBlocked(t, "hooks", row.Package.Requires[0].Blocked, substrate.BlockReachesPastScopes, "")
+	// A kind the repository does not hold and no closure of the chain
+	// declares is covered by its exact scope alone.
+	if row := planWith(t, ds, cat, []string{"read:" + basePkg + "/*"}, pkgDetail(needsHooks, 1))[0]; row.Blocked == nil {
+		t.Fatal("a glob covered a kind nobody declares")
+	}
+	// Full access covers everything, a write of llm included, which no
+	// scope covers.
+	row = planWith(t, ds, cat, []string{"write:*"}, pkgDetail(pinnerPkg, 1))[0]
+	wantBlocked(t, "pinner", row.Blocked, substrate.BlockReachesPastScopes, "")
+	if !strings.Contains(row.Blocked.Problem, "it writes substrate.reamde.dev/llm/memory (only full access covers it)") || row.Package.Reach[0].Scope != "full" {
+		t.Fatalf("pinner says %q with %+v", row.Blocked.Problem, row.Package.Reach)
+	}
+	if row := planWith(t, ds, cat, []string{"full"}, pkgDetail(pinnerPkg, 1))[0]; row.Blocked != nil {
+		t.Fatalf("full access blocked %+v", row.Blocked)
+	}
+	// Nothing checked covers nothing, and a package without code is never
+	// blocked for its reach.
+	if row := planWith(t, ds, cat, nil, pkgDetail(appPkg, 4))[0]; row.Blocked == nil || row.Blocked.Reason != substrate.BlockReachesPastScopes {
+		t.Fatalf("nothing checked = %+v", row.Blocked)
+	}
+	ds.installed(cat, hooksPkg, 2)
+	if row := planWith(t, ds, cat, nil, pkgDetail(needsHooks, 1))[0]; row.Blocked != nil {
+		t.Fatalf("a package without code, its requirement in place, blocked %+v", row.Blocked)
+	}
+	// A package in place is not held: its code runs already.
+	ds.installed(cat, basePkg, 2)
+	ds.installed(cat, appPkg, 4)
+	if row := planWith(t, ds, cat, nil, pkgDetail(appPkg, 4))[0]; row.Action != substrate.SetupNone || row.Blocked != nil {
+		t.Fatalf("a package in place = %+v", row)
+	}
+}
+
+// An agent's grants, a mapping's source and target and a record trigger's
+// kinds are reach too, each named with what reaches it, and an internal
+// kind a closure of the chain declares is covered by its exact scope alone.
+func TestAnAgentsAMappingsAndATriggersReachCount(t *testing.T) {
+	cat := testCatalog(t)
+	ds := newFakeDataset()
+	row := planWith(t, ds, cat, []string{"write:" + coachPkg + "/*", "write:" + basePkg + "/*"}, pkgDetail(coachPkg, 1))[0]
+	if row.Blocked != nil {
+		t.Fatalf("coach blocked: %+v", row.Blocked)
+	}
+	want := map[string][]substrate.AuthorizationReachBy{
+		"read " + basePkg + "/*":      {{Type: vocabulary.DocAgent, ID: coachPkg + "/coach"}},
+		"write " + coachPkg + "/plan": {{Type: vocabulary.DocAgent, ID: coachPkg + "/coach"}, {Type: vocabulary.DocRecordMapping, ID: coachPkg + "/fromthing"}},
+		"read " + basePkg + "/thing":  {{Type: vocabulary.DocRecordMapping, ID: coachPkg + "/fromthing"}, {Type: "trigger", ID: "coach-on-thing"}},
+	}
+	got := map[string][]substrate.AuthorizationReachBy{}
+	for _, r := range row.Package.Reach {
+		verb := "read"
+		if r.Write {
+			verb = "write"
+		}
+		got[verb+" "+r.Pattern] = r.By
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("coach's reach = %+v, want %+v", got, want)
+	}
+	// The agent's read of base/* is a glob, which only a glob at least as
+	// wide covers; the mapping's and the trigger's exact read is covered by
+	// base's write glob alone once the agent's is.
+	row = planWith(t, ds, cat, []string{"write:" + coachPkg + "/*", "read:" + basePkg + "/thing"}, pkgDetail(coachPkg, 1))[0]
+	wantBlocked(t, "coach", row.Blocked, substrate.BlockReachesPastScopes, "")
+	if !strings.Contains(row.Blocked.Problem, "it reads "+basePkg+"/* (read:"+basePkg+"/* covers it)") || strings.Contains(row.Blocked.Problem, basePkg+"/thing") {
+		t.Fatalf("coach says %q", row.Blocked.Problem)
+	}
+	// app's account kind is internal: the closure says so before it is
+	// installed, so app's write glob does not cover a function writing it.
+	accountWriter := closure("example.com/writer", 1, map[string]int{appPkg: 4}, functionDoc("example.com/writer/write", "["+appAccount+"]"))
+	cat2 := testCatalogWith(t, map[string]string{"example.com/writer/bundle.yaml": accountWriter})
+	row = planWith(t, ds, cat2, []string{"write:example.com/writer/*", "write:" + appPkg + "/*", "write:" + basePkg + "/*"}, pkgDetail("example.com/writer", 1))[0]
+	wantBlocked(t, "writer", row.Blocked, substrate.BlockReachesPastScopes, "")
+	if !strings.Contains(row.Blocked.Problem, "it writes "+appAccount+" (write:"+appAccount+" covers it)") {
+		t.Fatalf("writer says %q", row.Blocked.Problem)
+	}
+	if row := planWith(t, ds, cat2, []string{"write:" + appAccount, "write:" + appPkg + "/*", "write:" + basePkg + "/*"}, pkgDetail("example.com/writer", 1))[0]; row.Blocked != nil {
+		t.Fatalf("the exact write blocked %+v", row.Blocked)
+	}
+	// Planned for its action alone, a row keeps the block and carries no
+	// reach.
+	rows, _, err := Plan(context.Background(), ds, cat, []substrate.AuthorizationDetail{pkgDetail(coachPkg, 1)},
+		Options{Approved: scope.Approved{}, ActionOnly: map[string]bool{coachPkg: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row := rows[0]; row.Blocked == nil || row.Blocked.Reason != substrate.BlockReachesPastScopes || row.Package.Reach != nil || row.Package.Requires[0].Reach != nil {
+		t.Fatalf("an action-only row = %+v %+v", row.Blocked, row.Package)
 	}
 }
