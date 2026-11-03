@@ -8,7 +8,7 @@ Three Gradle modules here, built from the one Gradle root in
 | Module | What it holds |
 | --- | --- |
 | `kit-core` | `libSubstrateAndroid.so` (the kit's portable libraries, `SubstrateBridge` and `SubstrateBridgeCheck`, from `apps/kit/Package.swift`) with the Swift runtime and Foundation it loads, per ABI; the Swift packages' resource bundles as assets; `Bridge`, `BridgeCore`, `BridgeHandle`, `KeyedListState`, `DeviceServices`, `Redaction`; the values generated from `bridge.golden.json` (`bridge/Protocol.kt`) |
-| `kit-device` | the device services in Kotlin, the only kit module that touches an Android service: `Transport` (OkHttp), `SecureStore` (Tink and DataStore), `Dns` (`DnsResolver.rawQuery`), `Connectivity`, `KitDevice.services(context)`; the backup and device-transfer rules |
+| `kit-device` | the device services in Kotlin, the only kit module that touches an Android service: `Transport` (OkHttp), `SecureStore` (Tink and DataStore), `Dns` (`DnsResolver.rawQuery`), `Connectivity`, `BrowserSignIn` (the default browser, a loopback callback on `127.0.0.1`), `Notifications` (`NotificationManager`, alarms, the permission's question), `KitDevice.services(context)`; the backup and device-transfer rules |
 | `kit-ui` | the shared screens in Compose and Material 3, one composable per SubstrateUI view (`ConnectScreen`, `ServerTooOldScreen`, `AccessBannerView`, `AccessEndedScreen`, `ReviewScreen`, `RepositoryScreen`, `StatusScreen`, `SettingsScreen`, `AboutScreen`, `ProblemView`, `ChangeLineView`, `UnrevokedNotices`, `AppMenu`), the building blocks an app draws its own screens with (`KitTheme`, `KitCard`, `KitSection`, `KitRow`, `KitValueRow`, `KitNavigationRow`, `KitDestructiveRow`, `StatusBadge`, `ProblemBox`), the design tokens Swift writes (`KitTokens.kt`), and `KitGallery`, each screen's composable |
 | `bridge-check` | an app that starts the bridge from its `Application` and runs `BridgeChecks` (the runtime checks) against the Swift library; never published |
 | `gallery` | the Gallery app: every shared screen in every state, live, from the fixtures the `gallery` root presents through the bridge, drawn by kit-ui; never published |
@@ -55,6 +55,30 @@ command is read with the exact reader and decoded by `ValueCoding`, so a
 `JSONValue` in it keeps its digits, and a new locale or time zone has
 `Runtime.environmentChanged` present the whole tree again.
 
+**Signing in.** `BrowserSignIn` takes a local build's loopback route: it
+listens on `127.0.0.1` alone, on a port the system picks, for the one path
+Swift named, opens the owner's default browser on the approval page, and
+hands the callback's query back unchecked; `OAuthClient` holds `state`,
+`iss` and PKCE in Swift. The page the browser lands on links back to the
+app. A release's claimed route is refused until the app takes its
+verified App Link (the Auth Tab), never answered through loopback. The
+kit's `SignInController` is the Connect screen as a root of its own, with
+a count of finished sign-ins an app opens its link again on.
+
+**Notifications.** `Notifications.get(context)` is the process's one
+instance: a request with a `fireAt` is kept in
+`noBackupFilesDir/notifications` with an alarm (exact where the owner lets
+the app schedule exact alarms), armed again at every start and by
+`NotificationReceiver` after a reboot, so `pending(prefix)` answers across
+launches; one with none shows at once, and one whose instant passed is
+dropped. The permission is asked once, from the activity in front
+(`PermissionActivity`). A tap opens the app's launch activity, which hands
+its intent to `Notifications.handle`; that, an action and a dismissal are
+responses, each once, kept for the first reader. An app names its
+notifications' channel in `KitDevice.services(context, notificationChannel)`
+and may replace the status bar's mark by declaring
+`@drawable/substrate_notification`.
+
 A body too large for a message is a file under `noBackupFilesDir/bridge`,
 deleted by whichever side holds it last and swept when kit-device's
 `Transport` is made; a credential exchange's never is. A locale or time
@@ -67,7 +91,14 @@ tree needs no glue: `registry.register("tasks") { settings, context in
 (TasksRoot(), context.appEnvironment(secureStore: "session")) }` opens it as
 a `Runtime`, whose commands are `RouteCommand`s. An app builds its own
 library the way `kit-core` builds `SubstrateAndroid` (the `substrate.swift`
-convention plugin) and passes its name to `Bridge.start`.
+convention plugin) and passes its name to `Bridge.start`; its APK leaves
+out kit-core's `libSubstrateAndroid.so` and takes one copy of the Swift
+runtime both carry (`packaging.jniLibs`). Substrate Tasks is the first
+([apps/tasks/README.md](../../tasks/README.md#on-android)): its library is
+`TasksKit`'s `SubstrateTasks` product, its `bridge.json` names
+`"uses": ["apps/kit/android/bridge.json"]` and generates only its own
+values, and `mise run android:generate` runs every app's configuration
+after the kit's.
 
 ## The generated Kotlin
 
@@ -121,9 +152,9 @@ opens one.
 
 ```bash
 mise run android:sdk     # once: the SDK packages, NDK r30, the Swift SDK for Android
-mise run android:build   # every module, the Gallery app included, debug and release
+mise run android:build   # every module, the Gallery app and every app's included, debug and release
 mise run android:test    # the generator, the bridge on this host, the Kotlin tests, the round trip
-mise run android:smoke   # on a booted emulator: the release build's checks, cold starts, the APK's libraries, the contract tests
+mise run android:smoke   # on a booted emulator: the release build's checks, cold starts, the APK's libraries, the contract tests (kit-device's: transport, secure store, DNS, browser sign-in, notifications)
 mise run android:lock    # after a change to gradle/libs.versions.toml
 ```
 

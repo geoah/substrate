@@ -845,7 +845,9 @@ adds to the app id.
 A fifth app, built on the kit from its first line: `SubstrateTasks` (bundle id
 `dev.reamde.substrate.tasks`) on iPhone, iPad and Mac from one target, its
 screens in the `SubstrateTasksUI` framework, its core the portable
-`TasksKit` (`tasks/TasksKit`) under the kit's link. Its approval asks for
+`TasksKit` (`tasks/TasksKit`) under the kit's link; and on Android
+(application id `dev.reamde.substrate.tasks`), the same core under a
+Compose UI, the Gradle module `:tasks` in `tasks/android`. Its approval asks for
 `substrate.reamde.dev/tasks`, which it publishes, and the server installs
 it from the authority document. Tasks and task lists, due dates and
 reminders, offline writes through the outbox and live updates through the
@@ -984,6 +986,7 @@ workouts/package/                   its published training and trainingcoach pac
 workouts/WorkoutsKit/               its Swift package: WorkoutsCore (model, engines, presenters) and WorkoutsSync (package, catalogue, outbox), with their tests; portable, over the kit's portable libraries
 tasks/apple/                        Substrate Tasks: Sources/ (the app), UI/ (SubstrateTasksUI: the shell and the views), Tests/ (the views over the fixtures)
 tasks/package/                      its published tasks package
-tasks/TasksKit/                     its Swift package: TasksCore (model, codec, the root under the link, the editor, presenters, reminders), with its tests; portable
+tasks/TasksKit/                     its Swift package: TasksCore (model, codec, the root under the link, the editor, presenters, reminders) and TasksAndroid (its roots over the Android bridge, the SubstrateTasks library), with their tests; portable
+tasks/android/                      Substrate Tasks on Android: the Gradle module :tasks, its Compose UI, its bridge.json and generated Kotlin, fixtures/tasks.json
 template/                           what `mise run apps:new` copies: a whole app named `template` (app.json, TemplateKit/, apple/, package/), released by nothing
 ```
