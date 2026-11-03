@@ -698,6 +698,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	authority := ds.Repository().Authority
 	id := pathParam(r, "request")
 	actor := ActorFrom(ctx)
+	var selectedRows []substrate.AuthorizationSetup
 	// Checked again under the store's lock by whichever of Reserve, Approve
 	// and Finish answers the request.
 	approve := func(req authorize.Request) (authorize.Approval, error) {
@@ -722,6 +723,16 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		if !slices.Contains(lifetimeDays, *in.LifetimeDays) {
 			return authorize.Approval{}, validation("lifetimeDays must be one of 7, 30 or 90, or 0 for until revoked")
 		}
+		// An add-on the owner left out of the approval is left out of what
+		// the token says the app asked for (decision 0216).
+		details := req.Details
+		if selectedRows != nil {
+			details = slices.DeleteFunc(slices.Clone(details), func(d substrate.AuthorizationDetail) bool {
+				return d.Type == substrate.DetailPackage && slices.ContainsFunc(selectedRows, func(row substrate.AuthorizationSetup) bool {
+					return row.Package != nil && row.Package.ID == d.Package && row.Package.AddonFor != "" && !slices.Contains(in.Addons, d.Package)
+				})
+			})
+		}
 		// Only an approved webhook detail puts `webhook:` on a token.
 		for _, d := range req.Details {
 			if d.Type == substrate.DetailWebhook {
@@ -731,7 +742,8 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		return authorize.Approval{
 			Repository: authority, Dataset: ds, Scopes: scopes,
 			Lifetime: time.Duration(*in.LifetimeDays) * 24 * time.Hour, ClientName: approvedName(doc),
-			Details: req.Details, AppAuthority: verifiedAuthority(doc),
+			Details: details, AppAuthority: verifiedAuthority(doc),
+			AppAddons: appsetup.WaitingAddons(selectedRows),
 		}, nil
 	}
 	// The publisher the page showed is checked again before anything is
@@ -800,7 +812,8 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		approved, approvedHash = withoutProgress(req.Setup), req.PlanHash
-		if appsetup.Moved(approved, rows) >= 0 {
+		selectedNow, _ := appsetup.SelectAddons(rows, in.Addons)
+		if appsetup.Moved(approved, selectedNow) >= 0 {
 			refuse(true, conflict)
 			return
 		}
@@ -808,6 +821,18 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		refuse(false, conflict)
 		return
 	}
+	rows, err = appsetup.SelectAddons(rows, in.Addons)
+	if err == nil {
+		approved, err = appsetup.SelectAddons(approved, in.Addons)
+	}
+	if err == nil {
+		err = appsetup.ValidateSettings(rows, in.Settings)
+	}
+	if err != nil {
+		refuse(false, func() { writeSubstrateError(w, r, err) })
+		return
+	}
+	selectedRows = rows
 	if i := appsetup.FirstBlocked(rows); i >= 0 {
 		refuse(req.Setup != nil, func() {
 			writeError(w, http.StatusUnprocessableEntity, codeValidation, "this request cannot be set up: "+rows[i].Blocked.Problem)
@@ -818,7 +843,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		refuse(false, func() { writeSubstrateError(w, r, err) })
 		return
 	}
-	if !appsetup.NeedsAction(rows) {
+	if !appsetup.NeedsAction(rows) && len(in.Settings) == 0 {
 		code, req, err := h.authz.Approve(id, authority, approve)
 		if err != nil {
 			refuse(false, func() { writeAuthorizationAnswerError(w, r, err) })
@@ -842,7 +867,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	}
 	// Detached: a closed tab does not stop a set up that may be part way
 	// through an install, and the page that comes back reads where it is.
-	go h.runSetup(context.WithoutCancel(ctx), ds, actor, req, approved, opts, approve)
+	go h.runSetup(context.WithoutCancel(ctx), ds, actor, req, approved, opts, appsetup.RunOptions{Addons: in.Addons, Settings: in.Settings}, approve)
 	writeJSON(w, http.StatusAccepted, substrate.AuthorizationAnswer{State: substrate.AuthorizationSettingUp, Setup: started})
 }
 
@@ -1128,6 +1153,7 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 		AppAuthority: c.Approval.AppAuthority, AppAuthorityFromFile: c.Approval.AppAuthority != "" && c.Request.Document.Publisher.FromFile,
 		AppLocal:    authorize.LocalRedirect(c.Request.RedirectURI),
 		AppPackages: authorize.PackageFloors(c.Approval.Details), AppSoftwareVersion: c.Request.SoftwareVersion,
+		AppAddons: c.Approval.AppAddons,
 	})
 	if err != nil {
 		status, code := http.StatusInternalServerError, "server_error"

@@ -9,6 +9,7 @@ import { queryOptions } from "@tanstack/react-query"
 import { rootPath, request, seg } from "./http"
 import type {
   BundleStatus,
+  AddonInstallResult,
   CatalogItem,
   ConversionConfirm,
   OperationalList,
@@ -209,11 +210,15 @@ export function fetchCatalogItem(id: string): Promise<CatalogItem> {
  * upgrade semantics); the response is the installed bundle's computed status.
  * The catalog id is a package reference and carries a `/`, so it is
  * `%2F`-encoded as one path segment. */
+export type BundleInstallResult = BundleStatus & {
+  addons?: AddonInstallResult[]
+}
+
 export function installBundle(
   id: string,
   confirm?: ConversionConfirm
-): Promise<BundleStatus> {
-  return request<BundleStatus>(
+): Promise<BundleInstallResult> {
+  return request<BundleInstallResult>(
     "POST",
     `${CATALOG}/${seg(id)}/install`,
     confirm && { confirm }

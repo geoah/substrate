@@ -196,6 +196,8 @@ type fakeDataset struct {
 	putErr        func(in substrate.PutInput) error
 }
 
+func (d *fakeDataset) Tokens(context.Context) ([]substrate.TokenInfo, error) { return nil, nil }
+
 func newFakeDataset() *fakeDataset {
 	return &fakeDataset{
 		statuses: map[string]substrate.BundleStatus{}, kinds: map[string]substrate.KindInfo{},

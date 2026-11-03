@@ -80,6 +80,7 @@ function webhookWords(webhook: AuthorizationWebhookPlan): string {
 export function setupTitle(row: AuthorizationSetup): string {
   if (row.package) {
     const name = packageName(row.package.id)
+    if (row.action === "wait") return `${name} waits for its provider`
     if (row.action === "none") return `${name} is installed`
     if (row.action === "upgrade") return `Update ${name}`
     return `Install ${name}`

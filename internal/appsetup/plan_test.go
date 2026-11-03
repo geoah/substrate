@@ -562,9 +562,9 @@ func TestAnAgentsAMappingsAndATriggersReachCount(t *testing.T) {
 		t.Fatalf("coach blocked: %+v", row.Blocked)
 	}
 	want := map[string][]substrate.AuthorizationReachBy{
-		"read " + basePkg + "/*":      {{Type: vocabulary.DocAgent, ID: reachCoachPkg + "/coach"}},
+		"read " + basePkg + "/*":           {{Type: vocabulary.DocAgent, ID: reachCoachPkg + "/coach"}},
 		"write " + reachCoachPkg + "/plan": {{Type: vocabulary.DocAgent, ID: reachCoachPkg + "/coach"}, {Type: vocabulary.DocRecordMapping, ID: reachCoachPkg + "/fromthing"}},
-		"read " + basePkg + "/thing":  {{Type: vocabulary.DocRecordMapping, ID: reachCoachPkg + "/fromthing"}, {Type: "trigger", ID: "coach-on-thing"}},
+		"read " + basePkg + "/thing":       {{Type: vocabulary.DocRecordMapping, ID: reachCoachPkg + "/fromthing"}, {Type: "trigger", ID: "coach-on-thing"}},
 	}
 	got := map[string][]substrate.AuthorizationReachBy{}
 	for _, r := range row.Package.Reach {

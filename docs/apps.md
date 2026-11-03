@@ -917,3 +917,22 @@ preselected. No compatible row blocks approval with `no-model`; add a
 suitable AI provider and read the approval again. Setup binds the chosen
 row after installing the package. The server validates each choice against
 the current plan before writing.
+## Optional add-ons and configuration
+
+A published package listing may name `addonFor`, the provider package it
+extends. Its approval row is optional: the owner checks the add-ons they
+want. When that provider is absent, an approved row waits; the token keeps
+its package, version floor and provider in `appAddons`. Installing the
+provider tries the waiting add-ons again under each live token's approval.
+An expired or revoked token cannot authorize that install. The provider's
+install answer reports add-ons installed or still waiting; a blocked add-on
+does not undo the provider install.
+
+Packages can ship empty core `setting` and `secret` records under their own
+id prefix. Approval lists those fields, including requirements' fields, and
+asks the owner to fill them. Required empty fields refuse approval with
+`needs-setting`. The approval POST's `settings` entries carry `id`,
+`secret` and `value`; its `addons` names the optional packages selected.
+Values are written as the owner after installation. Secrets use sealed
+storage and never return to the app, enter the plan hash or live on the token.
+Waiting add-ons collect no configuration values until their package is here.
