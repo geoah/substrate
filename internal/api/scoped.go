@@ -1159,10 +1159,6 @@ func (s *scopedDataset) BindBundleInput(context.Context, string, string, string)
 
 func (s *scopedDataset) UninstallBundle(context.Context, string) error { return errScope("bundles") }
 
-func (s *scopedDataset) UninstallAppBundle(context.Context, substrate.Actor, string) error {
-	return errScope("bundles")
-}
-
 func (s *scopedDataset) PurgeBundle(context.Context, string) (int, error) {
 	return 0, errScope("bundles")
 }
