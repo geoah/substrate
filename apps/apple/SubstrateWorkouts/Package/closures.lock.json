@@ -1,10 +1,10 @@
 {
   "substrate.reamde.dev/training": {
-    "version": 4,
-    "sha256": "999f96921a1751752c7027f9b9f5a4443089ff67aaca2559a8b00b57285ba3a6"
+    "version": 5,
+    "sha256": "9ef4f532b653671dca0dd197b6f7f0f2bd77161114b3e12ad7ecccfd9168b4cf"
   },
   "substrate.reamde.dev/trainingcoach": {
-    "version": 2,
-    "sha256": "ab40c1c3ce87f73f09e7ad5dffc3f5bdec3bf5575771c06e368e9f253bf52a93"
+    "version": 3,
+    "sha256": "fde09d267f16109969f4c33d63a788d0da06fc4a9ac2c8d59c14a1e860f0f182"
   }
 }
