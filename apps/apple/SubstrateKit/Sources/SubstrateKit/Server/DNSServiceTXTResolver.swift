@@ -28,7 +28,14 @@ public struct DNSServiceTXTResolver: TXTResolver {
     /// missed.
     public struct Unconfirmed: LocalizedError, Sendable {
         public let name: String
-        public var errorDescription: String? { "Looking up \(name) failed: the DNS servers did not answer it." }
+        /// The plain resolver found a record where the system resolver said
+        /// there was none: the two disagree, rather than neither answering.
+        public var answered = false
+        public var errorDescription: String? {
+            answered
+                ? "Looking up \(name) gave two answers: the system said there is no record and the DNS servers returned one."
+                : "Looking up \(name) failed: the DNS servers did not answer it."
+        }
     }
 
     public func txt(_ name: String) async throws -> [String]? {
@@ -148,7 +155,7 @@ private final class TXTQuery: @unchecked Sendable {
                 case SubstrateTXTNoSuchName, SubstrateTXTNoData:
                     finish(.success(nil))
                 default:
-                    finish(.failure(DNSServiceTXTResolver.Unconfirmed(name: name)))
+                    finish(.failure(DNSServiceTXTResolver.Unconfirmed(name: name, answered: outcome == SubstrateTXTAnswered)))
                 }
             }
         }
