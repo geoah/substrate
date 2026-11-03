@@ -732,7 +732,8 @@ console's agent or an importer edits what the app wrote, these rules hold:
   ([Left out](#left-out-and-why)).
 - **The workout coach writes routines only once the owner agrees, and
   never while one is running.** The coach Substrate Workouts installs
-  (`substrate.reamde.dev/trainingcoach/workoutCoach`, [decision 0207](../../../../docs/decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md))
+  (`substrate.reamde.dev/trainingcoach/workoutCoach`, the agent in the
+  trainingcoach closure under [coach/](coach/))
   writes routines, exercises, setups and its memories directly, after
   presenting the change in a fixed shape and getting a clear yes in the chat,
   and it checks for a session of the routine whose `status` is `active`
