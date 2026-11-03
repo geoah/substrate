@@ -9,6 +9,7 @@ public final class MemoryJournal<Event: Codable & Sendable, State: Codable & Sen
     private var stored: StoredJournal<Event, State>?
     private var written: [[Event]] = []
     private var asideCount = 0
+    private var readCount = 0
     private var failing: (any Error)?
 
     public init(events: [Event]? = nil, state: State? = nil) {
@@ -61,7 +62,15 @@ public final class MemoryJournal<Event: Codable & Sendable, State: Codable & Sen
     public func read() throws -> StoredJournal<Event, State>? {
         lock.lock()
         defer { lock.unlock() }
+        readCount += 1
         return stored
+    }
+
+    /// How many times a runtime read the journal: once, when it opens.
+    public var reads: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return readCount
     }
 
     public func delete() throws {

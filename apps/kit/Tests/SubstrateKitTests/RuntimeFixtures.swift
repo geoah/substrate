@@ -1,5 +1,6 @@
 import Foundation
 import SubstrateRuntime
+import SubstrateScreens
 import SubstrateTesting
 
 /// A refusal of the fixtures' engines.
@@ -58,6 +59,9 @@ struct Training: Controller {
         case finishFailed(String)
         case restStarted(until: Date)
         case restEnded
+        /// At open over a replayed session: its effects restore what the
+        /// device showed for it.
+        case resumed
     }
 
     struct State: Codable, Equatable, Sendable {
@@ -83,10 +87,13 @@ struct Training: Controller {
     enum Effect: Equatable, Sendable {
         case writeHistory([String])
         case announce(String)
+        case restoreActivity(sets: Int)
     }
 
     let store: any JournalStore<Event, State>
     let shelf: HistoryShelf
+    /// Asks for `resumed` at open, as Workouts does over a replayed session.
+    var resumes = false
 
     var initialState: State { State() }
     var initialTransient: Transient { Transient() }
@@ -120,24 +127,26 @@ struct Training: Controller {
             next.restUntil = until
         case .restEnded:
             next.restUntil = nil
+        case .resumed:
+            break
         }
         return next
     }
 
-    func journaling(_ event: Event) -> Journaling {
+    func journaling(of event: Event) -> Journaling {
         switch event {
         case .started: .restart
         case .logged, .restStarted, .restEnded: .append
         case .finished: .clear
-        case .finishRequested, .finishFailed: .skip
+        case .finishRequested, .finishFailed, .resumed: .skip
         }
     }
 
-    func noting(_ event: Event, applied state: State, in transient: Transient) -> Transient {
+    func transient(after event: Event, applied state: State, from transient: Transient) -> Transient {
         Transient(refusal: nil)
     }
 
-    func refusing(_ event: Event, because error: any Error, in transient: Transient) -> Transient {
+    func transient(afterRefusing event: Event, because error: any Error, from transient: Transient) -> Transient {
         Transient(refusal: String(describing: error))
     }
 
@@ -153,15 +162,18 @@ struct Training: Controller {
 
     func nextChange(of presentation: Presentation) -> Date? { presentation.restUntil }
 
-    func tick(at instant: Date) -> Event? { .restEnded }
+    func event(atTick instant: Date) -> Event? { .restEnded }
 
     func effects(of event: Event, on state: State, presented presentation: Presentation) -> [Effect] {
         switch event {
         case .finishRequested: [.writeHistory(state.sets)]
         case let .logged(set): [.announce("\(set), \(presentation.sets.count) so far")]
+        case .resumed: state.id == nil ? [] : [.restoreActivity(sets: state.sets.count)]
         default: []
         }
     }
+
+    func event(atOpen replayed: Bool) -> Event? { resumes && replayed ? .resumed : nil }
 
     func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
         switch effect {
@@ -175,7 +187,7 @@ struct Training: Controller {
                     return .finishFailed(String(describing: error))
                 }
             }
-        case .announce:
+        case .announce, .restoreActivity:
             return .none
         }
     }
@@ -248,9 +260,12 @@ struct Feed: Controller {
         return next
     }
 
-    func coalescing(_ event: Event) -> Coalescing {
-        if case .delta = event { return .within(.milliseconds(50)) }
-        return .now
+    func coalescing(of event: Event) -> Coalescing {
+        switch event {
+        case .delta: .within(.milliseconds(50))
+        case .heard: .within(.milliseconds(10))
+        default: .now
+        }
     }
 
     func present(_ input: PresenterInput<Feed>) -> State { input.state }
@@ -324,23 +339,30 @@ private extension AsyncStream {
 }
 
 /// Chat's list, small: rooms are children keyed by an id the app mints,
-/// what a child says is folded into the parent's transcript, and the
-/// parent's presentation holds each child's.
+/// what a child says is folded into the parent's transcript, the parent's
+/// presentation holds each child's, the topic the parent keeps is part of
+/// each child's value, and a room bound to a thread closes any other room
+/// on it, as binding a thread closes Chat's other conversation.
 struct Lobby: Controller {
     enum Command: Codable, Equatable, Sendable {
         case open(String)
         case close(ChildKey)
+        case topic(String)
     }
 
     enum Event: Codable, Equatable, Sendable {
         case opened(ChildKey, String)
         case closed(ChildKey)
         case said(ChildKey, String)
+        case bound(ChildKey, String)
+        case topicSet(String)
     }
 
     struct State: Codable, Equatable, Sendable {
         var rooms: [ChildKey: String] = [:]
+        var threads: [ChildKey: String] = [:]
         var transcript: [String] = []
+        var topic = ""
     }
 
     struct Presentation: Codable, Equatable, Sendable {
@@ -356,6 +378,7 @@ struct Lobby: Controller {
         switch command {
         case let .open(name): [.opened(ChildKey(context.mint().uuidString.lowercased()), name)]
         case let .close(key): [.closed(key)]
+        case let .topic(topic): [.topicSet(topic)]
         }
     }
 
@@ -363,8 +386,17 @@ struct Lobby: Controller {
         var next = state
         switch event {
         case let .opened(key, name): next.rooms[key] = name
-        case let .closed(key): next.rooms[key] = nil
+        case let .closed(key):
+            next.rooms[key] = nil
+            next.threads[key] = nil
         case let .said(key, text): next.transcript.append("\(state.rooms[key] ?? "?"): \(text)")
+        case let .bound(key, thread):
+            for (other, bound) in state.threads where other != key && bound == thread {
+                next.rooms[other] = nil
+                next.threads[other] = nil
+            }
+            next.threads[key] = thread
+        case let .topicSet(topic): next.topic = topic
         }
         return next
     }
@@ -374,19 +406,23 @@ struct Lobby: Controller {
     }
 
     func children(in state: State) -> [ChildKey: Room] {
-        state.rooms.mapValues { Room(name: $0, gates: gates) }
+        state.rooms.mapValues { Room(name: $0, topic: state.topic, gates: gates) }
     }
 
     func event(fromChild key: ChildKey, _ event: Room.Event) -> Event? {
-        if case let .spoke(text) = event { return .said(key, text) }
-        return nil
+        switch event {
+        case let .spoke(text): .said(key, text)
+        case let .bound(thread): .bound(key, thread)
+        default: nil
+        }
     }
 }
 
-struct Room: Controller {
+struct Room: Controller, Equatable {
     enum Command: Codable, Equatable, Sendable {
         case say(String)
         case wait(String)
+        case bind(String)
     }
 
     enum Event: Codable, Equatable, Sendable {
@@ -394,16 +430,19 @@ struct Room: Controller {
         case linked(Int)
         case asked(String)
         case answered(String)
+        case bound(String)
     }
 
     struct State: Codable, Equatable, Sendable {
         var spoken: [String] = []
         var link: Int?
         var answers: [String] = []
+        var thread: String?
     }
 
     struct Presentation: Codable, Equatable, Sendable {
         var name: String
+        var topic: String
         var spoken: [String]
         var link: Int?
         var answers: [String]
@@ -414,7 +453,12 @@ struct Room: Controller {
     }
 
     let name: String
+    let topic: String
     let gates: Gates
+
+    static func == (lhs: Room, rhs: Room) -> Bool {
+        lhs.name == rhs.name && lhs.topic == rhs.topic && lhs.gates === rhs.gates
+    }
 
     var initialState: State { State() }
 
@@ -422,6 +466,7 @@ struct Room: Controller {
         switch command {
         case let .say(text): [.spoke(text)]
         case let .wait(gate): [.asked(gate)]
+        case let .bind(thread): [.bound(thread)]
         }
     }
 
@@ -432,15 +477,16 @@ struct Room: Controller {
         case let .linked(generation): next.link = generation
         case .asked: break
         case let .answered(gate): next.answers.append(gate)
+        case let .bound(thread): next.thread = thread
         }
         return next
     }
 
     func present(_ input: PresenterInput<Room>) -> Presentation {
-        Presentation(name: name, spoken: input.state.spoken, link: input.state.link, answers: input.state.answers)
+        Presentation(name: name, topic: topic, spoken: input.state.spoken, link: input.state.link, answers: input.state.answers)
     }
 
-    func linkChanged(_ link: LinkSnapshot) -> Event? { .linked(link.generation) }
+    func event(forLink link: LinkSnapshot) -> Event? { .linked(link.generation) }
 
     func effects(of event: Event, on state: State, presented presentation: Presentation) -> [Effect] {
         if case let .asked(gate) = event { return [.wait(gate)] }
@@ -457,4 +503,46 @@ struct Room: Controller {
             }
         }
     }
+}
+
+extension Lobby: LinkedApp {
+    static func == (lhs: Lobby, rhs: Lobby) -> Bool { lhs.gates === rhs.gates }
+}
+
+/// A controller whose presentation fails to encode while `broken`: what the
+/// bridge is told rather than nothing.
+struct Fragile: Controller {
+    enum Command: Codable, Equatable, Sendable { case set(Bool) }
+    typealias Event = Command
+
+    struct State: Codable, Equatable, Sendable {
+        var broken = false
+
+        init(broken: Bool = false) {
+            self.broken = broken
+        }
+
+        init(from decoder: any Decoder) throws {
+            broken = try decoder.singleValueContainer().decode(Bool.self)
+        }
+
+        func encode(to encoder: any Encoder) throws {
+            if broken { throw EncodingError.invalidValue(self, .init(codingPath: [], debugDescription: "broken on purpose")) }
+            var container = encoder.singleValueContainer()
+            try container.encode(broken)
+        }
+    }
+
+    typealias Presentation = State
+
+    var initialState: State { State() }
+
+    func events(for command: Command, in context: Enrichment<Fragile>) -> [Event] { [command] }
+
+    func apply(_ event: Event, to state: State) throws -> State {
+        guard case let .set(broken) = event else { return state }
+        return State(broken: broken)
+    }
+
+    func present(_ input: PresenterInput<Fragile>) -> State { input.state }
 }

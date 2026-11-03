@@ -26,10 +26,10 @@ private func openOutbox(_ root: URL = temporaryFolder()) throws -> Outbox {
     Outbox(folder: try RepositoryFolder(root: root))
 }
 
-private func entry(_ method: OutboxEntry.Method, _ kind: String, _ id: String, group: String? = nil, guarded: Bool = false,
+private func entry(_ method: OutboxEntry.Method, _ kind: String, _ id: String, batch: String? = nil, guarded: Bool = false,
                    properties: JSONObject = [:]) -> OutboxEntry
 {
-    OutboxEntry(method: method, kind: kind, recordID: id, properties: properties, guarded: guarded, group: group)
+    OutboxEntry(method: method, kind: kind, recordID: id, properties: properties, guarded: guarded, batch: batch)
 }
 
 private func edit(_ id: String, _ patch: JSONObject, base: Int) -> OutboxEntry {
@@ -49,8 +49,8 @@ struct OutboxTests {
         server.on { $0.method == "PUT" ? (200, answered(1)) : nil }
         let outbox = try openOutbox()
         try await outbox.enqueue([
-            entry(.put, entryKind, "s1", group: "s1"),
-            entry(.patch, entryKind, "s1", group: "s1", guarded: true, properties: ["notes": .string("x")]),
+            entry(.put, entryKind, "s1", batch: "s1"),
+            entry(.patch, entryKind, "s1", batch: "s1", guarded: true, properties: ["notes": .string("x")]),
         ])
         #expect(await outbox.flush(writer(server)) == .sent)
         // The create answered version 1, which somebody moved to 5: the
@@ -67,7 +67,7 @@ struct OutboxTests {
         server.answer("PUT", path(entryKind, "a"), 422,
                       #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.revision: 1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"]}}"#)
         let outbox = try openOutbox()
-        try await outbox.enqueue([entry(.put, entryKind, "a", group: "s")])
+        try await outbox.enqueue([entry(.put, entryKind, "a", batch: "s")])
         #expect(await outbox.flush(writer(server)) == .sent)
         #expect(await outbox.entries.isEmpty)
     }
@@ -77,21 +77,21 @@ struct OutboxTests {
         server.on { _ in (-1, "") }
         let root = temporaryFolder()
         let first = try openOutbox(root)
-        try await first.enqueue((1 ... 5).map { entry(.put, entryKind, "e\($0)", group: "g") })
+        try await first.enqueue((1 ... 5).map { entry(.put, entryKind, "e\($0)", batch: "g") })
         guard case .offline = await first.flush(writer(server)) else { Issue.record("not offline"); return }
         #expect(await first.entries.count == 5)
         #expect(try await openOutbox(root).entries.count == 5)
     }
 
-    @Test func aRefusalParksTheWriteHoldsTheRestOfItsGroupAndLetsAnotherGo() async throws {
+    @Test func aRefusalParksTheWriteHoldsTheRestOfItsBatchAndLetsAnotherGo() async throws {
         let server = ScriptedServer()
         server.answer("PUT", path(entryKind, "bad"), 422,
                       #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.sport: expected one of strength"]}}"#)
         server.on { $0.method == "PUT" ? (200, answered(1)) : nil }
         let outbox = try openOutbox()
         try await outbox.enqueue([
-            entry(.put, entryKind, "bad", group: "bad"), entry(.put, entryKind, "bad-1", group: "bad"),
-            entry(.put, entryKind, "good", group: "good"),
+            entry(.put, entryKind, "bad", batch: "bad"), entry(.put, entryKind, "bad-1", batch: "bad"),
+            entry(.put, entryKind, "good", batch: "good"),
         ])
         guard case let .refused(words) = await outbox.flush(writer(server)) else { Issue.record("not refused"); return }
         #expect(words.contains("props.sport"))
@@ -103,7 +103,7 @@ struct OutboxTests {
         let before = server.sent.count
         guard case .refused = await outbox.flush(writer(server)) else { Issue.record("a parked write stopped being reported"); return }
         #expect(server.sent.count == before)
-        // Retried, it goes; discarded, its group goes with it.
+        // Retried, it goes; discarded, its batch goes with it.
         let parked = try #require(await outbox.parked.first)
         try await outbox.discard(parked.id)
         #expect(await outbox.entries.isEmpty)
@@ -118,19 +118,19 @@ struct OutboxTests {
         #expect(await outbox.entries.count == 1)
     }
 
-    @Test func aDiscardDropsTheGroupAndAGroupTheServerHoldsIsPurgedAtItsVersion() async throws {
+    @Test func aDiscardDropsTheBatchAndABatchTheServerHoldsIsPurgedAtItsVersion() async throws {
         let outbox = try openOutbox()
-        let purge = entry(.purge, entryKind, "s", group: "s", guarded: true)
-        try await outbox.enqueue([entry(.put, entryKind, "s", group: "s"), entry(.put, entryKind, "s-1", group: "s")])
-        #expect(try await outbox.discard(group: "s", purge: purge) == false)
+        let purge = entry(.purge, entryKind, "s", batch: "s", guarded: true)
+        try await outbox.enqueue([entry(.put, entryKind, "s", batch: "s"), entry(.put, entryKind, "s-1", batch: "s")])
+        #expect(try await outbox.discard(batch: "s", purge: purge) == false)
         #expect(await outbox.entries.isEmpty)
 
         let server = ScriptedServer()
         server.on { $0.method == "PUT" ? (200, answered(3)) : nil }
         server.on { $0.method == "DELETE" ? (200, "{}") : nil }
-        try await outbox.enqueue([entry(.put, entryKind, "s", group: "s")])
+        try await outbox.enqueue([entry(.put, entryKind, "s", batch: "s")])
         await outbox.flush(writer(server))
-        try await outbox.purge(group: "s", with: purge)
+        try await outbox.purge(batch: "s", with: purge)
         #expect(await outbox.flush(writer(server)) == .sent)
         let sent = try #require(server.sent.last)
         #expect(sent.method == "DELETE")
@@ -149,30 +149,30 @@ struct OutboxTests {
         #expect(folder.setAside.count == 1)
     }
 
-    @Test func anEntryWorkoutsWroteReadsItsSessionAsItsGroup() throws {
+    @Test func anEntryWorkoutsWroteReadsItsSessionAsItsBatch() throws {
         let json = #"{"id":"6E1C3A4E-3D1B-4B8E-9E55-2F7A2B0C9D11","method":"PUT","kind":"k","recordID":"r","session":"s1"}"#
         let read = try JSONDecoder().decode(OutboxEntry.self, from: Data(json.utf8))
-        #expect(read.group == "s1")
+        #expect(read.batch == "s1")
         #expect(!read.parked)
     }
 }
 
 @Suite("The outbox while a write is in flight")
 struct OutboxInFlightTests {
-    @Test func aGroupPurgedWhileAnothersCreateIsInFlightLosesNoneOfTheOthersWrites() async throws {
+    @Test func aBatchPurgedWhileAnothersCreateIsInFlightLosesNoneOfTheOthersWrites() async throws {
         let server = ScriptedServer()
         let held = server.hold("PUT", path(entryKind, "a"))
         server.answer("PUT", path(entryKind, "b"), 422, #"{"error":{"code":"validation","message":"props.sport: no"}}"#)
         server.on { $0.method == "PUT" ? (200, answered(1)) : nil }
         server.on { $0.method == "DELETE" ? (200, "{}") : nil }
         let outbox = try openOutbox()
-        try await outbox.enqueue([entry(.put, entryKind, "b", group: "b"), entry(.put, entryKind, "b-1", group: "b")])
+        try await outbox.enqueue([entry(.put, entryKind, "b", batch: "b"), entry(.put, entryKind, "b-1", batch: "b")])
         await outbox.flush(writer(server))
-        try await outbox.enqueue([entry(.put, entryKind, "a", group: "a")] + (1 ... 5).map { entry(.put, entryKind, "a-\($0)", group: "a") })
+        try await outbox.enqueue([entry(.put, entryKind, "a", batch: "a")] + (1 ... 5).map { entry(.put, entryKind, "a-\($0)", batch: "a") })
 
         let flush = Task { await outbox.flush(writer(server)) }
         await held.arrived()
-        try await outbox.purge(group: "b", with: entry(.purge, entryKind, "b", group: "b", guarded: true))
+        try await outbox.purge(batch: "b", with: entry(.purge, entryKind, "b", batch: "b", guarded: true))
         held.release()
         #expect(await flush.value == .sent)
         #expect(await outbox.entries.isEmpty)
@@ -180,16 +180,16 @@ struct OutboxInFlightTests {
         #expect(server.methodsAndPaths.last == "DELETE \(path(entryKind, "b"))")
     }
 
-    @Test func aGroupDiscardedWhileItsCreateIsInFlightIsPurgedAfterAtTheVersionItAnswered() async throws {
+    @Test func aBatchDiscardedWhileItsCreateIsInFlightIsPurgedAfterAtTheVersionItAnswered() async throws {
         let server = ScriptedServer()
         let held = server.hold("PUT", path(entryKind, "a"))
         server.on { $0.method == "PUT" ? (200, answered(4)) : nil }
         server.on { $0.method == "DELETE" ? (200, "{}") : nil }
         let outbox = try openOutbox()
-        try await outbox.enqueue([entry(.put, entryKind, "a", group: "a"), entry(.put, entryKind, "a-1", group: "a")])
+        try await outbox.enqueue([entry(.put, entryKind, "a", batch: "a"), entry(.put, entryKind, "a-1", batch: "a")])
         let flush = Task { await outbox.flush(writer(server)) }
         await held.arrived()
-        #expect(try await outbox.discard(group: "a", purge: entry(.purge, entryKind, "a", group: "a", guarded: true)))
+        #expect(try await outbox.discard(batch: "a", purge: entry(.purge, entryKind, "a", batch: "a", guarded: true)))
         held.release()
         #expect(await flush.value == .sent)
         #expect(server.methodsAndPaths == ["PUT \(path(entryKind, "a"))", "DELETE \(path(entryKind, "a"))"])
@@ -203,7 +203,7 @@ struct OutboxInFlightTests {
         server.on { $0.method == "PUT" ? (200, answered(1)) : nil }
         let root = temporaryFolder()
         let outbox = try openOutbox(root)
-        try await outbox.enqueue([entry(.put, entryKind, "a", group: "a"), entry(.put, entryKind, "a-1", group: "a")])
+        try await outbox.enqueue([entry(.put, entryKind, "a", batch: "a"), entry(.put, entryKind, "a-1", batch: "a")])
         let flush = Task { await outbox.flush(writer(server)) }
         await held.arrived()
         try await outbox.reset()
@@ -350,7 +350,7 @@ struct OutboxEditTests {
         #expect(body["ifVersion"] == .number(0))
     }
 
-    @Test func aPurgeOutsideAnyGroupIsWithdrawnUntilItGoes() async throws {
+    @Test func aPurgeOutsideAnyBatchIsWithdrawnUntilItGoes() async throws {
         let outbox = try openOutbox()
         try await outbox.edit(edit("day-1", ["name": .string("One")], base: 4))
         try await outbox.delete(OutboxEntry(method: .purge, kind: noteKind, recordID: "day-1"))
@@ -358,5 +358,89 @@ struct OutboxEditTests {
         #expect(await outbox.waitingDeletes == ["\(noteKind)/day-1"])
         try await outbox.withdrawDelete(noteKind, "day-1")
         #expect(await outbox.entries.isEmpty)
+    }
+}
+
+/// Workouts' format 1 spelling, as its `LegacyKinds` respells it: the
+/// package was `~/training` on the device.
+private let legacy = OutboxUpgrade(
+    respell: { $0.hasPrefix("~/training") ? "substrate.reamde.dev/training" + $0.dropFirst("~/training".count) : $0 },
+    respellProperties: { respellObject($0) })
+
+private func respellObject(_ object: JSONObject) -> JSONObject {
+    var out = JSONObject()
+    for (key, value) in object { out[key] = respellValue(value) }
+    return out
+}
+
+private func respellValue(_ value: JSONValue) -> JSONValue {
+    switch value {
+    case let .string(text): .string(text.hasPrefix("~/training") ? "substrate.reamde.dev/training" + text.dropFirst("~/training".count) : text)
+    case let .array(items): .array(items.map(respellValue))
+    case let .object(object): .object(respellObject(object))
+    default: value
+    }
+}
+
+@Suite("The outbox's files and reports")
+struct OutboxFileTests {
+    let session = "01a16363-cf80-73ed-85fd-704f6ce38d73"
+
+    func legacyFolder() throws -> RepositoryFolder {
+        let folder = try RepositoryFolder(root: temporaryFolder())
+        let fixture = try #require(Bundle.module.url(forResource: "legacy-outbox", withExtension: "json", subdirectory: "Resources"))
+        try folder.write(Data(contentsOf: fixture), to: "outbox.json", in: .outbox)
+        return folder
+    }
+
+    @Test func aFormatOneFileIsReadThroughTheAppsUpgradeAndWrittenBackOnce() async throws {
+        let folder = try legacyFolder()
+        let outbox = Outbox(folder: folder, upgrade: legacy)
+        #expect(await outbox.unreadable == nil)
+        let entries = await outbox.entries
+        #expect(entries.count == 22)
+        #expect(entries.first?.kind == "substrate.reamde.dev/training/session" && entries.first?.recordID == session)
+        // Workouts' `session` is the batch.
+        #expect(entries.dropFirst().dropLast().allSatisfy { $0.kind == "substrate.reamde.dev/training/set" && $0.batch == session })
+        #expect(await outbox.version(of: "substrate.reamde.dev/training/exercise", "leg-press-machine") == 2)
+        #expect(await outbox.versions.keys.allSatisfy { $0.hasPrefix("substrate.reamde.dev/training/") })
+
+        let rewritten = String(decoding: try #require(try folder.read("outbox.json", in: .outbox)), as: UTF8.self)
+        #expect(rewritten.contains(#""format":2"#))
+        #expect(!rewritten.contains("~/"))
+        // Written with both names, so a build of Workouts from before the
+        // kit's outbox reads its sessions back.
+        #expect(rewritten.contains(#""batch":"\#(session)""#) && rewritten.contains(#""session":"\#(session)""#))
+
+        let again = Outbox(folder: folder, upgrade: legacy)
+        #expect(await again.entries == entries)
+        #expect(String(decoding: try #require(try folder.read("outbox.json", in: .outbox)), as: UTF8.self) == rewritten)
+    }
+
+    @Test func aFormatOneFileWithoutAnUpgradeIsSetAsideNeverDropped() async throws {
+        let folder = try legacyFolder()
+        let outbox = Outbox(folder: folder)
+        #expect(await outbox.entries.isEmpty)
+        let aside = try #require(await outbox.unreadable)
+        #expect(try folder.read(aside.name, in: .outbox) != nil)
+        #expect(await outbox.summary.unreadable == aside)
+    }
+
+    @Test func theQueueReportsEachChangeAndOnlyTheAppsMoveTheRevision() async throws {
+        let server = ScriptedServer()
+        server.on { $0.method == "PUT" ? (200, answered(1)) : nil }
+        let outbox = try openOutbox()
+        var reports = await outbox.changes().makeAsyncIterator()
+        #expect(await reports.next() == OutboxSummary())
+        try await outbox.enqueue([entry(.put, entryKind, "a")])
+        let queued = try #require(await reports.next())
+        #expect(queued.revision == 1 && queued.waiting == 1 && queued.sendable == 1 && !queued.flushing)
+        await outbox.flush(writer(server))
+        var last = queued
+        while last.flushing || last.waiting > 0 {
+            last = try #require(await reports.next())
+        }
+        // The flush moved the counts and the state, never the revision.
+        #expect(last.state == .sent && last.revision == 1)
     }
 }

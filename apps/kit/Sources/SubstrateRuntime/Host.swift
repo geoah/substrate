@@ -7,7 +7,7 @@ import Foundation
 /// unchecked `Sendable` hold: an effect's task carries it back there and
 /// touches nothing on the way.
 final class Host<C: Controller>: @unchecked Sendable {
-    let controller: C
+    private(set) var controller: C
     let path: [ChildKey]
     unowned let loop: any LoopServices
     let journal: (any JournalStore<C.Event, C.State>)?
@@ -26,6 +26,9 @@ final class Host<C: Controller>: @unchecked Sendable {
 
     private var journaled: [C.Event] = []
     private var dirty = true
+    private var presentedChildProblem: String?
+    private var reconciling = false
+    private var reconcileAgain = false
     private var epochs: [String: Int] = [:]
     private var running: [Int: Task<Void, Never>] = [:]
     private var runningKeys: [String: Int] = [:]
@@ -45,26 +48,34 @@ final class Host<C: Controller>: @unchecked Sendable {
     // MARK: Opening
 
     /// Folds the journal, if there is one, through the engine alone: no
-    /// enrichment, no effect, no parent. Then makes the children the state
-    /// keeps, each folding its own.
+    /// enrichment, no effect, no parent. Then the link this state makes
+    /// goes down, the children the state keeps are made (each opening the
+    /// same way), and the live path starts: the link as an event, then the
+    /// controller's event at open, whose effects run after the first
+    /// presentation.
     func open() {
-        if let journal { replay(journal) }
+        let replayed = journal.map { replay($0) } ?? false
+        let link = controller.link(in: state)
+        if let link { loop.link = link }
         reconcile(live: false)
+        if link == nil, let current = loop.link { told(current) }
+        if let event = controller.event(atOpen: replayed) { step([event]) }
     }
 
-    private func replay(_ journal: any JournalStore<C.Event, C.State>) {
+    /// Answers whether a journal was folded.
+    private func replay(_ journal: any JournalStore<C.Event, C.State>) -> Bool {
         let stored: StoredJournal<C.Event, C.State>
         do {
-            guard let read = try journal.read() else { return }
+            guard let read = try journal.read() else { return false }
             stored = read
         } catch is JournalUnavailable {
             // The device could not read it (a lock, an I/O error): it stays
             // where it is for the next launch.
             journalProblem = "The journal could not be read."
-            return
+            return false
         } catch {
             setAside(journal, because: error)
-            return
+            return false
         }
         do {
             var folded = controller.initialState
@@ -77,8 +88,10 @@ final class Host<C: Controller>: @unchecked Sendable {
             // that differs is written again, best effort.
             if stored.cachedState != folded { try? journal.write(events: journaled, state: folded) }
             loop.trace(.replayed(path: path, events: stored.events.count))
+            return !stored.events.isEmpty
         } catch {
             setAside(journal, because: error)
+            return false
         }
     }
 
@@ -103,8 +116,8 @@ final class Host<C: Controller>: @unchecked Sendable {
     }
 
     /// Each event in turn: the engine, the journal, the transient state, the
-    /// children, and the presentation and effects requested for after. The
-    /// first refusal stops the rest.
+    /// presentation and effects requested for after, the link and the
+    /// children, then the parent's fold. The first refusal stops the rest.
     func step(_ events: [C.Event]) {
         for event in events {
             guard !closed else { return }
@@ -112,7 +125,7 @@ final class Host<C: Controller>: @unchecked Sendable {
             do {
                 next = try controller.apply(event, to: state)
             } catch {
-                transient = controller.refusing(event, because: error, in: transient)
+                transient = controller.transient(afterRefusing: event, because: error, from: transient)
                 dirty = true
                 loop.trace(.refused(path: path, event: event, reason: String(describing: error)))
                 loop.requestPresent(.now)
@@ -120,13 +133,28 @@ final class Host<C: Controller>: @unchecked Sendable {
             }
             record(event, state: next)
             state = next
-            transient = controller.noting(event, applied: next, in: transient)
+            transient = controller.transient(after: event, applied: next, from: transient)
             dirty = true
-            reconcile(live: true)
             let generation = generation
             loop.afterPresent { [self] in effects(of: event, on: next, generation: generation) }
-            loop.requestPresent(controller.coalescing(event))
+            loop.requestPresent(controller.coalescing(of: event))
+            follow(next)
             offerUp?(event)
+        }
+    }
+
+    /// The link and the children after a state moved: a new snapshot goes
+    /// down inside this step, to the children there before it; a child
+    /// made here is told it as it opens.
+    private func follow(_ next: C.State) {
+        let link = controller.link(in: next)
+        let moved = link != nil && link != loop.link
+        if moved { loop.link = link }
+        let before = Set(children.keys)
+        reconcile(live: true)
+        guard moved, let link else { return }
+        for key in children.keys.sorted() where before.contains(key) {
+            children[key]?.linkChanged(link)
         }
     }
 
@@ -134,7 +162,7 @@ final class Host<C: Controller>: @unchecked Sendable {
     /// here may suspend, so a process killed after this line still has the
     /// event.
     private func record(_ event: C.Event, state next: C.State) {
-        let journaling = controller.journaling(event)
+        let journaling = controller.journaling(of: event)
         guard let journal, journaling != .skip else { return }
         do {
             switch journaling {
@@ -234,25 +262,39 @@ final class Host<C: Controller>: @unchecked Sendable {
     // MARK: Presenting
 
     /// Presents the children whose state moved, then this controller if it
-    /// or any child moved. Answers whether the presentation changed.
+    /// or any child moved, or a journal under it started or stopped failing.
+    /// Answers whether the presentation changed.
     @discardableResult
     func present() -> Bool {
         var childChanged = false
         for key in children.keys.sorted() {
             if children[key]?.present() == true { childChanged = true }
         }
+        let childProblem = childJournalProblem
+        if childProblem != presentedChildProblem { dirty = true }
         guard dirty || childChanged || presentation == nil else { return false }
         dirty = false
+        presentedChildProblem = childProblem
         let environment = loop.environment
         let input = PresenterInput<C>(state: state, transient: transient, children: children.compactMapValues(\.presentation),
                                       now: environment.clock.now, locale: environment.locale, timeZone: environment.timeZone,
-                                      link: loop.link, journalProblem: journalProblem)
+                                      link: loop.link, journalProblem: journalProblem, childJournalProblem: childProblem)
         let next = controller.present(input)
         let changed = next != presentation
         presentation = next
         if changed { loop.trace(.presented(path: path)) }
         schedule(tickAt: controller.nextChange(of: next))
         return changed
+    }
+
+    /// Why a journal under this controller cannot be read or written, the
+    /// first by key, nil while every one can.
+    var childJournalProblem: String? {
+        for key in children.keys.sorted() {
+            guard let child = children[key] else { continue }
+            if let problem = child.journalProblem ?? child.childJournalProblem { return problem }
+        }
+        return nil
     }
 
     /// One wake-up at the presentation's next change, replaced when the
@@ -277,7 +319,7 @@ final class Host<C: Controller>: @unchecked Sendable {
         guard !closed, generation == self.generation, tickAt == at else { return }
         tickAt = nil
         tick = nil
-        if let event = controller.tick(at: at) {
+        if let event = controller.event(atTick: at) {
             step([event])
         } else {
             // The presenter reads the instant: drawn again, it says what
@@ -289,58 +331,104 @@ final class Host<C: Controller>: @unchecked Sendable {
 
     // MARK: Composition
 
+    /// A new snapshot from the link above: this controller's event for it,
+    /// then every child there before it, each in turn.
     func linkChanged(_ link: LinkSnapshot) {
         guard !closed else { return }
-        if let event = controller.linkChanged(link) {
+        let keys = children.keys.sorted()
+        told(link)
+        for key in keys {
+            children[key]?.linkChanged(link)
+        }
+    }
+
+    /// The link as this controller's own event, or drawn again where it has
+    /// none, since its presenter reads the snapshot.
+    private func told(_ link: LinkSnapshot) {
+        if let event = controller.event(forLink: link) {
             step([event])
         } else {
             dirty = true
             loop.requestPresent(.now)
         }
-        for key in children.keys.sorted() {
-            children[key]?.linkChanged(link)
-        }
     }
 
-    /// Makes the children the state keeps and closes the ones it dropped. A
-    /// child made on the live path is told the link at once.
+    /// Makes the children the state keeps, closes the ones it dropped, and
+    /// hands a new value to a child whose value changed. A child made opens
+    /// at once, which tells it the link. Re-entered from a child's open (its
+    /// event folded here), it runs again once the pass in progress ends.
     private func reconcile(live: Bool) {
-        let wanted = controller.children(in: state)
-        for key in children.keys.sorted() where wanted[key] == nil {
-            children.removeValue(forKey: key)?.close()
-            dirty = true
+        if reconciling {
+            reconcileAgain = true
+            return
         }
-        for key in wanted.keys.sorted() where children[key] == nil {
-            guard let child = wanted[key] else { continue }
-            let host = Host<C.Child>(controller: child, path: path + [key], loop: loop, journal: child.journal(in: loop.environment))
-            host.offerUp = { [unowned self] event in
-                guard let up = controller.event(fromChild: key, event) else { return }
-                step([up])
+        reconciling = true
+        defer { reconciling = false }
+        repeat {
+            reconcileAgain = false
+            let wanted = controller.children(in: state)
+            for key in children.keys.sorted() where wanted[key] == nil {
+                children.removeValue(forKey: key)?.close()
+                dirty = true
             }
-            children[key] = host
-            host.open()
-            if live, let link = loop.link { host.linkChanged(link) }
-            dirty = true
-        }
+            for key in wanted.keys.sorted() {
+                guard let child = wanted[key], !closed else { continue }
+                if let running = children[key] {
+                    if running.controller != child {
+                        running.replace(child)
+                        dirty = true
+                    }
+                    continue
+                }
+                let host = Host<C.Child>(controller: child, path: path + [key], loop: loop, journal: child.journal(in: loop.environment))
+                host.offerUp = { [unowned self] event in
+                    guard let up = controller.event(fromChild: key, event) else { return }
+                    step([up])
+                }
+                children[key] = host
+                dirty = true
+                host.open()
+            }
+        } while reconcileAgain && !closed
+    }
+
+    /// The parent handed this child a new value (a catalogue, the settings):
+    /// the state stays, and the presenter, the effects from here on and the
+    /// children read the new one.
+    private func replace(_ next: C) {
+        guard !closed else { return }
+        controller = next
+        dirty = true
+        loop.trace(.replaced(path: path))
+        loop.requestPresent(.now)
+        reconcile(live: true)
     }
 
     func child(_ key: ChildKey) -> Host<C.Child>? { children[key] }
 
-    func route(_ path: ArraySlice<ChildKey>, command data: Data) throws {
+    /// A command as the controller at the end of `path` takes it: decoded
+    /// from JSON for the Android bridge, or a value of its `Command` type.
+    func route(_ path: ArraySlice<ChildKey>, command: RoutedValue) throws {
         guard let first = path.first else {
-            let command: C.Command
-            do {
-                command = try JSONDecoder().decode(C.Command.self, from: data)
-            } catch {
-                throw UnroutableCommand(path: self.path, reason: "The command did not decode: \(error)")
+            switch command {
+            case let .encoded(data):
+                do {
+                    send(try JSONDecoder().decode(C.Command.self, from: data))
+                } catch {
+                    throw UnroutableCommand(path: self.path, reason: "The command did not decode: \(error)")
+                }
+            case let .value(value):
+                guard let typed = value as? C.Command else {
+                    throw UnroutableCommand(path: self.path, reason: "A \(type(of: value)) is not a command of the controller here.")
+                }
+                send(typed)
             }
-            send(command)
             return
         }
         guard let child = children[first] else {
             throw UnroutableCommand(path: self.path + [first], reason: "No child is kept under \(first).")
         }
-        try child.route(path.dropFirst(), command: data)
+        try child.route(path.dropFirst(), command: command)
     }
 
     // MARK: Ending
@@ -365,8 +453,8 @@ final class Host<C: Controller>: @unchecked Sendable {
         try? journal?.delete()
         journalProblem = nil
         dirty = true
-        reconcile(live: true)
         loop.requestPresent(.now)
+        follow(state)
     }
 
     private func cancelAll() {
@@ -379,4 +467,11 @@ final class Host<C: Controller>: @unchecked Sendable {
         for child in children.values { child.close() }
         children = [:]
     }
+}
+
+/// A command on its way down a tree: as JSON from the Android bridge, or a
+/// value from Swift.
+enum RoutedValue: Sendable {
+    case encoded(Data)
+    case value(any Sendable)
 }

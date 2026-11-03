@@ -1,5 +1,6 @@
-/// An app's own settings, by row id: the engine a settings screen's toggles
-/// and choices apply to, so the rows and their values stay one value.
+/// An app's own settings, by the id it gave each row (`SettingsRowID.app`):
+/// the engine a settings screen's toggles and choices apply to, so the rows
+/// and their values stay one value.
 public struct SettingsValues: Codable, Hashable, Sendable {
     public var toggles: [String: Bool]
     public var choices: [String: String]
@@ -9,13 +10,14 @@ public struct SettingsValues: Codable, Hashable, Sendable {
         self.choices = choices
     }
 
-    /// The values after a command; an open or an action changes none.
+    /// The values after a command; an open, an action, or a row that is
+    /// not the app's own changes none.
     public func applying(_ command: SettingsCommand) -> SettingsValues {
         var next = self
         switch command {
-        case let .toggle(row, on): next.toggles[row] = on
-        case let .choose(row, option): next.choices[row] = option
-        case .open, .perform: break
+        case let .toggle(.app(row), on): next.toggles[row] = on
+        case let .choose(.app(row), option): next.choices[row] = option
+        case .toggle, .choose, .open, .perform: break
         }
         return next
     }

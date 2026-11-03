@@ -2,8 +2,9 @@
 import SwiftUI
 import SubstrateScreens
 
-/// The Status screen as sections of a settings form: the sentence, the
-/// package, what to do about it, and the writes the server refused.
+/// The Status screen as sections of a settings form: the sentence, why
+/// where there is a reason, each package, what to do about it, and the
+/// writes the server refused.
 public struct StatusScreen: View {
     let presentation: StatusPresentation
     let perform: (StatusAction) -> Void
@@ -22,7 +23,8 @@ public struct StatusScreen: View {
                 Image(systemName: presentation.symbol.systemName)
                     .foregroundStyle(presentation.tone == .quiet ? Color.primary : presentation.tone.color)
             }
-            ForEach(presentation.rows, id: \.label) { LabeledContent($0.label, value: $0.value) }
+            if let problem = presentation.problem { ProblemBox(problem) }
+            ForEach(presentation.packages) { LabeledContent($0.row.label, value: $0.row.value) }
             ForEach(presentation.actions, id: \.self) { button in
                 Button {
                     perform(button.action)

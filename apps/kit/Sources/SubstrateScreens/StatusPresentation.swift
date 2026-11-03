@@ -1,26 +1,30 @@
 /// Where the app stands with its repository (§5.6's Status): a sentence,
-/// the package, what the owner can do about it, and the writes the server
-/// refused, each with Retry and Discard.
+/// why where there is a reason (the server's or the system's words, never
+/// run into the sentence), each package, what the owner can do about it,
+/// and the writes the server refused, each with Retry and Discard.
 public struct StatusPresentation: Codable, Hashable, Sendable {
     public var title: String
     public var symbol: ScreenSymbol
     public var tone: ScreenTone
     public var sentence: String
-    public var rows: [LabeledValue]
+    public var problem: ProblemPresentation?
+    /// One row per package the app needs.
+    public var packages: [PackageLine]
     public var actions: [ActionButton<StatusAction>]
     /// Whether a send is running now.
     public var busy: Bool
     public var footer: String?
     public var refused: RefusedWrites?
 
-    public init(title: String, symbol: ScreenSymbol, tone: ScreenTone, sentence: String, rows: [LabeledValue], actions: [ActionButton<StatusAction>],
-                busy: Bool, footer: String?, refused: RefusedWrites?)
+    public init(title: String, symbol: ScreenSymbol, tone: ScreenTone, sentence: String, problem: ProblemPresentation? = nil,
+                packages: [PackageLine], actions: [ActionButton<StatusAction>], busy: Bool, footer: String?, refused: RefusedWrites?)
     {
         self.title = title
         self.symbol = symbol
         self.tone = tone
         self.sentence = sentence
-        self.rows = rows
+        self.problem = problem
+        self.packages = packages
         self.actions = actions
         self.busy = busy
         self.footer = footer
@@ -69,5 +73,18 @@ public struct RefusedWrite: Codable, Hashable, Sendable, Identifiable {
         self.words = words
         self.retry = retry
         self.discard = discard
+    }
+}
+
+/// A package the app needs, as the Status screen lists it: "Training
+/// package", "Version 2".
+public struct PackageLine: Codable, Hashable, Sendable, Identifiable {
+    /// The package's id.
+    public var id: String
+    public var row: LabeledValue
+
+    public init(id: String, row: LabeledValue) {
+        self.id = id
+        self.row = row
     }
 }

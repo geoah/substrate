@@ -26,12 +26,12 @@ their JNI half on Android alone. The package is in Swift 6 language mode.
 | `SubstrateDevice` | the device services' protocols and their values: `HTTPTransport` with `URLSessionTransport`, which never follows a redirect, whose `lines(for:)` reads an answer line by line as a `LineStream`; `SessionStorage`, the secure store, with `StoredItem` (missing told from failed) and `SecureStoreRefused`; `BrowserSignIn` with `SignInRoute`, `SignInRedirect`, `SignInAnswer` and `SignInCancelled`; `TXTResolver`, whose `TXTAnswer` keeps records, a confirmed absence, an unconfirmed absence and a failure apart; `Connectivity` with `NetworkPath`; `AppFolders` |
 | `SubstrateAPI` | `SubstrateClient`: `Timeout` tiers, `Retry-After`, `segment(_:)`, records, lists (`ListQuery`, `RecordPage`), blobs, webhook deliveries, parked deliveries, the password door; `RecordReader`, `HTTPRecordReader` and `RecordDirectory`; `Discovery`, `AuthorizationServerMetadata` and `ServerMismatch`, `ServerVersion`, `ServerRequirement`, `ServerProbe`; `DomainRecord` and `ServerLocator` over a `TXTResolver`; `RecordWriter`, the record calls an outbox sends through; the watch: `WatchFollower` (a cursor and its generation, heartbeats, a dropped connection opened again, a relist on a 410 or a `compacted` frame) with `WatchFrame`, `WatchRow`, `WatchCursor`, `WatchEvent` and `WatchEnd` |
 | `SubstrateAuth` | `AppManifest`, `KindLabel`, `AuthorizationDetail` and the check's wire shapes with `checkAuthorization`; `PKCE` (SHA-256 from CryptoKit, or swift-crypto where it is missing); `OAuthClient`, whose `signIn` takes the device's `BrowserSignIn`, `TokenResponse`, `RepositoryMismatch`; `Session` and its `revoke`; `SessionStore`, its pending revocations and its transitions, over a `SessionStorage`; `AppStatusCheck`, `AppStatus`, `AppIssue`, `Change` and its words, `AppStatusModel` |
-| `SubstrateRuntime` | the loop every screen runs (below): `Controller`, `Runtime`, `AppEnvironment` with `AppEnvironmentKey`, `ClientSource` and `DeviceServices`, `Enrichment`, `PresenterInput`, `Journaling`, `JournalStore`, `Coalescing`, `Work`, `ChildKey`, `LinkSnapshot`, `KeyedList` with its `KeyedListDelta`, `RoutedCommand`, `RuntimeTrace`, `RuntimeClock`, `IDSource` |
-| `SubstrateLocal` | what an app keeps on the device for one repository: `RepositoryFolder` (a format, atomic writes, `SetAsideFile`s listed, `AreaUsage` per `FolderArea`, eviction by age and budget), `JournalFile`, the `Outbox` (Workouts', with a `group` where it had a session), `RecordCache`, `HeldPackage`, `LinkGeneration`; the folder joins the environment as `environment.folder` |
-| `SubstrateScreens` | the shared screens as engines, presenters and fixtures, each label written here: `LinkController` (the session and its revocations, the status check, the package versions, connectivity, the outbox; a `LinkSnapshot` with no secret), `ConnectController`, `AccessPresenter`, `ReviewPresenter`, `ServerTooOldPresentation`, `AccountPresenter`, `StatusPresenter` with `LinkStatus` and `StatusWords`, `SettingsPresentation` with `SettingsPresenter` and `SettingsValues`, `ProblemPresenter`, `AboutPresentation`; `ScreenFixtures`, every screen in the states an app shows it in |
+| `SubstrateRuntime` | the loop every screen runs (below): `Controller`, `Runtime` with `PresentationNotEncoded`, `AppEnvironment` with `AppEnvironmentKey`, `ClientSource` and `DeviceServices`, `Enrichment`, `PresenterInput`, `Journaling`, `JournalStore`, `Coalescing`, `Work`, `ChildKey`, `LinkSnapshot`, `KeyedList` with its `KeyedListDelta`, `RoutedCommand`, `RuntimeTrace`, `RuntimeClock`, `IDSource` |
+| `SubstrateLocal` | what an app keeps on the device for one repository: `RepositoryFolder` (a format, atomic writes, `SetAsideFile`s listed, `AreaUsage` per `FolderArea`, eviction by age and budget), `JournalFile`, the `Outbox` (Workouts', with a `batch` where it had a session; `changes()` reports each `OutboxSummary`, and an `OutboxUpgrade` reads a file an older build wrote), `RecordCache`, `HeldPackage`, `LinkGeneration`; the folder joins the environment as `environment.folder` |
+| `SubstrateScreens` | the shared screens as engines, presenters and fixtures, each label written here: `LinkController` (the session and its revocations, the status check, the package versions, connectivity, the outbox; a `LinkSnapshot` with no secret) over the app's root, a `LinkedApp` that tells it a `LinkReport`, `ConnectController`, `AccessPresenter`, `ReviewPresenter`, `ServerTooOldPresentation`, `RepositoryPresenter`, `StatusPresenter` with `LinkStatus`, `PackageStanding` and `StatusWords`, `SettingsPresentation` with `SettingsPresenter`, `SettingsValues` and the rows' `SettingsRowID`, `ProblemPresenter`, `AboutPresentation`; `ScreenFixtures`, every screen in the states an app shows it in |
 | `SubstrateTesting` | the fakes tests use: `StubTransport` and `ScriptedServer` (scripted servers, by route and by rule), `ScriptedLines` (answers read line by line), `MemoryStorage`, `TableResolver`, `ScriptedBrowser`, `ScriptedConnectivity`, `TemporaryFolders`; and the runtime's harness: `ControllerHarness` with `TestClock`, `SequentialIDs` and `MemoryJournal` |
 | `SubstrateDeviceApple` | the device services on Apple frameworks: `KeychainStorage`, `WebAuthenticator` (`ASWebAuthenticationSession`, the claimed callback or the loopback redirect), `LoopbackReceiver`, `DNSServiceTXTResolver` and the `SubstrateResolv` C target behind it, `PathMonitor` (`NWPathMonitor`), `ApplicationFolders` |
-| `SubstrateUI` | the renderers of SubstrateScreens' presentations (`ConnectScreen`, `AccessBannerView`, `AccessEndedScreen`, `ReviewScreen` and `ReviewSectionsView`, `ServerTooOldScreen`, `AccountScreen`, `StatusScreen`, `SettingsScreen`, `AboutScreen`, `ProblemView`, `ChangeLineView`) with the design tokens, `Gallery` (each screen's renderer), `PresentationModel` (a root's presentations republished on the main actor) and `AppEnvironment.apple`; the views apps call by their own initialisers, now thin wrappers over those (`ConnectView`, which runs a `ConnectController`, `ServerTooOldView`, `AppStatusBanner`, `ReviewChangesSheet` and its `ReviewChangesSections`, `AccessEndingBanner`, `AccessEndedView`, `AccountSection`, `UnrevokedNotices`, `ChangeRow`, `ProblemBox`), `StatusBadge`; and the record views (`KindGlyph`, `RecordPill`, `RecordSheet`, `RecordDetailView`, `RecordValueView`) |
+| `SubstrateUI` | the renderers of SubstrateScreens' presentations (`ConnectScreen`, `AccessBannerView`, `AccessEndedScreen`, `ReviewScreen` and `ReviewSectionsView`, `ServerTooOldScreen`, `RepositoryScreen`, `StatusScreen`, `SettingsScreen`, `AboutScreen`, `ProblemView`, `ChangeLineView`) with the design tokens, `Gallery` (each screen's renderer), `PresentationModel` (a root's presentations republished on the main actor) and `AppEnvironment.apple`; the views apps call by their own initialisers, now thin wrappers over those (`ConnectView`, which runs a `ConnectController`, `ServerTooOldView`, `AppStatusBanner`, `ReviewChangesSheet` and its `ReviewChangesSections`, `AccessEndingBanner`, `AccessEndedView`, `AccountSection` (the Repository screen under the apps' word, Account), `UnrevokedNotices`, `ChangeRow`, `ProblemBox`), `StatusBadge`; and the record views (`KindGlyph`, `RecordPill`, `RecordSheet`, `RecordDetailView`, `RecordValueView`) |
 | `SubstrateBridge` | the Android bridge (§5.5, [android/](android/README.md)): `BridgeRuntime` (`start`, `post`, what `deliver` is handed), the `Envelope` and its `Op`s, `Handle`s with generations, `BridgeRoot` and `RootRegistry`, `RuntimeRoot` (any `Runtime` as a root) and `RouteCommand`, `BridgeContext` (a handle's presentations, keyed lists and `DeviceChannel`, and its `AppEnvironment`), `ListMessage`, `BridgeFailure`, `Redaction`, `StartConfig` and `BridgeEnvironment`, `ProtocolFingerprint`; the device services over it: `BridgeTransport`, `BridgeSecureStore`, `BridgeTXTResolver`, `BridgeConnectivity`, `BridgeFolders`, with `DeviceRequest` and their answers; the JNI surface in `Android/`, compiled on Android alone over the `SubstrateJNI` C target |
 | `SubstrateBridgeCheck` | `CheckRoot` and `Counter`, the roots the bridge's runtime checks open on a device |
 
@@ -54,7 +54,7 @@ A screen is a `Controller` a `Runtime` runs (docs/plans/app-kit.md,
 what a pure function may not read (`context.mint()`, `context.now`, the
 environment) into events; `apply(_:to:)`, the engine, applies each; the
 journal, where `journal(in:)` names one, is written at once, with no
-suspension between the engine and the write, as `journaling(_:)` says
+suspension between the engine and the write, as `journaling(of:)` says
 (`.append`, `.restart`, `.clear`, or `.skip` for a step whose outcome waits
 on work outside, which comes back as a second event); `present(_:)` draws
 the state, the transient state, the children's presentations, the instant,
@@ -63,18 +63,29 @@ start, on the live path alone, never on a replay. An effect is a value;
 `perform(_:in:)` turns it into `Work`, whose results are events through the
 same loop. Under a `key(of:)`, starting one cancels the one running and its
 late result is dropped; a reset or a close drops every result still on its
-way. `coalescing(_:)` says whether an event presents now or within a window
-the events after it share, and `nextChange(of:)` has the runtime deliver
-`tick(at:)` then. A parent keeps its children in its state, by the key the
-app minted (`children(in:)`), folds the events of theirs it cares about
+way. `coalescing(of:)` says whether an event presents now or within a
+window, and a shorter window asked later moves the deadline earlier;
+`nextChange(of:)` has the runtime deliver `event(atTick:)` then. A runtime
+opens on its own executor at its first call: the journal folded, then
+`event(atOpen:)` applied live, so its effects run. The rule for the names,
+and every default, is in `Controller.swift`.
+
+A parent keeps its children in its state, by the key the app minted
+(`children(in:)`), each an `Equatable` value made from that state, so what
+the parent hands a child is part of it and a changed value replaces the
+one running; it folds the events of theirs it cares about
 (`event(fromChild:_:)`), and presents them in its own tree, which goes out
-once per step. The link's snapshot reaches every controller as
-`linkChanged(_:)`.
+once per step. A command reaches any controller by its path of keys
+(`send(_:to:)`). The link is every app's root: `LinkController<App>` keeps
+the app's root as its child, its snapshot reaches every controller under
+it as `event(forLink:)` inside the step that changed it, and the app tells
+it a `LinkReport` (a 401, a 403 `insufficient_scope`) from any event.
 
 ```swift
-let runtime = Runtime(TasksController(...), environment: .apple(transport: transport))
-let model = PresentationModel(runtime, first: await runtime.presentation)   // SwiftUI reads model.presentation
-model.send(.complete(taskID))
+let link = LinkController(app: TasksController(...), manifest: manifest, sessions: store, outbox: outbox,
+                          packages: ["substrate.reamde.dev/tasks": 2], words: words)
+let model = PresentationModel(link, environment: .apple(transport: transport))  // SwiftUI reads model.presentation
+model.send(TasksController.Command.complete(taskID), to: LinkController<TasksController>.appPath)
 ```
 
 `ControllerHarness` (SubstrateTesting) runs a controller on a `TestClock`

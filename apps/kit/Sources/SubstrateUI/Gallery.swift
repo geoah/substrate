@@ -12,7 +12,7 @@ public enum Gallery {
             guard case let .connect(connect) = presentation else { return nil }
             return AnyView(ConnectScreen(connect, text: .constant(connect.field.text), send: { _ in },
                                          header: { ConnectHeader(appName: ScreenFixtures.manifest.appName, tagline: "Your tasks, in your substrate.") },
-                                         passwordDoor: { _ in EmptyView() }))
+                                         passwordDoor: { _ in PasswordDoorStandIn() }))
         },
         .serverTooOld: { presentation in
             guard case let .serverTooOld(tooOld) = presentation else { return nil }
@@ -30,9 +30,9 @@ public enum Gallery {
             guard case let .review(review) = presentation else { return nil }
             return AnyView(ReviewScreen(review, onContinue: {}, onCancel: {}))
         },
-        .account: { presentation in
-            guard case let .account(account) = presentation else { return nil }
-            return AnyView(Form { AccountScreen(account, onChangeAccess: {}, onSignOut: {}) }.formStyle(.grouped))
+        .repository: { presentation in
+            guard case let .repository(repository) = presentation else { return nil }
+            return AnyView(Form { RepositoryScreen(repository, onChangeAccess: {}, onSignOut: {}) }.formStyle(.grouped))
         },
         .status: { presentation in
             guard case let .status(status) = presentation else { return nil }
@@ -51,6 +51,21 @@ public enum Gallery {
             return AnyView(Form { AboutScreen(about) }.formStyle(.grouped))
         },
     ]
+
+    /// Where an app's own password form stands: the kit draws the door,
+    /// the app the form.
+    struct PasswordDoorStandIn: View {
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("The app's own password form").font(.subheadline.weight(.semibold))
+                Text("Password").foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .background(.fill.tertiary, in: .rect(cornerRadius: 10))
+            }
+            .modifier(KitCard(tint: .secondary))
+        }
+    }
 
     /// The fixture drawn by its screen's renderer; nil when there is none.
     @MainActor

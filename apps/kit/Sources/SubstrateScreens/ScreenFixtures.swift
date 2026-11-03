@@ -28,7 +28,8 @@ public enum ScreenFixtures {
                      "substrate.reamde.dev/tasks/list": KindLabel(singular: "List", plural: "Lists")],
         softwareVersion: "0.120.0 (20261103.090000)")
 
-    static let words = StatusWords(app: app, device: "this iPhone", package: "Tasks", kept: "tasks")
+    static let words = StatusWords(app: app, device: "this iPhone", kept: "tasks")
+    static let tasksPackage = "substrate.reamde.dev/tasks"
 
     static var probe: ServerProbe.Result {
         ServerProbe.Result(origin: server, discovery: Discovery(server: .init(version: "v0.114.0")),
@@ -56,7 +57,7 @@ public enum ScreenFixtures {
         fix: "/catalog/substrate.reamde.dev%2Ftasks")
 
     public static var all: [ScreenFixture] {
-        connect + access + review + account + status + settings + problems + about
+        connect + access + review + repository + status + settings + problems + about
     }
 
     // MARK: Connect
@@ -66,6 +67,15 @@ public enum ScreenFixtures {
                                            unrevoked: [], signIn: { _ in })
         let unrevoked = ConnectController(manifest: manifest, locator: ServerLocator(probe: ServerProbe(), resolver: NoLookups()),
                                           unrevoked: [elsewhere], signIn: { _ in })
+        let browser = ConnectController(manifest: manifest, locator: ServerLocator(probe: ServerProbe(), resolver: NoLookups()),
+                                        opensBrowser: true, signIn: { _ in })
+        var fallback = manifest
+        fallback.passwordFallback = .withoutAppAuthorization
+        let password = ConnectController(manifest: fallback, locator: ServerLocator(probe: ServerProbe(), resolver: NoLookups()),
+                                         hasPasswordDoor: true, signIn: { _ in })
+        var noAppAccess = probe
+        noAppAccess.metadata = nil
+        noAppAccess.verdict = .tooOld(running: "v0.113.0", needed: nil, missing: ["give apps access of their own"])
         var old = probe
         old.verdict = .tooOld(running: "v0.113.0", needed: "0.114.0", missing: ["say which version it runs"])
         func present(_ state: ConnectState, _ controller: ConnectController = controller) -> FixturePresentation {
@@ -81,6 +91,10 @@ public enum ScreenFixtures {
                                                                   retryable: true))),
             ScreenFixture("connect-unrevoked", present(ConnectState(address: host, phase: .found(probe)), unrevoked)),
             ScreenFixture("connect-too-old", present(ConnectState(address: host, phase: .found(old)))),
+            ScreenFixture("connect-password", present(ConnectState(address: host, phase: .found(noAppAccess)), password)),
+            ScreenFixture("connect-browser-waiting", present(ConnectState(address: host, phase: .signingIn(probe)), browser)),
+            ScreenFixture("connect-sign-in-failed", present(ConnectState(address: host, phase: .found(probe),
+                                                                         problem: "ada.example.com refused the sign-in: the code was already used."))),
         ]
     }
 
@@ -128,32 +142,49 @@ public enum ScreenFixtures {
         ]
     }
 
-    // MARK: Account and status
+    // MARK: Repository and status
 
-    static var account: [ScreenFixture] {
+    static var repositoryPresentation: RepositoryPresentation {
+        RepositoryPresenter.present(session: session, manifest: manifest, serverVersion: "v0.114.0", unrevoked: [], offersChangeAccess: true,
+                                    locale: locale, timeZone: timeZone)
+    }
+
+    static var repository: [ScreenFixture] {
         [
-            ScreenFixture("account", .account(AccountPresenter.present(session: session, manifest: manifest, serverVersion: "v0.114.0",
-                                                                       unrevoked: [], offersChangeAccess: true, locale: locale,
-                                                                       timeZone: timeZone))),
-            ScreenFixture("account-unrevoked", .account(AccountPresenter.present(
+            ScreenFixture("repository", .repository(repositoryPresentation)),
+            ScreenFixture("repository-unrevoked", .repository(RepositoryPresenter.present(
                 session: session, manifest: manifest, serverVersion: "v0.114.0-3-gabc1234",
                 unrevoked: [SessionFacts(server: server, repository: host), elsewhere], offersChangeAccess: true, locale: locale,
                 timeZone: timeZone))),
-            ScreenFixture("account-password", .account(AccountPresenter.present(
+            ScreenFixture("repository-password", .repository(RepositoryPresenter.present(
                 session: SessionFacts(server: server, repository: host), manifest: manifest, serverVersion: "v0.113.0", unrevoked: [],
                 offersChangeAccess: true, locale: locale, timeZone: timeZone))),
         ]
     }
 
-    static let refusedWrite = ParkedWrite(id: UUID(uuidString: "00000000-0000-7000-8000-000000000001")!, method: .put,
+    public static let refusedWrite = ParkedWrite(id: UUID(uuidString: "00000000-0000-7000-8000-000000000001")!, method: .put,
                                           kind: "substrate.reamde.dev/tasks/task", recordID: "0196f7d2-buy-milk",
                                           words: "props.status: expected one of todo, doing, done", conflict: false)
 
-    static func status(_ status: LinkStatus, package: HeldPackage? = .current(held: 2), sending: Bool = false, waiting: Int = 0,
-                       parked: [ParkedWrite] = []) -> StatusPresentation
+    static func tasks(_ held: HeldPackage?) -> PackageStanding {
+        PackageStanding(id: tasksPackage, name: "Tasks", held: held, needs: 2)
+    }
+
+    static func status(_ status: LinkStatus, packages: [PackageStanding] = [tasks(.current(held: 2))], sending: Bool = false,
+                       waiting: Int = 0, parked: [ParkedWrite] = []) -> StatusPresentation
     {
-        StatusPresenter.present(status, words: words, host: host, package: package, known: 2, sending: sending, waiting: waiting,
+        StatusPresenter.present(status, words: words, host: host, packages: packages, sending: sending, waiting: waiting,
                                 parked: parked, kindLabels: manifest.kindLabels.mapValues(\.singular), locale: locale, timeZone: timeZone)
+    }
+
+    static let diskFull = "The disk is full: 0 bytes are free on this iPhone."
+
+    /// The status as `LinkStatus.derive` reaches it from these inputs, so a
+    /// fixture is a state the link can be in.
+    static func derived(packages: [PackageStanding] = [tasks(.current(held: 2))], outbox: OutboxState = .sent, waiting: Int = 0,
+                        issues: [AppIssue] = [], notKept: String? = nil) -> LinkStatus
+    {
+        LinkStatus.derive(signedIn: true, packages: packages, outbox: outbox, waiting: waiting, issues: issues, notKept: notKept)
     }
 
     static var status: [ScreenFixture] {
@@ -164,10 +195,23 @@ public enum ScreenFixtures {
             ScreenFixture("status-refused", .status(status(.refused(waiting: 1, reason: "props.status: expected one of todo, doing, done"),
                                                            waiting: 1, parked: [refusedWrite]))),
             ScreenFixture("status-needs-approval", .status(status(.needsApproval, waiting: 1))),
-            ScreenFixture("status-package-behind", .status(status(.packageBehind(held: 1, known: 2), package: .behind(held: 1)))),
+            ScreenFixture("status-package-behind", .status(status(derived(packages: [tasks(.behind(held: 1))]),
+                                                                  packages: [tasks(.behind(held: 1))]))),
+            ScreenFixture("status-packages-behind", .status(status(derived(packages: twoBehind), packages: twoBehind))),
             ScreenFixture("status-signed-out", .status(status(.signedOut, waiting: 4))),
-            ScreenFixture("status-local", .status(status(.local, package: nil))),
+            ScreenFixture("status-local", .status(status(.local, packages: []))),
+            ScreenFixture("status-ends-soon", .status(status(derived(waiting: 2, issues: [.accessEndsSoon(now.addingTimeInterval(3 * 86400))]),
+                                                             waiting: 2))),
+            ScreenFixture("status-not-kept", .status(status(derived(waiting: 1, notKept: diskFull), waiting: 1))),
+            ScreenFixture("status-server-too-old", .status(status(derived(waiting: 3, issues: [
+                .serverTooOld(running: "v0.113.0", needed: "0.114.0", missing: ["give apps access of their own"]),
+            ]), waiting: 3))),
+            ScreenFixture("status-preparing", .status(status(derived(packages: [tasks(nil)]), packages: [tasks(nil)], sending: true))),
         ]
+    }
+
+    static var twoBehind: [PackageStanding] {
+        [tasks(.behind(held: 1)), PackageStanding(id: "samples.substrate.reamde.dev/people", name: "People", held: .behind(held: 2), needs: 3)]
     }
 
     // MARK: Settings, problems and about
@@ -175,25 +219,26 @@ public enum ScreenFixtures {
     static var settings: [ScreenFixture] {
         let about = AboutPresentation.present(appName: app, version: "0.120.0-pre.20261103.090000+ac85863e", channel: "pre", offered: nil)
         let values = SettingsValues(toggles: ["reminders": true], choices: ["sort": "due"])
-        let app = SettingsSection(id: "tasks", title: "Tasks", rows: [
-            SettingsRow(id: "reminders", label: "Remind me when a task is due", control: .toggle(values.toggle("reminders"))),
-            SettingsRow(id: "sort", label: "Sort by", control: .choice(selected: values.choice("sort", default: "due"), options: [
+        let app = SettingsSection(id: .app("tasks"), title: "Tasks", rows: [
+            SettingsRow(id: .app("reminders"), label: "Remind me when a task is due", control: .toggle(values.toggle("reminders"))),
+            SettingsRow(id: .app("sort"), label: "Sort by", control: .choice(selected: values.choice("sort", default: "due"), options: [
                 SettingsOption(id: "due", label: "Due date"), SettingsOption(id: "priority", label: "Priority"),
                 SettingsOption(id: "name", label: "Name"),
             ])),
-            SettingsRow(id: "lists", label: "Lists", control: .link),
+            SettingsRow(id: .app("lists"), label: "Lists", control: .link),
         ])
         let usage = [AreaUsage(area: .outbox, bytes: 2400, files: 1), AreaUsage(area: .records, bytes: 1_840_000, files: 1),
                      AreaUsage(area: .cache, bytes: 12_300_000, files: 48)]
-        guard case let .account(account) = Self.account[0].presentation else { return [] }
+        func settings(_ status: StatusPresentation) -> FixturePresentation {
+            .settings(SettingsPresentation(sections: [app] + SettingsPresenter.status(status) + SettingsPresenter.repository(repositoryPresentation)
+                + [SettingsPresenter.storage(usage, budget: 100_000_000), SettingsPresenter.about(about)]))
+        }
         return [
-            ScreenFixture("settings", .settings(SettingsPresentation(sections: [
-                app,
-                SettingsPresenter.status(status(.ready(waiting: 0))),
-                SettingsPresenter.account(account),
-                SettingsPresenter.storage(usage, budget: 100_000_000),
-                SettingsPresenter.about(about),
-            ]))),
+            ScreenFixture("settings", settings(status(.ready(waiting: 0)))),
+            ScreenFixture("settings-journal-problem", settings(status(derived(waiting: 1, notKept: "The journal could not be written: "
+                    + "the disk is full."), waiting: 1))),
+            ScreenFixture("settings-refused", settings(status(.refused(waiting: 1, reason: refusedWrite.words ?? ""), waiting: 1,
+                                                              parked: [refusedWrite]))),
         ]
     }
 

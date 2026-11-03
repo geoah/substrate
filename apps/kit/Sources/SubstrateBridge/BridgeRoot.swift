@@ -72,6 +72,11 @@ public final class BridgeContext: Sendable {
         outbox.present(EncodedJSON(json))
     }
 
+    /// A failure for this handle, as Kotlin hears it; the handle stays open.
+    public func fail(_ failure: BridgeFailure) {
+        _ = outbox.enqueue(BridgeCodec.failure(failure, handle: handle))
+    }
+
     /// A keyed list, by name: the first time whole, after that as the
     /// `KeyedListDelta` from the revision sent before, never coalesced. A
     /// revision already sent is not sent again.

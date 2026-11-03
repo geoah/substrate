@@ -9,28 +9,40 @@ import SubstrateCore
 /// then the effects its events asked for start. An effect's result is an
 /// event through the same loop.
 ///
+/// Making a runtime reads nothing: the root opens (its journal folded, its
+/// children made, its event at open applied) on the runtime's own executor
+/// at the first call, so a journal is never replayed on the caller's thread.
+///
 /// The UI reads `presentations()`; SubstrateUI's `PresentationModel`
 /// republishes them on the main actor for SwiftUI, and the Android bridge
 /// reads `encodedPresentations()` and sends `send(encoded:)`.
 public actor Runtime<Root: Controller> {
     private let loop: Loop<Root>
+    private var opened = false
 
-    /// Opens the root: its journal, if it keeps one, is folded through the
-    /// engine with no effect run, and the first presentation made.
     public init(_ root: Root, environment: AppEnvironment, options: RuntimeOptions = RuntimeOptions()) {
         let box = RuntimeBox<Root>()
         let loop = Loop<Root>(environment: environment, options: options) { body in
             await box.runtime?.perform(body)
         }
-        let host = Host(controller: root, path: [], loop: loop, journal: root.journal(in: environment))
-        loop.root = host
-        host.open()
-        loop.presentFirst()
+        loop.root = Host(controller: root, path: [], loop: loop, journal: root.journal(in: environment))
         self.loop = loop
         box.runtime = self
     }
 
+    /// Opens the root once: its journal folded through the engine with no
+    /// effect run, the link and the children made, the events at open
+    /// applied, and the first presentation made; then the effects those
+    /// events asked for start.
+    private func open() {
+        guard !opened else { return }
+        opened = true
+        loop.root.open()
+        loop.presentFirst()
+    }
+
     private func perform(_ body: @Sendable () -> Void) {
+        open()
         body()
         loop.settle()
     }
@@ -39,33 +51,48 @@ public actor Runtime<Root: Controller> {
 
     /// The root's presentation tree as last published.
     public var presentation: Root.Presentation {
-        // `presentFirst` ran in `init`, and a host presents at least once.
-        loop.published ?? loop.root.presentation!
+        open()
+        // `presentFirst` ran in `open`, and a host presents at least once.
+        return loop.published ?? loop.root.presentation!
     }
 
-    public var state: Root.State { loop.root.state }
+    public var state: Root.State {
+        open()
+        return loop.root.state
+    }
 
     public var counters: RuntimeCounters { loop.counters }
 
     /// The state of the child kept under `key`, nil when none is.
-    public func state(of key: ChildKey) -> Root.Child.State? { loop.root.child(key)?.state }
+    public func state(of key: ChildKey) -> Root.Child.State? {
+        open()
+        return loop.root.child(key)?.state
+    }
 
     /// Every presentation the root publishes from now on, the current one
     /// first. A slow reader gets the newest and misses the ones between:
     /// a presentation is a snapshot.
     public func presentations() -> AsyncStream<Root.Presentation> {
-        loop.subscribe()
+        open()
+        return loop.subscribe()
     }
 
-    /// The presentations as JSON, for the Android bridge.
-    public func encodedPresentations() -> AsyncStream<Data> {
+    /// The presentations as JSON, for the Android bridge. One that does not
+    /// encode arrives as its failure, which the bridge delivers as an error,
+    /// and the next one still comes.
+    public func encodedPresentations() -> AsyncStream<Result<Data, PresentationNotEncoded>> {
+        open()
         let presentations = loop.subscribe()
-        let (stream, continuation) = AsyncStream<Data>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let (stream, continuation) = AsyncStream<Result<Data, PresentationNotEncoded>>.makeStream(bufferingPolicy: .bufferingNewest(1))
         let task = Task {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
             for await presentation in presentations {
-                if let data = try? encoder.encode(presentation) { continuation.yield(data) }
+                do {
+                    continuation.yield(.success(try encoder.encode(presentation)))
+                } catch {
+                    continuation.yield(.failure(PresentationNotEncoded(reason: String(describing: error))))
+                }
             }
             continuation.finish()
         }
@@ -76,34 +103,44 @@ public actor Runtime<Root: Controller> {
     // MARK: Writing
 
     public func send(_ command: Root.Command) {
+        open()
         loop.root.send(command)
         loop.settle()
     }
 
-    /// A command for the child kept under `key`; nothing when none is.
-    public func send(_ command: Root.Child.Command, to key: ChildKey) {
-        loop.root.child(key)?.send(command)
-        loop.settle()
+    /// A command for the controller at `path`, the keys from the root down
+    /// (none for the root itself). Throws when no controller is kept there,
+    /// or the command is not of its `Command` type.
+    public func send<Command: Sendable>(_ command: Command, to path: [ChildKey]) throws {
+        open()
+        defer { loop.settle() }
+        try loop.root.route(path[...], command: .value(command))
     }
 
     /// A `RoutedCommand` as JSON, from the Android bridge.
     public func send(encoded data: Data) throws {
+        open()
+        defer { loop.settle() }
         let routed = try JSONDecoder().decode(RoutedCommand.self, from: data)
         let command = try JSONEncoder().encode(routed.command)
-        try loop.root.route(routed.path[...], command: command)
-        loop.settle()
+        try loop.root.route(routed.path[...], command: .encoded(command))
     }
 
     /// An event from outside the loop, applied as an effect's result is: a
     /// platform callback, or a test answering an effect it held.
     public func deliver(_ event: Root.Event) {
+        open()
         loop.root.step([event])
         loop.settle()
     }
 
-    /// The link's snapshot, delivered to the root and down to every child as
-    /// `linkChanged`, and to each child made later.
+    /// A link's snapshot from outside the tree, delivered to the root and
+    /// down to every child as `event(forLink:)`, and to each child made
+    /// later: for a root that runs without a `LinkController` above it (a
+    /// test, a preview, an extension). Under a link, the link's own state
+    /// makes the snapshot and this is not called.
     public func linkChanged(_ snapshot: LinkSnapshot) {
+        open()
         loop.link = snapshot
         loop.root.linkChanged(snapshot)
         loop.settle()
@@ -112,6 +149,7 @@ public actor Runtime<Root: Controller> {
     /// The root back to its initial state with no journal; its controller
     /// generation moves, so every result still on its way is dropped.
     public func reset() {
+        open()
         loop.root.reset()
         loop.settle()
     }
@@ -119,7 +157,18 @@ public actor Runtime<Root: Controller> {
     /// Cancels every effect, drops every result still on its way, and ends
     /// the presentation streams. Idempotent.
     public func close() {
+        opened = true
         loop.close()
+    }
+}
+
+/// A presentation that did not encode as JSON: a bug in its `Encodable`
+/// conformance, which the bridge reports rather than draw nothing.
+public struct PresentationNotEncoded: Error, Equatable, Sendable {
+    public var reason: String
+
+    public init(reason: String) {
+        self.reason = reason
     }
 }
 

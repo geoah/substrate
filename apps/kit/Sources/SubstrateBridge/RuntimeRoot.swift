@@ -4,7 +4,8 @@ import SubstrateRuntime
 
 /// Any `Runtime` as a bridge root, with no glue per controller: commands are
 /// `RoutedCommand`s as JSON (`Runtime.send(encoded:)`), and each presentation
-/// the runtime publishes goes out as it encoded it, coalesced on the way.
+/// the runtime publishes goes out as it encoded it, coalesced on the way; one
+/// that did not encode goes out as a `swiftFailure`, and the next still comes.
 public final class RuntimeRoot<Root: Controller>: BridgeRoot {
     public let runtime: Runtime<Root>
     private let forwarding: Task<Void, Never>
@@ -13,8 +14,11 @@ public final class RuntimeRoot<Root: Controller>: BridgeRoot {
         self.runtime = runtime
         let presentations = await runtime.encodedPresentations()
         forwarding = Task {
-            for await json in presentations {
-                context.present(encoded: json)
+            for await encoded in presentations {
+                switch encoded {
+                case let .success(json): context.present(encoded: json)
+                case let .failure(failure): context.fail(BridgeFailure(.swiftFailure, "a presentation did not encode: \(failure.reason)"))
+                }
             }
         }
     }

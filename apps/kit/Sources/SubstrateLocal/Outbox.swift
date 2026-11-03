@@ -13,8 +13,10 @@ import SubstrateCore
 /// call, never by its position, and `reset` moves a generation the flush
 /// checks before it touches anything.
 public actor Outbox {
-    /// The file's `format`. Workouts' outbox wrote this one with each group
-    /// under `session`, which an entry still reads.
+    /// The file's `format`. Workouts' outbox wrote this one with each batch
+    /// under `session`, which an entry still reads and writes. A file at an
+    /// older format is read through the app's `OutboxUpgrade`, or set aside
+    /// where the app gives none; one with no `format` is format 1.
     public static let fileFormat = 2
 
     struct File: Codable {
@@ -35,8 +37,8 @@ public actor Outbox {
 
         init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            format = try c.decodeIfPresent(Int.self, forKey: .format) ?? Outbox.fileFormat
-            guard format == Outbox.fileFormat else {
+            format = try c.decodeIfPresent(Int.self, forKey: .format) ?? 1
+            guard format <= Outbox.fileFormat else {
                 throw DecodingError.dataCorruptedError(forKey: .format, in: c, debugDescription: "outbox format \(format)")
             }
             entries = try c.decodeIfPresent([OutboxEntry].self, forKey: .entries) ?? []
@@ -74,16 +76,39 @@ public actor Outbox {
     public private(set) var unreadable: SetAsideFile?
     /// Why the last save failed, until one succeeds.
     public private(set) var saveProblem: String?
+    /// Moved by every change the app makes to the queue, never by a flush.
+    private var revision = 0
+    private var watchers: [Int: AsyncStream<OutboxSummary>.Continuation] = [:]
+    private var nextWatcher = 0
 
-    public init(folder: RepositoryFolder, name: String = "outbox.json", area: FolderArea = .outbox, now: Date = Date()) {
+    /// - Parameter upgrade: how a file an older build of the app wrote is
+    ///   read; without one, such a file is set aside like any other it
+    ///   cannot read.
+    public init(folder: RepositoryFolder, name: String = "outbox.json", area: FolderArea = .outbox, now: Date = Date(),
+                upgrade: OutboxUpgrade? = nil)
+    {
         self.folder = folder
         self.name = name
         self.area = area
         // Never an empty queue over writes nobody can read: a file that does
         // not decode is kept beside, and said so.
         let loaded = try? folder.load(File.self, from: name, in: area, at: now)
-        file = loaded?.value ?? File()
-        unreadable = loaded?.aside
+        var file = loaded?.value ?? File()
+        var unreadable = loaded?.aside
+        var upgraded = false
+        if file.format < Outbox.fileFormat {
+            if let upgrade {
+                upgrade.apply(to: &file)
+                upgraded = true
+            } else {
+                unreadable = try? folder.setAside(name, in: area, at: now)
+                file = File()
+            }
+        }
+        self.file = file
+        self.unreadable = unreadable
+        // Written back once at this format, so the next open reads it as is.
+        if upgraded { try? Self.write(file, to: folder, name: name, area: area) }
     }
 
     public var entries: [OutboxEntry] { file.entries }
@@ -97,6 +122,54 @@ public actor Outbox {
 
     public var versions: [String: Int] { file.versions }
 
+    // MARK: Following
+
+    /// Where the queue stands now.
+    public var summary: OutboxSummary {
+        OutboxSummary(state: state, waiting: file.entries.count, parked: file.entries.filter(\.parked), sendable: sendable,
+                      flushing: flushing, revision: revision, saveProblem: saveProblem, unreadable: unreadable)
+    }
+
+    /// The summary now, then again each time the queue, its last flush or a
+    /// save changes, until the reader stops. A slow reader gets the newest.
+    public func changes() -> AsyncStream<OutboxSummary> {
+        let (stream, continuation) = AsyncStream<OutboxSummary>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        nextWatcher += 1
+        let id = nextWatcher
+        watchers[id] = continuation
+        continuation.yield(summary)
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.stopWatching(id) }
+        }
+        return stream
+    }
+
+    private func stopWatching(_ id: Int) {
+        watchers[id] = nil
+    }
+
+    private func announce() {
+        guard !watchers.isEmpty else { return }
+        let now = summary
+        for continuation in watchers.values { continuation.yield(now) }
+    }
+
+    /// The entries a flush would try now: not parked, and not behind a
+    /// parked write of their batch.
+    private var sendable: Int {
+        var held = Set<String>()
+        var count = 0
+        for entry in file.entries {
+            if let batch = entry.batch, held.contains(batch) { continue }
+            if entry.parked {
+                if let batch = entry.batch { held.insert(batch) }
+                continue
+            }
+            count += 1
+        }
+        return count
+    }
+
     // MARK: Queueing
 
     /// Queues the writes, kept on disk before it returns; on a failed save
@@ -109,60 +182,60 @@ public actor Outbox {
     /// written, as `kind/id`.
     public func saw(_ seen: [String: Int]) throws {
         guard !seen.isEmpty else { return }
-        try change { file in
+        try change(queues: false) { file in
             for (key, version) in seen { file.versions[key] = version }
         }
     }
 
     /// Forgets a record this repository no longer holds.
     public func forget(_ kind: String, _ id: String) throws {
-        try change { $0.versions["\(kind)/\(id)"] = nil }
+        try change(queues: false) { $0.versions["\(kind)/\(id)"] = nil }
     }
 
-    /// A group given up before it was sent (a session discarded): its
+    /// A batch given up before it was sent (a session discarded): its
     /// waiting writes dropped and, when the server holds `purge`'s record or
     /// may once a write in flight lands, the purge queued, in one save.
     /// Answers whether the purge was queued.
     @discardableResult
-    public func discard(group: String, purge: OutboxEntry) throws -> Bool {
-        let held = file.versions[purge.key] != nil || inFlight?.group == group
+    public func discard(batch: String, purge: OutboxEntry) throws -> Bool {
+        let held = file.versions[purge.key] != nil || inFlight?.batch == batch
         try change { file in
-            file.entries.removeAll { $0.group == group }
+            file.entries.removeAll { $0.batch == batch }
             if held { file.entries.append(purge) }
         }
         return held
     }
 
-    /// Drops a group's waiting writes and queues `purge` in one save: a
-    /// group deleted on the device whatever the server holds.
-    public func purge(group: String, with purge: OutboxEntry) throws {
+    /// Drops a batch's waiting writes and queues `purge` in one save: a
+    /// batch deleted on the device whatever the server holds.
+    public func purge(batch: String, with purge: OutboxEntry) throws {
         try change { file in
-            file.entries.removeAll { $0.group == group }
+            file.entries.removeAll { $0.batch == batch }
             file.entries.append(purge)
         }
     }
 
-    /// A record outside any group deleted on the device: any write of it
+    /// A record outside any batch deleted on the device: any write of it
     /// still waiting dropped and its purge queued, in one save.
     public func delete(_ purge: OutboxEntry) throws {
         try change { file in
-            file.entries.removeAll { $0.group == nil && $0.key == purge.key }
+            file.entries.removeAll { $0.batch == nil && $0.key == purge.key }
             file.entries.append(purge)
         }
     }
 
-    /// The records outside any group whose purge waits, as `kind/id`: what
+    /// The records outside any batch whose purge waits, as `kind/id`: what
     /// a read of them leaves out until the purge lands.
     public var waitingDeletes: Set<String> {
-        Set(file.entries.filter { $0.method == .purge && $0.group == nil }.map(\.key))
+        Set(file.entries.filter { $0.method == .purge && $0.batch == nil }.map(\.key))
     }
 
     /// Takes back a record's purge that has not gone yet (it was added back
     /// before its delete reached the server).
     public func withdrawDelete(_ kind: String, _ id: String) throws {
         let key = "\(kind)/\(id)"
-        try change { file in
-            file.entries.removeAll { $0.method == .purge && $0.group == nil && $0.key == key && $0.id != inFlight?.id }
+        try change(queues: false) { file in
+            file.entries.removeAll { $0.method == .purge && $0.batch == nil && $0.key == key && $0.id != inFlight?.id }
         }
     }
 
@@ -179,7 +252,7 @@ public actor Outbox {
     }
 
     /// A guarded edit (an entry with `baseVersion`), kept on disk before it
-    /// returns. The last write of the same record outside any group, when it
+    /// returns. The last write of the same record outside any batch, when it
     /// is a guarded edit or create still waiting (not on the wire, not
     /// parked), takes this one on top, so edits made offline go as one write
     /// under the first one's version and a create not sent yet takes the
@@ -189,7 +262,7 @@ public actor Outbox {
     public func edit(_ entry: OutboxEntry) throws {
         guard let patch = entry.properties, !patch.isEmpty else { return }
         try change { file in
-            if let index = file.entries.lastIndex(where: { $0.group == nil && $0.key == entry.key }),
+            if let index = file.entries.lastIndex(where: { $0.batch == nil && $0.key == entry.key }),
                file.entries[index].id != inFlight?.id, !file.entries[index].parked,
                file.entries[index].baseVersion != nil, file.entries[index].method != .purge
             {
@@ -204,13 +277,13 @@ public actor Outbox {
         }
     }
 
-    /// The records of `kind` outside any group whose writes wait, by id, as
+    /// The records of `kind` outside any batch whose writes wait, by id, as
     /// what they will set. A parked write is not laid over: during a
     /// conflict the record shows as the server holds it, which Use Theirs
     /// keeps.
     public func waiting(kind: String) -> [String: WaitingWrite] {
         var out: [String: WaitingWrite] = [:]
-        for entry in file.entries where entry.group == nil && entry.kind == kind && !entry.parked {
+        for entry in file.entries where entry.batch == nil && entry.kind == kind && !entry.parked {
             switch entry.method {
             case .purge:
                 out[entry.recordID] = nil
@@ -254,13 +327,13 @@ public actor Outbox {
         }
     }
 
-    /// Gives up a parked write and, when it belongs to a group, every write
-    /// of that group still waiting behind it.
+    /// Gives up a parked write and, when it belongs to a batch, every write
+    /// of that batch still waiting behind it.
     public func discard(_ id: UUID) throws {
         try change { file in
             guard let entry = file.entries.first(where: { $0.id == id }) else { return }
-            if let group = entry.group {
-                file.entries.removeAll { $0.group == group }
+            if let batch = entry.batch {
+                file.entries.removeAll { $0.batch == batch }
             } else {
                 file.entries.removeAll { $0.id == id }
             }
@@ -278,17 +351,19 @@ public actor Outbox {
     // MARK: Sending
 
     /// Sends what waits, in order. A write the server refuses for itself is
-    /// parked with its words and holds back the rest of its group; the
+    /// parked with its words and holds back the rest of its batch; the
     /// network, a busy server or the token stop the run, and nothing is lost.
     /// Writes queued while it runs are sent in the same run.
     @discardableResult
     public func flush(_ writer: any RecordWriter) async -> OutboxState {
         guard !flushing else { return state }
         flushing = true
+        announce()
         defer {
             flushing = false
             inFlight = nil
             if landedUnsaved { try? save() }
+            announce()
         }
         let run = generation
         var tried = Set<UUID>()
@@ -351,16 +426,16 @@ public actor Outbox {
         return state
     }
 
-    /// The first entry not tried in this run whose group nothing parked or
+    /// The first entry not tried in this run whose batch nothing parked or
     /// earlier holds back.
     private func next(skipping tried: Set<UUID>) -> OutboxEntry? {
         var held = Set<String>()
         for entry in file.entries {
-            if let group = entry.group, held.contains(group) { continue }
+            if let batch = entry.batch, held.contains(batch) { continue }
             if entry.parked || tried.contains(entry.id) {
                 // A write tried and still here was refused or parked: the
-                // rest of its group waits.
-                if let group = entry.group { held.insert(group) }
+                // rest of its batch waits.
+                if let batch = entry.batch { held.insert(batch) }
                 continue
             }
             return entry
@@ -427,7 +502,7 @@ public actor Outbox {
         /// since the version an edit was made on.
         case conflict(String)
         case stop(OutboxState)
-        /// Left queued, its group held for the rest of the run.
+        /// Left queued, its batch held for the rest of the run.
         case hold(String)
         case park(String)
     }
@@ -461,16 +536,20 @@ public actor Outbox {
 
     /// A change the caller asked for: saved before it returns, and undone in
     /// memory when the save fails, so the queue never claims what the disk
-    /// does not hold.
-    private func change(_ edit: (inout File) -> Void) throws {
+    /// does not hold. One that `queues` moves the revision a reader starts
+    /// a flush on.
+    private func change(queues: Bool = true, _ edit: (inout File) -> Void) throws {
         let before = file
         edit(&file)
         do {
             try save()
         } catch {
             file = before
+            announce()
             throw OutboxNotSaved(reason: error.localizedDescription)
         }
+        if queues { revision += 1 }
+        announce()
     }
 
     /// A change the flush makes after the server answered: kept in memory
@@ -492,18 +571,23 @@ public actor Outbox {
         }
         lastLandedSave = now
         try? save()
+        announce()
     }
 
     private func save() throws {
         do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
-            try folder.write(encoder.encode(file), to: name, in: area)
+            try Self.write(file, to: folder, name: name, area: area)
             saveProblem = nil
             landedUnsaved = false
         } catch {
             saveProblem = error.localizedDescription
             throw error
         }
+    }
+
+    private static func write(_ file: File, to folder: RepositoryFolder, name: String, area: FolderArea) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
+        try folder.write(encoder.encode(file), to: name, in: area)
     }
 }
