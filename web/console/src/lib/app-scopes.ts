@@ -1,10 +1,11 @@
-/** An app's scopes in the owner's words (decisions 0194 and 0195): what each
- * verb lets the app do with its pattern, for the approval page and the Apps
- * list in Settings. Pure, so the words are tested here. */
+/** An app's scopes in the owner's words (decisions 0194, 0195 and 0219):
+ * what each verb lets the app do with its pattern, for the approval page and
+ * the Apps list in Settings. Pure, so the words are tested here. */
 
 import { agentName } from "@/lib/actor-identity"
 import { splitKind } from "@/lib/api/http"
 import type {
+  AuthorizationCallFunction,
   AuthorizationKind,
   AuthorizationScope,
   ScopeVerb,
@@ -26,6 +27,7 @@ const ACTIONS: Record<ScopeVerb, string> = {
   agents: "Talk to, and read the chats of, the agents matching",
   decide: "Apply, edit or dismiss changes suggested by the agents matching",
   declare: "Install and add to the package",
+  call: "Run the functions matching",
   webhook: "Send data to, and see the refused deliveries of, the webhook",
   full: "Everything you can do when you sign in",
 }
@@ -65,7 +67,7 @@ const MAX_LABELS = 6
  * reaches today. */
 export type SentenceScope = Pick<
   AuthorizationScope,
-  "verb" | "pattern" | "glob" | "kinds" | "agents"
+  "verb" | "pattern" | "glob" | "kinds" | "agents" | "functions"
 >
 
 /** A pattern's shape: every kind, one authority's, one package's, or one
@@ -177,12 +179,19 @@ function agentsPhrase(scope: SentenceScope, shape: PatternShape): string {
   }
 }
 
+/** What every read or write scope adds (decision 0219): a semantic search
+ * over the kinds it reads embeds the query with the owner's provider. */
+const SEMANTIC_CLAUSE =
+  ", and search them by meaning, which spends your embedding budget"
+
 /** A scope as the everyday sentence the approval page shows beside its
- * checkbox: what the app may do, over the kinds or the agents it reaches by
- * their labels. Every power stays in the words: a write may delete, a glob
- * reaches what is added later, talking to an agent reaches whatever the
- * agent may do and reads every chat with it, and a decision may edit the
- * change it applies. */
+ * checkbox: what the app may do, over the kinds, the agents or the functions
+ * it reaches by their labels. Every power stays in the words: a write may
+ * delete, a read searches by meaning at the owner's cost, a glob reaches
+ * what is added later, talking to an agent reaches whatever the agent may
+ * do and reads every chat with it, a decision may edit the change it
+ * applies, and a call runs the owner's code as far as the app already
+ * reaches. */
 export function scopeSentence(scope: SentenceScope): string {
   const shape = patternShape(scope.pattern)
   switch (scope.verb) {
@@ -190,10 +199,11 @@ export function scopeSentence(scope: SentenceScope): string {
     case "write": {
       const verb = KIND_VERBS[scope.verb]
       const later = scope.glob ? ", including kinds added later" : ""
-      if (shape.shape === "all") return `${verb} all your records${later}`
+      if (shape.shape === "all")
+        return `${verb} all your records${later}${SEMANTIC_CLAUSE}`
       const what =
         scope.kinds.length > 0 ? kindsPhrase(scope.kinds) : patternPhrase(shape)
-      return `${verb} your ${what}${later}`
+      return `${verb} your ${what}${later}${SEMANTIC_CLAUSE}`
     }
     case "agents": {
       const later = scope.glob ? ", including agents added later" : ""
@@ -210,11 +220,50 @@ export function scopeSentence(scope: SentenceScope): string {
     }
     case "declare":
       return declareSentence(scope.pattern)
+    case "call":
+      return callSentence(scope, shape)
     case "webhook":
       return webhookSentence(scope.pattern)
     case "full":
       return FULL_ACCESS_SENTENCE
   }
+}
+
+/** A function by its name alone, as an agent is: the id's last segment,
+ * capitalised. */
+export function functionName(id: string): string {
+  return agentName(id)
+}
+
+/** The functions a call scope names: by name where it matches any today,
+ * else by what its pattern covers. */
+function functionsPhrase(
+  functions: readonly AuthorizationCallFunction[],
+  pattern: string,
+  shape: PatternShape
+): string {
+  if (shape.shape === "all") return "any of your functions"
+  if (functions.length > 0)
+    return listWords(functions.map((f) => functionName(f.identity)))
+  switch (shape.shape) {
+    case "authority":
+      return `the functions from ${shape.authority}`
+    case "package":
+      return `the functions in ${packageDisplayName(shape.pkg)}`
+    case "exact":
+      return functionName(pattern)
+  }
+}
+
+/** What a `call` scope lets the app do (decision 0219): run the matching
+ * functions, the owner's installed code, each only where the app's other
+ * scopes already cover what the function reads and writes. The server
+ * refuses a call whose reach they do not cover. */
+function callSentence(scope: SentenceScope, shape: PatternShape): string {
+  const later = scope.glob ? ", including functions added later" : ""
+  const one = !scope.glob
+  const who = functionsPhrase(scope.functions ?? [], scope.pattern, shape)
+  return `Run ${who}${later}; ${one ? "it runs" : "each runs"} only where the app may already see and change what it reads and writes`
 }
 
 /** What a `declare` scope lets an app do with one package of the owner's

@@ -391,6 +391,7 @@ describe("foldRequest", () => {
     glob: false,
     kinds: [],
     agents: [],
+    functions: [],
   } satisfies AuthorizationScope
   const TASKS = {
     ...ACCOUNTS,

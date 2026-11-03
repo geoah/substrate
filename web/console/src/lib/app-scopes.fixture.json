@@ -2,7 +2,7 @@
   {
     "scope": "read:*",
     "kinds": [],
-    "sentence": "See all your records, including kinds added later"
+    "sentence": "See all your records, including kinds added later, and search them by meaning, which spends your embedding budget"
   },
   {
     "scope": "declare:ada.example.com/training",
@@ -30,12 +30,12 @@
         "identity": "ada.example.com/tasks/task"
       }
     ],
-    "sentence": "See your people, and projects and tasks, including kinds added later"
+    "sentence": "See your people, and projects and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
   },
   {
     "scope": "read:ada.example.com/notes/*",
     "kinds": [],
-    "sentence": "See your Notes records, including kinds added later"
+    "sentence": "See your Notes records, including kinds added later, and search them by meaning, which spends your embedding budget"
   },
   {
     "scope": "read:providers.substrate.reamde.dev/applehealth/account",
@@ -49,12 +49,12 @@
         "purpose": "internal"
       }
     ],
-    "sentence": "See your Apple Health accounts"
+    "sentence": "See your Apple Health accounts, and search them by meaning, which spends your embedding budget"
   },
   {
     "scope": "read:substrate.reamde.dev/llm/provider",
     "kinds": [],
-    "sentence": "See your LLM providers"
+    "sentence": "See your LLM providers, and search them by meaning, which spends your embedding budget"
   },
   {
     "scope": "read:ada.example.com/greek/*",
@@ -109,12 +109,12 @@
         }
       }
     ],
-    "sentence": "See your Greek alphas, betas, gammas, deltas, epsilons and zetas, and 1 more kind, including kinds added later"
+    "sentence": "See your Greek alphas, betas, gammas, deltas, epsilons and zetas, and 1 more kind, including kinds added later, and search them by meaning, which spends your embedding budget"
   },
   {
     "scope": "write:*",
     "kinds": [],
-    "sentence": "See, add, change and delete all your records, including kinds added later"
+    "sentence": "See, add, change and delete all your records, including kinds added later, and search them by meaning, which spends your embedding budget"
   },
   {
     "scope": "write:providers.substrate.reamde.dev/apple/*",
@@ -156,12 +156,12 @@
         }
       }
     ],
-    "sentence": "See, add, change and delete your Apple contacts, events, reminders and visits, and 1 more kind, including kinds added later"
+    "sentence": "See, add, change and delete your Apple contacts, events, reminders and visits, and 1 more kind, including kinds added later, and search them by meaning, which spends your embedding budget"
   },
   {
     "scope": "write:ada.example.com/notes/note",
     "kinds": [],
-    "sentence": "See, add, change and delete your notes"
+    "sentence": "See, add, change and delete your notes, and search them by meaning, which spends your embedding budget"
   },
   {
     "scope": "agents:*",
@@ -197,6 +197,26 @@
     "scope": "decide:ada.example.com/llm/substrateEditor",
     "kinds": [],
     "sentence": "Apply or dismiss the changes Substrate editor suggests, and edit one before applying it, as you"
+  },
+  {
+    "scope": "call:*",
+    "kinds": [],
+    "sentence": "Run any of your functions, including functions added later; each runs only where the app may already see and change what it reads and writes"
+  },
+  {
+    "scope": "call:b.example.com/*",
+    "kinds": [],
+    "sentence": "Run the functions from b.example.com, including functions added later; each runs only where the app may already see and change what it reads and writes"
+  },
+  {
+    "scope": "call:ada.example.com/tasks/*",
+    "kinds": [],
+    "sentence": "Run the functions in Tasks, including functions added later; each runs only where the app may already see and change what it reads and writes"
+  },
+  {
+    "scope": "call:ada.example.com/tasks/summarize",
+    "kinds": [],
+    "sentence": "Run Summarize; it runs only where the app may already see and change what it reads and writes"
   },
   {
     "scope": "webhook:applehealth-webhook",

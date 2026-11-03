@@ -1,6 +1,7 @@
 /** One requested scope on the approval page: its checkbox and its everyday
  * sentence, and in the technical view the scope as written, what it reaches
- * by full reference and what an agent behind it may do. */
+ * by full reference, what an agent behind it may do and what a function it
+ * may run reaches. */
 
 import { useId, useState } from "react"
 
@@ -12,6 +13,8 @@ import type {
 } from "@/lib/api/types"
 import { agentName, canChange, canSee } from "@/lib/agent-chat"
 import { overAgents, scopeSentence } from "@/lib/app-scopes"
+
+import { FunctionList } from "./call-scope"
 
 /** How many kinds a scope lists before it offers the rest. */
 const KIND_PREVIEW = 8
@@ -118,7 +121,17 @@ function ScopeFacts({
         <p className="text-xs text-muted-foreground">
           {agentsScope
             ? "Also covers matching agents you add later."
-            : "Also covers matching kinds you add later."}
+            : scope.verb === "call"
+              ? "Also covers matching functions you add later."
+              : "Also covers matching kinds you add later."}
+        </p>
+      )}
+      {scope.verb === "call" && (
+        <p className="text-xs text-muted-foreground">
+          A function is your installed code. The app runs one only where the
+          scopes it holds already cover every kind the function, and what it
+          calls, reads and writes; the function’s own changes appear as the
+          function’s.
         </p>
       )}
       {scope.verb === "agents" && (
@@ -159,6 +172,8 @@ function ScopeFacts({
           </p>
           {agentsScope ? (
             <AgentList agents={scope.agents} talk={scope.verb === "agents"} />
+          ) : scope.verb === "call" ? (
+            <FunctionList functions={scope.functions} />
           ) : (
             <KindList kinds={scope.kinds} />
           )}

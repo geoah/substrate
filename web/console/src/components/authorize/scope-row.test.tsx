@@ -29,6 +29,7 @@ function scope(
     glob: pattern.endsWith("*"),
     kinds: [],
     agents: [],
+    functions: [],
     ...(refused ? { refused } : {}),
   } satisfies AuthorizationScope
 }

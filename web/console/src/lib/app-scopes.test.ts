@@ -30,6 +30,14 @@ describe("scopeWords", () => {
     expect(scopeWords("decide:*").pattern).toBe("*")
   })
 
+  it("names the functions a call scope runs", () => {
+    expect(scopeWords("call:ada.example.com/tasks/*")).toEqual({
+      verb: "call",
+      action: "Run the functions matching",
+      pattern: "ada.example.com/tasks/*",
+    })
+  })
+
   it("names the webhook a webhook scope delivers to", () => {
     expect(scopeWords("webhook:applehealth-webhook")).toEqual({
       verb: "webhook",
@@ -51,6 +59,7 @@ describe("scopeWords", () => {
         glob: false,
         kinds: [],
         agents: [],
+        functions: [],
       })
     ).toBe(FULL_ACCESS_SENTENCE)
     expect(FULL_ACCESS_SENTENCE).toMatch(/make or revoke tokens/)
@@ -71,6 +80,7 @@ describe("overAgents", () => {
     expect(overAgents("decide")).toBe(true)
     expect(overAgents("read")).toBe(false)
     expect(overAgents("write")).toBe(false)
+    expect(overAgents("call")).toBe(false)
     expect(overAgents("webhook")).toBe(false)
   })
 })
@@ -96,6 +106,7 @@ function scope(over: Partial<SentenceScope>): SentenceScope {
     glob: false,
     kinds: [],
     agents: [],
+    functions: [],
     ...over,
   }
 }
@@ -130,7 +141,7 @@ describe("scopeSentence", () => {
         })
       )
     ).toBe(
-      "See, add, change and delete your Apple contacts, events, reminders and visits, and 1 more kind, including kinds added later"
+      "See, add, change and delete your Apple contacts, events, reminders and visits, and 1 more kind, including kinds added later, and search them by meaning, which spends your embedding budget"
     )
   })
 
@@ -140,7 +151,9 @@ describe("scopeSentence", () => {
       scopeSentence(
         scope({ pattern: "ada.example.com/tasks/task", kinds: tasks })
       )
-    ).toBe("See your tasks")
+    ).toBe(
+      "See your tasks, and search them by meaning, which spends your embedding budget"
+    )
     expect(
       scopeSentence(
         scope({
@@ -149,7 +162,9 @@ describe("scopeSentence", () => {
           kinds: tasks,
         })
       )
-    ).toBe("See, add, change and delete your tasks")
+    ).toBe(
+      "See, add, change and delete your tasks, and search them by meaning, which spends your embedding budget"
+    )
   })
 
   it("names a kind with no label by its own words, and one with nothing installed yet by its pattern", () => {
@@ -164,24 +179,34 @@ describe("scopeSentence", () => {
           ],
         })
       )
-    ).toBe("See your tasks and projects, including kinds added later")
+    ).toBe(
+      "See your tasks and projects, including kinds added later, and search them by meaning, which spends your embedding budget"
+    )
     expect(
       scopeSentence(
         scope({ verb: "write", pattern: "ada.example.com/notes/note" })
       )
-    ).toBe("See, add, change and delete your notes")
+    ).toBe(
+      "See, add, change and delete your notes, and search them by meaning, which spends your embedding budget"
+    )
     expect(
       scopeSentence(scope({ pattern: "ada.example.com/notes/*", glob: true }))
-    ).toBe("See your Notes records, including kinds added later")
+    ).toBe(
+      "See your Notes records, including kinds added later, and search them by meaning, which spends your embedding budget"
+    )
     expect(
       scopeSentence(scope({ pattern: "substrate.reamde.dev/llm/provider" }))
-    ).toBe("See your LLM providers")
+    ).toBe(
+      "See your LLM providers, and search them by meaning, which spends your embedding budget"
+    )
   })
 
   // The server refuses such a scope, so the sentence fixture never carries
   // one; the page still reads it without an empty package name.
   it("reads a pattern that names no package by its kind alone", () => {
-    expect(scopeSentence(scope({ pattern: "note" }))).toBe("See your notes")
+    expect(scopeSentence(scope({ pattern: "note" }))).toBe(
+      "See your notes, and search them by meaning, which spends your embedding budget"
+    )
   })
 
   it("groups the kinds of several packages", () => {
@@ -198,13 +223,13 @@ describe("scopeSentence", () => {
         })
       )
     ).toBe(
-      "See your people, and projects and tasks, including kinds added later"
+      "See your people, and projects and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
     )
   })
 
   it("reads every record as every record", () => {
     expect(scopeSentence(scope({ pattern: "*", glob: true }))).toBe(
-      "See all your records, including kinds added later"
+      "See all your records, including kinds added later, and search them by meaning, which spends your embedding budget"
     )
   })
 
@@ -253,6 +278,53 @@ describe("scopeSentence", () => {
     )
   })
 
+  it("says a call runs the owner's code only as far as the app already reaches", () => {
+    expect(
+      scopeSentence(scope({ verb: "call", pattern: "*", glob: true }))
+    ).toBe(
+      "Run any of your functions, including functions added later; each runs only where the app may already see and change what it reads and writes"
+    )
+    expect(
+      scopeSentence(
+        scope({ verb: "call", pattern: "ada.example.com/tasks/*", glob: true })
+      )
+    ).toBe(
+      "Run the functions in Tasks, including functions added later; each runs only where the app may already see and change what it reads and writes"
+    )
+    expect(
+      scopeSentence(
+        scope({
+          verb: "call",
+          pattern: "ada.example.com/tasks/*",
+          glob: true,
+          functions: [
+            {
+              identity: "ada.example.com/tasks/summarize",
+              reads: [],
+              writes: [],
+              covered: true,
+            },
+            {
+              identity: "ada.example.com/tasks/report",
+              reads: [],
+              writes: [],
+              covered: false,
+            },
+          ],
+        })
+      )
+    ).toBe(
+      "Run Summarize and Report, including functions added later; each runs only where the app may already see and change what it reads and writes"
+    )
+    expect(
+      scopeSentence(
+        scope({ verb: "call", pattern: "ada.example.com/tasks/summarize" })
+      )
+    ).toBe(
+      "Run Summarize; it runs only where the app may already see and change what it reads and writes"
+    )
+  })
+
   it("says a webhook scope sends data and sees every delivery that could not be filed, whoever sent it", () => {
     expect(
       scopeSentence(scope({ verb: "webhook", pattern: "applehealth-webhook" }))
@@ -279,7 +351,7 @@ describe("scopeSentence", () => {
     expect(
       scopeSentence(scope({ pattern: "ada.example.com/greek/*", kinds }))
     ).toBe(
-      "See your Greek alphas, betas, gammas, deltas, epsilons and zetas, and 1 more kind"
+      "See your Greek alphas, betas, gammas, deltas, epsilons and zetas, and 1 more kind, and search them by meaning, which spends your embedding budget"
     )
   })
 })
@@ -363,6 +435,10 @@ const SENTENCE_CASES: Omit<SentenceCase, "sentence">[] = [
   { scope: "decide:*", kinds: [] },
   { scope: "decide:b.example.com/x/*", kinds: [] },
   { scope: "decide:ada.example.com/llm/substrateEditor", kinds: [] },
+  { scope: "call:*", kinds: [] },
+  { scope: "call:b.example.com/*", kinds: [] },
+  { scope: "call:ada.example.com/tasks/*", kinds: [] },
+  { scope: "call:ada.example.com/tasks/summarize", kinds: [] },
   { scope: "webhook:applehealth-webhook", kinds: [], package: APPLEHEALTH },
   { scope: "webhook:applehealth-webhook", kinds: [] },
 ]
@@ -384,6 +460,7 @@ function sentenceOf(c: Omit<SentenceCase, "sentence">): string {
     glob: pattern === "*" || pattern.endsWith("/*"),
     kinds: c.kinds,
     agents: [],
+    functions: [],
   })
 }
 
