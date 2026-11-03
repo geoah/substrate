@@ -51,6 +51,7 @@ func (p *planner) providerInputs(ctx context.Context, row *substrate.Authorizati
 		}
 		q.After = page.Cursor
 	}
+	needsBinding := false
 	for i := range row.Package.ProviderInputs {
 		input := &row.Package.ProviderInputs[i]
 		input.Options = providerOptions(input.Agents, providers)
@@ -64,16 +65,19 @@ func (p *planner) providerInputs(ctx context.Context, row *substrate.Authorizati
 		if err != nil && !errors.Is(err, substrate.ErrNotFound) {
 			return err
 		}
+		validBinding := false
 		if err == nil && bundle.DeletedAt == nil {
 			bindings, _ := bundle.Properties["bindings"].(map[string]any)
 			bound := vocabulary.ReferentID(bindings[input.Input], vocabulary.LLMKind("provider"))
 			if slices.ContainsFunc(input.Options, func(o substrate.AuthorizationProviderOption) bool { return o.ID == bound }) {
 				input.Selected = bound
+				validBinding = true
 			}
 		}
+		needsBinding = needsBinding || !validBinding
 	}
-	// Even an installed package needs the owner's binding before approval finishes.
-	if row.Action == substrate.SetupNone {
+	// A preselected option is not the owner's binding.
+	if row.Action == substrate.SetupNone && needsBinding {
 		row.Action = substrate.SetupEnable
 	}
 	return nil
@@ -123,6 +127,10 @@ func SelectProviders(rows []substrate.AuthorizationSetup, choices []substrate.Au
 				if input.Package != choice.Package || input.Input != choice.Input {
 					continue
 				}
+				found = true
+				if row.Action == substrate.SetupNone {
+					continue
+				}
 				if !slices.ContainsFunc(input.Options, func(o substrate.AuthorizationProviderOption) bool { return o.ID == choice.Provider }) {
 					return fmt.Errorf("%w: provider %q is not offered for %s input %s", substrate.ErrValidation, choice.Provider, choice.Package, choice.Input)
 				}
@@ -134,7 +142,7 @@ func SelectProviders(rows []substrate.AuthorizationSetup, choices []substrate.Au
 		}
 	}
 	for _, row := range rows {
-		if row.Package == nil {
+		if row.Package == nil || row.Action == substrate.SetupNone {
 			continue
 		}
 		for _, input := range row.Package.ProviderInputs {
@@ -149,7 +157,7 @@ func SelectProviders(rows []substrate.AuthorizationSetup, choices []substrate.Au
 func providerChoices(rows []substrate.AuthorizationSetup) []substrate.AuthorizationProviderChoice {
 	var out []substrate.AuthorizationProviderChoice
 	for _, row := range rows {
-		if row.Package == nil {
+		if row.Package == nil || row.Action == substrate.SetupNone {
 			continue
 		}
 		for _, input := range row.Package.ProviderInputs {

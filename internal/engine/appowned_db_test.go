@@ -119,3 +119,27 @@ func TestTheOwnerTakesOverAnAppsPackage(t *testing.T) {
 		t.Fatalf("the app edits the package after the takeover: %v", err)
 	}
 }
+
+func TestOwnerEditsPublishedPackageImmediatelyAfterTakeover(t *testing.T) {
+	_, ds := newCoreDataset(t)
+	ctx := context.Background()
+	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorConsole, apDocs("reps"), nil, substrate.BundleInstall{
+		Published: true, PublishedFrom: "https://example.com/authority.json", PublishedDigest: "test", ShippedVersion: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorConsole, apDocs("reps", "weight")); !errors.Is(err, substrate.ErrForbidden) {
+		t.Fatalf("published declaration write: %v", err)
+	}
+	row, err := ds.TakeOverPackage(ctx, substrate.ActorConsole, apPackage, apPackage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Properties["source"] != "installed" || row.Properties["publishedFrom"] != nil {
+		t.Fatalf("takeover: %+v", row.Properties)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorConsole, apDocs("reps", "weight")); err != nil {
+		t.Fatalf("owner's immediate declaration write: %v", err)
+	}
+	mustPut(t, ds, substrate.ActorConsole, substrate.PutInput{Kind: apSet, Properties: map[string]any{"weight": "80"}})
+}

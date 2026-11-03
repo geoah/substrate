@@ -16,16 +16,10 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// TakeOverPackage makes an app's package the owner's: the package row's
-// `declaredBy` becomes the hand that took it over, `takenOverFrom` names the
-// app it was taken from and `declaredByClient` is cleared, so the chokepoint no
-// longer names an app and the owner's doors write the package's declarations
-// as they write any of their own. It is deliberate on both ends: confirm must
-// repeat the package identity, and only the owner's own hand may take it (a
-// door the request names, never an app, an agent, a function, a bundle or
-// the substrate). Nothing else moves: no declaration, no record, no token.
-// The app keeps its token and its scope, and its next apply into the package
-// is refused, which is how it learns.
+// TakeOverPackage requires the owner's hand and an exact confirmation.
+// A document-published package becomes installed and immediately editable;
+// its provenance records the publisher it left. Legacy app ownership stamps
+// are cleared without changing the app's token or access.
 func (ds *dataset) TakeOverPackage(ctx context.Context, actor substrate.Actor, pkg, confirm string) (*substrate.Record, error) {
 	if actor == "" || substrate.ReservedActor(actor) {
 		return nil, fmt.Errorf("%w: taking over a package is the owner's, and %q is not the owner's hand", substrate.ErrForbidden, actor)
@@ -37,6 +31,9 @@ func (ds *dataset) TakeOverPackage(ctx context.Context, actor substrate.Actor, p
 	defer ds.vocabularyWriteMu.Unlock()
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, true, func(t *txn) error {
+		if err := t.lockKey(registryDepKey(ds)); err != nil {
+			return err
+		}
 		row, err := t.loadRow(eref{Kind: kindPackage, ID: pkg}, false)
 		if err != nil {
 			return err
@@ -72,7 +69,25 @@ func (ds *dataset) TakeOverPackage(ctx context.Context, actor substrate.Actor, p
 			props["publishedFrom"] = nil
 		}
 		out, err = t.putKind(ty, substrate.PutInput{Kind: kindPackage, ID: pkg, Properties: props})
-		return err
+		if err != nil {
+			return err
+		}
+		if _, live := ds.registry().PackageByName(pkg); published != "" && live {
+			built, unparsed, err := ds.storedPackages(ctx, t.tx, func(name string) bool { return name != pkg })
+			if err != nil {
+				return err
+			}
+			if len(unparsed) != 0 {
+				return fmt.Errorf("%w: taken-over package %s no longer parses", substrate.ErrValidation, pkg)
+			}
+			candidate := ds.registry().Clone()
+			candidate.Remove(pkg)
+			if err := candidate.InstallAll(built); err != nil {
+				return err
+			}
+			t.publishReg = candidate
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
