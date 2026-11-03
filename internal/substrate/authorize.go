@@ -452,10 +452,32 @@ type AuthorizationScope struct {
 	// change; empty when it matches none yet, and always empty for a read
 	// or write scope.
 	Agents []*Record `json:"agents"`
+	// Functions are the functions a call scope matches today, sorted by id,
+	// each with the reach a call of it is held to (decision 0219); empty
+	// when it matches none yet, and always empty for every other verb.
+	Functions []AuthorizationCallFunction `json:"functions"`
 	// Allowed is true when the previous token's scopes already cover this
 	// one (write covers read; a wider pattern covers a narrower one), so the
 	// page can fold it under what was allowed before.
 	Allowed bool `json:"allowed,omitempty"`
+}
+
+// AuthorizationCallFunction is one function a `call:` scope matches today
+// (decision 0219): its id and description, the reach its own permissions
+// and those of what it may call declare, and whether the request's read and
+// write scopes cover that reach, which is what a call is held to.
+type AuthorizationCallFunction struct {
+	Identity    string `json:"identity"`
+	Description string `json:"description,omitempty"`
+	// Reads and Writes are the kinds, or globs over kinds, the function and
+	// what it calls read and write, sorted.
+	Reads  []string `json:"reads"`
+	Writes []string `json:"writes"`
+	// Covered is true when the request's read and write scopes cover every
+	// entry of the reach; Uncovered names the entries they do not, each
+	// `read <kind>` or `write <kind>`.
+	Covered   bool     `json:"covered"`
+	Uncovered []string `json:"uncovered,omitempty"`
 }
 
 // AuthorizationKind is one kind a scope reaches today, or one a package the

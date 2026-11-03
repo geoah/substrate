@@ -91,9 +91,16 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	if scoped, ok := ds.(*scopedDataset); ok {
-		h.watchScoped(w, r, scoped, f)
-		return
+	scoped, isScoped := ds.(*scopedDataset)
+	if isScoped {
+		// Every feed route is open to an app's token, held to the records
+		// it reads (decision 0219). A text search and `values=1` read across
+		// kinds and into payloads, and a `kinds` entry it cannot read is
+		// unknown: each is refused here, before any path opens a stream.
+		if _, _, err := scoped.changeFilter(r.Context(), f); err != nil {
+			writeSubstrateError(w, r, err)
+			return
+		}
 	}
 	if q.Has("runs") {
 		// Run summaries are a history read: they walk backward from `before`
@@ -109,7 +116,7 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if q.Get("watch") == "1" {
-		h.streamChanges(w, r, ds, f, true)
+		h.streamChanges(w, r, ds, f, !isScoped)
 		return
 	}
 	// `before`/`first` select the newest-first history page; the parameterless
@@ -143,30 +150,13 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// watchScoped is the change feed for an app's token (decision 0195): the
-// live tail alone, held to the records the grant reads, each row carrying
-// names alone. History pages, run summaries and the forward read stay the
-// owner's; so do `q` and `values=1`, which read across kinds and into
-// payloads. Everything is refused before the stream opens.
-func (h *handler) watchScoped(w http.ResponseWriter, r *http.Request, ds *scopedDataset, f substrate.ChangeFilter) {
-	q := r.URL.Query()
-	if q.Get("watch") != "1" || q.Has("runs") || q.Has("before") || q.Has("first") {
-		writeSubstrateError(w, r, errScope("the change feed's history: its live tail is watch=1"))
-		return
-	}
-	if _, _, err := ds.changeFilter(r.Context(), f); err != nil {
-		writeSubstrateError(w, r, err)
-		return
-	}
-	h.streamChanges(w, r, ds, f, false)
-}
-
 // streamChanges writes the ndjson watch stream: a bookmark line, then every
 // matching change from that cursor on, then heartbeats while idle. annotate
 // attaches per-function delivery states to each row — the cross-collection
-// feed's contract; per-collection watches stay plain rows. Every row the
-// filter matches is emitted for a full-access token, which reads its whole
-// repository; an app's token gets the rows its grant reads (readChanges).
+// feed's contract; per-collection watches stay plain rows, and so do an
+// app's, whose rows carry names alone. Every row the filter matches is
+// emitted for a full-access token, which reads its whole repository; an
+// app's token gets the rows its grant reads (readChanges).
 //
 // The stream ends cleanly, after a flush, when the server starts to shut
 // down (Config.Draining): every row written is a row the client holds, so it

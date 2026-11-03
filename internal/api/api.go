@@ -406,10 +406,18 @@ func (h *handler) mountResources(r chi.Router) {
 			// of the trigger verbs are the owner's (mountTriggerVerbs).
 			r.Get("/"+corePackage+"/trigger/{id}/parked", h.getTriggerParked)
 			// Storing a blob, for a token that writes a kind declaring a
-			// blob-ref property (scopedDataset.PutBlob). Reading one stays
-			// the owner's, below.
+			// blob-ref property (scopedDataset.PutBlob), and reading one a
+			// record the token reads names (scopedDataset.GetBlob, decision
+			// 0219). A blob's manifest is an ordinary `blob` record under
+			// /substrate.reamde.dev/core/blob.
 			r.Put("/blobs", h.putBlob)
 			r.Put("/blobs/{digest}", h.putBlob)
+			r.Get("/blobs/{digest}", h.getBlob)
+			// The callable invocation API: manual invoke with arbitrary
+			// input. An app's token calls the functions its `call:` scopes
+			// name (scopedDataset.CallFunction, decision 0219). Five
+			// segments, so the record path below never shadows it.
+			r.Post("/"+corePackage+"/function/{name}/call", h.postFunctionCall)
 			// Whether an app is still set up, asked with its own token
 			// (appsetup.go). The static segment wins over the owner's
 			// /authorizations/{request} below, whichever group holds it.
@@ -482,11 +490,6 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Get("/catalog/{id}", h.getCatalogItem)
 			r.Post("/catalog/{id}/install", h.postCatalogInstall)
 			r.Post("/catalog/{id}/import", h.postCatalogImport)
-			// The content-addressed blob store: stream bytes back by digest,
-			// repository-scoped (the PUTs that store them sit on the scoped
-			// surface above). A blob's manifest is an ordinary `blob` record
-			// under /substrate.reamde.dev/core/blob.
-			r.Get("/blobs/{digest}", h.getBlob)
 			// Domain verification (decision 0208): the record to publish,
 			// and the check that stamps the repository record verified.
 			r.Post(domainRoute, h.postDomain)
@@ -521,11 +524,9 @@ func (h *handler) mountResources(r chi.Router) {
 			// Their records are `GET /records?filter={"implements": …}`.
 			trait := "/" + corePackage + "/trait/{id}"
 			r.Get(trait+"/implementors", h.getTraitImplementors)
-			// The callable invocation API: manual invoke with arbitrary input.
-			r.Post("/"+corePackage+"/function/{name}/call", h.postFunctionCall)
-			// Agents: the same call API. Chat, the one loop streaming, and
-			// the thread routes that reach a detached turn again (decision
-			// 0169) sit on the scoped surface above.
+			// The agent call API. Chat, the one loop streaming, and the
+			// thread routes that reach a detached turn again (decision
+			// 0169) sit on the scoped surface above, with the function call.
 			r.Post("/"+corePackage+"/agent/{name}/call", h.postAgentCall)
 		})
 	}

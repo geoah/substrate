@@ -61,13 +61,12 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 	v := r.URL.Query()
 	_, scoped := substrate.ScopesFrom(ctx)
 	switch {
-	case scoped && (v.Has("aggregate") || v.Has("downsample") || v.Get("watch") == "1"):
-		// The aggregate read reaches source kinds beside the ones it names
-		// (decision 0194). An app's tail is the change feed's, which cuts
-		// each row to what the token reads (0195); this one does not.
+	case scoped && v.Get("watch") == "1":
+		// An app's tail is the change feed's, which cuts each row to what
+		// the token reads (decision 0195); this one does not.
 		w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
 		writeError(w, http.StatusForbidden, codeForbidden,
-			"an app's token does not reach aggregate reads, and it follows changes on /api/v1/changes?watch=1")
+			"an app's token follows changes on /api/v1/changes?watch=1")
 	case v.Has("aggregate") || v.Has("downsample"):
 		h.aggregateRecords(w, r, ds)
 	case v.Get("watch") == "1":
@@ -153,14 +152,6 @@ func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if bounded {
-			// A window read computes occurrences from series and overrides of
-			// several kinds at once, which an app's scopes may split: it stays
-			// the owner's until it has a design of its own (decision 0194).
-			if scoped {
-				w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
-				writeError(w, http.StatusForbidden, codeForbidden, "an app's token does not reach window reads")
-				return
-			}
 			page, err = window.Read(ctx, ds, q, from, to)
 		} else {
 			page, err = ds.List(ctx, q)
