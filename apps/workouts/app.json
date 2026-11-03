@@ -12,10 +12,23 @@
     "clientIDKey": "SubstrateWorkoutsClientID",
     "redirectKey": "SubstrateWorkoutsRedirect"
   },
-  "packages": [
-    "substrate.reamde.dev/health",
+  "publishes": [
     "substrate.reamde.dev/training",
     "substrate.reamde.dev/trainingcoach"
+  ],
+  "asks": [
+    {
+      "package": "substrate.reamde.dev/health",
+      "atLeast": 1
+    },
+    {
+      "package": "substrate.reamde.dev/training",
+      "atLeast": 5
+    },
+    {
+      "package": "substrate.reamde.dev/trainingcoach",
+      "atLeast": 3
+    }
   ],
   "scopes": [
     "write:substrate.reamde.dev/training/*",

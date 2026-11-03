@@ -11,7 +11,8 @@
     "clientIDKey": "SubstrateConsoleClientID",
     "redirectKey": "SubstrateConsoleRedirect"
   },
-  "packages": [],
+  "publishes": [],
+  "asks": [],
   "scopes": [
     "full"
   ],

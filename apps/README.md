@@ -662,7 +662,7 @@ adds to the app id.
 Each app's folder holds an `app.json` that names the app once, as JSON so
 every reader parses it with no dependency: the server's first-party reach
 test (`internal/catalog/firstparty_reach_test.go`) reads the scopes and
-packages of every app that asks for packages, and a Swift test holds each
+asked-for packages of every app that asks for packages, and a Swift test holds each
 app's manifest to its file (Sync's `ReachTests`, Workouts' `CoachTests`,
 Chat's `AppJSON`), so the two never drift. `mise run lint:apps` refuses an
 app folder without one, or one missing a field below.
@@ -676,10 +676,18 @@ app folder without one, or one missing a field below.
 | `apple.extensions` | the bundle ids of its extensions and widgets, empty where it has none |
 | `apple.clientIDKey` | the Info.plist key a release stamps with its OAuth client id |
 | `apple.redirectKey` | the Info.plist key a release stamps with the https redirect it claims |
-| `packages` | the packages its approval asks to have set up (`package` details), in the manifest's order |
+| `publishes` | the ids of the packages the app's site publishes from its `package/` folder, which `.mise/apple.sh` lists in the authority document's entry for the app |
+| `asks` | the packages its approval asks to have set up, each `{"package": <id>, "atLeast": <version>}` as the manifest's `package` details send them, in the manifest's order: the floor is the version the build was written against |
 | `scopes` | the scopes it asks for, in the manifest's order |
 | `icon` | its 1024-pixel icon, relative to the app's folder |
 | `feed` | the folder `.mise/apple.sh` publishes its releases and feeds under, relative to `SUBSTRATE_APPLE_RELEASE_URL`; empty is the root, where the console's are |
+
+An app publishes a package and asks for one apart: Workouts asks for
+`substrate.reamde.dev/health`, which it does not publish, and for its own
+two at the versions it carries. The details that name the device are not
+in the file: Sync's `account` detail carries the phone's name and time
+zone and its `webhook` detail the account it delivers under, so Sync's
+manifest makes them per device in code, and `asks` holds only its packages.
 
 Nothing reads `apple.*`, `icon` or `feed` yet: `apple.sh` still names each
 app in its own `case` statements, and reads this file when the release
@@ -700,7 +708,7 @@ nothing takes, and holds the layering the rest of this page relies on
 ## Layout
 
 ```text
-<app>/app.json                      what names the app once: its ids, platforms, Info.plist keys, packages, scopes, icon and feed (above)
+<app>/app.json                      what names the app once: its ids, platforms, Info.plist keys, the packages it publishes and asks for, scopes, icon and feed (above)
 xcode/project.yml                   the xcodegen spec, the only project source; it includes each app's apple/targets.yml
 xcode/Shared/Updater.swift          the updater every app compiles in
 xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync and Chat

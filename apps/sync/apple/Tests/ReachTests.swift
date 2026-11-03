@@ -64,8 +64,10 @@ final class ReachTests: XCTestCase {
 
     /// apps/sync/app.json is what the server's first-party reach test
     /// reads in place of a hand copy of this manifest, so the two cannot
-    /// drift: the scopes in order, the packages the details ask for, and the
-    /// name and Info.plist keys the release reads.
+    /// drift: the scopes in order, each package the details ask for with its
+    /// floor, none of its own published, and the name and Info.plist keys
+    /// the release reads. The account and the webhook details name this
+    /// phone and are made per device, so app.json does not hold them.
     func testTheRequestIsTheOneAppJSONRecordsForTheServersReachTest() throws {
         let app = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -73,15 +75,26 @@ final class ReachTests: XCTestCase {
             var clientIDKey: String
             var redirectKey: String
         }
+        struct Ask: Decodable, Equatable {
+            var package: String
+            var atLeast: Int
+        }
         struct Recorded: Decodable {
             var name: String
             var scopes: [String]
-            var packages: [String]
+            var publishes: [String]
+            var asks: [Ask]
             var apple: Apple
         }
         let recorded = try JSONDecoder().decode(Recorded.self, from: Data(contentsOf: app.appendingPathComponent("app.json")))
         XCTAssertEqual(recorded.scopes, SyncManifest.scopes)
-        XCTAssertEqual(recorded.packages, [AppModel.appleProvider, AppModel.healthProvider])
+        let asked = SyncManifest.make(account: "", deviceName: "", timeZone: "").details
+            .filter { $0.type == AuthorizationDetail.Types.package }
+            .map { Ask(package: $0.package ?? "", atLeast: $0.version ?? 0) }
+        XCTAssertEqual(recorded.asks, asked)
+        XCTAssertEqual(recorded.asks, [Ask(package: AppModel.appleProvider, atLeast: AppModel.appleVersion),
+                                       Ask(package: AppModel.healthProvider, atLeast: AppModel.healthVersion)])
+        XCTAssertEqual(recorded.publishes, [])
         XCTAssertEqual(recorded.name, SyncManifest.appName)
         XCTAssertEqual(recorded.apple.clientIDKey, SyncManifest.clientIDKey)
         XCTAssertEqual(recorded.apple.redirectKey, SyncManifest.redirectKey)

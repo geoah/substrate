@@ -11,7 +11,8 @@
     "clientIDKey": "SubstrateChatClientID",
     "redirectKey": "SubstrateChatRedirect"
   },
-  "packages": [],
+  "publishes": [],
+  "asks": [],
   "scopes": [
     "agents:*",
     "decide:*",
