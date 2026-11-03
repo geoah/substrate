@@ -350,11 +350,24 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 		// the newest the publisher lists at the floor or later.
 		info.Description, info.Tier, info.Shipped, info.Publisher = b.Description, b.Tier, b.Version, publisherOf(b)
 		info.OAuthHosts = slices.Clone(b.OAuthHosts)
+		if origin := b.Origin(); origin != nil {
+			info.AddonFor = origin.AddonFor
+		}
+		if info.Settings, err = p.emptySettings(ctx, b); err != nil {
+			return row, err
+		}
 		if problem, err = p.packageBlock(ctx, b, d.Package, d.Version); err != nil {
 			return row, err
 		}
 	}
 	if row.Blocked = problem.own(); row.Blocked != nil || row.Action == substrate.SetupNone {
+		return row, nil
+	}
+	// An add-on whose provider is not installed waits for it (decision
+	// 0216): nothing installs now, and the provider's install plans it again
+	// against the approval's token.
+	if info.AddonFor != "" && p.held(info.AddonFor) == 0 {
+		row.Action = substrate.SetupWait
 		return row, nil
 	}
 	actionOnly := p.opts.ActionOnly[d.Package]
@@ -364,6 +377,19 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 	if info.Requires, problem, err = p.chain(ctx, b, actionOnly); err != nil || problem != nil {
 		row.Blocked = problem.needsFirst()
 		return row, err
+	}
+	// What the requirements an install brings first ship to be filled in is
+	// asked on the same page.
+	for _, step := range info.Requires {
+		dep := p.bundle(step.ID)
+		if dep == nil {
+			continue
+		}
+		settings, err := p.emptySettings(ctx, dep)
+		if err != nil {
+			return row, err
+		}
+		info.Settings = append(info.Settings, settings...)
 	}
 	// Every closure the approval installs is held to the scopes left
 	// checked, the package's own first, then what it brings (decision 0215).

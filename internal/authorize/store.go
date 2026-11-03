@@ -139,6 +139,7 @@ func (r *Request) snapshot() Request {
 
 // Approval is what the owner approved, bound to the code.
 type Approval struct {
+	AppAddons  []substrate.AppAddon
 	Repository string
 	// Dataset is the approving repository's handle: the exchange mints the
 	// token through it, so the code never names a repository a later
