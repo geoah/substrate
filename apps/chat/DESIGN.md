@@ -150,7 +150,7 @@ host; a password sign-in's are `api`, its token labelled "Substrate Chat on
 | `truncated` | not sent | the replay lost events: the overlay is marked partial ("Part of this answer arrived before you opened the chat; it shows in full when it finishes") |
 | `idle` | not sent | the whole answer: `running` is a turn this server does not stream (background, below); any other status ended between the row read and the attach: hand over |
 | `done` | settle and hand over | same |
-| `error` (after the 200) | settle; "<Agent> couldn't answer: <words>" | same |
+| `error` (after the 200) | settle; a card saying what happened, the server's words beneath it | same |
 | `{}` | heartbeat, every 30 s; ignored | same |
 
 | Exit | What follows |
@@ -430,10 +430,14 @@ bubble is a tinted fill. The transcript softens under the composer with
   them) or Dismissed (the values struck through). It is the transcript's:
   no read, so nothing to fail.
 - **Triggered openings**: "When <record> changed", not JSON.
-- **Errors**: "<Agent> couldn't answer: …"; refused and unknown-delivery cards;
+- **Errors**: a failed run's card says what happened ("OpenAI refused the
+  API key", "OpenAI is turning requests down", else "<Agent> couldn't
+  answer"), with the server's words beneath it under "The server said";
+  refused and unknown-delivery cards;
   a reload failure with Try Again; "This chat was deleted".
-- **A provider without a key**: a callout above the composer, "Add an API
-  key for OpenAI", with a sheet that names the provider's endpoint and, for
+- **A provider without a key**: a callout, "Add an API key for OpenAI",
+  in a new chat above its openers and scrolling with them, else above the
+  composer, with a sheet that names the provider's endpoint and, for
   a password sign-in, writes the key (an app token links to the provider's
   record in the console). The key lives only in the field until it is sent;
   it is never cached or logged.
@@ -566,7 +570,7 @@ may do and for how long; the app never sees the password.
 | Send refused | A card with the server's words; the text back in the composer |
 | Send unknown | "Checking whether your message arrived…", then the outcome |
 | The stream drops | Nothing; the app attaches again with backoff |
-| The turn errors | "<Agent> couldn't answer: …" in the transcript |
+| The turn errors | A card in the transcript: what happened, then "The server said" and its words |
 | Reload after a turn fails | The run stays shown; "The conversation didn't reload", Try Again |
 | A card's write fails | "That didn't go through: …"; a 409 re-reads and asks again |
 | The chat was deleted | "This chat was deleted"; the draft stays to copy |

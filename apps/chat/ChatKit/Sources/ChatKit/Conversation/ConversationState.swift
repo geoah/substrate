@@ -87,7 +87,8 @@ public struct ConversationState: Codable, Equatable, Sendable {
     var overlay = LiveOverlay.empty
     var seq = 0
     var stopping = false
-    /// "<Agent> couldn't answer: …"
+    /// The server's words for a run that failed; its card words what
+    /// happened around them (`TurnFailureWords`).
     var error: String?
     var outcomes: [Outcome] = []
     /// The handover read failed or outlasted its wait: the overlay stays.

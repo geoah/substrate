@@ -140,7 +140,7 @@ extension ChatApp {
         // A run that failed before this conversation was opened left its
         // words on the thread alone; the list marks it failed, so the chat says why.
         let failure = live.error ?? (working || row?.status != "error" ? nil : row?.reason ?? "The run ended in an error.")
-        if let failure { status.append(ConversationNote(kind: .failed, title: "\(live.name) couldn't answer", message: failure)) }
+        if let failure { status.append(TurnFailureWords.note(failure, agent: live.name, provider: state.provider(of: live.agent)?.name)) }
         if let failed = live.reloadFailed { status.append(ConversationNote(kind: .reloadFailed, title: nil, message: failed, action: "Try Again")) }
         if live.deleted {
             status.append(ConversationNote(kind: .deleted, title: "This chat was deleted",
@@ -149,6 +149,12 @@ extension ChatApp {
         var technical: [String]?
         if state.preferences.technicalDetails, let row { technical = ["\(Kinds.thread)/\(row.id)", row.tally.joined(separator: " · ")] }
         let keyless = state.keyless(live.agent)
+        let callout = keyless.map {
+            KeylessCallout(provider: $0.id, title: "Add an API key for \($0.name)",
+                           message: "Agents run on your own key, sealed on the provider's record.", action: "Add Key")
+        }
+        // A new chat says it above its openers; the composer, over the rest.
+        if hero?.empty == nil { hero?.keyless = callout }
         let blocked = live.blocked
         return ConversationScreen(
             key: key, thread: live.thread, threadPath: live.thread.map { "\(Kinds.thread)/\($0)" },
@@ -161,10 +167,7 @@ extension ChatApp {
             composer: ComposerPresentation(
                 draft: live.draft, draftRevision: live.draftRevision, placeholder: agent.map { "Message \($0.name)" } ?? "Message",
                 blocked: keyless == nil ? blocked : nil, blockedWhenEmpty: blocked == "Offline",
-                keyless: keyless.map {
-                    KeylessCallout(provider: $0.id, title: "Add an API key for \($0.name)",
-                                   message: "Agents run on your own key, sealed on the provider's record.", action: "Add Key")
-                },
+                keyless: hero?.keyless == nil ? callout : nil,
                 picksAgent: live.thread == nil, agentLabel: live.agent.map(agentName) ?? "No assistant", listenOnOpen: live.listenOnOpen,
                 canSend: blocked == nil),
             streaming: live.phase == .streaming, stopping: live.stopping,

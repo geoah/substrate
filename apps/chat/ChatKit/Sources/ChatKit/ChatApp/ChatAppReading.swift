@@ -47,9 +47,14 @@ extension ChatAppState {
 
     /// The provider an agent completes against, when it has no key.
     func keyless(_ agent: String?) -> Provider? {
-        guard let id = self.agent(agent)?.providerID, let record = providers[id] else { return nil }
-        let provider = Provider(record: record)
+        guard let provider = provider(of: agent) else { return nil }
         return provider.hasKey ? nil : provider
+    }
+
+    /// The provider an agent runs on, where its row is read.
+    func provider(of agent: String?) -> Provider? {
+        guard let id = self.agent(agent)?.providerID, let record = providers[id] else { return nil }
+        return Provider(record: record)
     }
 
     func unread(_ thread: ChatThread) -> Bool {

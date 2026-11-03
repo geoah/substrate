@@ -320,7 +320,7 @@ struct ListRules {
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
         let notes = try #require(await rig.conversation(key)?.status)
         #expect(notes.map(\.kind) == [.failed])
-        #expect(notes.first?.message == "401 Unauthorized")
+        #expect(notes.first?.title == "The provider refused the API key" && notes.first?.detail == "401 Unauthorized")
     }
 
     @Test func aWindowLeavingKeepsAConversationAnotherShows() async throws {
