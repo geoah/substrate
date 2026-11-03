@@ -429,11 +429,6 @@ func TestTheAuthorizationEndpointRefusesWithAPageNeverARedirect(t *testing.T) {
 		"bare kind":         func(p map[string]string) { p["scope"] = "read:task" },
 		"other resource":    func(p map[string]string) { p["resource"] = "https://elsewhere.example.com" },
 		"local, web return": func(p map[string]string) { p["client_id"] = "http://127.0.0.1/app" },
-		// A web app's access goes back to its own origin: a document on a
-		// shared host could otherwise send it anywhere it listed.
-		"other host": func(p map[string]string) { p["redirect_uri"] = "https://elsewhere.example.com/callback" },
-		"other port": func(p map[string]string) { p["redirect_uri"] = "https://notes.example.org:8443/callback" },
-		"sub-domain": func(p map[string]string) { p["redirect_uri"] = "https://app.notes.example.org/callback" },
 	}
 	for name, edit := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -451,6 +446,29 @@ func TestTheAuthorizationEndpointRefusesWithAPageNeverARedirect(t *testing.T) {
 	// A repeated parameter is refused before anything reads it.
 	rec := e.do(http.MethodGet, authorizeURL(appRequest("read:"+personKind))+"&client_id=https://evil.example.org/c", "", nil, "")
 	wantStatus(t, rec, http.StatusBadRequest)
+
+	// A web app's access goes back to its own origin unless a verified
+	// publisher's authority holds the redirect (decision 0209). Deciding that
+	// reads the app's document and its publisher's DNS, which waits for the
+	// owner's sign-in: the request parks, the page refuses it, and nothing
+	// can be approved.
+	for name, redirect := range map[string]string{
+		"other host": "https://elsewhere.example.com/callback",
+		"other port": "https://notes.example.org:8443/callback",
+		"sub-domain": "https://app.notes.example.org/callback",
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := appRequest("read:" + personKind)
+			p["redirect_uri"] = redirect
+			id := e.park(p)
+			page := e.show(id)
+			wantStatus(t, page, http.StatusUnprocessableEntity)
+			if !strings.Contains(page.Body.String(), "the redirect_uri") && !strings.Contains(page.Body.String(), "redirect_uri must be on the client_id's own origin") {
+				t.Fatalf("the page reads %s", page.Body.String())
+			}
+			wantStatus(t, e.approveShown(id, []string{"read:" + personKind}, 30), http.StatusUnprocessableEntity)
+		})
+	}
 }
 
 func TestAnApprovalIsHeldToTheRequest(t *testing.T) {
