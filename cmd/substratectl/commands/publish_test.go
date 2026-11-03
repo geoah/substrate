@@ -47,3 +47,24 @@ func TestPublishCheckPrintsEntryAndRefusesMutations(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPublishCheckRequiresConsentToNarrow(t *testing.T) {
+	h := newHarness(t)
+	dir := t.TempDir()
+	old := []byte("kind: substrate.reamde.dev/core/package\nmetadata:\n  id: example.com/notes\ndata:\n  authority: example.com\n  package: notes\n  version: 1\n---\nkind: substrate.reamde.dev/core/bundle\nmetadata:\n  id: example.com/notes\ndata:\n  authority: example.com\n  package: notes\n  installs: [example.com/notes/note]\n---\nkind: substrate.reamde.dev/core/kind\nmetadata:\n  id: example.com/notes/note\ndata:\n  authority: example.com\n  package: notes\n  names:\n    singular: note\n  properties:\n    name:\n      type: string\n")
+	candidate := strings.Replace(string(old), "version: 1", "version: 2", 1)
+	candidate = strings.Replace(candidate, "    name:\n      type: string\n", "    heading:\n      type: string\n", 1)
+	sum := sha256.Sum256(old)
+	doc := fmt.Sprintf(`{"authority":"example.com","packages":[{"package":"notes","versions":[{"version":1,"closure":"old.yaml","sha256":"%s"}]}]}`, hex.EncodeToString(sum[:]))
+	for name, body := range map[string][]byte{"old.yaml": old, "candidate.yaml": []byte(candidate), "authority.json": []byte(doc)} {
+		if err := os.WriteFile(filepath.Join(dir, name), body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	args := []string{"publish", "example.com/notes", "--check", "--file", filepath.Join(dir, "candidate.yaml"), "--version", "2", "--closure", "candidate.yaml", "--document", filepath.Join(dir, "authority.json")}
+	_, _, err := h.run(args...)
+	if err == nil || !strings.Contains(err.Error(), "--allow-narrowing") {
+		t.Fatal(err)
+	}
+	h.mustRun(append(args, "--allow-narrowing")...)
+}
