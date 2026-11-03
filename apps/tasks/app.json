@@ -3,15 +3,22 @@
   "name": "Substrate Tasks",
   "platforms": [
     "ios",
-    "macos"
+    "macos",
+    "android"
   ],
   "apple": {
     "bundleID": "dev.reamde.substrate.tasks",
+    "scheme": "SubstrateTasks",
     "extensions": [],
     "clientIDKey": "SubstrateTasksClientID",
     "redirectKey": "SubstrateTasksRedirect"
   },
-  "publishes": [],
+  "android": {
+    "applicationID": "dev.reamde.substrate.tasks"
+  },
+  "publishes": [
+    "substrate.reamde.dev/tasks"
+  ],
   "asks": [],
   "scopes": [
     "write:substrate.reamde.dev/tasks/*"

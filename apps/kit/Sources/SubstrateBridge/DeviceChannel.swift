@@ -31,7 +31,7 @@ public final class DeviceChannel: Sendable {
                 calls.waitCall(id, handle: handle, service: request.service, continuation)
                 if Task.isCancelled {
                     cancel(id, "the caller was cancelled")
-                } else if !outbox.enqueue(message) {
+                } else if !outbox.enqueue(message, onFailure: { [calls] in _ = calls.finish(id, failure: $0) }) {
                     calls.cancel(id, "the handle is closed")
                 }
             }
@@ -52,7 +52,8 @@ public final class DeviceChannel: Sendable {
         }
         calls.waitStream(id, handle: handle, service: request.service, continuation)
         do {
-            if !outbox.enqueue(try BridgeCodec.encode(op: .request, handle: handle, id: id, body: request)) {
+            let message = try BridgeCodec.encode(op: .request, handle: handle, id: id, body: request)
+            if !outbox.enqueue(message, onFailure: { [calls] in _ = calls.finish(id, failure: $0) }) {
                 calls.cancel(id, "the handle is closed")
             }
         } catch {
@@ -65,7 +66,8 @@ public final class DeviceChannel: Sendable {
     func cancel(_ id: Int, _ reason: String) {
         if calls.cancel(id, reason) {
             record.count(\.cancelled)
-            outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true)
+            // Kotlin may never hear it; the call is answered here either way.
+            outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true, onFailure: { _ in })
         }
     }
 }

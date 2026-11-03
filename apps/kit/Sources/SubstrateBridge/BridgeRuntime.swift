@@ -14,19 +14,27 @@ public final class BridgeRuntime: @unchecked Sendable {
 
     private enum Phase {
         case idle
-        case started(StartConfig, BridgeEnvironment, any BridgeOutlet)
+        case started(StartConfig, any BridgeOutlet)
         case failed(BridgeFailure)
+    }
+
+    /// What a root hears, in the order Kotlin posted it.
+    private enum Input {
+        case command(JSONValue)
+        case environment(BridgeEnvironment)
     }
 
     private struct Open {
         let root: any BridgeRoot
         let context: BridgeContext
-        let commands: AsyncStream<JSONValue>.Continuation
+        let inputs: AsyncStream<Input>.Continuation
         let worker: Task<Void, Never>
     }
 
     private let lock = NSLock()
     private var phase = Phase.idle
+    /// The device's settings now: the start's, then each update's.
+    private var current: BridgeEnvironment?
     private var handles = HandleTable<Open>()
     let calls = CallTable()
     public let record = BridgeRecord()
@@ -46,7 +54,7 @@ public final class BridgeRuntime: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         switch phase {
-        case let .started(started, _, _): return .started(fingerprint: started.fingerprint)
+        case let .started(started, _): return .started(fingerprint: started.fingerprint)
         case let .failed(failure): return .failed(failure: failure)
         case .idle: break
         }
@@ -61,17 +69,17 @@ public final class BridgeRuntime: @unchecked Sendable {
             return .failed(failure: failure)
         }
         if config.debug { record.log = log }
-        let environment = BridgeEnvironment(config)
-        phase = .started(config, environment, outlet)
-        globalOutbox = HandleOutbox(handle: nil, record: record) { [weak self] in self?.deliver($0) }
+        current = BridgeEnvironment(config)
+        phase = .started(config, outlet)
+        globalOutbox = HandleOutbox(handle: nil, record: record) { [weak self] message in
+            guard let self else { return BridgeRuntime.stopped }
+            return self.deliver(message)
+        }
         return .started(fingerprint: fingerprint)
     }
 
     public var environment: BridgeEnvironment? {
-        lock.withLock {
-            if case let .started(_, environment, _) = phase { return environment }
-            return nil
-        }
+        lock.withLock { current }
     }
 
     /// Device calls that belong to no handle (a session read at launch).
@@ -98,11 +106,13 @@ public final class BridgeRuntime: @unchecked Sendable {
         do {
             envelope = try BridgeCodec.decodeEnvelope(text)
         } catch {
-            record.record("in", text, service: nil)
+            record.record("in", text, call: .unknown)
             return BridgeCodec.failure(error)
         }
         record.count(\.posted)
-        record.record("in", text, service: envelope.id.flatMap(calls.service(of:)))
+        // Read before the message acts: a reply recorded after it would find
+        // its call gone, and is recorded as one of an unknown call anyway.
+        record.record("in", text, call: envelope.id.flatMap(calls.service(of:)).map(Redaction.Call.device) ?? .unknown)
         guard case .started = lock.withLock({ phase }) else {
             return BridgeCodec.failure(BridgeFailure(.notStarted, "the bridge has not started"), handle: envelope.handle, id: envelope.id)
         }
@@ -121,7 +131,9 @@ public final class BridgeRuntime: @unchecked Sendable {
             return try open(BridgeCodec.decode(OpenRequest.self, from: envelope.body))
         case .command:
             let open = try lookup(envelope.handle)
-            open.commands.yield(envelope.body ?? .null)
+            open.inputs.yield(.command(envelope.body ?? .null))
+        case .environment:
+            update(try BridgeCodec.decode(EnvironmentUpdate.self, from: envelope.body))
         case .close:
             guard let handle = envelope.handle else { throw BridgeFailure(.malformed, "close names no handle") }
             try close(handle)
@@ -136,7 +148,7 @@ public final class BridgeRuntime: @unchecked Sendable {
             case .taken: break
             case .overflowed:
                 record.count(\.overflowed)
-                deliver(BridgeCodec.encode(op: .cancel, handle: envelope.handle, id: id))
+                _ = deliver(BridgeCodec.encode(op: .cancel, handle: envelope.handle, id: id))
             case let .refused(failure): throw failure
             }
         case .end:
@@ -173,7 +185,7 @@ public final class BridgeRuntime: @unchecked Sendable {
             throw BridgeFailure(.unknownRoot, "no root named \(request.root); the app offers \(roots.names.joined(separator: ", "))")
         }
         lock.lock()
-        guard case let .started(_, environment, _) = phase else {
+        guard case .started = phase, let environment = current else {
             lock.unlock()
             throw BridgeFailure(.notStarted, "the bridge has not started")
         }
@@ -181,7 +193,11 @@ public final class BridgeRuntime: @unchecked Sendable {
         lock.unlock()
 
         // Made outside the lock: a factory may call back into the bridge.
-        let outbox = HandleOutbox(handle: handle, record: record) { [weak self] in self?.deliver($0) }
+        let outbox = HandleOutbox(handle: handle, record: record) { [weak self] message in
+            guard let self else { return BridgeRuntime.stopped }
+            return self.deliver(message)
+        }
+        outbox.onFailure { [weak self] failure in self?.fail(handle, failure) }
         let device = DeviceChannel(handle: handle, calls: calls, outbox: outbox, record: record)
         let context = BridgeContext(handle: handle, environment: environment, device: device, outbox: outbox)
         let root: any BridgeRoot
@@ -191,19 +207,47 @@ public final class BridgeRuntime: @unchecked Sendable {
             lock.withLock { handles.release(handle) }
             throw BridgeFailure(.swiftFailure, "root \(request.root) did not open: \(error.localizedDescription)")
         }
-        let (commands, continuation) = AsyncStream<JSONValue>.makeStream()
+        let (inputs, continuation) = AsyncStream<Input>.makeStream()
         let worker = Task {
-            for await command in commands {
-                do {
-                    try await root.receive(command)
-                } catch {
-                    outbox.enqueue(BridgeCodec.failure(BridgeFailure(.swiftFailure, "the command failed: \(error.localizedDescription)"),
-                                                       handle: handle))
+            for await input in inputs {
+                switch input {
+                case let .command(command):
+                    do {
+                        try await root.receive(command)
+                    } catch {
+                        outbox.enqueue(BridgeCodec.failure(BridgeFailure(.swiftFailure, "the command failed: \(error.localizedDescription)"),
+                                                           handle: handle))
+                    }
+                case let .environment(environment):
+                    await root.environmentChanged(environment)
                 }
             }
         }
-        lock.withLock { handles.fill(handle, with: Open(root: root, context: context, commands: continuation, worker: worker)) }
+        // An update between taking the environment above and here reaches
+        // this root too: it is read again under the lock that fills it.
+        let missed: BridgeEnvironment? = lock.withLock {
+            handles.fill(handle, with: Open(root: root, context: context, inputs: continuation, worker: worker))
+            return current.flatMap { $0 == environment ? nil : $0 }
+        }
+        if let missed {
+            context.update(missed)
+            continuation.yield(.environment(missed))
+        }
+        // A delivery that failed before the handle was filled found nothing to fail.
+        if let failure = outbox.deliveryFailure { fail(handle, failure) }
         return BridgeCodec.encode(op: .opened, handle: handle)
+    }
+
+    private func update(_ update: EnvironmentUpdate) {
+        let opens: [Open] = lock.withLock {
+            current = current?.updated(update)
+            return handles.values
+        }
+        guard let environment = self.environment else { return }
+        for open in opens {
+            open.context.update(environment)
+            open.inputs.yield(.environment(environment))
+        }
     }
 
     /// Idempotent: a handle already closed, or of an old generation that was
@@ -219,15 +263,30 @@ public final class BridgeRuntime: @unchecked Sendable {
             if wasOpened { return }
             throw BridgeFailure(.staleHandle, "handle \(handle.id) generation \(handle.generation) was never opened")
         }
-        open.context.outbox.beginClose()
-        open.commands.finish()
+        shut(open, handle, "the handle closed", notice: nil)
+    }
+
+    /// A message for the handle did not reach Kotlin, so what Kotlin shows
+    /// of it is stale: the handle is closed from this side, as Kotlin's
+    /// `close` would, with the failure sent before `closed` where it can be.
+    /// Once, whichever comes first of this and a close.
+    private func fail(_ handle: Handle, _ failure: BridgeFailure) {
+        guard let open = lock.withLock({ handles.remove(handle) }) else { return }
+        record.log?("handle \(handle.id) failed: \(failure.code.rawValue): \(failure.message)")
+        shut(open, handle, "a message for the handle did not reach Kotlin", notice: BridgeCodec.failure(failure, handle: handle))
+    }
+
+    private func shut(_ open: Open, _ handle: Handle, _ reason: String, notice: String?) {
+        let outbox = open.context.outbox
+        outbox.beginClose()
+        if let notice { outbox.enqueue(notice, forced: true, onFailure: { _ in }) }
+        open.inputs.finish()
         open.worker.cancel()
-        for id in calls.cancelAll(handle: handle, "the handle closed") {
+        for id in calls.cancelAll(handle: handle, reason) {
             record.count(\.cancelled)
-            open.context.outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true)
+            outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true, onFailure: { _ in })
         }
         let root = open.root
-        let outbox = open.context.outbox
         Task {
             await root.close()
             outbox.close(with: BridgeCodec.encode(op: .closed, handle: handle))
@@ -238,7 +297,7 @@ public final class BridgeRuntime: @unchecked Sendable {
         switch query {
         case .stats:
             do {
-                deliver(try BridgeCodec.encode(op: .reply, id: id, body: stats))
+                _ = deliver(try BridgeCodec.encode(op: .reply, id: id, body: stats))
             } catch {
                 throw BridgeFailure(.swiftFailure, "the stats did not encode")
             }
@@ -247,19 +306,27 @@ public final class BridgeRuntime: @unchecked Sendable {
 
     // MARK: deliver
 
-    func deliver(_ message: String) {
+    static let stopped = BridgeFailure(.notStarted, "the bridge is gone")
+
+    /// Hands one message to Kotlin; the failure when Kotlin did not take it,
+    /// for the caller to finish what waited on the message.
+    func deliver(_ message: String) -> BridgeFailure? {
         let outlet: (any BridgeOutlet)? = lock.withLock {
-            if case let .started(_, _, outlet) = phase { return outlet }
+            if case let .started(_, outlet) = phase { return outlet }
             return nil
         }
-        guard let outlet else { return }
+        guard let outlet else { return Self.stopped }
+        // Swift replies only to Kotlin's queries; any other id is a device call's.
         let envelope = try? BridgeCodec.decodeEnvelope(message)
-        record.record("out", message, service: envelope?.id.flatMap(calls.service(of:)))
+        let call: Redaction.Call = envelope?.op == .reply ? .query
+            : envelope?.id.flatMap(calls.service(of:)).map(Redaction.Call.device) ?? .unknown
+        record.record("out", message, call: call)
         if let failure = outlet.deliver(message) {
             record.count(\.deliveryFailures)
             record.log?("deliver failed: \(failure.code.rawValue): \(failure.message)")
-        } else {
-            record.count(\.delivered)
+            return failure
         }
+        record.count(\.delivered)
+        return nil
     }
 }

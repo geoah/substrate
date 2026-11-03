@@ -422,7 +422,7 @@ description = "shellcheck over every tracked shell script"
 run = "git ls-files -z '*.sh' | xargs -0 sh -c 'test \"$#\" -eq 0 || shellcheck -x \"$@\"' sh"
 
 [tasks."lint:python"]
-description = "ruff over the runner's Python host, every function body under kinds/ and samples/, the provider suites and .mise; Substrate Workouts' JSON against its YAML"
+description = "ruff over the runner's Python host, every function body under kinds/ and samples/, the provider suites and .mise; Substrate Workouts' JSON against its YAML, and every app's published closures against its lock"
 # internal/runner/host.py is the long-lived child every `runtime: python`
 # function body is exec'd into: a syntax slip there takes out every Python
 # function at once, and no Go test compiles it. The bodies are YAML literal
@@ -433,11 +433,14 @@ description = "ruff over the runner's Python host, every function body under kin
 # The second and third lines are Substrate Workouts' generated JSON held to
 # its YAML (apps/workouts/scripts/workouts-package.py and exercise-library.py,
 # --check): Python, so they run in the Linux `lint` job, where nothing builds
-# the Apple apps.
+# the Apple apps. The fourth holds every app's published closures to its
+# closures.lock.json (.mise/closures.py), so a closure changed under a
+# published version fails here, offline, before a release refuses it.
 run = [
   "python3 .mise/pybodies.py lint internal/runner/host.py .mise internal/providere2e internal/providertest/py",
   "uv run --quiet --with pyyaml apps/workouts/scripts/workouts-package.py --check",
   "uv run --quiet --with pyyaml apps/workouts/scripts/exercise-library.py --check",
+  "uv run --quiet --with pyyaml .mise/closures.py --check",
 ]
 
 [tasks."lint:migrations"]
@@ -885,15 +888,33 @@ run = ".mise/apple.sh sim"
 # release folder's host is a shared endpoint) come from the environment,
 # never from this file. So do SUBSTRATE_APPLE_SITE_URL (the https origin the
 # site is served at, which every release then claims its sign-in callback
-# on), SUBSTRATE_APPLE_SITE_UPLOAD_URL, SUBSTRATE_APPLE_SITE_AUTHORITY and
-# SUBSTRATE_APPLE_TEAM_ID.
+# on), SUBSTRATE_APPLE_SITE_UPLOAD_URL, SUBSTRATE_APPLE_SITE_AUTHORITY,
+# SUBSTRATE_APPLE_TEAM_ID, and the Android release key's
+# SUBSTRATE_ANDROID_KEYSTORE, _KEYSTORE_PASSWORD, _KEY_ALIAS, _KEY_PASSWORD
+# and _CERT_SHA256 (apps/README.md). The names keep their APPLE_ prefix
+# because the owner's environment already holds them.
+#
+# The console is built first whatever the selection: an app named on the
+# command line is an argument mise does not see, and the console's bundle
+# needs dist/.
+[tasks."apps:release"]
+description = "Build every app (or the ones named) on every platform it has a UI for from one commit, stage the artifacts, publish the site and activate each app's feeds, under one release lease; [prerelease|stable] [app…]; SUBSTRATE_APPS_RELEASE_DRY_RUN=1 runs it all against build/apps"
+depends = ["console:build"]
+run = ".mise/apps.sh release"
+
+[tasks."apps:site"]
+description = "Publish the apps' site alone, under the release lease: the association files, the authority document with every published package version, the closures and every app's client document, and print the _substrate record its DNS needs; SUBSTRATE_APPS_RELEASE_DRY_RUN=1 builds it under build/apps and uploads nothing"
+run = ".mise/apps.sh site"
+
+# The old per-app names, kept for one release as aliases of apps:release
+# and apps:site, and removed after the first joint release.
 [tasks."apple:release"]
-description = "Build, sign and publish both apps as a release (prerelease, or stable), with the feeds that update them"
+description = "Alias of `apps:release [channel] console`, for one release"
 depends = ["console:build"]
 run = ".mise/apple.sh release"
 
 [tasks."apple:release:sync"]
-description = "Build, sign and publish Substrate Sync as a release (prerelease, or stable) under sync/, with its own feeds"
+description = "Alias of `apps:release [channel] sync`, for one release"
 run = ".mise/apple.sh release:sync"
 
 [tasks."apple:build:workouts"]
@@ -923,15 +944,15 @@ docker run --rm -v "$PWD:/src:ro" -w /src/apps \
 """
 
 [tasks."apple:release:workouts"]
-description = "Build, sign and publish Substrate Workouts as a release (prerelease, or stable) under workouts/, with its own feeds"
+description = "Alias of `apps:release [channel] workouts`, for one release"
 run = ".mise/apple.sh release:workouts"
 
 [tasks."apple:release:chat"]
-description = "Build, sign and publish Substrate Chat for iPhone, iPad and Mac as a release (prerelease, or stable) under chat/, with its own feeds"
+description = "Alias of `apps:release [channel] chat`, for one release"
 run = ".mise/apple.sh release:chat"
 
 [tasks."apple:site"]
-description = "Publish the apps' site: the association file, the authority document with every published package version, Workouts' package closures and every app's client document, and print the _substrate record its DNS needs; SUBSTRATE_APPLE_SITE_DRY_RUN=1 builds it under build/site and uploads nothing"
+description = "Alias of `apps:site`, for one release; SUBSTRATE_APPLE_SITE_DRY_RUN=1 still asks for its dry run"
 run = ".mise/apple.sh site"
 
 # =============================================================================
@@ -964,6 +985,13 @@ run = ".mise/android.sh generate:check"
 description = "Cross-compile the kit for Android and build kit-core, kit-device and bridge-check, debug and release (SUBSTRATE_ABIS, default arm64-v8a,x86_64)"
 tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
 run = ".mise/android.sh build"
+
+# The interface .mise/apps.sh builds an app's Android release through: the
+# signed APK at SUBSTRATE_RELEASE_APK, with the key from the environment.
+[tasks."android:release:build"]
+description = "One app's release APK, built by its apps/<app>/android module and signed with the key in SUBSTRATE_ANDROID_KEYSTORE; <app>; for apps:release"
+tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
+run = ".mise/android.sh release:build"
 
 [tasks."android:test"]
 description = "The bridge's tests off a device: the generator, the Swift bridge on this host, the Kotlin unit tests and the Swift-Kotlin-Swift round trip"

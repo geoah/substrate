@@ -543,26 +543,36 @@ for app in apps:
 # --- every app folder names its app in a readable app.json ---------------
 #
 # app.json names an app once (§6, apps/README.md): the server's reach test,
-# each app's manifest test and, next, the release read it, and a reader that
-# finds a field missing fails far from the file. So every app folder has one,
-# it parses, and every field is there with its shape. What an app publishes
-# and what it asks for are two lists: Workouts asks for health, which another
-# authority publishes, and a request names a version floor a published
-# package does not have.
+# each app's manifest test and the release (.mise/apps.sh) read it, and a
+# reader that finds a field missing fails far from the file. So every app
+# folder has one, it parses, and every field is there with its shape. What
+# an app publishes and what it asks for are two lists: Workouts asks for
+# health, which another authority publishes, and a request names a version
+# floor a published package does not have. `apple` is there for an app that
+# names an Apple platform and `android` for one that names Android, since
+# the release reads each platform's ids from them; the scheme the release
+# archives is a target of the app's own apple/targets.yml; and two apps
+# never share a feed folder, where one's releases would replace the other's.
 
 FIELDS = {
     "id": str,
     "name": str,
     "platforms": list,
-    "apple": dict,
     "publishes": list,
     "asks": list,
     "scopes": list,
     "icon": str,
     "feed": str,
 }
-APPLE_FIELDS = {"bundleID": str, "extensions": list, "clientIDKey": str, "redirectKey": str}
-PLATFORMS = {"ios", "macos"}
+# By platform, the object an app that names it carries.
+PLATFORM_FIELDS = {
+    "apple": {"bundleID": str, "scheme": str, "extensions": list, "clientIDKey": str, "redirectKey": str},
+    "android": {"applicationID": str},
+}
+PLATFORMS = {"ios": "apple", "macos": "apple", "android": "android"}
+# An Android application id: two or more dot-separated Java identifiers.
+APPLICATION_ID = re.compile(r"[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)+")
+feeds = {}
 # A package id: an authority with a dot, a slash, one lowercase word.
 PACKAGE_ID = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+/[a-z][a-z0-9]*")
 
@@ -582,19 +592,41 @@ for app in apps:
     for key, kind in FIELDS.items():
         if not isinstance(doc.get(key), kind):
             flag(f"{rel(path)}: {key} is missing or not a {kind.__name__}")
-    for key in sorted(set(doc) - set(FIELDS)):
+    for key in sorted(set(doc) - set(FIELDS) - set(PLATFORM_FIELDS)):
         flag(f"{rel(path)}: {key} is no app.json field (apps/README.md lists them)")
     if doc.get("id") != app:
         flag(f"{rel(path)}: id is {doc.get('id')!r}, and the app's folder is {app}")
     if isinstance(doc.get("name"), str) and not doc["name"].strip():
         flag(f"{rel(path)}: name is empty")
     platforms = doc.get("platforms") if isinstance(doc.get("platforms"), list) else []
-    if not platforms or set(platforms) - PLATFORMS:
+    if not platforms or set(platforms) - set(PLATFORMS):
         flag(f"{rel(path)}: platforms is {platforms}, and each is one of {sorted(PLATFORMS)}")
-    apple = doc.get("apple") if isinstance(doc.get("apple"), dict) else {}
-    for key, kind in APPLE_FIELDS.items():
-        if not isinstance(apple.get(key), kind):
-            flag(f"{rel(path)}: apple.{key} is missing or not a {kind.__name__}")
+    named = {PLATFORMS[p] for p in platforms if p in PLATFORMS}
+    for block, fields in PLATFORM_FIELDS.items():
+        if block not in named:
+            if block in doc:
+                flag(f"{rel(path)}: {block} is there, and platforms names no platform it is for")
+            continue
+        value = doc.get(block) if isinstance(doc.get(block), dict) else {}
+        if not isinstance(doc.get(block), dict):
+            flag(f"{rel(path)}: {block} is missing or not a dict, and platforms names {sorted(p for p in platforms if PLATFORMS.get(p) == block)}")
+        for key, kind in fields.items():
+            if not isinstance(value.get(key), kind):
+                flag(f"{rel(path)}: {block}.{key} is missing or not a {kind.__name__}")
+        for key in sorted(set(value) - set(fields)):
+            flag(f"{rel(path)}: {block}.{key} is no app.json field (apps/README.md lists them)")
+    android = doc.get("android") if isinstance(doc.get("android"), dict) else {}
+    if isinstance(android.get("applicationID"), str) and not APPLICATION_ID.fullmatch(android["applicationID"]):
+        flag(f"{rel(path)}: android.applicationID {android['applicationID']!r} is no Android application id")
+    scheme = (doc.get("apple") or {}).get("scheme") if isinstance(doc.get("apple"), dict) else None
+    targets_yml = os.path.join(APPS, app, "apple", "targets.yml")
+    if isinstance(scheme, str) and os.path.exists(targets_yml) and not re.search(rf"^  {re.escape(scheme)}:\s*$", read(targets_yml), re.M):
+        flag(f"{rel(path)}: apple.scheme {scheme} is no target in {rel(targets_yml)}")
+    feed = doc.get("feed")
+    if isinstance(feed, str):
+        if feed in feeds:
+            flag(f"{rel(path)}: feed {feed!r} is {feeds[feed]}'s too, and two apps' releases would replace each other's")
+        feeds.setdefault(feed, app)
     scopes = doc.get("scopes") if isinstance(doc.get("scopes"), list) else []
     if not all(isinstance(v, str) and v for v in scopes):
         flag(f"{rel(path)}: scopes holds something other than names")

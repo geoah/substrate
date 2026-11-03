@@ -14,17 +14,25 @@ public struct BridgeConnectivity: Connectivity {
         self.channel = channel
     }
 
+    public func paths() -> AsyncStream<NetworkPath> {
+        paths(capacity: 64)
+    }
+
     public func current() async -> NetworkPath {
         (try? await channel.call(.connectivityCurrent, as: NetworkPath.self)) ?? .offline
     }
 
-    public func paths() -> AsyncStream<NetworkPath> {
-        let values = channel.stream(.connectivityWatch, capacity: 64)
-        let (paths, continuation) = AsyncStream<NetworkPath>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    /// Every path Kotlin sends, in order and none skipped: a device answer
+    /// is never coalesced. A reader `capacity` behind ends the stream, as
+    /// the bridge's own queue does, and its stream on Kotlin's side with it,
+    /// rather than drop a change it would never learn of.
+    public func paths(capacity: Int) -> AsyncStream<NetworkPath> {
+        let values = channel.stream(.connectivityWatch, capacity: capacity)
+        let (paths, continuation) = AsyncStream<NetworkPath>.makeStream(bufferingPolicy: .bufferingOldest(capacity))
         let pump = Task {
             do {
                 for try await value in values {
-                    continuation.yield(try BridgeCodec.decode(NetworkPath.self, from: value))
+                    if case .dropped = continuation.yield(try BridgeCodec.decode(NetworkPath.self, from: value)) { break }
                 }
             } catch {
                 continuation.yield(.offline)
@@ -62,7 +70,7 @@ public extension BridgeContext {
     /// environment carries them. The secure store is named by the app; a
     /// browser sign-in comes with the step that brings the Auth Tab.
     func devices(secureStore: String? = nil) -> DeviceServices {
-        DeviceServices(transport: BridgeTransport(channel: device, folder: environment.cache.appendingPathComponent("bridge")),
+        DeviceServices(transport: BridgeTransport(channel: device, folder: environment.spill),
                        secureStore: secureStore.map { BridgeSecureStore(channel: device, store: $0) },
                        resolver: BridgeTXTResolver(channel: device), connectivity: BridgeConnectivity(channel: device),
                        folders: environment.folders)

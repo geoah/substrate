@@ -5,8 +5,8 @@ machines they are done on, the workout routines the coach writes, and the
 training sessions and sets the app logs. The manifests are the YAML files
 beside this one, published under the authority `substrate.reamde.dev`
 (decision record 0214):
-`mise run apple:site` builds each version's closure from them
-(`apps/workouts/scripts/workouts-package.py --closures`) and lists it in the
+`mise run apps:site` builds each version's closure from them
+(`.mise/closures.py`, after the generator's `--check`) and lists it in the
 site's authority document, the app's approval asks for the package as a
 `package` detail at the version the build was written against, and the
 server installs it from the document under this very name, the same in every
@@ -41,11 +41,12 @@ it.
 **Changing it.** A change ships as the next `version` in `training.yaml`,
 and only additive changes (a new kind, a new optional property, a new enum
 value): the server refuses a narrowing while live records hold the old
-shape, and a published version never changes: `mise run apple:site` refuses
+shape, and a published version never changes: `mise run apps:site` refuses
 to publish a listed version whose closure changed, and writes
 `closures.lock.json`, each package's newest published version and its
-closure's sha256, which is committed after a publish so the generator's
-`--check` refuses the same change offline. A kind declares no `indices` or `embed`. Run
+closure's sha256, which is committed after a publish so
+`.mise/closures.py --check` (in `mise run lint:python` and
+`apple:test:workouts`) refuses the same change offline. A kind declares no `indices` or `embed`. Run
 the generator, then `mise run apple:test:workouts`, whose codec drift test
 reads the kinds' property names from the generated `kinds.json`.
 

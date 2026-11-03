@@ -57,12 +57,34 @@ struct BridgeModelTests {
             ("enum E: Bridged { case name }", "Kotlin reserves"),
             ("struct A {}\nextension A: Bridged {}", "in an extension"),
             ("final class C: Bridged {}", "is a class"),
+            // Coding written in an extension changes the wire as surely as in the declaration.
+            ("struct A: Bridged { var a: Int }\nextension A { func encode(to encoder: Encoder) throws {} }", "encode(to:) in an extension"),
+            ("struct A: Bridged { var a: Int }\nextension A { init(from decoder: Decoder) throws { a = 1 } }", "init(from:) in an extension"),
+            ("struct A: Bridged { var a: Int }\nextension A { enum CodingKeys: String, CodingKey { case a = \"b\" } }", "CodingKeys in an extension"),
+            ("struct O { enum E: Bridged { case one } }\nextension O.E { init(from decoder: Decoder) throws { self = .one } }", "O.E writes its own init(from:)"),
+            ("struct A: Bridged { var a: Int }\nextension M.A { func encode(to encoder: Encoder) throws {} }", "A writes its own encode(to:)"),
+            ("extension Bridged { func encode(to encoder: Encoder) throws {} }", "every bridged value"),
+            ("struct A: Bridged { typealias CodingKeys = K; var a: Int }", "CodingKeys"),
+            ("struct A: Bridged { @Clamped var a: Int }", "property wrapper"),
         ]
         for (source, words) in cases {
             let (model, errors) = model(source)
             #expect(model == nil, "\(source)")
             #expect(errors.contains { $0.contains(words) }, "\(source): \(errors)")
         }
+    }
+
+    @Test func codingInAnExtensionOfAnUnbridgedTypeIsNotTheModelsConcern() {
+        var reader = Reader()
+        reader.read(source: "struct A: Bridged { var a: Int }", module: "M", path: "a.swift")
+        reader.read(source: "struct Other {}\nextension Other { func encode(to encoder: Encoder) throws {} }", module: "M", path: "b.swift")
+        #expect(reader.model() != nil, "\(reader.errors.map(\.message))")
+        // Across files: an extension in one file of a value declared in another.
+        var across = Reader()
+        across.read(source: "extension A { enum CodingKeys: String, CodingKey { case a } }", module: "M", path: "b.swift")
+        across.read(source: "struct A: Bridged { var a: Int }", module: "M", path: "a.swift")
+        #expect(across.model() == nil)
+        #expect(across.errors.contains { $0.location == "b.swift:1" })
     }
 
     @Test func aValueNestedInAnUnbridgedTypeIsInAKotlinNamespace() throws {

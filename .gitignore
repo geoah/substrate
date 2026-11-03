@@ -19,6 +19,9 @@ dist/
 # data holds YAML of Xcode's.
 /apps/xcode/Substrate.xcodeproj/
 /apps/xcode/build/
+# The apps' release (.mise/apps.sh): staged builds, the site, and a dry run's
+# simulated release folder and site.
+/build/
 /apps/kit/.build/
 # `mise run apps:gallery`: every shared screen drawn, one folder per system.
 /build/gallery/

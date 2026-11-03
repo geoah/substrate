@@ -231,7 +231,7 @@ struct BridgeTests {
     @Test func routeCommandIsRoutedCommandsSpelling() throws {
         let routed = RoutedCommand(path: [ChildKey("a"), ChildKey("b")], command: ["x": 1])
         let route = RouteCommand(path: ["a", "b"], command: ["x": 1])
-        #expect(try BridgeCodec.encoder().encode(routed) == BridgeCodec.encoder().encode(route))
+        #expect(try JSONValue(encoding: routed) == BridgeCodec.value(route))
     }
 
     @Test func kotlinCanAskForTheCounters() async throws {
@@ -239,5 +239,92 @@ struct BridgeTests {
         _ = try post(runtime, Envelope(op: .request, id: 77, body: try BridgeCodec.value(BridgeQuery.stats)))
         let reply = try await outlet.next { $0.op == .reply && $0.id == 77 }
         #expect(try BridgeCodec.decode(BridgeStats.self, from: reply.body).posted >= 1)
+    }
+
+    @Test func anIdleRootsOnlyPresentationArrives() async throws {
+        let (runtime, outlet, _) = started()
+        let reply = try post(runtime, Envelope(op: .open, body: ["root": "idle"]))
+        let handle = try #require(reply.handle)
+        let shown = try await outlet.next { $0.op == .presentation && $0.handle == handle }
+        #expect(shown.body?["step"] == 1)
+    }
+
+    @Test func aRequestKotlinDidNotTakeFailsItsCallRatherThanWaiting() async throws {
+        let (runtime, outlet, _) = started()
+        outlet.refuse { $0.op == .request }
+        let channel = try #require(runtime.device)
+        await #expect {
+            try await channel.call(.connectivityCurrent)
+        } throws: { ($0 as? BridgeFailure)?.code == .jniFailure }
+        #expect(runtime.calls.outstanding == 0)
+        // A stream's request too: it ends with the failure.
+        var failure: BridgeFailure?
+        do {
+            for try await _ in channel.stream(.connectivityWatch) {}
+        } catch {
+            failure = error as? BridgeFailure
+        }
+        #expect(failure?.code == .jniFailure)
+        #expect(runtime.stats.deliveryFailures == 2)
+    }
+
+    @Test func aPresentationKotlinDidNotTakeFailsTheHandleOnce() async throws {
+        let (runtime, outlet, box) = started()
+        let handle = try open(runtime)
+        // A call the handle waits on, made beside its commands rather than by one.
+        let device = try #require(box.value?.context.device)
+        let calling = Task { try await device.call(.connectivityCurrent) }
+        let request = try await outlet.next { $0.op == .request }
+        outlet.refuse { $0.op == .presentation }
+        _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["present": 1]))
+        // The handle closes from Swift's side: its call cancelled once, the failure, then `closed`.
+        let failed = try await outlet.next { $0.op == .error && $0.handle == handle }
+        #expect(try BridgeCodec.decode(BridgeFailure.self, from: failed.body).code == .jniFailure)
+        let cancel = try await outlet.next { $0.op == .cancel }
+        #expect(cancel.id == request.id)
+        await #expect { try await calling.value } throws: { ($0 as? BridgeFailure)?.code == .cancelled }
+        _ = try await outlet.next { $0.op == .closed && $0.handle == handle }
+        #expect(await box.value?.closed == true)
+        #expect(runtime.stats.open == 0)
+        #expect(runtime.calls.outstanding == 0)
+        let late = try post(runtime, Envelope(op: .command, handle: handle, body: ["present": 1]))
+        #expect(try BridgeCodec.decode(BridgeFailure.self, from: late.body).code == .staleHandle)
+        // Kotlin's close after it is accepted, as any second close is.
+        #expect(try post(runtime, Envelope(op: .close, handle: handle)).op == .accepted)
+    }
+
+    @Test func anEnvironmentUpdateReachesEveryOpenRootInOrderWithItsCommands() async throws {
+        let (runtime, outlet, box) = started()
+        let handle = try open(runtime)
+        let root = try #require(box.value)
+        _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["n": 1]))
+        let update = try BridgeCodec.value(EnvironmentUpdate(locale: "el-GR", timeZone: "Europe/Athens"))
+        #expect(try post(runtime, Envelope(op: .environment, body: update)).op == .accepted)
+        _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["present": 1]))
+        _ = try await outlet.next { $0.op == .presentation }
+        let environments = await root.environments
+        #expect(environments.map(\.timeZone.identifier) == ["Europe/Athens"])
+        #expect(root.context.environment.timeZone.identifier == "Europe/Athens")
+        #expect(runtime.environment?.locale.identifier.hasPrefix("el") == true)
+        // A root opened after it starts from the new one.
+        _ = try open(runtime)
+        #expect(box.value?.context.environment.timeZone.identifier == "Europe/Athens")
+        let bad = try post(runtime, Envelope(op: .environment, body: ["locale": 1]))
+        #expect(try BridgeCodec.decode(BridgeFailure.self, from: bad.body).code == .malformed)
+    }
+
+    @Test func aNumberPastDecimalAndDoubleCrossesWhole() async throws {
+        let (runtime, outlet, box) = started()
+        let handle = try open(runtime)
+        let digits = "1234567890123456789012345678901234567890.0987654321"
+        let text = #"{"v":1,"op":"command","handle":{"id":\#(handle.id),"generation":\#(handle.generation)},"body":{"n":\#(digits),"e":1e-400,"big":2e999}}"#
+        #expect(try BridgeCodec.decodeEnvelope(runtime.post(text)).op == .accepted)
+        _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["present": 1]))
+        _ = try await outlet.next { $0.op == .presentation }
+        let command = try #require(await box.value?.commands.first)
+        #expect(command["n"] == .number(JSONNumber(digits)!))
+        #expect(command["e"] == .number(JSONNumber("1e-400")!))
+        #expect(command["big"] == .number(JSONNumber("2e999")!))
+        #expect(try BridgeCodec.text(Envelope(op: .command, body: command)).contains(digits))
     }
 }
