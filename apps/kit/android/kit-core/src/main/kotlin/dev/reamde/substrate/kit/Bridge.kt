@@ -46,43 +46,92 @@ public object Bridge {
     @Synchronized
     public fun start(context: Context, services: DeviceServices = NoDeviceServices, library: String = "SubstrateAndroid"): StartResult {
         result?.let { return it }
-        val started = begin(context.applicationContext, services, library)
+        val app = context.applicationContext
+        val debug = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        val log: ((String) -> Unit)? = if (debug) { line -> Log.d(TAG, line) } else null
+        val started = begin(
+            object : StartSteps {
+                override fun onMainThread() = Looper.myLooper() == Looper.getMainLooper()
+
+                override fun load() = System.loadLibrary(library)
+
+                override fun config() = StartConfig(
+                    fingerprint = ProtocolFingerprint.VALUE,
+                    locale = Locale.getDefault().toLanguageTag(),
+                    timeZone = TimeZone.getDefault().id,
+                    resources = SwiftResources.folder(app).path,
+                    data = app.noBackupFilesDir.path,
+                    cache = app.cacheDir.path,
+                    sdk = Build.VERSION.SDK_INT.toLong(),
+                    debug = debug,
+                )
+
+                override fun native(config: String) = NativeBridge.start(config)
+
+                override fun started() {
+                    val made = BridgeCore(NativeBridge::post, services, CoroutineScope(SupervisorJob() + Dispatchers.Default), log)
+                    core = made
+                    EnvironmentWatch.register(app) { update -> made.environment(update) }
+                }
+            },
+            library,
+        )
         result = started
         return started
     }
 
-    private fun begin(context: Context, services: DeviceServices, library: String): StartResult {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
+    /** What `start` does that touches the process, apart, so a test runs `begin` without a device. */
+    internal interface StartSteps {
+        fun onMainThread(): Boolean
+
+        fun load()
+
+        fun config(): StartConfig
+
+        fun native(config: String): String?
+
+        fun started()
+    }
+
+    /**
+     * Every step's failure is the terminal answer `start` latches, never a
+     * throw out of `Application.onCreate`: a library that will not load, a
+     * disk too full to copy the resources out, an asset that will not read.
+     */
+    internal fun begin(steps: StartSteps, library: String): StartResult {
+        if (!steps.onMainThread()) {
             return failed(BridgeFailure.Code.swiftFailure, "Bridge.start ran off the main thread; call it from Application.onCreate")
         }
         try {
-            System.loadLibrary(library)
-        } catch (failure: UnsatisfiedLinkError) {
+            steps.load()
+        } catch (failure: LinkageError) {
+            return failed(BridgeFailure.Code.jniFailure, "lib$library.so did not load: ${failure.message}")
+        } catch (failure: SecurityException) {
             return failed(BridgeFailure.Code.jniFailure, "lib$library.so did not load: ${failure.message}")
         }
-        val debug = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-        val log: ((String) -> Unit)? = if (debug) { line -> Log.d(TAG, line) } else null
-        val config = StartConfig(
-            fingerprint = ProtocolFingerprint.VALUE,
-            locale = Locale.getDefault().toLanguageTag(),
-            timeZone = TimeZone.getDefault().id,
-            resources = SwiftResources.folder(context).path,
-            data = context.noBackupFilesDir.path,
-            cache = context.cacheDir.path,
-            sdk = Build.VERSION.SDK_INT.toLong(),
-            debug = debug,
-        )
-        val answer = NativeBridge.start(BridgeJson.encodeToString(StartConfig.serializer(), config))
-            ?: return failed(BridgeFailure.Code.jniFailure, "start answered nothing")
+        val config = try {
+            steps.config()
+        } catch (failure: Exception) {
+            return failed(BridgeFailure.Code.unavailable, "the start's folders could not be made ready: ${failure::class.java.simpleName}: ${failure.message}")
+        }
+        val answer = try {
+            steps.native(BridgeJson.encodeToString(StartConfig.serializer(), config))
+        } catch (failure: Exception) {
+            return failed(BridgeFailure.Code.jniFailure, "start threw ${failure::class.java.simpleName}")
+        } catch (failure: LinkageError) {
+            return failed(BridgeFailure.Code.jniFailure, "start is not in lib$library.so: ${failure.message}")
+        } ?: return failed(BridgeFailure.Code.jniFailure, "start answered nothing")
         val decoded = try {
             BridgeJson.decodeFromString(StartAnswer.Serializer, answer)
         } catch (_: Exception) {
             return failed(BridgeFailure.Code.malformed, "start answered something Kotlin cannot read")
         }
         return when (decoded) {
-            is StartAnswer.Started -> {
-                core = BridgeCore(NativeBridge::post, services, CoroutineScope(SupervisorJob() + Dispatchers.Default), log)
+            is StartAnswer.Started -> try {
+                steps.started()
                 StartResult.Started(decoded.fingerprint)
+            } catch (failure: Exception) {
+                failed(BridgeFailure.Code.kotlinException, "the bridge's Kotlin did not start: ${failure::class.java.simpleName}: ${failure.message}")
             }
             is StartAnswer.Failed -> StartResult.Failed(decoded.failure)
         }
