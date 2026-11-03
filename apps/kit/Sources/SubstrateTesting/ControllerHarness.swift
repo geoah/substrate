@@ -6,7 +6,10 @@ import SubstrateRuntime
 /// A controller on a runtime with a fake environment: a `TestClock`, ids a
 /// test can name, a scripted server, English in UTC. It keeps the runtime's
 /// trace, so a test reads what was journaled, presented, published and
-/// asked for, in order, and waits on what it expects rather than on time.
+/// asked for, in order, and waits on what it expects rather than on time:
+/// `until` fails only once the runtime has made no move at all for its
+/// bound, so a host too loaded to run the test promptly slows it and never
+/// fails it.
 public final class ControllerHarness<C: Controller>: @unchecked Sendable {
     public let clock: TestClock
     public let ids: SequentialIDs
@@ -82,13 +85,37 @@ public final class ControllerHarness<C: Controller>: @unchecked Sendable {
         }
     }
 
-    /// Waits until `condition` holds, failing after `timeout` of real time.
-    public func until(timeout: Duration = .seconds(5), _ condition: @Sendable (ControllerHarness<C>) async -> Bool) async throws {
-        let deadline = ContinuousClock.now + timeout
+    /// How long `until` waits with nothing happening in the runtime before
+    /// it gives up: a hang guard, never a pace. `SUBSTRATE_HARNESS_IDLE`
+    /// (seconds) moves it for a whole run.
+    public static var idleBound: Duration {
+        let seconds = ProcessInfo.processInfo.environment["SUBSTRATE_HARNESS_IDLE"].flatMap(Double.init) ?? 60
+        return .milliseconds(Int(seconds * 1000))
+    }
+
+    /// Waits until `condition` holds, checking it each time the runtime
+    /// moves (a step traced, a presentation published, an effect asked for)
+    /// and between. It fails only after `idle` with no move in the runtime
+    /// at all, however long the whole wait takes.
+    public func until(idle: Duration = ControllerHarness.idleBound, _ condition: @Sendable (ControllerHarness<C>) async -> Bool) async throws {
+        var seen = recorder.count
+        var quietSince = ContinuousClock.now
         while await !condition(self) {
-            if ContinuousClock.now > deadline { throw HarnessTimedOut() }
-            try await Task.sleep(nanoseconds: 1_000_000)
+            let count = recorder.count
+            if count != seen {
+                seen = count
+                quietSince = ContinuousClock.now
+            } else if ContinuousClock.now - quietSince > idle {
+                throw HarnessTimedOut()
+            }
+            await recorder.changed(since: count, orAfter: .milliseconds(20))
         }
+    }
+
+    /// The same: `timeout` is the bound on a runtime that does nothing, and
+    /// never shorter than `idleBound`, which a loaded host never shortens.
+    public func until(timeout: Duration, _ condition: @Sendable (ControllerHarness<C>) async -> Bool) async throws {
+        try await until(idle: max(timeout, Self.idleBound), condition)
     }
 }
 
@@ -98,11 +125,53 @@ public struct HarnessTimedOut: Error, Sendable {}
 private final class TraceRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var kept: [RuntimeTrace] = []
+    /// Every entry ever appended, a clear included.
+    private var appended = 0
+    private var waiting: [UUID: CheckedContinuation<Void, Never>] = [:]
+    /// Waits whose limit passed before they began waiting.
+    private var expired: Set<UUID> = []
 
     func append(_ entry: RuntimeTrace) {
         lock.lock()
         kept.append(entry)
+        appended += 1
+        let woken = waiting
+        waiting = [:]
         lock.unlock()
+        for continuation in woken.values { continuation.resume() }
+    }
+
+    var count: Int { lock.withLock { appended } }
+
+    /// Returns once an entry is appended after the `count`th, or after
+    /// `limit`, whichever comes first.
+    func changed(since count: Int, orAfter limit: Duration) async {
+        let id = UUID()
+        let timer = Task {
+            try? await Task.sleep(for: limit)
+            if !Task.isCancelled { self.wake(id) }
+        }
+        await withCheckedContinuation { continuation in
+            let now = lock.withLock { () -> Bool in
+                if appended != count || expired.remove(id) != nil { return true }
+                waiting[id] = continuation
+                return false
+            }
+            if now { continuation.resume() }
+        }
+        timer.cancel()
+        lock.withLock { _ = expired.remove(id) }
+    }
+
+    private func wake(_ id: UUID) {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            guard let continuation = waiting.removeValue(forKey: id) else {
+                expired.insert(id)
+                return nil
+            }
+            return continuation
+        }
+        continuation?.resume()
     }
 
     func clear() {
