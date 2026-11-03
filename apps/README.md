@@ -95,8 +95,19 @@ and each step holds what it says before the next starts:
    renews it every two minutes while it works, and checks it before every
    write: a publisher that finds another's token, or its own lease close to
    expiry, stops. A lease past its expiry is taken over, and its taker reads
-   everything again. A bucket that answers conditional writes as if they
-   were plain ones is refused before anything is built.
+   everything again; an expired lease is never renewed, and its holder stops
+   at its next write. A bucket compares no token, so the fence is at the
+   write itself: every write is conditional, an immutable key created only
+   where it is absent and a mutable one (a feed, a site document, the
+   versionCodes' record) replaced only where it still holds the version
+   this run read under its lease, and every write is given up a minute
+   before the lease expires. A publisher that stalls after its last check
+   (a sleeping laptop) and writes once its lease was taken over is answered
+   412 over anything the next holder wrote, and the next holder is answered
+   412 over a late write it did not read, and stops rather than lose either.
+   Every store the release writes (the release folder, and the site's or
+   the client documents') is refused before anything is built if it answers
+   conditional writes as if they were plain ones.
 2. **Everything built and checked first**, from one commit under one
    version, and nothing goes up until all of it passed. Each Apple build's
    Info.plist is held to app.json (bundle id, and the client id and
@@ -108,8 +119,11 @@ and each step holds what it says before the next starts:
    held to their locks, then checked as the server admits them, and the
    site is built.
 3. **Staged.** The build is sealed under `build/apps/releases/<build>/`
-   (`staged.json` lists every file's sha256, and the files are made
-   read-only), and its files go up under each feed's `releases/<build>/`,
+   (`staged.json` lists every file's sha256 and what the stage was made
+   for: the mode, the release folder, the site, its upload address, the
+   client documents' folder, the authority, the team and the export
+   methods, and the Android certificate; the files are made read-only),
+   and its files go up under each feed's `releases/<build>/`,
    where no feed names them yet. Those keys are immutable: a key already
    holding the same bytes is passed over, and one holding other bytes stops
    the release.
@@ -124,26 +138,49 @@ and each step holds what it says before the next starts:
 
 **A rerun resumes.** `SUBSTRATE_APPS_RELEASE_BUILD=<build> mise run
 apps:release` builds nothing: it checks every staged file against
-`staged.json`, refuses a tree whose `HEAD` is not the commit it built, and
+`staged.json`, refuses a tree whose `HEAD` is not the commit it built and a
+run whose release folder, site, authority or signing identities are not
+the ones the stage was made for (its builds carry them stamped in), and
 carries on where the last run stopped, reading what is published before
-each write. Nothing else reuses a staged build.
+each write. Nothing else reuses a staged build, and a release never
+resumes a dry run's: it looks for stages where a dry run keeps none, and
+refuses one that says it was a dry run's or carries a dry run's update
+signature.
 
 **A dry run is every step against `build/apps`.**
-`SUBSTRATE_APPS_RELEASE_DRY_RUN=1` builds, stages, publishes and activates
-into `build/apps/dry-run/release` and `build/apps/dry-run/site`, simulated
-buckets with the same conditional writes, so the lease, a rerun and a
-conflict can be tried there; they persist between dry runs (`chmod -R u+w
-build/apps && rm -rf build/apps` starts over). It unsets the AWS key and the
-App Store Connect key, never passes `-allowProvisioningUpdates` (an app it
-cannot sign without it is archived as a placeholder, and it says so), reads
-no keychain, and writes no closures lock; the one function that uploads and
-the one that signs a request refuse to run in it. Only in a dry run:
-`SUBSTRATE_APPS_RELEASE_PLACEHOLDERS=1` stands placeholders in for every
-build, `SUBSTRATE_APPS_RELEASE_ANDROID_BUILD=<program>` another program in
-for `android:release:build`, `SUBSTRATE_APPS_RELEASE_STOP_AFTER=stage`,
-`site` or an app's id stops there as a failure would, and
+`SUBSTRATE_APPS_RELEASE_DRY_RUN=1` builds, stages (under
+`build/apps/dry-run/staged/<build>/`, apart from a release's), publishes and
+activates into `build/apps/dry-run/release` and `build/apps/dry-run/site`,
+simulated buckets with the same conditional writes and time bounds, so the
+lease, a rerun and a conflict can be tried there; they persist between dry
+runs (`chmod -R u+w build/apps && rm -rf build/apps` starts over). It unsets
+the AWS key and the App Store Connect key, never passes
+`-allowProvisioningUpdates`, archives every Apple build with signing
+switched off (`CODE_SIGNING_ALLOWED=NO`, no identity, no team, no profile)
+and takes the app out of the archive in place of an export, which would
+sign it, so it reads no keychain, and checks that no build it made names a
+signing identity (an app that does not archive unsigned is a placeholder,
+and it says so); it writes no closures lock, and the one function that
+uploads and the one that signs a request refuse to run in it. Only in a dry
+run: `SUBSTRATE_APPS_RELEASE_PLACEHOLDERS=1` stands placeholders in for
+every build, `SUBSTRATE_APPS_RELEASE_ANDROID_BUILD=<program>` another
+program in for `android:release:build`,
+`SUBSTRATE_APPS_RELEASE_STOP_AFTER=stage`, `site` or an app's id stops there
+as a failure would, `SUBSTRATE_APPS_RELEASE_SUSPEND_AT=<store>/<key>` stops
+the whole run as a sleeping machine would, just before that write reaches
+the store (`kill -CONT <pid>` wakes it), `SUBSTRATE_APPS_RELEASE_LEASE_MARGIN`
+shortens the minute a write leaves unused before the lease expires, and
 `SUBSTRATE_APPLE_SITE_PUBLISHED=<file>` tries the site's merge against a
 saved document.
+
+Each invocation works in its own directory under `build/apps/runs/`,
+removed when it exits, so two in one checkout share no working file. What
+they do share is held by local locks under `build/apps/locks/`: a build's
+stage, which one invocation stages or resumes at a time, and this
+checkout's builds (the Xcode project and derived data, the Gradle outputs),
+which one invocation runs at a time. Each lock is an `flock` its holder's
+process keeps, which the system drops when the process ends, so no run
+removes another's lock and a killed one leaves none.
 
 **An app's client id names it on every server.** Substrate Sync and
 Substrate Chat each publish a client ID metadata document, `client.json`,
@@ -185,17 +222,20 @@ publishes again:
 - `/.well-known/assetlinks.json`, naming each Android app's package and the
   SHA-256 of the certificate its APK is signed with, read from the signed
   APK this release staged, else from the newest Android build its feed
-  lists (and `SUBSTRATE_ANDROID_PREVIOUS_CERT_SHA256` during a rotation),
-  for its links and its credentials;
+  lists, every Android app's feed read again under the lease whether this
+  release ships it or not (and `SUBSTRATE_ANDROID_PREVIOUS_CERT_SHA256`
+  during a rotation), for its links and its credentials;
 - `/apps/<app>/client.json` for every app with a UI, whose redirects are
   each platform's callback, `https://<site host>/apps/<app>/callback` for
   Apple's and `/apps/<app>/android/callback` for Android's, and which names
   the authority as `substrate_authority`.
 
-A published version never changes: the task reads the live document first
-(absent is a first publish; a bucket that forbids listing answers 403 for a
-missing key, which the release's key settles with a signed read), carries
-every package it lists forward whole, its versions joined with this tree's,
+A published version never changes: the task reads the live document first,
+after taking the lease, from the store it is written to and with the
+release's key (absent is a first publish; a cache in front of the site
+could serve an older one, and a bucket that forbids listing answers an
+anonymous read of a missing key with 403), keeps its version and replaces
+it only over that version, carries every package it lists forward whole, its versions joined with this tree's,
 and refuses to publish a listed version whose closure this tree builds
 with another digest, or a version below the newest listed that was never
 published. Every closure it publishes for the first time is checked as the
@@ -207,7 +247,7 @@ document last, so the document never names a closure that is not there yet,
 and a release publishes the site before it makes any build current. After
 a publish each app's `package/closures.lock.json` is written with what is
 published, to be committed. `SUBSTRATE_APPS_RELEASE_DRY_RUN=1` builds the
-site under `build/apps/site` and publishes it into `build/apps/dry-run/site`
+site in its run's directory and publishes it into `build/apps/dry-run/site`
 alone (`SUBSTRATE_APPLE_SITE_DRY_RUN=1` still asks `apple:site` for the
 same).
 
@@ -261,16 +301,26 @@ address, it lives in the environment and never in the tree.
 ### Android: the versionCode and the release key
 
 An Android build's `versionCode` is allocated under the lease: the minutes
-from 2026-01-01 UTC to the build number's UTC time, or the highest code the
-app's feed lists plus one, whichever is larger, so it rises with the build
-across machines and stays above anything published when a clock is behind.
-It is written into the staged `release.json`, and only a rerun of that
-staged build uses it again. The APK comes from one task,
-`mise run android:release:build <app>`, which builds the app's
-`apps/<app>/android` module with the release's stamp as Gradle properties
-(`substrate.release.version`, `.versionCode`, `.channel`, `.commit`,
-`.updatesURL`, `.clientID`, `.redirect`, `.siteHost`), then aligns it and
-signs it with the release key, which Gradle never sees.
+from 2026-01-01 UTC to the build number's UTC time, the highest code the
+app's feed lists plus one, or the highest code ever given to one of its
+builds plus one, whichever is largest, so it rises with the build across
+machines and stays above anything published or given out when a clock is
+behind or a build never finished. Every code given is recorded in the
+release folder's `.apps-release-version-codes.json` (by app and build,
+written only over the version read, before anything is built), and in the
+staged `release.json`; only a rerun of that staged build uses it again, and
+the rerun checks the record still gives it to that build. The APK comes
+from one task, `mise run android:release:build <app>`, which builds the
+app's `apps/<app>/android` module with the release's stamp as Gradle
+properties (`substrate.release.version`, `.versionCode`, `.channel`,
+`.commit`, `.updatesURL`, `.clientID`, `.redirect`, `.siteHost`), then
+aligns it and signs it with the release key, which Gradle never sees: it
+runs with the key's variables removed from its environment, and they reach
+`apksigner` alone. A release calls the task's program directly, with the
+task's tools on its `PATH` and an environment made of the stamp, the key,
+the SDK and little else, never through `mise run`, which would load this
+machine's mise configuration (a `.mise.local.toml` and the env files it
+names, the bucket's key among them) into Gradle and its daemon.
 
 The key is made once, by the owner, outside the tree, and kept as a secret
 with its passwords (a password manager, and a backup of the file):
