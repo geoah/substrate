@@ -54,7 +54,7 @@ type scopedDataset struct {
 	threadAgents map[string]string
 	seen         map[string]bool
 	// agentCovered is talksTo's answer per agent: whether the grant's reads
-	// cover an app's agent (decision 0207).
+	// cover everything the agent reads (decision 0214).
 	agentCovered map[string]bool
 }
 
@@ -389,19 +389,6 @@ func (s *scopedDataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error)
 }
 
 func (s *scopedDataset) KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error) {
-	// The package, bundle and kind kinds resolve for a token that keeps a
-	// package, so the record path reaches Get, which admits that package's
-	// rows alone.
-	if s.keepsPackage() && declarationRowKind(ref) {
-		return s.inner.KindByRef(ctx, ref)
-	}
-	// An approved agent's row resolves for the token that declares it, and
-	// the kinds the agent is approved to read tell their definitions, so the
-	// app declares only kinds the repository holds (decision 0207). Records
-	// stay held to the scopes.
-	if (ref == vocabulary.CoreKind(vocabulary.DocAgent) && len(s.grant.Agents()) > 0) || s.grant.ApprovesAgentRead(ref) {
-		return s.inner.KindByRef(ctx, ref)
-	}
 	if ok, err := s.reaches(ctx, ref); err != nil {
 		return substrate.KindInfo{}, err
 	} else if !ok {
@@ -435,24 +422,6 @@ func (s *scopedDataset) ConvertUnit(ctx context.Context, in substrate.UnitConver
 }
 
 func (s *scopedDataset) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
-	// A package an app keeps the declarations of tells it the version it
-	// holds, through its package and bundle rows, and what each of its kinds
-	// holds, through their rows, so the app can tell an owner's edit from its
-	// own (decision 0203).
-	if declarationRowKind(typ) && s.grant.DeclaresIn(declaredPackage(typ, id), s.inner.Repository().Authority) {
-		return s.inner.Get(ctx, typ, id)
-	}
-	// The agent the owner approved the app to declare, and no other agent:
-	// its version, settings and prompt are what the app keeps (decision 0207).
-	if typ == vocabulary.CoreKind(vocabulary.DocAgent) && s.declaresAgent(id) {
-		return s.inner.Get(ctx, typ, id)
-	}
-	// The definition of a kind the agent is approved to read, so the app
-	// declares only kinds the repository holds; its records stay held to the
-	// scopes.
-	if typ == vocabulary.CoreKind(vocabulary.DocKind) && s.grant.ApprovesAgentRead(id) {
-		return s.inner.Get(ctx, typ, id)
-	}
 	gated, err := s.rowGated(ctx, typ)
 	if err != nil {
 		return nil, err
@@ -1028,27 +997,11 @@ func (s *scopedDataset) ChangeTriggers(context.Context, []substrate.Change) (map
 	return nil, errScope("the change feed")
 }
 
-// ApplyVocabularyDocuments admits a batch that declares only packages the
-// grant's `declare:` scopes keep (decision 0203): their package, bundle and
-// kind documents, under the repository's own authority, nothing that runs
-// code or reaches past the package, and nothing that removes what the
-// repository holds (scopeddeclare.go). The engine's admission still holds it
-// to the package's source (a shipped or published package is refused) and
-// refuses a lossy change, which only the owner may confirm.
-func (s *scopedDataset) ApplyVocabularyDocuments(ctx context.Context, _ substrate.Actor, docs []map[string]any) ([]*substrate.Record, error) {
-	if err := s.declarable(docs); err != nil {
-		return nil, err
-	}
-	if err := s.templatesRead(ctx, docs); err != nil {
-		return nil, err
-	}
-	if err := s.agentsPriced(ctx, docs); err != nil {
-		return nil, err
-	}
-	if err := s.widensOnly(ctx, docs); err != nil {
-		return nil, err
-	}
-	return s.inner.ApplyVocabularyDocuments(ctx, s.actor, docs)
+// ApplyVocabularyDocuments is refused: no scoped token applies vocabulary
+// (decision 0214). An app's own kinds arrive as a package its approval
+// installs, from the binary's catalog or its publisher's authority document.
+func (s *scopedDataset) ApplyVocabularyDocuments(context.Context, substrate.Actor, []map[string]any) ([]*substrate.Record, error) {
+	return nil, errScope("the vocabulary")
 }
 
 func (s *scopedDataset) TakeOverPackage(context.Context, substrate.Actor, string, string) (*substrate.Record, error) {
@@ -1192,15 +1145,8 @@ func (s *scopedDataset) BundleStatus(context.Context, string) (substrate.BundleS
 	return substrate.BundleStatus{}, errScope("bundles")
 }
 
-// BundlePackage resolves a bundle of a package the grant declares, which is
-// what the lifecycle PATCH reads before an app's uninstall (decision 0207);
-// any other bundle is the owner's.
-func (s *scopedDataset) BundlePackage(ctx context.Context, id string) (string, error) {
-	pkg, err := s.inner.BundlePackage(ctx, id)
-	if err != nil || !s.grant.DeclaresIn(pkg, s.inner.Repository().Authority) {
-		return "", errScope("bundles")
-	}
-	return pkg, nil
+func (s *scopedDataset) BundlePackage(context.Context, string) (string, error) {
+	return "", errScope("bundles")
 }
 
 func (s *scopedDataset) DisableBundle(context.Context, string) error { return errScope("bundles") }
@@ -1211,19 +1157,7 @@ func (s *scopedDataset) BindBundleInput(context.Context, string, string, string)
 	return errScope("bundles")
 }
 
-// UninstallBundle removes a package the grant declares and that holds no
-// kinds: an app taking away the agent it keeps (decision 0207). Any other
-// uninstall is the owner's.
-func (s *scopedDataset) UninstallBundle(ctx context.Context, id string) error {
-	pkg, err := s.inner.BundlePackage(ctx, id)
-	if err != nil {
-		return err
-	}
-	if !s.grant.DeclaresIn(pkg, s.inner.Repository().Authority) {
-		return errScope("bundles")
-	}
-	return s.inner.UninstallAppBundle(ctx, s.actor, id)
-}
+func (s *scopedDataset) UninstallBundle(context.Context, string) error { return errScope("bundles") }
 
 func (s *scopedDataset) UninstallAppBundle(context.Context, substrate.Actor, string) error {
 	return errScope("bundles")

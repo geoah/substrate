@@ -62,6 +62,14 @@ type Config struct {
 	// binary — the "available integrations" the /catalog endpoints list and
 	// install. Nil serves an empty catalog.
 	Catalog *catalog.Catalog
+	// Packages resolves the packages an app's approval sets up, through the
+	// binary's closures and the authority documents (decision 0214). Nil is
+	// Catalog; a test supplies one that publishes from memory.
+	Packages appsetup.Catalog
+	// PackageRefresher brings a document-published package a set up check
+	// finds below its app's floor up to date (decision 0213). Nil is Catalog
+	// where it refreshes, else nothing; a test supplies its own.
+	PackageRefresher packageRefresher
 	// ConsoleURL is the console the OAuth callback return-page reports back to:
 	// its scheme+host is the postMessage targetOrigin, its full base the
 	// fallback redirect target. Empty posts to the page's own origin, where
@@ -133,8 +141,14 @@ type handler struct {
 	inviteCode   string
 	totpDisabled bool
 	catalog      *catalog.Catalog
-	consoleURL   string
-	draining     <-chan struct{}
+	// packages and refresher are the approval's two views of the catalog
+	// (appsetup.go): nil where the server ships no catalog, so a plan
+	// offers nothing rather than reading a nil catalog through an
+	// interface.
+	packages   appsetup.Catalog
+	refresher  packageRefresher
+	consoleURL string
+	draining   <-chan struct{}
 	// The authorization flow's state, all of it in memory: the parked
 	// requests and codes, the document fetcher, and the per-address pace on
 	// the three bearer-less endpoints, kept apart from the door's limiter so
@@ -181,10 +195,22 @@ func New(cfg Config) http.Handler {
 		verifier:     cfg.Publishers,
 		parkRate:     newRateLimiter(interval, now),
 		publicURL:    strings.TrimRight(cfg.PublicURL, "/"),
-		setups:       appsetup.NewRunner(cfg.Catalog),
+		packages:     cfg.Packages,
+		refresher:    cfg.PackageRefresher,
 		setUpEnded:   cfg.setUpEnded,
 		checkTurns:   newCheckTurns(maxCheckPlans),
 	}
+	if h.packages == nil && cfg.Catalog != nil {
+		h.packages = cfg.Catalog
+	}
+	if h.refresher == nil && cfg.Catalog != nil {
+		// The catalog refreshes once it reads authority documents; a build
+		// whose catalog does not is a server whose checks refresh nothing.
+		if r, ok := any(cfg.Catalog).(packageRefresher); ok {
+			h.refresher = r
+		}
+	}
+	h.setups = appsetup.NewRunner(h.packages)
 	if h.fetcher == nil {
 		h.fetcher = authorize.NewFetcher(now)
 	}

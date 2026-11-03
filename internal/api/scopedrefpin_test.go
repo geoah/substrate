@@ -1,9 +1,7 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -69,52 +67,5 @@ func TestScopedRefPinTraitNeedsEveryImplementerReadable(t *testing.T) {
 		[]string{"write:" + refPinBadgeKind, "read:" + taskKind, "read:" + personKind})
 	if got := put(both, taskKind+"/c1"); got != http.StatusOK && got != http.StatusCreated {
 		t.Fatalf("a mirror's path under a grant reading every implementer answered %d", got)
-	}
-}
-
-// A declared title template that reads through a reference copies the
-// referent's title or property into the record's title, so an app declares
-// one only over a reference whose every possible target it reads.
-func TestScopedRefPinDeclaredTemplateReadsOnlyReadableTargets(t *testing.T) {
-	e := newAppEnv(t)
-	e.withRefPinBadge()
-	pkg := fakeRepository + "/training"
-	scopes := "declare:~/training write:~/training/*"
-	granted := []string{"declare:" + pkg, "write:" + pkg + "/*"}
-	blind := e.grant(scopes, granted)
-	reader := e.grant(scopes+" read:"+personKind, append(granted, "read:"+personKind))
-	apply := func(app, template string) *httptest.ResponseRecorder {
-		doc := map[string]any{
-			"kind": corePackage + "/kind", "metadata": map[string]any{"id": pkg + "/note"},
-			"data": map[string]any{
-				"displayTemplate": template,
-				"properties": map[string]any{
-					"text":    map[string]any{"type": "string"},
-					"person":  map[string]any{"type": "reference", "kind": personKind},
-					"people":  map[string]any{"type": "reference", "kind": personKind, "repeated": true},
-					"named":   map[string]any{"type": "reference", "trait": refPinTrait},
-					"about":   map[string]any{"type": "reference", "kind": "any"},
-					"anybody": map[string]any{"type": "reference"},
-				},
-			},
-		}
-		raw, _ := json.Marshal(map[string]any{"documents": []any{doc}})
-		return e.do(http.MethodPost, "/api/v1/vocabulary/apply", app, raw, "application/json")
-	}
-	for _, template := range []string{"{person.privateNote}", "{person}", "{people[].privateNote}", "{text|person}", "{named.privateNote}"} {
-		if rec := apply(blind, template); rec.Code != http.StatusForbidden {
-			t.Errorf("%s by a grant that cannot read the target: %d %s, want 403", template, rec.Code, rec.Body.String())
-		}
-		if rec := apply(reader, template); rec.Code != http.StatusOK {
-			t.Errorf("%s by a grant that reads the target: %d %s, want 200", template, rec.Code, rec.Body.String())
-		}
-	}
-	for _, template := range []string{"{about}", "{anybody.name}"} {
-		if rec := apply(reader, template); rec.Code != http.StatusForbidden {
-			t.Errorf("%s over an unpinned reference: %d %s, want 403", template, rec.Code, rec.Body.String())
-		}
-	}
-	if rec := apply(blind, "{text}"); rec.Code != http.StatusOK {
-		t.Errorf("a template reading no reference: %d %s, want 200", rec.Code, rec.Body.String())
 	}
 }

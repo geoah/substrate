@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -33,18 +32,18 @@ const (
 // it ran.
 var errMoved = errors.New("what approving sets up changed after the approval")
 
-// Runner runs approvals' set ups against the binary's catalog, one per
-// repository at a time.
+// Runner runs approvals' set ups against the catalog, one per repository at
+// a time.
 type Runner struct {
-	catalog *catalog.Catalog
+	catalog Catalog
 	// turns is each repository's one slot, by authority: two set ups that
 	// installed the same requirement at once would each replace what the
 	// other landed.
 	turns sync.Map
 }
 
-// NewRunner builds a runner over cat; nil ships nothing.
-func NewRunner(cat *catalog.Catalog) *Runner { return &Runner{catalog: cat} }
+// NewRunner builds a runner over cat; nil offers nothing.
+func NewRunner(cat Catalog) *Runner { return &Runner{catalog: cat} }
 
 // Outcome is how a run ended.
 type Outcome struct {
@@ -186,8 +185,10 @@ func Moved(approved, now []substrate.AuthorizationSetup) int {
 }
 
 // setUpRow runs one row: a package through the catalog's own install door,
-// requirements first, as from the provider page; an account created once; a
-// webhook turned on, held to the package the approved row named.
+// which resolves it as the plan did, through the binary's closures and the
+// authority documents, requirements first, as from the provider page; an
+// account created once; a webhook turned on, held to the package the
+// approved row named.
 func (r *Runner) setUpRow(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, d substrate.AuthorizationDetail, approved substrate.AuthorizationSetup) error {
 	switch d.Type {
 	case substrate.DetailPackage:

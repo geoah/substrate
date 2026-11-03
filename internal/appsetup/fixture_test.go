@@ -362,7 +362,7 @@ func webhookDetail(trigger string) substrate.AuthorizationDetail {
 	return substrate.AuthorizationDetail{Type: substrate.DetailWebhook, Trigger: trigger}
 }
 
-func plan(t *testing.T, ds substrate.Dataset, cat *catalog.Catalog, details ...substrate.AuthorizationDetail) []substrate.AuthorizationSetup {
+func plan(t *testing.T, ds substrate.Dataset, cat Catalog, details ...substrate.AuthorizationDetail) []substrate.AuthorizationSetup {
 	t.Helper()
 	rows, _, err := Plan(context.Background(), ds, cat, details, Options{})
 	if err != nil {

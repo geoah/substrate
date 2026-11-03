@@ -16,12 +16,11 @@
 // the second decides the change requests their threads proposed. Neither
 // reads or writes a kind through the rules of read and write.
 //
-// `declare:~/<package>` (decision 0203) lets an app keep the declarations of
-// one package of the repository's own authority: apply its package, bundle
-// and kind documents, and read its package and bundle rows, so an app that
-// brings its own kinds installs and upgrades them. Never a glob, never a
-// package under another authority, and never code: functions, triggers,
-// agents and mappings stay the owner's to declare.
+// `declare:` is retired (decision 0214): an app that brings its own kinds
+// publishes them as a package its approval installs, through a `package`
+// authorization detail. A request naming the verb is refused with words that
+// say so, and a stored token carrying it fails closed, so the app signs in
+// again.
 //
 // `full` (decision 0204) is a scope with no pattern, asked for alone: the
 // owner hands the app everything a password sign-in gets, through the same
@@ -42,7 +41,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -61,13 +59,16 @@ const (
 	// Webhook delivers to one webhook trigger with the token, and reads that
 	// trigger's parked deliveries.
 	Webhook Verb = "webhook"
-	// Declare keeps the declarations of one package of the repository's own
-	// authority (decision 0203).
-	Declare Verb = "declare"
 	// Full is everything the owner's own token does. A request names it
 	// alone, as the bare word `full`.
 	Full Verb = "full"
 )
+
+// retiredDeclare is the verb decision 0203 gave an app to keep a package of
+// its own, retired by decision 0214. Both doors refuse it by name, so an app
+// built against the old grammar is told what replaced it rather than that
+// the verb is unknown.
+const retiredDeclare = "declare"
 
 // FullScope is the one scope of the Full verb.
 var FullScope = Scope{Verb: Full}
@@ -137,8 +138,10 @@ func WebhookScope(trigger string) Scope { return Scope{Verb: Webhook, Pattern: t
 // The verbs a stored scope may carry, and the four of them a request may ask
 // for, as a refusal names them.
 const (
-	storedVerbs    = "read, write, agents, decide, declare or webhook"
-	requestedVerbs = "read, write, agents, decide or declare, or `full` alone"
+	storedVerbs    = "read, write, agents, decide or webhook"
+	requestedVerbs = "read, write, agents or decide, or `full` alone"
+	// retiredDeclareWords is what both doors say of the retired verb.
+	retiredDeclareWords = "`declare:` is retired (decision 0214): an app that needs a package of its own installed names it in a `package` authorization detail, published under its authority"
 )
 
 // Parse reads one scope, in a request or as stored: `~` is allowed, and
@@ -150,7 +153,9 @@ func Parse(raw string) (Scope, error) {
 	}
 	s := Scope{Verb: Verb(verb), Pattern: pattern}
 	switch s.Verb {
-	case Read, Write, Agents, Decide, Declare, Webhook:
+	case Read, Write, Agents, Decide, Webhook:
+	case retiredDeclare:
+		return Scope{}, fmt.Errorf("scope %q: %s", raw, retiredDeclareWords)
 	default:
 		return Scope{}, fmt.Errorf("scope %q: %q is not %s", raw, verb, storedVerbs)
 	}
@@ -163,8 +168,6 @@ func Parse(raw string) (Scope, error) {
 		if !vocabulary.ValidTriggerID(s.Pattern) {
 			problem = "is not one trigger's id"
 		}
-	case s.Verb == Declare:
-		problem = declarePatternProblem(s)
 	case s.OverAgents():
 		problem = agentPatternProblem(s)
 	default:
@@ -232,25 +235,6 @@ func agentPatternProblem(s Scope) string {
 	return ""
 }
 
-// declarePatternProblem holds a declare pattern to one package,
-// `<authority>/<package>`, never a glob. The authority is `~` in a request
-// (ParseRequest) and the repository's own once stored, which the grant is
-// held to where it is used (DeclaresIn).
-func declarePatternProblem(s Scope) string {
-	p := s.Pattern
-	if s.HomeRelative() {
-		p = homeStandIn + p[len(Home):]
-	}
-	if strings.Contains(p, Home) {
-		return "puts `~` somewhere other than the authority"
-	}
-	authority, pkg := vocabulary.SplitPackageRef(p)
-	if authority == "" || !vocabulary.ValidAuthority(authority) || !vocabulary.ValidPackage(pkg) {
-		return "is not one package: `~/<package>`"
-	}
-	return ""
-}
-
 // writesUnwritable reports whether a write pattern names an unwritable
 // package outright: one of its kinds, or the package glob. A wider glob
 // (`substrate.reamde.dev/*`, `*`) is admissible; matching skips those
@@ -298,13 +282,8 @@ func ParseRequest(param string) ([]Scope, error) {
 		verb, _, ok := strings.Cut(raw, ":")
 		switch Verb(verb) {
 		case Read, Write, Agents, Decide:
-		case Declare:
-			// An app declares in the owner's own namespace and nowhere else:
-			// a package under another authority would read as somebody
-			// else's vocabulary.
-			if _, pattern, _ := strings.Cut(raw, ":"); !strings.HasPrefix(pattern, Home+"/") {
-				return nil, fmt.Errorf("scope %q: an app declares only a package of the repository's own authority, `declare:~/<package>`", raw)
-			}
+		case retiredDeclare:
+			return nil, fmt.Errorf("scope %q: %s", raw, retiredDeclareWords)
 		case Webhook:
 			return nil, fmt.Errorf("scope %q: an app asks for a webhook with a `webhook` authorization detail, never in scope", raw)
 		default:
@@ -361,9 +340,6 @@ func CheckStored(scopes []string) error {
 // Grant is a stored token's scopes, ready to answer what one request may do.
 type Grant struct {
 	scopes []Scope
-	// agents are the agents the token's owner approved its app to declare
-	// (agent.go), carried beside the scopes and never read as one.
-	agents []substrate.AgentApproval
 }
 
 // NewGrant parses a token's stored scopes. A stored list that does not parse
@@ -403,17 +379,6 @@ func (g Grant) Reads(kind string, internal bool) bool {
 	})
 }
 
-// DeclaresIn reports whether the grant keeps the declarations of the package
-// pkg (`<authority>/<package>`) in the repository whose authority is home: a
-// declare scope names it, and it is home's own.
-func (g Grant) DeclaresIn(pkg, home string) bool {
-	authority, _ := vocabulary.SplitPackageRef(pkg)
-	if pkg == "" || home == "" || authority != home {
-		return false
-	}
-	return slices.ContainsFunc(g.scopes, func(s Scope) bool { return s.Verb == Declare && s.Pattern == pkg })
-}
-
 // Delivers reports whether the grant delivers to the webhook trigger whose
 // id is trigger, and reads its parked deliveries.
 func (g Grant) Delivers(trigger string) bool {
@@ -423,7 +388,7 @@ func (g Grant) Delivers(trigger string) bool {
 }
 
 // NamesPackage reports whether one of the grant's read or write scopes names
-// a kind of the package pkg, or a declare scope names the package itself (`<authority>/<package>`): exactly, or by a glob
+// a kind of the package pkg (`<authority>/<package>`): exactly, or by a glob
 // that covers the package. It is what decides whether a token may learn the
 // versions of a package its app needs set up, so the agent verbs and
 // `webhook:` never count.
@@ -432,9 +397,6 @@ func (g Grant) NamesPackage(pkg string) bool {
 		return false
 	}
 	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
-		if s.Verb == Declare {
-			return s.Pattern == pkg
-		}
 		if s.Verb != Read && s.Verb != Write {
 			return false
 		}

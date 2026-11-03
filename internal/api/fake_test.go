@@ -336,9 +336,11 @@ type fakeDataset struct {
 	lastVocabularyDocs []map[string]any
 	// lastConfirm is the consent the confirmed apply verb received; plan is
 	// what the preview answers.
-	lastConfirm    *substrate.ConversionConfirm
-	lastOrigin     string
-	lastTakeover   []string
+	lastConfirm  *substrate.ConversionConfirm
+	lastOrigin   string
+	lastTakeover []string
+	// builds are what RecordAppBuild was told, in order.
+	builds         []recordedBuild
 	plan           substrate.VocabularyPlan
 	lastDeleteType string
 	lastDeleteID   string
@@ -1460,8 +1462,20 @@ func (d *fakeDataset) MarkDomainVerified(context.Context) (time.Time, error) {
 	return at, nil
 }
 
-func (d *fakeDataset) RecordAppBuild(context.Context, map[string]int64, string) error {
-	return d.fail("RecordAppBuild")
+// recordedBuild is one RecordAppBuild call: the floors and the version.
+type recordedBuild struct {
+	packages map[string]int64
+	version  string
+}
+
+func (d *fakeDataset) RecordAppBuild(_ context.Context, packages map[string]int64, version string) error {
+	if err := d.fail("RecordAppBuild"); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.builds = append(d.builds, recordedBuild{packages: packages, version: version})
+	return nil
 }
 
 // The two Service doors that carry no bearer. This fake resolves neither a

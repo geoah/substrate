@@ -34,6 +34,15 @@ var ErrNotPublished = errors.New("not published")
 // when the binary ships it.
 func (b *Bundle) Origin() *Origin { return b.origin }
 
+// FromDocument is b as the authority document at origin published it: the
+// same closure, answering Origin. The document reader builds every version it
+// resolves this way, and a test of a reader of Origin builds one from a root.
+func (b *Bundle) FromDocument(origin Origin) *Bundle {
+	cp := *b
+	cp.origin = &origin
+	return &cp
+}
+
 // Resolve answers the bundle id names: the closure the binary ships when it
 // ships id, whatever its version, so the caller compares it with atLeast;
 // otherwise the newest version id's authority document lists at atLeast or

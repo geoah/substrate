@@ -846,9 +846,6 @@ type vocabularyStage struct {
 	// reader of a renamed name (renameGuards).
 	conversions      conversionPlan
 	conversionGuards []string
-	// appDependents names each app's package the batch would leave without
-	// a package it requires (appowned.go appDependentGuards, decision 0205).
-	appDependents []string
 }
 
 // guards is every refuse-breakage guard line the staged batch refuses on, read
@@ -869,7 +866,6 @@ func (st *vocabularyStage) guards(q sqlReader) ([]string, error) {
 	// rules, which is a license no repository token holds. A batch that would
 	// imply one is refused, naming the key.
 	guards = append(guards, st.moveRefusals...)
-	guards = append(guards, st.appDependents...)
 	narrowed, err := narrowingGuards(q, st.narrowings)
 	if err != nil {
 		return nil, err
@@ -950,14 +946,6 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 				if err := authorizeNewPackage(*actor, stored, ds.scope.Repository, g); err != nil {
 					return nil, err
 				}
-			}
-			owner, err := ds.packageOwner(ctx, ds.db, g)
-			if err != nil {
-				return nil, err
-			}
-			_, held := current.PackageByName(g)
-			if err := authorizeAppOwnedWrite(*actor, substrate.ClientIDFrom(ctx), owner, held, g); err != nil {
-				return nil, err
 			}
 		}
 		// An actor's id does not embed its authority (alone among the kinds), so a
@@ -1063,14 +1051,6 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	if err := candidate.InstallAll(rebuilt); err != nil {
 		return nil, err
 	}
-	// An app's package the batch leaves without a package it requires: the
-	// app's package is not touched, so nothing rebuilds it to notice
-	// (decision 0205).
-	owned, err := ds.appOwnedPackages(ctx, ds.db)
-	if err != nil {
-		return nil, err
-	}
-	appDependents := appDependentGuards(owned, candidate, touched)
 	// A declared default is stored by the write path, so it is refused here on
 	// the terms the write path would refuse it on.
 	if defaults := checkDeclaredDefaults(ds.coercer(), candidate, touched); len(defaults) > 0 {
@@ -1151,7 +1131,6 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// here (admitConversion).
 		conversions:      conversions,
 		conversionGuards: renameGuards(current, candidate, conversions.renames),
-		appDependents:    appDependents,
 	}, nil
 }
 
@@ -1586,9 +1565,11 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 // propPackageDeclaredBy is the actor that first declared a package (decision
 // record 0109). `managed` on the core `package` kind and no document key, so
 // no document can write it and `engineOwned` keeps it across every later
-// re-projection. propPackageDeclaredByClient is the full client id beside an
-// app's host-only actor, and propPackageTakenOverFrom the app a takeover took
-// the package from (decision 0205); both are managed the same way.
+// re-projection. propPackageTakenOverFrom is the app a takeover took the
+// package from, and propPackageDeclaredByClient the client id an earlier
+// binary stamped beside an app's actor (decision 0205, retired by 0214: no
+// path writes it now, and a takeover clears it); both are managed the same
+// way.
 const (
 	propPackageDeclaredBy       = substrate.PackageDeclaredBy
 	propPackageDeclaredByClient = substrate.PackageDeclaredByClient
@@ -1606,12 +1587,6 @@ const (
 // that does not declare the property: a repository whose shipped upgrade a
 // guard withheld, or a server seeded from an older tree as the upgrade drills
 // are, validates the row against that older kind, which would refuse it.
-//
-// An app's declaration stamps its full client id beside its actor (decision
-// 0205), and so does the first write by an app on the same host into a row an
-// app declared before the client id was stamped: the chokepoint admitted it
-// as that host's claim (substrate.PackageOwner.Admits), and from this write
-// on only that client id is the owner.
 func (t *txn) stampDeclaredBy(ty *vocabulary.Kind, d declaration, props map[string]any) error {
 	if ty == nil || ty.Props[propPackageDeclaredBy] == nil {
 		return nil
@@ -1620,23 +1595,10 @@ func (t *txn) stampDeclaredBy(ty *vocabulary.Kind, d declaration, props map[stri
 	if err != nil {
 		return err
 	}
-	if t.actor == "" {
-		return nil
-	}
-	client := ""
-	if substrate.IsAppActor(t.actor) && ty.Props[propPackageDeclaredByClient] != nil {
-		client = substrate.ClientIDFrom(t.ctx)
-	}
-	if row != nil && row.DeletedAt == nil {
-		if _, claim := substrate.PackageOwnerOf(row.Props).Admits(t.actor, client); claim {
-			props[propPackageDeclaredByClient] = client
-		}
+	if t.actor == "" || (row != nil && row.DeletedAt == nil) {
 		return nil
 	}
 	props[propPackageDeclaredBy] = string(t.actor)
-	if client != "" {
-		props[propPackageDeclaredByClient] = client
-	}
 	return nil
 }
 

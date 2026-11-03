@@ -77,8 +77,9 @@ func (d *mintingDataset) MintToken(_ context.Context, in substrate.MintTokenInpu
 	secret := fmt.Sprintf("substrate_tok_app%d", n)
 	info := substrate.TokenInfo{
 		ID: fmt.Sprintf("app%d", n), Label: in.Label, Created: time.Unix(0, 0).UTC(),
-		ExpiresAt: in.ExpiresAt, Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName, Agents: in.Agents,
+		ExpiresAt: in.ExpiresAt, Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName,
 		AppAuthority: in.AppAuthority, AppAuthorityFromFile: in.AppAuthorityFromFile, AppLocal: in.AppLocal,
+		AppPackages: in.AppPackages, AppSoftwareVersion: in.AppSoftwareVersion,
 	}
 	d.svc.tokens[secret] = fakeToken{repository: d.repository.Authority, info: info}
 	return info, secret, nil
@@ -1268,52 +1269,3 @@ func TestASecondFullRequestReadsAsAllowedBefore(t *testing.T) {
 // still be approved. A package the app itself declared is a renewal, and
 // one an app on its host declared before the client id was stamped is its
 // to claim.
-func TestADeclareScopeOverAPackageTheAppCannotKeepIsRefused(t *testing.T) {
-	pkg := fakeRepository + "/training"
-	declare := "declare:" + pkg
-	read := "read:" + personKind
-	for name, tc := range map[string]struct {
-		props map[string]any
-		want  string
-	}{
-		"nobody holds it":   {},
-		"the owner's":       {props: map[string]any{"declaredBy": "console"}, want: "is your package"},
-		"taken over":        {props: map[string]any{"declaredBy": "console", "takenOverFrom": "https://notes.example.org/client.json"}, want: "taken over from https://notes.example.org/client.json"},
-		"another host's":    {props: map[string]any{"declaredBy": "app:workouts.example.org", "declaredByClient": "https://workouts.example.org/client.json"}, want: "another app, https://workouts.example.org/client.json"},
-		"the same host's":   {props: map[string]any{"declaredBy": "app:notes.example.org", "declaredByClient": "https://notes.example.org/other/client.json"}, want: "another app, https://notes.example.org/other/client.json"},
-		"this app's":        {props: map[string]any{"declaredBy": "app:notes.example.org", "declaredByClient": appClientID}},
-		"its host's, older": {props: map[string]any{"declaredBy": "app:notes.example.org"}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			e := newAppEnv(t)
-			if tc.props != nil {
-				e.svc.datasets[fakeRepository].records[pkg] = &substrate.Record{Kind: corePackage + "/package", ID: pkg, Properties: tc.props}
-			}
-			id := e.park(appRequest("declare:~/training " + read))
-			page := decodeJSON[substrate.AuthorizationRequest](t, e.show(id))
-			var refused string
-			for _, s := range page.Scopes {
-				if s.Scope == declare {
-					refused = s.Refused
-				}
-			}
-			if tc.want == "" {
-				if refused != "" {
-					t.Fatalf("the page refuses the declare scope: %s", refused)
-				}
-				wantStatus(t, e.approveShown(id, []string{declare, read}, 30), http.StatusOK)
-				return
-			}
-			if !strings.Contains(refused, tc.want) {
-				t.Fatalf("the page's refusal = %q, want it to say %q", refused, tc.want)
-			}
-			rec := e.approveShown(id, []string{declare, read}, 30)
-			wantStatus(t, rec, http.StatusForbidden)
-			if !strings.Contains(rec.Body.String(), tc.want) {
-				t.Errorf("the approval's refusal = %s, want it to say %q", rec.Body.String(), tc.want)
-			}
-			// The request is handed back, and the rest of it approves.
-			wantStatus(t, e.approveShown(id, []string{read}, 30), http.StatusOK)
-		})
-	}
-}
