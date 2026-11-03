@@ -533,6 +533,38 @@ describe("providerStanding", () => {
     ).toBe("An update couldn’t be checked")
   })
 
+  it("names the connected app builds holding an update back, and a publisher it could not read", () => {
+    const line =
+      'Workouts (https://workouts.example.com/client.json), build "2.1", asks for version 3; no check-in recorded'
+    const s = providerStanding({
+      ...base,
+      upgradeBlockers: [
+        line,
+        "training/session: 3 records still hold nickname",
+      ],
+      upgradeHolders: [
+        {
+          clientName: "Workouts",
+          clientId: "https://workouts.example.com/client.json",
+          softwareVersion: "2.1",
+          floor: 3,
+        },
+      ],
+    })
+    expect(s.line).toBe("An update is waiting on connected app builds")
+    expect(s.problems[0].detail).toEqual([
+      "Workouts build 2.1 asks for version 3; no check-in recorded",
+      "training/session: 3 records still hold nickname",
+    ])
+    expect(
+      providerStanding({
+        ...base,
+        upgradeBlockers: ["the publisher no longer lists held version 3"],
+        upgradePublisherUnread: true,
+      }).problems[0].summary
+    ).toBe("An update couldn’t be checked against its publisher’s document")
+  })
+
   it("counts the parked runs of its triggers and offers to retry them", () => {
     const s = providerStanding({
       ...base,

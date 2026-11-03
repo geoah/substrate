@@ -1,4 +1,3 @@
-import { OAuthHosts } from "@/components/packages/outside-code"
 /** One setup row on the approval page (docs/plans/app-setup.md): what
  * approving installs, updates, creates or turns on, by its name, versions
  * and description, with the code it and what it brings first run, the
@@ -16,6 +15,7 @@ import {
   CircleXIcon,
   DownloadIcon,
   ExternalLinkIcon,
+  HourglassIcon,
   PlusIcon,
   ZapIcon,
 } from "lucide-react"
@@ -44,6 +44,7 @@ import {
   grantWords,
   keptWords,
   networkWords,
+  oauthHostWords,
   packageName,
   packagePage,
   propertyLabel,
@@ -61,6 +62,8 @@ const ACTION_ICONS: Partial<Record<SetupAction, typeof CheckIcon>> = {
   create: PlusIcon,
   enable: ZapIcon,
   none: CheckIcon,
+  // A waiting add-on runs nothing now; the check is for what is in place.
+  wait: HourglassIcon,
 }
 
 const PROGRESS_WORDS: Record<SetupProgress, string> = {
@@ -132,6 +135,20 @@ function Facts({ children }: { children: ReactNode }) {
 
 function version(n: number | undefined): string {
   return n ? `version ${n}` : "none"
+}
+
+/** Hosts in a line, each whole. */
+function Hosts({ hosts }: { hosts: readonly string[] }) {
+  return (
+    <>
+      {hosts.map((host, i) => (
+        <span key={host}>
+          {i > 0 && ", "}
+          <Mono>{host}</Mono>
+        </span>
+      ))}
+    </>
+  )
 }
 
 /** A list of references, one per line. */
@@ -340,7 +357,12 @@ function StepFacts({ step }: { step: AuthorizationPackageStep }) {
       {step.blocked && (
         <p className="text-destructive">{asSentence(step.blocked.problem)}</p>
       )}
-      <OAuthHosts hosts={step.oauthHosts} />
+      {step.oauthHosts && step.oauthHosts.length > 0 && (
+        <p>
+          <span className="text-muted-foreground">OAuth hosts </span>
+          <Hosts hosts={step.oauthHosts} />
+        </p>
+      )}
       <OwnFacts facts={step} of={name} />
     </li>
   )
@@ -355,7 +377,11 @@ function PackageFacts({ pkg }: { pkg: AuthorizationPackage }) {
       </Term>
       {pkg.tier && <Term name="Tier">{pkg.tier}</Term>}
       <Term name="The app needs">version {pkg.required} or later</Term>
-      <OAuthHosts hosts={pkg.oauthHosts} />
+      {pkg.oauthHosts && pkg.oauthHosts.length > 0 && (
+        <Term name="OAuth hosts">
+          <Hosts hosts={pkg.oauthHosts} />
+        </Term>
+      )}
       <Term name="You hold">{version(pkg.held)}</Term>
       <Term name={pkg.publisher ? "Its publisher lists" : "This server ships"}>
         {version(pkg.shipped)}
@@ -446,6 +472,7 @@ export function SetupRow({
   grantHeld,
   failure,
   technical,
+  children,
 }: {
   row: AuthorizationSetup
   /** The triggers the request leaves on, so a package whose webhook is one
@@ -457,6 +484,9 @@ export function SetupRow({
   /** Why the set up stopped at this row, when it did. */
   failure: string | undefined
   technical: boolean
+  /** The choices the row takes: a package's provider inputs, its settings
+   * and whether an add-on is included, kept inside the row they belong to. */
+  children?: ReactNode
 }) {
   const title = setupTitle(row)
   const status = statusWords(row)
@@ -465,6 +495,7 @@ export function SetupRow({
   const kept = keptWords(row)
   const code = row.package && codeWords(row.package, webhooks)
   const network = row.package && networkWords(row.package)
+  const signIn = row.package && oauthHostWords(row.package)
   const reach = row.package && reachWords(row.package)
   const chain = row.package ? chainLines(row.package, webhooks) : []
   const inPlace = row.action === "none"
@@ -488,6 +519,7 @@ export function SetupRow({
         )}
         {code && <p className="text-xs">{code}</p>}
         {network && <p className="text-xs">{network}</p>}
+        {signIn && <p className="text-xs">{signIn}</p>}
         {reach && <p className="text-xs">{reach}</p>}
         {chain.map((line) => (
           <p key={line} className="text-xs">
@@ -542,6 +574,7 @@ export function SetupRow({
         {failure && (
           <p className="text-xs text-destructive">{asSentence(failure)}</p>
         )}
+        {children}
         {technical && (
           <div className="pt-1">
             {row.package && <PackageFacts pkg={row.package} />}
