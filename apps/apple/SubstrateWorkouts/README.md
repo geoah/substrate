@@ -27,7 +27,7 @@ Dynamic Island.
 
 ```bash
 mise run apple:build:workouts     # the app for the simulator
-mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (569 tests, on the Mac)
+mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (561 tests, on the Mac)
 mise run apple:release:workouts   # archived, signed and published under workouts/
 uv run --with pyyaml apps/apple/scripts/workouts-package.py   # the package's manifests into the app's JSON
 uv run --with pyyaml apps/apple/scripts/exercise-library.py   # the exercise library into the app's JSON
@@ -293,10 +293,11 @@ observations would ask every user for a new scope.
 
 `mise run apple:test:workouts` checks the generated JSON against its YAML,
 then runs both suites on the Mac (CI runs the check, in the `lint` job, and
-not the suites: no workflow builds the Apple apps): WorkoutsCore's 465 (the codec, the engine,
+not the suites: no workflow builds the Apple apps): WorkoutsCore's 470 (the codec, the engine,
 the suggestions against their vectors, the presenters, the stores, the sample
 routine's methods and a session through it to Finish, and the Hevy import
-against `Tests/WorkoutsCoreTests/Fixtures/hevy`, the API's shape included, and the exercise library) and WorkoutsSync's 104:
+against `Tests/WorkoutsCoreTests/Fixtures/hevy`, the API's shape included, and the exercise library, and the files the last release left in the `~/training`
+spelling read back once) and WorkoutsSync's 91:
 the sample written once and never again after a delete, on a second phone or a
 reinstall, a refused sample write that stops nothing, a session logged signed
 out finding its exercises, a routine's delete through the outbox and during a
@@ -308,7 +309,8 @@ delete, a discard, a reset and a new write while a write is in flight, a
 failed save and an unreadable file, parked writes, the history exchange, the
 package check (missing, behind and asked through the set up check, current),
 the published manifests, the coach's closure and the scopes held to its reach
-(`CoachTests`), and the sign-in request and status.
+(`CoachTests`), an account folder from the `~/training` spelling read, rewritten and
+sent to the published paths, and the sign-in request and status.
 
 `LiveServerTests` runs the whole path against a real substrate when told
 where (one that reads the publisher's authority document, live or through
