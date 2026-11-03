@@ -17,9 +17,23 @@ const navigate = vi.fn().mockResolvedValue(undefined)
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigate,
+  Link: ({
+    children,
+    params,
+  }: {
+    children?: React.ReactNode
+    params?: { actorId?: string }
+  }) => <a href={`/actors/${params?.actorId ?? ""}`}>{children}</a>,
 }))
 
-import { ApiTokens, AppTokenRows, SignedInRows, tokenWords } from "./tokens"
+import {
+  ApiTokens,
+  AppTokenRows,
+  appActor,
+  appPublisher,
+  SignedInRows,
+  tokenWords,
+} from "./tokens"
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -181,6 +195,49 @@ describe("Signed in and API tokens", () => {
     expect(screen.queryByText("apps.example.com")).toBeNull()
   })
 
+  it("says who publishes an app, what it writes as, its build and the packages it needs", async () => {
+    const workouts = {
+      id: "tok-workouts",
+      label: "substrate.example.org",
+      createdAt: "2026-08-12T00:00:00Z",
+      scopes: ["write:example.org/training/*"],
+      clientId: "https://substrate.example.org/apps/workouts/client.json",
+      clientName: "Substrate Workouts",
+      appAuthority: "substrate.example.org",
+      appPackages: { "example.org/training": 5, "example.org/health": 1 },
+      appSoftwareVersion: "0.114.2 (20261103.083106)",
+      appCheckedAt: "2026-08-12T01:00:00Z",
+      appAddons: [
+        {
+          package: "example.org/coach",
+          version: 2,
+          addonFor: "example.org/whoop",
+        },
+      ],
+    }
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(200, { items: [workouts] })
+    )
+    renderWithClient(<AppTokenRows />)
+    const facts = await screen.findByLabelText(
+      "What substrate.example.org can do"
+    )
+    expect(within(facts).getByText("Publisher")).toBeTruthy()
+    expect(within(facts).getByText(/^Verified: its DNS record/)).toBeTruthy()
+    expect(within(facts).getByText("app:substrate.example.org")).toBeTruthy()
+    expect(
+      within(facts).getByText("See what it changed").getAttribute("href")
+    ).toBe("/actors/app:substrate.example.org")
+    expect(within(facts).getByText("0.114.2 (20261103.083106)")).toBeTruthy()
+    const packages = within(facts).getByLabelText(
+      "Packages substrate.example.org needs"
+    )
+    expect(within(packages).getByText("example.org/training")).toBeTruthy()
+    expect(within(packages).getByText("version 5 or later")).toBeTruthy()
+    expect(within(facts).getByText("example.org/coach")).toBeTruthy()
+    expect(within(facts).getByText("example.org/whoop")).toBeTruthy()
+  })
+
   it("says so when no app holds a token", async () => {
     fetchMock.mockImplementation(async () =>
       jsonResponse(200, { items: TOKENS.filter((t) => !("scopes" in t)) })
@@ -314,5 +371,35 @@ describe("tokenWords", () => {
         now
       ).title
     ).toBe("Another browser")
+  })
+})
+
+describe("appPublisher and appActor", () => {
+  const base = {
+    id: "t",
+    label: "x",
+    createdAt: "2026-08-12T00:00:00Z",
+    clientId: "https://notes.example.com/client.json",
+  }
+  it("names what the approval proved, and the actor that follows from it", () => {
+    expect(appPublisher({ ...base, appAuthority: "example.org" }).how).toMatch(
+      /^Verified/
+    )
+    expect(
+      appPublisher({
+        ...base,
+        appAuthority: "example.org",
+        appAuthorityFromFile: true,
+      }).how
+    ).toMatch(/file this server reads/)
+    expect(appPublisher({ ...base, appLocal: true }).who).toBe(
+      "A program on your own device"
+    )
+    expect(appPublisher(base).who).toBe("Not verified")
+    expect(appActor({ ...base, appAuthority: "example.org" })).toBe(
+      "app:example.org"
+    )
+    expect(appActor({ ...base, appLocal: true })).toBe("app:local")
+    expect(appActor(base)).toBe("app:notes.example.com")
   })
 })
