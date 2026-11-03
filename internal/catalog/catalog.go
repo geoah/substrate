@@ -23,8 +23,8 @@
 // bundle's own upgrade/refuse-breakage semantics — the whole-package re-apply
 // — so it is idempotent by construction.
 //
-// The catalog is the set of closures baked into the binary: there is no
-// remote-URL install, and nothing installs a chosen version.
+// Document-published packages resolve through the authority reader; binary
+// entries always take precedence over a document (decision 0212).
 package catalog
 
 import (
@@ -39,6 +39,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/geoah/substrate/internal/authority"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -109,6 +110,7 @@ func (b *Bundle) HeldID(held map[string]bool, homeAuthority string) string {
 
 // Catalog is the parsed set of shipped bundles, indexed by id.
 type Catalog struct {
+	reader  *authority.Reader
 	bundles []*Bundle
 	byID    map[string]*Bundle
 	// warnings names the shipped directories that failed to parse — a
@@ -146,6 +148,15 @@ func Load(roots ...Root) (*Catalog, error) {
 	}
 	sort.Slice(c.bundles, func(i, j int) bool { return c.bundles[i].ID < c.bundles[j].ID })
 	return c, nil
+}
+
+// LoadWithReader adds document-published packages to the binary catalog.
+func LoadWithReader(reader *authority.Reader, roots ...Root) (*Catalog, error) {
+	c, err := Load(roots...)
+	if err == nil {
+		c.reader = reader
+	}
+	return c, err
 }
 
 // Root is one shipped tree and the tier every closure in it takes.
@@ -420,9 +431,9 @@ type Unmet struct {
 // reader cannot disagree with either. Unmet is what the same walk passed over
 // as nothing it can install, which the install's admission refuses on.
 func (c *Catalog) Requirements(ctx context.Context, id string, ds substrate.Dataset) ([]*Bundle, []Unmet, error) {
-	b, ok := c.byID[id]
-	if !ok {
-		return nil, nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	b, err := c.ResolveFor(ctx, id, 0, ds)
+	if err != nil {
+		return nil, nil, err
 	}
 	return c.walkRequirements(ctx, b, ds)
 }
@@ -453,7 +464,7 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 // preview (Upgrade) answered. The engine refuses a lossy plan without one, or
 // with one for another plan; a lossless plan ignores it.
 func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*Bundle, []substrate.SuggestedMapping, error) {
-	b, err := c.installable(actor, id)
+	b, err := c.installable(ctx, actor, id, ds)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -502,9 +513,41 @@ func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, i
 }
 
 func (c *Catalog) installed(ctx context.Context, b *Bundle, ds substrate.Dataset, confirm *substrate.ConversionConfirm) ([]substrate.SuggestedMapping, error) {
+	var expected int64
+	var narrows bool
+	if b.origin != nil {
+		row, err := ds.Get(ctx, vocabulary.PackageCore+"/package", b.ID)
+		if err != nil && !errors.Is(err, substrate.ErrNotFound) {
+			return nil, err
+		}
+		if err == nil {
+			expected = mversion(row.Properties, "shippedVersion")
+		}
+		if err == nil && mstr(row.Properties, "publishedFrom") != "" && b.Version > mversion(row.Properties, "shippedVersion") {
+			old, err := c.heldClosure(ctx, b, ds)
+			if err != nil {
+				return nil, err
+			}
+			narrows, _ = CompareClosures(old, b)
+
+			plan, err := c.publishedUpgrade(ctx, b, ds)
+			if err != nil {
+				return nil, err
+			}
+			if len(plan.Holders) > 0 {
+				return nil, fmt.Errorf("%w: connected app builds hold back %s version %d", substrate.ErrConflict, b.ID, b.Version)
+			}
+		}
+	}
 	opts := substrate.BundleInstall{Published: b.Tier == substrate.TierProvider, Confirm: confirm}
 	if b.Tier == substrate.TierProvider {
 		opts.ShippedVersion = b.Version
+		if b.origin != nil {
+			opts.PublishedFrom = b.origin.DocumentURL
+			opts.PublishedDigest = b.origin.SHA256
+			opts.ExpectedPublishedVersion = expected
+			opts.PublishedNarrows = narrows
+		}
 	}
 	// A sample installed VERBATIM takes the same suggested-mapping filter an
 	// import does: the mapping's `from` is a provider package either way, and
@@ -557,10 +600,14 @@ func (c *Catalog) Import(ctx context.Context, actor substrate.Actor, id string, 
 // same rule as the install door's applies, and without a consent the engine
 // refuses the lossy plan and names it.
 func (c *Catalog) ImportConfirmed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*Bundle, []substrate.SuggestedMapping, error) {
-	b, err := c.installable(actor, id)
-	if err != nil {
-		return nil, nil, err
+	if !substrate.HumanActors[actor] {
+		return nil, nil, fmt.Errorf("%w: importing is the owner's action", substrate.ErrForbidden)
 	}
+	b, ok := c.ByID(id)
+	if !ok {
+		return nil, nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	}
+
 	if b.Tier != substrate.TierSample {
 		return nil, nil, fmt.Errorf("%w: %s is a provider, which installs under the authority that publishes it: use install, not import",
 			substrate.ErrValidation, b.ID)
@@ -656,8 +703,8 @@ func (c *Catalog) walkRequirements(ctx context.Context, b *Bundle, ds substrate.
 			if v, has := held[req]; has && v >= b.RequiresAtLeast[req] {
 				continue
 			}
-			dep, ok := c.byID[req]
-			if !ok || dep.Tier != substrate.TierProvider {
+			dep, err := c.ResolveFor(ctx, req, b.RequiresAtLeast[req], ds)
+			if err != nil || dep.Tier != substrate.TierProvider || dep.Version < b.RequiresAtLeast[req] {
 				// Placed too, so a second bundle requiring it reports it
 				// no second time.
 				placed[req] = true
@@ -691,21 +738,20 @@ func heldVersions(ctx context.Context, ds substrate.Dataset) (map[string]int64, 
 	for _, st := range statuses {
 		if st.Installed {
 			held[st.ID] = st.Version
+			if st.ShippedVersion > 0 {
+				held[st.ID] = st.ShippedVersion
+			}
 		}
 	}
 	return held, nil
 }
 
 // installable is the gate both doors share: the owner check and the lookup.
-func (c *Catalog) installable(actor substrate.Actor, id string) (*Bundle, error) {
+func (c *Catalog) installable(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset) (*Bundle, error) {
 	if !substrate.HumanActors[actor] {
 		return nil, fmt.Errorf("%w: taking a bundle is the repository user's action, not a machine's", substrate.ErrForbidden)
 	}
-	b, ok := c.byID[id]
-	if !ok {
-		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
-	}
-	return b, nil
+	return c.ResolveFor(ctx, id, 0, ds)
 }
 
 // install is the one admission both doors run: every shipped data document is
@@ -751,9 +797,12 @@ func install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, v
 // doors never read it: they recompute the plan inside their transaction and
 // admit a confirmation against that (decision 0067).
 func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset, held *substrate.BundleStatus) (*substrate.BundleUpgrade, error) {
-	b, ok := c.byID[id]
-	if !ok {
-		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	b, err := c.ResolveFor(ctx, id, 0, ds)
+	if err != nil {
+		return nil, err
+	}
+	if b.origin != nil {
+		return c.publishedUpgrade(ctx, b, ds)
 	}
 	// The gate is `held`, which the cache key does not carry, so it runs
 	// before the cache is asked.

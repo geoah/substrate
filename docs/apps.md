@@ -973,3 +973,26 @@ approval covers it. Nothing is refused.
 A binary from before app authorization reads an app's token as a
 full-access one, since it does not know `scopes`. Before rolling back past
 that change, revoke every app token under Settings > Apps.
+
+## Publish a package
+
+List the package in your authority document's `packages` array. Each entry
+has `package` (the package name), optional `addonFor` (a package id), and
+`versions`: positive, unique integer versions with `closure` (an HTTPS
+URL) and `sha256` (64 hexadecimal characters). Keep every published
+version's bytes unchanged.
+
+A closure is multi-document YAML: one package header, one bundle
+declaration for that package, and its declarations and records. The header's
+version matches the listed version. Every declaration belongs to the
+package; records of shared machinery kinds use ids beneath the package id.
+The binary wins for packages it already ships. A repository's own authority
+is declared locally rather than installed from its document.
+
+Check the candidate with `substratectl publish --check` before uploading
+it. Upload the immutable closure first, update the authority document
+second, and release the app build requesting that version last. A changed
+digest at an existing version and a version below the newest published
+version fail the check. Removing or renaming declarations needs
+`--allow-narrowing`; connected builds can still hold the server upgrade
+back until they check in with a sufficient floor or their access ends.
