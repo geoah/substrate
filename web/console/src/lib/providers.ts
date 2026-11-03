@@ -5,12 +5,17 @@
  * pages fold these off the reads `lib/api/*` returns. */
 
 import type {
+  BundleUpgradeHolder,
   KindInfo,
   SetupItem,
   SubstrateRecord,
   TriggerStatus,
 } from "@/lib/api/types"
-import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
+import {
+  FAILED_PREVIEW_BLOCKER,
+  holderFreeBlockers,
+  holderWords,
+} from "@/lib/bundles"
 import { FUNCTION_KIND } from "@/lib/core-kinds"
 import { serverNow } from "@/lib/api/http"
 import { relativeTime, shortDate } from "@/lib/format"
@@ -185,6 +190,11 @@ export interface StandingInput {
   /** The server's guard lines on an update it will not offer; empty when
    * none blocks it. */
   upgradeBlockers: string[]
+  /** The connected app builds holding that update back (decision 0214),
+   * and whether what is held could not be checked against the publisher's
+   * document; both absent when nothing blocks it. */
+  upgradeHolders?: BundleUpgradeHolder[]
+  upgradePublisherUnread?: boolean
   /** Setup items the four steps do not cover (a required setting). */
   otherSetup: Pick<SetupItem, "code" | "message">[]
   steps: SetupStep[]
@@ -372,14 +382,22 @@ export function standingProblems(
   }
   if (s.upgradeBlockers.length) {
     const unchecked = s.upgradeBlockers.includes(FAILED_PREVIEW_BLOCKER)
+    const holders = s.upgradeHolders ?? []
     out.push({
       code: "update-blocked",
       summary: unchecked
         ? "An update couldn’t be checked"
-        : "An update is waiting on your records",
+        : holders.length > 0
+          ? "An update is waiting on connected app builds"
+          : s.upgradePublisherUnread
+            ? "An update couldn’t be checked against its publisher’s document"
+            : "An update is waiting on your records",
       detail: unchecked
         ? ["The server couldn’t preview it; its log says why."]
-        : s.upgradeBlockers,
+        : [
+            ...holders.map(holderWords),
+            ...holderFreeBlockers(s.upgradeBlockers, holders),
+          ],
       fixes: [],
     })
   }

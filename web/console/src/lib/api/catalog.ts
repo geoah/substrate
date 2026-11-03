@@ -10,8 +10,8 @@ import { rootPath, request, seg } from "./http"
 import type {
   BundleStatus,
   AddonInstallResult,
+  BundleInstallRequest,
   CatalogItem,
-  ConversionConfirm,
   OperationalList,
   ShippedUpgrade,
 } from "./types"
@@ -216,13 +216,21 @@ export type BundleInstallResult = BundleStatus & {
 
 export function installBundle(
   id: string,
-  confirm?: ConversionConfirm
+  body?: BundleInstallRequest
 ): Promise<BundleInstallResult> {
   return request<BundleInstallResult>(
     "POST",
     `${CATALOG}/${seg(id)}/install`,
-    confirm && { confirm }
+    takeBody(body)
   )
+}
+
+/** No body is the bare POST the doors always took; a body with nothing in
+ * it would be an empty object the strict decoder still has to read. */
+function takeBody(
+  body: BundleInstallRequest | undefined
+): BundleInstallRequest | undefined {
+  return body && (body.confirm || body.expect) ? body : undefined
 }
 
 /** Import a SAMPLE under this repository's own authority (decision record
@@ -233,12 +241,12 @@ export function installBundle(
  * (decision records 0067 and 0070). */
 export function importBundle(
   id: string,
-  confirm?: ConversionConfirm
+  body?: BundleInstallRequest
 ): Promise<BundleStatus> {
   return request<BundleStatus>(
     "POST",
     `${CATALOG}/${seg(id)}/import`,
-    confirm && { confirm }
+    takeBody(body)
   )
 }
 

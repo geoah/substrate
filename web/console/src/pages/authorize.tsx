@@ -14,7 +14,7 @@
  * `form-action 'self'`, so a form post that redirects off the origin would
  * be blocked. An error never navigates anywhere. */
 
-import { Fragment, useEffect, useState, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import {
   keepPreviousData,
   useMutation,
@@ -81,6 +81,7 @@ import {
   lifetimeEnd,
   planChanges,
   progressWords,
+  providerNeedWords,
   reauthorizationHeading,
   webhookTriggers,
   type SetupLine,
@@ -374,9 +375,9 @@ function Approval({
   const [providerChoices, setProviderChoices] = useState<
     Record<string, string>
   >({})
-  const [addons, setAddons] = useState<string[]>(() =>
-    request.setup.flatMap((r) => (r.package?.addonFor ? [r.package.id] : []))
-  )
+  // An optional add-on starts unchecked: the owner checks the ones to
+  // approve (decision 0216), and an unchecked one is left out of the plan.
+  const [addons, setAddons] = useState<string[]>([])
   const [settings, setSettings] = useState<AuthorizationSettingValue[]>([])
   const activeRows = request.setup.filter(
     (r) => !r.package?.addonFor || addons.includes(r.package.id)
@@ -410,14 +411,18 @@ function Approval({
   const full = request.scopes.some((s) => s.verb === "full")
   const { previous } = request
   const webhooks = webhookTriggers(request.setup)
-  const providerInputs = request.setup.flatMap(
+  // An unchecked add-on is left out of the plan, so its inputs need no
+  // choice and its block holds nothing back.
+  const providerInputs = activeRows.flatMap(
     (r) => r.package?.providerInputs ?? []
   )
-  const missingProvider = providerInputs.some(
+  const activeBlocks = activeRows.flatMap((r) => (r.blocked ? [r.blocked] : []))
+  const missingInputs = providerInputs.filter(
     (input) =>
       !(providerChoices[input.package + "/" + input.input] ?? input.selected)
   )
-  const blocked = activeRows.some((r) => r.blocked) || missingSetting
+  const missingProvider = missingInputs.length > 0
+  const blocked = activeBlocks.length > 0 || missingSetting
 
   const settingUp = request.state === "setting-up"
   const approved = request.state === "approved"
@@ -528,53 +533,60 @@ function Approval({
       onChange={(checked) => toggle(s.scope, checked)}
     />
   )
-  const setupRow = ({ row, index, grantHeld }: SetupLine) => (
-    <Fragment key={index}>
+  // A package's choices sit inside its row: whether an add-on is included,
+  // then the AI provider for each of its inputs and its settings, which a
+  // row left out does not ask for.
+  const setupRow = ({ row, index, grantHeld }: SetupLine) => {
+    const pkg = row.package
+    const included = !pkg?.addonFor || addons.includes(pkg.id)
+    return (
       <SetupRow
+        key={index}
         row={row}
         webhooks={webhooks}
         grantHeld={grantHeld}
         failure={failure?.row === index ? failure.message : undefined}
         technical={technical}
-      />
-      {(row.package?.providerInputs ?? []).map((input) => (
-        <li key={input.package + "/" + input.input}>
-          <ProviderPicker
-            input={input}
-            value={
-              providerChoices[input.package + "/" + input.input] ??
-              input.selected ??
-              ""
-            }
+      >
+        {pkg && (
+          <PackageChoices
+            pkg={pkg}
+            waiting={row.action === "wait"}
+            selected={included}
             disabled={settled}
-            onChange={(value) =>
-              setProviderChoices((previous) => ({
-                ...previous,
-                [input.package + "/" + input.input]: value,
-              }))
+            onSelect={(checked) =>
+              setAddons((old) =>
+                checked ? [...old, pkg.id] : old.filter((id) => id !== pkg.id)
+              )
             }
+            values={settings}
+            onValues={setSettings}
           />
-        </li>
-      ))}
-      {row.package && (
-        <PackageChoices
-          pkg={row.package}
-          waiting={row.action === "wait"}
-          selected={!row.package.addonFor || addons.includes(row.package.id)}
-          disabled={settled}
-          onSelect={(checked) =>
-            setAddons((old) =>
-              checked
-                ? [...old, row.package!.id]
-                : old.filter((id) => id !== row.package!.id)
-            )
-          }
-          values={settings}
-          onValues={setSettings}
-        />
-      )}
-    </Fragment>
-  )
+        )}
+        {included &&
+          (pkg?.providerInputs ?? []).map((input) => (
+            <ProviderPicker
+              key={input.package + "/" + input.input}
+              input={input}
+              inputs={providerInputs}
+              value={
+                providerChoices[input.package + "/" + input.input] ??
+                input.selected ??
+                ""
+              }
+              disabled={settled}
+              technical={technical}
+              onChange={(value) =>
+                setProviderChoices((previous) => ({
+                  ...previous,
+                  [input.package + "/" + input.input]: value,
+                }))
+              }
+            />
+          ))}
+      </SetupRow>
+    )
+  }
   const appTitle = titleOf(request)
 
   return (
@@ -828,12 +840,17 @@ function Approval({
               <span>
                 {missingSetting
                   ? "Fill every required setting."
-                  : blockedWords(fold.blocks)}
+                  : blockedWords(activeBlocks)}
               </span>
               <Button variant="outline" size="xs" onClick={() => void reread()}>
                 Check again
               </Button>
             </div>
+          )}
+          {missingProvider && !settled && (
+            <p className="text-right text-xs text-muted-foreground">
+              {providerNeedWords(missingInputs, providerInputs)}
+            </p>
           )}
           {fold.reauth && !settled && (
             <p className="text-right text-xs text-muted-foreground">
