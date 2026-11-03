@@ -684,6 +684,18 @@ Nothing reads `apple.*`, `icon` or `feed` yet: `apple.sh` still names each
 app in its own `case` statements, and reads this file when the release
 tooling is generalised.
 
+## Third-party packages
+
+What the apps take from outside this tree, each a decision with its
+reason. `mise run lint:apps` refuses a package no row lists and a row
+nothing takes, and holds the layering the rest of this page relies on
+(its rules are the `# ---` sections of `.mise/appscheck.py`).
+
+| Package | Why |
+| --- | --- |
+| `Sparkle` | the macOS updater every Mac app compiles in (`xcode/Shared/Updater.swift`): it reads the release's `appcast.xml` and checks its signature |
+| `swift-crypto` | SHA-256 for PKCE on Linux and Android, where CryptoKit is not; SubstrateAuth takes it on those platforms alone |
+
 ## Layout
 
 ```text

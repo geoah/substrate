@@ -47,8 +47,8 @@ mise run test           # the whole Go suite, in its two halves
 mise run test:short     # skips every suite that wants a database
 mise run test:race      # the short suite under the race detector
 mise run test:coverage  # both halves, with a profile -> coverage.out
-mise run lint           # every linter: Go, YAML, shell, Python, the docs, the migrations, the sandbox gate, the toolchain pins, the CI scripts
-mise run lint:go        # one of them; :yaml/:shell/:python/:docs/:migrations/:sandboxgate/:toolchain/:ci are the rest
+mise run lint           # every linter: Go, YAML, shell, Python, the docs, the migrations, the sandbox gate, the toolchain pins, the CI scripts, the apps
+mise run lint:go        # one of them; :yaml/:shell/:python/:docs/:migrations/:sandboxgate/:toolchain/:ci/:apps are the rest
 mise run audit          # the vulnerability scans: govulncheck and pnpm audit
 mise run fmt            # every formatter, in place: gofumpt/goimports and yamlfmt
 mise run fmt:check      # the same, as a check — what CI runs
@@ -58,7 +58,7 @@ mise run ci             # every CI job, locally. The whole pipeline.
 ```
 
 **A bare task name is every check of its kind**, and a suffix narrows it to
-one language: `lint` is all nine linters, `lint:go` is one of them; `fmt`
+one language: `lint` is all ten linters, `lint:go` is one of them; `fmt`
 writes Go and YAML, `fmt:yaml` writes one; `fmt:check` is the pair as a check.
 Nothing is reachable only through the aggregate. The console is not one of
 those suffixes — it is a second toolchain with its own family (`console:lint`,
@@ -551,7 +551,7 @@ first label.
   [docs/releasing.md](docs/releasing.md)), never `CHANGELOG.md` by hand.
 - Keep `mise run lint` and `mise run fmt:check` at zero. Both are aggregates,
   and the `lint` job runs both: `lint` is Go, YAML, shell, Python, the docs,
-  the migrations, the sandbox gate, the toolchain pins and the CI scripts, `fmt:check` is Go and YAML. The console has its own pair
+  the migrations, the sandbox gate, the toolchain pins, the CI scripts and the apps' layering, `fmt:check` is Go and YAML. The console has its own pair
   (`console:lint`, `console:fmt:check`) inside `ci:console`.
 - **A landed migration is never edited.** `internal/engine/migrations/` is
   append-only: the runner records each file's sha256 as it applies it and

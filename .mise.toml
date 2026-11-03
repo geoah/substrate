@@ -348,7 +348,7 @@ run = [
 # eslint from `lint` would drag pnpm into the lint job and run it twice.
 
 [tasks.lint]
-description = "Every linter: Go, YAML, shell, Python, the docs, the migrations, the toolchain pins, the sandbox gate and the CI workflows and scripts"
+description = "Every linter: Go, YAML, shell, Python, the docs, the migrations, the toolchain pins, the sandbox gate, the CI workflows and scripts, and the apps' layering"
 depends = [
   "lint:go",
   "lint:yaml",
@@ -359,6 +359,7 @@ depends = [
   "lint:sandboxgate",
   "lint:toolchain",
   "lint:ci",
+  "lint:apps",
 ]
 
 [tasks."lint:go"]
@@ -492,6 +493,14 @@ description = "The version pins written more than once: .mise.toml against the D
 # check that turns a base-image bump into a named failure rather than a silent
 # split between what CI builds and what ships.
 run = ".mise/toolchaincheck.sh"
+
+[tasks."lint:apps"]
+description = "The apps' layering: the kit's libraries in order, portable code importing only what Linux and Android have, no app importing another, every app's app.json, every third-party package listed"
+# IN `lint`, and Python rather than Swift: it reads Package.swift, the
+# targets.yml files and the sources as text, so it runs in the Linux `lint`
+# job, where nothing builds the apps. Its rules are the `# ---` sections of
+# the script.
+run = "python3 .mise/appscheck.py"
 
 [tasks."lint:docs"]
 description = "The docs, held: links and anchors (lychee), then the prose rules"
@@ -1046,6 +1055,7 @@ depends = [
   "lint:sandboxgate",
   "lint:toolchain",
   "lint:ci",
+  "lint:apps",
   "release:check",
   "kinds:check",
   "frozen:check",
