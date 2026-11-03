@@ -296,6 +296,13 @@ type Dataset interface {
 	// MarkDomainVerified stamps `domainVerifiedAt` on the repository record
 	// and spends the pending proof. The caller has checked the name.
 	MarkDomainVerified(ctx context.Context) (time.Time, error)
+
+	// --- app builds (decision 0213) ---
+	// RecordAppBuild records, on the request's own app token
+	// (PrincipalFrom), what its build said at a set up check: the floor of
+	// each package it needs, its software version, and the time. A token
+	// with no app behind it records nothing.
+	RecordAppBuild(ctx context.Context, packages map[string]int64, softwareVersion string) error
 }
 
 // ReembedReport is what one Reembed enqueued: the pair every vector will name

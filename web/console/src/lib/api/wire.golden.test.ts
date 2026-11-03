@@ -79,6 +79,7 @@ import type {
   AuthorizationPackageStep,
   AuthorizationPrevious,
   AuthorizationPublisher,
+  AuthorizationPackagePublisher,
   AuthorizationRedirectTo,
   AuthorizationRequest,
   AuthorizationScope,
@@ -602,6 +603,9 @@ const tokenInfo: Shape<TokenInfo> = {
   appAuthority: false,
   appAuthorityFromFile: false,
   appLocal: false,
+  appPackages: false,
+  appSoftwareVersion: false,
+  appCheckedAt: false,
   agents: false,
 }
 
@@ -741,6 +745,14 @@ const authorizationPackage: Shape<AuthorizationPackage> = {
   kinds: false,
   functions: false,
   triggers: false,
+  publisher: false,
+}
+
+const authorizationPackagePublisher: Shape<AuthorizationPackagePublisher> = {
+  authority: true,
+  name: false,
+  documentUrl: true,
+  fromFile: false,
 }
 
 const authorizationPackageStep: Shape<AuthorizationPackageStep> = {
@@ -1248,6 +1260,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   AuthorizationRequest: authorizationRequest,
   AuthorizationApp: authorizationApp,
   AuthorizationPublisher: authorizationPublisher,
+  AuthorizationPackagePublisher: authorizationPackagePublisher,
   AuthorizationRedirectTo: authorizationRedirectTo,
   AuthorizationScope: authorizationScope,
   AuthorizationKind: authorizationKind,

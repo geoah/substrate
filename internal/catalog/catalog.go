@@ -67,6 +67,9 @@ type Bundle struct {
 	kinds     []KindFact
 	functions []FunctionFact
 	triggers  []TriggerFact
+	// origin is where a document-published bundle came from, nil for one
+	// the binary ships (published.go).
+	origin *Origin
 }
 
 // Closure and ShippedRecord are the catalog's names for the two nested wire
