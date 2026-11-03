@@ -38,14 +38,19 @@ words. From top to bottom:
   suggest says the app may edit a suggestion before applying it, as you.
 - **It will set up on your server**: when the app needs something on your
   server, one row per thing: a provider to install or update, with the
-  version, what it installs first and whether it runs code on your server;
-  the account it delivers under, with every value it writes; and the
-  webhook it turns on, with what that lets the app send. The webhook's
-  access comes with the set up and has no checkbox: to refuse it, deny the
-  request. A row already in place says so. A row the server cannot set up
-  says why in one sentence and, where the console can fix it, links there;
-  Approve stays off until **Check again** finds every row clear, or you
-  deny the request.
+  version, what it installs first, whether it runs code on your server,
+  whether that code uses the internet and what it reads and changes; the
+  account it delivers under, with every value it writes; and the webhook
+  it turns on, with what that lets the app send. The webhook's access
+  comes with the set up and has no checkbox: to refuse it, deny the
+  request. A row already in place says so. What a package's code reads
+  and changes stays within the access you allow above
+  ([0215](decisions/0215-code-an-approval-installs-reaches-no-further-than-the-scopes-it-approves.md)):
+  unchecking a scope its code needs plans the set up again and the row
+  says which access it needs, and checking it back clears it. A row the
+  server cannot set up says why in one sentence and, where the console can
+  fix it, links there; Approve stays off until **Check again** finds every
+  row clear, or you deny the request.
 - **Your automations run on its changes**, when the app asks to write: your
   triggers and mappings respond to its changes like any other, so they may
   run code you installed, call services that charge you, or change records
@@ -73,8 +78,10 @@ authority document it names and whether that document lists the client id; the a
 returns to; the repository; the access the app holds now; each scope as
 written, with every kind it reaches by full reference; per set up row, the
 package id, the version the app needs and the one this server ships, what it
-installs first, the kinds it adds, its functions with what each may write,
-and its triggers; the account's kind and id; the webhook's trigger, whether
+installs first, the kinds it adds, its functions with what each may read and
+write and the hosts each declares, its triggers, and everything its code
+reaches with what reaches it and the scope that covers it; the account's
+kind and id; the webhook's trigger, whether
 it is on and whether it has a key, which is never shared; the name the app's
 changes are recorded under, which history shows as the app's and never as
 yours: `app:` and the verified authority, `app:local` for an app whose
@@ -424,7 +431,37 @@ that cannot be installed blocks the row of the package that needs it.
 | `upgrade-needs-review` | the upgrade's preview refuses it, would lose data or discard edits, or could not run: the provider page asks the owner first | its provider page |
 | `not-requested` | the account or the webhook belongs to a package no `package` entry names, or the trigger is neither in the repository nor shipped by a requested package | none |
 | `account-deleted` | the account was deleted and the server has not collected the deletion yet; once it has, approving creates the account again | none |
+| `reaches-past-scopes` | the package's code, or a requirement's, reads or writes a kind the scopes left checked do not cover ([what the code reaches](#what-the-code-reaches)); the problem names each uncovered reach and the scope that would cover it | none: the owner leaves that scope checked, or the app asks for it |
 | `unsupported` | the account's kind is no account, its package declares no such kind, or a property is one it may not set; the trigger takes no webhook, its provider signs it, or it runs code of no package | none |
+
+#### What the code reaches
+
+Code an approval installs reaches no further than the scopes it approves
+([0215](decisions/0215-code-an-approval-installs-reaches-no-further-than-the-scopes-it-approves.md)),
+so an app asks, in `scope`, for every kind the packages it names reach:
+each function's `permissions.reads.kinds` and `permissions.writes`, each
+agent's, each record trigger's `source.record.kinds`, and each mapping's
+`from` and `to`, for the packages it names and every package the catalog
+installs first. A `write:` covers a read of the same kinds; a glob covers
+the kinds it matches, except a kind whose purpose is `internal`, which
+only its exact scope covers, and so is a kind the repository does not hold
+and no package of the install declares; no scope writes a `core` or `llm`
+kind, so code that does needs `full`. Substrate Sync, whose applehealth
+package's functions write that package's kinds, the `health` catalogue's
+sleep and workouts and the seeded observations, asks for
+`write:providers.substrate.reamde.dev/applehealth/*`, the package's two
+internal kinds by name, `write:substrate.reamde.dev/health/*` and
+`write:substrate.reamde.dev/observations/*`.
+
+The page plans against the scopes left checked: its read takes them as
+`?scope=` query parameters (`GET /api/v1/authorizations/{id}?scope=…`,
+one per scope, in the resolved spelling the page shows; absent, every
+requested scope is checked, and `scope=` alone is none), the approval
+plans against the scopes it names, and the token's check against the
+token's own. A package row carries `reach`, one entry per kind or glob and
+verb with what reaches it (`by`), whether a checked scope covers it and
+the scope that would, and each function its `reads`, `writes` and declared
+`network` hosts.
 
 The owner sees one row per entry and approves them with the scopes or not
 at all, as themselves: a request that carries entries is approved through
