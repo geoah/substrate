@@ -88,7 +88,7 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 	// A set up may run for minutes: the publisher the page showed is checked
 	// again before the code exists.
 	if why := h.publisherMoved(ctx, req); why != "" {
-		stop(&substrate.AuthorizationFailure{Message: "Everything is set up, and who publishes this app changed since the page loaded: " + why + ". Reload the page and check the request again."}, false)
+		stop(&substrate.AuthorizationFailure{Message: "Everything is set up, and who publishes this app changed since the page loaded: " + why + ". Start again from the app, which reads who publishes it afresh."}, false)
 		return
 	}
 	_, _, err = h.authz.Finish(req.ID, authority, approve, func(req authorize.Request, code string) substrate.AuthorizationRequest {
