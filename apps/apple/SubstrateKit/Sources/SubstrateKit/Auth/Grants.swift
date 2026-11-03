@@ -109,19 +109,26 @@ public struct ScopeKind: Hashable, Sendable {
 
 /// A scope as the sentence the console's approval page shows beside its
 /// checkbox (web/console's app-scopes.ts, whose words this mirrors): what the
-/// app may do, over the kinds or agents it reaches, by their labels. Every
-/// power stays in the words: a write may delete, a glob reaches what is
-/// added later, talking to an agent reaches whatever the agent may do and
-/// reads every chat with it, and a decision may edit the change it applies.
+/// app may do, over the kinds, agents or functions it reaches, by their
+/// labels. Every power stays in the words: a write may delete, a read
+/// searches by meaning at the owner's cost, a glob reaches what is added
+/// later, talking to an agent reaches whatever the agent may do and reads
+/// every chat with it, a decision may edit the change it applies, and a
+/// call runs the owner's code as far as the app already reaches.
 public enum ScopeWords {
     /// How many kind labels one sentence names before it counts the rest.
     static let maxLabels = 6
+
+    /// What every read or write scope adds (decision 0219): a semantic
+    /// search over the kinds it reads embeds the query with the owner's
+    /// provider.
+    static let semanticClause = ", and search them by meaning, which spends your embedding budget"
 
     /// The sentence for one scope. `kinds` are the kinds it reaches today,
     /// where the caller knows them; without them a pattern reads by its
     /// shape. `agents` are the names of the agents an agent scope matches.
     public static func sentence(_ scope: String, kinds: [ScopeKind] = [], agents: [String] = [],
-                                packageName: String? = nil) -> String
+                                functions: [String] = [], packageName: String? = nil) -> String
     {
         let (verb, pattern) = split(scope)
         let glob = Grants.isGlob(pattern)
@@ -130,9 +137,13 @@ public enum ScopeWords {
         case "read", "write":
             let action = verb == "read" ? "See" : "See, add, change and delete"
             let later = glob ? ", including kinds added later" : ""
-            if case .all = shape { return "\(action) all your records\(later)" }
+            if case .all = shape { return "\(action) all your records\(later)\(semanticClause)" }
             let what = kinds.isEmpty ? patternPhrase(shape) : kindsPhrase(kinds)
-            return "\(action) your \(what)\(later)"
+            return "\(action) your \(what)\(later)\(semanticClause)"
+        case "call":
+            let later = glob ? ", including functions added later" : ""
+            let who = functionsPhrase(shape, pattern, functions)
+            return "Run \(who)\(later); \(glob ? "each runs" : "it runs") only where the app may already see and change what it reads and writes"
         case "agents":
             let later = glob ? ", including agents added later" : ""
             let who: String
@@ -270,6 +281,19 @@ public enum ScopeWords {
         case .exact(let authority, let package, let name):
             package.isEmpty ? kindDisplayPlural(name).lowercasedFirst
                 : packagePhrase(package, [kindDisplayPlural("\(authority)/\(package)/\(name)").lowercasedFirst])
+        }
+    }
+
+    /// The functions a call scope names (decision 0219): by name where the
+    /// caller knows which it matches, else by what its pattern covers.
+    static func functionsPhrase(_ shape: Shape, _ pattern: String, _ functions: [String]) -> String {
+        if case .all = shape { return "any of your functions" }
+        if !functions.isEmpty { return joinWords(functions) }
+        switch shape {
+        case .all: return "any of your functions"
+        case .authority(let authority): return "the functions from \(authority)"
+        case .package(_, let package): return "the functions in \(packageDisplayName(package))"
+        case .exact: return agentWords(pattern)
         }
     }
 

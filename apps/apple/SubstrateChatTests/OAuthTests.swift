@@ -289,7 +289,7 @@ private struct LegacySession: Codable {
         #expect(words[0].hasPrefix("Talk to all your agents, including agents added later, and through a chat have them do anything they may do; read every chat"))
         #expect(words[1].hasPrefix("Apply or dismiss the changes your agents suggest"))
         #expect(words[2].hasPrefix("See your"))
-        #expect(words[3] == "See all your records, including kinds added later")
+        #expect(words[3] == "See all your records, including kinds added later, and search them by meaning, which spends your embedding budget")
         #expect(ChatManifest.manifest.scopeWords("read:*") == words[3])
     }
 }

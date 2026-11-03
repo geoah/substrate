@@ -8,7 +8,8 @@ public struct Change: Hashable, Sendable, Identifiable {
     }
 
     public var kind: Kind
-    /// What approving does: "Install Apple Health", "See your Apple places".
+    /// What approving does: "Install Apple Health", "See your Apple places, and
+    /// search them by meaning, which spends your embedding budget".
     public var words: String
     /// A fact beside it: "Version 2 to 3", or a blocked row's problem.
     public var detail: String?
