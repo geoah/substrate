@@ -171,3 +171,58 @@ func TestReachGrowsOnlyPastWhatIsHeld(t *testing.T) {
 		t.Fatalf("nothing against nothing grows %+v", got)
 	}
 }
+
+// An agent that asks writes its questions as llm/interaction records, which
+// the `ask` tool needs granted: that is not the owner's data, and no app
+// scope writes llm, so it adds no reach. An agent that writes the kind
+// without asking reaches it like any other.
+func TestAnAskingAgentsInteractionsAreNotReach(t *testing.T) {
+	const manifest = `
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: demo.example.com/demo
+data:
+  authority: demo.example.com
+  package: demo
+  version: 1
+---
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: demo.example.com/demo
+data:
+  authority: demo.example.com
+  package: demo
+  description: a demo
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: demo.example.com/demo/note
+data:
+  authority: demo.example.com
+  package: demo
+  name: note
+  description: a note
+---
+kind: substrate.reamde.dev/core/agent
+metadata:
+  id: demo.example.com/demo/coach
+data:
+  authority: demo.example.com
+  package: demo
+  description: asks before it writes
+  prompt: ask
+  provider: default
+  model: gpt-5
+  tools:
+  - function: substrate.reamde.dev/core/ask
+  - function: substrate.reamde.dev/core/write
+  permissions:
+    writes: [note, substrate.reamde.dev/llm/interaction]
+`
+	b := reachBundle(t, manifest)
+	coach := ReachBy{Type: "agent", ID: "demo.example.com/demo/coach"}
+	want := []Reach{{Pattern: "demo.example.com/demo/note", Write: true, By: []ReachBy{coach}}}
+	if got := b.Reach(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("reach = %+v, want %+v", got, want)
+	}
+}
