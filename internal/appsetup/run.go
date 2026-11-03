@@ -123,7 +123,7 @@ func (r *Runner) Run(ctx context.Context, ds substrate.Dataset, actor substrate.
 		err = ValidateSettings(rows, run.Settings)
 	}
 	if err != nil {
-		return Outcome{Failure: &substrate.AuthorizationFailure{Message: "needs-setting: check the settings and add-ons, then approve again"}}
+		return Outcome{Failure: &substrate.AuthorizationFailure{Message: "Check the settings and add-ons, then approve again."}}
 	}
 	if err := SelectProviders(rows, providerChoices(approved)); err != nil {
 		return Outcome{Failure: &substrate.AuthorizationFailure{Message: err.Error()}, Moved: true}

@@ -83,9 +83,9 @@ func DecisionFrom(ctx context.Context) string {
 
 // The CLIENT ID of an app's token rides the context beside its scopes: the
 // full client id (its client id metadata document URL) the owner approved.
-// The actor an app writes under names only the URL's host, `app:<host>`, so
-// two apps on one host, and every loopback build, share an actor; the client
-// id is what tells them apart where that matters, the label and annotation
+// The actor is `app:<authority>` for a verified publisher, `app:local` for
+// a loopback approval, and `app:<host>` of the client id otherwise. Apps may
+// share an actor; the client id tells them apart in the label and annotation
 // namespace an app keeps. The only writer is `withRequestAuth`, and only for
 // a scoped token: a full-access app token writes as a door.
 type clientIDKey struct{}

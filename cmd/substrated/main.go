@@ -264,7 +264,7 @@ func run() error {
 	for authority, path := range authorityDocs {
 		// Loud, and at boot: this file, not the authority's DNS, decides
 		// which apps read as its.
-		slog.Warn("SUBSTRATE_INSECURE_AUTHORITY_DOCS is set: apps are verified against a local file for this authority, never its DNS record: local development only",
+		slog.Warn("SUBSTRATE_INSECURE_AUTHORITY_DOCS is set: the server trusts this file in place of DNS for this authority",
 			"authority", authority, "path", path)
 	}
 	resolver := domains.NewResolver(cfg.DNSResolver)
