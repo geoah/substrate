@@ -1038,9 +1038,6 @@ client-side over files on disk.
 The shipped bundles, one by one (what each declares, its functions and its
 triggers), are the [Bundles catalog](bundles-catalog.md).
 
-Next: [functions](functions.md), the callables a bundle ships, and the
-host SDK.
-
 ## Packages published through authority documents
 
 The catalog also resolves a package id through its publisher's authority
@@ -1062,6 +1059,7 @@ An agent can consume an input of kind `substrate.reamde.dev/llm/provider`
 by naming it in `providerInput`, beside its ordered `models` list. It
 uses the same bound, default, sole resolution as other inputs; it does
 not need `inject: functions`. The owner's binding survives upgrades.
+
 ## Configuration during app approval
 
 An app's approval can fill the empty core `setting` and `secret` records a
@@ -1076,3 +1074,6 @@ If its provider is absent, the approval waits on the app's token. A later
 provider install replans live approvals, installs what it can as the bundle,
 and reports what remains waiting. Required configuration cannot be saved on
 a waiting token: fill it through the package's settings page.
+
+Next: [functions](functions.md), the callables a bundle ships, and the
+host SDK.

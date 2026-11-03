@@ -51,6 +51,15 @@ version entry; publishing the files remains the publisher's action.
   token expires or the owner revokes it.
 - Conservative comparisons can leave harmless edits for owner review.
 - Publisher versions remain distinct from the engine's declaration versions.
+- The held version's closure is read again from the publisher's document
+  whenever the package is planned, previewed or upgraded, so a publisher
+  keeps every version it published listed. A held version the document no
+  longer lists blocks the package's upgrades, saying so, until the owner
+  takes the package over; keeping each installed closure in the repository
+  instead is later work.
+- A refresh follows the document named on the package row, and a document
+  that moved (the record now names another one) holds the upgrade for the
+  owner rather than following it.
 
 ### Confirmation
 
