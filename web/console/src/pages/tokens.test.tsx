@@ -30,6 +30,7 @@ import {
   ApiTokens,
   AppTokenRows,
   appActor,
+  appName,
   appPublisher,
   SignedInRows,
   tokenWords,
@@ -132,15 +133,29 @@ describe("Signed in and API tokens", () => {
     expect(screen.queryByText("tok-app")).toBeNull()
   })
 
-  it("lists an app with its host, claimed name, scopes and dates", async () => {
+  it("heads an app by its name, with its host, client id, scopes and dates as labelled facts", async () => {
     renderWithClient(<AppTokenRows />)
-    expect(await screen.findByText("notes.example.com")).toBeTruthy()
+    // The row is titled by the name, never by the host: four apps one
+    // publisher ships would otherwise all read as its host.
+    // It appears twice: the title, and the labelled fact under it.
+    expect(await screen.findAllByText("Notes for Ada")).toHaveLength(2)
     expect(
       screen.getByText("https://notes.example.com/oauth/client.json")
     ).toBeTruthy()
-    const facts = screen.getByLabelText("What notes.example.com can do")
-    expect(within(facts).getByText("Calls itself")).toBeTruthy()
+    const facts = screen.getByLabelText("What Notes for Ada can do")
+    expect(within(facts).getByText("Name")).toBeTruthy()
     expect(within(facts).getByText("Notes for Ada")).toBeTruthy()
+    expect(
+      within(facts).getByText(
+        "The name the app gave itself when you approved it."
+      )
+    ).toBeTruthy()
+    expect(within(facts).queryByText(/Calls itself/)).toBeNull()
+    expect(within(facts).getByText("Runs at")).toBeTruthy()
+    expect(within(facts).getByText("notes.example.com")).toBeTruthy()
+    expect(within(facts).getByText("Client id")).toBeTruthy()
+    expect(within(facts).getByText("Access")).toBeTruthy()
+    expect(screen.queryByRole("status")).toBeNull()
     expect(within(facts).getByText("ada.example.com/tasks/*")).toBeTruthy()
     expect(within(facts).getByText("Read records of")).toBeTruthy()
     expect(within(facts).getByText("ada.example.com/notes/note")).toBeTruthy()
@@ -184,7 +199,7 @@ describe("Signed in and API tokens", () => {
       jsonResponse(200, { items: [...TOKENS, full] })
     )
     renderWithClient(<AppTokenRows />)
-    const facts = await screen.findByLabelText("What apps.example.com can do")
+    const facts = await screen.findByLabelText("What Substrate Console can do")
     expect(
       within(facts).getByText(/^Do everything you can do when you sign in/)
     ).toBeTruthy()
@@ -219,9 +234,10 @@ describe("Signed in and API tokens", () => {
       jsonResponse(200, { items: [workouts] })
     )
     renderWithClient(<AppTokenRows />)
-    const facts = await screen.findByLabelText(
-      "What substrate.example.org can do"
-    )
+    const facts = await screen.findByLabelText("What Substrate Workouts can do")
+    expect(
+      within(facts).getByText("The name its verified publisher gives it.")
+    ).toBeTruthy()
     expect(within(facts).getByText("Publisher")).toBeTruthy()
     expect(within(facts).getByText(/^Verified: its DNS record/)).toBeTruthy()
     expect(within(facts).getByText("app:substrate.example.org")).toBeTruthy()
@@ -230,12 +246,50 @@ describe("Signed in and API tokens", () => {
     ).toBe("/actors/app:substrate.example.org")
     expect(within(facts).getByText("0.114.2 (20261103.083106)")).toBeTruthy()
     const packages = within(facts).getByLabelText(
-      "Packages substrate.example.org needs"
+      "Packages Substrate Workouts needs"
     )
     expect(within(packages).getByText("example.org/training")).toBeTruthy()
     expect(within(packages).getByText("version 5 or later")).toBeTruthy()
-    expect(within(facts).getByText("example.org/coach")).toBeTruthy()
-    expect(within(facts).getByText("example.org/whoop")).toBeTruthy()
+    // A waiting add-on says only what it waits for: the server lists none
+    // that is installed.
+    const addon = within(facts).getByText("example.org/coach")
+      .parentElement as HTMLElement
+    expect(addon.textContent).toBe(
+      "example.org/coachversion 2 or later; waits for example.org/whoop to be installed"
+    )
+  })
+
+  it("heads an app that gave no name by its host", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(200, { items: [{ ...APP_TOKEN, clientName: undefined }] })
+    )
+    renderWithClient(<AppTokenRows />)
+    const facts = await screen.findByLabelText("What notes.example.com can do")
+    expect(within(facts).queryByText("Name")).toBeNull()
+    expect(within(facts).getByText("Runs at")).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Revoke notes.example.com" })
+    ).toBeTruthy()
+  })
+
+  it("says a retired token stopped working, and lists its scopes as what it was approved for", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(200, { items: [{ ...APP_TOKEN, retired: true }] })
+    )
+    renderWithClient(<AppTokenRows />)
+    const facts = await screen.findByLabelText("What Notes for Ada can do")
+    // The status has a role of its own: it is not folded into the access.
+    const status = screen.getByRole("status")
+    expect(status.textContent).toBe(
+      "Stopped working: its access was approved under a rule this server no longer honours. Revoke it, and approve the app again if you still use it."
+    )
+    expect(facts.contains(status)).toBe(false)
+    expect(within(facts).getByText("Was approved for")).toBeTruthy()
+    expect(within(facts).queryByText("Access")).toBeNull()
+    expect(within(facts).getByText("ada.example.com/tasks/*")).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Revoke Notes for Ada" })
+    ).toBeTruthy()
   })
 
   it("says so when no app holds a token", async () => {
@@ -249,10 +303,10 @@ describe("Signed in and API tokens", () => {
   it("revokes an app's token, after asking", async () => {
     renderWithClient(<AppTokenRows />)
     fireEvent.click(
-      await screen.findByRole("button", { name: "Revoke notes.example.com" })
+      await screen.findByRole("button", { name: "Revoke Notes for Ada" })
     )
     const dialog = await screen.findByRole("dialog")
-    expect(dialog.textContent).toContain("Revoke notes.example.com’s access?")
+    expect(dialog.textContent).toContain("Revoke Notes for Ada’s access?")
     expect(dialog.textContent).toContain(
       "The app stops reaching your repository straight away."
     )
@@ -374,24 +428,33 @@ describe("tokenWords", () => {
   })
 })
 
-describe("appPublisher and appActor", () => {
+describe("appName, appPublisher and appActor", () => {
   const base = {
     id: "t",
     label: "x",
     createdAt: "2026-08-12T00:00:00Z",
     clientId: "https://notes.example.com/client.json",
   }
+  it("heads an app by its name, else by its host", () => {
+    expect(appName({ ...base, clientName: "Notes for Ada" })).toBe(
+      "Notes for Ada"
+    )
+    expect(appName(base)).toBe("notes.example.com")
+    expect(appName({ ...base, clientId: undefined })).toBe("x")
+  })
   it("names what the approval proved, and the actor that follows from it", () => {
     expect(appPublisher({ ...base, appAuthority: "example.org" }).how).toMatch(
       /^Verified/
     )
-    expect(
-      appPublisher({
-        ...base,
-        appAuthority: "example.org",
-        appAuthorityFromFile: true,
-      }).how
-    ).toMatch(/file this server reads/)
+    // A file in place of DNS is a deployment's choice (decision 0209), not
+    // a development one.
+    const vouched = appPublisher({
+      ...base,
+      appAuthority: "example.org",
+      appAuthorityFromFile: true,
+    }).how
+    expect(vouched).toMatch(/file this server reads in place of its DNS/)
+    expect(vouched).not.toMatch(/development/)
     expect(appPublisher({ ...base, appLocal: true }).who).toBe(
       "A program on your own device"
     )
