@@ -1,0 +1,113 @@
+targets:
+  SubstrateTasks:
+    # Substrate Tasks, native on iPhone, iPad and Mac from one target: the
+    # scenes, the menu commands and the updater (Sparkle on the Mac alone,
+    # through the shared Updater file). Its screens are SubstrateTasksUI's.
+    type: application
+    platform: auto
+    supportedDestinations: [iOS, macOS]
+    scheme:
+      testTargets:
+        - SubstrateTasksTests
+        - package: TasksKit/TasksCoreTests
+    sources:
+      - Sources
+      - Assets.xcassets
+      - ../../xcode/Shared/Updater.swift
+    dependencies:
+      - package: Sparkle
+        destinationFilters: [macOS]
+      # The kit and TasksKit come through the framework alone: the app
+      # linking them too would hold a second copy of their types.
+      - target: SubstrateTasksUI
+    settings:
+      base:
+        PRODUCT_NAME: SubstrateTasks
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.tasks
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: ../tasks/apple/Support/Info-Tasks-iOS.plist
+        "INFOPLIST_FILE[sdk=macosx*]": ../tasks/apple/Support/Info-Tasks-macOS.plist
+        CODE_SIGN_ENTITLEMENTS: $(SUBSTRATE_IOS_ENTITLEMENTS_$(SUBSTRATE_ASSOCIATED_DOMAINS))
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": $(SUBSTRATE_MACOS_ENTITLEMENTS_$(SUBSTRATE_ASSOCIATED_DOMAINS))
+        SUBSTRATE_IOS_ENTITLEMENTS_NO: ""
+        SUBSTRATE_IOS_ENTITLEMENTS_YES: ../tasks/apple/Support/SubstrateTasks-iOS-site.entitlements
+        SUBSTRATE_MACOS_ENTITLEMENTS_NO: ../tasks/apple/Support/SubstrateTasks-macOS.entitlements
+        SUBSTRATE_MACOS_ENTITLEMENTS_YES: ../tasks/apple/Support/SubstrateTasks-macOS-site.entitlements
+        "LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]": ["$(inherited)", "@executable_path/../Frameworks"]
+        ENABLE_HARDENED_RUNTIME: "YES"
+        SUPPORTS_MACCATALYST: "NO"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "6.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  SubstrateTasksUI:
+    # The app's screens: the shell that runs the link over TasksApp, and the
+    # SwiftUI views that draw TasksKit's presentations and send its
+    # commands, with the kit's views for the sign-in, the banner and the
+    # shared settings sections. A framework of its own, so its tests run on
+    # the Mac outside the app's sandbox and the gallery can write its files.
+    type: framework
+    platform: auto
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - UI
+    dependencies:
+      - package: TasksKit
+        product: TasksCore
+      # The kit by library, not its umbrella: a framework that links the
+      # umbrella's package product is left without the libraries under it.
+      - package: SubstrateKit
+        product: SubstrateCore
+      - package: SubstrateKit
+        product: SubstrateDevice
+      - package: SubstrateKit
+        product: SubstrateAPI
+      - package: SubstrateKit
+        product: SubstrateAuth
+      - package: SubstrateKit
+        product: SubstrateRuntime
+      - package: SubstrateKit
+        product: SubstrateLocal
+      - package: SubstrateKit
+        product: SubstrateScreens
+      # SubstrateUI brings SubstrateDeviceApple with it; naming it too
+      # links its classes twice.
+      - package: SubstrateKit
+        product: SubstrateUI
+    settings:
+      base:
+        PRODUCT_NAME: SubstrateTasksUI
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.tasks.ui
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: "YES"
+  SubstrateTasksTests:
+    # The views drawn from TasksKit's fixtures, on the Mac, with no host
+    # app: with SUBSTRATE_TASKS_GALLERY naming a folder
+    # (`mise run apps:gallery`), each one is written there as a PNG.
+    type: bundle.unit-test
+    platform: auto
+    supportedDestinations: [macOS, iOS]
+    sources:
+      - Tests
+    dependencies:
+      - target: SubstrateTasksUI
+      - package: TasksKit
+        product: TasksCore
+      - package: SubstrateKit
+        product: SubstrateAPI
+      - package: SubstrateKit
+        product: SubstrateRuntime
+      - package: SubstrateKit
+        product: SubstrateScreens
+      - package: SubstrateKit
+        product: SubstrateUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.tasks.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"

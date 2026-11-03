@@ -48,8 +48,11 @@ public struct StatusScreen: View {
             Section {
                 ForEach(refused.rows) { row in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(row.title)
+                        Text(row.label)
                             .font(.subheadline.weight(.semibold))
+                        Label(row.status, systemImage: ScreenSymbol.warning.systemName)
+                            .font(.footnote)
+                            .foregroundStyle(ScreenTone.caution.color)
                         Text(row.recordID)
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)

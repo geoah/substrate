@@ -100,13 +100,31 @@ public struct StatusWords: Codable, Hashable, Sendable {
     /// The signed-out sentence, where the app says more than what it keeps
     /// (Workouts: the routines it carries, and the sessions).
     public var local: String?
+    /// The Status screen's footer, where the app writes other than as the
+    /// owner makes each change (Workouts writes a session when it finishes);
+    /// `{server}` stands for the server's host.
+    public var footer: String?
+    /// The refused writes' footer, where Discard gives up more than the
+    /// change and those behind it (Workouts: the rest of its session's).
+    public var refusedFooter: String?
 
-    public init(app: String, device: String, kept: String, packageNames: [String: String] = [:], local: String? = nil) {
+    public init(app: String, device: String, kept: String, packageNames: [String: String] = [:], local: String? = nil,
+                footer: String? = nil, refusedFooter: String? = nil)
+    {
         self.app = app
         self.device = device
         self.kept = kept
         self.packageNames = packageNames
         self.local = local
+        self.footer = footer
+        self.refusedFooter = refusedFooter
+    }
+
+    /// The Status screen's footer for the server at `host`.
+    public func footer(host: String?) -> String {
+        let server = host ?? "your substrate"
+        guard let footer else { return "Changes are written to \(server) as you make them, and wait on \(device) while it cannot be reached." }
+        return footer.replacingOccurrences(of: "{server}", with: server)
     }
 
     /// "Training" for `substrate.reamde.dev/training`, unless named.

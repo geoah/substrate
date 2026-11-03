@@ -1,3 +1,4 @@
+import SubstrateKit
 import WorkoutsCore
 import SwiftUI
 
@@ -21,7 +22,7 @@ struct SubstrateWorkoutsApp: App {
         // Everything a launch from a Live Activity button or a notification
         // tap needs is wired here, before the app finishes launching: the
         // system performs the intent, or delivers the tap, right after.
-        NotificationDelegate.shared.install()
+        SystemNotifications.installDelegate()
         let root = WorkoutsRoot.shared
         LiveActivityActions.handler = { action in
             // The runtime folds the journal before it applies (§6.3).

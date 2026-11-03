@@ -155,6 +155,22 @@ build_workouts() {
 	echo "apple: $DERIVED/Build/Products/Debug-iphonesimulator/SubstrateWorkouts.app"
 }
 
+# Substrate Tasks: one target for iPhone, iPad and Mac, built for the Mac
+# and the simulator. Nothing here registers its bundle id: no
+# -allowProvisioningUpdates, so the Mac build is signed with the
+# development certificate the machine holds and no profile, which runs it
+# here and nowhere else.
+tasks() {
+	xcodebuild -project "$PROJECT" -scheme SubstrateTasks -derivedDataPath "$DERIVED" -quiet "$@"
+}
+
+build_tasks() {
+	tasks -destination 'platform=macOS' -configuration Debug build
+	tasks -destination 'generic/platform=iOS Simulator' -configuration Debug build
+	echo "apple: $DERIVED/Build/Products/Debug/SubstrateTasks.app"
+	echo "apple: $DERIVED/Build/Products/Debug-iphonesimulator/SubstrateTasks.app"
+}
+
 # --- a release's Apple half ------------------------------------------------
 #
 # .mise/apps.sh sources this file and calls what follows for every app its
@@ -495,6 +511,18 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 		uv run --quiet --with pyyaml ../../.mise/closures.py --check workouts
 		swift test --package-path ../workouts/WorkoutsKit
 		;;
+	build:tasks)
+		project
+		build_tasks
+		;;
+	test:tasks)
+		# TasksKit on the Mac, then the app's views over its fixtures. The
+		# closure the app carries must be the one the site publishes.
+		uv run --quiet --with pyyaml ../../.mise/closures.py --check --json ../tasks/TasksKit/Sources/TasksCore/Resources/Package tasks
+		swift test --package-path ../tasks/TasksKit
+		project
+		tasks -destination 'platform=macOS' test -only-testing:SubstrateTasksTests
+		;;
 	test:kit)
 		# SubstrateKit is a Swift package: its tests run on the Mac with swift
 		# test, no project or simulator.
@@ -529,7 +557,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 			exec "$APPLE_ROOT/.mise/apps.sh" site
 		;;
 	*)
-		echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|sim:chat|test:chat|test:kit|test:workouts|install|sim|release|release:sync|release:chat|release:workouts|site [prerelease|stable]" >&2
+		echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|build:tasks|sim:chat|test:chat|test:kit|test:workouts|test:tasks|install|sim|release|release:sync|release:chat|release:workouts|site [prerelease|stable]" >&2
 		exit 2
 		;;
 	esac

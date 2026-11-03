@@ -40,6 +40,7 @@ export const APPS = {
   substrate: { name: 'Substrate', bg: ['#f5f9ff', '#d9e7ff'], hi: '#86bbff', lo: '#2d5fe6', glyph: 'strata' },
   sync: { name: 'Substrate Sync', bg: ['#f2fcf8', '#d3f2e5'], hi: '#72e2bb', lo: '#0f936d', glyph: 'cycle' },
   chat: { name: 'Substrate Chat', bg: ['#f8f5ff', '#e4dcfd'], hi: '#bba2ff', lo: '#6a3fe0', glyph: 'chat' },
+  tasks: { name: 'Substrate Tasks', bg: ['#fff5f7', '#ffdbe4'], hi: '#ff9bb2', lo: '#d92c58', glyph: 'checklist' },
 };
 
 // Glyphs are drawn around (512, 470), about 560 units across. Each part has a
@@ -70,6 +71,10 @@ const GLYPHS = {
   chat: () => [['back', rect(392, 236, 370, 260, 110)],
     ['front', 'M358,278 L638,278 C710,278 758,326 758,398 L758,518 C758,590 710,638 638,638 L456,638 L352,712 L374,638 L358,638 C286,638 238,590 238,518 L238,398 C238,326 286,278 358,278 Z'],
     ['spark', spark(484, 458, 104)], ['spark', spark(604, 382, 42)]],
+  // A card of three lines, the first ticked: the list of things to do.
+  checklist: () => [['back', rect(252, 214, 520, 520, 104)],
+    ['mid', rect(500, 316, 196, 60, 30)], ['mid', rect(500, 446, 196, 60, 30)], ['mid', rect(328, 576, 368, 60, 30)],
+    ['front', 'M306,428 L370,492 L470,360', 70]],
 };
 
 function drawGlyph(name, mode, p, id) {

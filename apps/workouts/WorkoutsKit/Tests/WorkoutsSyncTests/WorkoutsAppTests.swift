@@ -56,6 +56,59 @@ struct WorkoutsAppTests {
         #expect(reason.contains("version \(WorkoutsManifest.trainingVersion) or later"))
     }
 
+    @Test("a sync asked while the package is behind starts none and says it is not syncing, so a wait on its end ends")
+    func syncWhileBehind() async throws {
+        let harness = Self.harness(directory: nil)
+        await harness.runtime.linkChanged(Self.snapshot(training: WorkoutsManifest.trainingVersion - 1))
+        harness.clearTrace()
+        await harness.send(.sync)
+        #expect(!Self.names(harness.effects).contains("sync"))
+        #expect(await !harness.presentation.syncing)
+        // Writable, the same command syncs, and says so until it ends.
+        await harness.runtime.linkChanged(Self.snapshot())
+        await harness.send(.sync)
+        #expect(Self.names(harness.effects).contains("sync"))
+        #expect(await harness.presentation.syncing)
+    }
+
+    @Test("an outbox read reads again the routines of the conflicts it did not hold before, and only those")
+    func newConflicts() async throws {
+        let harness = Self.harness(directory: nil)
+        await harness.runtime.linkChanged(Self.snapshot())
+        let kind = RecordCodec().kinds.routine
+        var first = OutboxEntry(method: .put, kind: kind, recordID: "r1", properties: [:])
+        first.parked = true
+        first.conflict = true
+        var second = OutboxEntry(method: .put, kind: kind, recordID: "r2", properties: [:])
+        second.parked = true
+        second.conflict = true
+        harness.clearTrace()
+        await harness.deliver(.outboxRead(Self.account, waitingRoutines: [], conflicts: [first]))
+        #expect(harness.effects == [.reread(Self.account, [RoutineID("r1")])])
+        harness.clearTrace()
+        await harness.deliver(.outboxRead(Self.account, waitingRoutines: [], conflicts: [first]))
+        #expect(harness.effects.isEmpty)
+        await harness.deliver(.outboxRead(Self.account, waitingRoutines: [], conflicts: [first, second]))
+        #expect(harness.effects == [.reread(Self.account, [RoutineID("r2")])])
+    }
+
+    @Test("the session's events reach the app only where it hands them off: a tick is the session's alone")
+    func childEvents() throws {
+        let app = WorkoutsApp(directory: nil, adapter: "substrate-workouts@test", settings: WorkoutsSettings())
+        let at = Date(timeIntervalSince1970: 1_793_696_400)
+        let tick = EventEnvelope(id: EventID("e1"), at: at, event: .skipRest)
+        #expect(app.event(fromChild: WorkoutsApp.sessionKey, .engine(tick)) == nil)
+        #expect(app.event(fromChild: WorkoutsApp.sessionKey, .tick(at)) == nil)
+        let discard = SessionController.Event.discard(EventEnvelope(id: EventID("e2"), at: at, event: .discard), session: SessionID("s1"),
+                                                      then: nil)
+        #expect(app.event(fromChild: WorkoutsApp.sessionKey, discard) == .session(discard))
+        var exercise = try #require(try BundledCatalog().loadNow().exercises.values.first)
+        exercise.isLocal = true
+        let added = SessionController.Event.engine(EventEnvelope(id: EventID("e3"), at: at,
+                                                                 event: .addExercise(SessionEvent.AddExercise(slot: "x", exercise: exercise))))
+        #expect(app.event(fromChild: WorkoutsApp.sessionKey, added) == .session(added))
+    }
+
     @Test("a sync step for an account no longer signed in changes nothing")
     func staleAccount() async throws {
         let harness = Self.harness(directory: nil)

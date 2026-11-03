@@ -75,6 +75,24 @@ public enum WorkoutsManifest {
     /// the request, whatever it calls its build; one that cannot is too old.
     public static let requirement = ServerRequirement(scopeVerbs: ["write", "agents"], detailTypes: [AuthorizationDetail.Types.package])
 
+    /// The training kinds' labels and purposes as `package/` declares them,
+    /// so the approval and a refused write say "Training session" and
+    /// "Workout routine", never the word built from the kind's name.
+    public static let trainingLabels: [String: KindLabel] = {
+        let kinds = WorkoutsKinds.v1
+        return [
+            kinds.session: KindLabel(singular: "Training session", plural: "Training sessions"),
+            kinds.set: KindLabel(singular: "Set", plural: "Sets", purpose: "supporting"),
+            kinds.routine: KindLabel(singular: "Workout routine", plural: "Workout routines"),
+            kinds.exercise: KindLabel(singular: "Exercise", plural: "Exercises"),
+            kinds.movement: KindLabel(singular: "Movement", plural: "Movements", purpose: "supporting"),
+            kinds.setup: KindLabel(singular: "Exercise setup", plural: "Exercise setups", purpose: "supporting"),
+            kinds.library: KindLabel(singular: "Seeded library", plural: "Seeded libraries", purpose: "internal"),
+            kinds.bodyMeasurement: KindLabel(singular: "Body measurement", plural: "Body measurements"),
+            "\(WorkoutsKinds.packageID)/memory": KindLabel(singular: "Coach memory", plural: "Coach memories"),
+        ]
+    }()
+
     public static func manifest(clientID: String, claimedRedirect: URL? = nil, softwareVersion: String = AppManifest.softwareVersion()) -> AppManifest {
         AppManifest(
             appName: appName,
@@ -85,11 +103,11 @@ public enum WorkoutsManifest {
             claimedRedirect: claimedRedirect,
             passwordFallback: .never,
             names: [healthPackage: "Health", WorkoutsKinds.packageID: "Training", Coach.package: "Workout coach"],
-            kindLabels: [
+            kindLabels: trainingLabels.merging([
                 healthWorkout: KindLabel(singular: "Workout", plural: "Workouts"),
                 healthSleep: KindLabel(singular: "Sleep", plural: "Sleep"),
                 healthAccount: KindLabel(singular: "Apple Health account", plural: "Apple Health accounts", purpose: "internal"),
-            ],
+            ]) { training, _ in training },
             softwareVersion: softwareVersion)
     }
 

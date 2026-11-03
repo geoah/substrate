@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateDevice
 import SubstrateLocal
 import SubstrateRuntime
 
@@ -16,7 +17,8 @@ import SubstrateRuntime
 /// and its effect writes the history file; `finished` then removes the
 /// journal, or `finishFailed` leaves the session open. A crash between them
 /// replays to the session open, and the open's check against History closes
-/// it when its file was written.
+/// it when its file was written. Every Save is answered under its receipt,
+/// saved or refused, so the sheet waits for its own outcome.
 public struct SessionController: Controller, Equatable {
     public typealias Command = SessionCommand
     public typealias Presentation = SessionScreenPresentation
@@ -50,11 +52,17 @@ public struct SessionController: Controller, Equatable {
     public static let countdownCategory = "workouts.countdown"
     public static let sessionKey = "session"
 
+    /// The command a notification's response means: a tap on the rest
+    /// notification reveals the session.
+    public static func command(for response: NotificationResponse) -> SessionCommand? {
+        response.category == countdownCategory && response.action == .open ? .reveal : nil
+    }
+
     public var initialState: State { State(session: preview) }
     public var initialTransient: Transient { Transient() }
 
     public func journal(in environment: AppEnvironment) -> (any JournalStore<Event, State>)? {
-        guard let directory, let folder = try? RepositoryFolder(adopting: directory, writingOptions: WorkoutsFiles.protectedWriting)
+        guard let directory, let folder = try? RepositoryFolder(app: directory, writingOptions: WorkoutsFiles.protectedWriting)
         else { return nil }
         return SessionJournalFile(folder: folder)
     }
@@ -82,7 +90,7 @@ public struct SessionController: Controller, Equatable {
             next = State()
         case .finishFailed:
             next.finishing = nil
-        case let .noted(.refuse(error)):
+        case let .noted(.refuse(error)), let .finishRefused(_, error):
             throw error
         case .opened, .foregrounded, .starting, .startDropped, .tick, .alertsRead, .setAsideFound, .noted:
             break
@@ -134,10 +142,12 @@ public struct SessionController: Controller, Equatable {
             next = cleared(next)
             next.play(.finishSaved)
             next.startAfterFinish = nil
+            if let receipt = finished.receipt { next.finishOutcomes[receipt] = .some(nil) }
             // The cover stays up for the next session.
             if finished.then == nil { next.show(cover: false) } else { next.starting = true }
-        case let .finishFailed(reason):
+        case let .finishFailed(reason, receipt):
             next.finishProblem = reason
+            if let receipt { next.finishOutcomes[receipt] = .some(reason) }
             next.play(.warning)
         case .alreadyFinished:
             next = cleared(next)
@@ -154,7 +164,7 @@ public struct SessionController: Controller, Equatable {
             next.alerts = permission
         case let .setAsideFound(records):
             next.setAside = records
-        case .opened:
+        case .opened, .finishRefused:
             break
         case let .noted(note):
             switch note {
@@ -165,7 +175,7 @@ public struct SessionController: Controller, Equatable {
                 if edit, let row = next.entryCheck?.row { next.scroll(row: row) }
                 next.entryCheck = nil
             case let .scroll(target):
-                if let target { next.scroll(row: target.row, slot: target.slot) } else { next.scroll = nil }
+                if let target { next.scroll(row: target.row, slot: target.slot) } else { next.scroll.clear() }
             case let .finishFlow(request):
                 next.startAfterFinish = request
                 next.finishFlow = true
@@ -174,6 +184,11 @@ public struct SessionController: Controller, Equatable {
                 next.finishFlow = false
             case let .startAfterFinish(request):
                 next.startAfterFinish = request
+            case let .coverVisible(visible):
+                next.coverVisible = visible
+            case let .reveal(row):
+                next.show(cover: true)
+                if let row { next.scroll(row: row) }
             case .leftForTheApp, .refuse:
                 break
             }
@@ -183,8 +198,21 @@ public struct SessionController: Controller, Equatable {
 
     public func transient(afterRefusing event: Event, because error: any Error, from transient: Transient) -> Transient {
         var next = transient
-        next.lastRefusal = String(describing: error)
+        let refusal = String(describing: error)
+        next.lastRefusal = refusal
         next.play(.warning)
+        switch event {
+        case let .engine(envelope):
+            // A Start the engine refuses once the device has answered: the
+            // cover leaves its progress for what is open, or for nothing.
+            if case .start = envelope.event { next.starting = false }
+        case let .finishRequested(_, finished):
+            if let receipt = finished.receipt { next.finishOutcomes[receipt] = .some(refusal) }
+        case let .finishRefused(receipt, _):
+            if let receipt { next.finishOutcomes[receipt] = .some(refusal) }
+        default:
+            break
+        }
         return next
     }
 
@@ -192,7 +220,7 @@ public struct SessionController: Controller, Equatable {
     private func cleared(_ transient: Transient) -> Transient {
         var next = transient
         next.entryCheck = nil
-        next.scroll = nil
+        next.scroll.clear()
         next.undo = nil
         next.finishFlow = false
         next.finishProblem = nil
@@ -226,12 +254,16 @@ public struct SessionController: Controller, Equatable {
             SessionPresenter.present($0, catalog: catalog, history: history, settings: presenterSettings(calendar: input.calendar),
                                      now: input.now)
         }
+        // Rows' Log says the set is in the journal: with the write failed,
+        // it is not, and the cover says so instead.
+        var cue = transient.cue
+        if input.journalProblem != nil, cue.value?.kind == .logged { cue.clear() }
         return SessionScreenPresentation(
             session: session, state: state.session, starting: transient.starting, finishing: state.finishing != nil,
             entryCheck: transient.entryCheck, scroll: transient.scroll, lastRefusal: transient.lastRefusal,
-            finishProblem: transient.finishProblem, journalProblem: input.journalProblem, cover: transient.cover, cue: transient.cue,
-            finishFlow: transient.finishFlow, startAfterFinish: transient.startAfterFinish, undo: transient.undo,
-            alerts: transient.alerts, setAside: transient.setAside)
+            finishProblem: transient.finishProblem, finishOutcomes: transient.finishOutcomes, journalProblem: input.journalProblem,
+            cover: transient.cover, coverVisible: transient.coverVisible, cue: cue, finishFlow: transient.finishFlow,
+            startAfterFinish: transient.startAfterFinish, undo: transient.undo, alerts: transient.alerts, setAside: transient.setAside)
     }
 
     public func nextChange(of presentation: SessionScreenPresentation) -> Date? { presentation.session?.nextChange }

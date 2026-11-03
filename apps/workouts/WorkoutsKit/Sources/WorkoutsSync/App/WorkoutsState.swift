@@ -45,16 +45,9 @@ public extension WorkoutsApp {
         public var conflicts: [OutboxEntry] = []
         /// The routine edit not saved yet, kept on disk.
         public var draft: RoutineEditor?
-        /// The last snapshot signed in to another account, or none.
-        public var accountMoved = false
-        /// The last snapshot made the training package writable.
-        public var becameWritable = false
         /// The catalogue was read before the history loaded: the exchange
         /// waits for it.
         public var awaitingHistory = false
-        /// Conflicts the last outbox read found that were not there before:
-        /// their routines are read again.
-        public var newConflicts: [RoutineID] = []
         /// Sessions finished here since launch: History's badge counts them.
         public var finished = 0
         /// How each change waited on by its receipt went: nil is done.

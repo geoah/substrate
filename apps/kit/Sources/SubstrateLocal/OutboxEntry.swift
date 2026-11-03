@@ -8,6 +8,9 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
         case patch = "PATCH"
         /// `DELETE ?purge=true`.
         case purge = "DELETE"
+        /// `DELETE` alone: the record is deleted and can be restored, and a
+        /// record whose reference to it cascades goes with it.
+        case delete = "DELETE-RESTORABLE"
     }
 
     public var id: UUID

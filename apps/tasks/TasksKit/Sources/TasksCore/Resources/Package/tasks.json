@@ -1,0 +1,159 @@
+{
+  "package": "substrate.reamde.dev/tasks",
+  "version": 1,
+  "documents": [
+    {
+      "kind": "substrate.reamde.dev/core/package",
+      "metadata": {
+        "id": "substrate.reamde.dev/tasks"
+      },
+      "data": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "version": 1
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/bundle",
+      "metadata": {
+        "id": "substrate.reamde.dev/tasks"
+      },
+      "data": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "description": "Your to-do list: tasks with a due day or time and a priority, sorted into task lists in your own order. Substrate Tasks keeps them.",
+        "installs": [
+          "substrate.reamde.dev/tasks/task",
+          "substrate.reamde.dev/tasks/list"
+        ]
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/kind",
+      "metadata": {
+        "id": "substrate.reamde.dev/tasks/task"
+      },
+      "data": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "description": "Something you have to do, such as Buy milk or Renew passport, with when it is due and how urgent it is. It is in one of your task lists or in none, and stays open until you mark it done or abandon it.",
+        "purpose": "primary",
+        "names": {
+          "singular": "task"
+        },
+        "traits": [
+          "substrate.reamde.dev/core/temporal(point: dueAt)"
+        ],
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "description": "what to do, in one line, such as Buy milk"
+          },
+          "description": {
+            "type": "markdown",
+            "description": "the details, as prose"
+          },
+          "url": {
+            "type": "url",
+            "description": "a link that goes with the task, such as the page to read or the form to fill in"
+          },
+          "list": {
+            "type": "reference",
+            "kind": "substrate.reamde.dev/tasks/list",
+            "mustExist": true,
+            "onDelete": "cascade",
+            "description": "the task list it is in; absent when it is in none, which Substrate Tasks shows as its inbox"
+          },
+          "position": {
+            "type": "decimal",
+            "description": "where the task sits among the tasks of its list, lowest first; a number written as a string, such as \"2\" or \"1.5\""
+          },
+          "dueDay": {
+            "type": "date",
+            "description": "the day it is due; written on every task with a due date, timed or not"
+          },
+          "priority": {
+            "type": "enum",
+            "description": "how urgent it is, from none to urgent",
+            "default": "none",
+            "values": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "urgent"
+            ]
+          },
+          "status": {
+            "type": "state",
+            "description": "open until you mark it done or abandon it; either can be undone",
+            "states": [
+              "open",
+              "done",
+              "abandoned"
+            ],
+            "initial": "open",
+            "transitions": [
+              {
+                "from": "open",
+                "to": "done",
+                "stamps": {
+                  "completedAt": "now"
+                }
+              },
+              {
+                "from": "done",
+                "to": "open"
+              },
+              {
+                "from": "open",
+                "to": "abandoned"
+              },
+              {
+                "from": "abandoned",
+                "to": "open"
+              }
+            ]
+          },
+          "completedAt": {
+            "type": "datetime",
+            "description": "when it was marked done"
+          }
+        }
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/kind",
+      "metadata": {
+        "id": "substrate.reamde.dev/tasks/list"
+      },
+      "data": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "description": "A task list: a named list of your tasks, such as Groceries or Home, kept in the order you arrange your lists. A task is in one list or in none.",
+        "purpose": "primary",
+        "names": {
+          "singular": "list"
+        },
+        "label": {
+          "singular": "Task list",
+          "plural": "Task lists"
+        },
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "description": "the list's name, such as Groceries"
+          },
+          "position": {
+            "type": "decimal",
+            "description": "where the list sits among your lists, lowest first; a number written as a string, such as \"2\" or \"1.5\""
+          }
+        }
+      }
+    }
+  ]
+}

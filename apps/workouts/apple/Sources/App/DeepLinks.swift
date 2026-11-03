@@ -20,14 +20,9 @@ enum DeepLinks {
     }
 
     /// Opens the cover on the session in progress and brings Up next into
-    /// view; with none open, the app stays where it is.
+    /// view; with none open, the app stays where it is. The session decides
+    /// both (`SessionCommand.reveal`), as it does for a notification's tap.
     static func openSession() {
-        let root = WorkoutsRoot.shared
-        Task {
-            await root.until { $0.app?.session != nil }
-            guard let presentation = root.session.presentation else { return }
-            root.app.isSessionPresented = true
-            if let row = presentation.upNext?.row ?? presentation.timedRow { root.session.scrollTarget = ScrollTarget(row: row) }
-        }
+        WorkoutsRoot.shared.send(.reveal)
     }
 }

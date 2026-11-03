@@ -287,13 +287,34 @@ struct RepositoryStatusTests {
                                              timeZone: utc)
         #expect(status.sentence == "Your substrate refused a change. 1 change waits; retry or discard it below.")
         #expect(status.problem == nil)
-        #expect(status.refused?.rows.map(\.title) == ["Task, changed"])
+        // What the write was of and what was refused are two facts.
+        #expect(status.refused?.rows.map(\.label) == ["Task"])
+        #expect(status.refused?.rows.map(\.status) == ["Change refused"])
         #expect(status.refused?.rows.first?.words == "props.status: expected one of todo, doing, done")
         #expect(status.refused?.rows.first?.retry == ActionButton("Retry", .retry(write.id)))
         #expect(status.actions.map(\.title) == ["Send Now"])
         let unlisted = StatusPresenter.present(.refused(waiting: 1, reason: "no"), words: words, host: nil, packages: [], sending: false,
                                                waiting: 1, parked: [], locale: enUS, timeZone: utc)
         #expect(unlisted.problem?.message == "no")
+    }
+
+    @Test func anAppsWordsReplaceTheFooters() {
+        var mine = words
+        mine.footer = "Sessions are written to {server} when they finish."
+        mine.refusedFooter = "Discard gives up the rest of its session's changes."
+        let write = ParkedWrite(id: UUID(), method: .put, kind: "substrate.reamde.dev/training/session", recordID: "s1", words: "no",
+                                conflict: false)
+        let status = StatusPresenter.present(.refused(waiting: 1, reason: "no"), words: mine, host: "ada.example.com", packages: [],
+                                             sending: false, waiting: 1, parked: [write],
+                                             kindLabels: ["substrate.reamde.dev/training/session": "Training session"], locale: enUS,
+                                             timeZone: utc)
+        #expect(status.footer == "Sessions are written to ada.example.com when they finish.")
+        #expect(status.refused?.footer == "Discard gives up the rest of its session's changes.")
+        #expect(status.refused?.rows.map(\.label) == ["Training session"])
+        #expect(status.refused?.rows.map(\.status) == ["Write refused"])
+        let plain = StatusPresenter.present(.ready(waiting: 0), words: words, host: nil, packages: [], sending: false, waiting: 0, parked: [],
+                                            locale: enUS, timeZone: utc)
+        #expect(plain.footer == "Changes are written to your substrate as you make them, and wait on this iPhone while it cannot be reached.")
     }
 
     @Test func aChangeNotKeptSaysWhyApart() {
@@ -311,7 +332,8 @@ struct RepositoryStatusTests {
         #expect(settings.sections.map(\.id) == [.app("tasks"), .status, .refused, .repository, .approvedAccess, .storage, .about])
         let refused = try #require(settings.sections.first { $0.id == .refused })
         let write = ScreenFixtures.refusedWrite
-        #expect(refused.rows.map(\.id) == [.status(.refused(write.id)), .status(.action(.retry(write.id))), .status(.action(.discard(write.id)))])
+        #expect(refused.rows.map(\.id) == [.status(.refused(write.id)), .status(.refusedStatus(write.id)), .status(.action(.retry(write.id))),
+                                            .status(.action(.discard(write.id)))])
         #expect(refused.rows[0].detail == write.words)
         let approved = try #require(settings.sections.first { $0.id == .approvedAccess })
         #expect(approved.rows.map(\.id) == ScreenFixtures.manifest.scopes.map { .repository(.scope($0)) } + [.repository(.until), .repository(.changeAccess)])
