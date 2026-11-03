@@ -5,6 +5,7 @@ import FoundationNetworking
 import SubstrateBridge
 import SubstrateCore
 import SubstrateDevice
+import SubstrateRuntime
 
 /// A command to the check root, which the bridge's runtime checks and the
 /// gallery-free smoke run (`bridge-check`) send to exercise each path.
@@ -57,7 +58,7 @@ public enum CheckResult: Bridged, Equatable {
 }
 
 /// One row of the check root's keyed list.
-public struct CheckRow: Bridged, Equatable {
+public struct CheckRow: Bridged, Equatable, Identifiable {
     public var id: String
     public var text: String
 }
@@ -66,7 +67,7 @@ public struct CheckRow: Bridged, Equatable {
 public actor CheckRoot: BridgeRoot {
     private let context: BridgeContext
     private var step = 0
-    private var rows: [CheckRow] = []
+    private var rows = KeyedList<CheckRow>()
 
     public init(context: BridgeContext) {
         self.context = context
@@ -107,17 +108,17 @@ public actor CheckRoot: BridgeRoot {
             }
             return ok("\(count)")
         case let .rows(count):
-            rows = (0 ..< count).map { CheckRow(id: "row-\($0)", text: "Row \($0)") }
-            context.publish(list: "rows", rows: rows, id: \.id)
+            rows.update((0 ..< count).map { CheckRow(id: "row-\($0)", text: "Row \($0)") })
+            context.publish(list: "rows", rows)
             return ok("\(count) rows")
         case let .changeRow(id, text):
-            guard let index = rows.firstIndex(where: { $0.id == id }) else { return .failed(name: name, detail: "no row \(id)") }
-            rows[index].text = text
-            context.publish(list: "rows", rows: rows, id: \.id)
+            guard rows[id] != nil else { return .failed(name: name, detail: "no row \(id)") }
+            rows.update(rows.rows.map { $0.id == id ? CheckRow(id: id, text: text) : $0 })
+            context.publish(list: "rows", rows)
             return ok(id)
         case let .removeRow(id):
-            rows.removeAll { $0.id == id }
-            context.publish(list: "rows", rows: rows, id: \.id)
+            rows.update(rows.rows.filter { $0.id != id })
+            context.publish(list: "rows", rows)
             return ok(id)
         case let .fetch(url, via):
             guard let url = URL(string: url) else { return .failed(name: name, detail: "not a URL") }
@@ -194,5 +195,6 @@ public func substrate_bridge_roots(_ registry: UnsafeMutableRawPointer) {
 public extension CheckRoot {
     static func register(in registry: RootRegistry) {
         registry.register("check") { _, context in CheckRoot(context: context) }
+        registry.register("counter") { _, context in (Counter(), context.appEnvironment()) }
     }
 }

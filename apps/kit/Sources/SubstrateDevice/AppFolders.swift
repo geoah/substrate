@@ -1,15 +1,15 @@
 import Foundation
 
-/// Where an app keeps its files. `data` holds what must survive and never
-/// leave the device (the repository's folder: outbox, record cache, journal),
-/// excluded from backups and device transfers; `cache` what the system may
-/// drop.
-public struct AppFolders: Hashable, Sendable {
-    public let data: URL
-    public let cache: URL
-
-    public init(data: URL, cache: URL) {
-        self.data = data
-        self.cache = cache
-    }
+/// Where the app keeps its files, as a device service.
+public protocol AppFolders: Sendable {
+    /// For what cannot be read again (a journal, the outbox): kept out of
+    /// backups and device transfers, so a restore never revives a queue of
+    /// writes for a session that no longer exists, and readable after the
+    /// first unlock, so background work reaches it. `noBackupFilesDir` on
+    /// Android.
+    func data() throws -> URL
+    /// For what can be read again; the system may clear it.
+    func cache() throws -> URL
+    /// What every write there adds to `.atomic`: the data protection class.
+    var writingOptions: Data.WritingOptions { get }
 }

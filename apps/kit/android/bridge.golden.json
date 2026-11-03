@@ -201,6 +201,28 @@
       ]
     },
     {
+      "name": "Counter.Command",
+      "module": "SubstrateBridgeCheck",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "add",
+          "fields": [
+            {"name": "amount", "type": "Int"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Counter.Presentation",
+      "module": "SubstrateBridgeCheck",
+      "kind": "struct",
+      "fields": [
+        {"name": "count", "type": "Int"},
+        {"name": "words", "type": "String"}
+      ]
+    },
+    {
       "name": "DNSAnswer",
       "module": "SubstrateBridge",
       "kind": "enum",
@@ -340,7 +362,8 @@
       "kind": "struct",
       "fields": [
         {"name": "online", "type": "Bool"},
-        {"name": "expensive", "type": "Bool"}
+        {"name": "expensive", "type": "Bool"},
+        {"name": "constrained", "type": "Bool"}
       ]
     },
     {
@@ -380,6 +403,15 @@
       "kind": "struct",
       "fields": [
         {"name": "list", "type": "String"}
+      ]
+    },
+    {
+      "name": "RouteCommand",
+      "module": "SubstrateBridge",
+      "kind": "struct",
+      "fields": [
+        {"name": "path", "type": "[String]"},
+        {"name": "command", "type": "JSON"}
       ]
     },
     {

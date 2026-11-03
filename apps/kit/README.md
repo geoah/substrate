@@ -22,14 +22,19 @@ compile to nothing elsewhere. The package is in Swift 6 language mode.
 | Library | What it holds |
 | --- | --- |
 | `SubstrateCore` | `JSONValue` (a number keeps its decimal text: `JSONNumber`, read as a `Decimal`, a `Double` or an `Int`; an object its key order: `JSONObject`) with `DecimalText`; `Record`, `FlatRecord` (the record as the REST API speaks it) and `CodecError`; `KindReference`, `RecordReference`, `KindDeclaration`; `Timestamp` (RFC 3339) and `ISODuration`; a kind's and a property's name in words (`KindNames`, `kindDisplayName`, `propertyLabel`), its glyph (`KindGlyphSpec`, `KindHue`), `ValueShape` and `valueWords`; `ServerAddress`; the errors (`ServerError`, `TransportError`, `Redirected`, `SessionExpired`, `InsufficientScope`, `LoginRefused`, `OAuthRefusal`) and `explain(_:app:server:)`; `Grants`, `ScopeWords` and `ScopeKind` |
-| `SubstrateDevice` | the device services' protocols and their values: `HTTPTransport` with `URLSessionTransport`, which never follows a redirect; `SessionStorage`, the secure store, with `StoredItem` (missing told from failed) and `SecureStoreRefused`; `BrowserSignIn` with `SignInRoute`, `SignInRedirect`, `SignInAnswer` and `SignInCancelled`; `TXTResolver`, whose `TXTAnswer` keeps records, a confirmed absence, an unconfirmed absence and a failure apart |
-| `SubstrateAPI` | `SubstrateClient`: `Timeout` tiers, `Retry-After`, `segment(_:)`, records, lists (`ListQuery`, `RecordPage`), blobs, webhook deliveries, parked deliveries, the password door; `RecordReader`, `HTTPRecordReader` and `RecordDirectory`; `Discovery`, `AuthorizationServerMetadata` and `ServerMismatch`, `ServerVersion`, `ServerRequirement`, `ServerProbe`; `DomainRecord` and `ServerLocator` over a `TXTResolver` |
+| `SubstrateDevice` | the device services' protocols and their values: `HTTPTransport` with `URLSessionTransport`, which never follows a redirect, whose `lines(for:)` reads an answer line by line as a `LineStream`; `SessionStorage`, the secure store, with `StoredItem` (missing told from failed) and `SecureStoreRefused`; `BrowserSignIn` with `SignInRoute`, `SignInRedirect`, `SignInAnswer` and `SignInCancelled`; `TXTResolver`, whose `TXTAnswer` keeps records, a confirmed absence, an unconfirmed absence and a failure apart; `Connectivity` with `NetworkPath`; `AppFolders` |
+| `SubstrateAPI` | `SubstrateClient`: `Timeout` tiers, `Retry-After`, `segment(_:)`, records, lists (`ListQuery`, `RecordPage`), blobs, webhook deliveries, parked deliveries, the password door; `RecordReader`, `HTTPRecordReader` and `RecordDirectory`; `Discovery`, `AuthorizationServerMetadata` and `ServerMismatch`, `ServerVersion`, `ServerRequirement`, `ServerProbe`; `DomainRecord` and `ServerLocator` over a `TXTResolver`; `RecordWriter`, the record calls an outbox sends through; the watch: `WatchFollower` (a cursor and its generation, heartbeats, a dropped connection opened again, a relist on a 410 or a `compacted` frame) with `WatchFrame`, `WatchRow`, `WatchCursor`, `WatchEvent` and `WatchEnd` |
 | `SubstrateAuth` | `AppManifest`, `KindLabel`, `AuthorizationDetail` and the check's wire shapes with `checkAuthorization`; `PKCE` (SHA-256 from CryptoKit, or swift-crypto where it is missing); `OAuthClient`, whose `signIn` takes the device's `BrowserSignIn`, `TokenResponse`, `RepositoryMismatch`; `Session` and its `revoke`; `SessionStore`, its pending revocations and its transitions, over a `SessionStorage`; `AppStatusCheck`, `AppStatus`, `AppIssue`, `Change` and its words, `AppStatusModel` |
-| `SubstrateTesting` | the fakes tests use: `StubTransport` (a scripted server), `MemoryStorage`, `TableResolver`, `ScriptedBrowser` |
-| `SubstrateDeviceApple` | the device services on Apple frameworks: `KeychainStorage`, `WebAuthenticator` (`ASWebAuthenticationSession`, the claimed callback or the loopback redirect), `LoopbackReceiver`, `DNSServiceTXTResolver` and the `SubstrateResolv` C target behind it |
-| `SubstrateUI` | the SwiftUI screens (`ConnectView`, `ServerTooOldView`, `AppStatusBanner`, `ReviewChangesSheet` and its `ReviewChangesSections`, `AccessEndingBanner`, `AccessEndedView`, `AccountSection`, `UnrevokedNotices`, `ChangeRow`, `StatusBadge`, `ProblemBox`) and the record views (`KindGlyph`, `RecordPill`, `RecordSheet`, `RecordDetailView`, `RecordValueView`) |
+| `SubstrateRuntime` | the loop every screen runs (below): `Controller`, `Runtime`, `AppEnvironment` with `AppEnvironmentKey`, `ClientSource` and `DeviceServices`, `Enrichment`, `PresenterInput`, `Journaling`, `JournalStore`, `Coalescing`, `Work`, `ChildKey`, `LinkSnapshot`, `KeyedList` with its `KeyedListDelta`, `RoutedCommand`, `RuntimeTrace`, `RuntimeClock`, `IDSource` |
+| `SubstrateLocal` | what an app keeps on the device for one repository: `RepositoryFolder` (a format, atomic writes, `SetAsideFile`s listed, `AreaUsage` per `FolderArea`, eviction by age and budget), `JournalFile`, the `Outbox` (Workouts', with a `group` where it had a session), `RecordCache`, `HeldPackage`, `LinkGeneration`; the folder joins the environment as `environment.folder` |
+| `SubstrateScreens` | the shared screens as engines, presenters and fixtures, each label written here: `LinkController` (the session and its revocations, the status check, the package versions, connectivity, the outbox; a `LinkSnapshot` with no secret), `ConnectController`, `AccessPresenter`, `ReviewPresenter`, `ServerTooOldPresentation`, `AccountPresenter`, `StatusPresenter` with `LinkStatus` and `StatusWords`, `SettingsPresentation` with `SettingsPresenter` and `SettingsValues`, `ProblemPresenter`, `AboutPresentation`; `ScreenFixtures`, every screen in the states an app shows it in |
+| `SubstrateTesting` | the fakes tests use: `StubTransport` and `ScriptedServer` (scripted servers, by route and by rule), `ScriptedLines` (answers read line by line), `MemoryStorage`, `TableResolver`, `ScriptedBrowser`, `ScriptedConnectivity`, `TemporaryFolders`; and the runtime's harness: `ControllerHarness` with `TestClock`, `SequentialIDs` and `MemoryJournal` |
+| `SubstrateDeviceApple` | the device services on Apple frameworks: `KeychainStorage`, `WebAuthenticator` (`ASWebAuthenticationSession`, the claimed callback or the loopback redirect), `LoopbackReceiver`, `DNSServiceTXTResolver` and the `SubstrateResolv` C target behind it, `PathMonitor` (`NWPathMonitor`), `ApplicationFolders` |
+| `SubstrateUI` | the renderers of SubstrateScreens' presentations (`ConnectScreen`, `AccessBannerView`, `AccessEndedScreen`, `ReviewScreen` and `ReviewSectionsView`, `ServerTooOldScreen`, `AccountScreen`, `StatusScreen`, `SettingsScreen`, `AboutScreen`, `ProblemView`, `ChangeLineView`) with the design tokens, `Gallery` (each screen's renderer), `PresentationModel` (a root's presentations republished on the main actor) and `AppEnvironment.apple`; the views apps call by their own initialisers, now thin wrappers over those (`ConnectView`, which runs a `ConnectController`, `ServerTooOldView`, `AppStatusBanner`, `ReviewChangesSheet` and its `ReviewChangesSections`, `AccessEndingBanner`, `AccessEndedView`, `AccountSection`, `UnrevokedNotices`, `ChangeRow`, `ProblemBox`), `StatusBadge`; and the record views (`KindGlyph`, `RecordPill`, `RecordSheet`, `RecordDetailView`, `RecordValueView`) |
 
-`SubstrateKit` is every library but `SubstrateTesting` under one import,
+`SubstrateKit` is every library but `SubstrateTesting` and `SubstrateLocal`
+under one import (`SubstrateLocal`'s outbox shares its names with
+WorkoutsSync's until Workouts moves onto it, so an app takes it by name),
 with the Apple device services as the defaults the single module had: a
 `ServerLocator(probe:)` reads DNS through DNS-SD, `OAuthClient.signIn`
 without a `browser:` signs in through `WebAuthenticator`, and
@@ -38,6 +43,41 @@ through a `KeychainStorage` made of those settings.
 The console, Chat and Sync import it. Code that must build for Linux or
 Android (an app's core: WorkoutsCore and WorkoutsSync) imports the
 portable libraries it uses instead and passes its device services in.
+
+## The loop
+
+A screen is a `Controller` a `Runtime` runs (docs/plans/app-kit.md,
+§5.1 and §5.2). The UI sends a command; `events(for:in:)` enriches it with
+what a pure function may not read (`context.mint()`, `context.now`, the
+environment) into events; `apply(_:to:)`, the engine, applies each; the
+journal, where `journal(in:)` names one, is written at once, with no
+suspension between the engine and the write, as `journaling(_:)` says
+(`.append`, `.restart`, `.clear`, or `.skip` for a step whose outcome waits
+on work outside, which comes back as a second event); `present(_:)` draws
+the state, the transient state, the children's presentations, the instant,
+the locale and the time zone; and only then do `effects(of:on:presented:)`
+start, on the live path alone, never on a replay. An effect is a value;
+`perform(_:in:)` turns it into `Work`, whose results are events through the
+same loop. Under a `key(of:)`, starting one cancels the one running and its
+late result is dropped; a reset or a close drops every result still on its
+way. `coalescing(_:)` says whether an event presents now or within a window
+the events after it share, and `nextChange(of:)` has the runtime deliver
+`tick(at:)` then. A parent keeps its children in its state, by the key the
+app minted (`children(in:)`), folds the events of theirs it cares about
+(`event(fromChild:_:)`), and presents them in its own tree, which goes out
+once per step. The link's snapshot reaches every controller as
+`linkChanged(_:)`.
+
+```swift
+let runtime = Runtime(TasksController(...), environment: .apple(transport: transport))
+let model = PresentationModel(runtime, first: await runtime.presentation)   // SwiftUI reads model.presentation
+model.send(.complete(taskID))
+```
+
+`ControllerHarness` (SubstrateTesting) runs a controller on a `TestClock`
+with `SequentialIDs` and a scripted server, and keeps the runtime's trace,
+so a test reads what was journaled, presented, published and asked for, in
+order.
 
 ## How an app uses it
 
@@ -251,6 +291,9 @@ sentence, never rebuilt here.
 the server with a scripted transport, and `mise run apps:test:linux` runs it
 on Linux, where the tests of the Apple libraries and the SwiftUI screens
 compile out. With `SUBSTRATEKIT_SNAPSHOTS` naming a
-directory, `swift test --filter Snapshots` also draws every screen in its
-usual states to PNG files there, at an iPhone's size in light mode, for a
-person to look at.
+directory, `swift test --filter Snapshots` also draws every fixture of
+`ScreenFixtures` through `Gallery`, and the views apps call in their usual
+states (under `apps/`), to PNG files there, at an iPhone's size in light
+mode, for a person to look at; `mise run apps:gallery` does it into
+`build/gallery/apple`. A screen without a renderer in `Gallery` fails the
+suite either way.

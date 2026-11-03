@@ -65,10 +65,6 @@ public struct Reader {
                     errors.append(ModelError(location: item.location, message: "\(declaration.name) has a case named \(rawCase.name), which Kotlin reserves"))
                 }
             }
-            if let parent = declaration.parent, names[parent] == nil {
-                errors.append(ModelError(location: item.location,
-                                         message: "\(declaration.name) is nested in \(parent), which is not Bridged: nest bridged values only in bridged ones"))
-            }
             declarations.append(declaration)
         }
         guard errors.isEmpty else { return nil }

@@ -15,7 +15,7 @@ public struct ServerProbe: Sendable {
     }
 
     /// What a server answered.
-    public struct Result: Hashable, Sendable {
+    public struct Result: Codable, Hashable, Sendable {
         public var origin: URL
         public var discovery: Discovery
         /// Nil when the server has no app authorization: its metadata

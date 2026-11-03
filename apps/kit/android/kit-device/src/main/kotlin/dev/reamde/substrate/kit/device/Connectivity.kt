@@ -11,8 +11,9 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
- * The default network: online when it reaches the internet (validated), and
- * expensive when it is metered.
+ * The default network: online when it reaches the internet (validated),
+ * expensive when it is metered, constrained when the owner turned data saver
+ * on for this app.
  */
 public class Connectivity(context: Context) {
     private val manager = context.getSystemService(ConnectivityManager::class.java)
@@ -40,6 +41,7 @@ public class Connectivity(context: Context) {
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         val expensive = capabilities != null && !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-        return NetworkPath(online, online && expensive)
+        val constrained = manager.restrictBackgroundStatus == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
+        return NetworkPath(online = online, expensive = online && expensive, constrained = online && constrained)
     }
 }

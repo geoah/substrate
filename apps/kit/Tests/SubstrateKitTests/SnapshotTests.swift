@@ -15,11 +15,12 @@ import FoundationNetworking
 @testable import SubstrateUI
 import SubstrateTesting
 
-/// Every screen of the kit in the states an app shows it in, drawn to PNG
-/// files in the directory SUBSTRATEKIT_SNAPSHOTS names, for a person to look
-/// at; skipped without it. A view is hosted in an offscreen window and its
-/// layer cached, since `ImageRenderer` draws a text field or a list as a
-/// placeholder.
+/// Every shared screen's fixtures through the gallery's renderers, then the
+/// views apps call by their own initialisers, drawn to PNG files in the
+/// directory SUBSTRATEKIT_SNAPSHOTS names (`mise run apps:gallery`), for a
+/// person to look at; skipped without it. A view is hosted in an offscreen
+/// window and its layer cached, since `ImageRenderer` draws a text field or
+/// a list as a placeholder.
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATEKIT_SNAPSHOTS"] != nil))
 @MainActor
 struct Snapshots {
@@ -51,11 +52,6 @@ struct Snapshots {
         ]
     }
 
-    func connect(_ phase: ConnectView<ConnectHeader, EmptyView>.Phase, address: String) -> some View {
-        ConnectView(manifest: manifest, address: .constant(address), probe: ServerProbe(), header: header,
-                    onSignIn: { _ in }, passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, phase: phase)
-    }
-
     func screen(@ViewBuilder _ content: () -> some View) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -68,21 +64,21 @@ struct Snapshots {
         }
     }
 
-    @Test func everyScreenDraws() async throws {
+    @Test func everyFixtureDraws() async throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for fixture in ScreenFixtures.all {
+            let view = try #require(Gallery.view(for: fixture), "\(fixture.name) has no renderer")
+            try await draw(fixture.name, view)
+        }
+    }
+
+    @Test func everyViewAnAppCallsDraws() async throws {
+        let directory = directory.appendingPathComponent("apps", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let actions = AppStatusActions(review: {}, signInAgain: {}, moveToAppAccess: {}, retry: {}, openFix: { _ in })
-        let result = ServerProbe.Result(origin: server, discovery: Discovery(server: .init(version: "v0.114.0")),
-                                        metadata: metadata, verdict: .compatible)
+        func draw(_ name: String, _ view: some View) async throws { try await self.draw(name, view, in: directory) }
 
-        try await draw("connect-empty", connect(.idle, address: ""))
-        try await draw("connect-checking", connect(.checking, address: "ada.example.com"))
-        try await draw("connect-found", connect(.found(result), address: "https://ada.example.com"))
-        // Signed out with an earlier sign-in on another server still live.
-        try await draw("connect-unrevoked", ConnectView(
-            manifest: manifest, address: .constant("https://ada.example.com"), probe: ServerProbe(), header: header,
-            onSignIn: { _ in }, passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, phase: .found(result),
-            unrevoked: [Session(server: URL(string: "https://substrate.example.org")!, repository: "grace.example.org",
-                                secret: "s", clientID: manifest.clientID, scopes: ["read:*"])]))
+        try await draw("connect-view", ConnectView(manifest: manifest, address: .constant(""), header: { header }, onSignIn: { _ in }))
         try await draw("server-too-old", ScrollView {
             ServerTooOldView(appName: "Substrate Sync", host: "ada.example.com", running: "v0.113.0", needed: "0.114.0",
                              missing: [ServerRequirement.detailWords("account"), ServerRequirement.detailWords("webhook")],
@@ -166,7 +162,8 @@ struct Snapshots {
 
     /// Hosts the view in an offscreen window at an iPhone's size, in light
     /// mode, lets it settle, and writes what it drew.
-    func draw(_ name: String, _ view: some View) async throws {
+    func draw(_ name: String, _ view: some View, in directory: URL? = nil) async throws {
+        let directory = directory ?? self.directory
         _ = NSApplication.shared
         let hosting = NSHostingView(rootView: view
             .frame(width: Self.size.width, height: Self.size.height)
@@ -187,6 +184,27 @@ struct Snapshots {
         let png = try #require(rep.representation(using: .png, properties: [:]))
         try png.write(to: directory.appendingPathComponent("\(name).png"))
         window.contentView = nil
+    }
+}
+#endif
+
+#if canImport(SwiftUI)
+import SubstrateScreens
+
+/// The gallery's check (§7.4): a fixture whose screen has no renderer
+/// fails here, so a presentation never ships without its view.
+@MainActor
+@Suite struct GalleryRenderers {
+    @Test func everyScreenHasARenderer() {
+        for screen in ScreenKind.allCases {
+            #expect(Gallery.renderers[screen] != nil, "\(screen) has no renderer")
+        }
+    }
+
+    @Test func everyFixtureIsDrawnByItsScreensRenderer() {
+        for fixture in ScreenFixtures.all {
+            #expect(Gallery.view(for: fixture) != nil, "\(fixture.name) has no renderer")
+        }
     }
 }
 #endif

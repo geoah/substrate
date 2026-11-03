@@ -57,13 +57,20 @@ struct BridgeModelTests {
             ("enum E: Bridged { case name }", "Kotlin reserves"),
             ("struct A {}\nextension A: Bridged {}", "in an extension"),
             ("final class C: Bridged {}", "is a class"),
-            ("enum Plain { struct Inner: Bridged { var a: Int } }", "not Bridged"),
         ]
         for (source, words) in cases {
             let (model, errors) = model(source)
             #expect(model == nil, "\(source)")
             #expect(errors.contains { $0.contains(words) }, "\(source): \(errors)")
         }
+    }
+
+    @Test func aValueNestedInAnUnbridgedTypeIsInAKotlinNamespace() throws {
+        let (model, errors) = model("struct Counter { enum Command: Bridged { case add(amount: Int) }; struct Presentation: Bridged { var count: Int } }")
+        #expect(errors.isEmpty, "\(errors)")
+        let kotlin = try Kotlin.write(try #require(model), package: "p", fingerprint: "f", generatedBy: "test")
+        #expect(kotlin.contains("public object Counter {\n    @Serializable(with = Counter.Command.Serializer::class)"))
+        #expect(kotlin.contains("    public data class Presentation(\n        val count: Long,\n    )"))
     }
 
     @Test func theFingerprintIsTheGoldensSHA256() {

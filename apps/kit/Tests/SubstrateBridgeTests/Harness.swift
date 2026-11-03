@@ -1,6 +1,8 @@
 import Foundation
 @testable import SubstrateBridge
+import SubstrateBridgeCheck
 import SubstrateCore
+import SubstrateRuntime
 
 /// Kotlin's side of the bridge in a test: every message Swift delivers,
 /// kept in order, and a way to wait for one.
@@ -50,6 +52,7 @@ actor TestRoot: BridgeRoot {
     let context: BridgeContext
     private(set) var commands: [JSONValue] = []
     private(set) var closed = false
+    private var rows = KeyedList<Row>()
 
     init(context: BridgeContext) {
         self.context = context
@@ -80,9 +83,9 @@ actor TestRoot: BridgeRoot {
                 context.present(["streamFailure": .string(failure.code.rawValue), "streamed": .array(values)] as JSONValue)
             }
         }
-        if let rows = command["rows"]?.array {
-            let list = rows.compactMap(\.string).map { Row(id: $0, text: command["text"]?.string ?? $0) }
-            context.publish(list: "rows", rows: list, id: \.id)
+        if let ids = command["rows"]?.array {
+            rows.update(ids.compactMap(\.string).map { Row(id: $0, text: command["text"]?.string ?? $0) })
+            context.publish(list: "rows", rows)
         }
         if command["throw"] != nil { throw BridgeFailure(.swiftFailure, "asked to") }
     }
@@ -91,7 +94,7 @@ actor TestRoot: BridgeRoot {
         closed = true
     }
 
-    struct Row: Codable, Equatable, Sendable {
+    struct Row: Codable, Equatable, Sendable, Identifiable {
         var id: String
         var text: String
     }
@@ -102,6 +105,7 @@ func started(fingerprint: String = "test") -> (BridgeRuntime, Outlet, Box<TestRo
     let runtime = BridgeRuntime()
     let outlet = Outlet()
     let box = Box<TestRoot>()
+    CheckRoot.register(in: runtime.roots)
     runtime.roots.register("test") { _, context in
         let root = TestRoot(context: context)
         box.value = root

@@ -110,12 +110,29 @@ final class HandleOutbox: @unchecked Sendable {
             case let .presentation(pending):
                 let value = lock.withLock { pending.value }
                 do {
-                    send(try BridgeCodec.encode(op: .presentation, handle: handle, body: value))
+                    if let encoded = value as? EncodedJSON {
+                        send(BridgeCodec.encode(op: .presentation, handle: handle, raw: encoded.data))
+                    } else {
+                        send(try BridgeCodec.encode(op: .presentation, handle: handle, body: value))
+                    }
                 } catch {
                     send(BridgeCodec.failure(BridgeFailure(.swiftFailure, "a presentation did not encode: \(BridgeCodec.describe(error))"),
                                              handle: handle))
                 }
             }
         }
+    }
+}
+
+/// JSON encoded already, put in a message as it is.
+struct EncodedJSON: Encodable, Sendable {
+    let data: Data
+
+    init(_ data: Data) {
+        self.data = data
+    }
+
+    func encode(to _: any Encoder) throws {
+        throw EncodingError.invalidValue(data, .init(codingPath: [], debugDescription: "EncodedJSON goes in a message as it is"))
     }
 }

@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "29e4dec0a31287edb9489a8c2c57a4e768e3f70d039e0b4337aee85cf71e446c"
+    public const val VALUE: String = "5684f1e859af50d5f8a2c5d554012812f405cbf670dfc420088c4b967925ed08"
 }
 
 /**
@@ -418,6 +418,7 @@ public data class ListRow(
 public data class NetworkPath(
     val online: Boolean,
     val expensive: Boolean,
+    val constrained: Boolean,
 )
 
 @Serializable
@@ -448,6 +449,12 @@ public data class OpenRequest(
 @Serializable
 public data class ResyncRequest(
     val list: String,
+)
+
+@Serializable
+public data class RouteCommand(
+    val path: List<String>,
+    val command: @Serializable(with = ExactJson::class) JsonElement,
 )
 
 @Serializable(with = SecureItem.Serializer::class)
@@ -618,6 +625,29 @@ public data class TransportResponse(
     val bodyFile: String? = null,
 )
 
+public object Counter {
+    @Serializable(with = Counter.Command.Serializer::class)
+    public sealed interface Command {
+        @Serializable
+        public data class Add(
+            val amount: Long,
+        ) : Command
+
+        public object Serializer : KSerializer<Counter.Command> by SwiftEnumSerializer(
+            "Counter.Command",
+            listOf(
+                SwiftEnumSerializer.Case("add", Add::class, Add.serializer()),
+            ),
+        )
+    }
+
+    @Serializable
+    public data class Presentation(
+        val count: Long,
+        val words: String,
+    )
+}
+
 /** Every bridged value's serializer by its Swift name, for the round-trip fixtures. */
 public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "BridgeFailure" to BridgeFailure.serializer(),
@@ -629,6 +659,8 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "CheckResult" to CheckResult.Serializer,
     "CheckRow" to CheckRow.serializer(),
     "CheckTransport" to CheckTransport.serializer(),
+    "Counter.Command" to Counter.Command.Serializer,
+    "Counter.Presentation" to Counter.Presentation.serializer(),
     "DNSAnswer" to DNSAnswer.Serializer,
     "DeviceRequest" to DeviceRequest.Serializer,
     "Envelope" to Envelope.serializer(),
@@ -639,6 +671,7 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "Op" to Op.serializer(),
     "OpenRequest" to OpenRequest.serializer(),
     "ResyncRequest" to ResyncRequest.serializer(),
+    "RouteCommand" to RouteCommand.serializer(),
     "SecureItem" to SecureItem.Serializer,
     "SecureOutcome" to SecureOutcome.Serializer,
     "StartAnswer" to StartAnswer.Serializer,

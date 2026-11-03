@@ -248,6 +248,7 @@
   {
     "type": "NetworkPath",
     "json": {
+      "constrained": false,
       "expensive": false,
       "online": true
     }

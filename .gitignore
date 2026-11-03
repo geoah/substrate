@@ -20,6 +20,8 @@ dist/
 /apps/xcode/Substrate.xcodeproj/
 /apps/xcode/build/
 /apps/kit/.build/
+# `mise run apps:gallery`: every shared screen drawn, one folder per system.
+/build/gallery/
 /apps/kit/.swiftpm/
 /apps/workouts/WorkoutsKit/.build/
 /apps/workouts/WorkoutsKit/.swiftpm/

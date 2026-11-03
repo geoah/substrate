@@ -81,6 +81,22 @@ public struct Model: Equatable, Sendable {
     public func children(of name: String?) -> [Declaration] {
         declarations.filter { $0.parent == name }
     }
+
+    /// The names bridged values are nested in that are not bridged
+    /// themselves (a controller holding its `Command`), directly under
+    /// `scope`: Kotlin keeps them as namespaces.
+    public func namespaces(in scope: String?) -> [String] {
+        var found = Set<String>()
+        for declaration in declarations {
+            var parent = declaration.parent
+            while let name = parent {
+                let above = name.lastIndex(of: ".").map { String(name[..<$0]) }
+                if self.declaration(name) == nil, above == scope { found.insert(name) }
+                parent = above
+            }
+        }
+        return found.sorted()
+    }
 }
 
 /// A declaration outside the model, named with where it is.

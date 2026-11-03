@@ -1,21 +1,28 @@
-import Foundation
 import SubstrateCore
 
-/// The device's network as an app decides by it: whether it is online, and
-/// whether the network is one the owner pays for by the byte.
+/// Whether the device can reach a network, and on what terms. Bridged: the
+/// Android connectivity service answers with it.
 public struct NetworkPath: Bridged, Hashable {
     public var online: Bool
+    /// A cellular or hotspot network the person pays for by the byte.
     public var expensive: Bool
+    /// Low Data Mode, or Android's data saver.
+    public var constrained: Bool
 
-    public init(online: Bool, expensive: Bool) {
+    public init(online: Bool, expensive: Bool = false, constrained: Bool = false) {
         self.online = online
         self.expensive = expensive
+        self.constrained = constrained
     }
+
+    public static let offline = NetworkPath(online: false)
 }
 
-/// Reports the network, now and as it changes.
-public protocol ConnectivityMonitor: Sendable {
-    func current() async throws -> NetworkPath
-    /// The current path first, then each change, until the reader stops.
-    func paths() -> AsyncThrowingStream<NetworkPath, Error>
+/// The device's network, as a device service: `NWPathMonitor` on an Apple
+/// system, `ConnectivityManager` on Android, a scripted one in a test.
+public protocol Connectivity: Sendable {
+    /// The network now.
+    func current() async -> NetworkPath
+    /// The network now, then each change, until the reader stops reading.
+    func paths() -> AsyncStream<NetworkPath>
 }

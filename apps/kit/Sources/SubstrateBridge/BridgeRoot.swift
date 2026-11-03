@@ -1,5 +1,6 @@
 import Foundation
 import SubstrateCore
+import SubstrateRuntime
 
 /// What the bridge needs from a root controller, and all it needs: commands
 /// in, encoded, and a close. Presentations go out through the context the
@@ -65,10 +66,17 @@ public final class BridgeContext: Sendable {
         outbox.present(presentation)
     }
 
-    /// A keyed list's rows, in order: the first time whole, after that the
-    /// rows inserted, changed and removed since, and never coalesced.
-    public func publish<Row: Encodable & Equatable & Sendable>(list name: String, rows: [Row], id: (Row) -> String) {
-        lists.publish(name, rows: rows, id: id)
+    /// A presentation already encoded (`Runtime.encodedPresentations()`),
+    /// coalesced as `present`'s are.
+    public func present(encoded json: Data) {
+        outbox.present(EncodedJSON(json))
+    }
+
+    /// A keyed list, by name: the first time whole, after that as the
+    /// `KeyedListDelta` from the revision sent before, never coalesced. A
+    /// revision already sent is not sent again.
+    public func publish<Row>(list name: String, _ list: KeyedList<Row>) {
+        lists.publish(name, list)
     }
 
     /// The handle is closed: nothing sent through this context goes out.

@@ -26,6 +26,13 @@ public enum BridgeCodec {
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// A message whose body is JSON encoded already, spliced in as it is
+    /// rather than decoded and encoded again.
+    public static func encode(op: Op, handle: Handle? = nil, id: Int? = nil, raw body: Data) -> String {
+        let head = encode(op: op, handle: handle, id: id)
+        return String(head.dropLast()) + ",\"body\":" + String(decoding: body, as: UTF8.self) + "}"
+    }
+
     /// An error message; never fails, since a failure is what it reports.
     public static func failure(_ failure: BridgeFailure, handle: Handle? = nil, id: Int? = nil) -> String {
         (try? encode(op: .error, handle: handle, id: id, body: failure))

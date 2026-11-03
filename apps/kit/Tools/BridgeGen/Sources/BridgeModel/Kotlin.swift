@@ -114,10 +114,7 @@ public enum Kotlin {
 
 
         """
-        for declaration in model.children(of: nil) {
-            out += declare(declaration, model: model, indent: "")
-            out += "\n"
-        }
+        out += scope(nil, model: model, indent: "")
         out += "/** Every bridged value's serializer by its Swift name, for the round-trip fixtures. */\n"
         out += "public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(\n"
         for declaration in model.declarations {
@@ -140,7 +137,8 @@ public enum Kotlin {
         var errors: [String] = []
         for declaration in model.declarations where declaration.kind == .enum {
             let classes = declaration.cases.map { caseClass($0.name) }
-            let nested = Set(model.children(of: declaration.name).map(\.simpleName))
+            let nested = Set(model.children(of: declaration.name).map(\.simpleName)
+                + model.namespaces(in: declaration.name).map { $0.split(separator: ".").last.map(String.init) ?? $0 })
             for (name, item) in zip(classes, declaration.cases) {
                 if nested.contains(name) || name == "Serializer" {
                     errors.append("\(declaration.name).\(item.name) would be the Kotlin class \(name), which another name there takes")
@@ -184,13 +182,27 @@ public enum Kotlin {
         }.joined()
     }
 
+    /// The declarations and namespaces directly under `name`, each followed
+    /// by a blank line.
+    private static func scope(_ name: String?, model: Model, indent: String) -> String {
+        var out = ""
+        for declaration in model.children(of: name) {
+            out += declare(declaration, model: model, indent: indent) + "\n"
+        }
+        for namespace in model.namespaces(in: name) {
+            let simple = namespace.split(separator: ".").last.map(String.init) ?? namespace
+            out += "\(indent)public object \(identifier(simple)) {\n"
+            out += scope(namespace, model: model, indent: indent + "    ").dropLast()
+            out += "\(indent)}\n\n"
+        }
+        return out
+    }
+
     private static func declare(_ declaration: Declaration, model: Model, indent: String) -> String {
         let name = identifier(declaration.simpleName)
-        let children = model.children(of: declaration.name)
         var body = ""
-        for child in children {
-            body += "\n" + declare(child, model: model, indent: indent + "    ")
-        }
+        let inner = scope(declaration.name, model: model, indent: indent + "    ")
+        if !inner.isEmpty { body = "\n" + inner.dropLast() }
         var out = ""
         switch declaration.kind {
         case .struct:

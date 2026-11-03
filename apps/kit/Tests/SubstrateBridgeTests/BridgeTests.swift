@@ -1,6 +1,8 @@
 import Foundation
 @testable import SubstrateBridge
+import SubstrateBridgeCheck
 import SubstrateCore
+import SubstrateRuntime
 import Testing
 
 @Suite("The bridge's runtime, off Android")
@@ -43,7 +45,7 @@ struct BridgeTests {
         let environment = try #require(runtime.environment)
         #expect(environment.locale.identifier == "en-GB" || environment.locale.identifier == "en_GB")
         #expect(environment.timeZone.identifier == "Europe/London")
-        #expect(environment.folders.data.path == "/tmp/data")
+        #expect(try environment.folders.data().path == "/tmp/data")
     }
 
     @Test func malformedMessagesAreStructuredErrors() throws {
@@ -210,6 +212,26 @@ struct BridgeTests {
         // In order: each one newer than the last.
         let steps = outlet.messages.filter { $0.op == .presentation }.compactMap { $0.body?["step"]?.int }
         #expect(steps == steps.sorted())
+    }
+
+    @Test func aRuntimeIsARootWithNoGlue() async throws {
+        let (runtime, outlet, _) = started()
+        let reply = try post(runtime, Envelope(op: .open, body: ["root": "counter"]))
+        let handle = try #require(reply.handle)
+        let first = try await outlet.next { $0.op == .presentation && $0.handle == handle }
+        #expect(first.body == ["count": 0, "words": "0 in all"])
+        let add = try BridgeCodec.value(RouteCommand(command: try BridgeCodec.value(Counter.Command.add(amount: 1))))
+        #expect(try post(runtime, Envelope(op: .command, handle: handle, body: add)).op == .accepted)
+        let next = try await outlet.next { $0.op == .presentation && $0.body?["count"] == 1 }
+        #expect(next.body?["words"] == "one")
+        _ = try post(runtime, Envelope(op: .close, handle: handle))
+        _ = try await outlet.next { $0.op == .closed && $0.handle == handle }
+    }
+
+    @Test func routeCommandIsRoutedCommandsSpelling() throws {
+        let routed = RoutedCommand(path: [ChildKey("a"), ChildKey("b")], command: ["x": 1])
+        let route = RouteCommand(path: ["a", "b"], command: ["x": 1])
+        #expect(try BridgeCodec.encoder().encode(routed) == BridgeCodec.encoder().encode(route))
     }
 
     @Test func kotlinCanAskForTheCounters() async throws {
