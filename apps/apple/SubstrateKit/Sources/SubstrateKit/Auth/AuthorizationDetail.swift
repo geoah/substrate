@@ -2,17 +2,18 @@ import Foundation
 
 /// One entry of an app's `authorization_details` (RFC 9396), as
 /// internal/substrate's authorize.go carries it: a package the app needs at a
-/// version or later, the account it delivers under, the webhook it
-/// delivers to, or the one agent it may declare (decision 0207). The token response answers the same shape, with `version`
-/// the version now held and `url` where a webhook takes deliveries.
+/// version or later, the account it delivers under, or the webhook it
+/// delivers to. The token response answers the same shape, with `version`
+/// the version now held and `url` where a webhook takes deliveries. An
+/// app's agent ships in a published package and is asked for as that
+/// package (decision 0214 retired the `agent` detail).
 public struct AuthorizationDetail: Codable, Hashable, Sendable {
     /// The types a substrate takes.
     public enum Types {
         public static let package = "package"
         public static let account = "account"
         public static let webhook = "webhook"
-        public static let agent = "agent"
-        public static let all = [package, account, webhook, agent]
+        public static let all = [package, account, webhook]
     }
 
     public var type: String
@@ -28,12 +29,6 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
     /// a webhook detail carries its trigger alone and the server refuses any
     /// other member.
     public var deliversTo: String?
-    /// An `agent` detail: the agent's id, the exact kinds it reads and
-    /// writes, and the most it may spend a day, in cents.
-    public var agent: String?
-    public var reads: [String]?
-    public var writes: [String]?
-    public var spendCentsPerDay: Int?
     /// Whether the app asks for it only where the server takes its type: a
     /// server that does not is sent the request without it, rather than
     /// refused as too old. Never sent.
@@ -41,7 +36,6 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
 
     public init(type: String, package: String? = nil, version: Int? = nil, kind: String? = nil, id: String? = nil,
                 properties: [String: JSONValue]? = nil, trigger: String? = nil, url: URL? = nil, deliversTo: String? = nil,
-                agent: String? = nil, reads: [String]? = nil, writes: [String]? = nil, spendCentsPerDay: Int? = nil,
                 optional: Bool = false)
     {
         self.type = type
@@ -53,32 +47,14 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
         self.trigger = trigger
         self.url = url
         self.deliversTo = deliversTo
-        self.agent = agent
-        self.reads = reads
-        self.writes = writes
-        self.spendCentsPerDay = spendCentsPerDay
         self.optional = optional
     }
 
-    /// The one agent the app may declare in a package of its own, with what
-    /// it reads and writes and its daily cap; the owner approves it on the
-    /// approval page and the token carries the approval (decision 0207).
-    /// Optional: a server without agents takes the rest of the request.
-    public static func agent(_ id: String, reads: [String], writes: [String], spendCentsPerDay: Int) -> AuthorizationDetail {
-        AuthorizationDetail(type: Types.agent, agent: id, reads: reads, writes: writes, spendCentsPerDay: spendCentsPerDay, optional: true)
-    }
-
-    /// The `declare:` scope an agent detail's agent is declared under,
-    /// `declare:~/<package>`; nil for every other detail.
-    public var declareScope: String? {
-        guard type == Types.agent, let agent else { return nil }
-        let parts = agent.split(separator: "/")
-        guard parts.count == 3 else { return nil }
-        return "declare:\(parts[0])/\(parts[1])"
-    }
-
-    /// A catalog package at `version` or later, installed or upgraded on
-    /// approval.
+    /// A package at `version` or later, installed or upgraded on approval:
+    /// one this server's catalog ships, or one its publisher's authority
+    /// document lists (decision 0214). `version` is the floor the build was
+    /// written against; the approval installs the newest version at or
+    /// above it and never one below.
     public static func package(_ id: String, atLeast version: Int) -> AuthorizationDetail {
         AuthorizationDetail(type: Types.package, package: id, version: version)
     }
@@ -106,7 +82,7 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
         return wire
     }
 
-    enum CodingKeys: String, CodingKey { case type, package, version, kind, id, properties, trigger, url, agent, reads, writes, spendCentsPerDay }
+    enum CodingKeys: String, CodingKey { case type, package, version, kind, id, properties, trigger, url }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -119,10 +95,6 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
         trigger = c.value(.trigger, or: nil)
         url = c.value(.url, or: nil)
         deliversTo = nil
-        agent = c.value(.agent, or: nil)
-        reads = c.value(.reads, or: nil)
-        writes = c.value(.writes, or: nil)
-        spendCentsPerDay = c.value(.spendCentsPerDay, or: nil)
     }
 
     /// The fields its type carries and nothing else: the server reads a
@@ -137,10 +109,6 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
         if let properties, !properties.isEmpty { try c.encode(properties, forKey: .properties) }
         try c.encodeIfPresent(trigger, forKey: .trigger)
         try c.encodeIfPresent(url, forKey: .url)
-        try c.encodeIfPresent(agent, forKey: .agent)
-        try c.encodeIfPresent(reads, forKey: .reads)
-        try c.encodeIfPresent(writes, forKey: .writes)
-        try c.encodeIfPresent(spendCentsPerDay, forKey: .spendCentsPerDay)
     }
 
     /// The details as the compact JSON the `authorization_details` parameter
@@ -191,6 +159,16 @@ public struct AuthorizationSetup: Codable, Hashable, Sendable {
             public static let upgradeNeedsReview = "upgrade-needs-review"
             public static let notRequested = "not-requested"
             public static let accountDeleted = "account-deleted"
+            /// The package's authority document lists no version at or above
+            /// the floor, or cannot be read: the publisher's to fix.
+            public static let notPublished = "not-published"
+            /// A package's code reaches a kind the requested scopes do not
+            /// cover (decision 0215): the app asks for the scope it names.
+            public static let reachesPastScopes = "reaches-past-scopes"
+            /// No provider row prices a model the package's agents run on.
+            public static let noModel = "no-model"
+            /// A required setting or secret of the package was left empty.
+            public static let needsSetting = "needs-setting"
             public static let unsupported = "unsupported"
         }
 
@@ -329,14 +307,35 @@ public struct AuthorizationSetup: Codable, Hashable, Sendable {
 
 /// `POST /api/v1/authorizations/check`'s body: the request the app would
 /// send now, its `scope` and its details under `details`, held to the rules
-/// `/oauth/authorize` holds them to.
+/// `/oauth/authorize` holds them to, and the build's `softwareVersion`,
+/// which the server records on the token with the floors of the package
+/// details (decision 0213), so an upgrade that would break this build is
+/// held while it is connected.
 public struct AuthorizationCheck: Codable, Hashable, Sendable {
     public var scope: String
     public var details: [AuthorizationDetail]
+    public var softwareVersion: String?
 
-    public init(scopes: [String], details: [AuthorizationDetail]) {
+    public init(scopes: [String], details: [AuthorizationDetail], softwareVersion: String? = nil) {
         scope = scopes.joined(separator: " ")
         self.details = details.map(\.sent)
+        self.softwareVersion = softwareVersion.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    enum CodingKeys: String, CodingKey { case scope, details, softwareVersion }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        scope = c.value(.scope, or: "")
+        details = c.value(.details, or: [])
+        softwareVersion = c.value(.softwareVersion, or: String?.none).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(scope, forKey: .scope)
+        try c.encode(details, forKey: .details)
+        try c.encodeIfPresent(softwareVersion, forKey: .softwareVersion)
     }
 }
 

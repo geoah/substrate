@@ -138,7 +138,8 @@ func syncManifest() -> AppManifest {
         kindLabels: [
             "providers.substrate.reamde.dev/applehealth/account": KindLabel(singular: "Account", plural: "Accounts"),
             "providers.substrate.reamde.dev/applehealth/export": KindLabel(singular: "Delivery", plural: "Deliveries"),
-        ])
+        ],
+        softwareVersion: "0.120.0 (20261103.101500)")
 }
 
 /// The server's block sentences, as internal/appsetup/blocks.go words them:
