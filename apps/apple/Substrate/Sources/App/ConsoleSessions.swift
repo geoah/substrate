@@ -67,8 +67,18 @@ final class ConsoleSessions: ObservableObject {
     /// replaces any the app held for that server, whose token is revoked
     /// behind it: the sign-in does not wait on the server for that.
     func signIn(_ probe: ServerProbe.Result) async throws {
-        let session = try await ConsoleSignIn.session(probe)
         let server = probe.origin
+        // Known before the browser opens: a token minted for a repository
+        // other than the one asked for is kept under this server to revoke,
+        // and a start retries revocations on the servers it knows alone.
+        remember(server)
+        let session: Session
+        do {
+            session = try await ConsoleSignIn.session(probe)
+        } catch {
+            forgetIfUnused(server)
+            throw error
+        }
         let old = store(for: server).load()
         try await store(for: server).save(session, replacing: old)
         changed(server)
@@ -140,6 +150,17 @@ final class ConsoleSessions: ObservableObject {
 
     private func remember(_ server: URL) {
         known = [server] + known.filter { $0 != server }
+        defaults.set(known.map(\.absoluteString), forKey: Self.knownKey)
+    }
+
+    /// Drops `server` from the known list when nothing is held for it: no
+    /// sign-in, no page sign-in and no token waiting to be revoked, as after
+    /// a sign-in that failed before the server minted anything.
+    private func forgetIfUnused(_ server: URL) {
+        guard store(for: server).load() == nil, !pageSignIn.contains(server.absoluteString),
+              store(for: server).pendingRevocations().isEmpty
+        else { return }
+        known.removeAll { $0 == server }
         defaults.set(known.map(\.absoluteString), forKey: Self.knownKey)
     }
 
