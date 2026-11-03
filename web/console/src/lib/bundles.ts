@@ -221,7 +221,11 @@ export function upgradeHolders(
 
 /** The blocker lines that are not a holder restated: the server writes one
  * line per holder beside the structured list, naming the build by its
- * client id, so a note that lists the builds drops them. */
+ * client id, so a note that lists the builds drops them.
+ *
+ * This keys on the server's sentence (catalog refresh.go), as
+ * `publisherUnreadable` does: a reworded line slips through unnoticed. Both
+ * should read a structured reason on the wire instead. */
 export function holderFreeBlockers(
   blockers: readonly string[],
   holders: readonly BundleUpgradeHolder[]
