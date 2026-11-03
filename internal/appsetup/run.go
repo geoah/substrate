@@ -116,15 +116,15 @@ func (r *Runner) Run(ctx context.Context, ds substrate.Dataset, actor substrate.
 	if err != nil {
 		return Outcome{Failure: &substrate.AuthorizationFailure{Message: FailureWords("Reading what to set up", err)}}
 	}
-	if err := SelectProviders(rows, providerChoices(approved)); err != nil {
-		return Outcome{Failure: &substrate.AuthorizationFailure{Message: err.Error()}, Moved: true}
-	}
 	rows, err = SelectAddons(rows, run.Addons)
 	if err == nil {
 		err = ValidateSettings(rows, run.Settings)
 	}
 	if err != nil {
 		return Outcome{Failure: &substrate.AuthorizationFailure{Message: "needs-setting: check the settings and add-ons, then approve again"}}
+	}
+	if err := SelectProviders(rows, providerChoices(approved)); err != nil {
+		return Outcome{Failure: &substrate.AuthorizationFailure{Message: err.Error()}, Moved: true}
 	}
 	// Nothing is written unless every row still is what the owner approved.
 	if i := FirstBlocked(rows); i >= 0 {
