@@ -60,14 +60,7 @@ function modelOf(agent: SubstrateRecord): string {
 const ROW =
   "grid grid-cols-[minmax(96px,120px)_minmax(0,1fr)] gap-x-3 sm:grid-cols-[minmax(120px,170px)_minmax(0,1fr)]"
 
-export function RunsOn({
-  agent,
-  readOnly = false,
-}: {
-  agent: SubstrateRecord
-  /** An app keeps the agent (decision 0207): its model is the app's to set. */
-  readOnly?: boolean
-}) {
+export function RunsOn({ agent }: { agent: SubstrateRecord }) {
   const registry = useQuery(kindsQueryOptions)
   const kinds = registry.data ?? NO_KINDS
   const [editing, setEditing] = useState(false)
@@ -108,18 +101,16 @@ export function RunsOn({
           {modelId || <EmptyValue />}
         </dd>
       </dl>
-      {!readOnly && (
-        <Button
-          size="xs"
-          variant="ghost"
-          className="text-muted-foreground"
-          aria-label={`Change ${provider.label} and ${model.label}`}
-          onClick={() => setEditing(true)}
-        >
-          <PencilIcon aria-hidden />
-          Change
-        </Button>
-      )}
+      <Button
+        size="xs"
+        variant="ghost"
+        className="text-muted-foreground"
+        aria-label={`Change ${provider.label} and ${model.label}`}
+        onClick={() => setEditing(true)}
+      >
+        <PencilIcon aria-hidden />
+        Change
+      </Button>
     </div>
   )
 }

@@ -20,7 +20,6 @@ import { AgentMark } from "@/components/agent/agent-mark"
 import { AgentRef } from "@/components/agent/agent-ref"
 import { AllowRules } from "@/components/agent/always-allow"
 import { GrantsEditor } from "@/components/agent/grants-editor"
-import { AppManagedSection } from "@/components/packages/app-managed"
 import { AddKeyButton } from "@/components/agent/model-key-dialog"
 import { RunsOn } from "@/components/agent/runs-on"
 import { EmptyValue } from "@/components/identity/empty-value"
@@ -101,7 +100,6 @@ import { functionsQueryOptions } from "@/lib/api/functions"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
-import { packageApp, packagesQueryOptions } from "@/lib/packages"
 import { AGENT_KIND } from "@/lib/core-kinds"
 import { propertyLabel } from "@/lib/grid-values"
 import { propSpecsByName, type PropSpec } from "@/lib/record-schema"
@@ -120,44 +118,6 @@ const STATUS_TONE: Record<RunStatus, PillTone> = {
 /** How many runs the table shows at first, and adds per "Show more". */
 const RUNS_PAGE = 50
 
-/** An app's agent's grants, read-only: the app keeps them, held to what the
- * owner approved (decision 0207). */
-function AppAgentGrants({ agent }: { agent: SubstrateRecord }) {
-  const perms = (agent.properties.permissions ?? {}) as {
-    reads?: { kinds?: unknown[] }
-    writes?: unknown[]
-  }
-  const ids = (list: unknown[] | undefined) =>
-    (list ?? []).map((v) =>
-      typeof v === "string"
-        ? v
-        : String((v as { ref?: string })?.ref ?? "").replace(
-            `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/kind/`,
-            ""
-          )
-    )
-  return (
-    <dl className="flex flex-col gap-3 text-[13.5px]">
-      <div>
-        <dt className="text-muted-foreground">Reads</dt>
-        <dd className="flex flex-col">
-          {ids(perms.reads?.kinds).map((k) => (
-            <IdText key={k} value={k} />
-          ))}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-muted-foreground">Changes</dt>
-        <dd className="flex flex-col">
-          {ids(perms.writes).map((k) => (
-            <IdText key={k} value={k} />
-          ))}
-        </dd>
-      </div>
-    </dl>
-  )
-}
-
 export function AgentPage() {
   const { id } = agentRoute.useParams()
   const [technical] = useTechnicalDetails()
@@ -172,11 +132,6 @@ export function AgentPage() {
     ...functionsQueryOptions,
     enabled: agentToolsFrom(agent.data).length > 0,
   })
-  const packages = useQuery(packagesQueryOptions)
-  // An app keeps an agent of a package it declared (decision 0207).
-  const agentPackage = id.split("/").slice(0, 2).join("/")
-  const app = packageApp(packages.data, agentPackage)
-
   if (agent.isPending) {
     return (
       <DocPage>
@@ -257,26 +212,24 @@ export function AgentPage() {
                 }
               />
             )}
-            {!app && (
-              <Button
-                size="sm"
-                variant="outline"
-                render={
-                  <Link
-                    to="/data/$authority/$pkg/$name/$id"
-                    params={{
-                      authority: CORE_AUTHORITY,
-                      pkg: CORE_PACKAGE_NAME,
-                      name: "agent",
-                      id,
-                    }}
-                  >
-                    <PencilIcon />
-                    Edit agent
-                  </Link>
-                }
-              />
-            )}
+            <Button
+              size="sm"
+              variant="outline"
+              render={
+                <Link
+                  to="/data/$authority/$pkg/$name/$id"
+                  params={{
+                    authority: CORE_AUTHORITY,
+                    pkg: CORE_PACKAGE_NAME,
+                    name: "agent",
+                    id,
+                  }}
+                >
+                  <PencilIcon />
+                  Edit agent
+                </Link>
+              }
+            />
           </>
         }
       >
@@ -305,15 +258,6 @@ export function AgentPage() {
         </div>
       )}
 
-      {app && (
-        <AppManagedSection
-          app={app}
-          clientId={packages.data?.get(agentPackage)?.declaredByClient}
-          packageId={agentPackage}
-          agent
-        />
-      )}
-
       <FailingBadge callables={[id]} />
       <AlertsPanel refs={[`${AGENT_KIND}/${id}`]} />
 
@@ -321,14 +265,10 @@ export function AgentPage() {
         title="What it runs on"
         hint="a model id belongs to one provider"
       />
-      <RunsOn agent={record} readOnly={!!app} />
+      <RunsOn agent={record} />
 
       <SectionHead title="What it’s allowed to do" />
-      {app ? (
-        <AppAgentGrants agent={record} />
-      ) : (
-        <GrantsEditor agent={record} />
-      )}
+      <GrantsEditor agent={record} />
       <Facts
         rows={[
           [

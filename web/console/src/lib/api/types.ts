@@ -894,8 +894,6 @@ export interface TokenInfo {
   /** Add-ons the owner approved that wait for their provider (decision
    * 0216). */
   appAddons?: AppAddon[]
-  /** The agents the owner approved the app to declare (decision 0207). */
-  agents?: AgentApproval[]
 }
 
 /** One add-on an approval left waiting for the provider it extends. */
@@ -903,15 +901,6 @@ export interface AppAddon {
   package: string
   version: number
   addonFor: string
-}
-
-/** One approved `agent` detail as a token stores it: the agent, the exact
- * kinds it reads and writes, and its daily cap in cents. */
-export interface AgentApproval {
-  agent: string
-  reads: string[]
-  writes?: string[]
-  spendCentsPerDay: number
 }
 
 /** One parked app authorization request as the approval page reads it
@@ -971,14 +960,14 @@ export type SetupBlockReason =
   | "upgrade-needs-review"
   | "not-requested"
   | "account-deleted"
+  | "not-published"
   | "unsupported"
 
 /** One setup row's state while a set up runs, and after one stopped. */
 export type SetupProgress = "waiting" | "running" | "done" | "failed"
 
 /** The detail types an authorization request may carry. */
-export type AuthorizationDetailType =
-  "package" | "account" | "webhook" | "agent"
+export type AuthorizationDetailType = "package" | "account" | "webhook"
 
 /** The app asking. `host` is the one fact its client id URL proves; `name` and
  * `uri` are what its own document claims, never present for a local app. */
@@ -1057,20 +1046,14 @@ export interface AuthorizationScope {
    * a wider pattern a narrower one), so the page folds it under what was
    * allowed before. */
   allowed?: boolean
-  /** Why this scope cannot be approved: a declare scope over a package the
-   * owner keeps, or one another app declared (decision 0205). The page
-   * leaves it unchecked and says why; the server refuses an approval that
-   * names it. */
-  refused?: string
 }
 
-/** What one scope of an app's token does with its pattern. `declare` keeps one
- * package of the owner's own (decision 0203). `webhook` names
+/** What one scope of an app's token does with its pattern. `webhook` names
  * one trigger, and only an approved `webhook` detail puts it on a token.
  * `full` is only ever requested: approving it mints a token without scopes
  * (decision 0204). */
 export type ScopeVerb =
-  "read" | "write" | "agents" | "decide" | "declare" | "webhook" | "full"
+  "read" | "write" | "agents" | "decide" | "webhook" | "full"
 
 /** One kind a scope reaches today, or one a package the request sets up
  * would add (`added`). `purpose` is absent for a primary kind. */
@@ -1094,15 +1077,10 @@ export interface AuthorizationDetail {
   properties?: Record<string, unknown>
   trigger?: string
   url?: string
-  /** An `agent` detail (decision 0207). */
-  agent?: string
-  reads?: string[]
-  writes?: string[]
-  spendCentsPerDay?: number
 }
 
 /** One detail as approving would set it up. Exactly one of `package`,
- * `account`, `webhook` and `agent` is present, by `type`. `blocked` is present when
+ * `account` and `webhook` is present, by `type`. `blocked` is present when
  * the row cannot run, and then approving is refused. `progress` is present
  * while a set up runs and after one stopped. */
 export interface AuthorizationSetup {
@@ -1113,31 +1091,6 @@ export interface AuthorizationSetup {
   package?: AuthorizationPackage
   account?: AuthorizationAccount
   webhook?: AuthorizationWebhookPlan
-  agent?: AuthorizationAgentPlan
-}
-
-/** An agent row: the one agent the app may declare and keep (decision
- * 0207), each kind it reads and writes (`held` false for one the server
- * lacks), and its daily cap. Approving sets nothing up; `allowed` is true
- * when the previous token's approval already covers it. */
-export interface AuthorizationAgentPlan {
-  agent: string
-  reads?: AuthorizationAgentKind[]
-  writes?: AuthorizationAgentKind[]
-  spendCentsPerDay?: number
-  allowed?: boolean
-  /** The apps that can already ask it questions and read its chats: ones the
-   * owner let talk to their agents whose reads cover everything it reads. */
-  talkedToBy?: string[]
-  /** Why approving leaves the agent out: its package's declare scope is
-   * refused, since another hand keeps the package (decision 0205). */
-  withheld?: string
-}
-
-export interface AuthorizationAgentKind {
-  identity: string
-  label?: KindLabel
-  held?: boolean
 }
 
 /** Why a setup row cannot run: the reason a client branches on, the server's
@@ -1150,9 +1103,10 @@ export interface AuthorizationBlock {
 }
 
 /** A package row's facts. `held` is the catalog release the repository
- * holds, absent when none; `shipped` what this server's catalog ships,
- * absent when none; `required` the floor the app asks for. A client names a
- * package from its `id`. */
+ * holds, absent when none; `shipped` the version approving would install,
+ * what this server's catalog ships or the newest a publisher's document
+ * lists at the floor or later, absent when neither offers one; `required`
+ * the floor the app asks for. A client names a package from its `id`. */
 export interface AuthorizationPackage {
   id: string
   description?: string
@@ -1184,7 +1138,8 @@ export interface AuthorizationPackagePublisher {
 
 /** One package a requested one requires, with what it brings of its own.
  * `blocked` is present when it cannot be installed or upgraded, which blocks
- * the row that requires it. */
+ * the row that requires it. `publisher` is present for a requirement an
+ * authority document publishes, as on the row. */
 export interface AuthorizationPackageStep {
   id: string
   description?: string
@@ -1195,6 +1150,7 @@ export interface AuthorizationPackageStep {
   kinds?: AuthorizationKind[]
   functions?: AuthorizationFunction[]
   triggers?: AuthorizationTrigger[]
+  publisher?: AuthorizationPackagePublisher
 }
 
 /** Code a package ships, and the kinds it may write. */
@@ -1239,7 +1195,6 @@ export interface AuthorizationPrevious {
   /** Absent when it lasts until revoked. */
   expiresAt?: string
   scopes: string[]
-  agents?: AgentApproval[]
 }
 
 /** Why a set up stopped, in the owner's words: `row` is the row it stopped
@@ -1251,10 +1206,13 @@ export interface AuthorizationFailure {
 }
 
 /** `POST /api/v1/authorizations/check`'s body: the request an app would
- * send now, its `scope` and its `authorization_details` as `details`. */
+ * send now, its `scope`, its `authorization_details` as `details` and its
+ * `software_version` as `softwareVersion`, which the check records on the
+ * calling token with the floors of the package details (decision 0213). */
 export interface AuthorizationCheck {
   scope: string
   details: AuthorizationDetail[]
+  softwareVersion?: string
 }
 
 /** Whether a token still has what its app needs: the requested scopes it

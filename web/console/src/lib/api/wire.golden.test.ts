@@ -87,9 +87,6 @@ import type {
   AuthorizationSetup,
   AuthorizationTrigger,
   AuthorizationWebhookPlan,
-  AuthorizationAgentPlan,
-  AuthorizationAgentKind,
-  AgentApproval,
   BlobInfo,
   DomainCheck,
   DomainProof,
@@ -608,20 +605,12 @@ const tokenInfo: Shape<TokenInfo> = {
   appSoftwareVersion: false,
   appCheckedAt: false,
   appAddons: false,
-  agents: false,
 }
 
 const appAddon: Shape<AppAddon> = {
   package: true,
   version: true,
   addonFor: true,
-}
-
-const agentApproval: Shape<AgentApproval> = {
-  agent: true,
-  reads: true,
-  writes: false,
-  spendCentsPerDay: true,
 }
 
 /** An app's authorization request as the approval page reads it, and the
@@ -684,7 +673,6 @@ const authorizationScope: Shape<AuthorizationScope> = {
   kinds: true,
   agents: true,
   allowed: false,
-  refused: false,
 }
 
 const authorizationKind: Shape<AuthorizationKind> = {
@@ -703,10 +691,6 @@ const authorizationDetail: Shape<AuthorizationDetail> = {
   properties: false,
   trigger: false,
   url: false,
-  agent: false,
-  reads: false,
-  writes: false,
-  spendCentsPerDay: false,
 }
 
 const authorizationSetup: Shape<AuthorizationSetup> = {
@@ -717,23 +701,6 @@ const authorizationSetup: Shape<AuthorizationSetup> = {
   package: false,
   account: false,
   webhook: false,
-  agent: false,
-}
-
-const authorizationAgentPlan: Shape<AuthorizationAgentPlan> = {
-  agent: true,
-  reads: false,
-  writes: false,
-  spendCentsPerDay: false,
-  allowed: false,
-  talkedToBy: false,
-  withheld: false,
-}
-
-const authorizationAgentKind: Shape<AuthorizationAgentKind> = {
-  identity: true,
-  label: false,
-  held: false,
 }
 
 const authorizationBlock: Shape<AuthorizationBlock> = {
@@ -773,6 +740,7 @@ const authorizationPackageStep: Shape<AuthorizationPackageStep> = {
   kinds: false,
   functions: false,
   triggers: false,
+  publisher: false,
 }
 
 const authorizationFunction: Shape<AuthorizationFunction> = {
@@ -806,7 +774,6 @@ const authorizationPrevious: Shape<AuthorizationPrevious> = {
   approvedAt: true,
   expiresAt: false,
   scopes: true,
-  agents: false,
 }
 
 const authorizationFailure: Shape<AuthorizationFailure> = {
@@ -817,6 +784,7 @@ const authorizationFailure: Shape<AuthorizationFailure> = {
 const authorizationCheck: Shape<AuthorizationCheck> = {
   scope: true,
   details: true,
+  softwareVersion: false,
 }
 
 const authorizationCheckResult: Shape<AuthorizationCheckResult> = {
@@ -1282,9 +1250,6 @@ const mirrors: Record<string, Record<string, boolean>> = {
   AuthorizationTrigger: authorizationTrigger,
   AuthorizationAccount: authorizationAccount,
   AuthorizationWebhookPlan: authorizationWebhookPlan,
-  AuthorizationAgentPlan: authorizationAgentPlan,
-  AuthorizationAgentKind: authorizationAgentKind,
-  AgentApproval: agentApproval,
   AuthorizationPrevious: authorizationPrevious,
   AuthorizationFailure: authorizationFailure,
   AuthorizationCheck: authorizationCheck,

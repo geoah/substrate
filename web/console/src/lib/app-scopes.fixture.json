@@ -5,11 +5,6 @@
     "sentence": "See all your records, including kinds added later"
   },
   {
-    "scope": "declare:ada.example.com/training",
-    "kinds": [],
-    "sentence": "Install your Training package and add to it as the app changes; it can’t remove a kind, property or value the package holds, or add code. The app will own these kinds: you can’t edit them unless you take them over, and their records stay yours"
-  },
-  {
     "scope": "read:ada.example.com/*",
     "kinds": [
       {

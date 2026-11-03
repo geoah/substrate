@@ -13,7 +13,6 @@ import { Link, useNavigate } from "@tanstack/react-router"
 import { FileCode2Icon, MessageSquareIcon } from "lucide-react"
 
 import { AgentCard } from "@/components/agent/agent-ref"
-import { AppManagedSection } from "@/components/packages/app-managed"
 
 import { CopyButton } from "@/components/identity/copy-button"
 import { IdText } from "@/components/identity/id-text"
@@ -51,12 +50,7 @@ import { kindPurpose } from "@/lib/definition"
 import { hiddenKindsNote } from "@/lib/grid-values"
 import { displayPlural } from "@/lib/kind-names"
 import { kindDescription } from "@/lib/kind-copy"
-import {
-  appManagedLine,
-  packageAgent,
-  packageApp,
-  packagesQueryOptions,
-} from "@/lib/packages"
+import { packageAgent, packagesQueryOptions } from "@/lib/packages"
 import { buildTools, toolDescription, toolName, type Tool } from "@/lib/tools"
 import { authorityRoute, packageRoute } from "@/router"
 
@@ -353,8 +347,6 @@ export function PackagePage() {
   const provider = authority === PROVIDERS_AUTHORITY ? providerInfo(pkg) : null
   const agent = packageAgent(packages.data, `${authority}/${pkg}`)
   const agentId = agent ? actorIdentity(agent).record?.id : undefined
-  const app = packageApp(packages.data, `${authority}/${pkg}`)
-  const maker = agent ?? app
   return (
     <TablePage>
       <PageHeader
@@ -388,9 +380,9 @@ export function PackagePage() {
                 {tools.length} {tools.length === 1 ? "tool" : "tools"}
               </span>
             )}
-            {maker && (
+            {agent && (
               <OriginMark
-                origin={{ kind: "actor", identity: actorIdentity(maker) }}
+                origin={{ kind: "actor", identity: actorIdentity(agent) }}
               />
             )}
           </>
@@ -400,9 +392,7 @@ export function PackagePage() {
             ? `Read-only copies, kept up to date by ${provider.name}.`
             : agent
               ? `What ${actorIdentity(agent).name} set up for you: the collections it keeps and the tools it works with.`
-              : app
-                ? appManagedLine(app)
-                : undefined
+              : undefined
         }
       />
       <PageState
@@ -428,13 +418,6 @@ export function PackagePage() {
             ))}
           </ul>
         </section>
-      )}
-      {app && (
-        <AppManagedSection
-          app={app}
-          clientId={packages.data?.get(`${authority}/${pkg}`)?.declaredByClient}
-          packageId={`${authority}/${pkg}`}
-        />
       )}
       {agentId && (
         <section>

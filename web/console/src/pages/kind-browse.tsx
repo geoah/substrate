@@ -66,7 +66,6 @@ import { IdentityHoverCard } from "@/components/identity/identity-hover-card"
 import { KindCard, KindPath } from "@/components/identity/kind-ref"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
-import { OriginMark } from "@/components/identity/origin-mark"
 import { ProviderBadge } from "@/components/identity/provider-badge"
 import { KindDefinition } from "@/components/record/definition"
 import { SearchBox } from "@/components/search-box"
@@ -92,8 +91,7 @@ import {
   useLiveInvalidation,
 } from "@/hooks/use-live-invalidation"
 import { useRecordTree } from "@/hooks/use-record-tree"
-import { actorIdentity, providerOfKind } from "@/lib/actor-identity"
-import { packageApp, packagesQueryOptions } from "@/lib/packages"
+import { providerOfKind } from "@/lib/actor-identity"
 import {
   formatCount,
   recordCountQueryOptions,
@@ -272,7 +270,6 @@ export function KindBrowsePage() {
   }
 
   const registry = useQuery(kindsQueryOptions)
-  const packages = useQuery(packagesQueryOptions)
   const kindInfo = registry.data
     ? kindByCollection(registry.data, authority, pkg, name)
     : undefined
@@ -641,23 +638,12 @@ export function KindBrowsePage() {
       : totalCapped
         ? undefined
         : total
-  const app = packageApp(
-    packages.data,
-    `${kindInfo.authority}/${kindInfo.package}`
-  )
   const providerNote = provider ? (
     <span className="inline-flex items-center gap-1.5">
       <ProviderBadge provider={provider.key} size="xs" />
       Read-only copies, kept up to date by {provider.name}
     </span>
-  ) : (
-    app && (
-      <span className="inline-flex items-center gap-1.5">
-        <OriginMark origin={{ kind: "actor", identity: actorIdentity(app) }} />
-        Its definition is read only
-      </span>
-    )
-  )
+  ) : undefined
   const header = (
     <div className={cn("shrink-0 pt-6", GUTTER)}>
       <PageHeader
