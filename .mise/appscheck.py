@@ -315,6 +315,7 @@ KIT_ORDER = [
     "SubstrateAuth",
     "SubstrateRuntime",
     "SubstrateLocal",
+    "SubstrateScreens",
     "SubstrateTesting",
     "SubstrateDeviceApple",
     "SubstrateUI",
@@ -365,7 +366,7 @@ for target, info in sorted(kit.targets.items()):
 # swift-crypto's Crypto, either under `#if canImport(CryptoKit)`. The Linux
 # job catches what this misses, later and slower.
 
-PORTABLE_KIT = ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal", "SubstrateTesting"]
+PORTABLE_KIT = ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal", "SubstrateScreens", "SubstrateTesting"]
 ALLOWED = {"Foundation", "Observation", "Dispatch"}
 GUARDED = {
     "FoundationNetworking": "canImport(FoundationNetworking)",

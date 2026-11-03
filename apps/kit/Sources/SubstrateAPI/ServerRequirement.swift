@@ -23,7 +23,7 @@ public struct ServerRequirement: Hashable, Sendable {
         self.detailTypes = detailTypes
     }
 
-    public enum Verdict: Hashable, Sendable {
+    public enum Verdict: Codable, Hashable, Sendable {
         case compatible
         /// `running` is the version the server reports, `needed` the minimum
         /// the app names, and `missing` what the server cannot do yet, in

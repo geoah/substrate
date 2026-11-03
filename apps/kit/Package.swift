@@ -18,6 +18,7 @@ let package = Package(
         .library(name: "SubstrateAuth", targets: ["SubstrateAuth"]),
         .library(name: "SubstrateRuntime", targets: ["SubstrateRuntime"]),
         .library(name: "SubstrateLocal", targets: ["SubstrateLocal"]),
+        .library(name: "SubstrateScreens", targets: ["SubstrateScreens"]),
         .library(name: "SubstrateTesting", targets: ["SubstrateTesting"]),
         .library(name: "SubstrateDeviceApple", targets: ["SubstrateDeviceApple"]),
         .library(name: "SubstrateUI", targets: ["SubstrateUI"]),
@@ -46,6 +47,11 @@ let package = Package(
         // The repository's folder, the journal file, the outbox, the record
         // cache, the package a repository holds and the link generation.
         .target(name: "SubstrateLocal", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateRuntime"]),
+        // The shared screens: the link, and each screen's engine, presenter and
+        // fixtures.
+        .target(name: "SubstrateScreens", dependencies: [
+            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal",
+        ]),
         // The scripted server, the fake device services and the harness tests use.
         .target(name: "SubstrateTesting", dependencies: [
             "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal",
@@ -63,7 +69,7 @@ let package = Package(
             "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateDeviceApple",
             "SubstrateUI",
         ]),
-        .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateLocal", "SubstrateTesting"]),
+        .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateLocal", "SubstrateScreens", "SubstrateTesting"]),
     ],
     swiftLanguageModes: [.v6]
 )
