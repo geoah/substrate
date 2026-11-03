@@ -167,12 +167,21 @@ def app_folders():
     return out
 
 
-def imports(path):
+# An import's attributes and access level come before the keyword in any
+# order Swift 6 takes (`@preconcurrency`, `@_exported public`, `@_spi(X)
+# internal`), and its kind (`struct`, `func`) after it.
+IMPORT = re.compile(
+    r"(?:(?:@\w+(?:\([^)]*\))?|public|package|internal|fileprivate|private)\s+)*"
+    r"import\s+(?:(?:struct|class|enum|protocol|func|var|let|typealias)\s+)?([A-Za-z_]\w*)"
+)
+
+
+def imports(path, text=None):
     """Each import in a Swift file, with the `canImport` conditions it sits
     under: (line number, module, conditions)."""
     out = []
     conditions = []
-    for number, line in enumerate(read(path).splitlines(), 1):
+    for number, line in enumerate((read(path) if text is None else text).splitlines(), 1):
         stripped = line.strip()
         m = re.match(r"#if\s+(.*)", stripped)
         if m:
@@ -190,9 +199,10 @@ def imports(path):
             if conditions:
                 conditions.pop()
             continue
-        m = re.match(r"(?:@\w+\s+)*import\s+(?:(?:struct|class|enum|protocol|func|var|let|typealias)\s+)?([A-Za-z_]\w*)", stripped)
-        if m:
-            out.append((number, m.group(1), list(conditions)))
+        for statement in stripped.split(";"):
+            m = IMPORT.match(statement.strip())
+            if m:
+                out.append((number, m.group(1), list(conditions)))
     return out
 
 
@@ -202,6 +212,75 @@ def swift_files(top):
 
 kit = Package(os.path.join(KIT, "Package.swift"))
 apps = app_folders()
+
+
+# --- the import reader reads every spelling of an import -----------------
+#
+# Every rule about imports below sees only what `imports` reads, so a
+# spelling it misses is an import no rule holds: `public import UIKit` in an
+# app's core passed until Swift 6's access-level imports were read. The
+# reader runs here over each spelling first, those that are imports and
+# those that only look like one, and a miss is a failure of its own.
+
+IMPORT_SPELLINGS = """\
+import UIKit
+public import UIKit
+internal import SwiftUI
+package import AppKit
+fileprivate import WatchKit
+private import HealthKit
+@preconcurrency import Combine
+@preconcurrency public import CoreData
+@_exported public import MapKit
+@_exported import SubstrateCore
+@_spi(Internal) internal import StoreKit
+@_implementationOnly import Security
+@testable import WidgetKit
+import struct CoreLocation.CLLocation
+public import func Darwin.sqrt
+import Foundation; import ActivityKit
+#if os(iOS)
+    import EventKit
+#elseif os(macOS)
+    public import Contacts
+#else
+    @preconcurrency internal import Photos
+#endif
+// import NotAnImport
+let importer = "import NotAnImport"
+func important() {}
+imported(UIKit)
+"""
+IMPORT_EXPECTED = [
+    (1, "UIKit", []),
+    (2, "UIKit", []),
+    (3, "SwiftUI", []),
+    (4, "AppKit", []),
+    (5, "WatchKit", []),
+    (6, "HealthKit", []),
+    (7, "Combine", []),
+    (8, "CoreData", []),
+    (9, "MapKit", []),
+    (10, "SubstrateCore", []),
+    (11, "StoreKit", []),
+    (12, "Security", []),
+    (13, "WidgetKit", []),
+    (14, "CoreLocation", []),
+    (15, "Darwin", []),
+    (16, "Foundation", []),
+    (16, "ActivityKit", []),
+    (18, "EventKit", ["os(iOS)"]),
+    (20, "Contacts", ["os(macOS)"]),
+    (22, "Photos", ["!(os(macOS))"]),
+]
+read_back = imports("<the spellings>", IMPORT_SPELLINGS)
+if read_back != IMPORT_EXPECTED:
+    for want in IMPORT_EXPECTED:
+        if want not in read_back:
+            flag(f"the import reader misses line {want[0]} of its spellings, which imports {want[1]}")
+    for got in read_back:
+        if got not in IMPORT_EXPECTED:
+            flag(f"the import reader reads line {got[0]} of its spellings as importing {got[1]}, which it does not")
 
 
 # --- every package folder name under apps/ is unique ---------------------
