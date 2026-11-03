@@ -857,7 +857,7 @@ description = "Run Substrate Chat's unit tests on the Mac"
 run = ".mise/apple.sh test:chat"
 
 [tasks."apps:gallery"]
-description = "Draw every shared screen's fixtures, and the kit's views as the apps call them, to PNG files in build/gallery/apple"
+description = "Draw every shared screen's fixtures, the kit's views as the apps call them, and Substrate Tasks' screens, to PNG files in build/gallery/apple"
 # The gallery is a check as well as a picture (docs/plans/app-kit.md, §7.4):
 # a fixture whose screen has no renderer fails the run, which
 # `mise run apple:test:kit` also holds without drawing anything.
@@ -865,6 +865,12 @@ run = """
 rm -rf build/gallery/apple
 mkdir -p build/gallery/apple
 SUBSTRATEKIT_SNAPSHOTS="$PWD/build/gallery/apple" swift test --package-path apps/kit --filter 'Snapshots|GalleryRenderers'
+# Substrate Tasks' screens, drawn by its own views in its UI framework's
+# tests, which run on the Mac with no host app.
+mkdir -p build/gallery/apple/tasks
+.mise/apple.sh project
+(cd apps/xcode && TEST_RUNNER_SUBSTRATE_TASKS_GALLERY="$PWD/../../build/gallery/apple/tasks" xcodebuild -project Substrate.xcodeproj \
+  -scheme SubstrateTasks -derivedDataPath build/dd -quiet -destination 'platform=macOS' test -only-testing:SubstrateTasksTests/GalleryTests)
 echo "apps:gallery: $(find build/gallery/apple -name '*.png' | wc -l | tr -d ' ') screens in build/gallery/apple"
 """
 
@@ -924,6 +930,14 @@ run = ".mise/apple.sh build:workouts"
 [tasks."apple:test:workouts"]
 description = "Run WorkoutsKit's tests (Substrate Workouts' model, session and suggestion engines, and its sync) on the Mac"
 run = ".mise/apple.sh test:workouts"
+
+[tasks."apple:build:tasks"]
+description = "Build Substrate Tasks for the Mac and the iOS simulator, registering nothing with Apple"
+run = ".mise/apple.sh build:tasks"
+
+[tasks."apple:test:tasks"]
+description = "Run TasksKit's tests (Substrate Tasks' root, editor, presenters and codec) and the app's views over its fixtures on the Mac"
+run = ".mise/apple.sh test:tasks"
 
 [tasks."apps:test:linux"]
 description = "The kit, WorkoutsKit and TasksKit, built and tested on Linux in the swift container"

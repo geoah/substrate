@@ -29,6 +29,10 @@ packages:
   # libraries alone.
   WorkoutsKit:
     path: ../workouts/WorkoutsKit
+  # Substrate Tasks' core (TasksCore): its root under the kit's link, the
+  # task editor and the presenters, with no UI framework.
+  TasksKit:
+    path: ../tasks/TasksKit
 settings:
   base:
     DEVELOPMENT_TEAM: KFA5J8GDWJ
@@ -56,6 +60,8 @@ settings:
     SUBSTRATE_SYNC_CLIENT_ID: ""
     # Substrate Workouts', the same way (WorkoutsManifest.localClientID).
     SUBSTRATE_WORKOUTS_CLIENT_ID: ""
+    # Substrate Tasks', the same way (TasksManifest.localClientID).
+    SUBSTRATE_TASKS_CLIENT_ID: ""
     # The https redirect each release claims, beside its client id:
     # `https://<site host>/apps/<app>/callback`, listed in the client
     # document `apple.sh` publishes. Empty is a local build, which signs in
@@ -64,6 +70,7 @@ settings:
     SUBSTRATE_CHAT_REDIRECT: ""
     SUBSTRATE_SYNC_REDIRECT: ""
     SUBSTRATE_WORKOUTS_REDIRECT: ""
+    SUBSTRATE_TASKS_REDIRECT: ""
     # The host of the site `apple.sh site` publishes, whose association file
     # names every app. With SUBSTRATE_ASSOCIATED_DOMAINS=YES, which the
     # release sets beside it, each app signs with the `-site` entitlements:
@@ -77,3 +84,4 @@ include:
   - ../chat/apple/targets.yml
   - ../sync/apple/targets.yml
   - ../workouts/apple/targets.yml
+  - ../tasks/apple/targets.yml

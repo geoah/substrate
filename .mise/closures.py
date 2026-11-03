@@ -26,6 +26,11 @@ runs with --check first, so a closure is never built from a stale file.
     uv run --with pyyaml .mise/closures.py --out build/apps/site/packages [app ...]
 
 --out writes DIR/<package>-<version>.yaml and prints `path sha256` for each.
+--authority NAME, beside --out, writes DIR/authority.json too: NAME's
+authority document listing each closure by its file name, which a local
+server reads in place of the live one through
+SUBSTRATE_INSECURE_AUTHORITY_DOCS=NAME=DIR/authority.json, so an app's
+approval installs the packages this tree builds (apps/tasks/README.md).
 --json writes DIR/<package>.json, the closure an app carries as a resource
 (`{"package", "version", "documents"}`, the documents in closure order), so
 its build knows the version it asks for; with --check beside it, a file that
@@ -187,6 +192,18 @@ def check_lock(app: str, built: dict[str, tuple[int, str]]) -> None:
             raise ClosureError(f"{package_id}: the closure changed under the published version {version}; bump data.version, a published version never changes")
 
 
+def write_authority(folder: Path, authority: str, built: dict[str, tuple[int, str]]) -> None:
+    """The authority document a local server reads from a file: every
+    closure written beside it, by its file name, with its digest."""
+    packages = [
+        {"package": package_id.rsplit("/", 1)[1], "versions": [{"version": version, "closure": f"{package_id.rsplit('/', 1)[1]}-{version}.yaml", "sha256": sha256(closure)}]}
+        for package_id, (version, closure) in sorted(built.items())
+        if package_id.split("/", 1)[0] == authority
+    ]
+    document = {"authority": authority, "name": authority, "packages": packages}
+    (folder / "authority.json").write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+
 def write_json(folder: Path, built: dict[str, tuple[int, str]], check: bool) -> list[Path]:
     """Each closure as the JSON resource an app carries; answers the files
     that differ, written unless `check`."""
@@ -208,6 +225,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="hold every closure to its app's lock, and write nothing")
     parser.add_argument("--out", metavar="DIR", help="write each closure as DIR/<package>-<version>.yaml")
+    parser.add_argument("--authority", metavar="NAME", help="with --out, write DIR/authority.json naming each closure, for a local server")
     parser.add_argument("--json", metavar="DIR", help="write each closure as DIR/<package>.json, the resource an app carries")
     parser.add_argument("apps", nargs="*", help="the apps, by folder name; every app that publishes a package when none")
     args = parser.parse_args()
@@ -215,6 +233,8 @@ def main() -> int:
         parser.error("one of --check and --out")
     if args.json and args.out:
         parser.error("--json writes the resource alone")
+    if args.authority and not args.out:
+        parser.error("--authority writes beside --out")
     try:
         names = args.apps or publishing_apps()
         built = {}
@@ -235,6 +255,8 @@ def main() -> int:
                 path = out / f"{package_id.rsplit('/', 1)[1]}-{version}.yaml"
                 path.write_text(closure, encoding="utf-8")
                 print(f"{path} {sha256(closure)}")
+            if args.authority:
+                write_authority(out, args.authority, built)
         if args.json:
             stale = write_json(Path(args.json), built, check=args.check)
             for path in [] if args.check else stale:

@@ -28,6 +28,14 @@ public extension TasksApp {
         default:
             break
         }
+        switch event {
+        case .permission(.notAsked), .loaded, .listed, .wrote, .editorSaved:
+            // Asked once there is something to remind of, never at a
+            // launch with nothing due: the system asks only once.
+            if TasksSettings.reminds(state.settings), state.permission == .notAsked, Self.hasDue(state) { out.append(.askPermission) }
+        default:
+            break
+        }
         switch state.syncDue {
         case .read?: out.append(.read)
         case .follow?: out.append(.follow(state.cursor))
@@ -41,6 +49,10 @@ public extension TasksApp {
             out.append(.schedule(presentation.reminders))
         }
         return out
+    }
+
+    private static func hasDue(_ state: TasksState) -> Bool {
+        state.records.values.contains { $0.kind == TasksKinds.task && $0.properties["dueDay"] != nil }
     }
 
     /// A write is never cancelled for another: the line keeps their order.

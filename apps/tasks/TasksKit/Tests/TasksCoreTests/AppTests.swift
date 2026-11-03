@@ -138,6 +138,21 @@ struct LiveAppTests {
         #expect(await harness.presentation.detail?.title == "Pay rent")
     }
 
+    @Test func permissionIsAskedOnceSomethingIsDueAndNotBefore() async throws {
+        let rig = try Rig(notifications: ScriptedNotifications(permission: .notAsked, answer: .allowed))
+        serve(rig)
+        let harness = rig.harness()
+        await harness.runtime.linkChanged(signedIn)
+        try await harness.until { await $0.state.sync == .following }
+        #expect(rig.notifications.asked == 0)
+        await harness.send(.show(.today))
+        await harness.send(.quickAdd("Water plants"))
+        try await harness.until { _ in rig.notifications.asked == 1 }
+        try await harness.until { await $0.state.permission == .allowed }
+        // Due today at the chosen hour, which is past: nothing to schedule.
+        #expect(rig.notifications.scheduled.isEmpty)
+    }
+
     @Test func settingsAreKeptInTheRepositorysFolder() async throws {
         let rig = try Rig()
         serve(rig)
