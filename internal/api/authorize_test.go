@@ -1295,3 +1295,35 @@ func TestASecondFullRequestReadsAsAllowedBefore(t *testing.T) {
 // still be approved. A package the app itself declared is a renewal, and
 // one an app on its host declared before the client id was stamped is its
 // to claim.
+
+func TestARetiredAppTokenIsNotPreviousApprovalAndCanRevokeItself(t *testing.T) {
+	e := newSetupEnv(t)
+	app := e.grant("read:"+personKind, []string{"read:" + personKind})
+	e.svc.mu.Lock()
+	token := e.svc.tokens[app]
+	token.info.Retired = true
+	token.info.Scopes = append(token.info.Scopes, "declare:notes.example.org/notes")
+	e.svc.tokens[app] = token
+	e.svc.mu.Unlock()
+	page := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(appRequest("read:"+personKind))))
+	if page.Previous != nil || page.Scopes[0].Allowed {
+		t.Fatalf("retired grant shown as previous approval: %+v", page)
+	}
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/records", app, nil, ""), http.StatusUnauthorized)
+	form := url.Values{"token": {app}, "client_id": {"https://other.example/client.json"}}
+	wantStatus(t, e.do(http.MethodPost, "/oauth/revoke", "", []byte(form.Encode()), "application/x-www-form-urlencoded"), http.StatusOK)
+	e.svc.mu.Lock()
+	_, held := e.svc.tokens[app]
+	e.svc.mu.Unlock()
+	if !held {
+		t.Fatal("a mismatched client revoked the retired token")
+	}
+	form.Set("client_id", appClientID)
+	wantStatus(t, e.do(http.MethodPost, "/oauth/revoke", "", []byte(form.Encode()), "application/x-www-form-urlencoded"), http.StatusOK)
+	e.svc.mu.Lock()
+	_, held = e.svc.tokens[app]
+	e.svc.mu.Unlock()
+	if held {
+		t.Fatal("self-revocation left the retired token in storage")
+	}
+}
