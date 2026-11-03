@@ -19,9 +19,24 @@ func WithOutsideCode(policy string, unconfined bool) Option {
 	return func(o *options) { o.outsideCode = policy; o.unconfinedOutsideCode = unconfined }
 }
 
-func (s *service) admitOutsideCode() error {
+// admitOutsidePolicy refuses outside code of any form (a function, an agent,
+// a trigger, a mapping or an oauth2 block) where the operator refuses it.
+func (s *service) admitOutsidePolicy() error {
 	if s.outsideCode == "refuse" {
 		return fmt.Errorf("%w: this server refuses code from outside authorities (SUBSTRATE_OUTSIDE_CODE=refuse)", substrate.ErrGuard)
+	}
+	return nil
+}
+
+// admitOutsideBodies is admitOutsidePolicy for function bodies, which run in
+// the sandbox and so need one that confines them: filesystem, syscalls and
+// the connect gate. An agent, a trigger, a mapping and an oauth2 block run in
+// the server's own process under the engine's rules (an agent's reach and
+// cap, decisions 0215 and 0217), so a host the sandbox cannot fully confine,
+// such as a kernel without Landlock, still takes them.
+func (s *service) admitOutsideBodies() error {
+	if err := s.admitOutsidePolicy(); err != nil {
+		return err
 	}
 	c := runner.Shared.Sandbox()
 	r := c.Report()
@@ -49,7 +64,7 @@ func (ds *dataset) admitOutsidePackage(ctx context.Context, pkg string) error {
 		return err
 	}
 	if outside {
-		return ds.svc.admitOutsideCode()
+		return ds.svc.admitOutsidePolicy()
 	}
 	return nil
 }
@@ -69,23 +84,29 @@ func (ds *dataset) admitOutsideClosure(ctx context.Context, docs []vocabulary.Do
 	if !outside {
 		return nil
 	}
-	code, err := validateOutsideCode(docs, data)
-	if err != nil {
+	code, bodies, err := validateOutsideCode(docs, data)
+	switch {
+	case err != nil:
 		return err
-	}
-	if code {
-		return ds.svc.admitOutsideCode()
+	case bodies:
+		return ds.svc.admitOutsideBodies()
+	case code:
+		return ds.svc.admitOutsidePolicy()
 	}
 	return nil
 }
 
-func validateOutsideCode(docs []vocabulary.Document, data []substrate.PutInput) (bool, error) {
-	code := false
+// validateOutsideCode reports whether an outside closure carries code, and
+// whether any of it is a function body the sandbox runs, and refuses a
+// function network host or an oauth2 endpoint an outside package may not
+// name.
+func validateOutsideCode(docs []vocabulary.Document, data []substrate.PutInput) (code, bodies bool, err error) {
 	for _, d := range docs {
 		switch d.Kind {
 		case vocabulary.DocFunction, vocabulary.DocAgent, vocabulary.DocRecordMapping:
 			code = true
 			if d.Kind == vocabulary.DocFunction {
+				bodies = true
 				permissions, _ := d.Data["permissions"].(map[string]any)
 				items := asItems(permissions["network"])
 				if hosts, ok := permissions["network"].([]string); ok {
@@ -98,7 +119,7 @@ func validateOutsideCode(docs []vocabulary.Document, data []substrate.PutInput) 
 					host, _ := raw.(string)
 					plain := strings.TrimPrefix(host, "*.")
 					if net.ParseIP(plain) != nil || strings.ContainsAny(plain, ":/") || plain == "" {
-						return false, fmt.Errorf("%w: outside function %s network must name exact DNS hosts or *.example.com patterns", substrate.ErrValidation, d.ID)
+						return false, false, fmt.Errorf("%w: outside function %s network must name exact DNS hosts or *.example.com patterns", substrate.ErrValidation, d.ID)
 					}
 				}
 			}
@@ -113,7 +134,7 @@ func validateOutsideCode(docs []vocabulary.Document, data []substrate.PutInput) 
 					}
 					u, err := url.Parse(value)
 					if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
-						return false, fmt.Errorf("%w: outside package %s oauth2.%s must be an HTTPS endpoint", substrate.ErrValidation, d.ID, key)
+						return false, false, fmt.Errorf("%w: outside package %s oauth2.%s must be an HTTPS endpoint", substrate.ErrValidation, d.ID, key)
 					}
 				}
 			}
@@ -122,7 +143,7 @@ func validateOutsideCode(docs []vocabulary.Document, data []substrate.PutInput) 
 	for _, d := range data {
 		code = code || d.Kind == typeTrigger
 	}
-	return code, nil
+	return code, bodies, nil
 }
 
 // outsideInstallKey marks bodies before their package row exists. It is never
@@ -138,7 +159,7 @@ func (ds *dataset) outsideSpec(ctx context.Context, spec runner.Spec, pkg string
 	spec.UnconfinedOutside = ds.svc.unconfinedOutsideCode
 	spec.Refusal = err
 	if err == nil && outside {
-		spec.Refusal = ds.svc.admitOutsideCode()
+		spec.Refusal = ds.svc.admitOutsideBodies()
 	}
 	return spec
 }
@@ -150,7 +171,7 @@ func (t *txn) admitOutsideMapping(pkg string) error {
 	}
 	if row != nil {
 		if from, _ := row.Props["publishedFrom"].(string); from != "" {
-			return t.ds.svc.admitOutsideCode()
+			return t.ds.svc.admitOutsidePolicy()
 		}
 	}
 	return nil
