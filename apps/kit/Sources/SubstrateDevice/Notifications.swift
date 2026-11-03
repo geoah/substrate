@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// The device's local notifications (§5.4): whether the owner lets the app
 /// alert, one request scheduled or replaced by its id, and a request taken
@@ -36,7 +37,7 @@ public extension Notifications {
 }
 
 /// What the owner allows.
-public enum NotificationPermission: String, Codable, Equatable, Sendable {
+public enum NotificationPermission: String, Bridged, Equatable {
     /// Never asked: the app asks when it first needs to.
     case notAsked
     /// Refused, or allowed with nowhere to show one.
@@ -48,7 +49,7 @@ public enum NotificationPermission: String, Codable, Equatable, Sendable {
 }
 
 /// One notification to show at an instant.
-public struct NotificationRequest: Codable, Equatable, Sendable {
+public struct NotificationRequest: Bridged, Equatable {
     public var id: String
     public var title: String
     /// A line under the title: what the notification is about.

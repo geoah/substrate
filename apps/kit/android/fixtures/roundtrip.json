@@ -305,6 +305,20 @@
     }
   },
   {
+    "type": "NotificationRequest",
+    "json": {
+      "body": "Due today",
+      "fireAt": "2026-11-03T09:00:00Z",
+      "id": "due|a",
+      "thread": "today",
+      "timeSensitive": true,
+      "title": "Buy milk",
+      "userInfo": {
+        "task": "a"
+      }
+    }
+  },
+  {
     "type": "Ledger.Command",
     "json": {
       "note": {

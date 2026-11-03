@@ -922,6 +922,30 @@ on it. What changed:
   (`environment`, `BridgeRoot.environmentChanged`), in order with its
   commands.
 
+**Step 7's kit-ui and gallery, as built, 2026-11-03.** Where the code
+settled other than the text above says:
+
+- A runtime root's presentation crosses with each `KeyedList` in it as a
+  reference, `{"$list": <its place in the tree>, "revision": n}`; the
+  lists whose rows moved go first, whole then as deltas, at a revision of
+  the crossing's own that only moves forward, and Kotlin draws a tree only
+  once every list it names is at the revision it names.
+  `Runtime.environmentChanged` presents the whole tree again, and a
+  command is read by the exact reader and `ValueCoding`, which moved to
+  SubstrateCore.
+- The restricted model reads what the shared screens already were rather
+  than reshape them: generic structs (`ActionButton<Action>`,
+  `LinkPresentation<App>`), unlabelled payloads keyed `_0` as Swift writes
+  them, `Date` as RFC 3339, `URL` and `UUID` as strings, dictionaries keyed
+  by `ChildKey`, and types a configuration names opaque (a probe's whole
+  answer), which Kotlin carries as JSON. A configuration may use another's
+  declarations, so an app's golden generates only its own values.
+- The design tokens are data in SubstrateUI; a Swift test writes them as
+  kit-ui's `KitTokens.kt`. The gallery check on Android is Robolectric
+  with Roborazzi, not Paparazzi, from the one fixture file Swift writes
+  (`fixtures/screens.json`); the Gallery app draws the same fixtures made
+  on the device and its instrumented test holds them to kit-ui.
+
 **Confirmation round, 2026-11-03**, on draft three with the spike. Fable:
 the loop's order is now the contract (journal before any suspension, a
 finish that is two events, transient state beside the journaled state),

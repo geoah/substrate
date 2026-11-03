@@ -20,9 +20,18 @@ enum ScreenFixturesFile {
 
 @Suite("The screens' fixture file", .timeLimit(.minutes(2)))
 struct ScreenFixturesFileTests {
+    #if os(macOS)
+    static let onAMac = true
+    #else
+    static let onAMac = false
+    #endif
+
     /// SUBSTRATE_UPDATE_FIXTURES=1 writes it again after a presentation or
-    /// a fixture changes.
-    @Test func theFileIsWhatTheScreensPresentToday() throws {
+    /// a fixture changes. Held on a Mac alone: the presenters word dates with
+    /// the platform's formatters, the file holds the Mac's words, and Linux's
+    /// ICU spaces a time differently.
+    @Test(.enabled(if: Self.onAMac))
+    func theFileIsWhatTheScreensPresentToday() throws {
         let text = try ScreenFixturesFile.text()
         if ProcessInfo.processInfo.environment["SUBSTRATE_UPDATE_FIXTURES"] == "1" {
             try text.write(to: ScreenFixturesFile.file, atomically: true, encoding: .utf8)

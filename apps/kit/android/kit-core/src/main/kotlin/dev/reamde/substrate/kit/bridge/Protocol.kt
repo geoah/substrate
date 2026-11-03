@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "f9a700eb41ee4a73ceb3cd40fa2ebc6dc6bdb05769257d539625d69287a1b90f"
+    public const val VALUE: String = "fa2477e8b0289ca1e20568c8c94e849290f2eb0b89900c5569ba133d6adcfd8e"
 }
 
 /**
@@ -723,6 +723,27 @@ public data class NetworkPath(
     val online: Boolean,
     val expensive: Boolean,
     val constrained: Boolean,
+)
+
+@Serializable
+public enum class NotificationPermission {
+    @SerialName("notAsked") notAsked,
+    @SerialName("off") off,
+    @SerialName("notTimeSensitive") notTimeSensitive,
+    @SerialName("on") on,
+}
+
+@Serializable
+public data class NotificationRequest(
+    val id: String,
+    val title: String,
+    val subtitle: String? = null,
+    val body: String? = null,
+    val fireAt: String,
+    val thread: String? = null,
+    val category: String? = null,
+    val timeSensitive: Boolean,
+    val userInfo: Map<String, String>,
 )
 
 @Serializable
@@ -1661,6 +1682,8 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "ListMessage" to ListMessage.Serializer,
     "ListRow" to ListRow.serializer(),
     "NetworkPath" to NetworkPath.serializer(),
+    "NotificationPermission" to NotificationPermission.serializer(),
+    "NotificationRequest" to NotificationRequest.serializer(),
     "Op" to Op.serializer(),
     "OpenRequest" to OpenRequest.serializer(),
     "PackageLine" to PackageLine.serializer(),

@@ -90,6 +90,9 @@ enum Fixtures {
         .of("Ledger.Presentation", Ledger.Presentation(rows: KeyedList([LedgerRow(id: "a", text: unicode), LedgerRow(id: "b", text: "B")],
                                                                        revision: 7),
                                                        count: "2 rows", drawn: "Tuesday", note: nil)),
+        // An instant crosses as RFC 3339, in whole seconds where it has no fraction.
+        .of("NotificationRequest", NotificationRequest(id: "due|a", title: "Buy milk", body: "Due today", fireAt: Date(timeIntervalSince1970: 1_793_696_400),
+                                                       thread: "today", timeSensitive: true, userInfo: ["task": "a"])),
         .of("Ledger.Command", Ledger.Command.note(value: ["n": JSONValue.number(JSONNumber("1234567890123456789012345678901234567890.5")!)])),
     ]
 
