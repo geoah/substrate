@@ -140,14 +140,15 @@ var wireTypes = map[string]any{
 	"SessionCredential": SessionCredential{},
 	// The approval page (authorize.ts): the parked request it renders, the
 	// approval it posts and the redirect either answer carries.
-	"AuthorizationRequest":    AuthorizationRequest{},
-	"AuthorizationApp":        AuthorizationApp{},
-	"AuthorizationPublisher":  AuthorizationPublisher{},
-	"AuthorizationRedirectTo": AuthorizationRedirectTo{},
-	"AuthorizationScope":      AuthorizationScope{},
-	"AuthorizationKind":       AuthorizationKind{},
-	"AuthorizationApproval":   AuthorizationApproval{},
-	"AuthorizationAnswer":     AuthorizationAnswer{},
+	"AuthorizationRequest":      AuthorizationRequest{},
+	"AuthorizationApp":          AuthorizationApp{},
+	"AuthorizationPublisher":    AuthorizationPublisher{},
+	"AuthorizationRedirectTo":   AuthorizationRedirectTo{},
+	"AuthorizationScope":        AuthorizationScope{},
+	"AuthorizationKind":         AuthorizationKind{},
+	"AuthorizationCallFunction": AuthorizationCallFunction{},
+	"AuthorizationApproval":     AuthorizationApproval{},
+	"AuthorizationAnswer":       AuthorizationAnswer{},
 	// The set up an approval runs (docs/plans/app-setup.md): each detail as
 	// the app wrote it and as the page shows it, and the check an app's
 	// token asks with.

@@ -1053,6 +1053,9 @@ export interface AuthorizationScope {
    * names each and says what it may read and change; empty for a read or
    * write scope. */
   agents: SubstrateRecord[]
+  /** The functions a call scope matches today, each with the reach a call
+   * of it is held to (decision 0219); empty for every other verb. */
+  functions: AuthorizationCallFunction[]
   /** The previous token's scopes already cover this one (write covers read,
    * a wider pattern a narrower one), so the page folds it under what was
    * allowed before. */
@@ -1067,10 +1070,31 @@ export interface AuthorizationScope {
 /** What one scope of an app's token does with its pattern. `declare` keeps one
  * package of the owner's own (decision 0203). `webhook` names
  * one trigger, and only an approved `webhook` detail puts it on a token.
- * `full` is only ever requested: approving it mints a token without scopes
- * (decision 0204). */
+ * `call` runs the matching functions where the token's reads and writes
+ * cover their reach (decision 0219). `full` is only ever requested:
+ * approving it mints a token without scopes (decision 0204). */
 export type ScopeVerb =
-  "read" | "write" | "agents" | "decide" | "declare" | "webhook" | "full"
+  | "read"
+  | "write"
+  | "agents"
+  | "decide"
+  | "declare"
+  | "call"
+  | "webhook"
+  | "full"
+
+/** One function a `call:` scope matches today: its id and description, the
+ * kinds (or globs) it and what it calls read and write, and whether the
+ * request's read and write scopes cover that reach, which a call is held
+ * to. `uncovered` names what they do not, `read <kind>` or `write <kind>`. */
+export interface AuthorizationCallFunction {
+  identity: string
+  description?: string
+  reads: string[]
+  writes: string[]
+  covered: boolean
+  uncovered?: string[]
+}
 
 /** One kind a scope reaches today, or one a package the request sets up
  * would add (`added`). `purpose` is absent for a primary kind. */

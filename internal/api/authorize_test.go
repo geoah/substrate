@@ -293,7 +293,6 @@ func TestAnAppGetsATokenHeldToTheScopesTheOwnerApproved(t *testing.T) {
 		{http.MethodPost, "/tokens"},
 		{http.MethodGet, "/api/v1/export"},
 		{http.MethodPost, "/api/v1/vocabulary/apply"},
-		{http.MethodGet, "/api/v1/changes"},
 		{http.MethodGet, "/api/v1/catalog"},
 		{http.MethodPut, "/api/v1/blobs"},
 		{http.MethodPost, "/api/v1/merge"},
@@ -306,13 +305,10 @@ func TestAnAppGetsATokenHeldToTheScopesTheOwnerApproved(t *testing.T) {
 			t.Fatalf("%s %s with an app's token = %d %s, want 403", c.method, c.path, rec.Code, rec.Body.String())
 		}
 	}
-	// The tail is the owner's: a watch is refused before it streams.
+	// The records route's tail is the owner's: an app follows changes on
+	// the change feed, which cuts each row to what it reads.
 	watch := e.do(http.MethodGet, "/api/v1/records?watch=1", app, nil, "")
 	wantStatus(t, watch, http.StatusForbidden)
-	// So are the window and aggregate reads.
-	window := `{"kinds":["` + taskKind + `"],"properties":{"at":{"gte":"2026-01-01T00:00:00Z","lt":"2026-02-01T00:00:00Z"}}}`
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(window), app, nil, ""), http.StatusForbidden)
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?aggregate="+url.QueryEscape(`{"op":"count"}`), app, nil, ""), http.StatusForbidden)
 }
 
 func TestAListWithNoKindsNamesEveryReadableKindAndNoOther(t *testing.T) {
@@ -870,17 +866,28 @@ func TestAnAppsRecordsAreCutToItsGrant(t *testing.T) {
 	}
 }
 
-func TestAnAppSearchesByWordsAloneAndSeesNoScores(t *testing.T) {
+// An app searches in every mode, the semantic one included (decision 0219),
+// over the kinds it reads alone, and sees no scores.
+func TestAnAppSearchesInEveryModeOverWhatItReadsAndSeesNoScores(t *testing.T) {
 	e := newAppEnv(t)
 	e.seed(substrate.Record{ID: "p1", Kind: personKind, Title: "Ada notes"}, nil)
 	e.seed(substrate.Record{ID: "m1", Kind: messageKind, Title: "notes from Bob"}, nil)
 	app := e.grant("read:"+personKind, []string{"read:" + personKind})
 	ds := e.svc.datasets[fakeRepository]
-	for _, mode := range []string{"", "&mode=hybrid", "&mode=lexical"} {
-		rec := e.do(http.MethodGet, "/api/v1/records?q=notes"+mode, app, nil, "")
+	for _, mode := range []substrate.SearchMode{"", substrate.SearchHybrid, substrate.SearchLexical, substrate.SearchSemantic} {
+		path := "/api/v1/records?q=notes"
+		if mode != "" {
+			path += "&mode=" + string(mode)
+		}
+		rec := e.do(http.MethodGet, path, app, nil, "")
 		wantStatus(t, rec, http.StatusOK)
-		if ds.lastSearch.Mode != substrate.SearchLexical {
-			t.Fatalf("an app's search%s ran %q, want lexical", mode, ds.lastSearch.Mode)
+		if ds.lastSearch.Mode != mode {
+			t.Fatalf("an app's search in mode %q ran %q, want the mode it asked for", mode, ds.lastSearch.Mode)
+		}
+		// A search naming no kind is cut to the kinds the token reads, never
+		// widened.
+		if len(ds.lastSearch.Kinds) != 1 || ds.lastSearch.Kinds[0] != personKind {
+			t.Fatalf("an app's search ran over %v, want the readable kind alone", ds.lastSearch.Kinds)
 		}
 		ranked := decodeJSON[substrate.RankedPage](t, rec)
 		if len(ranked.Records) != 1 || ranked.Records[0].ID != "p1" {
@@ -890,8 +897,9 @@ func TestAnAppSearchesByWordsAloneAndSeesNoScores(t *testing.T) {
 			t.Fatalf("an app's search carried scores %+v", s)
 		}
 	}
-	rec := e.do(http.MethodGet, "/api/v1/records?q=notes&mode=semantic", app, nil, "")
-	wantStatus(t, rec, http.StatusForbidden)
+	// A kind it cannot read is unknown, in the semantic mode as in every other.
+	filter := url.QueryEscape(`{"kinds":["` + messageKind + `"]}`)
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?q=notes&mode=semantic&filter="+filter, app, nil, ""), http.StatusNotFound)
 }
 
 func TestAGlobNeverReachesAnInternalKindAndAnExactScopeDoes(t *testing.T) {

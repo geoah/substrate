@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -900,6 +901,9 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 		if q.Filter.Implements != "" && !implementors[e.Kind] {
 			continue
 		}
+		if !matchesScalarConds(e.Properties, q.Filter.Properties) {
+			continue
+		}
 		if q.Filter.Referencing != nil {
 			sites := referenceSites(e.Properties, targets, q.Filter.Referencing.Property)
 			if len(sites) == 0 {
@@ -934,6 +938,37 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 		}
 	}
 	return page, nil
+}
+
+// matchesScalarConds applies the two conditions the fake models over a
+// record's own values: `eq` against a scalar, and `contains` against a list
+// of scalars, as the engine tests a blob-ref digest. A condition on a
+// reference or an object, or any other operator, filters nothing here: the
+// tests that send one read the query the dataset saw.
+func matchesScalarConds(props map[string]any, conds map[string]substrate.Cond) bool {
+	for name, c := range conds {
+		switch {
+		case c.Eq != nil:
+			if _, isMap := props[name].(map[string]any); isMap {
+				continue
+			}
+			if _, isList := props[name].([]any); isList {
+				continue
+			}
+			if props[name] == nil || fmt.Sprint(props[name]) != fmt.Sprint(c.Eq) {
+				return false
+			}
+		case c.Contains != nil:
+			list, ok := props[name].([]any)
+			if !ok {
+				return false
+			}
+			if !slices.ContainsFunc(list, func(v any) bool { return fmt.Sprint(v) == fmt.Sprint(c.Contains) }) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // recordAt resolves a "<kind>/<id>" path against the fake's rows, a former id

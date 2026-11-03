@@ -242,6 +242,14 @@
     "problem": true,
     "reason": true
   },
+  "AuthorizationCallFunction": {
+    "covered": true,
+    "description": false,
+    "identity": true,
+    "reads": true,
+    "uncovered": false,
+    "writes": true
+  },
   "AuthorizationCheck": {
     "details": true,
     "scope": true
@@ -353,6 +361,7 @@
   "AuthorizationScope": {
     "agents": true,
     "allowed": false,
+    "functions": true,
     "glob": true,
     "kinds": true,
     "pattern": true,
