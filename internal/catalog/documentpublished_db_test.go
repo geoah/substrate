@@ -42,7 +42,7 @@ func TestPublishedInstallRefreshTakeover(t *testing.T) {
 		}
 	}
 	release(1, "")
-	c, err := catalog.LoadWithReader(authority.NewReader(authority.Options{LocalDocuments: map[string]string{"publisher.example": docPath}}))
+	c, err := catalog.LoadWithReader(authority.NewReader(authority.Options{LocalDocuments: map[string]string{"publisher.example": docPath}}), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

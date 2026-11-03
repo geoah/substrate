@@ -120,6 +120,9 @@ type Catalog struct {
 	// plans is the upgrade previews Upgrade reuses while the repository's
 	// changelog head has not moved (plancache.go).
 	plans planCache
+	// seeded is the packages the binary seeds outside the catalog
+	// (LoadWithReader), which no document resolves.
+	seeded map[string]bool
 }
 
 // Load parses every shipped PACKAGE directory in the given roots. A package
@@ -151,12 +154,22 @@ func Load(roots ...Root) (*Catalog, error) {
 }
 
 // LoadWithReader adds document-published packages to the binary catalog.
-func LoadWithReader(reader *authority.Reader, roots ...Root) (*Catalog, error) {
+// seeded names the packages the binary seeds into every repository outside
+// the catalog (core, llm, console, observations): with the catalog's own
+// closures they are everything the binary ships, and a document never
+// resolves one of them, so whoever can change a hosted file or a DNS answer
+// cannot replace what the binary ships (decision 0221).
+func LoadWithReader(reader *authority.Reader, seeded []string, roots ...Root) (*Catalog, error) {
 	c, err := Load(roots...)
-	if err == nil {
-		c.reader = reader
+	if err != nil {
+		return nil, err
 	}
-	return c, err
+	c.reader = reader
+	c.seeded = map[string]bool{}
+	for _, id := range seeded {
+		c.seeded[id] = true
+	}
+	return c, nil
 }
 
 // Root is one shipped tree and the tier every closure in it takes.
