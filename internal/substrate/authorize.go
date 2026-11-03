@@ -235,6 +235,9 @@ type AuthorizationPackagePublisher struct {
 	Name        string `json:"name,omitempty"`
 	DocumentURL string `json:"documentUrl"`
 	FromFile    bool   `json:"fromFile,omitempty"`
+	// Digest is the SHA-256 of the closure the row would install, which
+	// binds the approval to that closure (appsetup.Moved).
+	Digest string `json:"digest,omitempty"`
 }
 
 // AuthorizationPackageStep is one package a requested one requires, with

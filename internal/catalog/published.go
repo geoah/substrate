@@ -121,7 +121,7 @@ func (c *Catalog) readClosure(ctx context.Context, id string, source authority.S
 			break
 		}
 	}
-	b.Publisher = &substrate.AuthorizationPackagePublisher{Authority: b.origin.Authority, Name: b.origin.Name, DocumentURL: b.origin.DocumentURL, FromFile: b.origin.FromFile}
+	b.Publisher = &substrate.AuthorizationPackagePublisher{Authority: b.origin.Authority, Name: b.origin.Name, DocumentURL: b.origin.DocumentURL, FromFile: b.origin.FromFile, Digest: b.origin.SHA256}
 	return b, nil
 }
 

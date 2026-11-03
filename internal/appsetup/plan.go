@@ -40,6 +40,10 @@ type Catalog interface {
 	Requirements(ctx context.Context, id string, ds substrate.Dataset) ([]*catalog.Bundle, []catalog.Unmet, error)
 	Upgrade(ctx context.Context, id string, ds substrate.Dataset, held *substrate.BundleStatus) (*substrate.BundleUpgrade, error)
 	InstallConfirmed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*catalog.Bundle, []substrate.SuggestedMapping, error)
+	// InstallReviewed is InstallConfirmed held to the document-published
+	// closure the owner approved: another version or digest is refused
+	// before anything lands.
+	InstallReviewed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm, expect *catalog.PublishedCandidate) (*catalog.Bundle, []substrate.SuggestedMapping, error)
 }
 
 // accountConfigTrait is the trait an account detail's kind implements.
@@ -330,7 +334,7 @@ func publisherOf(b *catalog.Bundle) *substrate.AuthorizationPackagePublisher {
 	if o == nil {
 		return nil
 	}
-	return &substrate.AuthorizationPackagePublisher{Authority: o.Authority, Name: o.Name, DocumentURL: o.DocumentURL, FromFile: o.FromFile}
+	return &substrate.AuthorizationPackagePublisher{Authority: o.Authority, Name: o.Name, DocumentURL: o.DocumentURL, FromFile: o.FromFile, Digest: o.SHA256}
 }
 
 func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetail) (substrate.AuthorizationSetup, error) {

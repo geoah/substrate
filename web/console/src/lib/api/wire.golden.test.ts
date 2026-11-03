@@ -755,6 +755,7 @@ const authorizationPackagePublisher: Shape<AuthorizationPackagePublisher> = {
   name: false,
   documentUrl: true,
   fromFile: false,
+  digest: false,
 }
 
 const authorizationPackageStep: Shape<AuthorizationPackageStep> = {
