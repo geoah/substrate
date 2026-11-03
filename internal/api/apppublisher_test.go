@@ -123,12 +123,13 @@ func TestAVerifiedAppIsShownByItsAuthorityAndWritesAsIt(t *testing.T) {
 
 func TestAnUnlistedAppIsMarkedUnverifiedAndMayStillAskForFull(t *testing.T) {
 	e := newPublishedEnv(t)
-	// Its redirect is off the client id's origin and nothing verifies it, so
-	// the request is never parked.
-	rec := e.do(http.MethodGet, authorizeURL(workoutsRequest("full", pubRedirect)), "", nil, "")
-	wantStatus(t, rec, http.StatusBadRequest)
-	if !strings.Contains(rec.Body.String(), "does not list this app") {
-		t.Fatalf("the refusal reads %s", rec.Body.String())
+	// Its redirect is off the client id's origin and nothing verifies it.
+	// Nothing is fetched before a sign-in, so the request parks, and the
+	// signed-in page refuses it.
+	refused := e.show(e.park(workoutsRequest("full", pubRedirect)))
+	wantStatus(t, refused, http.StatusUnprocessableEntity)
+	if !strings.Contains(refused.Body.String(), "does not list this app") {
+		t.Fatalf("the refusal reads %s", refused.Body.String())
 	}
 
 	// Its own document on its own origin, claiming the publisher.
@@ -190,7 +191,9 @@ func workoutsForm(code, redirect string) url.Values {
 }
 
 // A record withdrawn after the page showed the app as verified refuses the
-// approval: the owner is asked to look again, and no code exists.
+// approval and ends the request: the page keeps what it first read, so only
+// a fresh request from the app can show the publisher as it is now, and
+// no code exists.
 func TestAPublisherWithdrawnAfterThePageViewRefusesTheApproval(t *testing.T) {
 	e, dns := newPublishedEnvWithDNS(t, pubClientID)
 	id := e.park(workoutsRequest("full", pubRedirect))
@@ -202,11 +205,19 @@ func TestAPublisherWithdrawnAfterThePageViewRefusesTheApproval(t *testing.T) {
 	delete(dns, "_substrate.example.org.")
 	rec := e.approveShown(id, []string{"full"}, 30)
 	wantStatus(t, rec, http.StatusConflict)
-	if body := rec.Body.String(); !strings.Contains(body, "no longer verifies") || !strings.Contains(body, "Reload the page") {
+	if body := rec.Body.String(); !strings.Contains(body, "no longer verifies") || !strings.Contains(body, "start again from the app") {
 		t.Fatalf("the refusal reads %s", body)
 	}
 	if len(e.svc.tokens) != 1 {
 		t.Fatalf("a refused approval minted a token: %d tokens", len(e.svc.tokens))
+	}
+	// The ended request is gone; the app's next request reads the
+	// publisher as it is now.
+	wantStatus(t, e.show(id), http.StatusNotFound)
+	again := e.show(e.park(workoutsRequest("full", pubRedirect)))
+	wantStatus(t, again, http.StatusUnprocessableEntity)
+	if !strings.Contains(again.Body.String(), "publishes no _substrate record") {
+		t.Fatalf("the fresh request reads %s", again.Body.String())
 	}
 }
 

@@ -171,9 +171,10 @@ func (h *handler) getProtectedResourceMetadata(w http.ResponseWriter, r *http.Re
 // --- the authorization endpoint ---
 
 // getAuthorize checks an authorization request's shape and parks it. It
-// fetches nothing and redirects nowhere but the console: until the owner is
-// signed in and the app's document is read, the redirect_uri is unverified,
-// so every refusal here is a page (OAuth 2.1 §4.1.2.1).
+// fetches and resolves nothing and redirects nowhere but the console: until
+// the owner is signed in and the app's document is read, the redirect_uri is
+// unverified, so every refusal here is a page (OAuth 2.1 §4.1.2.1). A caller
+// who has signed in as nobody never makes the server dial out.
 func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	for k, v := range q {
@@ -192,12 +193,12 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// A redirect off the client id's origin is held until the app's
-	// publisher is read below: a verified app's client document may be
-	// served from anywhere, its redirect only from its authority.
-	offOrigin := authorize.RedirectAllowed(client, redirect)
-	if offOrigin != nil && (client.Local || authorize.LocalRedirect(redirect)) {
-		writeAuthorizePage(w, http.StatusBadRequest, offOrigin.Error())
+	// An https redirect off the client id's origin is decided once the
+	// owner has signed in and the page reads the app's publisher
+	// (verifiedApp): a verified app's client document may be served from
+	// anywhere, its redirect only from its authority.
+	if err := authorize.RedirectAllowed(client, redirect); err != nil && client.Local {
+		writeAuthorizePage(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if rt := q.Get("response_type"); rt != "code" {
@@ -244,12 +245,6 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 	if ok, _ := h.parkRate.allow(costPaired, source+"|authorize"); !ok {
 		writeAuthorizePage(w, http.StatusTooManyRequests, "too many authorization requests from this address; wait a moment and try again")
 		return
-	}
-	if offOrigin != nil {
-		if why := h.offOriginRefusal(r.Context(), client, redirect); why != "" {
-			writeAuthorizePage(w, http.StatusBadRequest, offOrigin.Error()+", unless the app's publisher is verified and the redirect is on its authority: "+why)
-			return
-		}
 	}
 	req, err := h.authz.Park(authorize.Request{
 		Issuer: iss, Client: client, RedirectURI: redirect, AppState: state,
@@ -325,31 +320,6 @@ func writeAuthorizationGone(w http.ResponseWriter) {
 		"this authorization request has expired or was already answered: start again from the app")
 }
 
-// offOriginRefusal says why a redirect off the client id's origin may not be
-// parked, "" when the app's document lists it and its publisher is verified
-// with the redirect on its authority (decision 0209).
-func (h *handler) offOriginRefusal(ctx context.Context, client authorize.Client, redirect string) string {
-	doc, err := h.fetcher.Fetch(ctx, client)
-	if err != nil {
-		var fe *authorize.FetchError
-		if errors.As(err, &fe) {
-			return fe.Error()
-		}
-		return "the app's document could not be read"
-	}
-	if !authorize.RedirectListed(doc.RedirectURIs, redirect) {
-		return "the app's document does not list it"
-	}
-	p := h.verifier.Verify(ctx, client, doc, redirect)
-	if !p.Verified {
-		if p.Reason == "" {
-			return "the app's document names no publisher"
-		}
-		return p.Reason
-	}
-	return ""
-}
-
 // verifiedApp reads a pending request's app: a local app as its URL alone, a
 // web app through its document, whose redirect_uris must list the request's
 // redirect, and either with who publishes it. A refusal is the owner's to
@@ -373,14 +343,14 @@ func (h *handler) verifiedApp(ctx context.Context, req authorize.Request) (autho
 			"the app's document does not list the redirect_uri this request names, " + req.RedirectURI)
 	}
 	doc.Publisher = h.verifier.Verify(ctx, req.Client, doc, req.RedirectURI)
-	// Parked because its publisher was verified then; a publisher that no
-	// longer verifies leaves the redirect off the app's origin unproven.
-	if authorize.RedirectAllowed(req.Client, req.RedirectURI) != nil && !doc.Publisher.Verified {
+	// Only a verified publisher's redirect may leave the client id's origin,
+	// and only for the publisher's authority or a name under it.
+	if offOrigin := authorize.RedirectAllowed(req.Client, req.RedirectURI); offOrigin != nil && !doc.Publisher.Verified {
 		why := doc.Publisher.Reason
 		if why == "" {
 			why = "the app's document names no publisher"
 		}
-		return authorize.Document{}, validation("the redirect_uri is off the app's own origin, and its publisher no longer verifies: " + why)
+		return authorize.Document{}, validation(offOrigin.Error() + ", unless the app's publisher is verified and the redirect is on its authority: " + why)
 	}
 	return doc, nil
 }
@@ -862,10 +832,14 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	// The publisher the page showed is checked again before anything is
 	// reserved, outside the store's lock: a record withdrawn since the page
 	// loaded leaves the owner approving something the page no longer
-	// describes.
+	// describes. The page keeps what it first read, so the request ends
+	// here and the app starts again, which reads the publisher afresh.
 	if shown, err := h.authz.Claim(id, authority); err == nil && shown.State == substrate.AuthorizationPending {
 		if why := h.publisherMoved(ctx, shown); why != "" {
-			writeError(w, http.StatusConflict, codeConflict, "who publishes this app changed since the page loaded: "+why+". Reload the page and check the request again")
+			if _, err := h.authz.Deny(id, authority, func(authorize.Request) error { return nil }); err != nil && !errors.Is(err, authorize.ErrNotPending) {
+				slog.Warn("authorize: ending a request whose publisher moved", "request", id, "error", err)
+			}
+			writeError(w, http.StatusConflict, codeConflict, "who publishes this app changed since the page loaded: "+why+". This request has ended: start again from the app")
 			return
 		}
 	}
