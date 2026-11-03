@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -28,23 +29,30 @@ import (
 // (Resources/Package/*.json, the documents the site publishes), parsed as
 // the server parses a published closure.
 
-// appRequest is what one app's app.json says it asks a substrate for.
+// appRequest is what one app's app.json says it asks a substrate for, and
+// the packages its own site publishes.
 type appRequest struct {
-	Name     string   `json:"name"`
-	Scopes   []string `json:"scopes"`
-	Packages []string `json:"packages"`
+	Name      string   `json:"name"`
+	Scopes    []string `json:"scopes"`
+	Publishes []string `json:"publishes"`
+	Asks      []struct {
+		Package string `json:"package"`
+		AtLeast int64  `json:"atLeast"`
+	} `json:"asks"`
 }
 
 // firstPartyRequests reads every app's app.json and keeps the apps that ask
 // for packages to be set up, by name: an app that asks for none has no
-// closure to hold its scopes to.
-func firstPartyRequests(t *testing.T) map[string]appRequest {
+// closure to hold its scopes to. It answers too every package an app
+// publishes.
+func firstPartyRequests(t *testing.T) (map[string]appRequest, []string) {
 	t.Helper()
 	files, err := filepath.Glob(filepath.Join("..", "..", "apps", "*", "app.json"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("find the apps' app.json: %v (%d found)", err, len(files))
 	}
 	out := map[string]appRequest{}
+	var published []string
 	for _, file := range files {
 		raw, err := os.ReadFile(file)
 		if err != nil {
@@ -57,7 +65,8 @@ func firstPartyRequests(t *testing.T) map[string]appRequest {
 		if app.Name == "" {
 			t.Fatalf("%s names no app", file)
 		}
-		if len(app.Packages) > 0 {
+		published = append(published, app.Publishes...)
+		if len(app.Asks) > 0 {
 			out[app.Name] = app
 		}
 	}
@@ -66,7 +75,8 @@ func firstPartyRequests(t *testing.T) map[string]appRequest {
 			t.Fatalf("no app.json asks for %s's packages", name)
 		}
 	}
-	return out
+	slices.Sort(published)
+	return out, published
 }
 
 // workoutsClosure parses one of the closures Substrate Workouts carries as
@@ -191,12 +201,34 @@ func TestTheFirstPartyAppsScopesCoverThePackagesTheyAskFor(t *testing.T) {
 		}
 		return append(out, b.Reach()...)
 	}
-	requests := firstPartyRequests(t)
+	requests, publishes := firstPartyRequests(t)
+	// The closures read here as an app's own are the ones the apps say
+	// their sites publish, no more and no fewer.
+	var carried []string
+	for id := range published {
+		carried = append(carried, id)
+	}
+	slices.Sort(carried)
+	if !slices.Equal(carried, publishes) {
+		t.Fatalf("the apps publish %v, and this test reads the closures of %v", publishes, carried)
+	}
 	for name, c := range requests {
 		t.Run(name, func(t *testing.T) {
 			var reach []Reach
-			for _, pkg := range c.Packages {
-				reach = append(reach, closure(pkg)...)
+			for _, ask := range c.Asks {
+				b, ok := published[ask.Package]
+				if !ok {
+					b, ok = cat.ByID(ask.Package)
+				}
+				if !ok {
+					t.Fatalf("neither the catalog nor the app ships %s", ask.Package)
+				}
+				// A floor past every version there is leaves the approval
+				// nothing to install.
+				if ask.AtLeast < 1 || ask.AtLeast > b.Version {
+					t.Fatalf("%s asks for %s at %d or later, and the version there is %d", name, ask.Package, ask.AtLeast, b.Version)
+				}
+				reach = append(reach, closure(ask.Package)...)
 			}
 			if len(reach) == 0 {
 				t.Fatalf("%s's packages reach nothing", name)

@@ -120,7 +120,7 @@ final class SessionKindTests: XCTestCase {
     /// password one, full access, with its own token id; and written back,
     /// such a build still reads it.
     func testAPasswordSessionKeptByAnEarlierBuildStillReads() throws {
-        let store = SessionStore(service: SessionStore.sync.service, account: "session-test-\(UUID().uuidString)")
+        let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
         defer { store.clear() }
         // As the earlier build's JSONEncoder wrote its four fields.
         let earlier = #"{"server":"https:\/\/ada.example.com","repository":"ada.example.com","secret":"sub_x","tokenID":"tok_1"}"#
@@ -145,7 +145,7 @@ final class SessionKindTests: XCTestCase {
     }
 
     func testAnAppSessionKeepsWhatItWasApproved() throws {
-        let store = SessionStore(service: SessionStore.sync.service, account: "session-test-\(UUID().uuidString)")
+        let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
         defer { store.clear() }
         let session = Session(server: URL(string: "https://ada.example.com")!, repository: "ada.example.com", secret: "sub_app_x",
                               clientID: SyncManifest.localClientID, scopes: SyncManifest.scopes + ["webhook:applehealth-webhook"],
@@ -339,7 +339,7 @@ final class RevocationTests: XCTestCase {
     let server = URL(string: "https://ada.example.com")!
 
     func testAReplacedTokenIsKeptUntilTheServerRevokesIt() async throws {
-        let store = SessionStore(service: SessionStore.sync.service, account: "session-test-\(UUID().uuidString)")
+        let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
         defer { for old in store.pendingRevocations() { store.revoked(old) } }
         let old = Session(server: server, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
         let current = Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
@@ -365,7 +365,7 @@ final class RevocationTests: XCTestCase {
     /// A sign-out forgets the session once its token is kept, and keeps it
     /// until the server answers 200; a busy server's answer is no revocation.
     func testASignedOutTokenIsKeptUntilTheServerRevokesIt() async throws {
-        let store = SessionStore(service: SessionStore.sync.service, account: "session-test-\(UUID().uuidString)")
+        let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
         defer {
             for old in store.pendingRevocations() { store.revoked(old) }
             store.clear()
@@ -393,7 +393,7 @@ final class RevocationTests: XCTestCase {
     /// A replacement whose save never landed leaves the old session in use:
     /// that one is forgotten from the list, never revoked.
     func testTheSessionInUseIsNeverRevoked() async throws {
-        let store = SessionStore(service: SessionStore.sync.service, account: "session-test-\(UUID().uuidString)")
+        let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
         defer { for old in store.pendingRevocations() { store.revoked(old) } }
         let current = Session(server: server, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
         try store.keepForRevocation(current)

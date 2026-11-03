@@ -64,6 +64,22 @@ import SubstrateTesting
         #expect(String(decoding: patch, as: UTF8.self) == #"{"properties":{"points":null}}"#)
     }
 
+    /// A number the server sent goes back with every digit, past what a
+    /// Double holds, and an object's keys in the order they were set.
+    @Test func aPatchWritesBackEveryDigitItReadAndEveryKeyInOrder() async throws {
+        let stub = StubTransport()
+        stub.on("GET", "/api/v1/a.example.com/x/y/r",
+                json: #"{"id":"r","kind":"a.example.com/x/y","properties":{"count":9007199254740993,"far":1e200,"near":1e-200,"big":123456789012345678901234567890123456},"version":3}"#)
+        stub.on("PATCH", "/api/v1/a.example.com/x/y/r", json: #"{"id":"r","kind":"a.example.com/x/y","properties":{},"version":4}"#)
+        let c = client(stub)
+        let read = try #require(try await c.record("a.example.com/x/y", "r"))
+        let spec: JSONValue = ["z": read["count"]!, "a": read["far"]!, "m": read["near"]!, "b": read["big"]!]
+        try await c.patch("a.example.com/x/y", "r", properties: ["spec": spec], ifVersion: read.version)
+        let patch = try #require(stub.sent("PATCH", "/api/v1/a.example.com/x/y/r").first?.httpBody)
+        #expect(String(decoding: patch, as: UTF8.self)
+            == #"{"properties":{"spec":{"z":9007199254740993,"a":1e200,"m":1e-200,"b":123456789012345678901234567890123456}},"ifVersion":3}"#)
+    }
+
     @Test func aBusyServerIsWaitedOutOnlyWhereARetryIsSafe() async throws {
         let stub = StubTransport()
         stub.on("GET", "/api/v1/records", status: 503, headers: ["Retry-After": "2"], json: #"{"error":{"code":"unavailable","message":"busy"}}"#)

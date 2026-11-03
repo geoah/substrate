@@ -45,7 +45,7 @@ public struct PackageManifest: Sendable {
               case let .number(version)? = object["version"],
               case let .array(documents)? = object["documents"]
         else { throw CatalogError.missingResource("Package/*.json is not a manifest file") }
-        return PackageManifest(package: package, version: NSDecimalNumber(decimal: version).intValue, documents: documents)
+        return PackageManifest(package: package, version: version.int ?? 0, documents: documents)
     }
 
     /// The `data` of every document of `kind`, with its id.
@@ -116,7 +116,7 @@ public struct PackageCheck: Sendable {
         guard let row = try await api.packageRow(packageID) else { return .missing }
         let held = ["shippedVersion", "version"].lazy.compactMap { key -> Int? in
             guard case let .number(version)? = row[key] else { return nil }
-            return NSDecimalNumber(decimal: version).intValue
+            return version.int
         }.first
         return .of(held: held, needed: manifest.version)
     }

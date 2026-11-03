@@ -45,7 +45,7 @@ struct CoachTests {
         guard case let .object(budgets)? = agent["budgets"], case let .number(cap)? = budgets["spendCentsPerDay"] else {
             Issue.record("no daily cap"); return
         }
-        #expect(cap == 100)
+        #expect(cap.int == 100)
         let bundle = try #require(coach.documents(ofKind: "substrate.reamde.dev/core/bundle").first)
         guard case let .object(inputs)? = bundle.data["inputs"], case let .object(model)? = inputs["model"] else {
             Issue.record("no model input"); return
@@ -106,8 +106,9 @@ struct CoachTests {
 
     /// apps/workouts/app.json is what the server's first-party reach test
     /// reads in place of a hand copy of this manifest, so the two cannot
-    /// drift: the scopes in order, the packages the details ask for, and the
-    /// name and Info.plist keys the release reads.
+    /// drift: the scopes in order, each package the details ask for with its
+    /// floor, the packages the app's site publishes, and the name and
+    /// Info.plist keys the release reads.
     @Test("the request is the one apps/workouts/app.json records for the server's reach test")
     func recordedRequest() throws {
         let app = URL(fileURLWithPath: #filePath)
@@ -116,15 +117,23 @@ struct CoachTests {
             var clientIDKey: String
             var redirectKey: String
         }
+        struct Ask: Decodable, Equatable {
+            var package: String
+            var atLeast: Int
+        }
         struct Recorded: Decodable {
             var name: String
             var scopes: [String]
-            var packages: [String]
+            var publishes: [String]
+            var asks: [Ask]
             var apple: Apple
         }
         let recorded = try JSONDecoder().decode(Recorded.self, from: Data(contentsOf: app.appendingPathComponent("app.json")))
         #expect(recorded.scopes == WorkoutsManifest.scopes)
-        #expect(recorded.packages == WorkoutsManifest.details.filter { $0.type == AuthorizationDetail.Types.package }.compactMap(\.package))
+        #expect(WorkoutsManifest.details.allSatisfy { $0.type == AuthorizationDetail.Types.package })
+        #expect(recorded.asks == WorkoutsManifest.details.map { Ask(package: $0.package ?? "", atLeast: $0.version ?? 0) })
+        #expect(recorded.publishes == [WorkoutsKinds.packageID, Coach.package])
+        #expect(try [PackageManifest.bundled().package, PackageManifest.coach().package] == recorded.publishes)
         #expect(recorded.name == WorkoutsManifest.appName)
         #expect(recorded.apple.clientIDKey == WorkoutsManifest.clientIDKey)
         #expect(recorded.apple.redirectKey == WorkoutsManifest.redirectKey)

@@ -12,9 +12,16 @@
     "clientIDKey": "SubstrateSyncClientID",
     "redirectKey": "SubstrateSyncRedirect"
   },
-  "packages": [
-    "providers.substrate.reamde.dev/apple",
-    "providers.substrate.reamde.dev/applehealth"
+  "publishes": [],
+  "asks": [
+    {
+      "package": "providers.substrate.reamde.dev/apple",
+      "atLeast": 3
+    },
+    {
+      "package": "providers.substrate.reamde.dev/applehealth",
+      "atLeast": 5
+    }
   ],
   "scopes": [
     "write:providers.substrate.reamde.dev/apple/*",

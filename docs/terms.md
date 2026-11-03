@@ -136,14 +136,17 @@ unit's linear component, which a declaration names with `unit:` (decision
 
 ## In an app
 
-The apps' code (`apps/`, the plan in [plans/app-kit.md](plans/app-kit.md))
-builds every screen as one loop: a command, a controller that enriches it
-into an event, an engine that applies the event, a journal, a presenter,
-then the effects. These words mean that loop's parts "in an app", and three
-of them are not the server's: an app's **engine** is not `internal/engine`,
-its **effect** is not a function's returned effects, and its **link** is not
-a reference. The kit takes none of adapter, mirror, stream, sync, feature,
-group or account for a name of its own.
+The apps' code is under `apps/`, and the plan for it is
+[plans/app-kit.md](plans/app-kit.md). An app converted to the kit builds
+each screen as one loop: a command, a controller that enriches it into an
+event, then, in this order, an engine that applies the event, a journal
+written before anything can suspend, a presenter, and the effects.
+Workouts' session is built so; Chat and Sync are not converted yet. These
+words mean that loop's parts "in an app", and three of them are not the
+server's: an app's **engine** is not `internal/engine`, its **effect** is
+not a function's returned effects, and its **link** is not a reference.
+The kit takes none of adapter, mirror, stream, sync, feature, group or
+account for a name of its own.
 
 | Term | What it is |
 | ---- | ---------- |
@@ -154,7 +157,7 @@ group or account for a name of its own.
 | **effect** | In an app: work an event asks for through the client, the local store or a device service, decided by a pure function of the event, the state and the presentation, and run only live, never on a replay. Its result comes back as an event. Not the effects a function body returns for the server to apply ([functions](functions.md)). |
 | **presenter** | In an app: `present(state, inputs) -> Presentation`, pure, with every input it reads (catalogue, history, settings, the instant, the locale) declared, so a test pins each. |
 | **presentation** | In an app: the value a view draws, made of strings, numbers, enums and ids, and the only thing a UI reads. Its `nextChange` instant has the runtime deliver a tick then, so no view keeps a timer. |
-| **journal** | In an app: a controller's events kept on the device, written before anything else happens and folded back through its engine at launch. Optional per controller: Workouts' session keeps one, Chat's conversation does not, since the server holds it. Not the **changelog**. |
+| **journal** | In an app: a controller's events kept on the device, written once the engine has applied the event and before the controller suspends, presents or runs an effect, and folded back through its engine at launch. Optional per controller: Workouts' session keeps one, Chat's conversation does not, since the server holds it. Not the **changelog**. |
 | **link** | In an app: the root controller that owns the connection to one repository: the session and its revocations, the status check, the versions of the app's packages, connectivity and the outbox's state. Its snapshot carries no secret. Not a **reference**, which is the only link between records. |
 | **device service** | In an app: what the device does for the core behind one protocol (transport, secure store, browser sign-in, DNS lookups and later the rest), with an Apple implementation, an Android one and a fake. A request and its answer are values, and an answer keeps each outcome apart. |
 | **outbox** | In an app: the writes waiting to reach the server, kept on the device in order: puts, patches and deletes with their `ifVersion` chains, held back when refused until they are retried, discarded or resolved. |

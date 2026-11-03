@@ -35,6 +35,9 @@ public struct SecureStoreRefused: LocalizedError, Sendable {
 /// in a test. A write that fails throws (`SecureStoreRefused`) and leaves the item
 /// before it, as the Keychain's does.
 public protocol SessionStorage: Sendable {
+    /// Where the items are, as text: two storages at one location hold the
+    /// same items, so a session store serialises its transitions on it.
+    var location: String { get }
     func read(account: String) -> StoredItem
     func write(_ data: Data, account: String) throws
     func delete(account: String)

@@ -350,14 +350,11 @@ publish_client() {
 	fi
 }
 
-# The packages an app's authority document entry lists, by the folder name
-# each app is published under: Workouts' two published packages, built from
-# apps/workouts/package/; the rest bring none of their own.
+# The packages an app's authority document entry lists, by name: the ones
+# its app.json `publishes`, built from its package/ folder (Workouts'
+# training and trainingcoach); the rest bring none of their own.
 app_packages() {
-	case "$1" in
-	workouts) echo '["training","trainingcoach"]' ;;
-	*) echo '[]' ;;
-	esac
+	jq -c '[.publishes[] | split("/") | last]' "../$1/app.json"
 }
 
 # The authority document the site serves now, on stdout: the body of a 200,

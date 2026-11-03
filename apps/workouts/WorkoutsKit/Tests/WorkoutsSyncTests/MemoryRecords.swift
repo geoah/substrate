@@ -65,7 +65,7 @@ final class MemoryRecords: @unchecked Sendable {
             let current = records[key]
             var ifVersion: Int?
             if case let .object(body)? = sent.body, case let .number(version)? = body["ifVersion"] {
-                ifVersion = NSDecimalNumber(decimal: version).intValue
+                ifVersion = version.int
             }
             switch sent.method {
             case "GET":

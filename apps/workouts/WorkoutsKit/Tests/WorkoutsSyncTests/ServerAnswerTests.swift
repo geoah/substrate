@@ -73,8 +73,8 @@ struct ServerAnswerTests {
         else { Issue.record("no version in the package row"); return }
         // The recorded repository held version 2; a build written against
         // version 1 reads it as current, one against 3 as behind.
-        #expect(PackageState.of(held: NSDecimalNumber(decimal: version).intValue, needed: 1) == .current(held: 2))
-        #expect(PackageState.of(held: NSDecimalNumber(decimal: version).intValue, needed: 3) == .behind(held: 2))
+        #expect(PackageState.of(held: version.int ?? 0, needed: 1) == .current(held: 2))
+        #expect(PackageState.of(held: version.int ?? 0, needed: 3) == .behind(held: 2))
     }
 }
 

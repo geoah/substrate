@@ -337,7 +337,33 @@ import SubstrateTesting
         try await password.revoke(transport: gone)
     }
 
+    /// A store keeps its items where its storage does and nowhere else:
+    /// two stores over one storage share them, and two over two storages
+    /// never meet, whatever account each names.
+    @Test func aStoreIsItsStoragesAndNoOneElses() throws {
+        let one = MemoryStorage(), other = MemoryStorage()
+        try SessionStore(storage: one).save(app())
+        #expect(SessionStore(storage: one).load() == app())
+        #expect(SessionStore(storage: other).load() == nil)
+        #expect(SessionStore(account: "elsewhere", storage: one).load() == nil)
+        #expect(one.location != other.location)
+    }
+
     #if canImport(Security)
+    /// Every setting of the Apple store is the Keychain storage's, so the
+    /// store reads and writes the item those settings name.
+    @Test func theKeychainStoreIsTheStorageItsSettingsName() throws {
+        let store = SessionStore(service: "dev.reamde.substrate.kit.tests", accessGroup: "TEAM.dev.reamde.substrate.kit",
+                                 account: "a", accessibility: .afterFirstUnlock, dataProtection: true)
+        let keychain = try #require(store.storage as? KeychainStorage)
+        #expect(keychain.service == "dev.reamde.substrate.kit.tests" && keychain.accessGroup == "TEAM.dev.reamde.substrate.kit")
+        #expect(keychain.accessibility == .afterFirstUnlock && keychain.dataProtection && store.account == "a")
+        let plain = try #require(SessionStore(service: "dev.reamde.substrate.kit.tests").storage as? KeychainStorage)
+        #expect(plain.accessGroup == nil && plain.accessibility == .afterFirstUnlockThisDeviceOnly && !plain.dataProtection)
+        #expect(plain.location != keychain.location)
+        #expect(plain.location != KeychainStorage(service: "dev.reamde.substrate.kit.other").location)
+    }
+
     @Test func aSignOutKeepsTheTokenUntilTheServerRevokesIt() async throws {
         let store = SessionStore(service: "dev.reamde.substrate.kit.tests", account: "test-\(UUID().uuidString)")
         defer {
@@ -380,7 +406,7 @@ import SubstrateTesting
     /// The Keychain will not keep the revocations, and the store is over
     /// storage that says so.
     func store(refusing: Set<String> = ["session.revocations"]) -> SessionStore {
-        SessionStore(service: "dev.reamde.substrate.kit.tests", storage: MemoryStorage(refusing: refusing))
+        SessionStore(storage: MemoryStorage(refusing: refusing))
     }
 
     func revoked(_ transport: StubTransport) -> [String] {
@@ -448,7 +474,7 @@ import SubstrateTesting
     /// for nothing, and revokes the token it would have saved.
     @Test func aReplacementTheKeychainWillNotSaveLeavesTheOldSessionInUse() async throws {
         let storage = MemoryStorage(refusing: ["session"])
-        let store = SessionStore(service: "dev.reamde.substrate.kit.tests", storage: storage)
+        let store = SessionStore(storage: storage)
         let old = app("sub_app_old"), new = app("sub_app_new")
         try storage.writeUnchecked(JSONEncoder().encode(old), account: "session")
         let ok = StubTransport()
@@ -465,8 +491,7 @@ extension Retention {
     /// replacement that starts meanwhile, never across it: the session the
     /// replacement saves is the one in use when both are done.
     @Test func aSignOutWaitingOnTheServerNeverClearsTheSessionSavedAfterIt() async throws {
-        let store = SessionStore(service: "dev.reamde.substrate.kit.tests.overlap",
-                                 storage: MemoryStorage(refusing: ["session.revocations"]))
+        let store = SessionStore(storage: MemoryStorage(refusing: ["session.revocations"]))
         let old = app("sub_app_old"), new = app("sub_app_new")
         try store.save(old)
         let paused = PausedTransport()
@@ -490,7 +515,7 @@ extension Retention {
     /// the server does not answer is kept for revocation, never dropped.
     @Test func aReplacementNeitherSavedNorRevokedIsKeptForRevocation() async throws {
         let storage = MemoryStorage(refusing: ["session"])
-        let store = SessionStore(service: "dev.reamde.substrate.kit.tests.unsaved", storage: storage)
+        let store = SessionStore(storage: storage)
         let old = app("sub_app_old"), new = app("sub_app_new")
         try storage.writeUnchecked(JSONEncoder().encode(old), account: "session")
         let busy = StubTransport()

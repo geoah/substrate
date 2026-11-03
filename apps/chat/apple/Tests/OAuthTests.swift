@@ -214,15 +214,16 @@ private struct LegacySession: Codable {
 
     @Test func theKeychainItemIsWhereEveryBuildKeptIt() throws {
         let store = SessionStore.chat
-        #expect(store.service == "dev.reamde.substrate.chat")
+        let keychain = try #require(store.storage as? KeychainStorage)
+        #expect(keychain.service == "dev.reamde.substrate.chat")
         #expect(store.account == "session")
-        #expect(store.accessGroup == nil)
-        #expect(store.accessibility == .afterFirstUnlockThisDeviceOnly)
-        #expect(!store.dataProtection)
+        #expect(keychain.accessGroup == nil)
+        #expect(keychain.accessibility == .afterFirstUnlockThisDeviceOnly)
+        #expect(!keychain.dataProtection)
 
         // The bytes an earlier build wrote, read back through the kit's store
         // under the same service.
-        let scratch = SessionStore(service: store.service, account: "test-\(UUID().uuidString)")
+        let scratch = SessionStore(account: "test-\(UUID().uuidString)", storage: store.storage)
         defer { scratch.clear() }
         try scratch.write(JSONEncoder().encode(app), account: scratch.account)
         guard case let .found(session) = scratch.read() else {
@@ -349,7 +350,8 @@ private struct LegacySession: Codable {
 
 /// apps/chat/app.json names the app once for the release and the server's
 /// tests, so it holds what this manifest asks for: the name, the scopes in
-/// order, no packages, and the Info.plist keys a release stamps.
+/// order, no packages asked for or published, and the Info.plist keys a
+/// release stamps.
 @Suite struct AppJSON {
     struct Apple: Decodable {
         var clientIDKey: String
@@ -359,7 +361,8 @@ private struct LegacySession: Codable {
     struct Recorded: Decodable {
         var name: String
         var scopes: [String]
-        var packages: [String]
+        var publishes: [String]
+        var asks: [JSONValue]
         var apple: Apple
     }
 
@@ -368,7 +371,7 @@ private struct LegacySession: Codable {
         let recorded = try JSONDecoder().decode(Recorded.self, from: Data(contentsOf: app.appendingPathComponent("app.json")))
         #expect(recorded.name == ChatManifest.appName)
         #expect(recorded.scopes == ChatManifest.scopes)
-        #expect(recorded.packages.isEmpty && ChatManifest.manifest.details.isEmpty)
+        #expect(recorded.publishes.isEmpty && recorded.asks.isEmpty && ChatManifest.manifest.details.isEmpty)
         #expect(recorded.apple.clientIDKey == ChatManifest.clientIDKey)
         #expect(recorded.apple.redirectKey == ChatManifest.redirectKey)
     }

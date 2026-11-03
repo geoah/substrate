@@ -298,7 +298,7 @@ struct RoutineEditTests {
             guard sent.method == "PATCH", case let .object(body)? = sent.body else { return nil }
             switch body["ifVersion"] {
             case nil: return (200, record(6))
-            case .number(6)?: return (200, record(7))
+            case .number(JSONNumber(6))?: return (200, record(7))
             default: return (409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
             }
         }

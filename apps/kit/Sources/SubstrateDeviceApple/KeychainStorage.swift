@@ -25,6 +25,12 @@ public struct KeychainStorage: SessionStorage {
         self.dataProtection = dataProtection
     }
 
+    /// The service and the access group name an item; on macOS the
+    /// keychain it is in does too.
+    public var location: String {
+        "keychain|\(service)|\(accessGroup ?? "")|\(dataProtection ? "data-protection" : "file")"
+    }
+
     public func read(account: String) -> StoredItem {
         var q = query(account: account)
         q[kSecReturnData as String] = true

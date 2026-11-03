@@ -32,14 +32,16 @@ public extension OAuthClient {
 
 #if canImport(Security)
 public extension SessionStore {
-    /// The session in the Keychain, under `service` and `account`.
+    /// The session in the Keychain, under `service` and `account`:
+    /// readable after the first unlock so background work (a sync, a
+    /// refresh) can use it, never synced off the device by default, and
+    /// shared with the app's other targets (a share sheet, a widget) through
+    /// `accessGroup` where one is named.
     init(service: String, accessGroup: String? = nil, account: String = "session",
          accessibility: Accessibility = .afterFirstUnlockThisDeviceOnly, dataProtection: Bool = false)
     {
-        self.init(service: service, accessGroup: accessGroup, account: account, accessibility: accessibility,
-                  dataProtection: dataProtection,
-                  storage: KeychainStorage(service: service, accessGroup: accessGroup, accessibility: accessibility,
-                                           dataProtection: dataProtection))
+        self.init(account: account, storage: KeychainStorage(service: service, accessGroup: accessGroup,
+                                                             accessibility: accessibility, dataProtection: dataProtection))
     }
 }
 #endif
