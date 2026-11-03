@@ -795,6 +795,10 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if err := appsetup.SelectProviders(approved, in.ProviderChoices); err != nil {
+		refuse(false, func() { writeSubstrateError(w, r, err) })
+		return
+	}
 	if !appsetup.NeedsAction(rows) {
 		code, req, err := h.authz.Approve(id, authority, approve)
 		if err != nil {

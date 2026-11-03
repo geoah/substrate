@@ -75,6 +75,10 @@ import type {
   AuthorizationFailure,
   AuthorizationFunction,
   AuthorizationKind,
+  AuthorizationProviderInput,
+  AuthorizationProviderAgent,
+  AuthorizationProviderOption,
+  AuthorizationProviderChoice,
   AuthorizationPackage,
   AuthorizationPackageStep,
   AuthorizationPrevious,
@@ -713,6 +717,7 @@ const authorizationBlock: Shape<AuthorizationBlock> = {
 
 const authorizationPackage: Shape<AuthorizationPackage> = {
   oauthHosts: false,
+  providerInputs: false,
   id: true,
   description: false,
   tier: false,
@@ -802,6 +807,7 @@ const authorizationCheckScopes: Shape<AuthorizationCheckScopes> = {
 }
 
 const authorizationApproval: Shape<AuthorizationApproval> = {
+  providerChoices: false,
   scopes: true,
   lifetimeDays: true,
   planHash: false,
@@ -1268,6 +1274,28 @@ const mirrors: Record<string, Record<string, boolean>> = {
   AuthorizationDetail: authorizationDetail,
   AuthorizationSetup: authorizationSetup,
   AuthorizationBlock: authorizationBlock,
+  AuthorizationProviderInput: {
+    package: true,
+    input: true,
+    agents: true,
+    options: true,
+    selected: false,
+  } satisfies Shape<AuthorizationProviderInput>,
+  AuthorizationProviderAgent: {
+    agent: true,
+    models: true,
+    spendCentsPerDay: true,
+  } satisfies Shape<AuthorizationProviderAgent>,
+  AuthorizationProviderOption: {
+    id: true,
+    label: true,
+    models: true,
+  } satisfies Shape<AuthorizationProviderOption>,
+  AuthorizationProviderChoice: {
+    package: true,
+    input: true,
+    provider: true,
+  } satisfies Shape<AuthorizationProviderChoice>,
   AuthorizationPackage: authorizationPackage,
   AuthorizationPackageStep: authorizationPackageStep,
   AuthorizationFunction: authorizationFunction,
