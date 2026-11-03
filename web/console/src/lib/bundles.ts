@@ -23,7 +23,9 @@ import {
 } from "@/lib/api/catalog"
 import { CORE_PACKAGE } from "@/lib/api/http"
 import type {
+  BundleInstallRequest,
   BundleUpgrade,
+  BundleUpgradeHolder,
   CatalogTier,
   ConversionConfirm,
   ConversionPlan,
@@ -32,6 +34,7 @@ import type {
   SuggestedMapping,
 } from "@/lib/api/types"
 import { kindByIdentity, kindPackage, splitKind } from "@/lib/definition"
+import { shortDateTime } from "@/lib/format"
 import { displayPlural } from "@/lib/kind-names"
 import { kindHasTrait } from "@/lib/sync"
 
@@ -205,6 +208,54 @@ export function blockerWords(line: string): string {
 
 export function previewFailed(row: Pick<BundleRow, "upgrade">): boolean {
   return row.upgrade?.blockers?.includes(FAILED_PREVIEW_BLOCKER) ?? false
+}
+
+/** The connected app builds holding a published package's upgrade back
+ * (decision 0214): each still asks for the version the repository holds,
+ * so taking the upgrade would leave it on a package it does not know. */
+export function upgradeHolders(
+  upgrade: BundleUpgrade | undefined
+): BundleUpgradeHolder[] {
+  return upgrade?.holders ?? []
+}
+
+/** The blocker lines that are not a holder restated: the server writes one
+ * line per holder beside the structured list, naming the build by its
+ * client id, so a note that lists the builds drops them. */
+export function holderFreeBlockers(
+  blockers: readonly string[],
+  holders: readonly BundleUpgradeHolder[]
+): string[] {
+  return blockers.filter(
+    (line) => !holders.some((h) => line.includes(`(${h.clientId})`))
+  )
+}
+
+/** The preview could not check what the repository holds against the
+ * publisher's document (catalog refresh.go, heldClosure): the publisher no
+ * longer lists the held version, changed its digest, or the package stopped
+ * following it. The server says so in a blocker line naming the publisher
+ * and marks the upgrade for review, with no structured field, so the line
+ * is keyed on. */
+export function publisherUnreadable(
+  upgrade: BundleUpgrade | undefined
+): boolean {
+  return (
+    Boolean(upgrade?.reviewRequired) &&
+    upgradeHolders(upgrade).length === 0 &&
+    (upgrade?.blockers ?? []).some((line) => /publisher/i.test(line))
+  )
+}
+
+/** One holder as a line: "Workouts build 2.1 asks for version 3; last
+ * checked in 3 Nov 2026, 10:12". */
+export function holderWords(holder: BundleUpgradeHolder): string {
+  const name = holder.clientName || holder.clientId
+  const build = holder.softwareVersion ? ` build ${holder.softwareVersion}` : ""
+  const checked = holder.checkedAt
+    ? `last checked in ${shortDateTime(holder.checkedAt)}`
+    : "no check-in recorded"
+  return `${name}${build} asks for version ${holder.floor}; ${checked}`
 }
 
 /** The shipped packages whose upgrade has not landed here: what the Registry
@@ -516,21 +567,62 @@ export function importPlan(
  * reader edited (decision record 0070). Either way the click sends the
  * preview's `planHash` and `changelogSeq`, never a bare yes. */
 export function needsConfirmation(upgrade: BundleUpgrade | undefined): boolean {
-  return Boolean(
-    upgrade?.codeChanges?.length ||
-    (upgrade?.planHash && (upgrade.lossy || upgrade.discardsEdits))
-  )
+  return Boolean(upgrade?.planHash && (upgrade.lossy || upgrade.discardsEdits))
 }
 
-/** The confirmation a preview hands out, or undefined when it needs none. */
+/** Whether the publisher's changes need the reader's review before the
+ * upgrade is taken (decision 0220): code that changed, shown as diffs, or
+ * what the server marked for review without a diff, a kind removed, a
+ * function's reach grown, a held version the document no longer lists. */
+export function reviewNeeded(upgrade: BundleUpgrade | undefined): boolean {
+  return Boolean(upgrade?.codeChanges?.length || upgrade?.reviewRequired)
+}
+
+/** Whether a click on the upgrade asks first, for either reason. */
+export function needsConsent(upgrade: BundleUpgrade | undefined): boolean {
+  return needsConfirmation(upgrade) || reviewNeeded(upgrade)
+}
+
+/** What a review binds the install to: the version the preview was of and
+ * the digest its publisher listed, so a document that moved since answers
+ * 409 instead of landing something nobody reviewed. Undefined where the
+ * preview did not say. */
+export function expectationOf(
+  upgrade: BundleUpgrade | undefined
+): BundleInstallRequest["expect"] {
+  if (!upgrade?.candidateVersion || !upgrade.candidateDigest) return undefined
+  return { version: upgrade.candidateVersion, digest: upgrade.candidateDigest }
+}
+
+/** The body the door takes with an upgrade that asks first: the plan's
+ * confirmation where it hands one out, and the reviewed version where the
+ * preview names one. Undefined when the upgrade asks nothing, or when it
+ * asks and the preview gave nothing to bind the answer to. */
 export function confirmationOf(
   upgrade: BundleUpgrade | undefined
-): ConversionConfirm | undefined {
-  if (!needsConfirmation(upgrade) || !upgrade?.planHash) return undefined
-  return {
-    planHash: upgrade.planHash,
-    changelogSeq: upgrade.changelogSeq ?? 0,
-  }
+): BundleInstallRequest | undefined {
+  if (!needsConsent(upgrade)) return undefined
+  const confirm: ConversionConfirm | undefined = upgrade?.planHash
+    ? { planHash: upgrade.planHash, changelogSeq: upgrade.changelogSeq ?? 0 }
+    : undefined
+  const expect = expectationOf(upgrade)
+  if (!confirm && !expect) return undefined
+  return { ...(confirm && { confirm }), ...(expect && { expect }) }
+}
+
+/** The declarations an upgrade moves, one line each, for a review that
+ * carries no code diff: "kind example.com/training/session: version 2 → 3",
+ * "function …: added at version 3", "kind …: removed". */
+export function changeLines(upgrade: BundleUpgrade | undefined): string[] {
+  return (upgrade?.changes ?? []).map((c) => {
+    const motion =
+      c.from && c.to
+        ? `version ${c.from} → ${c.to}`
+        : c.to
+          ? `added at version ${c.to}`
+          : "removed"
+    return `${c.kind} ${c.id}: ${motion}`
+  })
 }
 
 // ── suggested mappings (decision record 0049) ──────────────────────────────

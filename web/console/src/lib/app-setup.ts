@@ -12,6 +12,7 @@ import type {
   AuthorizationPackagePublisher,
   AuthorizationPackageStep,
   AuthorizationPrevious,
+  AuthorizationProviderInput,
   AuthorizationReach,
   AuthorizationRequest,
   AuthorizationScope,
@@ -19,6 +20,7 @@ import type {
   AuthorizationWebhookPlan,
   SetupAction,
 } from "@/lib/api/types"
+import { capWords } from "@/lib/agent-runs"
 import { webhookSentence } from "@/lib/app-scopes"
 import {
   displayName,
@@ -80,9 +82,19 @@ function webhookWords(webhook: AuthorizationWebhookPlan): string {
 export function setupTitle(row: AuthorizationSetup): string {
   if (row.package) {
     const name = packageName(row.package.id)
-    if (row.action === "wait") return `${name} waits for its provider`
+    // An add-on whose provider is not here yet (decision 0216) names what
+    // it waits for.
+    if (row.action === "wait")
+      return `${name} waits for ${
+        row.package.addonFor
+          ? packageName(row.package.addonFor)
+          : "its provider"
+      }`
     if (row.action === "none") return `${name} is installed`
     if (row.action === "upgrade") return `Update ${name}`
+    // An installed package the approval still binds or turns on (its
+    // agents' AI provider, decision 0217) is set up, not installed again.
+    if (row.action === "enable") return `Set up ${name}`
     return `Install ${name}`
   }
   if (row.account) {
@@ -127,6 +139,36 @@ export function publishedWords(row: AuthorizationSetup): string | undefined {
   return `Installs ${name} ${pkg.shipped}, ${who}`
 }
 
+/** An AI provider input as the approval page names it: the package's name,
+ * and its input's word only where the package has more than one, since a
+ * lone input needs no second name. "Training Coach", "Training Coach
+ * (judge)". */
+export function providerInputName(
+  input: AuthorizationProviderInput,
+  inputs: readonly AuthorizationProviderInput[]
+): string {
+  const name = packageName(input.package)
+  const siblings = inputs.filter((i) => i.package === input.package)
+  return siblings.length > 1 ? `${name} (${input.input})` : name
+}
+
+/** The line under the buttons while an AI provider is still to be chosen:
+ * which inputs need one, so a dead Approve says why. */
+export function providerNeedWords(
+  missing: readonly AuthorizationProviderInput[],
+  all: readonly AuthorizationProviderInput[]
+): string {
+  return `Choose an AI provider for ${joinWords(
+    missing.map((input) => providerInputName(input, all))
+  )}.`
+}
+
+/** What an agent may spend in a day, in the console's money words: "up to
+ * $1.00 a day". */
+export function spendWords(cents: number): string {
+  return `up to ${capWords(cents)} a day`
+}
+
 /** The console page a package is paused or removed from: what the server
  * names as a block's fix for one it offers, the provider page. */
 export function packagePage(id: string): string {
@@ -169,6 +211,25 @@ export function declaredHosts(facts: PackageFacts): string[] {
   for (const f of facts.functions ?? [])
     for (const host of f.network ?? []) if (!out.includes(host)) out.push(host)
   return out
+}
+
+/** The hosts a package's sign-in goes through (decision 0220): its own OAuth
+ * endpoints' and those of each package it brings first, once each. */
+export function oauthHosts(pkg: AuthorizationPackage): string[] {
+  const out: string[] = []
+  for (const facts of [pkg, ...(pkg.requires ?? [])])
+    for (const host of facts.oauthHosts ?? [])
+      if (!out.includes(host)) out.push(host)
+  return out
+}
+
+/** Where a package's sign-in goes, as a sentence; undefined when it declares
+ * no OAuth endpoint. An add-on's endpoints may be another provider's, so
+ * the hosts are named, never assumed to be the publisher's. */
+export function oauthHostWords(pkg: AuthorizationPackage): string | undefined {
+  const hosts = oauthHosts(pkg)
+  if (hosts.length === 0) return undefined
+  return `Signing in to it goes through ${joinWords(hosts)}.`
 }
 
 /** Whether a package's code reaches the internet, as a sentence: the hosts
@@ -339,6 +400,8 @@ export function blockRemedy(block: AuthorizationBlock): BlockRemedy {
     case "quarantined":
     case "declared-by-owner":
     case "upgrade-needs-review":
+    case "no-model": // a provider's pricing, on the providers page it links to
+    case "needs-setting": // an add-on's settings, on its page (decision 0216)
       return "console"
     case "reaches-past-scopes":
       return "scopes"
@@ -401,6 +464,12 @@ export function propertyLabel(key: string): string {
     .replace(/[-_]+/g, " ")
     .toLowerCase()
   return spaced ? spaced[0].toUpperCase() + spaced.slice(1) : key
+}
+
+/** A setting's label from the last segment of its id: `example.com/addon/
+ * apiKey` reads "Api key". */
+export function settingLabel(id: string): string {
+  return propertyLabel(id.slice(id.lastIndexOf("/") + 1))
 }
 
 /** A property value as text: every value an account carries is shown, so

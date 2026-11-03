@@ -1,4 +1,3 @@
-import { CodeChanges } from "@/components/packages/outside-code"
 /** The verbs a bundle takes, each with the confirmation its consequence
  * earns: ADD (a provider installs under the authority that publishes it, a
  * sample imports as this repository's own, decision record 0048), taking the
@@ -24,6 +23,7 @@ import {
 } from "lucide-react"
 
 import { ImportRefusal } from "@/components/import-refusal"
+import { CodeChanges } from "@/components/packages/outside-code"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog, PauseDialog } from "@/components/ui/confirm-dialog"
@@ -51,25 +51,34 @@ import {
 import {
   ApiError,
   type BundleStatus,
+  type BundleUpgradeHolder,
   type CatalogItem,
   type ShippedUpgrade,
 } from "@/lib/api/types"
 import {
+  changeLines,
   confirmationOf,
+  expectationOf,
+  FAILED_PREVIEW_BLOCKER,
+  holderFreeBlockers,
   importPlan,
   lossyStepLines,
   missingChain,
   needsConfirmation,
+  needsConsent,
   previewFailed,
+  publisherUnreadable,
   blockerWords,
-  FAILED_PREVIEW_BLOCKER,
   readyMappings,
   REIMPORT_WARNING,
+  reviewNeeded,
   stepLines,
+  upgradeHolders,
   upgradeMotion,
   type BundleRow,
   type RequirementNode,
 } from "@/lib/bundles"
+import { shortDateTime } from "@/lib/format"
 import { bundleParams, removalLadder, type LadderStep } from "@/lib/providers"
 import { cn } from "@/lib/utils"
 
@@ -160,6 +169,16 @@ export function TakeButton({
           !consented.current.has(bundle.key)
         ) {
           throw new NeedsConsent(bundle)
+        }
+        // A held step whose publisher's changes need review is its own
+        // page's to update: this run shows no diff to review.
+        if (reviewNeeded(fresh.upgrade)) {
+          throw new ChainFailure(
+            bundle.name,
+            new Error(
+              "Its publisher listed changes that need your review. Update it from its own page first."
+            )
+          )
         }
         try {
           const result = await takeAgain(bundle, fresh.upgrade)
@@ -295,9 +314,10 @@ export function TakeButton({
 
 /** UPDATE: the row's own door again, offered only when the server's preview
  * says the closure moved and nothing blocks it. An update that loses
- * something (a lossy plan, or a re-import over an edited sample copy) asks
- * first through `LossyUpgradeDialog`, which the caller renders so it outlives
- * a re-render of the row. */
+ * something (a lossy plan, or a re-import over an edited sample copy), or
+ * whose publisher's changes need review (decision 0220), asks first through
+ * `LossyUpgradeDialog`, which the caller renders so it outlives a re-render
+ * of the row. */
 export function UpgradeButton({
   row,
   name,
@@ -310,7 +330,7 @@ export function UpgradeButton({
   const queryClient = useQueryClient()
   const called = name ?? row.name
   const upgrade = row.upgrade
-  const asks = needsConfirmation(upgrade)
+  const asks = needsConsent(upgrade)
   const upgrading = useMutation({
     mutationFn: () => takeAgain(row),
     onSuccess: (status) => {
@@ -382,10 +402,17 @@ export function UpgradeButton({
   )
 }
 
-/** The consent to an update that loses something (decisions 0067 and 0070).
+/** The dialog an update that asks first goes through, for either reason:
+ * it loses something (decisions 0067 and 0070), or the publisher's changes
+ * need review before they land (decision 0220): code shown as diffs, or
+ * what the server marked for review without one, a declaration removed or
+ * a reach grown, listed by the versions that move. A review is bound to
+ * what was shown: the install carries the preview's version and digest,
+ * and a publisher that listed another version since answers 409.
+ *
  * It reads the row's CURRENT preview: after a `409` the catalog is read
  * again, the dialog stays open and says so, and its next click confirms the
- * fresh `planHash` and `changelogSeq`, never the stale pair. */
+ * fresh preview, never the stale one. */
 export function LossyUpgradeDialog({
   row,
   name,
@@ -396,19 +423,25 @@ export function LossyUpgradeDialog({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
-  const [staleFor, setStaleFor] = useState<string | null>(null)
+  // Which row's confirmation the server refused, and whether it refused the
+  // reviewed version (the publisher moved) or the plan (records moved).
+  const [stale, setStale] = useState<{
+    key: string
+    reviewed: boolean
+  } | null>(null)
   const upgrade = row?.upgrade
   const called = name ?? row?.name
-  const stale = row !== undefined && staleFor === row.key
+  const review = reviewNeeded(upgrade)
+  const expectation = expectationOf(upgrade)
   const upgrading = useMutation({
     mutationFn: () => {
-      if (!row || !needsConfirmation(upgrade)) {
+      if (!row || !needsConsent(upgrade)) {
         throw new Error("no plan to confirm")
       }
       return takeAgain(row)
     },
     onSuccess: (status) => {
-      setStaleFor(null)
+      setStale(null)
       onClose()
       toast.add({
         type: "success",
@@ -421,14 +454,19 @@ export function LossyUpgradeDialog({
       refetchBundleStateSoon(queryClient)
     },
     onError: (error) => {
-      // A 409 says records changed since the preview; a 403 `lossy` at the
-      // same head says the plan itself reads differently now. Either way the
-      // consent named a plan the server no longer counts: read it again.
+      // A 409 says what was confirmed moved: the publisher listed another
+      // version than the one reviewed, or records changed since the plan
+      // was read; a 403 `lossy` at the same head says the plan itself
+      // reads differently now. Either way the consent named something the
+      // server no longer counts: read it again.
       if (
         error instanceof ApiError &&
         (error.status === 409 || error.code === "lossy")
       ) {
-        setStaleFor(row?.key ?? null)
+        setStale({
+          key: row?.key ?? "",
+          reviewed: error.status === 409 && expectation !== undefined,
+        })
         void queryClient.invalidateQueries({
           queryKey: catalogQueryOptions.queryKey,
         })
@@ -441,62 +479,111 @@ export function LossyUpgradeDialog({
       })
     },
   })
-  // A re-read plan that loses nothing has nothing to consent to.
-  const lossless = Boolean(row && !needsConfirmation(upgrade))
+  // A re-read plan that loses nothing and needs no review has nothing to
+  // consent to.
+  const lossless = Boolean(row && !needsConsent(upgrade))
   useEffect(() => {
     if (!lossless) return
     onClose()
     toast.add({
       type: "success",
-      title: `Updating ${called} now loses nothing`,
+      title: `Updating ${called} now asks nothing`,
       description: "Press Update to get it.",
     })
   }, [lossless, onClose, called])
   if (!row || lossless) return null
   const losses = lossyStepLines(upgrade)
+  const changes = review ? changeLines(upgrade) : []
+  const staleHere = stale !== null && stale.key === row.key
+  // A review binds the install to the version shown; a preview that did not
+  // say which version it is of cannot be confirmed as reviewed.
+  const unbound = review && !expectation
   const close = () => {
-    setStaleFor(null)
+    setStale(null)
     onClose()
   }
+  const title = upgrade?.discardsEdits
+    ? `Update ${called} and replace your edits?`
+    : review
+      ? `Review the publisher’s changes to ${called}`
+      : `Update ${called} and remove values?`
+  const consequence =
+    (upgrade?.discardsEdits
+      ? `You edited ${row.id} since you added it. Updating replaces the package with the shipped one, so your edits go with it. Your records are untouched. `
+      : "") +
+    (review
+      ? `Its publisher listed ${
+          upgrade?.candidateVersion
+            ? `version ${upgrade.candidateVersion}`
+            : "a version"
+        } with changes that need your review before they land${
+          upgrade?.codeChanges?.length
+            ? ": the code it runs changed, shown below"
+            : ": what it declares, or what its code reaches, is not the same as what you hold"
+        }. `
+      : "") +
+    (upgrade?.lossy
+      ? `Updating rewrites ${upgrade?.work ?? 0} ${
+          upgrade?.work === 1 ? "record" : "records"
+        } and removes some values from them. ` +
+        `The removed values stay in History. `
+      : "") +
+    (review
+      ? `Confirming updates to exactly the version reviewed here. If the publisher lists another version before it lands, the update is refused and this asks again.`
+      : `This confirms exactly the plan below. If a record or collection it changes is written before it lands, the plan is read again.`)
+  const confirm = upgrade?.discardsEdits
+    ? "Update and replace my edits"
+    : review
+      ? "Approve the changes and update"
+      : "Update and remove values"
   return (
     <ConfirmDialog
-      title={
-        upgrade?.discardsEdits
-          ? `Update ${called} and replace your edits?`
-          : upgrade?.codeChanges?.length
-            ? `Review code changes for ${called}`
-            : `Update ${called} and remove values?`
-      }
-      consequence={
-        (upgrade?.discardsEdits
-          ? `You edited ${row.id} since you added it. Updating replaces the package with the shipped one, so your edits go with it. Your records are untouched. `
-          : "") +
-        (upgrade?.lossy
-          ? `Updating rewrites ${upgrade?.work ?? 0} ${
-              upgrade?.work === 1 ? "record" : "records"
-            } and removes some values from them. ` +
-            `The removed values stay in History. `
-          : "") +
-        `This confirms exactly the plan below. If a record or collection it changes is written before it lands, the plan is read again.`
-      }
-      confirm={
-        upgrade?.discardsEdits
-          ? "Update and replace my edits"
-          : upgrade?.codeChanges?.length
-            ? "Approve code and update"
-            : "Update and remove values"
-      }
+      title={title}
+      consequence={consequence}
+      confirm={confirm}
       pending={upgrading.isPending}
-      disabled={!upgrade?.planHash && !upgrade?.codeChanges?.length}
+      disabled={!confirmationOf(upgrade) || unbound}
       onConfirm={() => upgrading.mutate()}
       onClose={close}
     >
+      {review && upgrade?.candidateVersion !== undefined && (
+        <p className="text-xs text-muted-foreground">
+          Reviewing version {upgrade.candidateVersion}
+          {upgrade.candidateDigest ? (
+            <>
+              , digest{" "}
+              <span className="font-mono break-all">
+                {upgrade.candidateDigest}
+              </span>
+            </>
+          ) : null}
+          .
+        </p>
+      )}
       <CodeChanges changes={upgrade?.codeChanges} />
-      {stale && (
+      {changes.length > 0 && (
+        <section className="space-y-1">
+          <h3 className="text-sm font-medium">Declarations that change</h3>
+          <ul className="space-y-1 text-xs">
+            {changes.map((line) => (
+              <li key={line} className="break-all">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {staleHere && (
         <p role="status" className="text-sm text-warning">
-          A record or collection this plan changes was written since it was
-          read, so the update was refused. Check the plan below and confirm it
-          again.
+          {stale.reviewed
+            ? "The publisher listed another version since you reviewed this one, so the update was refused. Review it again below, then confirm."
+            : "A record or collection this plan changes was written since it was read, so the update was refused. Check the plan below and confirm it again."}
+        </p>
+      )}
+      {unbound && (
+        <p role="status" className="text-sm text-warning">
+          The server did not say which version this preview is of, so the review
+          cannot be bound to it. Reload the page and try again.
         </p>
       )}
       <ul className="space-y-1 text-sm">
@@ -508,9 +595,48 @@ export function LossyUpgradeDialog({
   )
 }
 
-/** A blocked update, stated instead of offered: the server would refuse it
- * (refuse-breakage), so there is no click. The server's own guard lines name
- * the kind, the property and the count to migrate. */
+/** The builds holding an update back, each by its facts, labelled: the
+ * app's name, its client id whole, the build and when it last checked in. */
+function HolderList({ holders }: { holders: BundleUpgradeHolder[] }) {
+  return (
+    <ul
+      aria-label="Connected app builds holding the update back"
+      className="flex flex-col gap-2"
+    >
+      {holders.map((holder) => (
+        <li key={holder.clientId}>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
+            <dt className="text-muted-foreground">App</dt>
+            <dd className="[overflow-wrap:anywhere]">
+              {holder.clientName || "Unnamed app"}
+            </dd>
+            <dt className="text-muted-foreground">Client id</dt>
+            <dd className="font-mono [overflow-wrap:anywhere]">
+              {holder.clientId}
+            </dd>
+            <dt className="text-muted-foreground">Build</dt>
+            <dd>{holder.softwareVersion || "Not reported"}</dd>
+            <dt className="text-muted-foreground">Asks for</dt>
+            <dd>version {holder.floor}</dd>
+            <dt className="text-muted-foreground">Last checked in</dt>
+            <dd>
+              {holder.checkedAt
+                ? shortDateTime(holder.checkedAt)
+                : "No check-in recorded"}
+            </dd>
+          </dl>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** A blocked update, stated instead of offered: the server would refuse it,
+ * so there is no click. Which of three things is in the way has its own
+ * heading: connected app builds that still ask for the version held
+ * (decision 0214), listed by their facts; a publisher's document that could
+ * not be checked against what is held; or live records that hold something
+ * the update would drop, named by the server's own guard lines. */
 export function UpgradeBlockedNote({
   row,
   className,
@@ -518,10 +644,21 @@ export function UpgradeBlockedNote({
   row: BundleRow
   className?: string
 }) {
-  // The heading already says a preview failed; its fixed line adds nothing.
-  const blockers = (row.upgrade?.blockers ?? []).filter(
-    (b) => b !== FAILED_PREVIEW_BLOCKER
-  )
+  const holders = upgradeHolders(row.upgrade)
+  const unread = publisherUnreadable(row.upgrade)
+  // The heading says a preview failed, or lists the holders; the lines
+  // that restate either add nothing.
+  const blockers = holderFreeBlockers(
+    row.upgrade?.blockers ?? [],
+    holders
+  ).filter((b) => b !== FAILED_PREVIEW_BLOCKER)
+  const heading = previewFailed(row)
+    ? "An update could not be checked, so it is not offered yet."
+    : holders.length > 0
+      ? "An update is waiting. Connected app builds still ask for the version you hold."
+      : unread
+        ? "An update is waiting, but what you hold could not be checked against the publisher’s document."
+        : "An update is waiting. Some of your records still hold something it would drop."
   return (
     <div
       role="note"
@@ -534,17 +671,29 @@ export function UpgradeBlockedNote({
         aria-hidden
         className="mt-0.5 size-4 shrink-0 text-warning"
       />
-      <div className="min-w-0 space-y-1">
-        <p className="font-medium">
-          {previewFailed(row)
-            ? "An update could not be checked, so it is not offered yet."
-            : "An update is waiting. Some of your records still hold something it would drop."}
-        </p>
-        {blockers.map((b) => (
-          <p key={b} className="text-xs break-words text-muted-foreground">
-            {b}
-          </p>
-        ))}
+      <div className="min-w-0 space-y-2">
+        <p className="font-medium">{heading}</p>
+        {holders.length > 0 && (
+          <>
+            <HolderList holders={holders} />
+            <p className="text-xs text-muted-foreground">
+              The update lands once each build checks in asking for the new
+              version, or its access ends.
+            </p>
+          </>
+        )}
+        {blockers.length > 0 && (
+          <div className="space-y-1">
+            {holders.length > 0 && (
+              <p className="text-xs font-medium">Also in the way</p>
+            )}
+            {blockers.map((b) => (
+              <p key={b} className="text-xs break-words text-muted-foreground">
+                {blockerWords(b)}
+              </p>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

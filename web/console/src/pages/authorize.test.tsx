@@ -203,6 +203,39 @@ const ENABLE = {
   action: "enable",
   webhook: { trigger: "applehealth-webhook", package: APPLEHEALTH },
 }
+// A published package whose agent takes its AI provider through a bundle
+// input (decision 0217), with two providers to choose from, so none is
+// chosen for the owner.
+const COACH = "coach.example.com/coach"
+const COACH_INPUT = {
+  package: COACH,
+  input: "model",
+  agents: [{ agent: `${COACH}/run`, models: ["a"], spendCentsPerDay: 100 }],
+  options: [
+    { id: "openai", label: "OpenAI", models: { [`${COACH}/run`]: "a" } },
+    {
+      id: "anthropic",
+      label: "Anthropic",
+      models: { [`${COACH}/run`]: "a" },
+    },
+  ],
+}
+const COACH_ROW = {
+  type: "package",
+  action: "install",
+  package: {
+    id: COACH,
+    required: 1,
+    shipped: 1,
+    providerInputs: [COACH_INPUT],
+  },
+}
+// An optional add-on of Apple Health (decision 0216).
+const ADDON = {
+  type: "package",
+  action: "install",
+  package: { id: COACH, required: 1, shipped: 1, addonFor: APPLEHEALTH },
+}
 const SYNC = {
   ...REQUEST,
   app: {
@@ -993,6 +1026,118 @@ describe("AuthorizePage", () => {
     await screen.findByText(SETTING_UP)
     expect(body("POST")).toEqual({
       scopes: both,
+      lifetimeDays: 30,
+      planHash: "plan-1",
+    })
+  })
+
+  it("holds Approve while an AI provider is unchosen, says which input needs one, and sends the choice made", async () => {
+    answers.GET = () =>
+      jsonResponse(200, {
+        ...SYNC,
+        details: [{ type: "package", package: COACH, version: 1 }],
+        setup: [COACH_ROW],
+      })
+    renderPage()
+    const approve = await screen.findByRole<HTMLButtonElement>("button", {
+      name: "Approve and set up",
+    })
+    expect(approve.disabled).toBe(true)
+    expect(screen.getByText("Choose an AI provider for Coach.")).toBeTruthy()
+    const picker = screen.getByLabelText<HTMLSelectElement>(
+      "AI provider for Coach"
+    )
+    expect(picker.value).toBe("")
+    fireEvent.change(picker, { target: { value: "anthropic" } })
+    await waitFor(() => expect(approve.disabled).toBe(false))
+    expect(screen.queryByText("Choose an AI provider for Coach.")).toBeNull()
+    answers.POST = () => jsonResponse(200, { redirect: APPROVED })
+    fireEvent.click(approve)
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(APPROVED))
+    expect(body("POST")).toEqual({
+      scopes: [ACCOUNTS.scope],
+      lifetimeDays: 30,
+      planHash: "plan-1",
+      providerChoices: [
+        { package: COACH, input: "model", provider: "anthropic" },
+      ],
+    })
+  })
+
+  it("starts an optional add-on unchecked, and approves without it", async () => {
+    answers.GET = () =>
+      jsonResponse(200, { ...SYNC, setup: [INSTALL, ADDON, CREATE, ENABLE] })
+    renderPage()
+    const approve = await screen.findByRole<HTMLButtonElement>("button", {
+      name: "Approve and set up",
+    })
+    const addon = screen.getByRole<HTMLInputElement>("checkbox", {
+      name: /Include Coach/,
+    })
+    expect(addon.checked).toBe(false)
+    expect(approve.disabled).toBe(false)
+    fireEvent.click(approve)
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(APPROVED))
+    expect(body("POST")).toEqual({
+      scopes: [ACCOUNTS.scope],
+      lifetimeDays: 30,
+      planHash: "plan-1",
+    })
+  })
+
+  it("sends an optional add-on once the owner checks it", async () => {
+    answers.GET = () =>
+      jsonResponse(200, { ...SYNC, setup: [INSTALL, ADDON, CREATE, ENABLE] })
+    renderPage()
+    const approve = await screen.findByRole<HTMLButtonElement>("button", {
+      name: "Approve and set up",
+    })
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /Include Coach/,
+      })
+    )
+    fireEvent.click(approve)
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(APPROVED))
+    expect(body("POST").addons).toEqual([COACH])
+  })
+
+  it("asks for an add-on's AI provider, and counts its block, only while the add-on is checked", async () => {
+    const addon = {
+      ...ADDON,
+      package: { ...ADDON.package, providerInputs: [COACH_INPUT] },
+      blocked: {
+        reason: "no-model",
+        problem:
+          "No AI provider prices the models for coach.example.com/coach input model.",
+        fix: "/data/substrate.reamde.dev/llm/provider",
+      },
+    }
+    answers.GET = () =>
+      jsonResponse(200, { ...SYNC, setup: [INSTALL, addon, CREATE, ENABLE] })
+    renderPage()
+    const approve = await screen.findByRole<HTMLButtonElement>("button", {
+      name: "Approve and set up",
+    })
+    // Unchecked, the add-on holds nothing back and asks for nothing.
+    expect(approve.disabled).toBe(false)
+    expect(screen.queryByText("Choose an AI provider for Coach.")).toBeNull()
+    expect(screen.queryByText(/Fix it in the console/)).toBeNull()
+    const check = screen.getByRole("checkbox", {
+      name: /Include Coach/,
+    })
+    fireEvent.click(check)
+    expect(approve.disabled).toBe(true)
+    expect(screen.getByText("Choose an AI provider for Coach.")).toBeTruthy()
+    expect(screen.getByText(/Fix it in the console/)).toBeTruthy()
+    fireEvent.click(check)
+    expect(approve.disabled).toBe(false)
+    answers.POST = () => jsonResponse(200, { redirect: APPROVED })
+    fireEvent.click(approve)
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(APPROVED))
+    // No choice is sent for the add-on left out.
+    expect(body("POST")).toEqual({
+      scopes: [ACCOUNTS.scope],
       lifetimeDays: 30,
       planHash: "plan-1",
     })

@@ -1676,11 +1676,19 @@ export interface BundleCodeChange {
 }
 
 export interface BundleUpgrade extends ConversionPlan {
-  candidateVersion?: number
-  candidateDigest?: string
+  /** The connected app builds still asking for the version held (decision
+   * 0214); each is a blocker too. */
   holders?: BundleUpgradeHolder[]
+  /** The publisher's changes need the owner's review before the upgrade is
+   * taken (decision 0220): a change that is not additive, code whose reach
+   * grows, or a held version the document no longer lists. */
   reviewRequired?: boolean
   codeChanges?: BundleCodeChange[]
+  /** The version the preview is of and the digest its publisher listed
+   * for it, on a document-published package: what an install sends back
+   * as `expect`, so what lands is what was reviewed. */
+  candidateVersion?: number
+  candidateDigest?: string
   available: boolean
   /** Stored and shipped versions of the bundle's owned package; absent
    * (0 is omitted on the wire) where none is stored. */
@@ -1700,6 +1708,16 @@ export interface BundleUpgrade extends ConversionPlan {
    * at all carries one fixed line ("the upgrade preview failed; see the
    * server log") and no motion. */
   blockers?: string[]
+}
+
+/** The optional body of `POST /api/v1/catalog/{id}/install` and `/import`
+ * (api catalogTakeRequest): the consent a lossy or edit-replacing plan needs
+ * (decision 0067), and, for a document-published package, the version and
+ * digest the owner reviewed, answered 409 when the publisher listed another
+ * version since. */
+export interface BundleInstallRequest {
+  confirm?: ConversionConfirm
+  expect?: { version: number; digest: string }
 }
 
 /** The preview of one vocabulary apply (substrate.VocabularyPlan), from
