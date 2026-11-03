@@ -7,9 +7,10 @@ import SwiftUI
 /// with their values struck through and grey, ending with the change against
 /// last time and the verdict mark, so a logged set never looks like the one
 /// to do (owner, 2026-11-02); pending lines are muted and end with last time.
-/// When the line does not fit, its end moves under it. VoiceOver reads the
-/// presenter's sentence. A done line's check unticks it, and its `…` holds
-/// the set's menu (Untick set, Delete set and the rest), as the open set's does.
+/// When the line does not fit, its end moves under it, lined up with the
+/// text after the label. VoiceOver reads the presenter's sentence. A done
+/// line's check unticks it, and its `…` holds the set's menu (Untick set,
+/// Delete set and the rest), as the open set's does.
 struct RowsSetLine<MenuItems: View>: View {
     let item: RowsSetItem
     /// The set to do now, drawn as a line while another set is being fixed.
@@ -24,16 +25,22 @@ struct RowsSetLine<MenuItems: View>: View {
     var onUntick: (() -> Void)?
     /// What a tap does, said aloud, where it is not the session's (the routine page's plan).
     var tapHint: String?
+    /// A routine's plan, read only: nothing to tick, so no glyph, and the
+    /// targets are what the line is for, so they read in the primary colour.
+    var isPlan = false
     let onTap: () -> Void
     /// The set's `…` menu; none when there are no items.
     @ViewBuilder var menuItems: () -> MenuItems
 
     @ScaledMetric(relativeTo: .body) private var glyphSize: CGFloat = 22
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         HStack(spacing: 0) {
-            check
+            if !isPlan {
+                check
+            }
             line
             if MenuItems.self != EmptyView.self {
                 Menu {
@@ -130,8 +137,9 @@ struct RowsSetLine<MenuItems: View>: View {
                 trailing
                     .fixedSize()
             }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // The second row starts where the text after the label does.
+            VStack(alignment: .afterSetLabel, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: Self.afterLabel) {
                     title
                         .fixedSize()
                     values
@@ -142,8 +150,10 @@ struct RowsSetLine<MenuItems: View>: View {
                     trailing
                 }
             }
-            // The largest text: the name, the values and the rest each on a line.
-            VStack(alignment: .leading, spacing: 2) {
+            // The name, the values and the rest each on a line, under the
+            // text after the label; at the accessibility sizes, under the
+            // label, where the width is needed more.
+            VStack(alignment: typeSize.isAccessibilitySize ? .leading : .afterSetLabel, spacing: 2) {
                 title
                 values
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -152,6 +162,7 @@ struct RowsSetLine<MenuItems: View>: View {
                 }
             }
         }
+        .padding(.leading, isPlan ? 16 : 0)
         .padding(.trailing, MenuItems.self == EmptyView.self ? 16 : 0)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
@@ -178,9 +189,13 @@ struct RowsSetLine<MenuItems: View>: View {
         }
     }
 
+    /// The space between the label and the text after it.
+    private static var afterLabel: CGFloat { 7 }
+
     private var title: some View {
-        HStack(alignment: .center, spacing: 7) {
+        HStack(alignment: .center, spacing: Self.afterLabel) {
             RowsSetLabel(text: item.setLabel, isWarmup: item.role == .warmup, emphasis: labelEmphasis)
+                .alignmentGuide(.afterSetLabel) { $0[.trailing] + Self.afterLabel }
             if let caption = item.caption {
                 Text(caption)
                     .font(item.isChained ? .subheadline.weight(.semibold) : .body)
@@ -215,7 +230,7 @@ struct RowsSetLine<MenuItems: View>: View {
         if item.valuesChanged, !isDone { return .accentColor }
         // Struck through and grey is hard to read with Increase Contrast: the strike alone says done there.
         if isDone, contrast == .increased { return .primary }
-        return item.state == .now ? .primary : .secondary
+        return item.state == .now || isPlan ? .primary : .secondary
     }
 
     @ViewBuilder
@@ -241,12 +256,22 @@ struct RowsSetLine<MenuItems: View>: View {
         if isDone {
             RowsChangesView(changes: item.changes, verdict: item.verdict)
         } else if let last = item.last {
+            // Last time is a reference, not a target: a step quieter than the RPE beside it.
             Text(last)
                 .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(contrast == .increased ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
                 .lineLimit(1)
         }
     }
+}
+
+private extension HorizontalAlignment {
+    /// Where a set line's text starts after its label.
+    enum AfterSetLabel: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat { context[.leading] }
+    }
+
+    static let afterSetLabel = HorizontalAlignment(AfterSetLabel.self)
 }
 
 extension RowsSetLine where MenuItems == EmptyView {
@@ -334,13 +359,16 @@ struct RowsWarmupFoldLine: View {
 struct RowsRoundHeaderView: View {
     let header: RowsRoundHeader
 
+    /// On a routine's plan, whose lines have no glyph: under the labels.
+    var isPlan = false
+
     @ScaledMetric(relativeTo: .body) private var indent: CGFloat = 48
 
     var body: some View {
         Text(header.title)
             .font(.footnote.weight(.semibold))
             .foregroundStyle(header.isDone ? .tertiary : .secondary)
-            .padding(.leading, indent)
+            .padding(.leading, isPlan ? 16 : indent)
             .padding(.top, 8)
             .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
@@ -351,13 +379,16 @@ struct RowsRoundHeaderView: View {
 struct RowsChainHeaderView: View {
     let header: RowsChainHeader
 
+    /// On a routine's plan, whose lines have no glyph: under the labels.
+    var isPlan = false
+
     @ScaledMetric(relativeTo: .body) private var indent: CGFloat = 48
 
     var body: some View {
         Text(header.text)
             .font(.footnote.weight(.semibold))
             .foregroundStyle(.secondary)
-            .padding(.leading, indent)
+            .padding(.leading, isPlan ? 16 : indent)
             .padding(.trailing, 16)
             .padding(.top, 8)
             .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)

@@ -9,11 +9,12 @@ import SwiftUI
 /// session's bar when one runs: the page scrolls clear of all three, and
 /// neither glass ever lies over Start.
 ///
-/// A routine on the signed-in substrate is edited in place: Edit, or a tap
-/// on any set (which opens that set), turns the plan into its editor, with
-/// Cancel and Save where Back and Edit were; Duplicate opens the editor
-/// sheet for the copy, and Delete asks first. Signed out, the sample the
-/// app carries cannot be edited, and says so.
+/// A routine on the signed-in substrate is edited in place: Edit, and only
+/// Edit (the read-only plan answers no tap but an exercise's history),
+/// turns the plan into its editor, with Cancel and Save where Back and Edit
+/// were; Duplicate opens the editor sheet for the copy, and Delete asks
+/// first. Signed out, the sample the app carries cannot be edited, and says
+/// so.
 struct RoutinePreview: View {
     let routineID: RoutineID
 
@@ -65,7 +66,7 @@ struct RoutinePreview: View {
                     .pickerStyle(.segmented)
                     switch page {
                     case .plan:
-                        RoutinePlanCards(plan: plan, beginEdit: canBeginEdit ? { begin(RoutineEditor(routine), open: $0) } : nil)
+                        RoutinePlanCards(plan: plan, beginEdit: canBeginEdit ? { begin(RoutineEditor(routine), open: nil) } : nil)
                         if case .bundled = app.catalogOrigin {
                             Text("This sample comes with the app and can\u{2019}t be changed. Sign in to your substrate to edit routines or make your own copy.")
                                 .font(.footnote)
@@ -174,7 +175,7 @@ struct RoutinePreview: View {
 }
 
 /// The routine's folder, its notes, and what the plan holds as label over
-/// value: Exercises, Working sets, Last done.
+/// value: Exercises, Sets per session, Last done.
 private struct RoutineHeader: View {
     /// Shown when the navigation title is not the large one.
     let name: String?
