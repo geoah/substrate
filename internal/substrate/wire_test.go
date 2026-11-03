@@ -153,6 +153,10 @@ var wireTypes = map[string]any{
 	// token asks with.
 	"AuthorizationDetail":           AuthorizationDetail{},
 	"AuthorizationSetup":            AuthorizationSetup{},
+	"AuthorizationProviderInput":    AuthorizationProviderInput{},
+	"AuthorizationProviderAgent":    AuthorizationProviderAgent{},
+	"AuthorizationProviderOption":   AuthorizationProviderOption{},
+	"AuthorizationProviderChoice":   AuthorizationProviderChoice{},
 	"AuthorizationPackage":          AuthorizationPackage{},
 	"AuthorizationPackageStep":      AuthorizationPackageStep{},
 	"AuthorizationPackagePublisher": AuthorizationPackagePublisher{},

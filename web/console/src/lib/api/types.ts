@@ -963,6 +963,7 @@ export type SetupAction =
 
 /** Why a setup row cannot run (`substrate.Block*`). */
 export type SetupBlockReason =
+  | "no-model"
   | "server-update"
   | "not-shipped"
   | "sample"
@@ -1154,6 +1155,7 @@ export interface AuthorizationBlock {
  * absent when none; `required` the floor the app asks for. A client names a
  * package from its `id`. */
 export interface AuthorizationPackage {
+  providerInputs?: AuthorizationProviderInput[]
   id: string
   description?: string
   tier?: string
@@ -1275,6 +1277,7 @@ export interface AuthorizationCheckScopes {
  * at least one, one of the offered lifetimes (0 for until revoked), and the
  * request's `planHash` as the page read it when it has setup. */
 export interface AuthorizationApproval {
+  providerChoices?: AuthorizationProviderChoice[]
   scopes: string[]
   lifetimeDays: number
   planHash?: string
@@ -1966,4 +1969,27 @@ export interface UnitConversion {
   unit: string
   /** False where `value` was rounded. */
   exact: boolean
+}
+
+export interface AuthorizationProviderInput {
+  package: string
+  input: string
+  agents: AuthorizationProviderAgent[]
+  options: AuthorizationProviderOption[]
+  selected?: string
+}
+export interface AuthorizationProviderAgent {
+  agent: string
+  models: string[]
+  spendCentsPerDay: number
+}
+export interface AuthorizationProviderOption {
+  id: string
+  label: string
+  models: Record<string, string>
+}
+export interface AuthorizationProviderChoice {
+  package: string
+  input: string
+  provider: string
 }

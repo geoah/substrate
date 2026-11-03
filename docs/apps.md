@@ -973,3 +973,12 @@ approval covers it. Nothing is refused.
 A binary from before app authorization reads an app's token as a
 full-access one, since it does not know `scopes`. Before rolling back past
 that change, revoke every app token under Settings > Apps.
+
+
+For packages whose agents use provider inputs, approval offers a provider
+picker for each input. Each option shows the provider label and the model
+each agent would run on, alongside its daily cap. A sole compatible row is
+preselected. No compatible row blocks approval with `no-model`; add a
+suitable AI provider and read the approval again. Setup binds the chosen
+row after installing the package. The server validates each choice against
+the current plan before writing.

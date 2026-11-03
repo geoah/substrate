@@ -777,7 +777,7 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 			ds.svc.invocationEnded()
 		}
 	}()
-	provider, err := ds.resolveProvider(ctx, ag.Provider)
+	provider, model, err := ds.resolveAgentProvider(ctx, ag)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -813,7 +813,7 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 		in.stopHub = in.hub
 	}
 	l := &agentLoop{
-		ds: ds, ag: ag, provider: provider, model: ag.Model, params: params, in: in, appAgent: appOwner.App(),
+		ds: ds, ag: ag, provider: provider, model: model, params: params, in: in, appAgent: appOwner.App(),
 		client:    client,
 		actor:     substrate.Actor(ag.Actor()),
 		emit:      effectiveEmit(ag.Emit, in.emitCeiling, in.ceilinged),

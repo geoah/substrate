@@ -369,3 +369,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0209](0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md) | An app is verified by its authority's TXT record and document | proposed |
 | [0210](0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md) | A token declares new packages only under its repository's authority | proposed |
 | [0211](0211-the-console-groups-collections-by-package.md) | The console groups collections by package | proposed |
+| [0217](0217-a-published-agent-takes-its-provider-through-a-bundle-input-and-declares-its-daily-cap.md) | A published agent takes its provider through a bundle input and declares its daily cap | proposed |

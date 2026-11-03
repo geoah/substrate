@@ -235,6 +235,7 @@
   "AuthorizationApproval": {
     "lifetimeDays": true,
     "planHash": false,
+    "providerChoices": false,
     "scopes": true
   },
   "AuthorizationBlock": {
@@ -288,6 +289,7 @@
     "held": false,
     "id": true,
     "kinds": false,
+    "providerInputs": false,
     "publisher": false,
     "required": true,
     "requires": false,
@@ -317,6 +319,28 @@
     "approvedAt": true,
     "expiresAt": false,
     "scopes": true
+  },
+  "AuthorizationProviderAgent": {
+    "agent": true,
+    "models": true,
+    "spendCentsPerDay": true
+  },
+  "AuthorizationProviderChoice": {
+    "input": true,
+    "package": true,
+    "provider": true
+  },
+  "AuthorizationProviderInput": {
+    "agents": true,
+    "input": true,
+    "options": true,
+    "package": true,
+    "selected": false
+  },
+  "AuthorizationProviderOption": {
+    "id": true,
+    "label": true,
+    "models": true
   },
   "AuthorizationPublisher": {
     "appName": false,

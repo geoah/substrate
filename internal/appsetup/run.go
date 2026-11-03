@@ -102,6 +102,9 @@ func (r *Runner) Run(ctx context.Context, ds substrate.Dataset, actor substrate.
 	if err != nil {
 		return Outcome{Failure: &substrate.AuthorizationFailure{Message: FailureWords("Reading what to set up", err)}}
 	}
+	if err := SelectProviders(rows, providerChoices(approved)); err != nil {
+		return Outcome{Failure: &substrate.AuthorizationFailure{Message: err.Error()}, Moved: true}
+	}
 	// Nothing is written unless every row still is what the owner approved.
 	if i := FirstBlocked(rows); i >= 0 {
 		return stop(i, rows[i].Blocked.Problem, true)
@@ -168,7 +171,7 @@ func Moved(approved, now []substrate.AuthorizationSetup) int {
 		if row.Action == substrate.SetupNone {
 			continue
 		}
-		if row.Action != was.Action {
+		if row.Action != was.Action && !(row.Action == substrate.SetupEnable && row.Package != nil && len(row.Package.ProviderInputs) > 0 && (was.Action == substrate.SetupInstall || was.Action == substrate.SetupUpgrade)) {
 			return i
 		}
 		if row.Package == nil {
@@ -194,8 +197,12 @@ func (r *Runner) setUpRow(ctx context.Context, ds substrate.Dataset, actor subst
 		if r.catalog == nil {
 			return fmt.Errorf("%w: this server ships no catalog", substrate.ErrNotFound)
 		}
-		_, _, err := r.catalog.InstallConfirmed(ctx, actor, d.Package, ds, nil)
-		return err
+		if approved.Action != substrate.SetupEnable {
+			if _, _, err := r.catalog.InstallConfirmed(ctx, actor, d.Package, ds, nil); err != nil {
+				return err
+			}
+		}
+		return bindProviders(ctx, ds, approved)
 	case substrate.DetailAccount:
 		// ifVersion 0 creates and never resurrects: a live row that arrived
 		// since the plan is left alone, and one deleted since is the plan

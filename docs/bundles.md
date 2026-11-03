@@ -1040,3 +1040,9 @@ triggers), are the [Bundles catalog](bundles-catalog.md).
 
 Next: [functions](functions.md), the callables a bundle ships, and the
 host SDK.
+
+
+An agent can consume an input of kind `substrate.reamde.dev/llm/provider`
+by naming it in `providerInput`, beside its ordered `models` list. It
+uses the same bound, default, sole resolution as other inputs; it does
+not need `inject: functions`. The owner's binding survives upgrades.

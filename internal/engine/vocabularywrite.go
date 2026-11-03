@@ -300,6 +300,11 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	if err != nil {
 		return nil, err
 	}
+	if opts.Published {
+		if err := vocabulary.PublishedAgentBudgets(docs); err != nil {
+			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+		}
+	}
 	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
 		return nil, err
 	}

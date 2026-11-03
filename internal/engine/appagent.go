@@ -197,6 +197,14 @@ func (ds *dataset) appApprovalCovers(ctx context.Context, owner substrate.Packag
 // agentModelPriced reports whether ag's provider row prices its model, with
 // input and output rates above zero.
 func (ds *dataset) agentModelPriced(ctx context.Context, ag *vocabulary.Agent) (bool, error) {
+	if ag.ProviderInput != "" {
+		provider, model, err := ds.resolveAgentProvider(ctx, ag)
+		if err != nil {
+			return false, err
+		}
+		price := provider.pricing[model]
+		return price.inPer1M > 0 && price.outPer1M > 0, nil
+	}
 	row, err := ds.loadRowDB(ctx, eref{Kind: typeProvider, ID: ag.Provider})
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
