@@ -27,7 +27,9 @@ const (
 // carries no actor set, so the header is checked against one rule only: the
 // substrate's own writing hands are refused (substrate.ReservedActor,
 // authenticate below). An app's token ignores it and writes as its derived
-// `app:<host>` actor (appActorOf), or as `api` when it names no client id.
+// actor (appActorOf): `app:<authority>` for a verified publisher, `app:local`
+// for a loopback approval, `app:<host>` otherwise, or `api` when it names no
+// client id.
 const actorHeader = "X-Substrate-Actor"
 
 // withRequestAuth binds the request's authenticated write context. The actor
