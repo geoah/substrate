@@ -338,7 +338,10 @@ public struct LinkController<App: LinkedApp>: Controller {
                     // writes nothing from here on.
                     let generation = try folder.map { try LinkGeneration(folder: $0).bump() } ?? 0
                     try await sessions.signOut(session, transport: transport)
-                    return .signedOut(generation: generation, unrevoked: sessions.pendingRevocations().map(SessionFacts.init))
+                    // The sign-out only kept the token for revocation: it is
+                    // revoked now, and only one the server did not confirm waits.
+                    let left = await sessions.revokePending(current: sessions.load(), transport: transport)
+                    return .signedOut(generation: generation, unrevoked: left.map(SessionFacts.init))
                 } catch {
                     return .signOutFailed(explain(error, app: manifest.appName, server: session.server))
                 }

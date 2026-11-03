@@ -438,6 +438,27 @@ struct LinkControllerTests {
         #expect(presented.snapshot == LinkSnapshot(phase: .signedOut, generation: 5))
     }
 
+    @Test func aSignOutRevokesTheTokenAndOnlyOneTheServerRefusedWaits() async throws {
+        let storage = try signedIn()
+        let stub = StubTransport().on("POST", "/oauth/revoke")
+        let harness = ControllerHarness(link(storage), environment: environment(transport: stub))
+        try await harness.until { await $0.presentation.snapshot.phase == .signedIn }
+        await harness.send(.signOut)
+        try await harness.until { await $0.presentation.snapshot.phase == .signedOut }
+        #expect(stub.sent("POST", "/oauth/revoke").count == 1)
+        #expect(await harness.state.unrevoked.isEmpty)
+        #expect(SessionStore(storage: storage).pendingRevocations().isEmpty)
+
+        let refusing = try signedIn()
+        let down = StubTransport().on("POST", "/oauth/revoke", status: 503)
+        let other = ControllerHarness(link(refusing), environment: environment(transport: down))
+        try await other.until { await $0.presentation.snapshot.phase == .signedIn }
+        await other.send(.signOut)
+        try await other.until { await $0.presentation.snapshot.phase == .signedOut }
+        #expect(await other.state.unrevoked.map(\.repository) == ["ada.example.com"])
+        #expect(SessionStore(storage: refusing).pendingRevocations().count == 1)
+    }
+
     @Test func aCheckRunsAtMostEveryIntervalUnlessForced() async throws {
         let harness = ControllerHarness(link(MemoryStorage()), environment: environment(), performsEffects: false)
         await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com"), unrevoked: [], generation: 0))
