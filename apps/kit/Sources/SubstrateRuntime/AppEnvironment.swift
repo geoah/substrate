@@ -72,13 +72,17 @@ public struct DeviceServices: Sendable {
     public var secureStore: (any SessionStorage)?
     public var browser: (any BrowserSignIn)?
     public var resolver: (any TXTResolver)?
+    public var connectivity: (any Connectivity)?
+    public var folders: (any AppFolders)?
 
     public init(transport: any HTTPTransport, secureStore: (any SessionStorage)? = nil, browser: (any BrowserSignIn)? = nil,
-                resolver: (any TXTResolver)? = nil)
+                resolver: (any TXTResolver)? = nil, connectivity: (any Connectivity)? = nil, folders: (any AppFolders)? = nil)
     {
         self.transport = transport
         self.secureStore = secureStore
         self.browser = browser
         self.resolver = resolver
+        self.connectivity = connectivity
+        self.folders = folders
     }
 }
