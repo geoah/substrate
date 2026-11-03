@@ -47,9 +47,12 @@ and is reported.
   but not its code's reach: that reach is unknown until the provider is
   held, and it is checked against the token's scopes when the add-on
   installs.
-- An add-on whose agents take a provider through an input installs with
-  the input unbound; its agents run once the owner binds it on the
-  package's page, or once the input resolves to a sole or `default` row.
+- The approval asks no AI provider choice for a waiting add-on, since
+  nothing could keep it until the provider lands. An add-on whose agents
+  take a provider through an input installs later only where the input
+  resolves on its own (a binding, a `default` row, or the repository's only
+  provider row); otherwise it stays waiting and says to choose its provider
+  and install it from its package page.
 
 ### Confirmation
 

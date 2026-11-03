@@ -81,6 +81,13 @@ func configureAddons(cat addonCatalog) {
 		if err := ValidateSettings(rows, nil); err != nil {
 			return block(substrate.BlockNeedsSetting, "Fill the add-on's required settings on its package page.", ProviderPage(addon.Package))
 		}
+		// An add-on whose agents would install with a provider input
+		// nothing resolves waits: the approval kept no choice for it.
+		if ok, err := inputsResolve(ctx, ds, row); err != nil {
+			return block(substrate.BlockUnsupported, "The waiting add-on could not be planned.", "")
+		} else if !ok {
+			return block(substrate.BlockNoModel, "Choose the add-on's AI provider on its package page, then install it there.", ProviderPage(addon.Package))
+		}
 		return nil
 	})
 }

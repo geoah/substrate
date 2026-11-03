@@ -169,3 +169,65 @@ func TestExcludedAddonIgnoresProviderChoices(t *testing.T) {
 		t.Fatal("excluded choices forwarded to runner")
 	}
 }
+
+// capturingAddons keeps the planner configureAddons hands the catalog, so a
+// test runs a deferred add-on's planning directly.
+type capturingAddons struct {
+	*publishing
+	plan catalog.AddonPlanner
+}
+
+func (c *capturingAddons) SetAddonPlanner(plan catalog.AddonPlanner) { c.plan = plan }
+
+// A waiting add-on takes no provider choice at approval, since nothing
+// could keep one until its provider lands, and its later install waits
+// again unless its agents' provider input resolves on its own.
+func TestADeferredAgentAddonInstallsOnlyWhereItsProviderResolves(t *testing.T) {
+	ctx := context.Background()
+	const pkg = "coach.example.com/coach"
+	raw := closure(pkg, 1, nil, `kind: substrate.reamde.dev/core/agent
+metadata:
+  id: coach.example.com/coach/run
+data:
+  authority: coach.example.com
+  package: coach
+  description: Coach
+  prompt: Coach.
+  providerInput: model
+  models: [a]
+  budgets:
+    spendCentsPerDay: 100
+`)
+	raw = strings.Replace(raw, "  description: The coach package.", "  description: The coach package.\n  inputs:\n    model:\n      kind: substrate.reamde.dev/llm/provider", 1)
+	cat, err := catalog.Load(catalog.ProviderRoot(fstest.MapFS{"coach.example.com/coach/bundle.yaml": {Data: []byte(raw)}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := cat.ByID(pkg)
+	published := &publishing{Catalog: testCatalog(t), listed: map[string]*catalog.Bundle{
+		pkg: b.FromDocument(catalog.Origin{Authority: "coach.example.com", DocumentURL: "https://coach.example.com/authority.json", AddonFor: basePkg}),
+	}}
+	priced := func(id string) *substrate.Record {
+		return &substrate.Record{ID: id, Properties: map[string]any{"pricing": []any{map[string]any{"model": "a"}}}}
+	}
+	ds := &providerDataset{fakeDataset: newFakeDataset(), providers: []*substrate.Record{priced("fits"), priced("also")}}
+	rows, _, err := Plan(ctx, ds, published, []substrate.AuthorizationDetail{pkgDetail(pkg, 1)}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows[0].Action != substrate.SetupWait || rows[0].Blocked != nil || len(rows[0].Package.ProviderInputs) != 0 {
+		t.Fatalf("a waiting add-on asked for a provider: %+v, inputs %+v", rows[0], rows[0].Package.ProviderInputs)
+	}
+
+	ds.statuses[basePkg] = substrate.BundleStatus{ID: basePkg, Installed: true, Enabled: true, Version: 2}
+	capture := &capturingAddons{publishing: published}
+	configureAddons(capture)
+	addon := substrate.AppAddon{Package: pkg, Version: 1, AddonFor: basePkg}
+	if blocked := capture.plan(ctx, ds, substrate.TokenInfo{}, addon); blocked == nil || blocked.Reason != substrate.BlockNoModel {
+		t.Fatalf("two offered providers and no binding installed the add-on: %+v", blocked)
+	}
+	ds.providers = ds.providers[:1]
+	if blocked := capture.plan(ctx, ds, substrate.TokenInfo{}, addon); blocked != nil {
+		t.Fatalf("the repository's only provider did not resolve the input: %+v", blocked)
+	}
+}
