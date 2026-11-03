@@ -488,6 +488,8 @@
   "BundleUpgrade": {
     "available": true,
     "blockers": false,
+    "candidateDigest": false,
+    "candidateVersion": false,
     "changelogSeq": false,
     "changes": false,
     "codeChanges": false,
