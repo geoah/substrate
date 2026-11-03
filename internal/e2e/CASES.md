@@ -21,7 +21,7 @@ purpose: it asks the shipped binary for every code the conformance suite asks
 the in-process engine for, and it reads the list from the same source,
 `internal/api`'s `code*` declarations.
 
-Five preconditions gate individual cases and steps, and the `test:e2e` task
+Six preconditions gate individual cases and steps, and the `test:e2e` task
 sets every one it can:
 
 - `totp`: the enforced door, which AUTH-05 and AUTH-07 need and skip without:
@@ -47,6 +47,11 @@ sets every one it can:
   answering after the stop, so a hook that does nothing fails the case rather
   than passing it, and a case that fails while the server is down starts it
   again for the cases after it.
+- `sandbox`: Linux seccomp and Landlock confinement, needed by FN-04.
+  The local task supplies `SUBSTRATE_E2E_SERVER_OS` from the server build;
+  a known non-Linux server skips this case because it runs bodies unconfined.
+  When testing another server, set this variable to that server’s OS, not
+  the client’s. An unset value leaves the confinement assertions enabled.
 - `uv`: `uv` on PATH, a `python3` on PATH at 3.11 or newer, and a reachable
   package index, which BUN-04 and BUN-07 need because a provider's body
   declares its dependencies (and `requires-python = ">=3.11"`) in a PEP 723

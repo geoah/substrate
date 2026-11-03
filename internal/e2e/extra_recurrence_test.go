@@ -77,7 +77,7 @@ func xcSeries(c *C, id, summary, rule string, exdates []string) record {
 	base := xcMonday(c.r)
 	props := map[string]any{
 		"summary": summary, "recurrence": rule, "timezone": "Europe/London",
-		"at": base.Format(time.RFC3339),
+		"at": base.UTC().Format(time.RFC3339),
 	}
 	if len(exdates) > 0 {
 		props["exdates"] = exdates
@@ -93,11 +93,11 @@ func xcOccurrence(c *C, id, seriesID, summary string, at time.Time, length time.
 	c.t.Helper()
 	return c.putRec(eventCollection, id, map[string]any{
 		"summary":      summary,
-		"at":           at.Format(time.RFC3339),
-		"endsAt":       at.Add(length).Format(time.RFC3339),
+		"at":           at.UTC().Format(time.RFC3339),
+		"endsAt":       at.Add(length).UTC().Format(time.RFC3339),
 		"calendar":     recPath(calendarKind, "work"),
 		"recurrenceOf": recPath(seriesKind, seriesID),
-		"originalAt":   at.Format(time.RFC3339),
+		"originalAt":   at.UTC().Format(time.RFC3339),
 	})
 }
 
@@ -107,7 +107,7 @@ func xcTimeline(c *C, from, to time.Time) []record {
 	c.t.Helper()
 	filter := map[string]any{
 		"kinds":      []string{kindOf(eventCollection), seriesKind},
-		"properties": map[string]any{"at": map[string]any{"gte": from.Format(time.RFC3339), "lt": to.Format(time.RFC3339)}},
+		"properties": map[string]any{"at": map[string]any{"gte": from.UTC().Format(time.RFC3339), "lt": to.UTC().Format(time.RFC3339)}},
 	}
 	var page recordsPage
 	status, raw := c.do(http.MethodGet, listWhere(filter, "orderBy=at", "first=500"), nil, &page)
@@ -120,7 +120,7 @@ func xcWindow(c *C, from, to time.Time) []record {
 	c.t.Helper()
 	filter := map[string]any{
 		"kinds":      []string{kindOf(eventCollection)},
-		"properties": map[string]any{"at": map[string]any{"gte": from.Format(time.RFC3339), "lt": to.Format(time.RFC3339)}},
+		"properties": map[string]any{"at": map[string]any{"gte": from.UTC().Format(time.RFC3339), "lt": to.UTC().Format(time.RFC3339)}},
 	}
 	var page recordsPage
 	status, raw := c.do(http.MethodGet, listWhere(filter, "orderBy=at", "first=200"), nil, &page)
@@ -253,10 +253,12 @@ func xcCaseRuleMatrix(c *C) {
 
 func xcCaseWeekdayStandup(c *C) {
 	r := c.r
-	monday := xcMonday(r)
+	zone, err := time.LoadLocation("Europe/London")
+	c.requiref(err == nil, "loading calendar timezone: %v", err)
+	monday := xcMonday(r).In(zone)
 
 	// The definition: every weekday at 09:30 for a year, as Google emits it.
-	until := monday.AddDate(1, 0, 0).Format("20060102T150405Z")
+	until := monday.AddDate(1, 0, 0).UTC().Format("20060102T150405Z")
 	xcSeries(c, "x-ser-standup", "Engineering standup",
 		"RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;UNTIL="+until, nil)
 
@@ -278,12 +280,12 @@ func xcCaseWeekdayStandup(c *C) {
 	movedAt := monday.AddDate(0, 0, 9).Add(2 * time.Hour)
 	moved := c.putRec(eventCollection, movedID, map[string]any{
 		"summary": "Engineering standup (moved for the all-hands)",
-		"at":      movedAt.Format(time.RFC3339),
-		"endsAt":  movedAt.Add(15 * time.Minute).Format(time.RFC3339),
+		"at":      movedAt.UTC().Format(time.RFC3339),
+		"endsAt":  movedAt.Add(15 * time.Minute).UTC().Format(time.RFC3339),
 	})
 	c.requiref(sameSet(refPaths(moved, "recurrenceOf"), recPath(seriesKind, "x-ser-standup")),
 		"the override lost its series reference: %v (an update must merge, never prune)", refPaths(moved, "recurrenceOf"))
-	c.requiref(moved.prop("originalAt") == monday.AddDate(0, 0, 9).Format(time.RFC3339),
+	c.requiref(moved.prop("originalAt") == monday.AddDate(0, 0, 9).UTC().Format(time.RFC3339),
 		"the override does not keep the slot it replaced: originalAt %q", moved.prop("originalAt"))
 	c.stepf("overrode one instance in place: same id `%s`, new time +2h, new title, `originalAt` still naming the slot it replaced; the series reference survived the update", movedID)
 
@@ -295,7 +297,7 @@ func xcCaseWeekdayStandup(c *C) {
 	status, raw := c.do(http.MethodDelete, eventCollection+"/"+canceledID, nil, nil)
 	c.requiref(status == http.StatusOK, "retracting the canceled instance answered %d: %s", status, raw)
 	series := c.putRec(seriesCollection, "x-ser-standup", map[string]any{
-		"exdates": []string{canceledAt.Format(time.RFC3339)},
+		"exdates": []string{canceledAt.UTC().Format(time.RFC3339)},
 	})
 	exdates, _ := series.Properties["exdates"].([]any)
 	c.requiref(len(exdates) == 1, "the series carries %d exdates, want 1", len(exdates))
@@ -321,8 +323,8 @@ func xcCaseWeekdayStandup(c *C) {
 		"kinds":   []string{kindOf(eventCollection)},
 		"deleted": true,
 		"properties": map[string]any{"at": map[string]any{
-			"gte": canceledAt.Truncate(24 * time.Hour).Format(time.RFC3339),
-			"lt":  canceledAt.Truncate(24*time.Hour).AddDate(0, 0, 1).Format(time.RFC3339),
+			"gte": canceledAt.Truncate(24 * time.Hour).UTC().Format(time.RFC3339),
+			"lt":  canceledAt.Truncate(24*time.Hour).AddDate(0, 0, 1).UTC().Format(time.RFC3339),
 		}},
 	}
 	var tomb recordsPage
@@ -362,8 +364,8 @@ func xcCaseWeekdayStandup(c *C) {
 	c.requiref(len(computed) == 5, "week 4 computes %d standups, want 5: %v", len(computed), week4)
 	for i, rec := range computed {
 		wantAt := monday.AddDate(0, 0, 21+i)
-		c.requiref(rec.prop("at") == wantAt.Format(time.RFC3339),
-			"computed standup %d sits at %q, want %s", i, rec.prop("at"), wantAt.Format(time.RFC3339))
+		c.requiref(rec.prop("at") == wantAt.UTC().Format(time.RFC3339),
+			"computed standup %d sits at %q, want %s", i, rec.prop("at"), wantAt.UTC().Format(time.RFC3339))
 		c.requiref(rec.ID == "x-ser-standup_"+wantAt.UTC().Format("20060102T150405Z"),
 			"computed standup %d is %q, want the series id and the slot", i, rec.ID)
 		c.requiref(rec.prop("originalAt") == "" && len(refPaths(rec, "recurrenceOf")) == 0 && rec.Version == 0,
@@ -487,7 +489,7 @@ func xcCaseSeriesSplit(c *C) {
 	// ones. The instance ids change with the master, exactly as Google's
 	// master_yyyymmdd ids do.
 	splitAt := wednesday.AddDate(0, 0, 7*4)
-	until := splitAt.Add(-time.Second).Format("20060102T150405Z")
+	until := splitAt.Add(-time.Second).UTC().Format("20060102T150405Z")
 	seriesA := c.putRec(seriesCollection, "x-ser-sync-a", map[string]any{
 		"recurrence": "RRULE:FREQ=WEEKLY;BYDAY=WE;UNTIL=" + until,
 	})
@@ -641,7 +643,7 @@ func xoWindow(c *C, from, to time.Time, kinds ...string) []record {
 	c.t.Helper()
 	filter := map[string]any{
 		"kinds":      kinds,
-		"properties": map[string]any{"at": map[string]any{"gte": from.Format(time.RFC3339), "lt": to.Format(time.RFC3339)}},
+		"properties": map[string]any{"at": map[string]any{"gte": from.UTC().Format(time.RFC3339), "lt": to.UTC().Format(time.RFC3339)}},
 	}
 	var page recordsPage
 	status, raw := c.do(http.MethodGet, listWhere(filter, "orderBy=at", "first=500"), nil, &page)
@@ -667,16 +669,18 @@ func xoCaseDoseWeek(c *C) {
 	c.stepf("declared `%s`: a schedule binding `recurring` and a log binding `occurrencelog`, both traits from the installed `scheduling` sample", xoPkg)
 
 	base := xcMonday(c.r).Truncate(24 * time.Hour) // the block's Monday, 00:00Z
-	dose := base.Add(6 * time.Hour)                // 09:00 Athens in summer
+	zone, err := time.LoadLocation("Europe/Athens")
+	c.requiref(err == nil, "loading dose timezone: %v", err)
+	dose := time.Date(base.Year(), base.Month(), base.Day(), 9, 0, 0, 0, zone) // 09:00 local time across DST
 	week2, week3, week4 := base.AddDate(0, 0, 7), base.AddDate(0, 0, 14), base.AddDate(0, 0, 21)
 
 	c.putRec(xoScheduleCollection, "levothyroxine-daily", map[string]any{
 		"name":       "Levothyroxine",
 		"recurrence": "RRULE:FREQ=DAILY",
 		"timezone":   "Europe/Athens",
-		"at":         dose.Format(time.RFC3339), // the anchor: temporal(range)'s own start
+		"at":         dose.UTC().Format(time.RFC3339), // the anchor: temporal(range)'s own start
 	})
-	c.stepf("one schedule record holds the forever-daily rule, anchored %s", dose.Format(time.RFC3339))
+	c.stepf("one schedule record holds the forever-daily rule, anchored %s", dose.UTC().Format(time.RFC3339))
 
 	// ONE read answers the timeline: the calendar's rows and the doses the
 	// rule names, on one page, by slot. A concrete event in the same window
@@ -692,7 +696,7 @@ func xoCaseDoseWeek(c *C) {
 	ats := xoDoses(week, "levothyroxine-daily")
 	c.requiref(len(ats) == 7, "a daily rule names 7 instants in a week, got %v", ats)
 	for i, at := range ats {
-		want := dose.AddDate(0, 0, i).Format(time.RFC3339)
+		want := dose.AddDate(0, 0, i).UTC().Format(time.RFC3339)
 		c.requiref(at == want, "dose %d computed at %s, want %s", i, at, want)
 	}
 	for _, rec := range week {
@@ -704,8 +708,8 @@ func xoCaseDoseWeek(c *C) {
 	// window, beside the slot it marks, which it never hides.
 	tue := dose.AddDate(0, 0, 1)
 	c.putRec(xoLogCollection, "x-occ-dose-tue", map[string]any{
-		"at":          tue.Add(20 * time.Minute).Format(time.RFC3339),
-		"scheduledAt": tue.Format(time.RFC3339),
+		"at":          tue.Add(20 * time.Minute).UTC().Format(time.RFC3339),
+		"scheduledAt": tue.UTC().Format(time.RFC3339),
 		"schedule":    recPath(xoScheduleKind, "levothyroxine-daily"),
 	})
 	week = xoWindow(c, base, week2, xoScheduleKind, xoLogKind)
@@ -714,7 +718,7 @@ func xoCaseDoseWeek(c *C) {
 		if rec.Kind == xoLogKind && rec.ID == "x-occ-dose-tue" && !rec.Computed {
 			logged++
 		}
-		if rec.Kind == xoScheduleKind && rec.Computed && rec.prop("at") == tue.Format(time.RFC3339) {
+		if rec.Kind == xoScheduleKind && rec.Computed && rec.prop("at") == tue.UTC().Format(time.RFC3339) {
 			slots++
 		}
 	}
@@ -725,10 +729,14 @@ func xoCaseDoseWeek(c *C) {
 	// The travel week: home slots out via exdates, the moved instants in via
 	// rdates — 09:00 America/New_York written as instants, exactly how a
 	// Google override lands.
+	travelZone, err := time.LoadLocation("America/New_York")
+	c.requiref(err == nil, "loading travel timezone: %v", err)
+	travelDay := base.AddDate(0, 0, 7)
+	travelDose := time.Date(travelDay.Year(), travelDay.Month(), travelDay.Day(), 9, 0, 0, 0, travelZone)
 	exdates, rdates := []string{}, []string{}
 	for i := range 7 {
-		exdates = append(exdates, dose.AddDate(0, 0, 7+i).Format(time.RFC3339))
-		rdates = append(rdates, base.AddDate(0, 0, 7+i).Add(13*time.Hour).Format(time.RFC3339))
+		exdates = append(exdates, dose.AddDate(0, 0, 7+i).UTC().Format(time.RFC3339))
+		rdates = append(rdates, travelDose.AddDate(0, 0, i).UTC().Format(time.RFC3339))
 	}
 	status, raw = c.do(http.MethodPatch, xoScheduleCollection+"/levothyroxine-daily",
 		map[string]any{"properties": map[string]any{"exdates": exdates, "rdates": rdates}}, nil)
@@ -737,11 +745,11 @@ func xoCaseDoseWeek(c *C) {
 	moved := xoDoses(xoWindow(c, week2, week3, xoScheduleKind), "levothyroxine-daily")
 	c.requiref(len(moved) == 7, "the travel week still doses daily, got %v", moved)
 	for i, at := range moved {
-		want := base.AddDate(0, 0, 7+i).Add(13 * time.Hour).Format(time.RFC3339)
+		want := travelDose.AddDate(0, 0, i).UTC().Format(time.RFC3339)
 		c.requiref(at == want, "travel dose %d computed at %s, want %s (the moved slot)", i, at, want)
 	}
 	home := xoDoses(xoWindow(c, week3, week4, xoScheduleKind), "levothyroxine-daily")
-	c.requiref(len(home) == 7 && home[0] == dose.AddDate(0, 0, 14).Format(time.RFC3339),
+	c.requiref(len(home) == 7 && home[0] == dose.AddDate(0, 0, 14).UTC().Format(time.RFC3339),
 		"the week after the trip must dose at home time again, got %v", home)
 	c.stepf("the travel week reads 7 moved doses and week three is home time again — the rule itself never changed")
 }

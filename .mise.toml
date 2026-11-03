@@ -315,6 +315,7 @@ run = [
     export SUBSTRATE_OAUTH_CALLBACK_URL="${SUBSTRATE_OAUTH_CALLBACK_URL:-http://127.0.0.1:${SUBSTRATE_DEV_PORT:-8080}/api/v1/oauth/callback}"
     .mise/dev.sh restart
     SUBSTRATE_E2E_SERVER="http://127.0.0.1:${SUBSTRATE_DEV_PORT:-8080}" \
+    SUBSTRATE_E2E_SERVER_OS="$(go env GOOS)" \
     SUBSTRATE_E2E_INVITE="$SUBSTRATE_INVITE_CODE" \
     SUBSTRATE_E2E_DSN="$(.mise/dev.sh dsn)" \
     SUBSTRATE_E2E_CTL="$PWD/bin/substratectl" \
