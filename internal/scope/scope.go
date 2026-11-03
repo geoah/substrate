@@ -33,6 +33,13 @@
 // its parked deliveries. An app never asks for it in `scope`; only a
 // `webhook` authorization detail the owner approved puts it on a token, so
 // ParseRequest refuses it and CheckStored admits it.
+//
+// `call:<pattern>` (decision 0219) takes the kind grammar over function ids,
+// which are `<authority>/<package>/<name>` like a kind reference: the app
+// calls the matching functions, and only those whose own reach (the kinds
+// their `permissions` read and write) its read and write scopes cover,
+// which ReachCovered decides. A function of the core or llm package is
+// never matched: naming one outright is refused, and a glob skips them.
 package scope
 
 import (
@@ -59,6 +66,10 @@ const (
 	// Webhook delivers to one webhook trigger with the token, and reads that
 	// trigger's parked deliveries.
 	Webhook Verb = "webhook"
+	// Call runs the functions whose ids match, each only where the grant's
+	// reads and writes cover what the function itself reaches (decision
+	// 0219).
+	Call Verb = "call"
 	// Full is everything the owner's own token does. A request names it
 	// alone, as the bare word `full`.
 	Full Verb = "full"
@@ -138,8 +149,8 @@ func WebhookScope(trigger string) Scope { return Scope{Verb: Webhook, Pattern: t
 // The verbs a stored scope may carry, and the four of them a request may ask
 // for, as a refusal names them.
 const (
-	storedVerbs    = "read, write, agents, decide or webhook"
-	requestedVerbs = "read, write, agents or decide, or `full` alone"
+	storedVerbs    = "read, write, agents, decide, call or webhook"
+	requestedVerbs = "read, write, agents, decide or call, or `full` alone"
 	// retiredDeclareWords is what both doors say of the retired verb.
 	retiredDeclareWords = "`declare:` is retired (decision 0214): an app that needs a package of its own installed names it in a `package` authorization detail, published under its authority"
 )
@@ -153,7 +164,7 @@ func Parse(raw string) (Scope, error) {
 	}
 	s := Scope{Verb: Verb(verb), Pattern: pattern}
 	switch s.Verb {
-	case Read, Write, Agents, Decide, Webhook:
+	case Read, Write, Agents, Decide, Call, Webhook:
 	case retiredDeclare:
 		return Scope{}, fmt.Errorf("scope %q: %s", raw, retiredDeclareWords)
 	default:
@@ -168,6 +179,8 @@ func Parse(raw string) (Scope, error) {
 		if !vocabulary.ValidTriggerID(s.Pattern) {
 			problem = "is not one trigger's id"
 		}
+	case s.Verb == Call:
+		problem = callPatternProblem(s)
 	case s.OverAgents():
 		problem = agentPatternProblem(s)
 	default:
@@ -235,6 +248,34 @@ func agentPatternProblem(s Scope) string {
 	return ""
 }
 
+// callPatternProblem holds a call pattern to the kind grammar over function
+// ids, whose last segment is a function's lowercase word as a kind's is. A
+// function of the core or llm package is never an app's to call: those
+// packages hold the agent built-ins and the machinery that runs code, so
+// naming one outright, or the package glob, is refused; a wider glob is
+// admissible and Calls skips them.
+func callPatternProblem(s Scope) string {
+	p := s.Pattern
+	if s.HomeRelative() {
+		p = homeStandIn + p[len(Home):]
+	}
+	if strings.Contains(p, Home) {
+		return "puts `~` somewhere other than the authority"
+	}
+	if !vocabulary.ValidTypeGlob(p) {
+		return "is not a function pattern: `*`, `<authority>/*`, `<authority>/<package>/*` or `<authority>/<package>/<name>`"
+	}
+	if !vocabulary.IsTypeGlob(p) {
+		if authority, _, _ := vocabulary.SplitKindRef(p); authority == "" {
+			return "names a function without its authority and package"
+		}
+	}
+	if writesUnwritable(p) {
+		return "names a function of the core or llm package, which no app calls"
+	}
+	return ""
+}
+
 // writesUnwritable reports whether a write pattern names an unwritable
 // package outright: one of its kinds, or the package glob. A wider glob
 // (`substrate.reamde.dev/*`, `*`) is admissible; matching skips those
@@ -281,7 +322,7 @@ func ParseRequest(param string) ([]Scope, error) {
 		}
 		verb, _, ok := strings.Cut(raw, ":")
 		switch Verb(verb) {
-		case Read, Write, Agents, Decide:
+		case Read, Write, Agents, Decide, Call:
 		case retiredDeclare:
 			return nil, fmt.Errorf("scope %q: %s", raw, retiredDeclareWords)
 		case Webhook:
@@ -389,8 +430,8 @@ func (g Grant) Delivers(trigger string) bool {
 
 // NamesPackage reports whether one of the grant's scopes reaches into the
 // package pkg (`<authority>/<package>`): a read or write over a kind of it,
-// or an agents or decide scope over an agent of it, exactly or by a glob
-// that covers the package. It is what
+// an agents or decide scope over an agent of it, or a call scope over a
+// function of it, exactly or by a glob that covers the package. It is what
 // decides whether a token may learn the versions of a package its app needs
 // set up: a package of agents alone, such as a coach, is named by the scope
 // that talks to them. `webhook:` names one trigger, never a package.
@@ -400,7 +441,7 @@ func (g Grant) NamesPackage(pkg string) bool {
 	}
 	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
 		switch s.Verb {
-		case Read, Write, Agents, Decide:
+		case Read, Write, Agents, Decide, Call:
 		default:
 			return false
 		}
@@ -458,6 +499,54 @@ func (g Grant) Writes(kind string, internal bool) bool {
 		return false
 	}
 	return slices.ContainsFunc(g.scopes, func(s Scope) bool { return s.Verb == Write && matches(s.Pattern, kind, internal) })
+}
+
+// Calls reports whether the grant calls the function whose id is function,
+// `<authority>/<package>/<name>` in full. A glob covers a function declared
+// after the approval, and never one of the core or llm package.
+func (g Grant) Calls(function string) bool {
+	authority, pkg, name := vocabulary.SplitKindRef(function)
+	if authority == "" || !vocabulary.ValidPackage(pkg) || !vocabulary.ValidName(name) || inUnwritable(function) {
+		return false
+	}
+	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
+		return s.Verb == Call && vocabulary.MatchTypeGlob(s.Pattern, function)
+	})
+}
+
+// CallsAny reports whether the grant holds any call scope.
+func (g Grant) CallsAny() bool { return g.has(Call) }
+
+// ReachCovered reports whether the grant's read and write scopes cover one
+// entry of a function's declared reach: a kind it reads (verb Read) or
+// writes (verb Write), named in full or as a glob (decision 0219). An exact
+// kind is covered when the grant reads or writes it under every rule a
+// scope keeps, internal being its declared purpose; a glob is covered when
+// a scope of the verb (or a write, for a read) is at least as wide, and a
+// write glob never, where it reaches the core or llm package, since no scope
+// writes those and a function writing `*` reaches further than any approval.
+func (g Grant) ReachCovered(verb Verb, pattern string, internal bool) bool {
+	if !vocabulary.IsTypeGlob(pattern) {
+		if verb == Write {
+			return g.Writes(pattern, internal)
+		}
+		return g.Reads(pattern, internal)
+	}
+	if verb == Write && globReachesUnwritable(pattern) {
+		return false
+	}
+	return g.Covers(Scope{Verb: verb, Pattern: pattern}, false)
+}
+
+// globReachesUnwritable reports whether a glob covers a kind of an
+// unwritable package: `*`, the package's authority or the package itself.
+func globReachesUnwritable(glob string) bool {
+	for _, pkg := range unwritable {
+		if vocabulary.MatchTypeGlob(glob, pkg+"/x") {
+			return true
+		}
+	}
+	return false
 }
 
 // TalksTo reports whether the grant talks to the agent whose record id is
