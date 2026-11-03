@@ -373,5 +373,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0213](0213-a-published-package-keeps-its-publishers-versions-and-an-upgrade-waits-for-every-connected-build.md) | A published package keeps its publisher's versions, and an upgrade waits for every connected build | proposed |
 | [0214](0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md) | An app's approval installs published packages, and `declare:` and the `agent` detail are retired | proposed |
 | [0215](0215-code-an-approval-installs-reaches-no-further-than-the-scopes-it-approves.md) | Code an approval installs reaches no further than the scopes it approves | proposed |
+| [0216](0216-an-add-on-package-waits-for-the-provider-it-extends-under-the-approval-already-given.md) | An add-on package waits for the provider it extends, under the approval already given | proposed |
 | [0217](0217-a-published-agent-takes-its-provider-through-a-bundle-input-and-declares-its-daily-cap.md) | A published agent takes its provider through a bundle input and declares its daily cap | proposed |
+| [0218](0218-the-approval-page-writes-a-packages-settings-and-secrets-as-the-owner.md) | The approval page writes a package's settings and secrets as the owner | proposed |
 | [0220](0220-outside-code-is-confined-and-reviewed.md) | Code from an outside authority reaches only the hosts it declares, waits for review when it changes, and needs a sandbox that confines it | proposed |

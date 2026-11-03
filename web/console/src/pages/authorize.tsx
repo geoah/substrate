@@ -30,6 +30,7 @@ import {
 } from "@/components/authorize/publisher"
 import { ScopeRow } from "@/components/authorize/scope-row"
 import { ProviderPicker } from "@/components/authorize/provider-picker"
+import { PackageChoices } from "@/components/authorize/package-choices"
 import { SetupRow } from "@/components/authorize/setup-row"
 import { ConsolePreferencesProvider } from "@/components/console-preferences"
 import { CopyButton } from "@/components/identity/copy-button"
@@ -68,6 +69,7 @@ import {
   type AuthorizationPrevious,
   type AuthorizationRequest,
   type AuthorizationSetup,
+  type AuthorizationSettingValue,
 } from "@/lib/api/types"
 import {
   asSentence,
@@ -371,6 +373,31 @@ function Approval({
   const [providerChoices, setProviderChoices] = useState<
     Record<string, string>
   >({})
+  const [addons, setAddons] = useState<string[]>(() =>
+    request.setup.flatMap((r) => (r.package?.addonFor ? [r.package.id] : []))
+  )
+  const [settings, setSettings] = useState<AuthorizationSettingValue[]>([])
+  const activeRows = request.setup.filter(
+    (r) => !r.package?.addonFor || addons.includes(r.package.id)
+  )
+  const selectedSettings = settings.filter((v) =>
+    activeRows.some(
+      (r) =>
+        r.action !== "wait" &&
+        r.package?.settings?.some((s) => s.id === v.id && s.secret === v.secret)
+    )
+  )
+  const missingSetting = activeRows.some(
+    (r) =>
+      r.action !== "wait" &&
+      r.package?.settings?.some(
+        (s) =>
+          s.required &&
+          !selectedSettings.some(
+            (v) => v.id === s.id && v.secret === s.secret && v.value !== ""
+          )
+      )
+  )
   const [lifetime, setLifetime] = useState(request.defaultLifetimeDays)
   // What moved when the server refused the plan the page had shown.
   const [moved, setMoved] = useState<string[] | null>(null)
@@ -389,7 +416,7 @@ function Approval({
     (input) =>
       !(providerChoices[input.package + "/" + input.input] ?? input.selected)
   )
-  const blocked = fold.blocks.length > 0
+  const blocked = activeRows.some((r) => r.blocked) || missingSetting
 
   const settingUp = request.state === "setting-up"
   const approved = request.state === "approved"
@@ -469,6 +496,8 @@ function Approval({
       verdict: "approve",
       approval: {
         scopes: chosen,
+        ...(addons.length ? { addons } : {}),
+        ...(selectedSettings.length ? { settings: selectedSettings } : {}),
         lifetimeDays: lifetime,
         ...(request.planHash ? { planHash: request.planHash } : {}),
         ...(providerInputs.length
@@ -526,6 +555,23 @@ function Approval({
           />
         </li>
       ))}
+      {row.package && (
+        <PackageChoices
+          pkg={row.package}
+          waiting={row.action === "wait"}
+          selected={!row.package.addonFor || addons.includes(row.package.id)}
+          disabled={settled}
+          onSelect={(checked) =>
+            setAddons((old) =>
+              checked
+                ? [...old, row.package!.id]
+                : old.filter((id) => id !== row.package!.id)
+            )
+          }
+          values={settings}
+          onValues={setSettings}
+        />
+      )}
     </Fragment>
   )
   const appTitle = titleOf(request)
@@ -778,7 +824,11 @@ function Approval({
           )}
           {blocked && !settled && (
             <div className="flex flex-wrap items-center justify-end gap-2 text-right text-xs text-muted-foreground">
-              <span>{blockedWords(fold.blocks)}</span>
+              <span>
+                {missingSetting
+                  ? "Fill every required setting."
+                  : blockedWords(fold.blocks)}
+              </span>
               <Button variant="outline" size="xs" onClick={() => void reread()}>
                 Check again
               </Button>

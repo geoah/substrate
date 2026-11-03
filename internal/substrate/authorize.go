@@ -192,13 +192,21 @@ type AuthorizationBlock struct {
 // it cannot see. A client names a package from its ID; the catalog carries
 // no other name.
 type AuthorizationPackage struct {
-	OAuthHosts  []string `json:"oauthHosts,omitempty"`
-	ID          string   `json:"id"`
-	Description string   `json:"description,omitempty"`
-	Tier        string   `json:"tier,omitempty"`
-	Required    int64    `json:"required"`
-	Held        int64    `json:"held,omitempty"`
-	Shipped     int64    `json:"shipped,omitempty"`
+	ID          string `json:"id"`
+	Description string `json:"description,omitempty"`
+	Tier        string `json:"tier,omitempty"`
+	Required    int64  `json:"required"`
+	Held        int64  `json:"held,omitempty"`
+	Shipped     int64  `json:"shipped,omitempty"`
+	// AddonFor is the provider an optional add-on package extends (decision
+	// 0216), from its publisher's document; the owner may leave it out.
+	AddonFor string `json:"addonFor,omitempty"`
+	// Settings are the empty setting and secret records the package ships,
+	// which the owner fills on the page (decision 0218).
+	Settings []AuthorizationSetting `json:"settings,omitempty"`
+	// OAuthHosts are the hosts an outside package's oauth2 block names
+	// (decision 0220).
+	OAuthHosts []string `json:"oauthHosts,omitempty"`
 	// Requires is the requirement chain an install brings first, each with
 	// its own action and its own facts, in the order they land. Kinds,
 	// Functions and Triggers are this package's own.
@@ -460,11 +468,30 @@ type AuthorizationKind struct {
 	Added    bool       `json:"added,omitempty"`
 }
 
+// AuthorizationSetting describes an empty configuration record, never its value.
+type AuthorizationSetting struct {
+	ID          string `json:"id"`
+	Description string `json:"description,omitempty"`
+	Secret      bool   `json:"secret"`
+	Required    bool   `json:"required"`
+}
+
+// AuthorizationSettingValue exists only in the owner's approval POST.
+type AuthorizationSettingValue struct {
+	ID     string `json:"id"`
+	Secret bool   `json:"secret"`
+	Value  string `json:"value"`
+}
+
+const BlockNeedsSetting = "needs-setting"
+
 // AuthorizationApproval is the approval: the subset of the request's
 // resolved scopes the owner checked, at least one, and the lifetime picked,
 // one of the request's LifetimeDays (0 for until revoked).
 type AuthorizationApproval struct {
-	Scopes []string `json:"scopes"`
+	Addons   []string                    `json:"addons,omitempty"`
+	Settings []AuthorizationSettingValue `json:"settings,omitempty"`
+	Scopes   []string                    `json:"scopes"`
 	// LifetimeDays is required: a pointer, so an approval that names none
 	// is refused rather than read as 0, which is until revoked.
 	LifetimeDays *int `json:"lifetimeDays"`

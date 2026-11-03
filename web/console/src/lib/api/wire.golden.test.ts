@@ -82,6 +82,9 @@ import type {
   AuthorizationProviderOption,
   AuthorizationProviderChoice,
   AuthorizationPackage,
+  AuthorizationSetting,
+  AuthorizationSettingValue,
+  AddonInstallResult,
   AuthorizationPackageStep,
   AuthorizationPrevious,
   AuthorizationPublisher,
@@ -720,6 +723,8 @@ const authorizationBlock: Shape<AuthorizationBlock> = {
 const authorizationPackage: Shape<AuthorizationPackage> = {
   oauthHosts: false,
   providerInputs: false,
+  addonFor: false,
+  settings: false,
   id: true,
   description: false,
   tier: false,
@@ -827,6 +832,8 @@ const authorizationCheckScopes: Shape<AuthorizationCheckScopes> = {
 
 const authorizationApproval: Shape<AuthorizationApproval> = {
   providerChoices: false,
+  addons: false,
+  settings: false,
   scopes: true,
   lifetimeDays: true,
   planHash: false,
@@ -1287,6 +1294,23 @@ const mirrors: Record<string, Record<string, boolean>> = {
   AuthorizationPublisher: authorizationPublisher,
   AuthorizationPackagePublisher: authorizationPackagePublisher,
   AppAddon: appAddon,
+  AuthorizationSetting: {
+    id: true,
+    description: false,
+    secret: true,
+    required: true,
+  } satisfies Shape<AuthorizationSetting>,
+  AuthorizationSettingValue: {
+    id: true,
+    secret: true,
+    value: true,
+  } satisfies Shape<AuthorizationSettingValue>,
+  AddonInstallResult: {
+    package: true,
+    tokenId: true,
+    state: true,
+    problem: false,
+  } satisfies Shape<AddonInstallResult>,
   AuthorizationRedirectTo: authorizationRedirectTo,
   AuthorizationScope: authorizationScope,
   AuthorizationKind: authorizationKind,

@@ -37,7 +37,7 @@ import (
 // pending again with why it stopped. approved is the rows the approval was
 // checked against.
 func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, req authorize.Request, approved []substrate.AuthorizationSetup,
-	opts appsetup.Options, approve func(authorize.Request) (authorize.Approval, error),
+	opts appsetup.Options, run appsetup.RunOptions, approve func(authorize.Request) (authorize.Approval, error),
 ) {
 	if h.setUpEnded != nil {
 		defer h.setUpEnded(req.ID)
@@ -65,7 +65,7 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 			stop(&substrate.AuthorizationFailure{Message: "The set up failed on the server. Try again, and if it fails again the server log says why."}, false)
 		}
 	}()
-	out := h.setups.Run(ctx, ds, actor, req.Details, approved, opts, func(progress []string) bool {
+	out := h.setups.Run(ctx, ds, actor, req.Details, approved, opts, run, func(progress []string) bool {
 		if err := h.authz.Progress(req.ID, authority, progress); err != nil {
 			slog.Warn("authorize: a set up outlived its request", "request", req.ID, "error", err)
 			return false
