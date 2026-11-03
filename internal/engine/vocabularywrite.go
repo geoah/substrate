@@ -312,6 +312,13 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	// A published agent spends the owner's provider, so it ships its own
 	// daily cap (decision 0217), whether the binary or a document brought it.
 	if opts.Published {
+		for _, doc := range docs {
+			if doc.Kind == vocabulary.DocAgent {
+				if input, _ := doc.Data["providerInput"].(string); strings.TrimSpace(input) == "" || doc.Data["provider"] != nil || doc.Data["model"] != nil {
+					return nil, fmt.Errorf("%w: published agent %s must use providerInput and models, not provider and model", substrate.ErrValidation, doc.ID)
+				}
+			}
+		}
 		if err := vocabulary.PublishedAgentBudgets(docs); err != nil {
 			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 		}
@@ -334,6 +341,11 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 		publishedFrom:  opts.PublishedFrom, publishedDigest: opts.PublishedDigest, expectedPublishedVersion: opts.ExpectedPublishedVersion, publishedNarrows: opts.PublishedNarrows,
 		confirm: opts.Confirm,
 		extra: func(t *txn) error {
+			if opts.ApprovalTokenID != "" {
+				if err := t.requireAddonConsent(opts.ApprovalTokenID); err != nil {
+					return err
+				}
+			}
 			for _, in := range dataDocs {
 				// A trigger's callable is validated against the candidate here
 				// because the internal put below skips the callable check, so

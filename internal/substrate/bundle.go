@@ -331,6 +331,10 @@ type OAuthStarted struct {
 // BundleInstall is what the caller decides about an install beyond the
 // documents themselves.
 type BundleInstall struct {
+	// ApprovalTokenID requires a live, unexpired token inside the install's
+	// write transaction. Deferred add-ons must not outlive their consent.
+	ApprovalTokenID string
+
 	// Published marks a PROVIDER install: the closure's packages land with
 	// `source: published`, and afterwards only a substrate path (an install,
 	// an upgrade) may write their declarations, the same refusal the seeded

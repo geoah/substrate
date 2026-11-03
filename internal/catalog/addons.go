@@ -2,6 +2,8 @@ package catalog
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -54,8 +56,11 @@ func (c *Catalog) installAddons(ctx context.Context, ds substrate.Dataset, provi
 			result := substrate.AddonInstallResult{Package: addon.Package, TokenID: token.ID, State: substrate.SetupWait}
 			if blocked := c.addonPlanner(ctx, ds, token, addon); blocked != nil {
 				result.Problem = blocked.Problem
-			} else if _, _, err := c.Install(ctx, substrate.ActorConsole, addon.Package, ds); err != nil {
+			} else if _, _, err := c.Install(ctx, substrate.ActorConsole, addon.Package, &addonConsentDataset{Dataset: ds, tokenID: token.ID}); err != nil {
 				result.Problem = "The add-on could not be installed. Open its package page to resolve it."
+				if errors.Is(err, substrate.ErrForbidden) {
+					result.Problem = "The add-on's approval is no longer live. Approve the app again."
+				}
 			} else {
 				result.State = "installed"
 				installed[addon.Package] = addon.Version
@@ -64,4 +69,25 @@ func (c *Catalog) installAddons(ctx context.Context, ds substrate.Dataset, provi
 		}
 	}
 	return out
+}
+
+// Each closure, including requirements, rechecks consent after catalog fetches.
+// The engine repeats this check inside the write transaction.
+type addonConsentDataset struct {
+	substrate.Dataset
+	tokenID string
+}
+
+func (d *addonConsentDataset) InstallBundleClosure(ctx context.Context, actor substrate.Actor, docs []map[string]any, data []substrate.PutInput, opts substrate.BundleInstall) ([]*substrate.Record, error) {
+	tokens, err := d.Tokens(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, token := range tokens {
+		if token.ID == d.tokenID && (token.ExpiresAt == nil || token.ExpiresAt.After(time.Now())) {
+			opts.ApprovalTokenID = token.ID
+			return d.Dataset.InstallBundleClosure(ctx, actor, docs, data, opts)
+		}
+	}
+	return nil, fmt.Errorf("%w: the add-on's approval is no longer live", substrate.ErrForbidden)
 }
