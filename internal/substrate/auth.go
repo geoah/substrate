@@ -173,6 +173,10 @@ type TokenInfo struct {
 	AppPackages        map[string]int64 `json:"appPackages,omitempty"`
 	AppSoftwareVersion string           `json:"appSoftwareVersion,omitempty"`
 	AppCheckedAt       *time.Time       `json:"appCheckedAt,omitempty"`
+	// AppAddons are the add-on packages the owner approved while the
+	// provider each extends was not installed (decision 0216): installing
+	// that provider later installs them under this token's approval.
+	AppAddons []AppAddon `json:"appAddons,omitempty"`
 	// Agents are the agents the owner approved the app to declare (decision
 	// 0207), each with its reach and cap; absent on every other token.
 	Agents []AgentApproval `json:"agents,omitempty"`
@@ -209,6 +213,8 @@ type MintTokenInput struct {
 	// build asked for when the owner approved it.
 	AppPackages        map[string]int64
 	AppSoftwareVersion string
+	// AppAddons is TokenInfo's: the add-ons waiting for their provider.
+	AppAddons []AppAddon
 	// Agents are the approved agents of a scoped token, none on any other.
 	Agents []AgentApproval
 }
@@ -336,4 +342,12 @@ type LoginInput struct {
 	// Label names the token a login mints; ignored by the credential-changing
 	// paths, which mint nothing.
 	Label string
+}
+
+// AppAddon is one add-on an approval left waiting for its provider: the
+// package, the floor the app asked for, and the provider it extends.
+type AppAddon struct {
+	Package  string `json:"package"`
+	Version  int64  `json:"version"`
+	AddonFor string `json:"addonFor"`
 }
