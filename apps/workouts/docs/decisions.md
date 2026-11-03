@@ -7,9 +7,9 @@ took the decisions marked as its own on the owner's behalf, and each stays open 
 owner. Dates are UTC.
 
 The decisions that shape the server, rather than this app, are decision records in
-[`docs/decisions/`](../../../../docs/decisions/README.md): the app's package and its
+[`docs/decisions/`](../../../docs/decisions/README.md): the app's package and its
 `declare:` scope are
-[0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md).
+[0203](../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md).
 
 ## Contents
 
@@ -364,7 +364,7 @@ D5, and never sends a session RPE of 0 as Apple Health's effort score (A3).
 The mapping tables were corrected from both reports, with a code-system registry and rules for
 a second writer. Conditioning groups, cardio machines, programs, derived PRs and 1RMs,
 import-source preservation, fractional seconds and per-set `source` are reserved, not built.
-See [`Package/README.md`](../Package/README.md#later-reserved-not-built).
+See [`Package/README.md`](../package/README.md#later-reserved-not-built).
 
 ### Checked after the build
 
@@ -391,8 +391,8 @@ the rest.
   let's get a build working, deploy it on rxtx apps, open pr with screenshots, and the run
   reviews with astra and fable to start fixing issues."
 - **How:** the app signs in through SubstrateKit's app authorization
-  ([0194](../../../../docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
-  [0202](../../../../docs/decisions/0202-an-apps-approval-sets-up-what-it-needs-and-its-token-delivers-to-its-webhook.md)).
+  ([0194](../../../docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
+  [0202](../../../docs/decisions/0202-an-apps-approval-sets-up-what-it-needs-and-its-token-delivers-to-its-webhook.md)).
   It asks for `declare:~/training`, `write:~/training/*`, two Health reads, and a `package`
   detail that installs `substrate.reamde.dev/health`, which the package requires.
 - **Source:** owner, 2026-11-01; geoah/substrate#1100.
@@ -405,7 +405,7 @@ the rest.
   `kinds/`; that was reverted.
 - **Why:** the kinds are the app's, and change with its releases. A first-party catalogue
   would make the server ship and version them
-  ([0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)).
+  ([0203](../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)).
 - **Source:** owner, 2026-11-01; 0203; geoah/substrate#1100.
 
 ### T3. The package is the app's own `~/training`
@@ -415,7 +415,7 @@ the rest.
   `<authority>/training`. On the phone the kinds are `~/training/…`, and `Rehome` swaps `~`
   for the authority at the server's edge.
 - **Why:** that is where an owner's own vocabulary and imported samples already live
-  ([0046](../../../../docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md),
+  ([0046](../../../docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md),
   0048). The owner owns and edits it, and nothing is claimed under an authority the app
   does not own.
 - **Source:** 0203; geoah/substrate#1100.
@@ -432,8 +432,8 @@ the rest.
   approves exactly what it may touch. The alternatives failed: the request cannot carry the
   manifests (about 90 KB against a 2 KB bound on its details), a fetched URL would make the
   server dial out, and the owner rejected the first-party catalogue.
-- **Source:** [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md),
-  [`docs/apps.md`](../../../../docs/apps.md#keep-a-package-of-your-own).
+- **Source:** [0203](../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md),
+  [`docs/apps.md`](../../../docs/apps.md#keep-a-package-of-your-own).
 
 ### T5. The app installs and upgrades its package itself
 
@@ -459,8 +459,8 @@ the rest.
 ### T7. The packages are published under `substrate.reamde.dev`
 
 - **Decided by** the owner, 2026-11-03, in
-  [0214](../../../../docs/decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md)
-  and [0221](../../../../docs/decisions/0221-first-party-apps-publish-under-substrate-reamde-dev.md).
+  [0214](../../../docs/decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md)
+  and [0221](../../../docs/decisions/0221-first-party-apps-publish-under-substrate-reamde-dev.md).
   Replaces T3, T4 and T5.
 - **What:** `substrate.reamde.dev/training` and `substrate.reamde.dev/trainingcoach` are the
   same name in every repository. The server installs and upgrades them from the authority

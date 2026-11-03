@@ -10,14 +10,14 @@ session to Apple Health as one strength workout.
 This is the spec of the app's first build, written before it moved here, when it ran on bundled data alone ("V1") and
 named its later sync "V2". The sync is built: [README.md](README.md) says how the app signs in, keeps its training
 package and writes through its outbox, and the seams of §2.5 are implemented by WorkoutsKit's `WorkoutsSync`. Sections
-9.8 to 9.10 and 11 describe that first build's project and release, which `apps/apple/project.yml` and
-[`apps/apple/README.md`](../README.md) replace. Where a rule comes from the research behind the app, the source is given
+9.8 to 9.10 and 11 describe that first build's project and release, which `apps/xcode/project.yml` and
+[`apps/README.md`](../README.md) replace. Where a rule comes from the research behind the app, the source is given
 in brackets and links to it: "req 23" is requirement 23 of the [research's README](docs/research/README.md#requirements),
 and "03 §11.2" is section 11.2 of its [progression study](docs/research/03-progression.md). The research, the reviews and
 every decision since are in [`docs/`](docs/README.md); [docs/decisions.md](docs/decisions.md) lists the decisions with who
 took them and why. Nobody needs any of it to build.
 
-The data shapes are the training package's, beside this file in [`Package/`](Package/README.md). Where this document and
+The data shapes are the training package's, beside this file in [`Package/`](package/README.md). Where this document and
 those files disagree about a property, the kind files win and this document is wrong.
 
 ## Contents
@@ -80,7 +80,7 @@ those files disagree about a property, the kind files win and this document is w
 
 Recorded as decisions the owner may overturn; this spec does not reopen them.
 
-- **Package.** `substrate.reamde.dev/training`, published under the apps' authority and installed by the approval ([Package/](Package/README.md)). Kinds `exercise`, `routine` (label "Workout routine"), `session` (label
+- **Package.** `substrate.reamde.dev/training`, published under the apps' authority and installed by the approval ([Package/](package/README.md)). Kinds `exercise`, `routine` (label "Workout routine"), `session` (label
   "Training session"), `set`. A routine folder is a string plus a position on the routine.
 - **One record per performed set.** The session embeds its ordered slots; group values are stored once per group.
 - **Effort.** `rpe` as entered (a decimal on the RIR-based scale, half steps), optional `rir`, a scale tag for imports.
@@ -219,13 +219,13 @@ exercise). The next save writes the file as format 2.
 ### 2.4 Bundled data and the generator
 
 > **2026-11-02:** the app now bundles one sample routine and its thirteen exercises, written from
-> [`docs/examples/sample.yaml`](docs/examples/sample.yaml) by `apps/apple/scripts/workouts-package.py`, which
+> [`docs/examples/sample.yaml`](docs/examples/sample.yaml) by `apps/workouts/scripts/workouts-package.py`, which
 > also writes the test fixtures from their YAML; the previews run the sample through the engine instead of reading
 > `PreviewHistory.json`, which is gone (decision
 > [S1](docs/decisions.md#s1-one-sample-routine-that-shows-every-feature-written-once-and-deletable)). The rest of this
 > section is the first build's design.
 
-In this repository the bundled and fixture JSON are the source, and `apps/apple/scripts/workouts-package.py` writes
+In this repository the bundled and fixture JSON are the source, and `apps/workouts/scripts/workouts-package.py` writes
 only the package's manifests and `kinds.json`; the generator below is the first build's, and stayed in rxtx.dev. The
 YAML it read is in [`docs/examples/`](docs/examples/README.md), rehomed to `substrate.reamde.dev/training` and checked equal to the JSON
 record for record; that page says how the two relate.
@@ -2862,7 +2862,7 @@ research README's "Still to check on a device"):
 
 ## 10. Test plan
 
-All WorkoutsKit tests run on the Mac with `cd apps/apple/WorkoutsKit && swift test` (Swift Testing, `@Test`),
+All WorkoutsKit tests run on the Mac with `cd apps/workouts/core && swift test` (Swift Testing, `@Test`),
 and from `xcodebuild test` through the scheme's test target.
 
 ### 10.1 Unit tests

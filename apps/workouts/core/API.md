@@ -1,7 +1,7 @@
 # WorkoutsCore: the public API by screen
 
 A map for the app's engineers: what to call, from where. The spec is
-[`DESIGN.md`](../SubstrateWorkouts/DESIGN.md); doc comments in the sources say the rest. Everything here is `Sendable`, pure
+[`DESIGN.md`](../DESIGN.md); doc comments in the sources say the rest. Everything here is `Sendable`, pure
 unless it says it touches a file, and Foundation-only. The views compute no rule: they send commands and render
 presentations.
 

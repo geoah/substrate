@@ -8,7 +8,7 @@ up, and the screens for all of it. Beside that, the record and its values as
 the console draws them. The console's shell (Substrate), Substrate Sync and
 Substrate Chat use it; an app adds it as a local package (`project.yml`'s
 `packages:`) and imports `SubstrateKit`. The design
-it implements is [docs/plans/app-setup.md](../../../docs/plans/app-setup.md).
+it implements is [docs/plans/app-setup.md](../../docs/plans/app-setup.md).
 
 ## What is in it
 

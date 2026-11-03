@@ -4,8 +4,8 @@
 > (`proposals/087-spotter.md`, created 2026-10-30, as last revised on the branch of
 > geoah/rxtx.dev#118 on 2026-10-31), when the app was Spotter and its package a draft
 > Mneme package, `mneme.rxtx.dev/training`. It is superseded by this folder: the app is
-> Substrate Workouts, its package is its own `~/training` ([`Package/`](../../Package/README.md),
-> decision record [0203](../../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)),
+> Substrate Workouts, its package is its own `~/training` ([`Package/`](../../package/README.md),
+> decision record [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)),
 > and [decisions.md](../decisions.md) records what was decided since, including which of
 > the open questions below were answered. Links now point at this repository's copies
 > (the research in [`../research/`](../research/README.md), the examples in
@@ -28,7 +28,7 @@ the owner can approve, and the questions still open.
 
 - The research and its synthesis (requirements 1 to 39, the disagreements, the open questions):
   [research/workouts/README.md](../research/README.md).
-- The package: [research/workouts/substrate/training/](../../Package/README.md).
+- The package: [research/workouts/substrate/training/](../../package/README.md).
 - The example records: [research/workouts/substrate/examples/](../examples/README.md).
 - The app: [apps/apple/spotter/](../../README.md), designed in
   [apps/apple/spotter/docs/DESIGN.md](../../DESIGN.md).
@@ -100,13 +100,13 @@ set      (one performed set or one segment; UUIDv7) ──session (mustExist, ca
   target { plannedSet: <planned set key>, the full prescription as it ran }
 ```
 
-- **Manifests:** [bundle](../../Package/training.yaml),
-  [exercise](../../Package/exercise.yaml),
-  [setup](../../Package/setup.yaml),
-  [routine](../../Package/routine.yaml),
-  [session](../../Package/session.yaml),
-  [set](../../Package/set.yaml). The
-  [package README](../../Package/README.md) maps every property to its
+- **Manifests:** [bundle](../../package/training.yaml),
+  [exercise](../../package/exercise.yaml),
+  [setup](../../package/setup.yaml),
+  [routine](../../package/routine.yaml),
+  [session](../../package/session.yaml),
+  [set](../../package/set.yaml). The
+  [package README](../../package/README.md) maps every property to its
   requirement and holds the rules for reading chains, effective load, volume, Discard and the
   Health link.
 - **Examples** from the screenshots: [exercises](../examples/exercises.yaml)

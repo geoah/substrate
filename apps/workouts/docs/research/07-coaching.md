@@ -1,10 +1,10 @@
 # Workout coach: how a strength coach plans and adjusts training
 
 > **Where this came from.** Written on 2026-11-02 for the Substrate Workouts coach agent
-> (`~/trainingcoach/workoutCoach`), while [the coach plan](../../../../../docs/plans/workouts-coach.md)
+> (`~/trainingcoach/workoutCoach`), while [the coach plan](../../../../docs/plans/workouts-coach.md)
 > left its instructions as a placeholder. Sections 1 to 6 were distilled into
-> [`Package/coach/instructions.md`](../../Package/coach/instructions.md) and
-> [`mechanics.md`](../../Package/coach/mechanics.md). The owner's calls on section 7: intake is
+> [`Package/coach/instructions.md`](../../package/coach/instructions.md) and
+> [`mechanics.md`](../../package/coach/mechanics.md). The owner's calls on section 7: intake is
 > two short forms plus single free-text questions, deloads are a separate routine, and
 > `response` and `change` joined the memory topics. The text below is as written.
 

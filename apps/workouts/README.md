@@ -8,7 +8,7 @@ RPE, rest timers that notify when rest ends, and a suggested load and rep
 count for the next set from this session and earlier ones. Each finished
 session is also saved to Apple Health as one strength workout. It came to
 this repository from an app called Spotter; its spec is
-[DESIGN.md](DESIGN.md), and its package is [Package/](Package/README.md).
+[DESIGN.md](DESIGN.md), and its package is [Package/](package/README.md).
 The research, design options, reviews and decisions behind it are in
 [docs/](docs/README.md).
 
@@ -29,8 +29,8 @@ Dynamic Island.
 mise run apple:build:workouts     # the app for the simulator
 mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (562 tests, on the Mac)
 mise run apple:release:workouts   # archived, signed and published under workouts/
-uv run --with pyyaml apps/apple/scripts/workouts-package.py   # the package's manifests into the app's JSON
-uv run --with pyyaml apps/apple/scripts/exercise-library.py   # the exercise library into the app's JSON
+uv run --with pyyaml apps/workouts/scripts/workouts-package.py   # the package's manifests into the app's JSON
+uv run --with pyyaml apps/workouts/scripts/exercise-library.py   # the exercise library into the app's JSON
 ```
 
 **A routine's page** opens on its folder, notes and what the plan holds, then Plan or
@@ -49,17 +49,17 @@ history or the catalogue changes. `StatsPresenter` and `RoutinePlanPresenter` wo
 (`StatsPresenterTests`, `RoutinePlanPresenterTests`); the screenshots are
 `docs/screenshots/routine-*.jpg` and `stats-*.jpg`. The body map's figures are
 react-native-body-highlighter's (MIT), written into `Views/Stats/BodyMapShapes.swift` by
-`apps/apple/scripts/body-map.py` at a pinned commit, with its notice.
+`apps/workouts/scripts/body-map.py` at a pinned commit, with its notice.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `SubstrateWorkouts/Sources/` | the app: `App/` (the session controller, the model, `SubstrateLink`), `Platform/` (notifications, the Live Activity, HealthKit, haptics), `Shared/` (compiled into the widget too), `Views/` |
-| `SubstrateWorkouts/Package/` | the training package's manifests and their long form |
-| `SubstrateWorkoutsWidgets/` | the Live Activity extension |
-| `WorkoutsKit/Sources/WorkoutsCore` | Foundation only: the model and its record codec, the session engine, the rest rules, the suggestion engine, the presenters, the files on the phone, the sample routine and the package's manifests |
-| `WorkoutsKit/Sources/WorkoutsSync` | the app's side of a substrate, over SubstrateKit's client: the package installer, the catalogue, the outbox, the server's history, the manifest |
+| `apple/Sources/` | the app: `App/` (the session controller, the model, `SubstrateLink`), `Platform/` (notifications, the Live Activity, HealthKit, haptics), `Shared/` (compiled into the widget too), `Views/` |
+| `package/` | the training package's manifests and their long form |
+| `apple/Widgets/` | the Live Activity extension |
+| `core/Sources/WorkoutsCore` | Foundation only: the model and its record codec, the session engine, the rest rules, the suggestion engine, the presenters, the files on the phone, the sample routine and the package's manifests |
+| `core/Sources/WorkoutsSync` | the app's side of a substrate, over SubstrateKit's client: the package installer, the catalogue, the outbox, the server's history, the manifest |
 
 ## Signing in and sync
 
@@ -96,7 +96,7 @@ and Sign Out revokes it as the kit does for every app.
 **The package is published.** `substrate.reamde.dev/training` and
 `substrate.reamde.dev/trainingcoach` are the same name in every repository,
 served from the site's authority document with each version's closure
-(`mise run apple:site`, [Package/](Package/README.md)). The app applies
+(`mise run apple:site`, [Package/](package/README.md)). The app applies
 nothing and respells nothing: the kinds are `substrate.reamde.dev/training/…`
 on the phone and on the wire. A phone updated from a build that spelled them
 `~/training/…` (decision [T3](docs/decisions.md#t3-the-package-is-the-apps-own-training))
@@ -224,9 +224,9 @@ and how much) and 807 exercises, one per equipment version (Chest Press
 (Machine), Chest Press (Cable), Chest Press (Band)), each with its
 measurement, equipment and load conventions (two dumbbells count per
 dumbbell, a plate-loaded lever per side). The coach and the console read
-them like any record. `apps/apple/scripts/exercise-library.py` builds it
+them like any record. `apps/workouts/scripts/exercise-library.py` builds it
 (`WorkoutsCore/Resources/Bundled/library.json`) from two sources in
-[`Library/`](Library/):
+[`Library/`](library/):
 
 | Source | What |
 | --- | --- |
@@ -254,7 +254,7 @@ them.
 
 Settings → Import → Hevy reads a Hevy account in one of two ways, and
 `HevyImport` turns what it reads into the package's records as the package
-README's [Importing](Package/README.md#importing) section asks; nothing is
+README's [Importing](package/README.md#importing) section asks; nothing is
 saved until the owner has seen what it holds and taps Import.
 
 - **An API key** (Hevy Pro: hevy.com → Settings → Developer). `HevyClient`
@@ -326,7 +326,7 @@ read back as the owner.
 
 ```bash
 WORKOUTS_E2E_SERVER=http://localhost:8080 WORKOUTS_E2E_OWNER_TOKEN=… WORKOUTS_E2E_REPOSITORY=<fresh repository> \
-  swift test --package-path apps/apple/WorkoutsKit --filter LiveServer
+  swift test --package-path apps/workouts/core --filter LiveServer
 ```
 
 `LiveHevyImportTests` seeds the exercise library over an owner's own

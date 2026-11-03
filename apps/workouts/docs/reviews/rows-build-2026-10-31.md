@@ -12,7 +12,7 @@ The workflow kept only each reviewer's summary verdict, not its full numbered li
 what follows is those verdicts and the fixer's account, verbatim. Paths are the rxtx.dev
 worktree's at the time: `apps/apple/spotter/SpotterKit` became
 `apps/apple/WorkoutsKit` here, and `research/workouts/substrate` became
-[`Package/`](../../Package/README.md) and [`examples/`](../examples/README.md).
+[`Package/`](../../package/README.md) and [`examples/`](../examples/README.md).
 
 ## Data reviewer (13 findings)
 

@@ -6,12 +6,12 @@ training sessions and sets the app logs. The manifests are the YAML files
 beside this one, published under the authority `substrate.reamde.dev`
 (decision record 0214):
 `mise run apple:site` builds each version's closure from them
-(`apps/apple/scripts/workouts-package.py --closures`) and lists it in the
+(`apps/workouts/scripts/workouts-package.py --closures`) and lists it in the
 site's authority document, the app's approval asks for the package as a
 `package` detail at the version the build was written against, and the
 server installs it from the document under this very name, the same in every
 repository. The app carries the documents as JSON
-(`WorkoutsKit/Sources/WorkoutsCore/Resources/Package/training.json`, written
+(`core/Sources/WorkoutsCore/Resources/Package/training.json`, written
 by the same script) for the version it asks for, and applies nothing. The
 workout coach is the second package, `substrate.reamde.dev/trainingcoach`,
 under [coach/](coach/).
@@ -545,7 +545,7 @@ What a reader does with it:
 ## Memory
 
 `substrate.reamde.dev/training/memory`, from version 2: one fact the workout coach keeps
-([the coach plan](../../../../docs/plans/workouts-coach.md#7-memory)). The
+([the coach plan](../../../docs/plans/workouts-coach.md#7-memory)). The
 app itself reads and writes none yet; the coach writes them with
 `source: coach`, and the owner reads, edits, retires and deletes them as the
 Coach memories collection in the console.
@@ -769,7 +769,7 @@ the app cannot compute `<account>` on its own:
 - **The account is Substrate Sync's.** Substrate Sync names its Apple
   Health account `substrate-sync-` and the first eight characters of its
   install id, a random UUID it keeps in its own Keychain
-  (`apps/apple/SubstrateSync/Sources/Sync/LocalState.swift`), and it keys
+  (`apps/sync/apple/Sources/Sync/LocalState.swift`), and it keys
   each workout row `applehealth/<account>/<id>`
   (`kinds/providers.substrate.reamde.dev/applehealth/README.md`, "What
   lands where"). The app has no App Group to read that Keychain.

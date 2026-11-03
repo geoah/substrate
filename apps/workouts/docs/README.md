@@ -10,7 +10,7 @@ workout.
 This folder holds what lies behind the app: the research, the designs it chose between, the
 reviews and the decisions, so this repository stands on its own. How the app works today is
 in [the app's README](../README.md), its build spec is [DESIGN.md](../DESIGN.md), and its
-package is in [`Package/`](../Package/README.md).
+package is in [`Package/`](../package/README.md).
 
 ## The documents
 
@@ -19,12 +19,12 @@ package is in [`Package/`](../Package/README.md).
 - [decisions.md](decisions.md): every product, design and data decision, with who took it,
   when, why and the source, and the questions still open.
 - Decision record
-  [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md):
+  [0203](../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md):
   why the app keeps its own package under a `declare:` scope, the one server change it
   needed.
 - Decision record
-  [0207](../../../../docs/decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md)
-  and [the coach plan](../../../../docs/plans/workouts-coach.md): the workout coach the app
+  [0207](../../../docs/decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md)
+  and [the coach plan](../../../docs/plans/workouts-coach.md): the workout coach the app
   installs for the owner to use from Substrate Chat.
 
 ### Research

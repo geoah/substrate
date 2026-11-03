@@ -3,7 +3,7 @@
 > **Where this came from.** Part of the data-model review of 2026-10-31, kept verbatim
 > ([the index](../../README.md#reviews)). It reviewed the draft package `mneme.rxtx.dev/training`
 > in rxtx.dev's `research/workouts/substrate/training/`, the package that became the
-> app's own `~/training` in [`Package/`](../../../Package/README.md). The worktree paths
+> app's own `~/training` in [`Package/`](../../../package/README.md). The worktree paths
 > and `/tmp` paths it cites were on the build Mac and are not in this repository.
 
 Review the data model of Spotter, an iPhone strength-training app whose data lives on substrate (the owner's personal data

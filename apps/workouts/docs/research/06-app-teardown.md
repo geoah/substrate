@@ -5,12 +5,12 @@
 > app's second build used (geoah/rxtx.dev#118). It was carried into this repository on
 > 2026-11-02 as written, with two changes. The links resolve inside this repository. The
 > draft kind paths `mneme.rxtx.dev/training/<kind>` now read as the app-owned
-> `~/training/<kind>` they became (decision record [0203](../../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)). Where the
+> `~/training/<kind>` they became (decision record [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)). Where the
 > text names the package home it recommended, a Mneme package `mneme.rxtx.dev/training`,
 > that name is left as written: the home changed later, and the reasons are in
 > [decisions.md](../decisions.md). Mentions of Mneme, rxtx.dev paths or
 > `apps/apple/spotter` describe the plan at the time. The package now lives in
-> [`Package/`](../../Package/README.md), and the app's spec is [DESIGN.md](../../DESIGN.md).
+> [`Package/`](../../package/README.md), and the app's spec is [DESIGN.md](../../DESIGN.md).
 
 Research slice 06. Date: 2026-10-30.
 

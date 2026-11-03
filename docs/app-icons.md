@@ -4,7 +4,7 @@ Every app built on a substrate has an icon in one shared frame. Each app gets
 its own glyph and colour. Every icon has the same band along the bottom with
 the substrate infinity mark, so on a home screen the apps read as one family
 and each one is still easy to find. This page holds the rules that keep it
-that way. [`apps/apple/scripts/icons.mjs`](../apps/apple/scripts/icons.mjs)
+that way. [`apps/xcode/scripts/icons.mjs`](../apps/xcode/scripts/icons.mjs)
 draws every icon from code. Where this page and the script disagree, the
 script is right and this page is the bug.
 

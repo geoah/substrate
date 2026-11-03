@@ -65,7 +65,7 @@ iOS app on a simulator, `apple:test:chat` runs the tests.
 ## Architecture
 
 ```text
-SubstrateChat/Sources/
+apple/Sources/
   App/       the app, scenes, commands, session lifecycle, notifications, background, App Intents
   API/       the HTTP client, the ndjson stream reader, the change-feed watch, errors, a JSON value
   Model/     records, agents, providers, threads, the transcript fold and live overlay, cards, words

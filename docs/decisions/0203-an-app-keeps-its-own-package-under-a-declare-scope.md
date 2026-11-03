@@ -129,8 +129,8 @@ approval, health installed, the package declared, a session written.
 ## More Information
 
 The app and the package's long form are in
-[Substrate Workouts](../../apps/apple/SubstrateWorkouts/README.md) and
-[its package](../../apps/apple/SubstrateWorkouts/Package/README.md); the
+[Substrate Workouts](../../apps/workouts/README.md) and
+[its package](../../apps/workouts/package/README.md); the
 scope is in [apps](../apps.md#keep-a-package-of-your-own). Revisit when a
 second app brings its own kinds, or when kind identity moves to URLs, which
 would let an app publish under an authority of its own.

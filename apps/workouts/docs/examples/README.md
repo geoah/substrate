@@ -4,14 +4,14 @@
 > as `research/workouts/substrate/examples/`, for the app then called Spotter; carried
 > here on 2026-11-02. The records and this page now use the app's own kind names,
 > `substrate.reamde.dev/training/<kind>` (decision record
-> [0203](../../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)),
+> [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)),
 > where they said `mneme.rxtx.dev/training/<kind>`. The YAML was also rewritten in block
 > style for this repository's `lint:yaml` and `fmt:check`; the values did not change. The
 > rest of the page is as written: where it talks of applying the package to Mneme or of
 > `geoah.me`, it describes the plan at the time.
 
 Records in the shape `substratectl apply -f` takes, for the training package,
-now [`Package/`](../../Package/README.md) and then a draft in rxtx.dev's
+now [`Package/`](../../package/README.md) and then a draft in rxtx.dev's
 `research/workouts/substrate/training/`. Three files are built from the
 owner's 13 Hevy screenshots; a fourth, `coverage.yaml`, adds the methods the
 screenshots do not show. Date: 2026-10-30, revised 2026-10-31 after three
@@ -33,15 +33,15 @@ records with no refusal ([Verification](#verification)).
 
 These YAML files are the readable form of records the app carries as JSON, in the flat
 shape substrate's REST API speaks (`{"kind", "id", "properties"}`). The YAML is the source:
-`apps/apple/scripts/workouts-package.py` writes the JSON from it, and
+`apps/workouts/scripts/workouts-package.py` writes the JSON from it, and
 `mise run lint:python`, which CI's `lint` job runs, and `mise run apple:test:workouts` both run
 the script with `--check`, so a change to one without the other fails:
 
-| JSON in `apps/apple/`                                                    | Written from                                  | Used for                           |
+| JSON in `apps/workouts/`                                                 | Written from                                  | Used for                           |
 | ------------------------------------------------------------------------ | --------------------------------------------- | ---------------------------------- |
-| `WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/exercises.json`      | [`sample.yaml`](sample.yaml)'s exercises      | The catalogue signed out, and what the first sync writes into an empty repository |
-| `WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/routines.json`       | [`sample.yaml`](sample.yaml)'s routine        | The same                           |
-| `WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/examples/*.json`           | The four test-vector files, 163 records       | Codec, engine, presenter and suggestion tests |
+| `core/Sources/WorkoutsCore/Resources/Bundled/exercises.json`             | [`sample.yaml`](sample.yaml)'s exercises      | The catalogue signed out, and what the first sync writes into an empty repository |
+| `core/Sources/WorkoutsCore/Resources/Bundled/routines.json`              | [`sample.yaml`](sample.yaml)'s routine        | The same                           |
+| `core/Tests/WorkoutsCoreTests/Fixtures/examples/*.json`                  | The four test-vector files, 163 records       | Codec, engine, presenter and suggestion tests |
 
 Each JSON file names its YAML in its `source` field. The script loads the YAML with
 PyYAML's safe loader minus the timestamp resolver, so instants stay strings, and turns each
@@ -119,10 +119,10 @@ substratectl apply \
   -f research/workouts/substrate/training/set.yaml
 
 # 3. The records, in order.
-substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/exercises.yaml
-substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/routines.yaml
-substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/sessions.yaml
-substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/coverage.yaml
+substratectl apply -f apps/workouts/docs/examples/exercises.yaml
+substratectl apply -f apps/workouts/docs/examples/routines.yaml
+substratectl apply -f apps/workouts/docs/examples/sessions.yaml
+substratectl apply -f apps/workouts/docs/examples/coverage.yaml
 
 # 4. What landed: 36 exercises, 5 setups, 5 routines, 6 sessions and 111
 #    sets. A list pages at 50 unless --limit says otherwise.
@@ -567,20 +567,20 @@ holding the health catalogue and the package, the files applied in order
 with no refusal and no change to any of them:
 
 ```console
-$ substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/exercises.yaml
+$ substratectl apply -f apps/workouts/docs/examples/exercises.yaml
 substrate.reamde.dev/training/exercise/leg-press-machine created
 … 30 created
-$ substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/routines.yaml
+$ substratectl apply -f apps/workouts/docs/examples/routines.yaml
 substrate.reamde.dev/training/routine/fully-body-collection-1 created
 substrate.reamde.dev/training/routine/day-1-strength-foundation created
 substrate.reamde.dev/training/routine/day-2-volume-stability created
 substrate.reamde.dev/training/routine/day-3 created
-$ substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/sessions.yaml
+$ substratectl apply -f apps/workouts/docs/examples/sessions.yaml
 substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73 created
 substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e created
 substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203 created
 … 65 sets created
-$ substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/coverage.yaml
+$ substratectl apply -f apps/workouts/docs/examples/coverage.yaml
 … 6 exercises, 5 setups, 1 routine, 3 sessions and 46 sets created
 ```
 
