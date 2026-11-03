@@ -163,10 +163,13 @@ public enum TasksPresenter {
             guard let list = model.lists[id] else { return nil }
             let count = model.tasks.values.filter { $0.list == id }.count
             let name = list.name.isEmpty ? "this list" : "“\(list.name)”"
+            // No promise of a restore: the server's next sweep, within
+            // minutes, purges the list and the tasks it owns, and no
+            // console page brings a deleted record back.
             let message = switch count {
-            case 0: "The list has no tasks. You can restore it from your substrate's console."
-            case 1: "Its 1 task is deleted with it. You can restore both from your substrate's console."
-            default: "Its \(count) tasks are deleted with it. You can restore them from your substrate's console."
+            case 0: "The list has no tasks."
+            case 1: "Its 1 task is deleted with it."
+            default: "Its \(count) tasks are deleted with it."
             }
             return ConfirmationPresentation(question: confirmation, title: "Delete \(name)?", message: message,
                                             confirm: count == 0 ? "Delete List" : count == 1 ? "Delete List and 1 Task" : "Delete List and \(count) Tasks",

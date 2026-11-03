@@ -116,9 +116,13 @@ Notes:
   link property on `list`: a task in no list has no link to carry it, and a
   read orders by a property only.
 - **The list owns its tasks.** Deleting a list takes its tasks with it, as a
-  Reminders list does. A plain DELETE leaves them listed until the
-  collector's next pass; the app deletes a list with `?purge=true`, which
-  takes them at once. An app that wants to keep the tasks moves them first.
+  Reminders list does. The app deletes a list with a plain DELETE, no
+  purge: the list is tombstoned at once (the app shows none of its tasks
+  from then), and the collector's next pass, within five minutes, purges
+  the list and, in the same pass, the tasks its cascade reaches. Until that
+  pass a PUT of the list restores it with its tasks; after it nothing does,
+  so the app's question promises no restore. An app that wants to keep the
+  tasks moves them first.
 - **The states.** The sample's, without `proposed`: nothing proposes a task
   to this package yet, and a state nothing writes is not declared; adding it
   is additive. `abandoned` stays, and is reachable from `open`, which the

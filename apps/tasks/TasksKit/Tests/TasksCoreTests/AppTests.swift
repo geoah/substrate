@@ -220,14 +220,14 @@ struct AppTests {
         #expect(enqueued(harness).isEmpty)
     }
 
-    @Test func deletingAListSaysHowManyTasksGoWithItAndIsRestorable() async throws {
+    @Test func deletingAListSaysHowManyTasksGoWithIt() async throws {
         let (_, harness) = try await loaded([listRecord("home", "Home"), taskRecord("a", "A", list: "home"), taskRecord("b", "B", list: "home"),
                                              taskRecord("c", "C", list: "home", status: "done"), taskRecord("d", "D")],
                                             selection: .list("home"))
         await harness.send(.deleteList("home"))
         let asked = try #require(await harness.presentation.confirmation)
         #expect(asked.title == "Delete “Home”?")
-        #expect(asked.message == "Its 3 tasks are deleted with it. You can restore them from your substrate's console.")
+        #expect(asked.message == "Its 3 tasks are deleted with it.")
         #expect(asked.confirm == "Delete List and 3 Tasks")
         #expect(asked.cancel == "Cancel")
         #expect(enqueued(harness).isEmpty)
