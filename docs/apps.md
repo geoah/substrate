@@ -267,10 +267,11 @@ file on this server, not by DNS, and the token records
 Substrate's own Apple apps share, signs in through a claimed `https` callback
 in a release that names one, on iPhone and Mac alike, and through the
 loopback redirect (RFC 8252) in a local build, and sends the build's
-version as `software_version` and in the set up check. `mise run apple:site`
-publishes the association file, the authority document, each app's client
-document that the claimed callback needs, and every published version of
-Substrate Workouts' `training` and `trainingcoach` packages with its closure,
+version as `software_version` and in the set up check. `mise run apps:site`
+publishes the association files, the authority document, each app's client
+document that the claimed callback needs, and every published version of the
+packages the apps publish (Substrate Workouts' `training` and
+`trainingcoach`, Substrate Tasks' `tasks`) with its closure,
 which the app's approval installs as `package` details
 ([apps](../apps/README.md#releases-and-updates)). Sync asks for
 every read and write the applehealth package's functions and triggers reach,
