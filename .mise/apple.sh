@@ -349,21 +349,94 @@ publish_client() {
 	fi
 }
 
+# The packages an app's authority document entry lists, by the folder name
+# each app is published under: Workouts' two published packages, built from
+# apps/apple/SubstrateWorkouts/Package/; the rest bring none of their own.
+app_packages() {
+	case "$1" in
+	workouts) echo '["training","trainingcoach"]' ;;
+	*) echo '[]' ;;
+	esac
+}
+
+# The authority document the site serves now, on stdout: the body of a 200,
+# `{}` for a 404 (a first publish), and a refusal for anything else, since a
+# document that cannot be read could list versions this publish would then
+# drop. SUBSTRATE_APPLE_SITE_PUBLISHED names a file to read instead (empty:
+# a first publish), for trying the merge by hand.
+published_document() {
+	local site="$1" authority="$2" body status
+	if [ -n "${SUBSTRATE_APPLE_SITE_PUBLISHED+x}" ]; then
+		if [ -z "$SUBSTRATE_APPLE_SITE_PUBLISHED" ]; then
+			echo '{}'
+			return
+		fi
+		body="$(cat "$SUBSTRATE_APPLE_SITE_PUBLISHED")" || return 1
+	else
+		local file
+		file="$(mktemp)"
+		status="$(curl -sS -o "$file" -w '%{http_code}' --max-time 20 "$site/.well-known/substrate/authority.json")" || {
+			rm -f "$file"
+			echo "apple: reading $site/.well-known/substrate/authority.json failed" >&2
+			return 1
+		}
+		body="$(cat "$file")"
+		rm -f "$file"
+		case "$status" in
+		200) ;;
+		404)
+			echo '{}'
+			return
+			;;
+		*)
+			echo "apple: reading $site/.well-known/substrate/authority.json answered $status" >&2
+			return 1
+			;;
+		esac
+	fi
+	if ! jq -e 'type == "object"' <<<"$body" >/dev/null 2>&1; then
+		echo "apple: the published authority document is not a JSON object" >&2
+		return 1
+	fi
+	local named
+	named="$(jq -r '.authority // empty' <<<"$body")"
+	if [ -n "$named" ] && [ "$named" != "$authority" ]; then
+		echo "apple: the published authority document is $named's, not $authority's" >&2
+		return 1
+	fi
+	echo "$body"
+}
+
 # The site under SUBSTRATE_APPLE_SITE_URL, an https origin on a host of its
 # own, served at its root: Apple's association file naming every app id
 # for `webcredentials` and for `applinks` on its own callback path, the
-# authority document listing every app by client id (no packages yet), and
-# each app's client document. SUBSTRATE_APPLE_SITE_UPLOAD_URL is where the
-# files are PUT when that is not the site itself (a bucket behind the
-# host), signed with the same key as a release. The authority is
-# SUBSTRATE_APPLE_SITE_AUTHORITY, else the site's host; the team id that
-# signs the apps is SUBSTRATE_APPLE_TEAM_ID. The release builds stay in
-# their own folder.
+# authority document listing every app by client id with the packages it
+# asks for, and every published package version with its closure and
+# digest, each app's client document, and the closures themselves under
+# packages/<package>-<version>.yaml (decision record 0212). The closures
+# this tree ships are built by apps/apple/scripts/workouts-package.py; every
+# version the live document already lists is carried forward as it is, and
+# a listed version whose closure this tree builds with another digest is
+# refused, because a published version never changes. The closures go up
+# first and the document last, so the document never names a closure that is
+# not there yet, and closures.lock.json beside the package sources is
+# written last of all with what is published, for the generator's offline
+# check. SUBSTRATE_APPLE_SITE_UPLOAD_URL is where the files are PUT
+# when that is not the site itself (a bucket behind the host), signed with
+# the same key as a release. The authority is SUBSTRATE_APPLE_SITE_AUTHORITY,
+# else the site's host; the team id that signs the apps is
+# SUBSTRATE_APPLE_TEAM_ID. With SUBSTRATE_APPLE_SITE_DRY_RUN=1 everything is
+# built under build/site and what would be uploaded is printed, and nothing
+# is written anywhere but there. The release builds stay in their own
+# folder.
 publish_site() {
 	: "${SUBSTRATE_APPLE_SITE_URL:?set SUBSTRATE_APPLE_SITE_URL to the https origin of the site}"
 	: "${SUBSTRATE_APPLE_TEAM_ID:?set SUBSTRATE_APPLE_TEAM_ID to the team id that signs the apps}"
-	: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID to a key that may write the site}"
-	: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"
+	local dry="${SUBSTRATE_APPLE_SITE_DRY_RUN:-}"
+	if [ -z "$dry" ]; then
+		: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID to a key that may write the site}"
+		: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"
+	fi
 	local site host authority target out app id
 	site="$(site_url)" || return 1
 	host="${site#https://}"
@@ -372,7 +445,46 @@ publish_site() {
 	target="${target%/}"
 	out="build/site"
 	rm -rf "$out"
-	mkdir -p "$out/.well-known/substrate"
+	mkdir -p "$out/.well-known/substrate" "$out/packages"
+
+	# The closures this tree ships, as `path sha256` lines, then as JSON.
+	local built lines
+	lines="$(uv run --quiet --with pyyaml scripts/workouts-package.py --closures "$out/packages")" || return 1
+	built="$(jq -Rn --arg site "$site" --arg authority "$authority" '[inputs | select(length > 0) | split(" ") |
+		(.[0] | split("/") | last) as $file |
+		($file | sub("\\.yaml$"; "") | capture("^(?<name>.+)-(?<version>[0-9]+)$")) as $m |
+		{package: $m.name, version: ($m.version | tonumber), closure: "\($site)/packages/\($file)", sha256: .[1]}]' <<<"$lines")"
+
+	# What the site serves today: every version it lists stays listed.
+	local published
+	published="$(published_document "$site" "$authority")" || return 1
+	local conflicts
+	conflicts="$(jq -r --argjson built "$built" '[.packages // [] | .[] as $lp | ($lp.versions // [])[] as $lv |
+		$built[] | select(.package == $lp.package and .version == $lv.version and .sha256 != $lv.sha256) |
+		"\(.package) \(.version) \($lv.sha256) \(.sha256)"] | .[]' <<<"$published")"
+	if [ -n "$conflicts" ]; then
+		while read -r pkg version live mine; do
+			echo "apple: $authority/$pkg version $version is published with digest $live and this tree builds $mine; a published version never changes, so ship the change as the next version" >&2
+		done <<<"$conflicts"
+		return 1
+	fi
+	local stale
+	stale="$(jq -r --argjson built "$built" '[.packages // [] | .[] as $lp | ([$lp.versions[]?.version] | max) as $newest |
+		$built[] | select(.package == $lp.package and .version < $newest and ([$lp.versions[]?.version] | index(.version) | not)) |
+		"\(.package) \(.version) \($newest)"] | .[]' <<<"$published")"
+	if [ -n "$stale" ]; then
+		while read -r pkg version newest; do
+			echo "apple: $authority/$pkg version $version is below the published $newest and was never published; publish from a tree at or past it" >&2
+		done <<<"$stale"
+		return 1
+	fi
+	local packages
+	packages="$(jq -c --argjson built "$built" '
+		((.packages // []) + ($built | group_by(.package) | map({package: .[0].package, versions: map({version, closure, sha256})})))
+		| group_by(.package)
+		| map({package: .[0].package, versions: (map(.versions[]) | group_by(.version) | map(first) | sort_by(-.version))})
+		| sort_by(.package)' <<<"$published")"
+
 	local details="[]" ids="[]" apps="[]"
 	for app in $APPS; do
 		id="$SUBSTRATE_APPLE_TEAM_ID.$(app_bundle "$app")"
@@ -382,22 +494,57 @@ publish_site() {
 			'. + [{appIDs: [$id], components: [{"/": $path}]}]' <<<"$details")"
 		ids="$(jq -c --arg id "$id" '. + [$id]' <<<"$ids")"
 		apps="$(jq -c --arg client "$site/apps/$app/client.json" --arg name "$(app_name "$app")" --arg id "$id" \
-			'. + [{client_id: $client, name: $name, apple: {appIDs: [$id]}}]' <<<"$apps")"
+			--argjson packages "$(app_packages "$app")" \
+			'. + [{client_id: $client, name: $name, packages: $packages, apple: {appIDs: [$id]}}]' <<<"$apps")"
 	done
 	jq -n --argjson details "$details" --argjson ids "$ids" \
 		'{applinks: {details: $details}, webcredentials: {apps: $ids}}' >"$out/.well-known/apple-app-site-association"
-	jq -n --arg authority "$authority" --argjson apps "$apps" \
-		'{authority: $authority, name: "Substrate", apps: $apps}' >"$out/.well-known/substrate/authority.json"
+	jq -n --arg authority "$authority" --argjson apps "$apps" --argjson packages "$packages" \
+		'{authority: $authority, name: "Substrate", packages: $packages, apps: $apps}' >"$out/.well-known/substrate/authority.json"
 
-	upload "$out/.well-known/apple-app-site-association" "$target/.well-known/apple-app-site-association" "no-cache"
-	upload "$out/.well-known/substrate/authority.json" "$target/.well-known/substrate/authority.json" "no-cache"
-	for app in $APPS; do
-		upload "$out/apps/$app/client.json" "$target/apps/$app/client.json" "no-cache"
+	# The closures first, immutable; the documents the apps read next; the
+	# authority document last.
+	local file
+	for file in "$out"/packages/*.yaml; do
+		if [ -n "$(jq -r --arg file "${file##*/}" '.packages // [] | .[].versions[]? | select(.closure | endswith("/packages/" + $file)) | .sha256' <<<"$published")" ]; then
+			continue
+		fi
+		site_upload "$dry" "$file" "$target/packages/${file##*/}" "public, max-age=31536000, immutable"
 	done
-	echo "apple: published $site/.well-known/apple-app-site-association"
-	echo "apple: published $site/.well-known/substrate/authority.json"
+	site_upload "$dry" "$out/.well-known/apple-app-site-association" "$target/.well-known/apple-app-site-association" "no-cache"
+	for app in $APPS; do
+		site_upload "$dry" "$out/apps/$app/client.json" "$target/apps/$app/client.json" "no-cache"
+	done
+	site_upload "$dry" "$out/.well-known/substrate/authority.json" "$target/.well-known/substrate/authority.json" "no-cache"
+	# What is published now, for the generator's offline check: each
+	# package's newest version and its digest. Committed after a publish.
+	local lock="SubstrateWorkouts/Package/closures.lock.json"
+	local locked
+	locked="$(jq --arg authority "$authority" '[.packages[] | {key: "\($authority)/\(.package)", value: (.versions[0] | {version, sha256})}] | from_entries' \
+		"$out/.well-known/substrate/authority.json")"
+	if [ -n "$dry" ]; then
+		echo "apple: dry run: nothing was uploaded; the site is built under apps/apple/$out"
+		echo "apple: would write apps/apple/$lock:"
+		echo "$locked" | sed 's/^/apple:   /'
+	else
+		echo "apple: published $site/.well-known/apple-app-site-association"
+		echo "apple: published $site/.well-known/substrate/authority.json"
+		printf '%s\n' "$locked" >"$lock"
+		echo "apple: wrote apps/apple/$lock; commit it"
+	fi
+	jq -r '.packages[] | "apple: \(.package): versions \([.versions[].version] | map(tostring) | join(", "))"' "$out/.well-known/substrate/authority.json"
 	echo "apple: the authority's DNS needs this record, once:"
 	echo "apple:   _substrate.$authority. TXT \"v=substrate1 doc=$site/.well-known/substrate/authority.json\""
+}
+
+# One site file: uploaded, or in a dry run named with where it would go.
+site_upload() {
+	local dry="$1" file="$2" url="$3" cache="$4"
+	if [ -n "$dry" ]; then
+		echo "apple: would upload $file -> $url ($cache)"
+	else
+		upload "$file" "$url" "$cache"
+	fi
 }
 
 release() {
@@ -793,8 +940,9 @@ release:workouts)
 	release_workouts "${2:-}"
 	;;
 site)
-	# The site alone: the association file, the authority document and
-	# every client document, with no build.
+	# The site alone: the association file, the authority document with
+	# every published package version, the closures and every client
+	# document, with no build.
 	publish_site
 	;;
 *)

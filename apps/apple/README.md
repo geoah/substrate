@@ -98,11 +98,28 @@ every release publishes again:
   (`SUBSTRATE_APPLE_TEAM_ID` and the bundle id) under `webcredentials` and
   under `applinks` for its own `/apps/<app>/callback`;
 - `/.well-known/substrate/authority.json`, the authority
-  (`SUBSTRATE_APPLE_SITE_AUTHORITY`, else the site's host) and every app by
-  its client id, with no packages yet;
+  (`SUBSTRATE_APPLE_SITE_AUTHORITY`, else the site's host), every app by its
+  client id with the packages it asks for, and under `packages` every
+  published version of Workouts' `training` and `trainingcoach` with its
+  closure's URL and sha256, newest first;
+- `/packages/<package>-<version>.yaml`, each closure: the multi-document
+  YAML of `SubstrateWorkouts/Package/`, built by
+  `scripts/workouts-package.py --closures`;
 - `/apps/<app>/client.json` for `console`, `chat`, `sync` and `workouts`,
   whose one redirect is `https://<site host>/apps/<app>/callback` and which
   names the authority as `substrate_authority`.
+
+A published version never changes: the task reads the live document first
+(absent is a first publish), carries every version it lists forward as it
+is, and refuses to publish a listed version whose closure this tree builds
+with another digest, or a version below the newest listed that was never
+published. The closures go up first and the document last, so the document
+never names a closure that is not there yet, and a release publishes the
+site before it uploads the build that needs it.
+`SUBSTRATE_APPLE_SITE_DRY_RUN=1` builds everything under `build/site`, prints
+what it would upload and writes nothing anywhere else; with
+`SUBSTRATE_APPLE_SITE_PUBLISHED=<file>` the merge is tried against a saved
+document instead of the live one.
 
 The files are PUT to `SUBSTRATE_APPLE_SITE_UPLOAD_URL` when that is not the
 site itself (a bucket behind the host), with the release's key. The site
@@ -606,11 +623,13 @@ offers each newer release.
 A fourth app in the same project: `SubstrateWorkouts` (bundle id
 `dev.reamde.substrate.workouts`), iPhone only, iOS 27, with its Live Activity
 extension (`dev.reamde.substrate.workouts.widgets`). It logs strength
-sessions in the gym, down to the set, into a training package it keeps in the
-repository itself: its approval asks for `declare:~/training`, and the app
-installs, upgrades and reads its own package's version
-([0203](../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)).
-Its model and engines are a Swift package of their own, `WorkoutsKit`
+sessions in the gym, down to the set, into `substrate.reamde.dev/training`,
+a package published under this site's authority: its approval asks for the
+package, and for `substrate.reamde.dev/trainingcoach` with the workout coach
+in its closure, as `package` details at the versions the build was written
+against, and the server installs them from the authority document. The app
+applies no vocabulary and reads the version a repository holds. Its model
+and engines are a Swift package of their own, `WorkoutsKit`
 (Foundation only), and its sign-in is SubstrateKit's. Everything else, the
 outbox, the cached routines and the package's rules, is in
 [its README](SubstrateWorkouts/README.md).
@@ -642,7 +661,7 @@ SubstrateChat/Sources/      Substrate Chat: App/, API/, Model/ (the transcript f
 SubstrateChatTests/         its tests: the fold, the stream lines, the Markdown parser, the words
 SubstrateSync/Sources/      Substrate Sync: App/, API/, Sync/ (the mappings, the readers, the engine), Views/, Debug/
 SubstrateSyncTests/         its tests: ids, labels, dates, the Health goldens
-SubstrateWorkouts/          Substrate Workouts: Sources/ (App/, Platform/, Shared/, Views/), Package/ (its training package), DESIGN.md
+SubstrateWorkouts/          Substrate Workouts: Sources/ (App/, Platform/, Shared/, Views/), Package/ (its published training and trainingcoach packages), DESIGN.md
 SubstrateWorkoutsWidgets/   its Live Activity
 WorkoutsKit/                its Swift package: WorkoutsCore (model, engines, presenters) and WorkoutsSync (package, catalogue, outbox), with their tests
 ```
