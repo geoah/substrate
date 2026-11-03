@@ -47,7 +47,6 @@ import kotlinx.serialization.json.Json
  */
 public class SecureStore(context: Context) {
     private val folder = File(context.noBackupFilesDir, "secure-store")
-    private val stores = ConcurrentHashMap<String, Store>()
 
     init {
         AeadConfig.register()
@@ -82,6 +81,11 @@ public class SecureStore(context: Context) {
     private class Reset(override val reason: String) : Problem
 
     private class Unavailable(override val reason: String) : Problem
+
+    /** Lets go of a store as a process exit would, so a test reads it again from disk. */
+    internal fun forget(name: String) {
+        stores.remove(name)?.release()
+    }
 
     private suspend fun <T> guarded(name: String, body: suspend (Store) -> T): Result<T, Problem> {
         val store = stores.getOrPut(name) { Store(name, folder) }
@@ -124,7 +128,7 @@ public class SecureStore(context: Context) {
 
     private class MissingKey : GeneralSecurityException("the Keystore key is gone")
 
-    private class CorruptKeyset(cause: Throwable) : GeneralSecurityException("the keyset would not decrypt", cause)
+    private class CorruptKeyset(cause: Throwable) : GeneralSecurityException("the store would not decrypt", cause)
 
     /** One store: its keyset, its Keystore key and its DataStore file. */
     private class Store(private val name: String, folder: File) {
@@ -153,7 +157,14 @@ public class SecureStore(context: Context) {
 
         private fun decode(ciphertext: ByteArray): Map<String, String> {
             if (ciphertext.isEmpty()) return emptyMap()
-            val plaintext = aead().decrypt(ciphertext, associated)
+            val aead = aead()
+            // The keyset's own AES-GCM, in this process: a failure here is the
+            // file, never the Keystore.
+            val plaintext = try {
+                aead.decrypt(ciphertext, associated)
+            } catch (failure: GeneralSecurityException) {
+                throw CorruptKeyset(failure)
+            }
             return try {
                 json.decodeFromString(ITEMS, plaintext.decodeToString())
             } catch (failure: Exception) {
@@ -187,9 +198,13 @@ public class SecureStore(context: Context) {
             return handle.getPrimitive(RegistryConfiguration.get(), Aead::class.java).also { aead = it }
         }
 
+        fun release() {
+            scope.cancel()
+        }
+
         /** Deletes the store's files and key: what reset means. */
         fun destroy() {
-            scope.cancel()
+            release()
             keysetFile.delete()
             dataFile.delete()
             runCatching { AndroidKeystore.deleteKey(alias) }
@@ -198,11 +213,18 @@ public class SecureStore(context: Context) {
         private fun GeneralSecurityException.isCorruption(): Boolean =
             generateSequence<Throwable>(this) { it.cause }.any { it is AEADBadTagException } ||
                 message.orEmpty().contains("decryption failed", ignoreCase = true) ||
+                message.orEmpty().contains("parse keyset failed", ignoreCase = true) ||
                 message.orEmpty().contains("invalid keyset", ignoreCase = true)
 
         companion object {
             private val ITEMS = MapSerializer(String.serializer(), String.serializer())
         }
+    }
+
+    private companion object {
+        // One per process, whatever SecureStore is made: DataStore refuses a
+        // second instance over one file.
+        val stores = ConcurrentHashMap<String, Store>()
     }
 
     /** DataStore's file as raw bytes: the ciphertext, and nothing else. */

@@ -145,8 +145,8 @@ public class Transport(context: Context, base: OkHttpClient = OkHttpClient()) {
     private fun read(response: Response): TransportResponse {
         val source = response.body.source()
         val limit = INLINE_LIMIT
-        source.request(limit + 1L)
-        if (source.buffer.size <= limit && source.exhausted()) {
+        // False when the body ended first: then all of it is in the buffer.
+        if (!source.request(limit + 1L)) {
             val bytes = source.readByteArray()
             return head(response).copy(body = Base64.getEncoder().encodeToString(bytes))
         }
