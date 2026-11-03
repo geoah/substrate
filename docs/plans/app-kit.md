@@ -265,8 +265,10 @@ The decision tens of apps inherit.
   one repository: the session and its revocations, the status check, the
   versions of the app's packages, connectivity, the outbox's state. Chat's
   `AppModel` is already that half; Workouts' sync run, catalogue, sample and
-  drafts stay in a Workouts controller fed by the link. Its presentation is
-  the Connect, Access, Account and Status screens (§5.6). **The link's
+  drafts stay in a Workouts controller fed by the link, which keeps it as
+  its one child, so one runtime runs both as one tree. Its presentation is
+  the Connect, Access, Repository and Status screens (§5.6), with the app's
+  own beside them. **The link's
   snapshot carries no secret**: the token stays inside `SubstrateAuth` and the
   transport, so it never reaches a child, a presentation or a bridge message
   other than a transport request (§5.4).
@@ -274,11 +276,17 @@ The decision tens of apps inherit.
   subtree of its parent's, and a step that changes both publishes one tree.
   Chat's handover, where a settled turn's rows land and its live overlay
   clears in one step, stays one step: on Android it is one message, not two.
-- **State flows down as events, and up as events.** The runtime delivers
-  the link's snapshot to a controller as `linkChanged`. A child reaches its
-  parent with `child(key, event)`, which the parent's engine folds; what both
-  need (Chat's transcript rows) is the parent's, and the child reads it from
-  the parent's state. A child never calls its parent.
+- **State flows down as events and values, and up as events.** The runtime
+  delivers the link's snapshot to every controller under it as
+  `event(forLink:)`, inside the step that changed it. A parent hands a child
+  what it needs (a catalogue, a history index, the settings) as part of the
+  child's value, made from the parent's state; a value that changes
+  replaces the one running, and the child's state stays. A child reaches
+  its parent with `event(fromChild:_:)`, which the parent's engine folds;
+  what both need (Chat's transcript rows) is the parent's. The app reaches
+  the link the same way: a 401 or a 403 `insufficient_scope` from any of
+  its effects, however deep, is a `LinkReport` the link folds. A child
+  never calls its parent.
 - **Children are keyed by the client's own id**, minted when the child is
   made (Chat's conversation UUID). Server ids arrive later as events (Chat's
   `thread` event binds a thread id), and the parent's engine applies its rules
@@ -311,7 +319,7 @@ and Android. A library depends only on those above it.
 | `SubstrateAPI` | the client over the transport service: record calls with `ifVersion`, lists, filters, blobs, webhook delivery, line streams, the **watch** (cursor, generation, relist on 410 or `compacted`), agent turn streams; discovery, versions, the requirement; the locator over the DNS service | `SubstrateKit` `API/`, `Server/`; Chat `API/Watch.swift`, `AgentEvent.swift` |
 | `SubstrateAuth` | manifest and details, PKCE, `authorizeURL`, the callback check and code exchange, `Session`, the session rules over the secure-store service, pending revocations, the status check | `SubstrateKit` `Auth/`, `Status/` |
 | `SubstrateRuntime` | command, event, engine, effects, presenter, controller, environment, journal, keyed children, epochs, coalescing, keyed lists, the link's snapshot (§5.1, §5.2) | Workouts' `SessionController`, `SessionJournal`; Chat's ordering rules |
-| `SubstrateLocal` | the per-repository folder (format version, atomic writes, unreadable files set aside, sizes, budget, eviction); the journal file; the **outbox** (Workouts', with a group key in place of `session`; its routine helpers stay in the app); the **record cache** the watch keeps current; reading the version of a package the repository holds; the link generation | Workouts `Outbox`, `SessionJournal`, `RemoteCatalog`, `TrainingPackage` (read side); Chat `DiskCache` |
+| `SubstrateLocal` | the per-repository folder (format version, atomic writes, unreadable files set aside, sizes, budget, eviction); the journal file; the **outbox** (Workouts', with a batch key in place of `session`; its routine helpers stay in the app); the **record cache** the watch keeps current; reading the version of a package the repository holds; the link generation | Workouts `Outbox`, `SessionJournal`, `RemoteCatalog`, `TrainingPackage` (read side); Chat `DiskCache` |
 | `SubstrateScreens` | the shared screens: `LinkController` and each screen's engine, presenter and fixtures (§5.6) | `SubstrateKit` `UI/` (the logic now inside its views); Workouts' `SyncStatus` |
 | `SubstrateTesting` | a scripted server, a fake of every device service, the runtime's harness (a fixed clock and id source, a journal in memory) | Workouts' and Chat's `ScriptedServer` |
 | `SubstrateDeviceApple` (Apple) | the device services on Apple frameworks | `WebAuthenticator`, `LoopbackReceiver`, `DNSServiceTXTResolver` and `SubstrateResolv`, the Keychain half of `SessionStore`, Chat's `Notifier` and background code |
@@ -504,9 +512,9 @@ view in `SubstrateUI` and a composable in `kit-ui`.
 | --- | --- | --- |
 | Connect | address or repository name, finding the server, the door (browser, password, too old), unrevoked tokens | `ConnectView`, `ServerTooOldView`, `UnrevokedNotices` |
 | Access | the status banner's issues; the approval review; access ended | `AppStatusBanner`, `ReviewChangesSheet`, `AccessEndedView` |
-| Account | server, repository, access, change access, sign out | `AccountSection` |
+| Repository | server, repository, access, change access, sign out | `AccountSection` |
 | Status | a sentence (up to date, sending, offline, needs approval, signed out), the writes waiting and the ones refused, each with retry and discard | Workouts' `SubstrateSection`, `SyncStatus` |
-| Settings | sections and rows as data (toggle, choice, value, link, destructive action), with the account, status, storage and about sections every app has | each app's own |
+| Settings | sections and rows as data (toggle, choice, value, link, destructive action), with the repository, status, storage and about sections every app has | each app's own |
 | Problems | one problem in words, and what fixes it | `ProblemBox`, Chat's `ProblemLine` |
 | About | the build, the channel, an update when one is offered | each app's footer, `Updater.swift` |
 
@@ -831,6 +839,43 @@ text above says:
   keeps §5.6's name and `AccountSection`'s.
 - The fixtures are `ScreenFixtures`, made by the presenters themselves, and
   the gallery check is `Gallery.renderers` against them, under `swift test`.
+
+**Step 4's review, 2026-11-03** (Fable), before Chat, Workouts, Tasks and
+the bridge build on it. What changed:
+
+- The link is the tree's root: `LinkController<App: LinkedApp>` keeps the
+  app's root as its one child, so one runtime holds both as one
+  presentation tree. The link's state makes the snapshot
+  (`link(in:)`), and a new one reaches every controller under it inside
+  the step that changed it; `Runtime.linkChanged` stays only for a root
+  run without a link. What the app's events report (`LinkReport`: access
+  ended, approval needed) is the link's own event.
+- A child is `Equatable`, and a value that differs replaces the one
+  running under its key, its state kept, so a parent hands a child the
+  catalogue, the history index and the settings as part of its value. A
+  command reaches a controller by a path of keys, at any depth.
+- A controller has an event at open, `event(atOpen:)`, applied on the live
+  path after the replay, so its effects run (a replayed session checked
+  against the history, a Live Activity restored). A runtime opens on its
+  own executor at its first call, so a journal is never replayed on the
+  main actor.
+- The outbox reports its state and counts (`Outbox.changes()`); the link
+  follows them, and a write the app queues starts a flush wherever the
+  link can send. A file at an older format is read through the app's
+  `OutboxUpgrade`. The outbox's `group` is `batch`, written with
+  Workouts' `session` beside it so a build before the kit's outbox reads it.
+- The Status screen derives each package on its own, and says a change not
+  kept (the outbox's save, a journal's write); a reason is a fact of its
+  own, never run into the sentence. Settings rows and sections have typed
+  ids, and the approved access is one row per scope. Account became
+  Repository in the kit's types; `AccountSection` keeps the apps' word.
+- `Controller`'s requirements are named on one rule: the three stages are
+  verbs (`apply`, `present`, `perform`), the rest nouns for what they
+  answer, `journaling(of:)`, `transient(after:applied:from:)`,
+  `coalescing(of:)`, `event(atTick:)`, `event(forLink:)`, beside
+  `effects(of:on:presented:)`. A shorter coalescing window asked later
+  moves the deadline earlier. A presentation that does not encode reaches
+  the bridge as its failure.
 
 **Confirmation round, 2026-11-03**, on draft three with the spike. Fable:
 the loop's order is now the contract (journal before any suspension, a
