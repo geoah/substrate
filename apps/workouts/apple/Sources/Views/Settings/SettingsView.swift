@@ -144,17 +144,27 @@ struct SettingsView: View {
                 }
             }
             if let healthBodyMass {
-                Text("Body mass: \(Format.mass(healthBodyMass)) from Apple Health")
+                LabeledContent {
+                    Text(Format.mass(healthBodyMass))
+                } label: {
+                    Text("Body mass")
+                    Text("From Apple Health")
+                }
             } else {
+                // Empty, the field says what to type and in which unit; the
+                // unit stands beside a number only once there is one.
+                let unit = app.settings.typedBodyMass?.unit.rawValue ?? app.settings.defaultUnit.rawValue
                 LabeledContent("Body mass") {
                     HStack(spacing: 4) {
-                        TextField("None", text: $bodyMassText)
+                        TextField("Weight in \(unit)", text: $bodyMassText)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .focused($bodyMassFocused)
                             .monospacedDigit()
-                        Text(app.settings.typedBodyMass?.unit.rawValue ?? app.settings.defaultUnit.rawValue)
-                            .foregroundStyle(.secondary)
+                        if !bodyMassText.isEmpty {
+                            Text(unit)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }

@@ -159,6 +159,20 @@
     "sentence": "See, add, change and delete your notes, and search them by meaning, which spends your embedding budget"
   },
   {
+    "scope": "write:providers.substrate.reamde.dev/applehealth/account",
+    "kinds": [
+      {
+        "identity": "providers.substrate.reamde.dev/applehealth/account",
+        "label": {
+          "singular": "Apple Health account",
+          "plural": "Apple Health accounts"
+        },
+        "purpose": "internal"
+      }
+    ],
+    "sentence": "See, add, change and delete your Apple Health accounts, and search them by meaning, which spends your embedding budget"
+  },
+  {
     "scope": "agents:*",
     "kinds": [],
     "sentence": "Talk to all your agents, including agents added later, and through a chat have them do anything they may do; read every chat with them, yours included, answer their questions, and rename or stop any of those chats"

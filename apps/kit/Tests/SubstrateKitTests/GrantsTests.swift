@@ -226,5 +226,8 @@ import SubstrateTesting
         #expect(kindDisplayPlural("x.example.com/x/ofnote") == "Of notes")
         #expect(ScopeWords.sentence("read:x.example.com//*") == "See your records from x.example.com, including kinds added later, and search them by meaning, which spends your embedding budget")
         #expect(ScopeWords.agentWords("x.example.com/llm/") == "X.example.com/llm/")
+        #expect("Apple Health accounts".lowercasedFirst == "Apple Health accounts")
+        #expect("Apple watches".lowercasedFirst == "apple watches")
+        #expect("Tasks".lowercasedFirst == "tasks")
     }
 }

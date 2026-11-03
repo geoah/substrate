@@ -147,11 +147,14 @@ public func joinWords(_ words: [String]) -> String {
 public extension String {
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 
-    /// A display name inside a sentence: the first letter down unless the
-    /// first word keeps its casing ("API keys", "Gmail threads").
+    /// A display name inside a sentence: the first letter down unless it
+    /// opens with a word that keeps its casing ("API keys", "Gmail threads"),
+    /// a proper name of more than one word included ("Apple Health accounts").
     var lowercasedFirst: String {
         let first = split(separator: " ").first.map(String.init) ?? self
-        let proper = KindNames.proper.values.contains { first == $0 || first == KindNames.pluralWord($0) }
+        let proper = KindNames.proper.values.contains { name in
+            [name, KindNames.pluralWord(name)].contains { self == $0 || hasPrefix("\($0) ") }
+        }
         if proper || first.dropFirst().contains(where: \.isUppercase) { return self }
         return prefix(1).lowercased() + dropFirst()
     }

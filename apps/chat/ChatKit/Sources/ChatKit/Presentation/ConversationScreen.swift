@@ -40,6 +40,9 @@ public struct NewChatHero: Codable, Equatable, Sendable {
     public var prompts: [String]
     /// Said in place of the rest when there is no assistant.
     public var empty: String?
+    /// The agent's provider has no key: said above the openers, in the
+    /// transcript, so the composer's bar never grows over them.
+    public var keyless: KeylessCallout?
 }
 
 /// A line about the run: working elsewhere, an answer arriving in part, an
@@ -54,6 +57,16 @@ public struct ConversationNote: Codable, Hashable, Sendable {
     public var message: String
     /// "Try Again", for a reload that did not land.
     public var action: String?
+    /// The server's own words for a failed run, beneath the card's.
+    public var detail: String?
+
+    public init(kind: Kind, title: String?, message: String, action: String? = nil, detail: String? = nil) {
+        self.kind = kind
+        self.title = title
+        self.message = message
+        self.action = action
+        self.detail = detail
+    }
 }
 
 /// A send that started no turn, as its card says it.

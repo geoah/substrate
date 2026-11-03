@@ -105,13 +105,14 @@ struct RowsIslandView: View {
             Text(after.label)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
-            // One line, cut in the middle so the values stay; at the
-            // accessibility sizes it wraps and is cut only at its end.
+            // Wraps between words rather than cutting a name in the middle;
+            // only what two lines (three at the accessibility sizes) cannot
+            // hold is cut, at its end.
             Text(after.text)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
-                .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
-                .truncationMode(typeSize.isAccessibilitySize ? .tail : .middle)
+                .lineLimit(typeSize.isAccessibilitySize ? 3 : 2)
+                .truncationMode(.tail)
             Spacer(minLength: 4)
             if after.row != nil {
                 Image(systemName: "chevron.right")
@@ -321,9 +322,10 @@ struct RowsNextPartView: View {
                 } else {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         badge
+                        // A long name wraps between its words, never cut in its middle.
                         exerciseName
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
                         setLabel
                         chevron
                         Spacer(minLength: 0)
