@@ -22,6 +22,7 @@ import {
   grantWords,
   lifetimeEnd,
   needsAction,
+  oauthHostWords,
   networkWords,
   packageName,
   planChanges,
@@ -34,7 +35,11 @@ import {
   keptWords,
   packagePage,
   publishedWords,
+  providerInputName,
+  providerNeedWords,
   setupTitle,
+  settingLabel,
+  spendWords,
   splitByPrevious,
   stillHeld,
   versionWords,
@@ -112,6 +117,56 @@ function block(
   return { reason, problem: `blocked by ${reason}`, ...(fix ? { fix } : {}) }
 }
 
+describe("providerInputName and spendWords", () => {
+  const model = {
+    package: "coach.example.com/coach",
+    input: "model",
+    agents: [],
+    options: [],
+  }
+  it("names the package, and the input only where the package has several", () => {
+    expect(providerInputName(model, [model])).toBe("Coach")
+    expect(
+      providerInputName(model, [model, { ...model, input: "judge" }])
+    ).toBe("Coach (model)")
+  })
+  it("says which inputs still need a provider", () => {
+    expect(providerNeedWords([model], [model])).toBe(
+      "Choose an AI provider for Coach."
+    )
+    const judge = { ...model, input: "judge" }
+    expect(providerNeedWords([model, judge], [model, judge])).toBe(
+      "Choose an AI provider for Coach (model) and Coach (judge)."
+    )
+  })
+  it("says a cap in dollars, to the cent", () => {
+    expect(spendWords(100)).toBe("up to $1.00 a day")
+    expect(spendWords(5)).toBe("up to $0.05 a day")
+  })
+})
+
+describe("oauthHostWords", () => {
+  it("names the hosts a sign-in goes through, the requirements' included, once each", () => {
+    expect(oauthHostWords({ id: "x/y", required: 1 })).toBeUndefined()
+    expect(
+      oauthHostWords({
+        id: "x/y",
+        required: 1,
+        oauthHosts: ["accounts.example.com", "api.example.com"],
+        requires: [
+          {
+            id: "x/z",
+            action: "install",
+            oauthHosts: ["api.example.com", "login.other.example"],
+          },
+        ],
+      })
+    ).toBe(
+      "Signing in to it goes through accounts.example.com, api.example.com and login.other.example."
+    )
+  })
+})
+
 describe("setupTitle", () => {
   it("says what approving does to each row, naming a package from its id", () => {
     expect(packageName(APPLEHEALTH)).toBe("Apple Health")
@@ -131,6 +186,16 @@ describe("setupTitle", () => {
   })
 
   it("says a row in place is in place, and an update is an update", () => {
+    expect(
+      setupTitle({
+        ...HEALTH,
+        action: "wait",
+        package: { ...HEALTH.package!, addonFor: "example.com/whoop" },
+      })
+    ).toBe("Apple Health waits for WHOOP")
+    expect(setupTitle({ ...HEALTH, action: "enable" })).toBe(
+      "Set up Apple Health"
+    )
     expect(setupTitle({ ...HEALTH, action: "upgrade" })).toBe(
       "Update Apple Health"
     )
@@ -252,6 +317,10 @@ describe("the webhook's access", () => {
 })
 
 describe("the account's values", () => {
+  it("labels a setting from the last segment of its id", () => {
+    expect(settingLabel("example.com/addon/apiKey")).toBe("Api key")
+    expect(settingLabel("example.com/addon/key")).toBe("Key")
+  })
   it("labels a property by its words and shows every value as text", () => {
     expect(propertyLabel("displayName")).toBe("Display name")
     expect(propertyLabel("timezone")).toBe("Timezone")
@@ -270,8 +339,12 @@ describe("a blocked row", () => {
       "quarantined",
       "declared-by-owner",
       "upgrade-needs-review",
-    ] as const)
+      "no-model",
+      "needs-setting",
+    ] as const) {
       expect(blockRemedy(block(reason, "/providers/x"))).toBe("console")
+      expect(blockRemedy(block(reason))).toBe("console")
+    }
     expect(blockRemedy(block("server-update"))).toBe("server")
     expect(blockRemedy(block("account-deleted"))).toBe("wait")
     expect(blockRemedy(block("reaches-past-scopes"))).toBe("scopes")

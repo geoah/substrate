@@ -1086,11 +1086,11 @@ const bundleUpgradeHolder: Shape<BundleUpgradeHolder> = {
 }
 
 const bundleUpgrade: Shape<BundleUpgrade> = {
-  candidateVersion: false,
-  candidateDigest: false,
   holders: false,
   reviewRequired: false,
   codeChanges: false,
+  candidateVersion: false,
+  candidateDigest: false,
   ...conversionPlan,
   available: true,
   from: false,
@@ -1421,6 +1421,8 @@ const mirrors: Record<string, Record<string, boolean>> = {
  * export must be in the golden. */
 const notOnTheWire: Record<string, string> = {
   // types.ts
+  BundleInstallRequest:
+    "the body of the catalog's install and import doors, declared in internal/api (catalogTakeRequest) and out of the golden's reach",
   EnumValue:
     "one element of a property declaration's `values`, declared in internal/vocabulary and out of the golden's reach",
   // discovery.ts
