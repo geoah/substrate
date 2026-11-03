@@ -11,7 +11,8 @@ import Foundation
 ///    server's host (`alice.substrate.example.org`) without a record: whoever
 ///    controls the parent controls its subdomains.
 ///
-/// Steps 2 to 4 apply only to a bare domain name, and the result carries
+/// Steps 2 to 4 apply only to a bare domain name, or one typed as an
+/// `https://` origin with nothing after its host, and the result carries
 /// that name as the repository the sign-in asks for and holds the token to.
 /// Steps 3 and 4 run only after the lookup answered that the name has no
 /// `v=substrate1` record: a lookup that failed stops here, since the record
@@ -168,11 +169,16 @@ public struct ServerLocator: Sendable {
     }
 
     /// The repository name `typed` could be: a bare domain name of two
-    /// labels or more, lower-cased, without a trailing dot. Nil for an
-    /// address with a scheme, a port, a path or a user, for a loopback host
-    /// and for an IP address, which are servers or nothing.
+    /// labels or more, lower-cased, without a trailing dot, or that name as
+    /// an `https://` origin with nothing after its host, the way a browser
+    /// shows it. Nil for any other scheme, a port, a path or a user, for a
+    /// loopback host and for an IP address, which are servers or nothing.
     public static func repositoryName(_ typed: String) -> String? {
         var name = typed.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if name.hasPrefix("https://") {
+            name.removeFirst("https://".count)
+            if name.hasSuffix("/") { name.removeLast() }
+        }
         if name.hasSuffix(".") { name.removeLast() }
         guard !name.isEmpty, name.count <= 253, name.contains("."),
               name.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "." || $0 == "_") }),

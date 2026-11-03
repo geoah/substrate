@@ -301,9 +301,22 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
         }
     }
 
-    /// An address with a scheme, a port or a path is a server or nothing.
+    /// A name typed as a browser shows it, `https://` and the host alone,
+    /// is still the name: its record names the server.
+    @Test func anHTTPSOriginOfANameIsTheName() async throws {
+        for typed in ["https://ada.example.com", "HTTPS://Ada.Example.com/"] {
+            let resolver = TableResolver(["_substrate.ada.example.com": ["v=substrate1 server=https://substrate.example.org"]])
+            let found = try await locator(HostTransport().substrate("substrate.example.org"), resolver)
+                .locate(typed, requirement: requirement, app: "App")
+            #expect(found.origin.host == "substrate.example.org", "\(typed)")
+            #expect(found.repository == "ada.example.com", "\(typed)")
+        }
+    }
+
+    /// An address with another scheme, a port or a path is a server or nothing.
     @Test func anAddressIsNeverReadAsAName() async throws {
-        for typed in ["https://ada.example.com", "ada.example.com:8443", "ada.example.com/x", "127.0.0.1", "localhost"] {
+        for typed in ["http://ada.example.com", "https://ada.example.com:8443", "ada.example.com:8443", "ada.example.com/x",
+                      "https://ada.example.com/x", "127.0.0.1", "localhost"] {
             let resolver = TableResolver(["_substrate.ada.example.com": ["v=substrate1 server=https://substrate.example.org"]])
             await #expect(throws: ServerProbe.NotASubstrate.self, "\(typed)") {
                 try await locator(HostTransport().substrate("substrate.example.org"), resolver)
@@ -315,7 +328,9 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
 
     @Test func namesAndParents() {
         #expect(ServerLocator.repositoryName(" Ada.Example.com. ") == "ada.example.com")
-        for typed in ["https://ada.example.com", "ada.example.com:443", "ada", "localhost", "10.0.0.1", "a..b", "ada@example.com"] {
+        #expect(ServerLocator.repositoryName("https://ada.example.com/") == "ada.example.com")
+        for typed in ["http://ada.example.com", "https://ada.example.com:443", "https://user@ada.example.com", "https://ada.example.com/x",
+                      "ada.example.com:443", "ada", "localhost", "10.0.0.1", "a..b", "ada@example.com"] {
             #expect(ServerLocator.repositoryName(typed) == nil, "\(typed)")
         }
         #expect(ServerLocator.parent(of: "alice.substrate.example.org") == "substrate.example.org")
