@@ -17,6 +17,13 @@ substrateSwift {
     product.set("SubstrateAndroid")
 }
 
+// The round trip's middle leg reads the fixtures Swift wrote and writes
+// Kotlin's encoding of them where android.sh hands it back to Swift.
+tasks.withType<Test>().configureEach {
+    systemProperty("substrate.roundtrip.fixtures", layout.projectDirectory.file("../fixtures/roundtrip.json").asFile.path)
+    systemProperty("substrate.roundtrip.out", layout.buildDirectory.file("roundtrip/kotlin.json").get().asFile.path)
+}
+
 dependencies {
     api(libs.serialization.json)
     api(libs.coroutines.android)

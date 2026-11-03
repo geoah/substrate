@@ -26,6 +26,8 @@ final class HandleOutbox: @unchecked Sendable {
     private var items: [Item] = []
     private var head = 0
     private var draining = false
+    /// Closing: only the close's own messages go out.
+    private var closing = false
     private var closed = false
 
     init(handle: Handle?, record: BridgeRecord, send: @escaping @Sendable (String) -> Void) {
@@ -35,13 +37,14 @@ final class HandleOutbox: @unchecked Sendable {
         queue = DispatchQueue(label: "dev.reamde.substrate.bridge.handle-\(handle?.id ?? 0)")
     }
 
-    var isClosed: Bool { lock.withLock { closed } }
+    var isClosed: Bool { lock.withLock { closing || closed } }
 
-    /// Queues a message; false when the handle has closed.
+    /// Queues a message; false when the handle is closing or closed. The
+    /// close's own messages (`cancel`s, then `closed`) are `forced` through.
     @discardableResult
-    func enqueue(_ message: String) -> Bool {
+    func enqueue(_ message: String, forced: Bool = false) -> Bool {
         lock.withLock {
-            guard !closed else { return false }
+            guard !closed, forced || !closing else { return false }
             items.append(.message(message))
             scheduleLocked()
             return true
@@ -50,7 +53,7 @@ final class HandleOutbox: @unchecked Sendable {
 
     func present(_ value: any Encodable & Sendable) {
         lock.withLock {
-            guard !closed else { return }
+            guard !closed, !closing else { return }
             if items.count > head, case let .presentation(pending) = items[items.count - 1] {
                 pending.value = value
                 record.count(\.coalesced)
@@ -59,6 +62,11 @@ final class HandleOutbox: @unchecked Sendable {
             items.append(.presentation(Pending(value)))
             scheduleLocked()
         }
+    }
+
+    /// From here on only the close's own messages go out.
+    func beginClose() {
+        lock.withLock { closing = true }
     }
 
     /// Queues the last message and refuses everything after it.

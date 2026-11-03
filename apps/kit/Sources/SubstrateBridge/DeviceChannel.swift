@@ -65,7 +65,7 @@ public final class DeviceChannel: Sendable {
     func cancel(_ id: Int, _ reason: String) {
         if calls.cancel(id, reason) {
             record.count(\.cancelled)
-            outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id))
+            outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true)
         }
     }
 }

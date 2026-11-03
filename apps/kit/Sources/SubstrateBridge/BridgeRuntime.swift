@@ -219,11 +219,12 @@ public final class BridgeRuntime: @unchecked Sendable {
             if wasOpened { return }
             throw BridgeFailure(.staleHandle, "handle \(handle.id) generation \(handle.generation) was never opened")
         }
+        open.context.outbox.beginClose()
         open.commands.finish()
         open.worker.cancel()
         for id in calls.cancelAll(handle: handle, "the handle closed") {
             record.count(\.cancelled)
-            open.context.outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id))
+            open.context.outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true)
         }
         let root = open.root
         let outbox = open.context.outbox

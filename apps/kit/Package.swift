@@ -69,7 +69,7 @@ let package = Package(
             "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateDeviceApple", "SubstrateUI",
         ]),
         .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateTesting"]),
-        .testTarget(name: "SubstrateBridgeTests", dependencies: ["SubstrateBridge", "SubstrateBridgeCheck"]),
+        .testTarget(name: "SubstrateBridgeTests", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateBridge", "SubstrateBridgeCheck"]),
     ],
     swiftLanguageModes: [.v6]
 )

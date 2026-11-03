@@ -140,7 +140,8 @@ cmd_test() {
   swift test --package-path apps/kit --filter SubstrateBridgeTests
   local kotlin_out=$root/apps/kit/android/kit-core/build/roundtrip/kotlin.json
   rm -f "$kotlin_out"
-  SUBSTRATE_ROUNDTRIP_OUT=$kotlin_out gradle :kit-core:testDebugUnitTest :kit-device:testDebugUnitTest
+  # kit-core's RoundTripTest writes Kotlin's encoding of the fixtures there.
+  gradle :kit-core:testDebugUnitTest :kit-device:testDebugUnitTest
   [[ -f $kotlin_out ]] || die "the Kotlin round trip wrote nothing to $kotlin_out"
   SUBSTRATE_ROUNDTRIP_KOTLIN=$kotlin_out swift test --package-path apps/kit --filter KotlinRoundTrip
 }
