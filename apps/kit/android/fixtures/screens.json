@@ -1527,6 +1527,11 @@
           ],
           "busy": false,
           "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "notice": {
+            "symbol": "warning",
+            "text": "1 change needs you",
+            "tone": "caution"
+          },
           "packages": [
             {
               "id": "substrate.reamde.dev/tasks",
@@ -1974,6 +1979,7 @@
                       "verbatim": false
                     }
                   },
+                  "detail": "substrate.reamde.dev/tasks",
                   "id": {
                     "status": {
                       "_0": {
@@ -2391,6 +2397,7 @@
                       "verbatim": false
                     }
                   },
+                  "detail": "substrate.reamde.dev/tasks",
                   "id": {
                     "status": {
                       "_0": {
@@ -2808,6 +2815,7 @@
                       "verbatim": false
                     }
                   },
+                  "detail": "substrate.reamde.dev/tasks",
                   "id": {
                     "status": {
                       "_0": {
