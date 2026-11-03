@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"runtime/debug"
@@ -184,7 +185,7 @@ func previousToken(ctx context.Context, ds substrate.Dataset, client authorize.C
 	if scopes == nil {
 		scopes = []string{}
 	}
-	return &substrate.AuthorizationPrevious{ApprovedAt: newest.Created, ExpiresAt: newest.ExpiresAt, Scopes: scopes, Agents: newest.Agents}, nil
+	return &substrate.AuthorizationPrevious{ApprovedAt: newest.Created, ExpiresAt: newest.ExpiresAt, Scopes: scopes}, nil
 }
 
 // grantedDetails is what the token response lists as set up: each package
@@ -215,12 +216,6 @@ func grantedDetails(ctx context.Context, ds substrate.Dataset, issuer, authority
 				Type: d.Type, Trigger: d.Trigger,
 				URL: issuer + "/webhooks/" + url.PathEscape(authority) + "/" + url.PathEscape(d.Trigger),
 			})
-		case substrate.DetailAgent:
-			for _, a := range approvedAgents([]substrate.AuthorizationDetail{d}, authority) {
-				out = append(out, substrate.AuthorizationDetail{
-					Type: d.Type, Agent: a.Agent, Reads: a.Reads, Writes: a.Writes, SpendCentsPerDay: a.SpendCentsPerDay,
-				})
-			}
 		}
 	}
 	return out
@@ -229,10 +224,20 @@ func grantedDetails(ctx context.Context, ds substrate.Dataset, issuer, authority
 // --- the app's check ---
 
 // checkBody is the check's body as it arrives: its details stay raw for the
-// one reader of details, which /oauth/authorize reads its parameter with.
+// one reader of details, which /oauth/authorize reads its parameter with,
+// and its software version for the one reader of that.
 type checkBody struct {
-	Scope   string          `json:"scope"`
-	Details json.RawMessage `json:"details"`
+	Scope           string          `json:"scope"`
+	Details         json.RawMessage `json:"details"`
+	SoftwareVersion string          `json:"softwareVersion"`
+}
+
+// packageRefresher brings one document-published package the repository
+// holds up to the newest version its publisher lists, where the upgrade is
+// one the catalog applies on its own (decision 0213). The catalog is one
+// once it reads authority documents; a test supplies its own.
+type packageRefresher interface {
+	RefreshPackage(ctx context.Context, ds substrate.Dataset, id string) error
 }
 
 // postAuthorizationCheck answers an app, with its own token, whether it is
@@ -243,7 +248,8 @@ type checkBody struct {
 // reads, a webhook it delivers to. The owner's own token sees every row. An
 // app asks at every launch, so the last answer a token got for a body is
 // answered again for checkMemoTTL rather than planned again, and a plan
-// waits its turn (checkTurns) rather than being refused.
+// waits its turn (checkTurns) rather than being refused. Every check records
+// the build that asked on the calling token first (decision 0213).
 func (h *handler) postAuthorizationCheck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	raw, ok := readBody(w, r, jsonBody)
@@ -266,6 +272,15 @@ func (h *handler) postAuthorizationCheck(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 			return
 		}
+	}
+	softwareVersion, err := authorize.ParseSoftwareVersion(in.SoftwareVersion)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	if err := DatasetFrom(ctx).RecordAppBuild(ctx, authorize.PackageFloors(details), softwareVersion); err != nil {
+		writeSubstrateError(w, r, err)
+		return
 	}
 	principal := substrate.PrincipalFrom(ctx)
 	if out, ok := h.checks.answer(principal, raw, h.now()); ok {
@@ -331,7 +346,8 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 			}
 		}
 	}
-	rows, _, err := appsetup.Plan(ctx, owner, h.catalog, details, opts)
+	h.refreshBelowFloor(ctx, owner, details)
+	rows, _, err := appsetup.Plan(ctx, owner, h.packages, details, opts)
 	if err != nil {
 		return substrate.AuthorizationCheckResult{}, err
 	}
@@ -349,21 +365,9 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 				visible = grant.Reads(row.Account.Kind, !held || internalKind(k))
 			case substrate.DetailWebhook:
 				visible = grant.Delivers(row.Webhook.Trigger)
-			case substrate.DetailAgent:
-				// The token's own approval is what the row is about, so the
-				// row is always the token's to read.
-				visible = true
 			}
 		}
 		out.Setup[i] = checkRow(row, visible)
-		if row.Type == substrate.DetailAgent {
-			action, withheld, err := agentCheck(ctx, owner, grant, full, requested, details[i], authority)
-			if err != nil {
-				return substrate.AuthorizationCheckResult{}, err
-			}
-			out.Setup[i].Action = action
-			out.Setup[i].Agent.Withheld = withheld
-		}
 	}
 	if lease := leaseFrom(ctx); lease != nil {
 		out.ExpiresAt = lease.expires
@@ -408,61 +412,42 @@ func checkRow(row substrate.AuthorizationSetup, visible bool) substrate.Authoriz
 		if visible {
 			out.Webhook.Package = row.Webhook.Package
 		}
-	case substrate.DetailAgent:
-		out.Agent = &substrate.AuthorizationAgentPlan{Agent: row.Agent.Agent}
 	}
 	return out
 }
 
-// agentCheck is a check's answer for an agent row, and why approving would
-// leave the agent out: none when the request leaves out the agent package's
-// declare scope, or when 0205 would refuse that scope (the owner or another
-// client id keeps the package), since approving again would withhold the
-// agent again; otherwise agentCheckAction's answer.
-func agentCheck(ctx context.Context, ds substrate.Dataset, grant scope.Grant, full bool, requested []scope.Scope,
-	d substrate.AuthorizationDetail, authority string,
-) (string, string, error) {
-	declare := scope.Scope{Verb: scope.Declare, Pattern: authorize.AgentDeclarePackage(d.Agent)}
-	if !slices.Contains(requested, declare) {
-		return substrate.SetupNone, "the request leaves out " + declare.String() + ", the scope the agent is declared under", nil
+// refreshBelowFloor brings each document-published package the repository
+// holds below the floor the app's build asks for up to the newest version
+// its publisher lists, where the catalog applies that on its own (decision
+// 0213): a kinds-only, additive upgrade lands now and the row answers
+// `none`. One the catalog cannot refresh is left for the plan to say what
+// it needs, with the reason in the log.
+func (h *handler) refreshBelowFloor(ctx context.Context, ds substrate.Dataset, details []substrate.AuthorizationDetail) {
+	floors := authorize.PackageFloors(details)
+	if h.refresher == nil || h.packages == nil || len(floors) == 0 {
+		return
 	}
-	if !full {
-		client := clientOf(substrate.ClientIDFrom(ctx))
-		why, err := declareRefusal(ctx, ds, client, declare.Resolve(authority).String())
-		if err != nil {
-			return "", "", err
+	statuses, err := ds.BundleStatusesUncounted(ctx)
+	if err != nil {
+		slog.Warn("authorize: the held versions could not be read for a check's refresh", "error", err)
+		return
+	}
+	held := map[string]int64{}
+	for i := range statuses {
+		held[statuses[i].ID] = appsetup.HeldRelease(&statuses[i])
+	}
+	for _, id := range slices.Sorted(maps.Keys(floors)) {
+		if held[id] == 0 || held[id] >= floors[id] {
+			continue
 		}
-		if why != "" {
-			return substrate.SetupNone, why, nil
+		b, err := h.packages.Resolve(ctx, id, floors[id])
+		if err != nil || b.Origin() == nil {
+			continue
 		}
-	}
-	return agentCheckAction(grant, full, d, authority), "", nil
-}
-
-// clientOf is the client a check's token was minted for, by its client id.
-func clientOf(id string) authorize.Client {
-	c := authorize.Client{ID: id}
-	if u, err := url.Parse(id); err == nil {
-		c.Host = u.Host
-	}
-	return c
-}
-
-// agentCheckAction is a check's answer for an agent row: none when the
-// calling token's approval already covers the agent detail (its reach and
-// its cap), enable when approving again is needed. Nothing is set up on
-// approval either way; an owner's full-access token declares agents freely.
-func agentCheckAction(grant scope.Grant, full bool, d substrate.AuthorizationDetail, authority string) string {
-	if full {
-		return substrate.SetupNone
-	}
-	want := approvedAgents([]substrate.AuthorizationDetail{d}, authority)
-	if len(want) == 1 {
-		if held, ok := grant.Agent(want[0].Agent); ok && scope.CoversAgent(held, want[0]) {
-			return substrate.SetupNone
+		if err := h.refresher.RefreshPackage(ctx, ds, id); err != nil {
+			slog.Warn("authorize: a package below its app's floor could not be refreshed", "package", id, "error", err)
 		}
 	}
-	return substrate.SetupEnable
 }
 
 // checkMemoTTL is how long a token's last check answers the same body

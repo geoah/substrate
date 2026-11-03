@@ -85,9 +85,9 @@ func DecisionFrom(ctx context.Context) string {
 // full client id (its client id metadata document URL) the owner approved.
 // The actor an app writes under names only the URL's host, `app:<host>`, so
 // two apps on one host, and every loopback build, share an actor; the client
-// id is what tells them apart where that matters, the ownership of a package
-// an app declared (decision 0205). The only writer is `withRequestAuth`, and
-// only for a scoped token: a full-access app token writes as a door.
+// id is what tells them apart where that matters, the label and annotation
+// namespace an app keeps. The only writer is `withRequestAuth`, and only for
+// a scoped token: a full-access app token writes as a door.
 type clientIDKey struct{}
 
 // WithClientID marks ctx as serving the app whose client id is id. An empty
@@ -177,19 +177,6 @@ type TokenInfo struct {
 	// provider each extends was not installed (decision 0216): installing
 	// that provider later installs them under this token's approval.
 	AppAddons []AppAddon `json:"appAddons,omitempty"`
-	// Agents are the agents the owner approved the app to declare (decision
-	// 0207), each with its reach and cap; absent on every other token.
-	Agents []AgentApproval `json:"agents,omitempty"`
-}
-
-// AgentApproval is one approved `agent` detail as a token stores it: the
-// agent's id, the exact kinds it may read and write and its daily cap in
-// cents, every authority resolved.
-type AgentApproval struct {
-	Agent            string   `json:"agent"`
-	Reads            []string `json:"reads"`
-	Writes           []string `json:"writes,omitempty"`
-	SpendCentsPerDay int      `json:"spendCentsPerDay"`
 }
 
 // Scoped reports whether the token reaches less than its whole repository.
@@ -215,8 +202,6 @@ type MintTokenInput struct {
 	AppSoftwareVersion string
 	// AppAddons is TokenInfo's: the add-ons waiting for their provider.
 	AppAddons []AppAddon
-	// Agents are the approved agents of a scoped token, none on any other.
-	Agents []AgentApproval
 }
 
 // MintedToken is what a login and a `POST /tokens` answer with: the token

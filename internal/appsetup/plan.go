@@ -1,11 +1,12 @@
-// Package appsetup is what an app's approval sets up (decision 0202,
-// docs/plans/app-setup.md): an authorization request may name, beside its
-// scopes, catalog packages at a version or later, the account the app
-// delivers under and the webhook it delivers to. Plan is what approving them
-// would do in one repository, row by row; a Runner sets the approved plan up
-// as the owner before the code is issued. Both read the repository through
-// substrate.Dataset and the shipped closures through the catalog, so the
-// HTTP layer keeps the handlers and the wire alone.
+// Package appsetup is what an app's approval sets up (decisions 0202 and
+// 0214, docs/plans/app-setup.md): an authorization request may name, beside
+// its scopes, packages at a version or later, of the binary's catalog or
+// published by an authority document, the account the app delivers under and
+// the webhook it delivers to. Plan is what approving them would do in one
+// repository, row by row; a Runner sets the approved plan up as the owner
+// before the code is issued. Both read the repository through
+// substrate.Dataset and the closures through the catalog, so the HTTP layer
+// keeps the handlers and the wire alone.
 package appsetup
 
 import (
@@ -21,10 +22,21 @@ import (
 	"slices"
 
 	"github.com/geoah/substrate/internal/catalog"
-	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
+
+// Catalog is what a plan and a run ask of the catalog: the closure a package
+// id resolves to, through the binary's closures and the authority documents
+// (decision 0212, catalog.Catalog.Resolve), the requirements and the upgrade
+// preview of one, and the install door both sources take. catalog.Catalog is
+// one; a test substitutes one that publishes from memory.
+type Catalog interface {
+	Resolve(ctx context.Context, id string, atLeast int64) (*catalog.Bundle, error)
+	Requirements(ctx context.Context, id string, ds substrate.Dataset) ([]*catalog.Bundle, []catalog.Unmet, error)
+	Upgrade(ctx context.Context, id string, ds substrate.Dataset, held *substrate.BundleStatus) (*substrate.BundleUpgrade, error)
+	InstallConfirmed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*catalog.Bundle, []substrate.SuggestedMapping, error)
+}
 
 // accountConfigTrait is the trait an account detail's kind implements.
 const accountConfigTrait = vocabulary.PackageCore + "/" + vocabulary.TraitAccountConfig
@@ -44,16 +56,17 @@ type Options struct {
 
 // Plan is what approving details would set up in ds's repository: one row
 // per detail, in the request's order, and the digest of the rows an approval
-// names. Nothing is cached: a row reads the repository as it is. cat is the
-// binary's catalog; nil ships nothing.
-func Plan(ctx context.Context, ds substrate.Dataset, cat *catalog.Catalog, details []substrate.AuthorizationDetail, opts Options) ([]substrate.AuthorizationSetup, string, error) {
+// names. Nothing is cached: a row reads the repository as it is. cat
+// resolves each package through the binary's closures and the authority
+// documents; nil offers nothing.
+func Plan(ctx context.Context, ds substrate.Dataset, cat Catalog, details []substrate.AuthorizationDetail, opts Options) ([]substrate.AuthorizationSetup, string, error) {
 	if len(details) == 0 {
 		return []substrate.AuthorizationSetup{}, "", nil
 	}
 	p := &planner{
 		ds: ds, cat: cat, opts: opts, statuses: map[string]*substrate.BundleStatus{},
 		kinds: map[string]substrate.KindInfo{}, packages: map[string]*substrate.AuthorizationSetup{},
-		owned: map[string]ownership{},
+		owned: map[string]ownership{}, resolved: map[resolution]resolvedPackage{}, bundles: map[string]*catalog.Bundle{},
 	}
 	statuses, err := ds.BundleStatusesUncounted(ctx)
 	if err != nil {
@@ -85,8 +98,6 @@ func Plan(ctx context.Context, ds substrate.Dataset, cat *catalog.Catalog, detai
 			rows[i], err = p.accountRow(ctx, d)
 		case substrate.DetailWebhook:
 			rows[i], err = p.webhookRow(ctx, d)
-		case substrate.DetailAgent:
-			rows[i] = p.agentRow(d)
 		}
 		if err != nil {
 			return nil, "", err
@@ -158,10 +169,11 @@ func ProviderPage(pkg string) string {
 }
 
 // planner reads once what one plan needs: every bundle's status, quarantined
-// ones included, the registry, and each package record it asks whose it is.
+// ones included, the registry, each package record it asks whose it is, and
+// each package the catalog resolves for it.
 type planner struct {
 	ds       substrate.Dataset
-	cat      *catalog.Catalog
+	cat      Catalog
 	opts     Options
 	statuses map[string]*substrate.BundleStatus
 	kinds    map[string]substrate.KindInfo
@@ -169,6 +181,26 @@ type planner struct {
 	// the account and webhook rows that are held to them.
 	packages map[string]*substrate.AuthorizationSetup
 	owned    map[string]ownership
+	// resolved is what the catalog answered for each package at each floor
+	// it was asked at, once: a document-published package costs its
+	// publisher's document a read.
+	resolved map[resolution]resolvedPackage
+	// bundles are the closures the plan resolved, by package id, which the
+	// account and webhook rows read their kinds and triggers from.
+	bundles map[string]*catalog.Bundle
+}
+
+// resolution is one package at one floor, as Catalog.Resolve was asked.
+type resolution struct {
+	id    string
+	floor int64
+}
+
+// resolvedPackage is the catalog's answer: the closure, or why approving
+// cannot bring the package to the floor.
+type resolvedPackage struct {
+	bundle  *catalog.Bundle
+	problem *packageProblem
 }
 
 // ownership is whose a package is, as its package record says.
@@ -179,13 +211,35 @@ type ownership struct {
 	version  int64
 }
 
-func (p *planner) bundle(id string) *catalog.Bundle {
+// resolve is the closure package id resolves to at floor, or why approving
+// cannot bring it there: a nil catalog offers nothing, and a package no
+// source lists at the floor is not published, with the catalog's words
+// (decision 0212). A closure resolved once is the plan's to read by id.
+func (p *planner) resolve(ctx context.Context, id string, floor int64) (*catalog.Bundle, *packageProblem, error) {
 	if p.cat == nil {
-		return nil
+		return nil, notShipped(), nil
 	}
-	b, _ := p.cat.ByID(id)
-	return b
+	key := resolution{id: id, floor: floor}
+	if r, done := p.resolved[key]; done {
+		return r.bundle, r.problem, nil
+	}
+	b, err := p.cat.Resolve(ctx, id, floor)
+	switch {
+	case errors.Is(err, catalog.ErrNotPublished):
+		p.resolved[key] = resolvedPackage{problem: notPublished(err)}
+	case err != nil:
+		return nil, nil, err
+	default:
+		p.resolved[key] = resolvedPackage{bundle: b}
+		p.bundles[id] = b
+	}
+	r := p.resolved[key]
+	return r.bundle, r.problem, nil
 }
+
+// bundle is the closure the plan resolved for package id, nil where it
+// resolved none.
+func (p *planner) bundle(id string) *catalog.Bundle { return p.bundles[id] }
 
 func (p *planner) held(id string) int64 { return HeldRelease(p.statuses[id]) }
 
@@ -231,15 +285,14 @@ func (p *planner) ownedBlock(ctx context.Context, id string) (*packageProblem, e
 	return declaredByOwner(id, o.version), nil
 }
 
-// packageBlock is why approving cannot bring package id to need, nil when
-// nothing stands in its way but a preview: a package the catalog does not
-// ship, a sample, a quarantined copy, one the owner declared below need, or
-// one this server ships below need.
-func (p *planner) packageBlock(ctx context.Context, id string, need int64) (*packageProblem, error) {
-	b, st := p.bundle(id), p.statuses[id]
+// packageBlock is why approving cannot bring the resolved closure b of
+// package id to need, nil when nothing stands in its way but a preview: a
+// sample, a quarantined copy, one the owner declared below need, or one this
+// server ships below need. A document-published closure resolved at need or
+// later, so the last never blocks it.
+func (p *planner) packageBlock(ctx context.Context, b *catalog.Bundle, id string, need int64) (*packageProblem, error) {
+	st := p.statuses[id]
 	switch {
-	case b == nil:
-		return notShipped(), nil
 	case b.Tier == substrate.TierSample:
 		return sample(), nil
 	case st != nil && st.Quarantined:
@@ -250,38 +303,50 @@ func (p *planner) packageBlock(ctx context.Context, id string, need int64) (*pac
 	if problem, err := p.ownedBlock(ctx, id); problem != nil || err != nil {
 		return problem, err
 	}
-	if b.Version < need {
+	if b.Origin() == nil && b.Version < need {
 		return serverUpdate(b.Version, need), nil
 	}
 	return nil, nil
 }
 
+// publisherOf is where a document-published closure came from, as a row or
+// a step names it; nil for one the binary ships.
+func publisherOf(b *catalog.Bundle) *substrate.AuthorizationPackagePublisher {
+	o := b.Origin()
+	if o == nil {
+		return nil
+	}
+	return &substrate.AuthorizationPackagePublisher{Authority: o.Authority, Name: o.Name, DocumentURL: o.DocumentURL, FromFile: o.FromFile}
+}
+
 func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetail) (substrate.AuthorizationSetup, error) {
 	info := &substrate.AuthorizationPackage{ID: d.Package, Required: d.Version, Held: p.held(d.Package)}
 	row := substrate.AuthorizationSetup{Type: substrate.DetailPackage, Action: p.action(d.Package, d.Version), Package: info}
-	b := p.bundle(d.Package)
-	if b != nil {
-		info.Description, info.Tier, info.Shipped = b.Description, b.Tier, b.Version
-	}
 	// Installed or not: a package row admits the account and webhook rows of
 	// its package, which would otherwise reach the owner's own packages and
-	// the samples they imported, and nothing names those as the app's.
-	problem, err := p.packageBlock(ctx, d.Package, d.Version)
+	// the samples they imported, and nothing names those as the app's. So
+	// every package resolves, through the binary's closures and the
+	// authority documents (decision 0214).
+	b, problem, err := p.resolve(ctx, d.Package, d.Version)
 	if err != nil {
 		return row, err
+	}
+	if b != nil {
+		// Shipped is the version approving would install: the binary's, or
+		// the newest the publisher lists at the floor or later.
+		info.Description, info.Tier, info.Shipped, info.Publisher = b.Description, b.Tier, b.Version, publisherOf(b)
+		if problem, err = p.packageBlock(ctx, b, d.Package, d.Version); err != nil {
+			return row, err
+		}
 	}
 	if row.Blocked = problem.own(); row.Blocked != nil || row.Action == substrate.SetupNone {
 		return row, nil
-	}
-	steps, unmet, err := p.cat.Requirements(ctx, d.Package, p.ds)
-	if err != nil {
-		return row, err
 	}
 	actionOnly := p.opts.ActionOnly[d.Package]
 	if !actionOnly {
 		info.Kinds, info.Functions, info.Triggers = p.facts(b)
 	}
-	if info.Requires, problem, err = p.chain(ctx, b, steps, unmet, actionOnly); err != nil || problem != nil || actionOnly {
+	if info.Requires, problem, err = p.chain(ctx, b, actionOnly); err != nil || problem != nil || actionOnly {
 		row.Blocked = problem.needsFirst()
 		return row, err
 	}
@@ -306,12 +371,91 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 	return row, nil
 }
 
-// chain is what installing b brings first, in the order it lands: steps, the
+// chain is what installing b brings first, in the order it lands, and the
+// first step's problem that blocks. A closure the binary ships walks the
+// catalog's own list (binaryChain); one an authority document published
+// walks its requirements through the same resolution it came by
+// (publishedChain).
+func (p *planner) chain(ctx context.Context, b *catalog.Bundle, actionOnly bool) ([]substrate.AuthorizationPackageStep, *packageProblem, error) {
+	if b.Origin() != nil {
+		return p.publishedChain(ctx, b, actionOnly)
+	}
+	steps, unmet, err := p.cat.Requirements(ctx, b.ID, p.ds)
+	if err != nil {
+		return nil, nil, err
+	}
+	return p.binaryChain(ctx, b, steps, unmet, actionOnly)
+}
+
+// publishedChain is chain for a document-published closure: each
+// requirement the repository does not hold at the floor the chain puts
+// under it resolves as the package did, through the binary's closures and
+// the authority documents (decision 0214), its own requirements first, once,
+// in the order they land. One nothing offers at its floor is a step that is
+// not published, and a binary sample stays the owner's to import.
+func (p *planner) publishedChain(ctx context.Context, b *catalog.Bundle, actionOnly bool) ([]substrate.AuthorizationPackageStep, *packageProblem, error) {
+	var out []substrate.AuthorizationPackageStep
+	var first *packageProblem
+	placed := map[string]bool{}
+	visiting := map[string]bool{b.ID: true}
+	var walk func(lb *catalog.Bundle) error
+	walk = func(lb *catalog.Bundle) error {
+		for _, req := range lb.Requires {
+			floor := lb.RequiresAtLeast[req]
+			if visiting[req] || placed[req] {
+				continue
+			}
+			if st := p.statuses[req]; st != nil && st.Installed && HeldRelease(st) >= floor {
+				continue
+			}
+			placed[req] = true
+			step := substrate.AuthorizationPackageStep{ID: req, Action: p.stepAction(req), Held: p.held(req)}
+			dep, problem, err := p.resolve(ctx, req, floor)
+			if err != nil {
+				return err
+			}
+			if dep != nil {
+				step.Description, step.Shipped, step.Publisher = dep.Description, dep.Version, publisherOf(dep)
+				switch {
+				case dep.Tier == substrate.TierSample:
+					problem = sample()
+				default:
+					if problem, err = p.stepBlock(ctx, dep, floor); err != nil {
+						return err
+					}
+				}
+				if problem == nil {
+					// Its own requirements land before it.
+					visiting[req] = true
+					if err := walk(dep); err != nil {
+						return err
+					}
+					delete(visiting, req)
+				}
+				if !actionOnly {
+					step.Kinds, step.Functions, step.Triggers = p.facts(dep)
+				}
+			}
+			if problem != nil {
+				step.Blocked = problem.own()
+				if first == nil {
+					first = problem
+				}
+			}
+			out = append(out, step)
+		}
+		return nil
+	}
+	err := walk(b)
+	return out, first, err
+}
+
+// binaryChain is chain for a closure the binary ships: steps, the
 // requirements the catalog installs, each held to the floor the chain puts
 // under it, and after them unmet, what the chain needs that the catalog
 // cannot install, a package it does not ship or a sample, which the install
-// would be refused on. The problem is the first step's that blocks.
-func (p *planner) chain(ctx context.Context, b *catalog.Bundle, steps []*catalog.Bundle, unmet []catalog.Unmet, actionOnly bool) ([]substrate.AuthorizationPackageStep, *packageProblem, error) {
+// would be refused on.
+func (p *planner) binaryChain(ctx context.Context, b *catalog.Bundle, steps []*catalog.Bundle, unmet []catalog.Unmet, actionOnly bool) ([]substrate.AuthorizationPackageStep, *packageProblem, error) {
 	var first *packageProblem
 	blocks := func(step *substrate.AuthorizationPackageStep, problem *packageProblem) {
 		step.Blocked = problem.own()
@@ -328,6 +472,7 @@ func (p *planner) chain(ctx context.Context, b *catalog.Bundle, steps []*catalog
 	}
 	var out []substrate.AuthorizationPackageStep
 	for _, dep := range steps {
+		p.bundles[dep.ID] = dep
 		step := substrate.AuthorizationPackageStep{
 			ID: dep.ID, Description: dep.Description, Action: p.stepAction(dep.ID), Held: p.held(dep.ID), Shipped: dep.Version,
 		}
@@ -364,9 +509,9 @@ func (p *planner) stepAction(id string) string {
 	return substrate.SetupInstall
 }
 
-// stepBlock is packageBlock for a requirement the catalog installs: it lands
-// whatever the repository holds, so only what would refuse or replace it
-// counts.
+// stepBlock is packageBlock for a requirement an install brings first: it
+// lands whatever the repository holds, so only what would refuse or replace
+// it counts.
 func (p *planner) stepBlock(ctx context.Context, dep *catalog.Bundle, floor int64) (*packageProblem, error) {
 	if st := p.statuses[dep.ID]; st != nil && st.Quarantined {
 		return quarantined(dep.ID), nil
@@ -374,7 +519,7 @@ func (p *planner) stepBlock(ctx context.Context, dep *catalog.Bundle, floor int6
 	if problem, err := p.ownedBlock(ctx, dep.ID); problem != nil || err != nil {
 		return problem, err
 	}
-	if dep.Version < floor {
+	if dep.Origin() == nil && dep.Version < floor {
 		return serverUpdate(dep.Version, floor), nil
 	}
 	return nil, nil
@@ -570,31 +715,6 @@ func (p *planner) webhookRow(ctx context.Context, d substrate.AuthorizationDetai
 		row.Action = substrate.SetupNone
 	}
 	return row, nil
-}
-
-// agentRow plans an agent detail (decision 0207). Approving sets nothing
-// up: the token carries the approval and the app declares the agent with
-// it, so the row's action is none. It names each kind as the repository
-// holds it, or as not held yet: the app declares only the kinds held, since
-// an agent naming a missing kind is refused at load.
-func (p *planner) agentRow(d substrate.AuthorizationDetail) substrate.AuthorizationSetup {
-	home := p.ds.Repository().Authority
-	resolve := func(home string, kinds []string) []substrate.AuthorizationAgentKind {
-		out := make([]substrate.AuthorizationAgentKind, 0, len(kinds))
-		for _, k := range kinds {
-			id := scope.ResolveAgentKind(k, home)
-			ak := substrate.AuthorizationAgentKind{Identity: id}
-			if info, ok := p.kinds[id]; ok {
-				ak.Held, ak.Label = true, info.Label
-			}
-			out = append(out, ak)
-		}
-		return out
-	}
-	return substrate.AuthorizationSetup{Type: substrate.DetailAgent, Action: substrate.SetupNone, Agent: &substrate.AuthorizationAgentPlan{
-		Agent: scope.ResolveAgentKind(d.Agent, home), Reads: resolve(home, d.Reads), Writes: resolve(home, d.Writes),
-		SpendCentsPerDay: d.SpendCentsPerDay,
-	}}
 }
 
 // triggerProperties is a trigger's properties as the set up will find them:
