@@ -28,7 +28,7 @@ Dynamic Island.
 ```bash
 mise run apple:build:workouts     # the app for the simulator
 mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (562 tests, on the Mac)
-mise run apple:release:workouts   # archived, signed and published under workouts/
+mise run apps:release prerelease workouts   # archived, signed and published under workouts/
 uv run --with pyyaml apps/workouts/scripts/workouts-package.py   # the package's manifests into the app's JSON
 uv run --with pyyaml apps/workouts/scripts/exercise-library.py   # the exercise library into the app's JSON
 ```
@@ -96,7 +96,7 @@ and Sign Out revokes it as the kit does for every app.
 **The package is published.** `substrate.reamde.dev/training` and
 `substrate.reamde.dev/trainingcoach` are the same name in every repository,
 served from the site's authority document with each version's closure
-(`mise run apple:site`, [Package/](package/README.md)). The app applies
+(`mise run apps:site`, [Package/](package/README.md)). The app applies
 nothing and respells nothing: the kinds are `substrate.reamde.dev/training/…`
 on the phone and on the wire. A phone updated from a build that spelled them
 `~/training/…` (decision [T3](docs/decisions.md#t3-the-package-is-the-apps-own-training))

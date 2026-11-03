@@ -1,7 +1,9 @@
 // The release feeds, from one release's release.json and the index already
-// published: index.json (every release, read by the iOS app and by people),
-// appcast.xml (Sparkle's, read by the macOS app), index.html (the install
-// page) and the release's own manifest.plist (the iOS over-the-air install).
+// published: index.json (every release, read by the iOS and Android apps and
+// by people), appcast.xml (Sparkle's, read by the macOS app), index.html (the
+// install page) and the release's own manifest.plist (the iOS over-the-air
+// install). An entry with no Android build encodes as it always has, so a
+// feed with none is byte for byte what it was.
 //
 //   swift scripts/feed.swift <base-url> <published-index.json|-> <release.json> <out-dir>
 //
@@ -21,6 +23,12 @@ struct Artifact: Codable {
     var manifest: String?
     var icon: String?
     var smallIcon: String?
+    /// Android: the package, the versionCode an update must exceed, and the
+    /// signing certificate's SHA-256, read from the signed APK; an update
+    /// signed with another is one Android refuses.
+    var applicationId: String?
+    var versionCode: Int?
+    var certificateSHA256: String?
 }
 
 struct Release: Codable {
@@ -36,6 +44,7 @@ struct Release: Codable {
     var bundleIdentifier: String
     var macos: Artifact?
     var ios: Artifact?
+    var android: Artifact?
 }
 
 struct Index: Codable {
@@ -59,9 +68,15 @@ index.releases.removeAll { $0.build == release.build }
 index.releases.append(release)
 index.releases.sort { $0.build.compare($1.build, options: .numeric) == .orderedDescending }
 let name = release.name ?? "Substrate Console"
-// Another app's folder holds no Mac build, and its page says so.
+// The page names the systems the folder holds builds for: another app's
+// folder holds no Mac build, and its page says so.
 let hasMac = index.releases.contains { $0.macos != nil }
-let heading = hasMac ? "\(name) for iPhone, iPad and Mac" : "\(name) for iPhone and iPad"
+let hasIOS = index.releases.contains { $0.ios != nil }
+let hasAndroid = index.releases.contains { $0.android != nil }
+let systems = (hasIOS ? ["iPhone", "iPad"] : []) + (hasMac ? ["Mac"] : []) + (hasAndroid ? ["Android"] : [])
+let heading = systems.count > 1
+    ? "\(name) for \(systems.dropLast().joined(separator: ", ")) and \(systems.last!)"
+    : "\(name) for \(systems.first ?? "")"
 let blurb = name == "Substrate Console"
     ? "The console in a native app that talks to a substrate's API. Installed builds update themselves from here."
     : "Installed builds offer each newer release themselves."
@@ -156,6 +171,9 @@ func install(_ r: Release) -> String {
     if let mac = r.macos {
         links.append("<a href=\"\(xml(absolute(mac.path)))\">Download for Mac</a>")
     }
+    if let android = r.android {
+        links.append("<a href=\"\(xml(absolute(android.path)))\">Download for Android</a>")
+    }
     return links.joined(separator: " · ")
 }
 
@@ -176,6 +194,8 @@ for r in index.releases {
           </tr>
     """
 }
+let ios = "<p><strong>iPhone and iPad:</strong> open this page in Safari and tap Install. Only devices registered to the team can install it, and a development-signed build needs Developer Mode (Settings → Privacy &amp; Security). After that, the app offers each newer release itself.</p>"
+let android = "<p><strong>Android:</strong> download the APK on the phone and open it, and allow this browser to install apps when Android asks. After that, the app offers each newer release itself, and Android installs it only when it is signed with the same key.</p>"
 let mac = "<p><strong>Mac:</strong> download, unzip and move Substrate to Applications before opening it. If macOS says it cannot check the app, open System Settings → Privacy &amp; Security and choose Open Anyway. After that, Substrate → Check for Updates (and the scheduled check) installs newer releases itself.</p>"
 let latest = index.releases.first.map { "<p class=\"latest\">\(install($0))</p>" } ?? ""
 try write("""
@@ -203,8 +223,8 @@ try write("""
   <h2>Latest</h2>
   \(latest)
   <h2>First install</h2>
-  <p><strong>iPhone and iPad:</strong> open this page in Safari and tap Install. Only devices registered to the team can install it, and a development-signed build needs Developer Mode (Settings → Privacy &amp; Security). After that, the app offers each newer release itself.</p>
-  \(hasMac ? mac : "")
+  \(hasIOS ? ios : "")
+  \(hasMac ? mac : "")\(hasAndroid ? "\n  " + android : "")
   <h2>Every release</h2>
   <table>
     <thead><tr><th>Version</th><th>Channel</th><th>Commit</th><th>Built</th><th>Install</th></tr></thead>

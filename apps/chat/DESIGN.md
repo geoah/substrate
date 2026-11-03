@@ -57,7 +57,7 @@ changed is listed at the end.
 | Keychain      | service `dev.reamde.substrate.chat`, `AfterFirstUnlockThisDeviceOnly` |
 | macOS sandbox | network client, audio input |
 | Tests         | `SubstrateChatTests`, run on macOS (the rules are platform-free) |
-| Distribution  | `mise run apple:release:chat` to `<release folder>/chat/`, as Sync; listed on the internal catalogue |
+| Distribution  | `mise run apps:release prerelease chat` to `<release folder>/chat/`, as Sync; listed on the internal catalogue |
 
 `mise run apple:build:chat` builds both platforms, `apple:sim:chat` runs the
 iOS app on a simulator, `apple:test:chat` runs the tests.

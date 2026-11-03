@@ -6,6 +6,7 @@
   ],
   "apple": {
     "bundleID": "dev.reamde.substrate.workouts",
+    "scheme": "SubstrateWorkouts",
     "extensions": [
       "dev.reamde.substrate.workouts.widgets"
     ],
