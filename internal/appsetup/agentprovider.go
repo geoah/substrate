@@ -14,7 +14,10 @@ import (
 )
 
 func (p *planner) providerInputs(ctx context.Context, row *substrate.AuthorizationSetup) error {
-	if row.Package == nil || row.Blocked != nil || p.opts.ActionOnly[row.Package.ID] {
+	// A waiting add-on takes no provider choice now: nothing could keep it
+	// until its provider lands, and its install then needs the input to
+	// resolve on its own (inputsResolve).
+	if row.Package == nil || row.Blocked != nil || row.Action == substrate.SetupWait || p.opts.ActionOnly[row.Package.ID] {
 		return nil
 	}
 	ids := []string{row.Package.ID}
@@ -203,4 +206,41 @@ func heldProviderInputs(ctx context.Context, ds substrate.Dataset, pkg string) (
 func (p *planner) hasProviderInput(pkg string) bool {
 	st := p.statuses[pkg]
 	return st != nil && slices.ContainsFunc(st.Inputs, func(input substrate.InputStatus) bool { return input.Kind == vocabulary.LLMKind("provider") })
+}
+
+// inputsResolve reports whether every provider input of a planned row
+// resolves without a choice made now: a valid binding, the id `default`
+// among the offered rows, or the repository's only provider row, which is
+// how an input resolves at dispatch.
+func inputsResolve(ctx context.Context, ds substrate.Dataset, row substrate.AuthorizationSetup) (bool, error) {
+	if row.Package == nil {
+		return true, nil
+	}
+	for _, input := range row.Package.ProviderInputs {
+		offered := func(id string) bool {
+			return slices.ContainsFunc(input.Options, func(o substrate.AuthorizationProviderOption) bool { return o.ID == id })
+		}
+		bundle, err := ds.Get(ctx, vocabulary.CoreKind(vocabulary.DocBundle), input.Package)
+		if err != nil && !errors.Is(err, substrate.ErrNotFound) {
+			return false, err
+		}
+		if err == nil && bundle.DeletedAt == nil {
+			bindings, _ := bundle.Properties["bindings"].(map[string]any)
+			if bound := vocabulary.ReferentID(bindings[input.Input], vocabulary.LLMKind("provider")); bound != "" && offered(bound) {
+				continue
+			}
+		}
+		if offered("default") {
+			continue
+		}
+		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{vocabulary.LLMKind("provider")}}, First: 2})
+		if err != nil {
+			return false, err
+		}
+		if len(page.Records) == 1 && offered(page.Records[0].ID) {
+			continue
+		}
+		return false, nil
+	}
+	return true, nil
 }
