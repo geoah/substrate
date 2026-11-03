@@ -21,34 +21,52 @@ import (
 // internal kind covered by its exact scope alone. A closure that comes to
 // reach more fails here before it fails on the owner's approval page.
 //
-// Nothing here is a hand copy. What each app asks for is
-// apps/scopes.json, which a Swift test on each side holds equal to
-// the app's manifest; the binary's packages come from the catalog it ships,
+// Nothing here is a hand copy. What each app asks for is its
+// apps/<app>/app.json, which a Swift test on each side holds equal to the
+// app's manifest; the binary's packages come from the catalog it ships,
 // and Workouts' published packages from the closures the app carries
 // (Resources/Package/*.json, the documents the site publishes), parsed as
 // the server parses a published closure.
 
-// appRequest is one app's entry in apps/scopes.json.
+// appRequest is what one app's app.json says it asks a substrate for.
 type appRequest struct {
+	Name     string   `json:"name"`
 	Scopes   []string `json:"scopes"`
 	Packages []string `json:"packages"`
 }
 
-// firstPartyRequests reads apps/scopes.json.
+// firstPartyRequests reads every app's app.json and keeps the apps that ask
+// for packages to be set up, by name: an app that asks for none has no
+// closure to hold its scopes to.
 func firstPartyRequests(t *testing.T) map[string]appRequest {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "apps", "scopes.json"))
-	if err != nil {
-		t.Fatalf("read the apps' requests: %v", err)
+	files, err := filepath.Glob(filepath.Join("..", "..", "apps", "*", "app.json"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("find the apps' app.json: %v (%d found)", err, len(files))
 	}
-	var file struct {
-		Sync     appRequest `json:"sync"`
-		Workouts appRequest `json:"workouts"`
+	out := map[string]appRequest{}
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read the app's request: %v", err)
+		}
+		var app appRequest
+		if err := json.Unmarshal(raw, &app); err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		if app.Name == "" {
+			t.Fatalf("%s names no app", file)
+		}
+		if len(app.Packages) > 0 {
+			out[app.Name] = app
+		}
 	}
-	if err := json.Unmarshal(raw, &file); err != nil {
-		t.Fatalf("apps/scopes.json: %v", err)
+	for _, name := range []string{"Substrate Sync", "Substrate Workouts"} {
+		if _, ok := out[name]; !ok {
+			t.Fatalf("no app.json asks for %s's packages", name)
+		}
 	}
-	return map[string]appRequest{"Substrate Sync": file.Sync, "Substrate Workouts": file.Workouts}
+	return out
 }
 
 // workoutsClosure parses one of the closures Substrate Workouts carries as

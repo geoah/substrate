@@ -1,0 +1,31 @@
+{
+  "id": "workouts",
+  "name": "Substrate Workouts",
+  "platforms": [
+    "ios"
+  ],
+  "apple": {
+    "bundleID": "dev.reamde.substrate.workouts",
+    "extensions": [
+      "dev.reamde.substrate.workouts.widgets"
+    ],
+    "clientIDKey": "SubstrateWorkoutsClientID",
+    "redirectKey": "SubstrateWorkoutsRedirect"
+  },
+  "packages": [
+    "substrate.reamde.dev/health",
+    "substrate.reamde.dev/training",
+    "substrate.reamde.dev/trainingcoach"
+  ],
+  "scopes": [
+    "write:substrate.reamde.dev/training/*",
+    "read:providers.substrate.reamde.dev/applehealth/account",
+    "read:substrate.reamde.dev/health/workout",
+    "read:substrate.reamde.dev/health/sleep",
+    "read:substrate.reamde.dev/observations/*",
+    "read:substrate.reamde.dev/clinical/*",
+    "agents:substrate.reamde.dev/trainingcoach/*"
+  ],
+  "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "feed": "workouts"
+}

@@ -104,22 +104,30 @@ struct CoachTests {
         #expect(ClosureReach.of(try PackageManifest.bundled().documents) == ClosureReach())
     }
 
-    /// apps/scopes.json is what the server's first-party reach test
+    /// apps/workouts/app.json is what the server's first-party reach test
     /// reads in place of a hand copy of this manifest, so the two cannot
-    /// drift: the scopes in order, and the packages the details ask for.
-    @Test("the request is the one apps/scopes.json records for the server's reach test")
+    /// drift: the scopes in order, the packages the details ask for, and the
+    /// name and Info.plist keys the release reads.
+    @Test("the request is the one apps/workouts/app.json records for the server's reach test")
     func recordedRequest() throws {
-        let apple = URL(fileURLWithPath: #filePath)
+        let app = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent()
+        struct Apple: Decodable {
+            var clientIDKey: String
+            var redirectKey: String
+        }
         struct Recorded: Decodable {
+            var name: String
             var scopes: [String]
             var packages: [String]
+            var apple: Apple
         }
-        struct Requests: Decodable { var workouts: Recorded }
-        let recorded = try JSONDecoder().decode(Requests.self, from: Data(contentsOf: apple.appendingPathComponent("scopes.json"))).workouts
+        let recorded = try JSONDecoder().decode(Recorded.self, from: Data(contentsOf: app.appendingPathComponent("app.json")))
         #expect(recorded.scopes == WorkoutsManifest.scopes)
         #expect(recorded.packages == WorkoutsManifest.details.filter { $0.type == AuthorizationDetail.Types.package }.compactMap(\.package))
+        #expect(recorded.name == WorkoutsManifest.appName)
+        #expect(recorded.apple.clientIDKey == WorkoutsManifest.clientIDKey)
+        #expect(recorded.apple.redirectKey == WorkoutsManifest.redirectKey)
     }
 
     @Test("the prompt this build carries is under 20 KB and names the published kinds")

@@ -346,3 +346,30 @@ private struct LegacySession: Codable {
         #expect(!server.requests.contains { $0.url?.path == "/api/v1/authorizations/check" })
     }
 }
+
+/// apps/chat/app.json names the app once for the release and the server's
+/// tests, so it holds what this manifest asks for: the name, the scopes in
+/// order, no packages, and the Info.plist keys a release stamps.
+@Suite struct AppJSON {
+    struct Apple: Decodable {
+        var clientIDKey: String
+        var redirectKey: String
+    }
+
+    struct Recorded: Decodable {
+        var name: String
+        var scopes: [String]
+        var packages: [String]
+        var apple: Apple
+    }
+
+    @Test func theRequestIsTheOneAppJSONRecords() throws {
+        let app = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let recorded = try JSONDecoder().decode(Recorded.self, from: Data(contentsOf: app.appendingPathComponent("app.json")))
+        #expect(recorded.name == ChatManifest.appName)
+        #expect(recorded.scopes == ChatManifest.scopes)
+        #expect(recorded.packages.isEmpty && ChatManifest.manifest.details.isEmpty)
+        #expect(recorded.apple.clientIDKey == ChatManifest.clientIDKey)
+        #expect(recorded.apple.redirectKey == ChatManifest.redirectKey)
+    }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "console",
+  "name": "Substrate Console",
+  "platforms": [
+    "ios",
+    "macos"
+  ],
+  "apple": {
+    "bundleID": "dev.reamde.substrate.console",
+    "extensions": [],
+    "clientIDKey": "SubstrateConsoleClientID",
+    "redirectKey": "SubstrateConsoleRedirect"
+  },
+  "packages": [],
+  "scopes": [
+    "full"
+  ],
+  "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "feed": ""
+}

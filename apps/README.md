@@ -656,10 +656,38 @@ feeds and install page as Sync's, and its client ID metadata document as
 notifications on the development profile, which `-allowProvisioningUpdates`
 adds to the app id.
 
+## An app's app.json
+
+Each app's folder holds an `app.json` that names the app once, as JSON so
+every reader parses it with no dependency: the server's first-party reach
+test (`internal/catalog/firstparty_reach_test.go`) reads the scopes and
+packages of every app that asks for packages, and a Swift test holds each
+app's manifest to its file (Sync's `ReachTests`, Workouts' `CoachTests`,
+Chat's `AppJSON`), so the two never drift. `mise run lint:apps` refuses an
+app folder without one, or one missing a field below.
+
+| Field | What |
+| --- | --- |
+| `id` | the app's folder name, which is also its bundle id's last label and the name `.mise/apple.sh` knows it by |
+| `name` | its display name, the manifest's `appName` |
+| `platforms` | where it runs: `ios`, `macos` |
+| `apple.bundleID` | the app's bundle id |
+| `apple.extensions` | the bundle ids of its extensions and widgets, empty where it has none |
+| `apple.clientIDKey` | the Info.plist key a release stamps with its OAuth client id |
+| `apple.redirectKey` | the Info.plist key a release stamps with the https redirect it claims |
+| `packages` | the packages its approval asks to have set up (`package` details), in the manifest's order |
+| `scopes` | the scopes it asks for, in the manifest's order |
+| `icon` | its 1024-pixel icon, relative to the app's folder |
+| `feed` | the folder `.mise/apple.sh` publishes its releases and feeds under, relative to `SUBSTRATE_APPLE_RELEASE_URL`; empty is the root, where the console's are |
+
+Nothing reads `apple.*`, `icon` or `feed` yet: `apple.sh` still names each
+app in its own `case` statements, and reads this file when the release
+tooling is generalised.
+
 ## Layout
 
 ```text
-scopes.json                         what each first-party app asks a substrate for, read by the server's reach test
+<app>/app.json                      what names the app once: its ids, platforms, Info.plist keys, packages, scopes, icon and feed (above)
 xcode/project.yml                   the xcodegen spec, the only project source; it includes each app's apple/targets.yml
 xcode/Shared/Updater.swift          the updater every app compiles in
 xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync and Chat

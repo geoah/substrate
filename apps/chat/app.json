@@ -1,0 +1,23 @@
+{
+  "id": "chat",
+  "name": "Substrate Chat",
+  "platforms": [
+    "ios",
+    "macos"
+  ],
+  "apple": {
+    "bundleID": "dev.reamde.substrate.chat",
+    "extensions": [],
+    "clientIDKey": "SubstrateChatClientID",
+    "redirectKey": "SubstrateChatRedirect"
+  },
+  "packages": [],
+  "scopes": [
+    "agents:*",
+    "decide:*",
+    "read:substrate.reamde.dev/llm/provider",
+    "read:*"
+  ],
+  "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "feed": "chat"
+}

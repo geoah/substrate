@@ -62,20 +62,29 @@ final class ReachTests: XCTestCase {
         return out
     }
 
-    /// apps/scopes.json is what the server's first-party reach test
+    /// apps/sync/app.json is what the server's first-party reach test
     /// reads in place of a hand copy of this manifest, so the two cannot
-    /// drift: the scopes in order, and the packages the details ask for.
-    func testTheRequestIsTheOneScopesJSONRecordsForTheServersReachTest() throws {
-        let apple = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    /// drift: the scopes in order, the packages the details ask for, and the
+    /// name and Info.plist keys the release reads.
+    func testTheRequestIsTheOneAppJSONRecordsForTheServersReachTest() throws {
+        let app = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        struct Apple: Decodable {
+            var clientIDKey: String
+            var redirectKey: String
+        }
         struct Recorded: Decodable {
+            var name: String
             var scopes: [String]
             var packages: [String]
+            var apple: Apple
         }
-        struct Requests: Decodable { var sync: Recorded }
-        let recorded = try JSONDecoder().decode(Requests.self, from: Data(contentsOf: apple.appendingPathComponent("scopes.json"))).sync
+        let recorded = try JSONDecoder().decode(Recorded.self, from: Data(contentsOf: app.appendingPathComponent("app.json")))
         XCTAssertEqual(recorded.scopes, SyncManifest.scopes)
         XCTAssertEqual(recorded.packages, [AppModel.appleProvider, AppModel.healthProvider])
+        XCTAssertEqual(recorded.name, SyncManifest.appName)
+        XCTAssertEqual(recorded.apple.clientIDKey, SyncManifest.clientIDKey)
+        XCTAssertEqual(recorded.apple.redirectKey, SyncManifest.redirectKey)
     }
 
     func testSyncsScopesCoverWhatItsPackagesCodeReaches() throws {
