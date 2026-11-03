@@ -94,7 +94,7 @@ changes the list and a conversation publishes one tree.
 | Streamed text | `Conversation.coalescing(of:)`: a delta or a piece of reasoning presents within 50 ms, structure at once |
 | The watch | the kit's `WatchFollower`, its cursor and the rows still to read again in the kit's `RecordCache` (`records/watch.json`) |
 | The cache | `ChatStorage` over the kit's `RepositoryFolder`, at the path every build used (`Application Support/SubstrateChat/<hash>/`): `state.json` and `drafts.json` adopted at the top, transcripts moved from `messages/` into the cache area, bounded by age and budget |
-| Notifications | the kit's `Notifications` device service: scheduled, cancelled and badged as effects; a tap is a command |
+| Notifications | the kit's `Notifications` device service (`SystemNotifications` on an Apple device): scheduled, cancelled and badged as effects; the app's own delegate turns a tap into a route and keeps a chat on screen quiet |
 | Background | the kit's `BackgroundWork` device service: the refresh job's runs, and continued processing for a streaming turn |
 | The owner's choices | `ChatPreferences`, kept in UserDefaults under the keys every build used |
 
