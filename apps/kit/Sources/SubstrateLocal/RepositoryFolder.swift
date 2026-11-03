@@ -50,6 +50,17 @@ public final class RepositoryFolder: @unchecked Sendable {
         setAsideAtOpen = aside
     }
 
+    /// A folder an app laid out before it kept a format (Workouts' account
+    /// folders, its own folder for a session's journal): its files stay
+    /// where they are, nothing is set aside, and no marker is written, so
+    /// a build before the kit still reads every file.
+    public init(adopting root: URL, writingOptions: Data.WritingOptions = []) throws {
+        self.root = root
+        self.writingOptions = writingOptions
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        setAsideAtOpen = nil
+    }
+
     private static let markerName = "folder.json"
 
     private struct Marker: Codable {

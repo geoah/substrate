@@ -75,6 +75,10 @@ public struct LinkController<App: LinkedApp>: Controller {
     public let manifest: AppManifest
     public let sessions: SessionStore
     public let outbox: Outbox?
+    /// The outbox of the repository a session is signed in to, where an
+    /// app keeps one per repository (Workouts' account folders); `outbox`
+    /// where it answers none.
+    public let outboxes: (@Sendable (SessionFacts) -> Outbox?)?
     /// The app's packages, each with the version this build needs.
     public let packages: [String: Int]
     public let words: StatusWords
@@ -89,6 +93,24 @@ public struct LinkController<App: LinkedApp>: Controller {
         self.manifest = manifest
         self.sessions = sessions
         self.outbox = outbox
+        outboxes = nil
+        self.packages = packages
+        self.words = words
+        self.offers = offers
+        self.checkInterval = checkInterval
+    }
+
+    /// A link whose outbox is the signed-in repository's own, made or
+    /// found by `outboxes` each time an effect needs it.
+    public init(app: App, manifest: AppManifest, sessions: SessionStore, outboxes: @escaping @Sendable (SessionFacts) -> Outbox?,
+                packages: [String: Int] = [:], words: StatusWords, offers: Set<AccessAction.Offer> = Set(AccessAction.Offer.allCases),
+                checkInterval: TimeInterval = 300)
+    {
+        self.app = app
+        self.manifest = manifest
+        self.sessions = sessions
+        outbox = nil
+        self.outboxes = outboxes
         self.packages = packages
         self.words = words
         self.offers = offers
@@ -236,7 +258,8 @@ public struct LinkController<App: LinkedApp>: Controller {
     }
 
     public func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
-        let (sessions, manifest, outbox, packages) = (sessions, manifest, outbox, packages)
+        let (sessions, manifest, packages) = (sessions, manifest, packages)
+        let outbox = outboxes.flatMap { find in sessions.load().flatMap { find(SessionFacts($0)) } } ?? outbox
         let transport = environment.devices.transport
         let folder = environment.folder
         let now = environment.clock
