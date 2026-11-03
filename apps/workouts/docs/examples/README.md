@@ -39,9 +39,9 @@ the script with `--check`, so a change to one without the other fails:
 
 | JSON in `apps/workouts/`                                                 | Written from                                  | Used for                           |
 | ------------------------------------------------------------------------ | --------------------------------------------- | ---------------------------------- |
-| `core/Sources/WorkoutsCore/Resources/Bundled/exercises.json`             | [`sample.yaml`](sample.yaml)'s exercises      | The catalogue signed out, and what the first sync writes into an empty repository |
-| `core/Sources/WorkoutsCore/Resources/Bundled/routines.json`              | [`sample.yaml`](sample.yaml)'s routine        | The same                           |
-| `core/Tests/WorkoutsCoreTests/Fixtures/examples/*.json`                  | The four test-vector files, 163 records       | Codec, engine, presenter and suggestion tests |
+| `WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/exercises.json`             | [`sample.yaml`](sample.yaml)'s exercises      | The catalogue signed out, and what the first sync writes into an empty repository |
+| `WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/routines.json`              | [`sample.yaml`](sample.yaml)'s routine        | The same                           |
+| `WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/examples/*.json`                  | The four test-vector files, 163 records       | Codec, engine, presenter and suggestion tests |
 
 Each JSON file names its YAML in its `source` field. The script loads the YAML with
 PyYAML's safe loader minus the timestamp resolver, so instants stay strings, and turns each
