@@ -257,6 +257,17 @@ final class TransportBox: @unchecked Sendable {
         #expect(await status(approved: monthLate, lifetime: month).issues == [.accessEndsSoon(monthLate.addingTimeInterval(month))])
     }
 
+    /// An installed package the approval still binds (its agents' AI
+    /// provider) is set up, in the console's words, not installed again.
+    @Test func anEnableRowIsSetUp() async {
+        let bound = server(check: #"""
+        {"scopes":{"missing":[]},"setup":\#(rows(["enable", "none", "none", "none"]))}
+        """#)
+        let status = await run(bound, session: appSession())
+        #expect(status.changes == [Change(kind: .install, words: "Set up Apple")])
+        #expect(status.isClear == false)
+    }
+
     /// A blocked row makes the approval page refuse: the server's sentence
     /// says why, and its fix, where it names one, is where the owner goes.
     @Test func aBlockedRowSaysWhyAndWhereItIsFixed() async {
