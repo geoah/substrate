@@ -350,10 +350,9 @@ function Approval({
 }) {
   const { app } = request
   const [technical, setTechnical] = useTechnicalDetails()
-  // Every scope starts checked but one the server refuses (decision 0205);
-  // the set holds the ones left unchecked.
+  // Every scope starts checked; the set holds the ones left unchecked.
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(
-    () => new Set(request.scopes.filter((s) => s.refused).map((s) => s.scope))
+    () => new Set()
   )
   const [lifetime, setLifetime] = useState(request.defaultLifetimeDays)
   // What moved when the server refused the plan the page had shown.
@@ -455,7 +454,7 @@ function Approval({
       scope={s}
       repository={request.repository}
       checked={!unchecked.has(s.scope)}
-      disabled={settled || Boolean(s.refused)}
+      disabled={settled}
       technical={technical}
       onChange={(checked) => toggle(s.scope, checked)}
     />

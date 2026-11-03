@@ -21,12 +21,10 @@ import {
 
 import { Disclosure, Mono, Term } from "@/components/authorize/parts"
 import { Spinner } from "@/components/ui/spinner"
-import { INTERACTION_KIND } from "@/lib/core-kinds"
 import type {
   AuthorizationAccount,
-  AuthorizationAgentKind,
-  AuthorizationAgentPlan,
   AuthorizationPackage,
+  AuthorizationPackagePublisher,
   AuthorizationPackageStep,
   AuthorizationSetup,
   AuthorizationWebhookPlan,
@@ -40,12 +38,14 @@ import {
   chainLines,
   codeWords,
   consolePath,
-  dollars,
   factCounts,
   grantWords,
+  keptWords,
   packageName,
+  packagePage,
   propertyLabel,
   propertyValue,
+  publishedWords,
   setupTitle,
   versionWords,
 } from "@/lib/app-setup"
@@ -112,10 +112,6 @@ function statusWords(row: AuthorizationSetup): string | undefined {
   const progress = progressOf(row)
   if (progress) return PROGRESS_WORDS[progress]
   if (row.blocked) return blockStatus(row.blocked)
-  if (row.agent) {
-    if (row.agent.withheld) return "Left out"
-    return row.agent.allowed ? "Already approved" : undefined
-  }
   if (row.action === "none" && !row.package && !row.account && !row.webhook)
     return "In place"
   return undefined
@@ -210,8 +206,41 @@ function OwnFacts({
   )
 }
 
+/** Where a document-published package comes from, as the publisher check
+ * shows an app's publisher: the authority, the document's name for it, the
+ * document itself, and whether DNS or a file on this server vouched for it
+ * (decision 0212). */
+function PublisherFacts({
+  publisher,
+}: {
+  publisher: AuthorizationPackagePublisher
+}) {
+  return (
+    <>
+      <Term name="Published by">
+        <Mono>{publisher.authority}</Mono>
+        {publisher.name && <span>, {publisher.name}</span>}
+      </Term>
+      <Term name="Document">
+        <Mono>{publisher.documentUrl}</Mono>
+      </Term>
+      <Term name="Read from">
+        {publisher.fromFile
+          ? "A local file (SUBSTRATE_INSECURE_AUTHORITY_DOCS)"
+          : "DNS and the document it names"}
+      </Term>
+    </>
+  )
+}
+
+/** "this server ships" for a package the binary offers, "its publisher
+ * lists" for one an authority document does. */
+function offerWords(publisher: AuthorizationPackagePublisher | undefined) {
+  return publisher ? "its publisher lists" : "this server ships"
+}
+
 /** A package an install brings first: its name and what it brings, counted,
- * then its id, versions and its own facts. */
+ * then its id, versions, where it comes from and its own facts. */
 function StepFacts({ step }: { step: AuthorizationPackageStep }) {
   const name = packageName(step.id)
   const counts = factCounts(step)
@@ -223,10 +252,16 @@ function StepFacts({ step }: { step: AuthorizationPackageStep }) {
       </p>
       <p>
         <Mono>{step.id}</Mono>: {STEP_WORDS[step.action]}, you hold{" "}
-        {version(step.held)}, this server ships {version(step.shipped)}
+        {version(step.held)}, {offerWords(step.publisher)}{" "}
+        {version(step.shipped)}
       </p>
       {step.description && (
         <p className="text-muted-foreground">{step.description}</p>
+      )}
+      {step.publisher && (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-0.5">
+          <PublisherFacts publisher={step.publisher} />
+        </dl>
       )}
       {step.blocked && (
         <p className="text-destructive">{asSentence(step.blocked.problem)}</p>
@@ -246,7 +281,10 @@ function PackageFacts({ pkg }: { pkg: AuthorizationPackage }) {
       {pkg.tier && <Term name="Tier">{pkg.tier}</Term>}
       <Term name="The app needs">version {pkg.required} or later</Term>
       <Term name="You hold">{version(pkg.held)}</Term>
-      <Term name="This server ships">{version(pkg.shipped)}</Term>
+      <Term name={pkg.publisher ? "Its publisher lists" : "This server ships"}>
+        {version(pkg.shipped)}
+      </Term>
+      {pkg.publisher && <PublisherFacts publisher={pkg.publisher} />}
       {pkg.requires && pkg.requires.length > 0 && (
         <Term name="Brings first">
           <ul className="flex flex-col gap-2">
@@ -308,102 +346,6 @@ function WebhookFacts({ webhook }: { webhook: AuthorizationWebhookPlan }) {
   )
 }
 
-/** One kind an agent reaches, by its label where the server holds it. */
-function agentKindWords(k: AuthorizationAgentKind): string {
-  const name = k.label?.plural ?? k.identity
-  return k.held ? name : `${name} (not on this server yet)`
-}
-
-/** What an app's agent may do (decision 0207): what it reads and writes,
- * that it asks questions, what it spends, where what it reads goes, and who
- * keeps it. Every fact is its own labeled line. */
-function AgentWords({ agent }: { agent: AuthorizationAgentPlan }) {
-  const reads = agent.reads ?? []
-  const writes = agent.writes ?? []
-  return (
-    <div className="flex flex-col gap-1 text-xs">
-      <dl className="flex flex-col gap-1">
-        <div>
-          <dt className="text-muted-foreground">It reads</dt>
-          <dd>
-            <ul aria-label="What the agent reads" className="list-disc pl-4">
-              {reads.map((k) => (
-                <li key={k.identity}>{agentKindWords(k)}</li>
-              ))}
-            </ul>
-          </dd>
-        </div>
-        {writes.length > 0 && (
-          <div>
-            <dt className="text-muted-foreground">It changes</dt>
-            <dd>
-              <ul
-                aria-label="What the agent changes"
-                className="list-disc pl-4"
-              >
-                {writes.map((k) => (
-                  <li key={k.identity}>{agentKindWords(k)}</li>
-                ))}
-              </ul>
-            </dd>
-          </div>
-        )}
-        {agent.spendCentsPerDay !== undefined && (
-          <div>
-            <dt className="text-muted-foreground">It spends</dt>
-            <dd>
-              It stops for the day once it has spent about{" "}
-              {dollars(agent.spendCentsPerDay)} of your AI provider&apos;s
-              credit in 24 hours.
-            </dd>
-          </div>
-        )}
-      </dl>
-      <p>It can ask you questions in the chat.</p>
-      <p>
-        Apps you let talk to your agents can ask it questions and read its chats
-        only if they can read everything it reads.
-        {agent.talkedToBy && agent.talkedToBy.length > 0
-          ? ` Already: ${agent.talkedToBy.join(", ")}.`
-          : " None can yet."}
-      </p>
-      <p>
-        What it reads is sent to the AI provider it runs on. The app writes its
-        instructions and keeps them current. It stops when this app&apos;s
-        access ends, and you can turn it off on its package&apos;s page.
-      </p>
-    </div>
-  )
-}
-
-function AgentFacts({ agent }: { agent: AuthorizationAgentPlan }) {
-  const list = (ids: string[]) => (
-    <span className="flex flex-col">
-      {ids.map((id) => (
-        <Mono key={id}>{id}</Mono>
-      ))}
-    </span>
-  )
-  return (
-    <Facts>
-      <Term name="Agent">
-        <Mono>{agent.agent}</Mono>
-      </Term>
-      <Term name="Reads">
-        {list((agent.reads ?? []).map((k) => k.identity))}
-      </Term>
-      <Term name="Writes">
-        {list([
-          ...(agent.writes ?? []).map((k) => k.identity),
-          `${INTERACTION_KIND} (its questions)`,
-        ])}
-      </Term>
-      <Term name="Daily cap">{agent.spendCentsPerDay ?? 0} cents</Term>
-      <Term name="Tools">query, write and ask</Term>
-    </Facts>
-  )
-}
-
 /** Every value the account is created with, by its property's name. */
 function AccountValues({ account }: { account: AuthorizationAccount }) {
   const entries = Object.entries(account.properties ?? {})
@@ -443,7 +385,8 @@ export function SetupRow({
   const title = setupTitle(row)
   const status = statusWords(row)
   const fix = consolePath(row.blocked?.fix)
-  const versions = versionWords(row)
+  const versions = publishedWords(row) ?? versionWords(row)
+  const kept = keptWords(row)
   const code = row.package && codeWords(row.package, webhooks)
   const chain = row.package ? chainLines(row.package, webhooks) : []
   const inPlace = row.action === "none"
@@ -482,12 +425,21 @@ export function SetupRow({
         {row.webhook && (
           <p className="text-xs">{grantWords(row, !!grantHeld)}</p>
         )}
-        {row.agent?.withheld && (
+        {kept && row.package && (
           <p className="text-xs text-muted-foreground">
-            Approving leaves this agent out: {asSentence(row.agent.withheld)}
+            {kept}{" "}
+            <a
+              href={packagePage(row.package.id)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+            >
+              Open its page{" "}
+              <span className="sr-only">(opens in a new tab)</span>
+              <ExternalLinkIcon aria-hidden className="size-3" />
+            </a>
           </p>
         )}
-        {row.agent && !row.agent.withheld && <AgentWords agent={row.agent} />}
         {row.blocked && (
           <div className="flex flex-col gap-0.5 text-xs">
             <p className="text-destructive">
@@ -515,7 +467,6 @@ export function SetupRow({
             {row.package && <PackageFacts pkg={row.package} />}
             {row.account && <AccountFacts account={row.account} />}
             {row.webhook && <WebhookFacts webhook={row.webhook} />}
-            {row.agent && <AgentFacts agent={row.agent} />}
           </div>
         )}
       </div>
