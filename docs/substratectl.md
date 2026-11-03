@@ -468,3 +468,18 @@ failed, and exits non-zero until the record passes, so a script can wait on
 DNS propagation. Both take `-o json` and `-o yaml`.
 
 Next: the [web console](console.md), the same repository in a browser.
+
+## Check a package release
+
+```sh
+substratectl publish example.com/notes --check \
+  --file notes-2.yaml --version 2 \
+  --closure https://example.com/packages/notes-2.yaml
+```
+
+This reads the authority's live document and prints the version entry to
+add. `--document authority.json` reads a development document instead; its
+existing closure paths are relative to that file's directory.
+`--allow-narrowing` acknowledges removal or renaming from the newest listed
+closure. The command uploads nothing. It refuses changed published
+versions, downgrades, invalid closures and unexpected digests.

@@ -5,7 +5,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 23
+  version: 24
   description: >-
     One package whose kinds this repository holds: the group a declaration
     is versioned, owned and quarantined in. The row says who may write under
@@ -80,6 +80,7 @@ data:
     # stamped before this property is claimed by the first apply from an app
     # on the same host. A takeover clears it.
     declaredByClient:
+      deprecated: true
       type: string
       managed: true
       description: the client id of the app that declared this package and
@@ -144,3 +145,11 @@ data:
       description: the shipped package version the last provider install took,
         which the upgrade preview compares the shipped closure against
     # No sourceYAML (record 61): declaration rows store parsed facts only.
+    publishedFrom:
+      type: string
+      managed: true
+      description: the authority document URL that published this package
+    publishedDigest:
+      type: string
+      managed: true
+      description: the SHA-256 of the installed published closure

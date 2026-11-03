@@ -26,9 +26,11 @@ export function AppManagedSection({
   clientId,
   packageId,
   agent = false,
+  publisher,
 }: {
   /** The app's actor, `app:<host>`. */
   app: string
+  publisher?: string
   /** The section heads an app's agent (decision 0207) rather than its
    * collections. */
   agent?: boolean
@@ -41,7 +43,7 @@ export function AppManagedSection({
   const bundle = useQuery(bundleStatusQueryOptions(packageId))
   const [confirming, setConfirming] = useState(false)
   const [typed, setTyped] = useState("")
-  const name = actorIdentity(app).name
+  const name = publisher ?? actorIdentity(app).name
   const take = useMutation({
     mutationFn: () => takeOverPackage(packageId),
     onSuccess: async () => {
@@ -61,15 +63,24 @@ export function AppManagedSection({
   }
   return (
     <section>
-      <SectionHead title="Managed by" />
+      <SectionHead title={publisher ? "Publisher" : "Managed by"} />
       <div className="flex max-w-md flex-col gap-2 overflow-hidden rounded-[10px] border border-border px-3 py-2.5">
-        <ActorRef actor={app} />
+        {publisher ? (
+          <p className="break-all">{publisher}</p>
+        ) : (
+          <ActorRef actor={app} />
+        )}
         {clientId && (
           <p className="data text-xs [overflow-wrap:anywhere] text-muted-foreground">
             {clientId}
           </p>
         )}
-        {agent ? (
+        {publisher ? (
+          <p className="text-sm text-muted-foreground">
+            This package follows its publisher’s releases. Take it over to edit
+            its declarations yourself and stop receiving updates.
+          </p>
+        ) : agent ? (
           <p className="text-[13px] text-muted-foreground">
             {name} keeps this agent: its instructions, what it may read and
             change, its model and its daily cap. You can’t change them here.

@@ -441,8 +441,10 @@
     "changes": false,
     "discardsEdits": false,
     "from": false,
+    "holders": false,
     "lossy": true,
     "planHash": false,
+    "reviewRequired": false,
     "steps": false,
     "to": false,
     "work": true
@@ -452,6 +454,13 @@
     "id": true,
     "kind": true,
     "to": false
+  },
+  "BundleUpgradeHolder": {
+    "checkedAt": false,
+    "clientId": true,
+    "clientName": true,
+    "floor": true,
+    "softwareVersion": false
   },
   "CatalogBundle": {
     "authority": true,
@@ -464,6 +473,7 @@
     "origin": false,
     "originVersion": false,
     "package": true,
+    "publisher": false,
     "requires": false,
     "requiresAtLeast": false,
     "suggestedMappings": false,
@@ -487,6 +497,7 @@
     "origin": false,
     "originVersion": false,
     "package": true,
+    "publisher": false,
     "requires": false,
     "requiresAtLeast": false,
     "suggestedMappings": false,

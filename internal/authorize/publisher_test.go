@@ -28,7 +28,7 @@ func authorityJSON(authority string, clients ...string) string {
 		apps = append(apps, `{"client_id": "`+c+`", "name": "Example Workouts", "packages": ["training"], "apple": {"appIDs": ["ABCDE12345.org.example.workouts"]}}`)
 	}
 	return `{"authority": "` + authority + `", "name": "Example", "description": "Example's apps.",
-		"packages": [{"package": "training", "versions": [{"version": 1, "closure": "https://cdn.example.net/training-1.yaml", "sha256": "00"}]}],
+		"packages": [{"package": "training", "versions": [{"version": 1, "closure": "https://cdn.example.net/training-1.yaml", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}]}],
 		"apps": [` + strings.Join(apps, ",") + `]}`
 }
 
@@ -157,12 +157,12 @@ func TestAnAuthorityDocumentIsCachedOnlyWhenItWasRead(t *testing.T) {
 	bad, badHits := publisherServer(t, `{"authority": "example.org", "apps": [], "extra": true}`)
 	res["_substrate.example.org."] = []string{"v=substrate1 doc=" + bad.URL + "/a.json"}
 	for range 2 {
-		if p := v.Verify(context.Background(), c, claiming(pubAuthority), pubRedirect); p.Verified || !strings.Contains(p.Reason, "not one this server reads") {
+		if p := v.Verify(context.Background(), c, claiming(pubAuthority), pubRedirect); p.Verified || !strings.Contains(p.Reason, "does not list") {
 			t.Fatalf("a document with an unknown key reads %+v", p)
 		}
 	}
-	if badHits.Load() != 2 {
-		t.Fatalf("a refused document was fetched %d times, want 2: a failure is never cached", badHits.Load())
+	if badHits.Load() != 1 {
+		t.Fatalf("a forward-compatible document was fetched %d times, want 1", badHits.Load())
 	}
 }
 

@@ -913,6 +913,29 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 	if in.ClientName != "" {
 		props["clientName"] = in.ClientName
 	}
+	if err := validateAppBuild(in.AppPackages, in.AppSoftwareVersion); err != nil {
+		return zero, "", err
+	}
+	if len(in.AppPackages) > 0 {
+		props["appPackages"] = appPackageValues(in.AppPackages)
+	}
+	if in.AppSoftwareVersion != "" {
+		props["appSoftwareVersion"] = in.AppSoftwareVersion
+	}
+	if in.ClientID != "" {
+		props["appCheckedAt"] = nowUTC().Format(time.RFC3339Nano)
+	}
+	if len(in.AppAddons) > 0 {
+		raw, err := json.Marshal(in.AppAddons)
+		if err != nil {
+			return zero, "", err
+		}
+		var addons []any
+		if err := json.Unmarshal(raw, &addons); err != nil {
+			return zero, "", err
+		}
+		props["appAddons"] = addons
+	}
 	if in.AppAuthority != "" {
 		props["appAuthority"] = in.AppAuthority
 	}
@@ -946,6 +969,7 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 	return substrate.TokenInfo{
 		ID: ent.ID, Label: in.Label, Created: ent.CreatedAt, ExpiresAt: in.ExpiresAt,
 		Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName, Agents: in.Agents,
+		AppPackages: in.AppPackages, AppSoftwareVersion: in.AppSoftwareVersion, AppAddons: in.AppAddons, AppCheckedAt: appCheckTime(in.ClientID),
 		AppAuthority: in.AppAuthority, AppAuthorityFromFile: in.AppAuthorityFromFile, AppLocal: in.AppLocal,
 	}, secret, nil
 }
@@ -957,7 +981,7 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 		SELECT id, props->>'label', props->>'expiresAt', props->'scopes',
 		       props->>'clientId', props->>'clientName', props->'agents', created_at,
 		       props->>'appAuthority', COALESCE((props->>'appLocal')::boolean, false),
-		       COALESCE((props->>'appAuthorityFromFile')::boolean, false)
+		       COALESCE((props->>'appAuthorityFromFile')::boolean, false), props
 		FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC, id`, kindToken)
@@ -969,8 +993,8 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 	for rows.Next() {
 		var info substrate.TokenInfo
 		var label, expires, clientID, clientName, appAuthority sql.NullString
-		var scopes, agents []byte
-		if err := rows.Scan(&info.ID, &label, &expires, &scopes, &clientID, &clientName, &agents, &info.Created, &appAuthority, &info.AppLocal, &info.AppAuthorityFromFile); err != nil {
+		var scopes, agents, build []byte
+		if err := rows.Scan(&info.ID, &label, &expires, &scopes, &clientID, &clientName, &agents, &info.Created, &appAuthority, &info.AppLocal, &info.AppAuthorityFromFile, &build); err != nil {
 			return nil, err
 		}
 		info.Label = label.String
@@ -983,6 +1007,9 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 			return nil, fmt.Errorf("%w: token %s: %w", substrate.ErrCorrupt, info.ID, derr)
 		}
 		info.Agents = softAgents(ds.svc.log, info.ID, agents)
+		if err := readAppBuild(build, &info); err != nil {
+			return nil, err
+		}
 		info.ClientID, info.ClientName, info.AppAuthority = clientID.String, clientName.String, appAuthority.String
 		out = append(out, info)
 	}
@@ -1136,18 +1163,18 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, sub
 	var zero substrate.TokenInfo
 	var info substrate.TokenInfo
 	var label, got, expires, clientID, clientName, appAuthority sql.NullString
-	var scopes, agents []byte
+	var scopes, agents, build []byte
 	row := s.maint.QueryRowContext(ctx, `
 		SELECT `+tokenRepositoryColumns+`,
 		       r.id, r.props->>'label', r.props->>'hash', r.props->>'expiresAt',
 		       r.props->'scopes', r.props->>'clientId', r.props->>'clientName', r.props->'agents', r.created_at,
 		       r.props->>'appAuthority', COALESCE((r.props->>'appLocal')::boolean, false),
-		       COALESCE((r.props->>'appAuthorityFromFile')::boolean, false)
+		       COALESCE((r.props->>'appAuthorityFromFile')::boolean, false), r.props
 		FROM records r JOIN repositories p ON p.id = r.repository
 		WHERE r.kind = $1 AND r.deleted_at IS NULL AND r.props @> jsonb_build_object('hash', $2::text)`,
 		kindToken, hash)
 	repo, err := scanRepositoryRow(func(dest ...any) error {
-		return row.Scan(append(dest, &info.ID, &label, &got, &expires, &scopes, &clientID, &clientName, &agents, &info.Created, &appAuthority, &info.AppLocal, &info.AppAuthorityFromFile)...)
+		return row.Scan(append(dest, &info.ID, &label, &got, &expires, &scopes, &clientID, &clientName, &agents, &info.Created, &appAuthority, &info.AppLocal, &info.AppAuthorityFromFile, &build)...)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return Repository{}, zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
@@ -1166,6 +1193,9 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, sub
 		return Repository{}, zero, fmt.Errorf("%w: %w", substrate.ErrAuth, err)
 	}
 	info.Agents = softAgents(s.log, info.ID, agents)
+	if err := readAppBuild(build, &info); err != nil {
+		return Repository{}, zero, err
+	}
 	// Expiry is SERVER-ENFORCED here: a token past its stamp authenticates as
 	// a spent credential, so no dataset is ever handed out for it. An
 	// unreadable stamp fails closed for the same reason.

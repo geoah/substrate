@@ -329,7 +329,7 @@ export function UpgradeButton({
           <Button
             variant="outline"
             size="sm"
-            disabled={upgrading.isPending}
+            disabled={upgrading.isPending || Boolean(upgrade?.holders?.length)}
             onClick={(e) => {
               e.stopPropagation()
               if (asks) onConfirmLoss(row)
@@ -349,6 +349,17 @@ export function UpgradeButton({
         <TooltipContent className="max-w-96">
           <div className="space-y-1">
             {motion && <p>Version {motion}</p>}
+            {upgrade?.holders?.map((holder) => (
+              <p key={holder.clientId}>
+                Waiting for {holder.clientName || holder.clientId}
+                {holder.softwareVersion ? ` (${holder.softwareVersion})` : ""}:
+                floor {holder.floor}. {holder.clientId}.
+                {holder.checkedAt
+                  ? ` Last checked ${new Date(holder.checkedAt).toLocaleString()}.`
+                  : " No check-in recorded."}
+              </p>
+            ))}
+
             {steps.map((s) => (
               <p key={s}>{s}</p>
             ))}

@@ -10,6 +10,7 @@
  * applied directly), with its version, its state, its update and its
  * removal, so nothing the old Registry listed is out of reach. */
 
+import { PublisherDetails } from "@/components/packages/publisher"
 import { useCallback, useState } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { SearchXIcon, TriangleAlertIcon } from "lucide-react"
@@ -176,6 +177,9 @@ function ProviderCard({
           <StandingPill standing={standing} />
         )}
       </div>
+      {row.catalog?.publisher && (
+        <PublisherDetails publisher={row.catalog.publisher} />
+      )}
       {row.catalog?.description && (
         <p className="line-clamp-2 text-[12.5px] text-muted-foreground">
           {firstSentence(row.catalog.description)}

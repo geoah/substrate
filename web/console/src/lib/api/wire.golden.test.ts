@@ -98,6 +98,7 @@ import type {
   BundleStatus,
   BundleUninstalled,
   BundleUpgrade,
+  BundleUpgradeHolder,
   BundleUpgradeChange,
   CatalogBundle,
   CatalogInput,
@@ -933,6 +934,7 @@ const agentEvent: Shape<AgentEvent> = {
 
 /** The catalog entry and the shapes nested in it. */
 const catalogBundle: Shape<CatalogBundle> = {
+  publisher: false,
   id: true,
   name: true,
   authority: true,
@@ -1058,7 +1060,18 @@ const conversionConfirm: Shape<ConversionConfirm> = {
 }
 
 /** The upgrade preview, on a catalog entry and on the shipped-upgrade read. */
+
+const bundleUpgradeHolder: Shape<BundleUpgradeHolder> = {
+  clientName: true,
+  clientId: true,
+  softwareVersion: false,
+  checkedAt: false,
+  floor: true,
+}
+
 const bundleUpgrade: Shape<BundleUpgrade> = {
+  holders: false,
+  reviewRequired: false,
   ...conversionPlan,
   available: true,
   from: false,
@@ -1312,6 +1325,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   InputStatus: inputStatus,
   SetupItem: setupItem,
   BundleUpgrade: bundleUpgrade,
+  BundleUpgradeHolder: bundleUpgradeHolder,
   BundleUpgradeChange: bundleUpgradeChange,
   ConversionPlan: conversionPlan,
   ConversionStep: conversionStep,
