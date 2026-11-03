@@ -74,9 +74,16 @@ nothing. This amends 0046 and 0074, which accepted a name without proof.
 - Bad, because without a public URL an origin that relays this server's
   document passes the server comparison; the proof in DNS still has to be
   published by the name's controller.
+- Bad, because a stamp is never checked again: a name whose record later
+  names another server, or whose domain lapses, reads verified until the
+  owner runs the check again. Its audience today is the owner alone; a
+  periodic re-check belongs with the step up below.
 - Neutral: a server whose data root is lost mints a new instance id. The
   stamps it wrote stay, and a later check compares against the new id and
   still passes while `server=` reaches this server.
+- Neutral: with a configured public URL, `server=` naming it exactly
+  decides the server check and the origin's `server.json` is not read
+  back; a proof binds one check, so two checks of one proof stamp once.
 
 ### Confirmation
 
