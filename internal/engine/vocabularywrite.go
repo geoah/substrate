@@ -304,6 +304,11 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	if err != nil {
 		return nil, err
 	}
+	if opts.PublishedFrom != "" {
+		if err := ds.refuseShippedUnderDocument(ctx, docs); err != nil {
+			return nil, err
+		}
+	}
 	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
 		return nil, err
 	}
@@ -3292,6 +3297,39 @@ func (t *txn) reprojectRefs(kinds []string) error {
 	for _, ident := range kinds {
 		if err := t.syncRefsOfKind(ident); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// refuseShippedUnderDocument refuses a document-published closure (decision
+// 0212) that would land over a package the binary ships: one the seed wrote
+// (builtin) or a catalog install stamped without a document (published, no
+// publishedFrom). It reads the stored rows, as they stood before this
+// install: the bundle actor passes the source rules of
+// authorizeDeclarationWrite, so this is where a hosted file or a DNS answer is
+// kept from replacing what the binary ships. A package an earlier document
+// install stamped, or one the repository holds as installed, may be landed
+// over.
+func (ds *dataset) refuseShippedUnderDocument(ctx context.Context, docs []vocabulary.Document) error {
+	seen := map[string]bool{}
+	for _, d := range docs {
+		pkg := d.DeclaredPackage()
+		if pkg == "" || seen[pkg] {
+			continue
+		}
+		seen[pkg] = true
+		row, err := ds.loadRowDB(ctx, eref{Kind: kindPackage, ID: pkg})
+		if err != nil {
+			return err
+		}
+		if row == nil || row.DeletedAt != nil {
+			continue
+		}
+		source, _ := row.Props["source"].(string)
+		from, _ := row.Props["publishedFrom"].(string)
+		if source == vocabulary.SourceBuiltin || (source == vocabulary.SourcePublished && from == "") {
+			return fmt.Errorf("%w: %s ships with this server, and no authority document replaces it", substrate.ErrForbidden, pkg)
 		}
 	}
 	return nil

@@ -263,7 +263,7 @@ func run() error {
 			"authority", authority, "path", path)
 	}
 	reader := authority.NewReader(authority.Options{LocalDocuments: authorityDocs})
-	cat, err := catalog.LoadWithReader(reader, catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	cat, err := catalog.LoadWithReader(reader, kinds.SeedPackages, catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		return err
 	}
