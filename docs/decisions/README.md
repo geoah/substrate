@@ -371,3 +371,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0211](0211-the-console-groups-collections-by-package.md) | The console groups collections by package | proposed |
 | [0212](0212-a-package-is-published-by-its-authoritys-document-and-installed-from-it.md) | A package is published by its authority's document and installed from it | proposed |
 | [0213](0213-a-published-package-keeps-its-publishers-versions-and-an-upgrade-waits-for-every-connected-build.md) | A published package keeps its publisher's versions, and an upgrade waits for every connected build | proposed |
+| [0214](0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md) | An app's approval installs published packages, and `declare:` and the `agent` detail are retired | proposed |

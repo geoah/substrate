@@ -352,13 +352,13 @@ provider or catalogue), and creates a new package only under the
 repository's own authority
 ([0210](docs/decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md));
 its own packages and the
-samples it imported are `installed` and writable, except one an app declared
-under its `declare:` scope (`declaredBy` is the app's actor, and the full
-client id in `declaredByClient` owns it), whose declarations only that app writes
-until the owner takes it over; the bundle's disable and enable stay the
-owner's, its purge does not
-([0205](docs/decisions/0205-an-app-owns-the-package-it-declares.md)). A
-bundle owns one package and its id IS that package.
+samples it imported are `installed` and writable, whoever declared them: a
+package an app once declared under the retired `declare:` scope is the
+owner's like any other, and `declaredByClient` is a stamp no path writes
+([0214](docs/decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md)).
+An app's own kinds arrive as a package its approval installs, published by
+its authority's document. A bundle owns one package and its id IS that
+package.
 
 `substrate.reamde.dev` is a served domain: its `_substrate` TXT record names
 the authority document other servers read to verify the first-party apps
