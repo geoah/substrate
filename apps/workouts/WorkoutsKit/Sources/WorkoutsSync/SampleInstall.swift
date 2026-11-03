@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateLocal
 import WorkoutsCore
 import SubstrateCore
 

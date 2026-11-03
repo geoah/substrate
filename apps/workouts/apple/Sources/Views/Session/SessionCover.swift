@@ -9,7 +9,7 @@ import SwiftUI
 /// every change is a command.
 struct SessionCover: View {
     @Environment(AppModel.self) private var app
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @State private var cover = CoverModel()
     /// The Rows layout's view state: a fix in progress, the keypad, what is folded.
     @State private var rowsScreen: RowsScreenModel
@@ -411,7 +411,7 @@ struct SessionCover: View {
 
     /// The only scrolls: a tap on Up next or in the jump menu, a deep link,
     /// the entry check's Edit, and a superset's 0 s transition (§7.6).
-    private func scroll(to target: ScrollTarget, presentation: SessionPresentation, proxy: ScrollViewProxy) {
+    private func scroll(to target: WorkoutsCore.ScrollTarget, presentation: SessionPresentation, proxy: ScrollViewProxy) {
         let slot = target.slot ?? target.row.flatMap { presentation.row($0)?.slot }
         guard let slot, let block = presentation.blocks.first(where: { $0.cards.contains { $0.slot == slot } }) else { return }
         Task {
@@ -442,8 +442,8 @@ struct SessionCover: View {
         focus = nil
         rowsScreen.fixing = nil
         rowsScreen.typing = nil
+        // The setting reaches the session with its value: it presents again.
         app.settings.sessionLayout = layout.other
-        session.present()
     }
 
     // MARK: - Finish
@@ -603,7 +603,7 @@ struct SessionCover: View {
 
     private var entryCheckShown: Binding<Bool> {
         Binding { session.entryCheck != nil } set: { shown in
-            if !shown, session.entryCheck != nil { session.entryCheck = nil }
+            if !shown { session.dismissEntryCheck() }
         }
     }
 

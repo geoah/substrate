@@ -1,98 +1,73 @@
 #if canImport(UserNotifications)
 import Foundation
 import SubstrateDevice
-@preconcurrency import UserNotifications
+import UserNotifications
 
-/// Notifications through UserNotifications. Made once, at launch, before
-/// the app finishes launching: it becomes the notification center's
-/// delegate, so a tap that launched the app is kept until a reader comes
-/// for it, and a notification due while the app is in front still shows.
-public final class SystemNotifications: NSObject, Notifications, UNUserNotificationCenterDelegate, @unchecked Sendable {
-    private let center: UNUserNotificationCenter
-    private let lock = NSLock()
-    private var readers: [Int: AsyncStream<NotificationTap>.Continuation] = [:]
-    private var next = 0
-    /// Taps that came before any reader.
-    private var early: [NotificationTap] = []
-
-    public init(center: UNUserNotificationCenter = .current()) {
-        self.center = center
-        super.init()
-        center.delegate = self
-    }
+/// Notifications through `UNUserNotificationCenter`. The delegate, which
+/// decides what a notification does while the app is in front and what a
+/// tap opens, is the app's: it sets it on the same center before the app
+/// finishes launching.
+public struct SystemNotifications: Notifications {
+    public init() {}
 
     public func permission() async -> NotificationPermission {
-        Self.permission(await center.notificationSettings().authorizationStatus)
+        Self.permission(of: await UNUserNotificationCenter.current().notificationSettings())
     }
 
+    /// Asks for alerts and sound only: being time sensitive comes from the
+    /// app's entitlement, not an option.
     public func requestPermission() async -> NotificationPermission {
-        let now = await permission()
-        guard now == .notAsked else { return now }
-        _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+        let center = UNUserNotificationCenter.current()
+        if await center.notificationSettings().authorizationStatus == .notDetermined {
+            _ = try? await center.requestAuthorization(options: [.alert, .sound])
+        }
         return await permission()
     }
 
+    public func schedule(_ request: NotificationRequest) async {
+        let interval = request.fireAt.timeIntervalSinceNow
+        guard interval > 0 else { return }
+        let content = UNMutableNotificationContent()
+        content.title = request.title
+        if let body = request.body { content.body = body }
+        content.sound = .default
+        #if os(iOS)
+        // Without the entitlement the system delivers it as active, with no
+        // code change.
+        if request.timeSensitive { content.interruptionLevel = .timeSensitive }
+        #endif
+        if let thread = request.thread { content.threadIdentifier = thread }
+        if let category = request.category { content.categoryIdentifier = category }
+        content.userInfo = request.userInfo
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, interval), repeats: false)
+        try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: request.id, content: content, trigger: trigger))
+    }
+
+    public func cancel(_ id: String) async {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        center.removeDeliveredNotifications(withIdentifiers: [id])
+    }
+
     public func pending(prefix: String) async -> [String] {
-        await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }.sorted()
+        await UNUserNotificationCenter.current().pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }.sorted()
     }
 
-    public func schedule(_ requests: [NotificationRequest]) async throws {
-        for request in requests {
-            let content = UNMutableNotificationContent()
-            content.title = request.title
-            content.body = request.body
-            content.sound = .default
-            content.userInfo = request.payload
-            // An instant, not a wall-clock time: a time zone change leaves it
-            // where it is, and the app plans a day's hour again itself. The
-            // system refuses an interval that is not positive.
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, request.at.timeIntervalSinceNow), repeats: false)
-            try await center.add(UNNotificationRequest(identifier: request.id, content: content, trigger: trigger))
-        }
-    }
-
-    public func cancel(_ ids: [String]) async {
-        center.removePendingNotificationRequests(withIdentifiers: ids)
-    }
-
-    public func taps() -> AsyncStream<NotificationTap> {
-        let (stream, continuation) = AsyncStream<NotificationTap>.makeStream()
-        let (id, waiting) = lock.withLock { () -> (Int, [NotificationTap]) in
-            next += 1
-            readers[next] = continuation
-            defer { early = [] }
-            return (next, early)
-        }
-        for tap in waiting { continuation.yield(tap) }
-        continuation.onTermination = { [weak self] _ in self?.lock.withLock { _ = self?.readers.removeValue(forKey: id) } }
-        return stream
-    }
-
-    public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        let info = response.notification.request.content.userInfo
-        var payload: [String: String] = [:]
-        for (key, value) in info {
-            if let key = key as? String, let value = value as? String { payload[key] = value }
-        }
-        let tap = NotificationTap(id: response.notification.request.identifier, payload: payload)
-        let readers = lock.withLock { () -> [AsyncStream<NotificationTap>.Continuation] in
-            if self.readers.isEmpty { early.append(tap) }
-            return Array(self.readers.values)
-        }
-        for reader in readers { reader.yield(tap) }
-    }
-
-    public func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                       willPresent notification: UNNotification) async -> UNNotificationPresentationOptions
-    {
-        [.banner, .list, .sound]
-    }
-
-    static func permission(_ status: UNAuthorizationStatus) -> NotificationPermission {
-        switch status {
-        case .notDetermined: .notAsked
-        case .denied: .denied
-        default: .allowed
+    static func permission(of settings: UNNotificationSettings) -> NotificationPermission {
+        switch settings.authorizationStatus {
+        case .notDetermined:
+            return .notAsked
+        case .denied:
+            return .off
+        default:
+            // Allowed but shown nowhere still means the owner never sees one.
+            if settings.alertSetting != .enabled, settings.lockScreenSetting != .enabled,
+               settings.notificationCenterSetting != .enabled { return .off }
+            #if os(iOS)
+            return settings.timeSensitiveSetting == .enabled ? .on : .notTimeSensitive
+            #else
+            return .on
+            #endif
         }
     }
 }

@@ -14,7 +14,7 @@ public extension TasksApp {
         var out: [Effect] = []
         switch event {
         case .opening:
-            out += [.load, .followOutbox, .followTaps, .readPermission]
+            out += [.load, .followOutbox, .readPermission]
         case let .wrote(write), let .editorSaved(_, write, _):
             if !write.entries.isEmpty { out.append(.enqueue(write)) }
         case let .settingsChanged(settings):
@@ -60,7 +60,6 @@ public extension TasksApp {
         switch effect {
         case .load: "load"
         case .followOutbox: "outbox"
-        case .followTaps: "taps"
         case .readPermission, .askPermission: "permission"
         case .read: "read"
         case .follow, .stopFollowing: "watch"
@@ -75,7 +74,7 @@ public extension TasksApp {
     func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
         let (cache, outbox, line) = (cache, outbox, line)
         let folder = environment.folder
-        let notifications = environment.notifications
+        let notifications = environment.devices.notifications
         let source = environment.client
         switch effect {
         case .load:
@@ -97,15 +96,6 @@ public extension TasksApp {
             return .sequence {
                 Self.relay { continuation in
                     for await _ in await outbox.changes() { continuation.yield(.queueReported(await outbox.entries)) }
-                }
-            }
-        case .followTaps:
-            guard let notifications else { return .none }
-            return .sequence {
-                Self.relay { continuation in
-                    for await tap in notifications.taps() {
-                        if let task = tap.payload["task"] { continuation.yield(.tapped(task)) }
-                    }
                 }
             }
         case .readPermission:
@@ -199,8 +189,8 @@ public extension TasksApp {
             return .once {
                 let wanted = Set(plan.map(\.id))
                 let stale = await notifications.pending(prefix: Reminders.prefix).filter { !wanted.contains($0) }
-                if !stale.isEmpty { await notifications.cancel(stale) }
-                try? await notifications.schedule(plan)
+                for id in stale { await notifications.cancel(id) }
+                for request in plan { await notifications.schedule(request) }
                 return .scheduled(plan)
             }
         case .readUsage:

@@ -5,6 +5,7 @@
       "transportFetch": {
         "request": {
           "body": "AAECAwQ=",
+          "credentials": false,
           "headers": [
             {
               "name": "Content-Type",
@@ -164,6 +165,7 @@
   {
     "type": "TransportRequest",
     "json": {
+      "credentials": false,
       "headers": [],
       "method": "GET",
       "timeoutMillis": 1,
@@ -178,7 +180,8 @@
       "headers": [],
       "body": null,
       "bodyFile": null,
-      "timeoutMillis": 1
+      "timeoutMillis": 1,
+      "credentials": false
     }
   },
   {
@@ -214,17 +217,17 @@
     "json": {
       "body": {
         "decimal": 0.1,
-        "integer": 9223372036854775807,
         "long": 12345678901234567890.12345678901234567,
         "negative": -0.000000000000000000000000001,
+        "integer": 9223372036854775807,
         "nested": {
-          "empty": {},
           "list": [
             1,
             "two",
             true,
             null
-          ]
+          ],
+          "empty": {}
         }
       },
       "handle": {
@@ -233,6 +236,34 @@
       },
       "op": "presentation",
       "v": 1
+    }
+  },
+  {
+    "type": "Envelope",
+    "json": {
+      "body": {
+        "digits": 1234567890123456789012345678901234567890.0987654321,
+        "tiny": -1.25e-400,
+        "huge": 9.87654321e999,
+        "integer": 123456789012345678901234567890123456789012345678901234567890
+      },
+      "handle": {
+        "generation": 1,
+        "id": 3
+      },
+      "op": "command",
+      "v": 1
+    }
+  },
+  {
+    "type": "RouteCommand",
+    "json": {
+      "command": {
+        "amount": 1e-200
+      },
+      "path": [
+        "a"
+      ]
     }
   },
   {

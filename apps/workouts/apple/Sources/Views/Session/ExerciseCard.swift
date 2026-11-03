@@ -12,7 +12,7 @@ struct ExerciseCardView: View {
     let allCards: [ExerciseCard]
     var focus: FocusState<CoverModel.Field?>.Binding
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
 
     var body: some View {
@@ -163,7 +163,7 @@ struct ExerciseMenuItems: View {
     /// Every card of the session, for "Add to superset…".
     let allCards: [ExerciseCard]
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
 
     var body: some View {

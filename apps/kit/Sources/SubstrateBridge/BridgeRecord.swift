@@ -29,8 +29,8 @@ public final class BridgeRecord: @unchecked Sendable {
         lock.withLock { stats[keyPath: field] += 1 }
     }
 
-    func record(_ direction: String, _ message: String, service: DeviceService?) {
-        let line = "\(direction) \(Redaction.redact(message, service: service))"
+    func record(_ direction: String, _ message: String, call: Redaction.Call) {
+        let line = "\(direction) \(Redaction.redact(message, call: call))"
         lock.withLock {
             recent.append(line)
             if recent.count > keep { recent.removeFirst(recent.count - keep) }

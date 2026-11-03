@@ -60,6 +60,7 @@ class BridgeChecks(private val context: Context, private val emit: (String) -> U
                     handle.close()
                 }
             }
+            check("idle root x50") { idle(50) }
             check("open and close x200") { openClose(200) }
             check("cancellation races x100") { cancellationRaces(100) }
             check("slow consumer") { slowConsumer(2000) }
@@ -184,6 +185,19 @@ class BridgeChecks(private val context: Context, private val emit: (String) -> U
         val open = Bridge.stats().open
         require(open == baseline) { "$open handles open after, $baseline before" }
         return "$count cycles, ${"%.2f".format(ms(began) / count)} ms each, every handle closed and closing twice accepted"
+    }
+
+    /** A root that presents once, as it opens, and never again: that one presentation must arrive. */
+    private suspend fun idle(count: Int): String {
+        repeat(count) {
+            val handle = Bridge.open("idle").getOrThrow()
+            try {
+                withTimeout(5_000) { handle.presentations(CheckPresentation.serializer()).first { it.step == 1L } }
+            } finally {
+                handle.close()
+            }
+        }
+        return "$count opens of a root that presents only as it opens; each showed it"
     }
 
     private suspend fun cancellationRaces(count: Int): String {

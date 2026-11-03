@@ -114,6 +114,8 @@ public extension TasksApp {
             return [.foregrounded]
         case let .offered(version):
             return [.offered(version)]
+        case let .reminderTapped(id):
+            return [.tapped(id)]
         case .dismissProblem:
             return [.problemDismissed]
         }

@@ -232,7 +232,7 @@ private struct RoutineHeader: View {
     }
     .environment(app)
     .environment(PreviewData.noSession(app))
-    .environment(SubstrateLink.shared)
+    .environment(WorkoutsRoot.shared.link)
 }
 
 #Preview("Progress, with history") {
@@ -247,7 +247,7 @@ private struct RoutineHeader: View {
     }
     .environment(app)
     .environment(PreviewData.noSession(app))
-    .environment(SubstrateLink.shared)
+    .environment(WorkoutsRoot.shared.link)
 }
 
 #Preview("Progress, no sessions yet") {
@@ -261,7 +261,7 @@ private struct RoutineHeader: View {
     }
     .environment(app)
     .environment(PreviewData.noSession(app))
-    .environment(SubstrateLink.shared)
+    .environment(WorkoutsRoot.shared.link)
 }
 
 #Preview("Editing, a set open") {
@@ -283,7 +283,7 @@ private struct RoutineHeader: View {
     }
     .environment(app)
     .environment(PreviewData.noSession(app))
-    .environment(SubstrateLink.shared)
+    .environment(WorkoutsRoot.shared.link)
 }
 
 #Preview("No exercises") {
@@ -296,7 +296,7 @@ private struct RoutineHeader: View {
     }
     .environment(app)
     .environment(PreviewData.noSession(app))
-    .environment(SubstrateLink.shared)
+    .environment(WorkoutsRoot.shared.link)
 }
 
 #Preview("Largest text, dark") {
@@ -307,7 +307,7 @@ private struct RoutineHeader: View {
     }
     .environment(app)
     .environment(PreviewData.noSession(app))
-    .environment(SubstrateLink.shared)
+    .environment(WorkoutsRoot.shared.link)
     .environment(\.dynamicTypeSize, .accessibility3)
     .preferredColorScheme(.dark)
 }

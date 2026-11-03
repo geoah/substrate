@@ -9,7 +9,7 @@ import Foundation
 // and `SetValuesPatch`es, the same edits the Table layout sends.
 
 /// The session as the Rows layout shows it.
-public struct RowsLayout: Equatable, Sendable {
+public struct RowsLayout: Codable, Equatable, Sendable {
     /// Display order, as `SessionPresentation.blocks`: a plain exercise or a group.
     public var blocks: [RowsBlock]
     /// The floating island at the bottom.
@@ -38,7 +38,7 @@ public struct RowsLayout: Equatable, Sendable {
 }
 
 /// One block: a plain exercise, or a group with its members interleaved by round.
-public struct RowsBlock: Equatable, Sendable, Identifiable {
+public struct RowsBlock: Codable, Equatable, Sendable, Identifiable {
     /// `ExerciseBlock.id`: the slot's key, or `group-<key>`.
     public var id: String
     /// The slots in the block, in member order. The block's `…` menu reads
@@ -103,7 +103,7 @@ public struct RowsBlock: Equatable, Sendable, Identifiable {
 }
 
 /// A finished block's one line: `110 kg × 8, 7, 8` and `+5 kg`.
-public struct RowsBlockSummary: Equatable, Sendable {
+public struct RowsBlockSummary: Codable, Equatable, Sendable {
     /// The working sets, a repeated load written once: `110 kg × 8, 7, 8`,
     /// `40 kg × 11, 35 kg × 14, drop 25 kg × 12`, `Glute Bridge 16, 16; Bird Dog 11, 11 per side`.
     public var text: String
@@ -120,7 +120,7 @@ public struct RowsBlockSummary: Equatable, Sendable {
 }
 
 /// One line of a block.
-public enum RowsItem: Equatable, Sendable, Identifiable {
+public enum RowsItem: Codable, Equatable, Sendable, Identifiable {
     /// A set: a head, a side, a drop or a mini-set.
     case set(RowsSetItem)
     /// Every warm-up of the block once all are done, on one line.
@@ -145,7 +145,7 @@ public enum RowsItem: Equatable, Sendable, Identifiable {
 }
 
 /// Where a set row stands.
-public enum RowsRowState: String, Equatable, Sendable {
+public enum RowsRowState: String, Codable, Equatable, Sendable {
     case done
     /// The open set: the suggestion, or the one the owner tapped. Open in place with its editor.
     case now
@@ -156,7 +156,7 @@ public enum RowsRowState: String, Equatable, Sendable {
 }
 
 /// What kind of set a row is: its colour and its words.
-public enum RowsRowRole: String, Equatable, Sendable {
+public enum RowsRowRole: String, Codable, Equatable, Sendable {
     case working
     /// Orange.
     case warmup
@@ -171,8 +171,8 @@ public enum RowsRowRole: String, Equatable, Sendable {
 }
 
 /// A small tag after a row's values.
-public struct RowsTag: Equatable, Sendable {
-    public enum Style: String, Equatable, Sendable {
+public struct RowsTag: Codable, Equatable, Sendable {
+    public enum Style: String, Codable, Equatable, Sendable {
         /// Tinted: `up next`.
         case accent
         /// Grey: `top set`, `back-off`.
@@ -193,7 +193,7 @@ public struct RowsTag: Equatable, Sendable {
 }
 
 /// One part of a change against last time.
-public struct RowsChange: Equatable, Sendable {
+public struct RowsChange: Codable, Equatable, Sendable {
     /// `+5 kg`, `−2 reps`, `+0:05`, `as last time`, `first time`.
     public var text: String
     /// Green when true; every loss and every neutral word is grey.
@@ -209,7 +209,7 @@ public struct RowsChange: Equatable, Sendable {
 /// overall, by estimated one-rep max (adjusted for RPE when both sets carry a
 /// rating), within 1 % counting as the same. A model, not a fact: shown grey
 /// unless better, never red.
-public enum RowsVerdict: String, Equatable, Sendable {
+public enum RowsVerdict: String, Codable, Equatable, Sendable {
     /// Green `↗`.
     case better
     /// Grey `=`.
@@ -237,7 +237,7 @@ public enum RowsVerdict: String, Equatable, Sendable {
 }
 
 /// What a tap on a row does.
-public enum RowsTap: Equatable, Sendable {
+public enum RowsTap: Codable, Equatable, Sendable {
     /// Nothing: the open row, a locked row.
     case none
     /// A done row: open `fix` in place (view state, no command until Save).
@@ -247,7 +247,7 @@ public enum RowsTap: Equatable, Sendable {
 }
 
 /// One set's line.
-public struct RowsSetItem: Equatable, Sendable, Identifiable {
+public struct RowsSetItem: Codable, Equatable, Sendable, Identifiable {
     public var id: RowID
     public var slot: String
     public var state: RowsRowState
@@ -322,7 +322,7 @@ public struct RowsSetItem: Equatable, Sendable, Identifiable {
 }
 
 /// The warm-ups on one line once all are done: `Warm-ups 40 kg × 12, 70 kg × 6, as last time`.
-public struct RowsWarmupFold: Equatable, Sendable, Identifiable {
+public struct RowsWarmupFold: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     /// `Warm-ups`, or `Warm-up` for one.
     public var title: String
@@ -345,7 +345,7 @@ public struct RowsWarmupFold: Equatable, Sendable, Identifiable {
 }
 
 /// `Round 1 of 2`.
-public struct RowsRoundHeader: Equatable, Sendable, Identifiable {
+public struct RowsRoundHeader: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var round: Int
     public var rounds: Int
@@ -363,7 +363,7 @@ public struct RowsRoundHeader: Equatable, Sendable, Identifiable {
 }
 
 /// `Set 2 as myo-reps, 0:15 between mini-sets`.
-public struct RowsChainHeader: Equatable, Sendable, Identifiable {
+public struct RowsChainHeader: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var head: RowID
     public var text: String
@@ -376,7 +376,7 @@ public struct RowsChainHeader: Equatable, Sendable, Identifiable {
 }
 
 /// A chain's done mini-sets as chips, one line: `Mini-sets 4 4 4, first time`.
-public struct RowsMiniSets: Equatable, Sendable, Identifiable {
+public struct RowsMiniSets: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     /// `Mini-sets`, `Clusters`.
     public var title: String
@@ -404,7 +404,7 @@ public struct RowsMiniSets: Equatable, Sendable, Identifiable {
 }
 
 /// A chip that stands for one row.
-public struct RowsChip: Equatable, Sendable, Identifiable {
+public struct RowsChip: Codable, Equatable, Sendable, Identifiable {
     public var row: RowID
     public var text: String
     public var id: RowID { row }
@@ -416,7 +416,7 @@ public struct RowsChip: Equatable, Sendable, Identifiable {
 }
 
 /// What a Rows control asks of the session: one `SessionCommand` each.
-public enum RowsAction: Equatable, Sendable {
+public enum RowsAction: Codable, Equatable, Sendable {
     /// `.tick(row)`: commits `SetRowPresentation.commitValues`, after the entry check.
     case tick(RowID)
     /// `.touchRow(row)`: do this row now.
@@ -449,7 +449,7 @@ extension RowsAction {
 }
 
 /// A button: its words and what it sends.
-public struct RowsButton: Equatable, Sendable {
+public struct RowsButton: Codable, Equatable, Sendable {
     public var title: String
     /// VoiceOver's label when it says more than the title.
     public var accessibilityLabel: String
@@ -475,7 +475,7 @@ public struct RowsButton: Equatable, Sendable {
 ///    the same set in the list, so the view docks this part only while that
 ///    editor is out of view (`parts(editorInView:)`).
 /// 3. `after`: the set after that on one line; a tap opens it.
-public struct RowsIsland: Equatable, Sendable {
+public struct RowsIsland: Codable, Equatable, Sendable {
     public var rest: RowsRestPart?
     public var next: RowsNextPart?
     public var after: RowsAfterPart?
@@ -512,12 +512,12 @@ public struct RowsIsland: Equatable, Sendable {
 }
 
 /// One part of the island.
-public enum RowsIslandPart: String, Equatable, Sendable {
+public enum RowsIslandPart: String, Codable, Equatable, Sendable {
     case rest, next, after, allDone, empty
 }
 
 /// The island when there is no set to log.
-public enum RowsIslandEnd: Equatable, Sendable {
+public enum RowsIslandEnd: Codable, Equatable, Sendable {
     /// Every set is done: Finish.
     case allDone(title: String, detail: String)
     /// No exercise yet.
@@ -526,7 +526,7 @@ public enum RowsIslandEnd: Equatable, Sendable {
 
 /// The island's rest part, while a rest, a pause, a switch or the standalone
 /// timer counts down: a ring and the time left, `of 2:30`, −15, +15 and Skip.
-public struct RowsRestPart: Equatable, Sendable {
+public struct RowsRestPart: Codable, Equatable, Sendable {
     public var kind: LiveActivityCountdown.Kind
     /// `Rest`, `Round rest`, `Pause`, `Timer`: VoiceOver's label for the countdown.
     public var title: String
@@ -557,7 +557,7 @@ public struct RowsRestPart: Equatable, Sendable {
 /// its values with their steppers (a tap on a number types it), the RPE when
 /// one is planned or rated, and Log; Start or Stop for a timed set. A tap on
 /// the name brings the full editor into view.
-public struct RowsNextPart: Equatable, Sendable {
+public struct RowsNextPart: Codable, Equatable, Sendable {
     public var row: RowID
     /// `Leg Press (Machine)`.
     public var exercise: String
@@ -609,7 +609,7 @@ public struct RowsNextPart: Equatable, Sendable {
 /// The island's last line: the set after the next one. A tap takes the
 /// list to that set and marks it for a moment; it never opens it (the owner
 /// opens it with a tap of its own, owner, 2026-11-02).
-public struct RowsAfterPart: Equatable, Sendable {
+public struct RowsAfterPart: Codable, Equatable, Sendable {
     /// The line a tap takes the list to: that set's, or for a drop still
     /// waiting on its set (drawn as `+ drop` on it) the set's. A second side,
     /// a drop or a cluster's next part is as much a target as any. Nil when

@@ -17,8 +17,8 @@ struct Fixture: Sendable {
     let matches: @Sendable (Data) throws -> Bool
 
     static func of<T: Bridged & Equatable>(_ type: String, _ value: T, input: String? = nil) -> Fixture {
-        Fixture(type: type, input: input, encode: { try BridgeCodec.encoder().encode(value) },
-                matches: { try JSONDecoder().decode(T.self, from: $0) == value })
+        Fixture(type: type, input: input, encode: { try BridgeCodec.data(value) },
+                matches: { try BridgeCodec.decode(T.self, from: JSONValue(data: $0)) == value })
     }
 }
 
@@ -52,7 +52,7 @@ enum Fixtures {
         // Absent against null: Swift leaves a nil out; null in, nil out.
         .of("TransportRequest", TransportRequest(url: "https://example.com", method: "GET", headers: [], timeoutMillis: 1)),
         .of("TransportRequest", TransportRequest(url: "https://example.com", method: "GET", headers: [], timeoutMillis: 1),
-            input: #"{"url":"https://example.com","method":"GET","headers":[],"body":null,"bodyFile":null,"timeoutMillis":1}"#),
+            input: #"{"url":"https://example.com","method":"GET","headers":[],"body":null,"bodyFile":null,"timeoutMillis":1,"credentials":false}"#),
         .of("CheckPresentation", CheckPresentation(step: 1, result: nil, padding: nil),
             input: #"{"step":1,"result":null}"#),
         // Large integers and decimals: Int's extremes as Kotlin's Long, and
@@ -72,6 +72,16 @@ enum Fixtures {
             "integer": JSONValue.number(JSONNumber("9223372036854775807")!),
             "nested": ["list": [1, "two", true, .null], "empty": [:]],
         ])),
+        // Past what a Decimal holds (38 digits, exponents to ±128) and what a
+        // Double does (±1.8e308): only the exact reader and writer keep them,
+        // on both sides.
+        .of("Envelope", Envelope(op: .command, handle: Handle(id: 3, generation: 1), body: [
+            "digits": JSONValue.number(JSONNumber("1234567890123456789012345678901234567890.0987654321")!),
+            "tiny": JSONValue.number(JSONNumber("-1.25e-400")!),
+            "huge": JSONValue.number(JSONNumber("9.87654321e+999")!),
+            "integer": JSONValue.number(JSONNumber("123456789012345678901234567890123456789012345678901234567890")!),
+        ])),
+        .of("RouteCommand", RouteCommand(path: ["a"], command: ["amount": JSONValue.number(JSONNumber("1e-200")!)])),
         .of("CheckResult", CheckResult.ok(name: "double", detail: "", millis: 1e-300)),
         .of("NetworkPath", NetworkPath(online: true, expensive: false)),
     ]
@@ -149,7 +159,7 @@ struct KotlinRoundTrip {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATE_ROUNDTRIP_KOTLIN"] != nil))
     func swiftDecodesWhatKotlinWrote() throws {
         let path = try #require(ProcessInfo.processInfo.environment["SUBSTRATE_ROUNDTRIP_KOTLIN"])
-        let written = try JSONDecoder().decode([Fixtures.Entry].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        let written = try BridgeCodec.decode([Fixtures.Entry].self, from: JSONValue(data: Data(contentsOf: URL(fileURLWithPath: path))))
         #expect(written.count == Fixtures.all.count)
         for (fixture, entry) in zip(Fixtures.all, written) {
             #expect(entry.type == fixture.type)

@@ -8,6 +8,7 @@ import SubstrateLocal
 import SubstrateRuntime
 import SubstrateScreens
 import SubstrateUI
+import UserNotifications
 import TasksCore
 #if canImport(UIKit)
 import UIKit
@@ -26,9 +27,11 @@ public final class TasksShell {
 
     let sessions = SessionStore(storage: KeychainStorage(service: "dev.reamde.substrate.tasks"))
     let manifest = TasksManifest.current
-    /// Made at launch, before the app finishes launching, so a tap that
-    /// launched it reaches the app. None for a shell that only draws.
+    /// None for a shell that only draws.
     let notifications: SystemNotifications?
+    /// Kept for as long as the app runs: the notification center holds its
+    /// delegate weakly.
+    private var reminders: ReminderDelegate?
     private(set) var model: PresentationModel<LinkController<TasksApp>>
     /// A session is in the Keychain: the link's first presentation, before
     /// it has read it, is not a sign-in screen.
@@ -40,6 +43,11 @@ public final class TasksShell {
         let session = sessions.load()
         stored = session != nil
         (model, folderName) = Self.make(session: session, sessions: sessions, manifest: manifest, notifications: notifications)
+        // Made at launch, before the app finishes launching, so the tap that
+        // launched it reaches the app.
+        let delegate = ReminderDelegate { [weak self] task in self?.send(.reminderTapped(task)) }
+        UNUserNotificationCenter.current().delegate = delegate
+        reminders = delegate
     }
 
     /// "this iPhone", "this iPad", "this Mac": the words the app says the
@@ -66,7 +74,7 @@ public final class TasksShell {
     {
         var environment = AppEnvironment.apple()
         environment.client = ClientSource { sessions.load().map { SubstrateClient($0) } }
-        environment.notifications = notifications
+        environment.devices.notifications = notifications
         var folder: RepositoryFolder?
         var name: String?
         if let session {
@@ -124,6 +132,25 @@ public final class TasksShell {
 
     public func send(_ command: LinkController<TasksApp>.Command) {
         model.send(command)
+    }
+
+    // MARK: What the app's scenes and menus ask
+
+    /// The app came to the front: what the system may have changed is read
+    /// again, and the access is checked where it is due.
+    public func cameForward() {
+        send(.foreground)
+        send(LinkController<TasksApp>.Command.refresh(force: false))
+    }
+
+    /// The updater found a newer build, or none.
+    public func updateOffered(_ version: String?) {
+        send(.offered(version))
+    }
+
+    /// File > New Task.
+    public func newTask() {
+        send(.newTask)
     }
 
     /// A settings row's command, to the controller that answers it.

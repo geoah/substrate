@@ -9,6 +9,7 @@ import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.kotlin.dsl.create
 import org.gradle.kotlin.dsl.register
+import java.io.File
 
 /**
  * What a module's Swift is: one SwiftPM package and the dynamic library
@@ -52,11 +53,13 @@ class SwiftConvention : Plugin<Project> {
             val task = tasks.register<SwiftJniLibs>("swiftJniLibs$name") {
                 usesService(swiftBuilds)
                 val dir = swift.packageDir.get()
-                sources.from(
-                    dir.file("Package.swift"),
-                    dir.file("Package.resolved"),
-                    fileTree(dir.dir("Sources")),
-                )
+                // The package and every local package it reaches: an edit to
+                // the kit changes an app's library as surely as its own.
+                val packages = localPackages(dir.asFile)
+                logger.info("substrate.swift: ${variant.name} tracks ${packages.joinToString { it.path }}")
+                for (each in packages) {
+                    sources.from(File(each, "Package.swift"), File(each, "Package.resolved"), fileTree(File(each, "Sources")))
+                }
                 packageDir.set(dir.asFile.absolutePath)
                 product.set(swift.product)
                 this.abis.set(abis)
@@ -74,4 +77,24 @@ class SwiftConvention : Plugin<Project> {
             variant.sources.assets?.addGeneratedSourceDirectory(task, SwiftJniLibs::assets)
         }
     }
+}
+
+/**
+ * [root] and every package it depends on by `.package(path:)`, transitively,
+ * each once. Read from the manifests' text: running SwiftPM to resolve them
+ * would cost a toolchain start on every configuration, and a path
+ * dependency is always spelled this one way in this tree.
+ */
+internal fun localPackages(root: File): List<File> {
+    val found = LinkedHashSet<File>()
+    val dependency = Regex("""\.package\(\s*(?:name:\s*"[^"]*"\s*,\s*)?path:\s*"([^"]+)"""")
+    fun visit(dir: File) {
+        val canonical = dir.canonicalFile
+        if (!found.add(canonical)) return
+        val manifest = File(canonical, "Package.swift")
+        if (!manifest.isFile) return
+        for (match in dependency.findAll(manifest.readText())) visit(File(canonical, match.groupValues[1]))
+    }
+    visit(root)
+    return found.toList()
 }

@@ -1,58 +1,65 @@
 import Foundation
 
-/// Whether the person lets the app notify them. `notAsked` is told apart
-/// from `denied`: only the first may be asked, since a system shows its
-/// question once.
-public enum NotificationPermission: String, Codable, Hashable, Sendable {
-    case notAsked
-    case allowed
-    case denied
+/// The device's local notifications (§5.4): whether the owner lets the app
+/// alert, one request scheduled or replaced by its id, and a request taken
+/// back. A tap reaches the app through its own delegate, as a command.
+public protocol Notifications: Sendable {
+    /// Where the owner's permission stands now.
+    func permission() async -> NotificationPermission
+    /// Asks the owner once, where they were never asked; answers where the
+    /// permission stands after.
+    func requestPermission() async -> NotificationPermission
+    /// Schedules the request, replacing a pending one of the same id. A
+    /// permission refused makes it a quiet no-op.
+    func schedule(_ request: NotificationRequest) async
+    /// Removes the pending and the delivered notification of this id.
+    func cancel(_ id: String) async
+    /// The ids scheduled and not yet shown, among those starting with
+    /// `prefix`: what an app that schedules a whole plan takes back when
+    /// the plan no longer holds them, across launches.
+    func pending(prefix: String) async -> [String]
 }
 
-/// One notification the app asks the device to show at an instant, by an
-/// id of the app's: scheduling an id again replaces the one before.
-public struct NotificationRequest: Codable, Hashable, Sendable, Identifiable {
+public extension Notifications {
+    func pending(prefix: String) async -> [String] { [] }
+}
+
+/// What the owner allows.
+public enum NotificationPermission: String, Codable, Equatable, Sendable {
+    /// Never asked: the app asks when it first needs to.
+    case notAsked
+    /// Refused, or allowed with nowhere to show one.
+    case off
+    /// Allowed, but not time sensitive: a Focus may hold one back.
+    case notTimeSensitive
+    /// Allowed, time sensitive.
+    case on
+}
+
+/// One notification to show at an instant.
+public struct NotificationRequest: Codable, Equatable, Sendable {
     public var id: String
     public var title: String
-    public var body: String
-    public var at: Date
-    /// What the app is told when the person taps it, as `NotificationTap`.
-    public var payload: [String: String]
+    public var body: String?
+    public var fireAt: Date
+    /// Notifications of one thread group together.
+    public var thread: String?
+    /// The app's category, which its delegate reads on a tap.
+    public var category: String?
+    /// Breaks through a Focus where the app may.
+    public var timeSensitive: Bool
+    public var userInfo: [String: String]
 
-    public init(id: String, title: String, body: String, at: Date, payload: [String: String] = [:]) {
+    public init(id: String, title: String, body: String? = nil, fireAt: Date, thread: String? = nil, category: String? = nil,
+                timeSensitive: Bool = false, userInfo: [String: String] = [:])
+    {
         self.id = id
         self.title = title
         self.body = body
-        self.at = at
-        self.payload = payload
+        self.fireAt = fireAt
+        self.thread = thread
+        self.category = category
+        self.timeSensitive = timeSensitive
+        self.userInfo = userInfo
     }
-}
-
-/// A notification the person tapped: its id and the payload it was
-/// scheduled with, which the app turns into a command.
-public struct NotificationTap: Codable, Hashable, Sendable {
-    public var id: String
-    public var payload: [String: String]
-
-    public init(id: String, payload: [String: String]) {
-        self.id = id
-        self.payload = payload
-    }
-}
-
-/// Notifications as a device service (§5.4): UserNotifications on an Apple
-/// system, `NotificationManager` on Android, a scripted one in a test. Each
-/// call answers a value; a tap arrives on `taps()`, never as a callback
-/// into the core.
-public protocol Notifications: Sendable {
-    func permission() async -> NotificationPermission
-    /// Asks the person where it was never asked; answers what stands.
-    func requestPermission() async -> NotificationPermission
-    /// The ids scheduled and not yet shown, among those starting with
-    /// `prefix`.
-    func pending(prefix: String) async -> [String]
-    func schedule(_ requests: [NotificationRequest]) async throws
-    func cancel(_ ids: [String]) async
-    /// Each tap, from now on, until the reader stops reading.
-    func taps() -> AsyncStream<NotificationTap>
 }

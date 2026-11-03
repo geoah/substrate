@@ -5,7 +5,7 @@ import SwiftUI
 import UIKit
 
 /// The session cover's own state: what is typed but not yet sent, which
-/// sheet or question is up. The session itself lives in `SessionController`;
+/// sheet or question is up. The session itself lives in WorkoutsCore's `SessionController`;
 /// this never holds a rule.
 @MainActor
 @Observable
@@ -103,7 +103,7 @@ final class CoverModel {
 
     /// Sends a field's draft as an edit and waits for it, or waits for the
     /// edit already on its way, so a tick never overtakes a typed value.
-    func commit(_ field: Field, session: SessionController) async {
+    func commit(_ field: Field, session: SessionModel) async {
         guard let text = drafts.removeValue(forKey: field) else {
             await sending[field]?.value
             return
@@ -128,7 +128,7 @@ final class CoverModel {
 
     /// Sends every draft of a row, and waits for its edits on their way,
     /// before its tick commits what it shows.
-    func commitRow(_ row: RowID, session: SessionController) async {
+    func commitRow(_ row: RowID, session: SessionModel) async {
         let fields = Set(drafts.keys.filter { $0.row == row } + sending.keys.filter { $0.row == row })
         for field in fields {
             await commit(field, session: session)

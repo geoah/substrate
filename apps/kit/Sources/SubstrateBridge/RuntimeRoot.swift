@@ -24,7 +24,7 @@ public final class RuntimeRoot<Root: Controller>: BridgeRoot {
     }
 
     public func receive(_ command: JSONValue) async throws {
-        try await runtime.send(encoded: JSONEncoder().encode(command))
+        try await runtime.send(encoded: command.data(pretty: false))
     }
 
     public func close() async {

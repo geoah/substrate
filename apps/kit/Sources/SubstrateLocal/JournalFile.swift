@@ -9,24 +9,28 @@ import SubstrateRuntime
 public struct JournalFile<Event: Codable & Sendable, State: Codable & Sendable>: JournalStore {
     public let folder: RepositoryFolder
     public let name: String
+    /// The area the file is in: the journals' own, unless an app kept its
+    /// journal elsewhere before the kit.
+    public let area: FolderArea
     /// The layout of the events this build writes. A file of another is
     /// refused as unreadable, and the runtime sets it aside.
     public let format: Int
 
-    public init(folder: RepositoryFolder, name: String, format: Int = 1) {
+    public init(folder: RepositoryFolder, name: String, area: FolderArea = .journals, format: Int = 1) {
         self.folder = folder
         self.name = name
+        self.area = area
         self.format = format
     }
 
     public func write(events: [Event], state: State) throws {
-        try folder.write(Self.encoder.encode(File(format: format, events: events, state: state)), to: name, in: .journals)
+        try folder.write(Self.encoder.encode(File(format: format, events: events, state: state)), to: name, in: area)
     }
 
     public func read() throws -> StoredJournal<Event, State>? {
         let data: Data
         do {
-            guard let read = try folder.read(name, in: .journals) else { return nil }
+            guard let read = try folder.read(name, in: area) else { return nil }
             data = read
         } catch {
             throw JournalUnavailable(reason: String(describing: error))
@@ -40,11 +44,11 @@ public struct JournalFile<Event: Codable & Sendable, State: Codable & Sendable>:
     }
 
     public func delete() throws {
-        try folder.remove(name, in: .journals)
+        try folder.remove(name, in: area)
     }
 
     public func setAside(at instant: Date) throws -> String {
-        try folder.setAside(name, in: .journals, at: instant).name
+        try folder.setAside(name, in: area, at: instant).name
     }
 
     // Dates stay `deferredToDate` (a Double), so a stored instant reloads

@@ -10,7 +10,7 @@ import SwiftUI
 private struct RowsPreview: View {
     let moment: PreviewData.RowsMoment
     let app: AppModel
-    let session: SessionController
+    let session: SessionModel
 
     init(_ moment: PreviewData.RowsMoment) {
         self.moment = moment

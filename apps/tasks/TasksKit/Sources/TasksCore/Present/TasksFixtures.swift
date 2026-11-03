@@ -72,7 +72,7 @@ public enum TasksFixtures {
         state.openTask = open
         state.confirmation = confirmation
         state.editors = editors
-        state.permission = .allowed
+        state.permission = .on
         state.usage = [AreaUsage(area: .records, bytes: 18_400, files: 1), AreaUsage(area: .outbox, bytes: 412, files: 1)]
         return state
     }

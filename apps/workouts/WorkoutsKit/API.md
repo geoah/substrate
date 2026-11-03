@@ -2,35 +2,43 @@
 
 A map for the app's engineers: what to call, from where. The spec is
 [`DESIGN.md`](../DESIGN.md); doc comments in the sources say the rest. Everything here is `Sendable`, pure
-unless it says it touches a file, and Foundation-only. The views compute no rule: they send commands and render
+unless it says it touches a file, over Foundation and the kit's portable libraries. The views compute no rule: they send commands and render
 presentations.
 
 ## The loop (§2.2, §6.1)
 
-The `SessionController` (app, main actor) is the only writer. Per command:
+`SessionController` is the only writer, a `Controller` on the kit's runtime (`SubstrateRuntime`), kept by
+`WorkoutsApp` (WorkoutsSync) under the kit's `LinkController`. Its value carries what it presents with (the
+`Catalog`, the `HistoryIndex`, the `WorkoutsSettings`); a view sends a `SessionCommand` to
+`WorkoutsApp.sessionPath` and draws the `SessionScreenPresentation` it publishes. Per command the runtime runs, in
+this order:
 
-1. Build an `EventEnvelope(id:at:event:)`: a UUIDv7 id (`UUIDv7.make(at:using:)`), the instant
-   `.flooredToSecond` and clamped to the previous event's, and the `SessionEvent` with every id it needs pre-minted.
-2. `SessionEngine.apply(envelope, to: state) throws(EngineError) -> SessionState`. On a throw: a `.warning` haptic,
-   nothing else.
-3. `ActiveSessionJournal(directory:).write(events:state:)`. That is `SessionJournal<EventEnvelope, SessionState>`.
-4. `SessionPresenter.present(state, catalog:, history:, settings:, now:) -> SessionPresentation`.
-5. The coordinator syncs the notification and Live Activity from the presentation. Then call
-   `sink.applied(envelope, state:)` on `NoSync<EventEnvelope, SessionState>()`.
+1. `events(for:in:)`: an `EventEnvelope(id:at:event:)` with a UUIDv7 id (`UUIDv7.make(at:using:)`, its random bits
+   from the environment's id source), the instant `.flooredToSecond` and clamped to the previous event's, and the
+   `SessionEvent` with every id it needs pre-minted.
+2. `apply`: `SessionEngine.apply(envelope, to: state) throws(EngineError) -> SessionState`. On a throw: the refusal
+   and a `.warning` cue in the presentation, nothing else.
+3. The journal: `SessionJournalFile`, the kit's `JournalFile<EventEnvelope, SessionState>` at
+   `active-session.json`, as `journaling(of:)` says: Start `.restart`, an edit `.append`, Discard and `finished`
+   `.clear`, `finishRequested` and `finishFailed` `.skip`.
+4. `present`: `SessionPresenter.present(state, catalog:, history:, settings:, now:) -> SessionPresentation`, with the
+   transient state (the entry check, the scroll target, the last refusal, the cover's requests, the cues).
+5. `effects(of:on:presented:)`, on the live path alone: the notification and the Live Activity through the kit's
+   `Notifications` and `OngoingActivities`, the history write, the Health queue through `WorkoutsServices`.
 
-At launch, `journal.load(fold: SessionEngine.fold)` returns the folded `state` and `cacheMatched` (log it when
-false). When it throws (not a `CocoaError`), `journal.setAside(at:)` moves the file out of the next Start's way; list
-it in Settings. After Discard, `apply` returns the state unchanged; delete the journal. At Finish, call
-`SessionEngine.records(state, adapter: "substrate-workouts@<version>")` to get `SessionRecords`. Then call
-`HistoryStore.write(HistoryEntry(records:))` and `HealthQueueFile.enqueue(_:at:)`, in that order with no `await`
-between, and delete the journal. At launch and each foreground, `HealthQueueFile.lost(in: history)` names the pending
-sessions the queue lost; `enqueue(missing:at:)` queues them again, after `setAsideIfUnreadable(at:)`.
+At open the runtime folds the journal through `apply` (a cache that differs from the fold is written again; a file
+that does not fold is set aside as `active-session.unreadable-<seconds>.json` and the presenter is told), then applies
+`.opened(replayed:)`, whose effects restore the alert and the Live Activity and check a replayed session against
+History. Finish is `finishRequested` (the records from `SessionEngine.records(state, adapter:)`), whose effect writes
+`HistoryStore.write(HistoryEntry(records:))` and then the Health queue entry, then `finished` (or `finishFailed`). At
+each foreground, `HealthQueueFile.lost(in: history)` names the pending sessions the queue lost; `enqueue(missing:at:)`
+queues them again, after `setAsideIfUnreadable(at:)`.
 
 Event `Codable` shapes must keep decoding old journals: a new field is optional or decodes with a default; anything
 else raises `journalFormat`.
 
-Re-present at `presentation.nextChange`. That is when a countdown ends, and when "Rest over" gives way to the Up
-next chip.
+The presentation's `nextChange` is a tick (`event(atTick:)`): when a countdown ends, and when "Rest over" gives way to
+the Up next chip.
 
 ### What the controller fills from history
 
@@ -290,8 +298,9 @@ from the value:
 
 ## Live Activity and notification (§9.1, §9.2)
 
-`presentation.liveActivity` is a `LiveActivityContent`. Copy its fields into
-`WorkoutsActivityAttributes.ContentState` and add your effects revision:
+`presentation.liveActivity` is a `LiveActivityContent`, which the session sends the kit's `OngoingActivities` as a
+`LiveActivityPayload` (the content, the controller's revision, and after Finish the summary) and the app reads into
+`WorkoutsActivityAttributes.ContentState`:
 
 - `title`, `clockStart`, `clockPausedAt`
 - `exercise` (empty when all sets are done), `groupLabel`
@@ -302,8 +311,20 @@ from the value:
 - `countdown`: a `LiveActivityCountdown` whose `kind` has the same raw values as the app's `Countdown.Kind`
 - `setsDone`, `setsPlanned`
 
-`presentation.notification` is a `CountdownNotification` with `title`, `body` and `fireDate`. Schedule it only when
-`fireDate` is in the future. `SessionPresenter.finishedSummary(records)` gives "Saved: 46 min, 24 sets".
+`presentation.notification` is a `CountdownNotification` with `title`, `body` and `fireDate`, which the session
+schedules through the kit's `Notifications` only when `fireDate` is in the future.
+`SessionPresenter.finishedSummary(records)` gives "Saved: 46 min, 24 sets".
+
+## The app's root under the link (WorkoutsSync)
+
+`WorkoutsApp` is a `LinkedApp`: the link's snapshot arrives as `.linked`, and a sync step's 401 or 403 goes back up
+as a `LinkReport`. Its state holds the catalogue, History, the settings and the signed-in account's standing; its
+commands (`WorkoutsApp.Command`) are the tabs' changes, a sheet that waits naming a receipt answered in
+`WorkoutsPresentation.outcomes`. A sync step names the `AccountRef` it ran for, and one for an account no longer
+signed in changes nothing. Each account's files are a `WorkoutsAccount` from `WorkoutsAccounts` (in the environment,
+so the link flushes the same `Outbox` the app queues into): `Outbox.workouts(directory:)`, the kit's outbox over
+`outbox.json` with `Outbox.workoutsUpgrade` for a format 1 file and the routine and session helpers in
+`WorkoutsOutbox.swift`.
 
 ## Finish sheet (§7.7)
 

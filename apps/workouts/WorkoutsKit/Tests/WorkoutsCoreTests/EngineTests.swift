@@ -1,6 +1,8 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateLocal
+import SubstrateTesting
 import SubstrateCore
 
 // The session engine (DESIGN §4, §10.1, §10.5): every event's success and
@@ -1086,23 +1088,24 @@ struct EngineCountingTests {
 @Suite("Engine: journal")
 struct EngineJournalTests {
     @Test("the engine's events and state go through the session journal and fold back to the same state")
-    func journalRoundTrip() throws {
+    func journalRoundTrip() async throws {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
         let replay = try ExampleReplay.run(EngineFixtures.session("sessions", EngineFixtures.fullyBody), finish: false)
-        let journal = ActiveSessionJournal(directory: directory.url, writingOptions: .atomic)
+        let journal = SessionJournalFile(folder: try RepositoryFolder(adopting: directory.url, writingOptions: .atomic)).file
         let state = try replay.script.current
         try journal.write(events: replay.script.events, state: state)
-        let loaded = try #require(try journal.load { try SessionEngine.fold($0) })
-        #expect(loaded.cacheMatched)
-        #expect(loaded.state == state)
+        let loaded = try #require(try journal.read())
+        #expect(loaded.cachedState == state)
         #expect(loaded.events == replay.script.events)
-        // A stale cache loses to the fold and is rewritten.
+        // A stale cache loses to the controller's fold at open and is rewritten.
         var stale = state
         stale.revision += 10
         try journal.write(events: replay.script.events, state: stale)
-        let refolded = try #require(try journal.load { try SessionEngine.fold($0) })
-        #expect(!refolded.cacheMatched && refolded.state == state)
+        let controller = SessionController(catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
+                                           directory: directory.url)
+        let harness = ControllerHarness(controller, performsEffects: false)
+        #expect(await harness.state.session == state)
         #expect(try journal.read()?.cachedState == state)
     }
 

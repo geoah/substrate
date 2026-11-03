@@ -401,6 +401,10 @@ Tink keyset, and the repository's folder (outbox, record cache, journal),
 live under `noBackupFilesDir`; the backup and device-transfer rules exclude
 them by name as well, so a restore never revives a token or a queue of
 writes for a session that no longer exists. Caches live under `cacheDir`.
+A body too large for a bridge message is a file under
+`noBackupFilesDir/bridge`, since it may hold the owner's records; each one
+is deleted by whichever side holds it last, and the folder is swept at
+start. A credential exchange's body and answer never go to a file.
 
 **Background work runs headless.** A job starts the runtime without an
 activity, opens the repository's folder, reads the current session at run
@@ -470,7 +474,10 @@ changes when an app adds a controller.
   folders, and messages carry their paths.
 - `error` is structured: malformed message, unknown controller, a Swift
   failure, a Kotlin exception. Nothing throws across the boundary and
-  nothing crashes the process.
+  nothing crashes the process. A message Kotlin does not take is a failure
+  of what waited on it: a request's call, or the handle.
+- `environment` carries a new locale and time zone from Kotlin's
+  broadcast receiver to every open root, in order with its commands.
 
 **Delivery is serial per handle**, on one Swift queue, so a controller's
 presentations arrive in order. `kit-core` turns them into a `StateFlow` per
@@ -689,16 +696,23 @@ and keeps every guarantee `apple.sh` gives today.
    conditional write (`If-None-Match: *`), holding an expiry and a fencing
    token; it renews while it works, re-reads the published state after
    taking the lease, and checks the token before each write. A lease past
-   its expiry may be taken over, and the taker re-reads everything. A
-   bucket that cannot write conditionally is refused, not raced.
+   its expiry may be taken over, and the taker re-reads everything; an
+   expired lease is never renewed. A bucket compares no token, so every
+   write is itself conditional, on the version of the key read under the
+   lease (`If-Match`) or on its absence (`If-None-Match: *`), and bounded
+   to end before the lease expires: a publisher that stalls past its
+   lease cannot land a write over the next one's. A bucket that cannot
+   write conditionally is refused, not raced.
 
 `SUBSTRATE_APPS_RELEASE_DRY_RUN=1` runs every step against `build/`, the site
 included, and changes no lock file.
 
 **Android specifics.** `versionCode` is allocated under the lease: the
 larger of the minutes since 2026-01-01 at the build's UTC time and the
-highest published code plus one, written into the staged `release.json`; a
-rerun of the same staged build reuses it, and nothing else does. The signing
+highest published or reserved code plus one, reserved for the build in
+the release folder before it builds and written into the staged
+`release.json`; a rerun of the same staged build reuses it, and nothing
+else does. The signing
 key is made once, kept by the owner
 as a secret outside the tree, and its fingerprint is what `assetlinks.json`
 names; losing it means every install is replaced by hand, as losing
@@ -876,6 +890,37 @@ the bridge build on it. What changed:
   `effects(of:on:presented:)`. A shorter coalescing window asked later
   moves the deadline earlier. A presentation that does not encode reaches
   the bridge as its failure.
+
+**The Android bridge's review, 2026-11-03** (Astra), before an app runs
+on it. What changed:
+
+- A message's body is recorded only when what it belongs to is known to
+  carry no secret: a reply, chunk or error for a call nothing waits on
+  (one that raced its cancel, a second reply) and a request that does not
+  read keep no body, on both sides.
+- The envelope is read and written with `JSONValue`'s own reader and
+  writer and a coder over `JSONValue` (`ValueCoding`), never Foundation's,
+  so a number keeps every digit past a `Decimal`'s and a `Double`'s; the
+  round trip holds one of each.
+- A handle's first presentation is never lost: Kotlin holds a message for
+  a handle it does not know yet until the `open` it belongs to is
+  registered.
+- A message Kotlin does not take finishes what waited on it: a request's
+  call fails with the JNI failure, and a presentation or a list fails the
+  handle, which closes from Swift's side as Kotlin's `close` would.
+- The transport cancels the OkHttp call the moment its caller is cancelled,
+  while the head and the body are still coming. A body too large for a
+  message spills under `noBackupFilesDir/bridge`, is deleted on every path
+  (taken, refused, cancelled, cut short) and swept at start; a credential
+  exchange (token, revocation, login, registration) never spills.
+- `start` answers every failure, a full disk or a missing asset included,
+  as the terminal `Failed`; connectivity's changes are never coalesced and
+  one with no room ends the stream with `overflow`; the generator refuses
+  coding written in an extension and a property wrapper; the Swift build's
+  inputs are every local package it depends on and its script.
+- A locale or time zone change reaches every open root
+  (`environment`, `BridgeRoot.environmentChanged`), in order with its
+  commands.
 
 **Confirmation round, 2026-11-03**, on draft three with the spike. Fable:
 the loop's order is now the contract (journal before any suspension, a

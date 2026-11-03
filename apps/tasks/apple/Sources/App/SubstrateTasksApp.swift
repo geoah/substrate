@@ -1,6 +1,5 @@
 import SubstrateTasksUI
 import SwiftUI
-import TasksCore
 
 @main
 struct SubstrateTasksApp: App {
@@ -15,7 +14,7 @@ struct SubstrateTasksApp: App {
         window
             .commands {
                 CommandGroup(after: .newItem) {
-                    Button("New Task") { shell.send(.newTask) }
+                    Button("New Task") { shell.newTask() }
                         .keyboardShortcut("n")
                 }
                 UpdateCommands(updates: updates)
@@ -37,15 +36,14 @@ struct SubstrateTasksApp: App {
                 .environment(shell)
                 .environment(\.checkForUpdates) { updates.checkNow() }
                 .updateOffer(updates)
-                .onChange(of: updates.offer?.version, initial: true) { _, version in shell.send(.offered(version)) }
+                .onChange(of: updates.offer?.version, initial: true) { _, version in shell.updateOffered(version) }
                 #if os(macOS)
                 .frame(minWidth: 760, minHeight: 480)
                 #endif
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             guard phase == .active else { return }
-            shell.send(.foreground)
-            shell.send(.refresh(force: false))
+            shell.cameForward()
         }
     }
 }

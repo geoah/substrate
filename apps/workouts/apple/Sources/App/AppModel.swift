@@ -4,28 +4,21 @@ import os
 import WorkoutsCore
 import WorkoutsSync
 
-/// Where the catalogue comes from.
-enum CatalogOrigin: Hashable {
-    case bundled
-    case server(String)
-}
-
 /// The five tabs (DESIGN.md §7.1).
 enum AppTab: Hashable {
     case routines, history, stats, exercises, settings
 }
 
-/// What the app holds outside the session: the catalogue, the finished
-/// sessions, the settings, and where the owner is (the tab, the session
-/// cover). One instance, shared with `SessionController`, which reads the
-/// catalogue, the history index and the settings for every presentation.
+/// What the tabs draw outside the session, republished on the main actor
+/// from Workouts' root on the runtime (`WorkoutsApp`): the catalogue, the
+/// finished sessions and the settings. It also holds where the owner is (the
+/// tab, the session cover), which is the views' own. Every change goes to
+/// the runtime as a command; History's month sections are worked out here
+/// when the history, the catalogue or a totals setting changes rather than
+/// on every render.
 @MainActor
 @Observable
 final class AppModel {
-    /// Created on first use: at launch, or when a Live Activity intent
-    /// launches the app in the background.
-    static let shared = AppModel(directory: AppModel.workoutsDirectory())
-
     var tab: AppTab = .routines {
         didSet { if tab == .history { historyBadge = 0 } }
     }
@@ -38,61 +31,45 @@ final class AppModel {
     var settings: WorkoutsSettings {
         didSet {
             guard settings != oldValue else { return }
-            if persistsSettings { settings.save() }
+            if persistsSettings {
+                settings.save()
+                root?.send(.settings(settings))
+            }
             if settings.presenter != oldValue.presenter { refreshHistorySections() }
         }
     }
 
     /// Nil until the catalogue decodes (normally at once).
-    private(set) var catalog: Catalog? {
-        didSet { dataRevision &+= 1 }
-    }
+    private(set) var catalog: Catalog?
     /// Where the routines and exercises come from: this build, or the
     /// substrate the app is signed in to (its host).
     private(set) var catalogOrigin: CatalogOrigin = .bundled
     /// Set when a bundled file is missing, a build fault.
     private(set) var catalogFailure: String?
     /// Finished sessions, newest first.
-    private(set) var history: [HistoryEntry] = [] {
-        didSet { dataRevision &+= 1 }
-    }
+    private(set) var history: [HistoryEntry] = []
     /// Moves on every change to `history` or `catalog`: what a presentation
     /// worked out from both (the stats) is kept against.
     private(set) var dataRevision = 0
     private(set) var historyIndex = HistoryIndex()
-    private(set) var historyUnreadable: [UnreadableRecord] = []
-    /// A session journal that did not load at launch, set aside (§2.3).
-    private(set) var sessionUnreadable: [UnreadableRecord] = []
     private(set) var isHistoryLoaded = false
-    /// History's month sections, rebuilt when the history, the catalogue or a
-    /// totals setting changes rather than on every render: each row sums a
-    /// session's volume.
+    /// History's month sections.
     private(set) var historySections: [HistorySection] = []
+    /// Records that could not be read.
+    private(set) var unreadable: [UnreadableRecord] = []
+    /// Sessions deleted on the phone, which an import leaves out.
+    private(set) var hiddenSessions: Set<String> = []
 
     /// `Application Support/Workouts/`; nil in previews, which write nothing.
     let directory: URL?
-    /// Sessions deleted while signed out (and the phone-wide list builds
-    /// before 2026-11-02 kept): never imported again, never purged. A delete
-    /// while signed in is kept in that account's folder instead
-    /// (`SubstrateLink.keepTombstone`); nil in previews.
-    let tombstones: SessionTombstones?
-    /// Files of the substrate sync that could not be read, set aside.
-    private(set) var syncUnreadable: [UnreadableRecord] = []
-    private let catalogSource: BundledCatalog
-    private let historyStore: HistoryStore?
+    @ObservationIgnored weak var root: WorkoutsRoot?
+    @ObservationIgnored private var finished = 0
     private let persistsSettings: Bool
-    private var historyTask: Task<Void, Never>?
-    private let logger = Logger(subsystem: "dev.reamde.substrate.workouts", category: "app")
 
-    init(directory: URL?, defaults: UserDefaults = .standard) {
+    init(directory: URL?, settings: WorkoutsSettings) {
         self.directory = directory
-        settings = WorkoutsSettings.load(from: defaults)
+        self.settings = settings
         persistsSettings = true
-        catalogSource = BundledCatalog(localExercises: directory.map { LocalExercises(directory: $0) })
-        historyStore = directory.map { HistoryStore(directory: $0) }
-        let tombstones = directory.map { SessionTombstones(directory: $0) }
-        self.tombstones = tombstones
-        if let unreadable = tombstones?.unreadable { syncUnreadable.append(unreadable) }
     }
 
     /// A model over fixed data, for previews: nothing is read or written.
@@ -100,9 +77,6 @@ final class AppModel {
         directory = nil
         self.settings = settings
         persistsSettings = false
-        catalogSource = BundledCatalog()
-        historyStore = nil
-        tombstones = nil
         self.catalog = catalog
         self.history = history
         historyIndex = HistoryIndex(history.map(\.records))
@@ -110,7 +84,7 @@ final class AppModel {
         refreshHistorySections()
     }
 
-    private static func workoutsDirectory() -> URL? {
+    static func workoutsDirectory() -> URL? {
         do {
             return try WorkoutsFiles.applicationSupportDirectory()
         } catch {
@@ -123,6 +97,32 @@ final class AppModel {
         }
     }
 
+    func apply(_ next: WorkoutsPresentation) {
+        var moved = false
+        if next.catalog != catalog {
+            catalog = next.catalog
+            moved = true
+        }
+        if next.history != history {
+            history = next.history
+            historyIndex = next.index
+            moved = true
+        }
+        if next.origin != catalogOrigin { catalogOrigin = next.origin }
+        if next.catalogFailure != catalogFailure { catalogFailure = next.catalogFailure }
+        if next.historyLoaded != isHistoryLoaded { isHistoryLoaded = next.historyLoaded }
+        if next.unreadable != unreadable { unreadable = next.unreadable }
+        if next.hiddenSessions != hiddenSessions { hiddenSessions = next.hiddenSessions }
+        if next.finished > finished {
+            if tab != .history { historyBadge += next.finished - finished }
+            finished = next.finished
+        }
+        if moved {
+            dataRevision &+= 1
+            refreshHistorySections()
+        }
+    }
+
     var presenterSettings: PresenterSettings { settings.presenter }
 
     /// The session in progress: the same, with the RPE pre-fill when the
@@ -132,272 +132,47 @@ final class AppModel {
     /// Every exercise the catalogue knows.
     var exercises: [ExerciseID: Exercise] { catalog?.exercises ?? [:] }
 
-    /// Records that could not be read: the bundled catalogue as a whole, its
-    /// records, the history files and a session journal set aside.
-    var unreadable: [UnreadableRecord] {
-        let bundle = catalogFailure.map { [UnreadableRecord(source: "The routines and exercises in this build", reason: $0)] } ?? []
-        return bundle + (catalog?.unreadable ?? []) + historyUnreadable + sessionUnreadable + syncUnreadable
+    private func refreshHistorySections() {
+        historySections = HistoryPresenter.sections(history, exercises: exercises, settings: presenterSettings)
     }
 
-    /// A file of the substrate sync, or a server record, that could not be
-    /// read.
-    func noteUnreadable(_ record: UnreadableRecord) {
-        guard !syncUnreadable.contains(record) else { return }
-        syncUnreadable.append(record)
-    }
+    // MARK: Changes
 
-    /// The journal of the session in progress did not load and was set aside.
-    func noteUnreadableSession(_ record: UnreadableRecord) {
-        sessionUnreadable.append(record)
-    }
-
-    // MARK: - Loading
-
-    /// Reads the bundled catalogue and the phone's own exercises. Synchronous:
-    /// a few dozen records.
-    func loadCatalog() {
-        guard catalog == nil else { return }
-        do {
-            catalog = try catalogSource.loadNow()
-        } catch {
-            catalogFailure = String(describing: error)
-            catalog = Catalog()
-            logger.fault("Bundled catalogue failed: \(String(describing: error), privacy: .public)")
-        }
-        refreshHistorySections()
-    }
-
-    /// Reads every history file off the main actor, once; later calls wait
-    /// for the first.
-    func loadHistory() async {
-        if let historyTask { return await historyTask.value }
-        guard let historyStore else { return }
-        let task = Task {
-            let load = await Task.detached(priority: .userInitiated) { historyStore.loadAll() }.value
-            apply(load)
-        }
-        historyTask = task
-        await task.value
-    }
-
-    /// Re-reads every history file: after a Health save changed one.
-    func reloadHistory() async {
-        guard let historyStore else { return }
-        let load = await Task.detached(priority: .utility) { historyStore.loadAll() }.value
-        apply(load)
-    }
-
-    private func apply(_ load: HistoryLoad) {
-        history = load.entries
-        historyIndex = HistoryIndex(load.entries.map(\.records))
-        historyUnreadable = load.unreadable
-        isHistoryLoaded = true
-        refreshHistorySections()
-        for record in load.unreadable {
-            logger.error("Unreadable history file \(record.source, privacy: .public): \(record.reason, privacy: .public)")
-        }
-    }
-
-    // MARK: - Changes
-
-    /// Writes a finished session's file and adds it to the history. Only a
-    /// preview keeps a session in memory alone.
-    func save(_ entry: HistoryEntry) throws {
-        guard historyStore != nil || !persistsSettings else { throw CocoaError(.fileNoSuchFile) }
-        try historyStore?.write(entry)
-        history.removeAll { $0.id == entry.id }
-        history.insert(entry, at: history.firstIndex { $0.records.session.at < entry.records.session.at } ?? history.endIndex)
-        historyIndex.insert(entry.records)
-        refreshHistorySections()
-        if tab != .history { historyBadge += 1 }
+    /// Deletes a finished session's file, and the server's copy through the
+    /// outbox. Its Apple Health workout stays. A delete whose tombstone
+    /// cannot be kept is refused.
+    func deleteSession(_ id: SessionID) async throws {
+        try await root?.outcome { .deleteSession(id, receipt: $0) }
     }
 
     /// A history file the Health save rewrote (its status, its workout link).
     func replace(_ entry: HistoryEntry) {
-        guard let index = history.firstIndex(where: { $0.id == entry.id }) else { return }
-        history[index] = entry
-        historyIndex.remove(entry.id)
-        historyIndex.insert(entry.records)
-        refreshHistorySections()
-    }
-
-    /// Deletes a finished session's file, and the server's copy through the
-    /// outbox. Its Apple Health workout stays. The tombstone is kept first,
-    /// for the signed-in server and repository only (O3), or on the phone
-    /// when signed out: without it a later sync could import the session
-    /// again, so a delete that cannot be recorded is refused.
-    func deleteSession(_ id: SessionID) throws {
-        let kept = persistsSettings ? try SubstrateLink.shared.keepTombstone(id) : false
-        if !kept { try tombstones?.add(id) }
-        try historyStore?.delete(id)
-        history.removeAll { $0.id == id }
-        historyIndex.remove(id)
-        refreshHistorySections()
-        if persistsSettings { Task { await SubstrateLink.shared.deleted(id) } }
-    }
-
-    // MARK: - The substrate
-
-    /// The routines and exercises of the substrate the app is signed in to,
-    /// cached or just read, with the phone's own exercises merged in.
-    func showServerCatalog(_ server: Catalog, host: String) {
-        catalog = server
-        catalogFailure = nil
-        catalogOrigin = .server(host)
-        refreshHistorySections()
-    }
-
-    /// Back to this build's routines: a sign-out.
-    func showBundledCatalog() {
-        catalog = nil
-        catalogOrigin = .bundled
-        loadCatalog()
-    }
-
-    /// Finished sessions the server holds that this phone does not: another
-    /// writer's, or this phone's from before a reinstall. They join the
-    /// history, which PREVIOUS and the suggestions read, and are never saved
-    /// to Apple Health again.
-    func importServerSessions(_ sessions: [SessionRecords]) {
-        guard let historyStore else { return }
-        let held = Set(history.map(\.id))
-        var added = false
-        for records in sessions where !held.contains(records.id) {
-            let health = HealthSaveState(status: records.session.healthKitWorkout == nil ? .notAvailable : .saved)
-            let entry = HistoryEntry(records: records, local: HistoryLocal(health: health))
-            do {
-                try historyStore.write(entry)
-                history.append(entry)
-                historyIndex.insert(records)
-                added = true
-            } catch {
-                logger.error("A session from the server was not kept: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-        guard added else { return }
-        history.sort { $0.records.session.at > $1.records.session.at }
-        refreshHistorySections()
-    }
-
-    /// Sessions on the phone that another writer changed on the server: the
-    /// server's records replace the phone's, which keeps what only it knows
-    /// (the Health save's state).
-    func mergeServerSessions(_ sessions: [SessionRecords]) {
-        guard let historyStore, !sessions.isEmpty else { return }
-        var changed = false
-        for records in sessions {
-            guard let index = history.firstIndex(where: { $0.id == records.id }) else { continue }
-            let entry = HistoryEntry(records: records, local: history[index].local)
-            do {
-                try historyStore.write(entry)
-                history[index] = entry
-                historyIndex.remove(entry.id)
-                historyIndex.insert(records)
-                changed = true
-            } catch {
-                logger.error("A session changed on the server was not kept: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-        guard changed else { return }
-        history.sort { $0.records.session.at > $1.records.session.at }
-        refreshHistorySections()
-    }
-
-    /// Sessions the server held from this phone and deleted since: deleted
-    /// here too. Their Apple Health workouts stay. An imported one (`hevy-`)
-    /// is also kept from the next import of the same account or file, as a
-    /// delete on this phone is.
-    func removeSessionsDeletedOnServer(_ ids: [SessionID]) {
-        guard let historyStore, !ids.isEmpty else { return }
-        for id in ids {
-            do {
-                if id.rawValue.hasPrefix("hevy-") { try tombstones?.add(id) }
-                try historyStore.delete(id)
-                history.removeAll { $0.id == id }
-                historyIndex.remove(id)
-            } catch {
-                logger.error("A session deleted on the server stayed on this iPhone: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-        refreshHistorySections()
-    }
-
-    private func refreshHistorySections() {
-        historySections = HistoryPresenter.sections(history, exercises: exercises, settings: presenterSettings)
+        root?.send(.historyEntryChanged(entry))
     }
 
     /// Saves an exercise added on this phone (§7.6) and returns it as the
     /// catalogue now holds it.
     @discardableResult
-    func addLocalExercise(_ exercise: Exercise) throws -> Exercise {
-        try addLocalExercises([exercise])
+    func addLocalExercise(_ exercise: Exercise) async throws -> Exercise {
+        try await addLocalExercises([exercise])
         return catalog?.exercises[exercise.id] ?? exercise
     }
 
     /// Saves exercises added on this phone in one write, all or none.
-    func addLocalExercises(_ exercises: [Exercise]) throws {
-        let local = exercises.map { exercise in
-            var local = exercise
-            local.isLocal = true
-            return local
+    func addLocalExercises(_ exercises: [Exercise]) async throws {
+        guard let root else {
+            for exercise in exercises { catalog?.exercises[exercise.id] = exercise }
+            return
         }
-        if directory != nil, catalogOrigin == .bundled {
-            catalog = try catalogSource.addLocalExercises(local)
-        } else if let directory {
-            try LocalExercises(directory: directory).add(contentsOf: local)
-            for exercise in local { catalog?.exercises[exercise.id] = exercise }
-        } else {
-            for exercise in local { catalog?.exercises[exercise.id] = exercise }
-        }
-        refreshHistorySections()
+        try await root.outcome { .addLocalExercises(exercises, receipt: $0) }
     }
-
-    // MARK: - Imports
 
     /// Sessions from another app's export, and the exercises they name that
-    /// the catalogue lacks, saved first so no session names an exercise the
-    /// phone does not hold. They join the history like a session from the
-    /// server, never saved to Apple Health (the other app may have saved its
-    /// own workout), and the next sync sends them as sessions the server
-    /// never held. A file that cannot be written stops the import there:
-    /// the sessions written before it stay, and the error says how many.
+    /// the catalogue lacks, saved first. They join the history like a
+    /// session from the server, never saved to Apple Health, and the next
+    /// sync sends them as sessions the server never held. A file that
+    /// cannot be written stops the import there, and the error says how many.
     func importSessions(_ sessions: [SessionRecords], exercises: [Exercise]) async throws {
-        guard let historyStore else { throw CocoaError(.fileNoSuchFile) }
-        if !exercises.isEmpty { try addLocalExercises(exercises) }
-        let entries = sessions.map { HistoryEntry(records: $0, local: HistoryLocal(health: HealthSaveState(status: .notAvailable))) }
-        let outcome = await Task.detached(priority: .userInitiated) { () -> (written: [HistoryEntry], failure: String?) in
-            var written: [HistoryEntry] = []
-            for entry in entries {
-                do {
-                    try historyStore.write(entry)
-                } catch {
-                    return (written, error.localizedDescription)
-                }
-                written.append(entry)
-            }
-            return (written, nil)
-        }.value
-        let held = Set(history.map(\.id))
-        for entry in outcome.written {
-            if held.contains(entry.id) { history.removeAll { $0.id == entry.id } }
-            history.append(entry)
-            historyIndex.remove(entry.id)
-            historyIndex.insert(entry.records)
-        }
-        history.sort { $0.records.session.at > $1.records.session.at }
-        refreshHistorySections()
-        if let failure = outcome.failure {
-            throw ImportIncomplete(written: outcome.written.count, total: entries.count, reason: failure)
-        }
-    }
-}
-
-/// An import stopped at a history file it could not write.
-struct ImportIncomplete: LocalizedError {
-    let written: Int
-    let total: Int
-    let reason: String
-    var errorDescription: String? {
-        "\(written) of \(total) workouts were imported; the rest could not be saved on this iPhone: \(reason)"
+        try await root?.outcome { .importSessions(sessions, exercises: exercises, receipt: $0) }
     }
 }

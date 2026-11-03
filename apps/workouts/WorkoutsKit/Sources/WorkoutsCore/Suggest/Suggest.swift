@@ -240,7 +240,7 @@ public struct PendingSet: Sendable, Hashable {
 }
 
 /// What the engine suggests for the pending set (03 §9.5).
-public struct Suggestion: Sendable, Equatable, Hashable {
+public struct Suggestion: Codable, Sendable, Equatable, Hashable {
     /// Exercise unit; the added load or the assistance in bodyweight modes; nil: the lifter picks.
     public var load: Double?
     /// Nil for timed sets, drops to failure and open mini-sets.
@@ -274,7 +274,7 @@ public struct Suggestion: Sendable, Equatable, Hashable {
 }
 
 /// Which rule produced a suggestion (03 §9.5; `backoff` is the app's, DESIGN §5.3).
-public enum Reason: Sendable, Hashable {
+public enum Reason: Codable, Sendable, Hashable {
     case warmupAsLastTime, historyAddRep, historyLoadUp, historyLoadDown, historyNewRange,
          historyAtMax, sessionKeep, sessionUp, sessionDown, sessionCoarse, sessionAtMax, coldStartRoutineLoad,
          coldStartPickLoad, myoMini, myoStop, drop, dropAtMinimum, timedHistory, timedSession, timedLoadUp,

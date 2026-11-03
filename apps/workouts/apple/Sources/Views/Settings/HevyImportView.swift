@@ -163,7 +163,7 @@ struct HevyImportView: View {
             } header: {
                 Text("Routines")
             } footer: {
-                Text(link.session == nil
+                Text(!link.isSignedIn
                     ? "Routines and body measurements live on your substrate: sign in to one, then import again to add them."
                     : "Each routine keeps its folder, exercises, supersets, sets and rests. A routine here already is left as it is. Workouts started from a routine are linked to it.")
             }
@@ -226,7 +226,7 @@ struct HevyImportView: View {
 
     @ViewBuilder
     private func importSection(_ plan: HevyImport.Plan) -> some View {
-        let routines = link.session == nil ? 0 : plan.routines.count
+        let routines = !link.isSignedIn ? 0 : plan.routines.count
         Section {
             Button {
                 run(plan)
@@ -287,7 +287,7 @@ struct HevyImportView: View {
 
     private var inputs: Inputs {
         Inputs(exercises: app.exercises, routines: app.catalog?.routines ?? [:], history: app.history.map(\.records),
-               deleted: (app.tombstones?.all ?? []).union(link.tombstoneIDs), adapter: SessionController.adapter)
+               deleted: app.hiddenSessions, adapter: WorkoutsRoot.adapter)
     }
 
     private func readAccount() {
@@ -359,7 +359,7 @@ struct HevyImportView: View {
                 try await app.importSessions(plan.sessions, exercises: plan.exercises)
                 var routines = 0
                 var problem: String?
-                if link.session != nil, !plan.routines.isEmpty || !plan.measurements.isEmpty {
+                if link.isSignedIn, !plan.routines.isEmpty || !plan.measurements.isEmpty {
                     do {
                         try await link.importRecords(routines: plan.routines, measurements: plan.measurements, exercises: plan.exercises)
                         routines = plan.routines.count
@@ -469,6 +469,6 @@ private struct ProblemList: View {
         HevyImportView()
     }
     .environment(PreviewData.app())
-    .environment(SubstrateLink.shared)
+    .environment(WorkoutsRoot.shared.link)
 }
 #endif

@@ -17,11 +17,9 @@ targets:
     dependencies:
       - package: Sparkle
         destinationFilters: [macOS]
+      # The kit and TasksKit come through the framework alone: the app
+      # linking them too would hold a second copy of their types.
       - target: SubstrateTasksUI
-      - package: TasksKit
-        product: TasksCore
-      - package: SubstrateKit
-        product: SubstrateScreens
     settings:
       base:
         PRODUCT_NAME: SubstrateTasks

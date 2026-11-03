@@ -36,7 +36,7 @@ public enum TasksSettings {
             reminders.append(SettingsRow(id: .app(remindHour), label: "Tasks Due on a Day", detail: "When the reminder comes",
                                          control: .choice(selected: String(hour(values)),
                                                           options: hours.map { SettingsOption(id: String($0), label: hourWords($0, locale: locale)) })))
-            if permission == .denied {
+            if permission == .off {
                 reminders.append(SettingsRow(id: .app("notificationsOff"), label: "Notifications are off for Substrate Tasks",
                                              detail: "Turn them on in the system's Settings to be reminded.", control: .note(.caution)))
             } else {

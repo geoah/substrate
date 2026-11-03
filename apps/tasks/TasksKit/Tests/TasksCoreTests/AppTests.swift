@@ -115,42 +115,43 @@ struct LiveAppTests {
         rig.server.on { $0.method == "PATCH" ? (200, json(taskRecord("t2", "Call the vet", status: "done", version: 2))) : nil }
         let harness = rig.harness()
         await harness.runtime.linkChanged(signedIn)
-        try await harness.until { _ in rig.notifications.scheduled.count == 2 }
-        let vet = try #require(rig.notifications.scheduled[Reminders.id("t2")])
-        #expect(vet.at == Date(timeIntervalSince1970: 1_793_718_000))
+        try await harness.until { _ in rig.notifications.pending.count == 2 }
+        let vet = try #require(rig.notifications.pending[Reminders.id("t2")])
+        #expect(vet.fireAt == Date(timeIntervalSince1970: 1_793_718_000))
         #expect(vet.title == "Call the vet")
-        #expect(spaced(vet.body) == "Due at 3:00 PM")
-        #expect(vet.payload == ["task": "t2"])
+        #expect(vet.body.map(spaced) == "Due at 3:00 PM")
+        #expect(vet.userInfo == ["task": "t2"])
+        #expect(vet.category == Reminders.category)
         // A day's task reminds at the chosen hour of its day.
-        #expect(rig.notifications.scheduled[Reminders.id("t3")]?.at == Date(timeIntervalSince1970: 1_793_696_400 + 86400))
+        #expect(rig.notifications.pending[Reminders.id("t3")]?.fireAt == Date(timeIntervalSince1970: 1_793_696_400 + 86400))
 
         await harness.send(.complete("t2"))
-        try await harness.until { _ in rig.notifications.scheduled.keys.sorted() == [Reminders.id("t3")] }
-        #expect(rig.notifications.cancelled.last == [Reminders.id("t2")])
+        try await harness.until { _ in rig.notifications.pending.keys.sorted() == [Reminders.id("t3")] }
+        #expect(rig.notifications.calls.contains(.cancel(Reminders.id("t2"))))
 
         // Turned off, every one goes.
         await harness.send(.settings(.toggle(row: .app(TasksSettings.remind), on: false)))
-        try await harness.until { _ in rig.notifications.scheduled.isEmpty }
-        // A tap opens the task in its list.
-        rig.notifications.tap(Reminders.id("t3"), payload: ["task": "t3"])
+        try await harness.until { _ in rig.notifications.pending.isEmpty }
+        // A tap, which the app's delegate sends, opens the task in its list.
+        await harness.send(.reminderTapped("t3"))
         try await harness.until { await $0.state.openTask == "t3" }
         #expect(await harness.state.selection == .inbox)
         #expect(await harness.presentation.detail?.title == "Pay rent")
     }
 
     @Test func permissionIsAskedOnceSomethingIsDueAndNotBefore() async throws {
-        let rig = try Rig(notifications: ScriptedNotifications(permission: .notAsked, answer: .allowed))
+        let rig = try Rig(notifications: RecordedNotifications(.notAsked, granting: .on))
         serve(rig)
         let harness = rig.harness()
         await harness.runtime.linkChanged(signedIn)
         try await harness.until { await $0.state.sync == .following }
-        #expect(rig.notifications.asked == 0)
+        #expect(!rig.notifications.calls.contains(.requestPermission))
         await harness.send(.show(.today))
         await harness.send(.quickAdd("Water plants"))
-        try await harness.until { _ in rig.notifications.asked == 1 }
-        try await harness.until { await $0.state.permission == .allowed }
+        try await harness.until { _ in rig.notifications.calls.filter { $0 == .requestPermission }.count == 1 }
+        try await harness.until { await $0.state.permission == .on }
         // Due today at the chosen hour, which is past: nothing to schedule.
-        #expect(rig.notifications.scheduled.isEmpty)
+        #expect(rig.notifications.pending.isEmpty)
     }
 
     @Test func settingsAreKeptInTheRepositorysFolder() async throws {
@@ -171,7 +172,7 @@ struct AppTests {
         let rig = try Rig()
         let harness = rig.harness(performsEffects: false)
         await harness.deliver(.loaded(LocalCopy(records: records)))
-        await harness.deliver(.permission(.allowed))
+        await harness.deliver(.permission(.on))
         await harness.deliver(.shown(selection))
         harness.clearTrace()
         return (rig, harness)

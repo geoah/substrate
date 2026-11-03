@@ -15,10 +15,14 @@ public enum Reminders {
 
     public static func id(_ task: String) -> String { prefix + task }
 
+    /// The category a reminder is scheduled under, which the app's delegate
+    /// reads on a tap; the task's id is in its `userInfo` under `task`.
+    public static let category = "tasks.reminder"
+
     public static func plan(_ model: TasksModel, settings: SettingsValues, permission: NotificationPermission?, now: Date,
                             calendar: Calendar, locale: Locale) -> [NotificationRequest]
     {
-        guard TasksSettings.reminds(settings), permission == .allowed else { return [] }
+        guard TasksSettings.reminds(settings), permission == .on || permission == .notTimeSensitive else { return [] }
         var out: [NotificationRequest] = []
         for task in model.tasks.values where task.isOpen {
             guard let due = task.due else { continue }
@@ -27,8 +31,9 @@ public enum Reminders {
             let list = task.list.flatMap { model.lists[$0]?.name }
             let when = due.instant.map { "Due at \(DueWords.time($0, calendar: calendar, locale: locale))" } ?? "Due today"
             out.append(NotificationRequest(id: id(task.id), title: task.name.isEmpty ? "Untitled task" : task.name,
-                                           body: list.map { "\(when), in \($0)" } ?? when, at: at, payload: ["task": task.id]))
+                                           body: list.map { "\(when), in \($0)" } ?? when, fireAt: at, thread: "tasks",
+                                           category: category, userInfo: ["task": task.id]))
         }
-        return Array(out.sorted { ($0.at, $0.id) < ($1.at, $1.id) }.prefix(limit))
+        return Array(out.sorted { ($0.fireAt, $0.id) < ($1.fireAt, $1.id) }.prefix(limit))
     }
 }

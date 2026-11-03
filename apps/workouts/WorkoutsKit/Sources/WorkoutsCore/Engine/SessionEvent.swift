@@ -427,7 +427,7 @@ public extension SetValues {
 
 /// Why `SessionEngine.apply` refused an event. The controller turns it into
 /// a haptic and no change (§4.2).
-public enum EngineError: Error, Equatable, Sendable {
+public enum EngineError: Error, Codable, Equatable, Sendable {
     case noSession
     case sessionActive
     case unknownRow

@@ -3,7 +3,7 @@ import Foundation
 /// The grey values a pending row shows where nothing is typed (§5.5). Each
 /// field takes the first present of the suggestion, the copied target and
 /// PREVIOUS; RPE is never ghosted.
-public struct GhostValues: Equatable, Sendable {
+public struct GhostValues: Codable, Equatable, Sendable {
     /// The load, or the added load on a bodyweight-plus exercise.
     public var load: Mass?
     public var assistance: Mass?

@@ -41,6 +41,9 @@ public struct TasksApp: LinkedApp {
         /// The app came to the front: what the system may have changed
         /// meanwhile is read again.
         case foreground
+        /// The owner tapped a reminder: the app's notification delegate
+        /// sends the task's id it was scheduled with.
+        case reminderTapped(String)
         /// The updater found a newer build, or none.
         case offered(String?)
         case dismissProblem
@@ -85,7 +88,6 @@ public struct TasksApp: LinkedApp {
     public enum Effect: Equatable, Sendable {
         case load
         case followOutbox
-        case followTaps
         case readPermission
         case askPermission
         case read

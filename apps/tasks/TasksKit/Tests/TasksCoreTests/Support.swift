@@ -54,17 +54,17 @@ let signedIn = LinkSnapshot(phase: .signedIn, server: server, repository: "ada.e
                             packages: [TasksKinds.packageID: 1])
 
 /// A Tasks root over a folder of its own, a scripted server as its client
-/// and scripted notifications.
+/// and recorded notifications.
 struct Rig {
     let folder: RepositoryFolder
     let cache: RecordCache
     let outbox: Outbox
     let server: ScriptedServer
-    let notifications: ScriptedNotifications
+    let notifications: RecordedNotifications
     let clock: TestClock
     let app: TasksApp
 
-    init(notifications: ScriptedNotifications = ScriptedNotifications()) throws {
+    init(notifications: RecordedNotifications = RecordedNotifications()) throws {
         folder = try RepositoryFolder(root: temporaryFolder("tasks"))
         cache = RecordCache(folder: folder)
         outbox = Outbox(folder: folder)
@@ -83,7 +83,7 @@ struct Rig {
     var environment: AppEnvironment {
         var environment = AppEnvironment.testing(clock: clock, ids: SequentialIDs(), transport: server, client: .fixed(client))
         environment.folder = folder
-        environment.notifications = notifications
+        environment.devices.notifications = notifications
         return environment
     }
 

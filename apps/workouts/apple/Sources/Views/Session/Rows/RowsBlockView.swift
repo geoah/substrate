@@ -14,7 +14,7 @@ struct RowsBlockView: View {
     let isResting: Bool
     let showExercise: (ExerciseID) -> Void
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
     @Environment(RowsScreenModel.self) private var screen
     @Environment(\.dynamicTypeSize) private var typeSize

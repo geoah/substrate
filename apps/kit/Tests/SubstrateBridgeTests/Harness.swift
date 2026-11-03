@@ -12,6 +12,7 @@ final class Outlet: BridgeOutlet, @unchecked Sendable {
     /// Held, `deliver` blocks: a slow Kotlin.
     let gate = DispatchSemaphore(value: 1)
     var holding = false
+    private var refusing: @Sendable (Envelope) -> Bool = { _ in false }
 
     func deliver(_ message: String) -> BridgeFailure? {
         if holding {
@@ -19,8 +20,14 @@ final class Outlet: BridgeOutlet, @unchecked Sendable {
             gate.signal()
         }
         guard let envelope = try? BridgeCodec.decodeEnvelope(message) else { return BridgeFailure(.malformed, message) }
+        if lock.withLock({ refusing })(envelope) { return BridgeFailure(.jniFailure, "the test refused \(envelope.op.rawValue)") }
         lock.withLock { kept.append(envelope) }
         return nil
+    }
+
+    /// A Kotlin whose `deliver` fails, as a JNI failure would, for each message `matches`.
+    func refuse(_ matches: @escaping @Sendable (Envelope) -> Bool) {
+        lock.withLock { refusing = matches }
     }
 
     var messages: [Envelope] { lock.withLock { kept } }
@@ -52,6 +59,7 @@ actor TestRoot: BridgeRoot {
     let context: BridgeContext
     private(set) var commands: [JSONValue] = []
     private(set) var closed = false
+    private(set) var environments: [BridgeEnvironment] = []
     private var rows = KeyedList<Row>()
 
     init(context: BridgeContext) {
@@ -94,6 +102,10 @@ actor TestRoot: BridgeRoot {
         closed = true
     }
 
+    func environmentChanged(_ environment: BridgeEnvironment) async {
+        environments.append(environment)
+    }
+
     struct Row: Codable, Equatable, Sendable, Identifiable {
         var id: String
         var text: String
@@ -131,8 +143,7 @@ final class Box<T>: @unchecked Sendable {
 }
 
 func post(_ runtime: BridgeRuntime, _ envelope: Envelope) throws -> Envelope {
-    let text = String(decoding: try JSONEncoder().encode(envelope), as: UTF8.self)
-    return try BridgeCodec.decodeEnvelope(runtime.post(text))
+    try BridgeCodec.decodeEnvelope(runtime.post(BridgeCodec.text(envelope)))
 }
 
 func open(_ runtime: BridgeRuntime) throws -> Handle {
