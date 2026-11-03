@@ -268,10 +268,10 @@ struct StatsPresenterTests {
         let summary = StatsPresenter.summary(routine, history: try Stats.history(), settings: Stats.settings)
         #expect(summary.folder == "Full Body 3x Week (Back-Friendly)")
         let working = routine.slots.reduce(0) { $0 + $1.sets.count { $0.role == .working } }
-        #expect(summary.facts == [LabelledValue("Exercises", "5"), LabelledValue("Working sets", "\(working)"),
+        #expect(summary.facts == [LabelledValue("Exercises", "5"), LabelledValue("Sets per session", "\(working)"),
                                   LabelledValue("Last done", "Mon 26 Oct")])
         let never = StatsPresenter.summary(try #require(catalog.routines["day-3"]), history: try Stats.history(), settings: Stats.settings)
-        #expect(never.facts.map(\.label) == ["Exercises", "Working sets"])
+        #expect(never.facts.map(\.label) == ["Exercises", "Sets per session"])
     }
 
     @Test("Sessions per week, weeks trained and the weeks in a row")
