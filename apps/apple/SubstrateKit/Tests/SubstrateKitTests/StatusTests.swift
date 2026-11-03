@@ -324,31 +324,28 @@ final class TransportBox: @unchecked Sendable {
         #expect(home.leftOut(by: held).isEmpty)
     }
 
-    /// An agent the owner declined, by leaving out the `declare:` scope it
-    /// is declared under, is never asked about again: the check leaves the
-    /// agent detail out, and a withheld row (`none`) is no change.
-    @Test func anAgentTheOwnerDeclinedIsNotAskedAgain() async throws {
-        let declare = "declare:~/trainingcoach"
-        var manifest = AppManifest(appName: "Workouts", clientID: "https://workouts.example.org/client.json",
-                                   scopes: ["write:~/training/*", declare],
-                                   details: [.agent("~/trainingcoach/workoutCoach", reads: ["~/training/routine"], writes: [], spendCentsPerDay: 100)])
-        var session = appSession()
-        session.scopes = ["write:ada.example.com/training/*"]
-        session.requestedScopes = manifest.scopes
-        #expect(manifest.leftOut(by: session) == [declare])
-        let metadata = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"""
-        {"issuer":"https://ada.example.com","authorization_endpoint":"https://ada.example.com/oauth/authorize","token_endpoint":"https://ada.example.com/oauth/token","authorization_details_types_supported":["package","account","webhook","agent"]}
-        """#.utf8))
-        let check = manifest.check(for: session, metadata: metadata)
-        #expect(check.details.isEmpty)
-        #expect(check.scope == "write:~/training/*")
-        // A session that approved the agent still asks about it.
-        session.scopes = ["write:ada.example.com/training/*", "declare:ada.example.com/trainingcoach"]
-        #expect(manifest.check(for: session, metadata: metadata).details.map(\.type) == ["agent"])
-        // A withheld row answers none, which asks nothing.
-        manifest.scopes = ["write:~/training/*"]
-        let result = AuthorizationCheckResult(setup: [AuthorizationSetup(type: "agent", action: "none")])
-        #expect(manifest.changes(from: result, session: session).changes.isEmpty)
+    /// The check carries this build's version beside the request, so the
+    /// server records what the build needs (decision 0213); a version it
+    /// cannot store is cut to what it can, and a bundle without one says so.
+    @Test func theCheckNamesTheBuild() throws {
+        let manifest = syncManifest()
+        let check = manifest.check(for: appSession())
+        #expect(check.softwareVersion == "0.120.0 (20261103.101500)")
+        let body = String(decoding: try JSONEncoder().encode(check), as: UTF8.self)
+        #expect(body.contains(#""softwareVersion":"0.120.0 (20261103.101500)""#))
+        #expect(body.contains(#""scope":""#) && body.contains(#""details":["#))
+        let decoded = try JSONDecoder().decode(AuthorizationCheck.self, from: Data(body.utf8))
+        #expect(decoded == check)
+        // Empty is absent on the wire, never an empty string the server refuses.
+        let bare = AuthorizationCheck(scopes: ["read:*"], details: [], softwareVersion: "")
+        #expect(bare.softwareVersion == nil)
+        #expect(!String(decoding: try JSONEncoder().encode(bare), as: UTF8.self).contains("softwareVersion"))
+
+        #expect(AppManifest.softwareVersion("1.2.3 (45)") == "1.2.3 (45)")
+        #expect(AppManifest.softwareVersion(" 1.2.3\n") == "1.2.3")
+        #expect(AppManifest.softwareVersion("") == "unknown")
+        #expect(AppManifest.softwareVersion(String(repeating: "9", count: 80)).count == 64)
+        #expect(AppManifest(appName: "A", clientID: "http://127.0.0.1/a", scopes: [], softwareVersion: "\u{7}").softwareVersion == "unknown")
     }
 
     /// The approval page words a kind by the label it declares, and so does

@@ -134,7 +134,9 @@ public struct OAuthClient: Sendable {
     }
 
     /// The page the owner approves on. `authorization_details` is the
-    /// manifest's details as compact JSON. A server that does not list every
+    /// manifest's details as compact JSON and `software_version` this
+    /// build's version, which the token minted from the approval records
+    /// with the details' floors. A server that does not list every
     /// type they use would approve the scopes alone, so it is refused here
     /// rather than sent the request without them, and so is metadata whose
     /// endpoints are not on its issuer's origin. `loginHint` is the
@@ -155,6 +157,7 @@ public struct OAuthClient: Sendable {
             ("state", state),
         ]
         if let loginHint, !loginHint.isEmpty { items.append(("login_hint", loginHint)) }
+        items.append(("software_version", manifest.softwareVersion))
         let details = manifest.details(for: metadata)
         if !details.isEmpty { items.append(("authorization_details", try AuthorizationDetail.json(details))) }
         guard var parts = URLComponents(url: metadata.authorizationEndpoint, resolvingAgainstBaseURL: false) else {
