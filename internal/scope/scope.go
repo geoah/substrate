@@ -34,6 +34,13 @@
 // its parked deliveries. An app never asks for it in `scope`; only a
 // `webhook` authorization detail the owner approved puts it on a token, so
 // ParseRequest refuses it and CheckStored admits it.
+//
+// `call:<pattern>` (decision 0219) takes the kind grammar over function ids,
+// which are `<authority>/<package>/<name>` like a kind reference: the app
+// calls the matching functions, and only those whose own reach (the kinds
+// their `permissions` read and write) its read and write scopes cover,
+// which ReachCovered decides. A function of the core or llm package is
+// never matched: naming one outright is refused, and a glob skips them.
 package scope
 
 import (
@@ -64,6 +71,10 @@ const (
 	// Declare keeps the declarations of one package of the repository's own
 	// authority (decision 0203).
 	Declare Verb = "declare"
+	// Call runs the functions whose ids match, each only where the grant's
+	// reads and writes cover what the function itself reaches (decision
+	// 0219).
+	Call Verb = "call"
 	// Full is everything the owner's own token does. A request names it
 	// alone, as the bare word `full`.
 	Full Verb = "full"
@@ -137,8 +148,8 @@ func WebhookScope(trigger string) Scope { return Scope{Verb: Webhook, Pattern: t
 // The verbs a stored scope may carry, and the four of them a request may ask
 // for, as a refusal names them.
 const (
-	storedVerbs    = "read, write, agents, decide, declare or webhook"
-	requestedVerbs = "read, write, agents, decide or declare, or `full` alone"
+	storedVerbs    = "read, write, agents, decide, declare, call or webhook"
+	requestedVerbs = "read, write, agents, decide, declare or call, or `full` alone"
 )
 
 // Parse reads one scope, in a request or as stored: `~` is allowed, and
@@ -150,7 +161,7 @@ func Parse(raw string) (Scope, error) {
 	}
 	s := Scope{Verb: Verb(verb), Pattern: pattern}
 	switch s.Verb {
-	case Read, Write, Agents, Decide, Declare, Webhook:
+	case Read, Write, Agents, Decide, Declare, Call, Webhook:
 	default:
 		return Scope{}, fmt.Errorf("scope %q: %q is not %s", raw, verb, storedVerbs)
 	}
@@ -165,6 +176,8 @@ func Parse(raw string) (Scope, error) {
 		}
 	case s.Verb == Declare:
 		problem = declarePatternProblem(s)
+	case s.Verb == Call:
+		problem = callPatternProblem(s)
 	case s.OverAgents():
 		problem = agentPatternProblem(s)
 	default:
@@ -228,6 +241,34 @@ func agentPatternProblem(s Scope) string {
 	if authority == "" || strings.Contains(name, "/") || strings.Contains(name, "*") ||
 		!vocabulary.ValidAuthority(authority) || !vocabulary.ValidPackage(pkg) || !vocabulary.ValidCamel(name) {
 		return shape
+	}
+	return ""
+}
+
+// callPatternProblem holds a call pattern to the kind grammar over function
+// ids, whose last segment is a function's lowercase word as a kind's is. A
+// function of the core or llm package is never an app's to call: those
+// packages hold the agent built-ins and the machinery that runs code, so
+// naming one outright, or the package glob, is refused; a wider glob is
+// admissible and Calls skips them.
+func callPatternProblem(s Scope) string {
+	p := s.Pattern
+	if s.HomeRelative() {
+		p = homeStandIn + p[len(Home):]
+	}
+	if strings.Contains(p, Home) {
+		return "puts `~` somewhere other than the authority"
+	}
+	if !vocabulary.ValidTypeGlob(p) {
+		return "is not a function pattern: `*`, `<authority>/*`, `<authority>/<package>/*` or `<authority>/<package>/<name>`"
+	}
+	if !vocabulary.IsTypeGlob(p) {
+		if authority, _, _ := vocabulary.SplitKindRef(p); authority == "" {
+			return "names a function without its authority and package"
+		}
+	}
+	if writesUnwritable(p) {
+		return "names a function of the core or llm package, which no app calls"
 	}
 	return ""
 }
@@ -297,7 +338,7 @@ func ParseRequest(param string) ([]Scope, error) {
 		}
 		verb, _, ok := strings.Cut(raw, ":")
 		switch Verb(verb) {
-		case Read, Write, Agents, Decide:
+		case Read, Write, Agents, Decide, Call:
 		case Declare:
 			// An app declares in the owner's own namespace and nowhere else:
 			// a package under another authority would read as somebody
@@ -485,6 +526,54 @@ func (g Grant) Writes(kind string, internal bool) bool {
 		return false
 	}
 	return slices.ContainsFunc(g.scopes, func(s Scope) bool { return s.Verb == Write && matches(s.Pattern, kind, internal) })
+}
+
+// Calls reports whether the grant calls the function whose id is function,
+// `<authority>/<package>/<name>` in full. A glob covers a function declared
+// after the approval, and never one of the core or llm package.
+func (g Grant) Calls(function string) bool {
+	authority, pkg, name := vocabulary.SplitKindRef(function)
+	if authority == "" || !vocabulary.ValidPackage(pkg) || !vocabulary.ValidName(name) || inUnwritable(function) {
+		return false
+	}
+	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
+		return s.Verb == Call && vocabulary.MatchTypeGlob(s.Pattern, function)
+	})
+}
+
+// CallsAny reports whether the grant holds any call scope.
+func (g Grant) CallsAny() bool { return g.has(Call) }
+
+// ReachCovered reports whether the grant's read and write scopes cover one
+// entry of a function's declared reach: a kind it reads (verb Read) or
+// writes (verb Write), named in full or as a glob (decision 0219). An exact
+// kind is covered when the grant reads or writes it under every rule a
+// scope keeps, internal being its declared purpose; a glob is covered when
+// a scope of the verb (or a write, for a read) is at least as wide, and a
+// write glob never, where it reaches the core or llm package, since no scope
+// writes those and a function writing `*` reaches further than any approval.
+func (g Grant) ReachCovered(verb Verb, pattern string, internal bool) bool {
+	if !vocabulary.IsTypeGlob(pattern) {
+		if verb == Write {
+			return g.Writes(pattern, internal)
+		}
+		return g.Reads(pattern, internal)
+	}
+	if verb == Write && globReachesUnwritable(pattern) {
+		return false
+	}
+	return g.Covers(Scope{Verb: verb, Pattern: pattern}, false)
+}
+
+// globReachesUnwritable reports whether a glob covers a kind of an
+// unwritable package: `*`, the package's authority or the package itself.
+func globReachesUnwritable(glob string) bool {
+	for _, pkg := range unwritable {
+		if vocabulary.MatchTypeGlob(glob, pkg+"/x") {
+			return true
+		}
+	}
+	return false
 }
 
 // TalksTo reports whether the grant talks to the agent whose record id is

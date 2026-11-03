@@ -413,18 +413,18 @@ func TestAGrantCoversWhatItHoldsByReachNotSpelling(t *testing.T) {
 }
 
 // A trigger id is one predicate on every surface that names one, and a
-// refusal names the verbs where they apply: six stored, five requested.
+// refusal names the verbs where they apply: seven stored, six requested.
 func TestAVerbRefusalNamesTheVerbsItsSurfaceTakes(t *testing.T) {
 	if _, err := Parse("webhook:a/b"); err == nil {
 		t.Error("a webhook scope naming a path was admitted")
 	}
 	_, err := Parse("delete:*")
-	if err == nil || !strings.Contains(err.Error(), "read, write, agents, decide, declare or webhook") {
-		t.Errorf("a stored scope's unknown verb = %v, want the six verbs named", err)
+	if err == nil || !strings.Contains(err.Error(), "read, write, agents, decide, declare, call or webhook") {
+		t.Errorf("a stored scope's unknown verb = %v, want the seven verbs named", err)
 	}
 	_, err = ParseRequest("delete:*")
-	if err == nil || !strings.Contains(err.Error(), "read, write, agents, decide or declare") || strings.Contains(err.Error(), "webhook") {
-		t.Errorf("a request's unknown verb = %v, want the five requestable verbs named", err)
+	if err == nil || !strings.Contains(err.Error(), "read, write, agents, decide, declare or call") || strings.Contains(err.Error(), "webhook") {
+		t.Errorf("a request's unknown verb = %v, want the six requestable verbs named", err)
 	}
 }
 
