@@ -1,7 +1,7 @@
 import Foundation
 
 /// The catalogue signed out: the sample routine and its exercises bundled
-/// with the build (`Resources/Bundled`, which `apps/apple/scripts/workouts-package.py`
+/// with the build (`Resources/Bundled`, which `apps/workouts/scripts/workouts-package.py`
 /// writes from `docs/examples/sample.yaml`), plus the exercises added on the
 /// phone. A record that does not decode is skipped and listed in
 /// `Catalog.unreadable`; it never stops the rest loading.

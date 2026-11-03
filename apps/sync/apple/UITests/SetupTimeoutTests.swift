@@ -4,7 +4,7 @@ import XCTest
 /// step's error shows, nothing goes on spinning after it, and the server,
 /// which finished the install after the phone stopped waiting, shows it done
 /// at the next check. It runs only when SYNC_SLOW_SERVER names such a server
-/// (apps/apple/scripts/slowserver.py, holding each install longer than the
+/// (apps/xcode/scripts/slowserver.py, holding each install longer than the
 /// 3 seconds this test gives one) and SYNC_E2E_REPOSITORY and
 /// SYNC_E2E_PASSWORD a fresh repository on it.
 final class SetupTimeoutTests: XCTestCase {

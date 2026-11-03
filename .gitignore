@@ -15,14 +15,14 @@ node_modules/
 dist/
 
 # The Apple apps: xcodegen's project and xcodebuild's derived data. Here, not
-# in apps/apple/, because `.yamlfmt` reads this file alone, and the derived
+# in apps/, because `.yamlfmt` reads this file alone, and the derived
 # data holds YAML of Xcode's.
-/apps/apple/Substrate.xcodeproj/
-/apps/apple/build/
-/apps/apple/SubstrateKit/.build/
-/apps/apple/SubstrateKit/.swiftpm/
-/apps/apple/WorkoutsKit/.build/
-/apps/apple/WorkoutsKit/.swiftpm/
+/apps/xcode/Substrate.xcodeproj/
+/apps/xcode/build/
+/apps/kit/.build/
+/apps/kit/.swiftpm/
+/apps/workouts/core/.build/
+/apps/workouts/core/.swiftpm/
 
 # Editors / OS
 .DS_Store

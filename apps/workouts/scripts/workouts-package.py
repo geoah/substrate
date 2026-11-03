@@ -4,20 +4,20 @@ and into the closures its site publishes.
 Two sources, both YAML in `substratectl apply -f` form under the authority
 `substrate.reamde.dev`, the publisher's (decision record 0214):
 
-- The packages' manifests in apps/apple/SubstrateWorkouts/Package/: training,
-  and the workout coach under Package/coach/. The app carries each package's
+- The packages' manifests in apps/workouts/package/: training,
+  and the workout coach under package/coach/. The app carries each package's
   documents as JSON (Resources/Package/training.json and coach.json) for the
   version its approval asks for, and its codec drift test reads each kind's
   property names from kinds.json. The app applies none of them: a repository
   installs a package from the authority document, under this very name.
-- The example records in apps/apple/SubstrateWorkouts/docs/examples/.
+- The example records in apps/workouts/docs/examples/.
   sample.yaml is the sample routine and its exercises, the app's bundled
   catalogue (Resources/Bundled); the other four files are the test vectors
   (Tests/WorkoutsCoreTests/Fixtures/examples). Each record becomes the flat
   shape substrate's REST API speaks, `{"kind", "id", "properties"}`. An
   exercise id in more than one file must be the same record in each.
 
-It renders the workout coach's agent document (Package/coach/workoutcoach.yaml)
+It renders the workout coach's agent document (package/coach/workoutcoach.yaml)
 from the instructions, the mechanics and a field guide generated from the
 routine and exercise manifests, so the prompt and the kinds cannot drift, and
 it builds each package's closure, the multi-document YAML a bundle directory
@@ -29,9 +29,9 @@ site could refuse it.
 
 This script writes all of them:
 
-    uv run --with pyyaml apps/apple/scripts/workouts-package.py           # rewrite
-    uv run --with pyyaml apps/apple/scripts/workouts-package.py --check   # exit 1 and name each stale file
-    uv run --with pyyaml apps/apple/scripts/workouts-package.py --closures build/site/packages
+    uv run --with pyyaml apps/workouts/scripts/workouts-package.py           # rewrite
+    uv run --with pyyaml apps/workouts/scripts/workouts-package.py --check   # exit 1 and name each stale file
+    uv run --with pyyaml apps/workouts/scripts/workouts-package.py --closures build/site/packages
 
 The output has no timestamps, so a run over unchanged YAML changes nothing.
 """
@@ -46,16 +46,16 @@ from pathlib import Path
 
 import yaml
 
-APPLE = Path(__file__).resolve().parents[1]
-PACKAGE = APPLE / "SubstrateWorkouts/Package"
+APP = Path(__file__).resolve().parents[1]
+PACKAGE = APP / "package"
 # The apply order: the package and its bundle, then each kind after the kinds
 # it names (an exercise names a movement, a setup an exercise, a session a
 # routine, a set the rest).
 FILES = ("training", "movement", "exercise", "setup", "routine", "session", "set", "memory", "library", "bodymeasurement")
 KINDS = ("movement", "exercise", "routine", "session", "set", "setup")
-RESOURCE = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/training.json"
+RESOURCE = APP / "core/Sources/WorkoutsCore/Resources/Package/training.json"
 COACH = PACKAGE / "coach"
-COACH_RESOURCE = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/coach.json"
+COACH_RESOURCE = APP / "core/Sources/WorkoutsCore/Resources/Package/coach.json"
 # The rendered agent document, committed beside its sources so a diff shows
 # what a release changes of the coach, and read back into the closure.
 COACH_AGENT_FILE = COACH / "workoutcoach.yaml"
@@ -140,13 +140,13 @@ COACH_AGENT = {
 # The coach's prompt is a cacheable prefix beside the kinds list and its
 # pinned memories; past this it crowds them out.
 COACH_PROMPT_MAX = 20480
-FIXTURE = APPLE / "WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/kinds.json"
-EXAMPLES = APPLE / "SubstrateWorkouts/docs/examples"
+FIXTURE = APP / "core/Tests/WorkoutsCoreTests/Fixtures/kinds.json"
+EXAMPLES = APP / "docs/examples"
 SAMPLE = "sample"
-BUNDLED = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled"
+BUNDLED = APP / "core/Sources/WorkoutsCore/Resources/Bundled"
 # The test vectors: the owner's Hevy history and the methods it leaves out.
 VECTORS = ("exercises", "routines", "sessions", "coverage")
-VECTOR_FIXTURES = APPLE / "WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/examples"
+VECTOR_FIXTURES = APP / "core/Tests/WorkoutsCoreTests/Fixtures/examples"
 
 # The keys of a kind's property that kinds.json keeps. Descriptions, labels
 # and bounds are the server's business, not the codec's.
@@ -230,7 +230,7 @@ def kinds() -> dict:
                 "properties": [property_spec(prop, spec, name) for prop, spec in data["properties"].items()],
             }
         )
-    return {"source": "apps/apple/SubstrateWorkouts/Package", "kinds": out}
+    return {"source": "apps/workouts/package", "kinds": out}
 
 
 def example_records(name: str) -> list[dict]:
@@ -247,7 +247,7 @@ def example_records(name: str) -> list[dict]:
 
 
 def record_file(name: str, records: list[dict]) -> dict:
-    return {"source": f"apps/apple/SubstrateWorkouts/docs/examples/{name}.yaml", "records": records}
+    return {"source": f"apps/workouts/docs/examples/{name}.yaml", "records": records}
 
 
 def examples() -> dict[Path, dict]:
@@ -377,6 +377,9 @@ def coach_agent() -> dict:
 
 
 def coach_agent_yaml(agent: dict) -> str:
+    # The header names the script's old path and stays so: it is part of the
+    # published trainingcoach closure, whose digest closures.lock.json holds,
+    # so it changes only with the package's next version.
     head = (
         "# The workout coach's agent document, RENDERED by\n"
         "# apps/apple/scripts/workouts-package.py from instructions.md, mechanics.md,\n"
@@ -479,9 +482,9 @@ def main() -> int:
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
-        print(f"wrote {path.relative_to(APPLE)}")
+        print(f"wrote {path.relative_to(APP)}")
     for path in stale:
-        print(f"stale: {path.relative_to(APPLE)}", file=sys.stderr)
+        print(f"stale: {path.relative_to(APP)}", file=sys.stderr)
     return 1 if stale else 0
 
 

@@ -3,7 +3,7 @@ import Foundation
 import Testing
 
 /// The generated example records (`Fixtures/examples/*.json`) and
-/// `Fixtures/kinds.json`, from `apps/apple/scripts/workouts-package.py`.
+/// `Fixtures/kinds.json`, from `apps/workouts/scripts/workouts-package.py`.
 /// Shared by every test file that needs the examples.
 enum ExampleFixtures {
     static let files = ["exercises", "routines", "sessions", "coverage"]

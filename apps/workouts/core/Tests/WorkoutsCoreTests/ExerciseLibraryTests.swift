@@ -3,7 +3,7 @@ import Testing
 @testable import WorkoutsCore
 
 /// The exercise library this build carries (`Resources/Bundled/library.json`,
-/// from `apps/apple/scripts/exercise-library.py`).
+/// from `apps/workouts/scripts/exercise-library.py`).
 @Suite("Exercise library")
 struct ExerciseLibraryTests {
     let codec = RecordCodec()

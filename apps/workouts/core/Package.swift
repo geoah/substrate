@@ -17,18 +17,18 @@ let package = Package(
         .library(name: "WorkoutsSync", targets: ["WorkoutsSync"]),
     ],
     dependencies: [
-        .package(path: "../SubstrateKit"),
+        .package(path: "../../kit"),
     ],
     targets: [
         .target(
             name: "WorkoutsCore",
             // The starter exercises and routines, and the training package's
-            // manifests (apps/apple/scripts/workouts-package.py).
+            // manifests (apps/workouts/scripts/workouts-package.py).
             resources: [.copy("Resources/Bundled"), .copy("Resources/Package")]
         ),
         .target(
             name: "WorkoutsSync",
-            dependencies: ["WorkoutsCore", .product(name: "SubstrateKit", package: "SubstrateKit")]
+            dependencies: ["WorkoutsCore", .product(name: "SubstrateKit", package: "kit")]
         ),
         .testTarget(
             name: "WorkoutsCoreTests",
@@ -38,7 +38,7 @@ let package = Package(
         ),
         .testTarget(
             name: "WorkoutsSyncTests",
-            dependencies: ["WorkoutsSync", "WorkoutsCore", .product(name: "SubstrateKit", package: "SubstrateKit")],
+            dependencies: ["WorkoutsSync", "WorkoutsCore", .product(name: "SubstrateKit", package: "kit")],
             // Answers a substrate gave, recorded from a local server.
             resources: [.copy("Fixtures")]
         ),

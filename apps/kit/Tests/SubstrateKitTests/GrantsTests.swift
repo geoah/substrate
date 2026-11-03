@@ -192,7 +192,7 @@ import Testing
 
     static let fixture = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("web/console/src/lib/app-scopes.fixture.json")
 
     @Test func everySentenceIsTheConsoles() throws {

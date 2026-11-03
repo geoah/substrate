@@ -101,13 +101,14 @@ struct CoachTests {
         #expect(ClosureReach.of(try PackageManifest.bundled().documents) == ClosureReach())
     }
 
-    /// apps/apple/scopes.json is what the server's first-party reach test
+    /// apps/scopes.json is what the server's first-party reach test
     /// reads in place of a hand copy of this manifest, so the two cannot
     /// drift: the scopes in order, and the packages the details ask for.
-    @Test("the request is the one apps/apple/scopes.json records for the server's reach test")
+    @Test("the request is the one apps/scopes.json records for the server's reach test")
     func recordedRequest() throws {
         let apple = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
         struct Recorded: Decodable {
             var scopes: [String]
             var packages: [String]

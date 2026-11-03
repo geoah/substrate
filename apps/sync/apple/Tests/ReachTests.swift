@@ -12,6 +12,7 @@ import XCTest
 final class ReachTests: XCTestCase {
     static let kinds = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent()
         .appendingPathComponent("kinds/providers.substrate.reamde.dev")
 
     /// The internal kinds the closures declare, which a glob never covers.
@@ -61,11 +62,12 @@ final class ReachTests: XCTestCase {
         return out
     }
 
-    /// apps/apple/scopes.json is what the server's first-party reach test
+    /// apps/scopes.json is what the server's first-party reach test
     /// reads in place of a hand copy of this manifest, so the two cannot
     /// drift: the scopes in order, and the packages the details ask for.
     func testTheRequestIsTheOneScopesJSONRecordsForTheServersReachTest() throws {
-        let apple = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let apple = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         struct Recorded: Decodable {
             var scopes: [String]
             var packages: [String]

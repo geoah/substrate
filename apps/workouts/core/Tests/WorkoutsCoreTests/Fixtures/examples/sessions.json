@@ -1,5 +1,5 @@
 {
-  "source": "apps/apple/SubstrateWorkouts/docs/examples/sessions.yaml",
+  "source": "apps/workouts/docs/examples/sessions.yaml",
   "records": [
     {
       "kind": "substrate.reamde.dev/training/session",

@@ -1,5 +1,5 @@
 {
-  "source": "apps/apple/SubstrateWorkouts/Package",
+  "source": "apps/workouts/package",
   "kinds": [
     {
       "kind": "substrate.reamde.dev/training/movement",

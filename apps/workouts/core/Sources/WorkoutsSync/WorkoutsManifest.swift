@@ -41,7 +41,7 @@ public enum WorkoutsManifest {
     public static let writeScope = "write:\(KindNames.packageID)/*"
 
     /// The coach's reads outside training, as its closure declares them
-    /// (apps/apple/scripts/workouts-package.py, COACH_READS): the two health
+    /// (apps/workouts/scripts/workouts-package.py, COACH_READS): the two health
     /// kinds, every observation kind, and the clinical catalogue where the
     /// owner holds one.
     public static let coachReadScopes = [

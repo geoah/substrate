@@ -22,22 +22,22 @@ import (
 // reach more fails here before it fails on the owner's approval page.
 //
 // Nothing here is a hand copy. What each app asks for is
-// apps/apple/scopes.json, which a Swift test on each side holds equal to
+// apps/scopes.json, which a Swift test on each side holds equal to
 // the app's manifest; the binary's packages come from the catalog it ships,
 // and Workouts' published packages from the closures the app carries
 // (Resources/Package/*.json, the documents the site publishes), parsed as
 // the server parses a published closure.
 
-// appRequest is one app's entry in apps/apple/scopes.json.
+// appRequest is one app's entry in apps/scopes.json.
 type appRequest struct {
 	Scopes   []string `json:"scopes"`
 	Packages []string `json:"packages"`
 }
 
-// firstPartyRequests reads apps/apple/scopes.json.
+// firstPartyRequests reads apps/scopes.json.
 func firstPartyRequests(t *testing.T) map[string]appRequest {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "apps", "apple", "scopes.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "apps", "scopes.json"))
 	if err != nil {
 		t.Fatalf("read the apps' requests: %v", err)
 	}
@@ -46,7 +46,7 @@ func firstPartyRequests(t *testing.T) map[string]appRequest {
 		Workouts appRequest `json:"workouts"`
 	}
 	if err := json.Unmarshal(raw, &file); err != nil {
-		t.Fatalf("apps/apple/scopes.json: %v", err)
+		t.Fatalf("apps/scopes.json: %v", err)
 	}
 	return map[string]appRequest{"Substrate Sync": file.Sync, "Substrate Workouts": file.Workouts}
 }
@@ -56,7 +56,7 @@ func firstPartyRequests(t *testing.T) map[string]appRequest {
 // the site publishes them, as one YAML stream.
 func workoutsClosure(t *testing.T, name, id string) *Bundle {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "apps", "apple", "WorkoutsKit", "Sources", "WorkoutsCore", "Resources", "Package", name+".json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "apps", "workouts", "core", "Sources", "WorkoutsCore", "Resources", "Package", name+".json"))
 	if err != nil {
 		t.Fatalf("read the %s closure: %v", id, err)
 	}

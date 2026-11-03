@@ -3,7 +3,7 @@ import SubstrateKit
 import WorkoutsCore
 
 /// A package as this build carries it (`Resources/Package/training.json` and
-/// `coach.json`, written by apps/apple/scripts/workouts-package.py from
+/// `coach.json`, written by apps/workouts/scripts/workouts-package.py from
 /// SubstrateWorkouts/Package/): its id, the version this build was written
 /// against, and the documents of its closure. The app applies none of them:
 /// a repository installs the package from the publisher's authority

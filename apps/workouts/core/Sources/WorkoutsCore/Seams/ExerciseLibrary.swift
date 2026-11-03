@@ -1,7 +1,7 @@
 import Foundation
 
 /// The exercise library this build carries (`Resources/Bundled/library.json`,
-/// from `apps/apple/scripts/exercise-library.py`): movements and their
+/// from `apps/workouts/scripts/exercise-library.py`): movements and their
 /// exercises, one per equipment version, which the app seeds into the
 /// repository (`LibraryInstall`). Each record carries the library's code,
 /// `substrate-workouts-library`, whose `version` is the library version the

@@ -1,5 +1,5 @@
 {
- "source": "apps/apple/SubstrateWorkouts/Library",
+ "source": "apps/workouts/library",
  "version": 3,
  "freeExerciseDB": {
   "repository": "yuhonas/free-exercise-db",

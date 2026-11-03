@@ -6,7 +6,7 @@ install for DELAY seconds before passing it on, as a server installing a
 bundle's requirements first does. The install still happens after the client
 stopped waiting, which is what the test checks the app copes with.
 
-    python3 apps/apple/scripts/slowserver.py http://localhost:8080 8 8093
+    python3 apps/xcode/scripts/slowserver.py http://localhost:8080 8 8093
 """
 
 import http.server

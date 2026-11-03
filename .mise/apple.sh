@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# The Apple apps (apps/apple): the console, bundled, in a native shell for
+# The Apple apps (each app's apple/ folder under apps/, built from the one
+# project in apps/xcode): the console, bundled, in a native shell for
 # macOS, iPadOS and iOS. Every `mise run apple:*` task is one subcommand here.
 #
 # The console is built by `console:build` and copied into the bundle by the
@@ -10,7 +11,7 @@
 # app id and the device profile with.
 set -euo pipefail
 
-cd "$(dirname "$0")/../apps/apple"
+cd "$(dirname "$0")/../apps/xcode"
 
 readonly XCODEGEN="xcodegen@2.46.0"
 readonly PROJECT="Substrate.xcodeproj"
@@ -351,7 +352,7 @@ publish_client() {
 
 # The packages an app's authority document entry lists, by the folder name
 # each app is published under: Workouts' two published packages, built from
-# apps/apple/SubstrateWorkouts/Package/; the rest bring none of their own.
+# apps/workouts/package/; the rest bring none of their own.
 app_packages() {
 	case "$1" in
 	workouts) echo '["training","trainingcoach"]' ;;
@@ -495,7 +496,7 @@ check_publications() {
 # asks for, and every published package version with its closure and
 # digest, each app's client document, and the closures themselves under
 # packages/<package>-<version>.yaml (decision record 0212). The closures
-# this tree ships are built by apps/apple/scripts/workouts-package.py; every
+# this tree ships are built by apps/workouts/scripts/workouts-package.py; every
 # version the live document already lists is carried forward as it is, and
 # a listed version whose closure this tree builds with another digest is
 # refused, because a published version never changes. A closure published
@@ -532,7 +533,7 @@ publish_site() {
 
 	# The closures this tree ships, as `path sha256` lines, then as JSON.
 	local built lines
-	lines="$(uv run --quiet --with pyyaml scripts/workouts-package.py --closures "$out/packages")" || return 1
+	lines="$(uv run --quiet --with pyyaml ../workouts/scripts/workouts-package.py --closures "$out/packages")" || return 1
 	built="$(jq -Rn --arg site "$site" --arg authority "$authority" '[inputs | select(length > 0) | split(" ") |
 		(.[0] | split("/") | last) as $file |
 		($file | sub("\\.yaml$"; "") | capture("^(?<name>.+)-(?<version>[0-9]+)$")) as $m |
@@ -612,20 +613,20 @@ publish_site() {
 	site_upload "$dry" "$out/.well-known/substrate/authority.json" "$target/.well-known/substrate/authority.json" "no-cache"
 	# What is published now, for the generator's offline check: each
 	# package's newest version and its digest. Committed after a publish.
-	local lock="SubstrateWorkouts/Package/closures.lock.json"
+	local lock="../workouts/package/closures.lock.json"
 	local locked
 	locked="$(jq --arg authority "$authority" '[.packages[] | {key: "\($authority)/\(.package)", value: (.versions[0] | {version, sha256})}] | from_entries' \
 		"$out/.well-known/substrate/authority.json")"
 	if [ -n "$dry" ]; then
-		echo "apple: dry run: nothing was uploaded; the site is built under apps/apple/$out"
-		echo "apple: would write apps/apple/$lock:"
+		echo "apple: dry run: nothing was uploaded; the site is built under apps/xcode/$out"
+		echo "apple: would write apps/${lock#../}:"
 		local line
 		while IFS= read -r line; do echo "apple:   $line"; done <<<"$locked"
 	else
 		echo "apple: published $site/.well-known/apple-app-site-association"
 		echo "apple: published $site/.well-known/substrate/authority.json"
 		printf '%s\n' "$locked" >"$lock"
-		echo "apple: wrote apps/apple/$lock; commit it"
+		echo "apple: wrote apps/${lock#../}; commit it"
 	fi
 	jq -r '.packages[] | "apple: \(.package): versions \([.versions[].version] | map(tostring) | join(", "))"' "$out/.well-known/substrate/authority.json"
 	echo "apple: the authority's DNS needs this record, once:"
@@ -730,7 +731,7 @@ release() {
 	# The export names the IPA after the bundle name, "Substrate Console".
 	local exported=("$out/iOS"/*.ipa)
 	cp "${exported[0]}" "$stage/$ipa"
-	local icon="Substrate/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+	local icon="../console/apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
 	sips -z 57 57 "$icon" --out "$stage/$rel/icon-57.png" >/dev/null
 	sips -z 512 512 "$icon" --out "$stage/$rel/icon-512.png" >/dev/null
 
@@ -788,7 +789,7 @@ release_sync() {
 	# The export names the IPA after the app's display name, "Substrate Sync".
 	local exported=("$out/iOS"/*.ipa)
 	cp "${exported[0]}" "$stage/$ipa"
-	local icon="SubstrateSync/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+	local icon="../sync/apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
 	sips -z 57 57 "$icon" --out "$stage/$rel/icon-57.png" >/dev/null
 	sips -z 512 512 "$icon" --out "$stage/$rel/icon-512.png" >/dev/null
 
@@ -842,7 +843,7 @@ release_workouts() {
 	local ipa="$rel/SubstrateWorkouts-${version%%+*}-iOS.ipa"
 	local exported=("$out/iOS"/*.ipa)
 	cp "${exported[0]}" "$stage/$ipa"
-	local icon="SubstrateWorkouts/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+	local icon="../workouts/apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
 	sips -z 57 57 "$icon" --out "$stage/$rel/icon-57.png" >/dev/null
 	sips -z 512 512 "$icon" --out "$stage/$rel/icon-512.png" >/dev/null
 
@@ -912,7 +913,7 @@ release_chat() {
 	# The export names the IPA after the app's display name, "Substrate Chat".
 	local exported=("$out/iOS"/*.ipa)
 	cp "${exported[0]}" "$stage/$ipa"
-	local icon="SubstrateChat/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+	local icon="../chat/apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
 	sips -z 57 57 "$icon" --out "$stage/$rel/icon-57.png" >/dev/null
 	sips -z 512 512 "$icon" --out "$stage/$rel/icon-512.png" >/dev/null
 
@@ -1065,14 +1066,14 @@ test:workouts)
 	# WorkoutsKit is a Swift package too: the model, both engines and the
 	# sync, on the Mac. The package's manifests and their JSON must agree,
 	# and so must the exercise library and its sources.
-	uv run --quiet --with pyyaml scripts/workouts-package.py --check
-	uv run --quiet --with pyyaml scripts/exercise-library.py --check
-	swift test --package-path WorkoutsKit
+	uv run --quiet --with pyyaml ../workouts/scripts/workouts-package.py --check
+	uv run --quiet --with pyyaml ../workouts/scripts/exercise-library.py --check
+	swift test --package-path ../workouts/core
 	;;
 test:kit)
 	# SubstrateKit is a Swift package: its tests run on the Mac with swift
 	# test, no project or simulator.
-	swift test --package-path SubstrateKit
+	swift test --package-path ../kit
 	;;
 test:chat)
 	project

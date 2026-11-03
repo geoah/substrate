@@ -3,7 +3,7 @@
 Substrate Workouts writes its exercise library into the repository's training
 package (movements, and their exercises, one per equipment version) and fills
 what the repository lacks at each library version. This script builds that
-library from two sources in apps/apple/SubstrateWorkouts/Library/:
+library from two sources in apps/workouts/library/:
 
 - movements.yaml, curated by hand: each movement, its muscles and their
   shares, and its exercises with their equipment, measurement and load
@@ -20,9 +20,9 @@ first appeared in (`since`), which the seeding reads so an entry the owner
 deleted is never written back. A changed hash moves the version on the next
 write, and --check fails until it has.
 
-    uv run --with pyyaml apps/apple/scripts/exercise-library.py            # rewrite
-    uv run --with pyyaml apps/apple/scripts/exercise-library.py --check    # exit 1 and name each stale file
-    uv run --with pyyaml apps/apple/scripts/exercise-library.py --fetch    # refresh free-exercise-db.json from the pinned commit
+    uv run --with pyyaml apps/workouts/scripts/exercise-library.py            # rewrite
+    uv run --with pyyaml apps/workouts/scripts/exercise-library.py --check    # exit 1 and name each stale file
+    uv run --with pyyaml apps/workouts/scripts/exercise-library.py --fetch    # refresh free-exercise-db.json from the pinned commit
 """
 
 from __future__ import annotations
@@ -37,13 +37,13 @@ from pathlib import Path
 
 import yaml
 
-APPLE = Path(__file__).resolve().parents[1]
-LIBRARY = APPLE / "SubstrateWorkouts/Library"
+APP = Path(__file__).resolve().parents[1]
+LIBRARY = APP / "library"
 MOVEMENTS = LIBRARY / "movements.yaml"
 FEDB = LIBRARY / "free-exercise-db.json"
 LOCK = LIBRARY / "library.lock.json"
-RESOURCE = APPLE / "WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/library.json"
-EXERCISE_KIND = APPLE / "SubstrateWorkouts/Package/exercise.yaml"
+RESOURCE = APP / "core/Sources/WorkoutsCore/Resources/Bundled/library.json"
+EXERCISE_KIND = APP / "package/exercise.yaml"
 
 FEDB_REPOSITORY = "yuhonas/free-exercise-db"
 FEDB_COMMIT = "f00c92c7dcf1216a928a52c3706c7ce8e2f71ed5"
@@ -270,7 +270,7 @@ def library() -> tuple[dict, str | None]:
         coding = {"system": LIBRARY_SYSTEM, "code": record["id"], "version": str(since[key])}
         record["properties"]["codes"] = [coding] + record["properties"].get("codes", [])
     out = {
-        "source": "apps/apple/SubstrateWorkouts/Library",
+        "source": "apps/workouts/library",
         "version": version,
         "freeExerciseDB": {"repository": FEDB_REPOSITORY, "commit": FEDB_COMMIT},
         "records": records,
@@ -288,7 +288,7 @@ def fetch() -> None:
                 "categories": list(FEDB_CATEGORIES), "exercises": sorted(kept, key=lambda entry: entry["id"])}),
         encoding="utf-8",
     )
-    print(f"wrote {FEDB.relative_to(APPLE)}: {len(kept)} entries")
+    print(f"wrote {FEDB.relative_to(APP)}: {len(kept)} entries")
 
 
 def render(value: dict) -> str:
@@ -319,9 +319,9 @@ def main() -> int:
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
-        print(f"wrote {path.relative_to(APPLE)}")
+        print(f"wrote {path.relative_to(APP)}")
     for path in stale:
-        print(f"stale: {path.relative_to(APPLE)}", file=sys.stderr)
+        print(f"stale: {path.relative_to(APP)}", file=sys.stderr)
     return 1 if stale else 0
 
 

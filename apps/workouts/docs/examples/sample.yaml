@@ -4,7 +4,7 @@
 # installs the app, allow the user to delete it."
 #
 # This file is the source of the app's bundled catalogue.
-# apps/apple/scripts/workouts-package.py writes it to
+# apps/workouts/scripts/workouts-package.py writes it to
 # WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/exercises.json and
 # routines.json; `mise run lint:python` (CI's `lint` job) and
 # `mise run apple:test:workouts` fail while they differ. The app shows these

@@ -4,7 +4,7 @@
 # version, with their measurement and load conventions, the free-exercise-db
 # entries that are the same exercise and the Hevy template ids that map onto
 # it. An exercise keeps Hevy's name where one maps. The muscles are this
-# library's own, not Hevy's tags. apps/apple/scripts/exercise-library.py turns
+# library's own, not Hevy's tags. apps/workouts/scripts/exercise-library.py turns
 # this file and free-exercise-db.json into the records the app seeds.
 - id: 21s-bicep-curl
   name: 21s Bicep Curl
