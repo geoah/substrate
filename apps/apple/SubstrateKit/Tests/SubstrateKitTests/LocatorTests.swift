@@ -19,6 +19,16 @@ import Testing
         #expect(try DomainRecord.parse(["v=substrate1 server=https://a.example.org:8443"])?.server == "https://a.example.org:8443")
     }
 
+    /// A record written with tabs or doubled spaces is still the record
+    /// (`TestARecordReadsWithAnyWhitespaceAndRendersWhatItCarries`).
+    @Test func readsWithAnyWhitespaceAfterTheVersion() throws {
+        let record = try #require(try DomainRecord.parse(["v=substrate1\tserver=https://substrate.example.net  proof=abc123\tlater=x"]))
+        #expect(record.server == "https://substrate.example.net")
+        #expect(record.proof == "abc123")
+        #expect(record.other == ["later": "x"])
+        #expect(try DomainRecord.parse(["v=substrate1\u{00A0}server=https://a.example"])?.server == "https://a.example")
+    }
+
     @Test func findsNothingWithoutTheVersion() throws {
         for txts in [[], ["v=spf1 -all"], ["v=substrate10 server=https://a.example"], ["v=substrate1x"]] {
             #expect(try DomainRecord.parse(txts) == nil, "\(txts)")
