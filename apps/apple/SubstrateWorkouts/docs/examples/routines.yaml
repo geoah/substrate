@@ -1,13 +1,13 @@
 # Carried into substrate on 2026-11-02 from rxtx.dev, where it was
 # research/workouts/substrate/examples/routines.yaml, the kinds were the draft
 # mneme.rxtx.dev/training and the app was called Spotter. The kinds are now
-# the app's own ~/training (decision record 0203) and the adapter is
+# the app's own substrate.reamde.dev/training (decision record 0203) and the adapter is
 # substrate-workouts; nothing else changed, so where the comments below
 # mention Mneme they describe the plan of the time. README.md beside this
 # file says how these records relate to the JSON the app bundles.
 #
 # Example records: the owner's Hevy folder "Full Body 3x Week (Back-Friendly)"
-# as four records of ~/training/routine (research draft of
+# as four records of substrate.reamde.dev/training/routine (research draft of
 # 2026-10-30). Apply after exercises.yaml; sessions name these ids.
 #
 # WHAT THE SCREENSHOTS GIVE AND WHAT IS WRITTEN HERE.
@@ -66,7 +66,7 @@
 #                                             vertical traction
 #   a set to failure                          Day 2 rope pushdown
 #   a tempo                                   Day 1 Romanian deadlift
-kind: ~/training/routine
+kind: substrate.reamde.dev/training/routine
 metadata:
   id: fully-body-collection-1
 data:
@@ -85,7 +85,7 @@ data:
         roundRest: PT1M
     slots:
       - key: leg-press
-        exercise: ~/training/exercise/leg-press-machine
+        exercise: substrate.reamde.dev/training/exercise/leg-press-machine
         setRest: PT2M
         sets:
           - key: w1
@@ -112,7 +112,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: calf-press
-        exercise: ~/training/exercise/calf-press-machine
+        exercise: substrate.reamde.dev/training/exercise/calf-press-machine
         setRest: PT1M
         sets:
           - key: s1
@@ -132,7 +132,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: seated-leg-curl
-        exercise: ~/training/exercise/seated-leg-curl-machine
+        exercise: substrate.reamde.dev/training/exercise/seated-leg-curl-machine
         setRest: PT1M30S
         sets:
           - key: s1
@@ -152,7 +152,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: leg-extension
-        exercise: ~/training/exercise/leg-extension-machine
+        exercise: substrate.reamde.dev/training/exercise/leg-extension-machine
         setRest: PT1M30S
         sets:
           - key: s1
@@ -172,7 +172,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: hip-thrust
-        exercise: ~/training/exercise/hip-thrust-barbell
+        exercise: substrate.reamde.dev/training/exercise/hip-thrust-barbell
         setRest: PT2M
         notes: >-
           Ribs down and chin tucked; stop with the hips level with the knees,
@@ -195,7 +195,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: goblet-squat
-        exercise: ~/training/exercise/goblet-squat
+        exercise: substrate.reamde.dev/training/exercise/goblet-squat
         setRest: PT2M
         sets:
           - key: s1
@@ -220,7 +220,7 @@ data:
       # drop's load is not written: the app cuts 20 % and rounds down to the
       # 5 kg grid (35 kg to 25 kg, research 03 §11.7).
       - key: chest-press
-        exercise: ~/training/exercise/chest-press-machine
+        exercise: substrate.reamde.dev/training/exercise/chest-press-machine
         setRest: PT1M30S
         sets:
           - key: w1
@@ -249,7 +249,7 @@ data:
             structure: drop
             drops: 1
       - key: seated-row
-        exercise: ~/training/exercise/seated-row-machine
+        exercise: substrate.reamde.dev/training/exercise/seated-row-machine
         setRest: PT1M30S
         sets:
           - key: s1
@@ -269,7 +269,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: shoulder-press
-        exercise: ~/training/exercise/shoulder-press-machine-plates
+        exercise: substrate.reamde.dev/training/exercise/shoulder-press-machine-plates
         setRest: PT2M
         sets:
           - key: s1
@@ -289,7 +289,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: triceps-pushdown
-        exercise: ~/training/exercise/triceps-pushdown
+        exercise: substrate.reamde.dev/training/exercise/triceps-pushdown
         setRest: PT1M
         sets:
           - key: s1
@@ -309,7 +309,7 @@ data:
             rpeMin: "9"
             rpeMax: "9"
       - key: torso-rotation
-        exercise: ~/training/exercise/torso-rotation
+        exercise: substrate.reamde.dev/training/exercise/torso-rotation
         setRest: PT1M
         sideSwitch: PT10S
         sideOrder: left
@@ -333,7 +333,7 @@ data:
       # One side at a time: each set is two records, left then right, 15 s
       # apart. A dumbbell in each hand; the load is one dumbbell's.
       - key: bulgarian-split-squat
-        exercise: ~/training/exercise/bulgarian-split-squat-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell
         setRest: PT2M
         sideSwitch: PT15S
         sideOrder: left
@@ -358,7 +358,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: single-leg-romanian-deadlift
-        exercise: ~/training/exercise/single-leg-romanian-deadlift-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/single-leg-romanian-deadlift-dumbbell
         setRest: PT1M30S
         sideSwitch: PT15S
         sideOrder: left
@@ -387,7 +387,7 @@ data:
       # says what the owner is aiming for instead, and the suggestion adds
       # 5 s a session inside it (research 03 §11.8, test vector V11).
       - key: plank
-        exercise: ~/training/exercise/plank
+        exercise: substrate.reamde.dev/training/exercise/plank
         setRest: PT15S
         sets:
           - key: s1
@@ -397,7 +397,7 @@ data:
             durationMin: PT45S
             durationMax: PT1M30S
       - key: crunch
-        exercise: ~/training/exercise/crunch
+        exercise: substrate.reamde.dev/training/exercise/crunch
         setRest: PT0S
         sets:
           - key: s1
@@ -407,7 +407,7 @@ data:
             repsMin: 12
             repsMax: 20
       - key: lumbar-extension-stretch
-        exercise: ~/training/exercise/lumbar-extension-stretch
+        exercise: substrate.reamde.dev/training/exercise/lumbar-extension-stretch
         setRest: PT0S
         notes: >-
           Hips stay on the floor; press up only as far as is comfortable and
@@ -423,7 +423,7 @@ data:
       # PT0S, as the screenshot's "Rest: OFF"), then 1 min after the round.
       # The bird dog, the last member, needs no transition.
       - key: glute-bridge
-        exercise: ~/training/exercise/glute-bridge
+        exercise: substrate.reamde.dev/training/exercise/glute-bridge
         group: a
         transition: PT0S
         sets:
@@ -434,7 +434,7 @@ data:
             repsMin: 12
             repsMax: 20
       - key: bird-dog
-        exercise: ~/training/exercise/bird-dog
+        exercise: substrate.reamde.dev/training/exercise/bird-dog
         group: a
         notes: Reps per side, alternating; slow, and the hips stay square.
         sets:
@@ -445,7 +445,7 @@ data:
             repsMin: 8
             repsMax: 10
       - key: pallof-press
-        exercise: ~/training/exercise/cable-core-pallof-press
+        exercise: substrate.reamde.dev/training/exercise/cable-core-pallof-press
         setRest: PT1M
         sideSwitch: PT10S
         sideOrder: left
@@ -467,7 +467,7 @@ data:
             rpeMin: "7"
             rpeMax: "7"
       - key: glute-focused-step-down
-        exercise: ~/training/exercise/glute-focused-step-down
+        exercise: substrate.reamde.dev/training/exercise/glute-focused-step-down
         setRest: PT1M
         sideSwitch: PT10S
         sideOrder: left
@@ -482,7 +482,7 @@ data:
       # left in reserve (RPE 9). Under `rirstop` the RPE is the stop rule, not
       # a load selector (research 02 §5.4).
       - key: push-up
-        exercise: ~/training/exercise/push-up
+        exercise: substrate.reamde.dev/training/exercise/push-up
         setRest: PT1M30S
         sets:
           - key: s1
@@ -495,7 +495,7 @@ data:
             rpeMax: "9"
 ---
 # The heavier day of the three, in sets of 6 to 10. The hinge stays at RPE 7.
-kind: ~/training/routine
+kind: substrate.reamde.dev/training/routine
 metadata:
   id: day-1-strength-foundation
 data:
@@ -512,7 +512,7 @@ data:
       # Two warm-ups, then a longer rest before the first working set (the
       # second warm-up's `rest` overrides the 45 s warm-up rest).
       - key: leg-press
-        exercise: ~/training/exercise/leg-press-machine
+        exercise: substrate.reamde.dev/training/exercise/leg-press-machine
         setRest: PT2M30S
         notes: >-
           Feet high and shoulder width; lower only until the hips start to
@@ -559,7 +559,7 @@ data:
             rpeMax: "8"
       # The load is the plates on one arm.
       - key: iso-lateral-chest-press
-        exercise: ~/training/exercise/iso-lateral-chest-press-machine
+        exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
         setRest: PT2M
         sets:
           - key: s1
@@ -588,7 +588,7 @@ data:
             rpeMax: "8"
       # No setRest: the exercise's rest class (compound) gives 2 min.
       - key: seated-row
-        exercise: ~/training/exercise/seated-row-machine
+        exercise: substrate.reamde.dev/training/exercise/seated-row-machine
         sets:
           - key: s1
             load:
@@ -619,7 +619,7 @@ data:
       # (a quarter of the activation reps, 3 to 5), the cap (5) and the stop
       # rule (the exercise's, repdrop) are the defaults, so not written.
       - key: lateral-raise
-        exercise: ~/training/exercise/lateral-raise-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
         setRest: PT1M30S
         sets:
           - key: s1
@@ -641,7 +641,7 @@ data:
             structure: myo
             intraSetPause: PT15S
       - key: romanian-deadlift
-        exercise: ~/training/exercise/romanian-deadlift-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
         setRest: PT2M
         notes: >-
           Bells close to the legs; hinge to mid-shin and end the set when
@@ -680,7 +680,7 @@ data:
 # so the app takes 02 §4.4's 15 s for antagonists, and the round rest is
 # 2 min 30 s, 02 §4.4's figure for a superset of compounds. The incline
 # press's warm-up runs before the first round, not inside it (02 §2.2).
-kind: ~/training/routine
+kind: substrate.reamde.dev/training/routine
 metadata:
   id: day-2-volume-stability
 data:
@@ -699,7 +699,7 @@ data:
         roundRest: PT2M30S
     slots:
       - key: seated-leg-curl
-        exercise: ~/training/exercise/seated-leg-curl-machine
+        exercise: substrate.reamde.dev/training/exercise/seated-leg-curl-machine
         setRest: PT1M30S
         sets:
           - key: s1
@@ -727,7 +727,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: incline-bench-press
-        exercise: ~/training/exercise/incline-bench-press-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/incline-bench-press-dumbbell
         group: a
         sets:
           - key: w1
@@ -762,7 +762,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: vertical-traction
-        exercise: ~/training/exercise/vertical-traction-machine
+        exercise: substrate.reamde.dev/training/exercise/vertical-traction-machine
         group: a
         sets:
           - key: s1
@@ -790,7 +790,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: goblet-squat
-        exercise: ~/training/exercise/goblet-squat
+        exercise: substrate.reamde.dev/training/exercise/goblet-squat
         setRest: PT2M
         notes: >-
           Heels down and elbows inside the knees; only as deep as the lower
@@ -822,7 +822,7 @@ data:
             rpeMax: "7"
       # The last set goes to failure: no rep ceiling, 12 as the floor.
       - key: triceps-rope-pushdown
-        exercise: ~/training/exercise/triceps-rope-pushdown
+        exercise: substrate.reamde.dev/training/exercise/triceps-rope-pushdown
         setRest: PT1M
         sets:
           - key: s1
@@ -850,7 +850,7 @@ data:
 ---
 # The fourth routine; its title is hidden in the screenshot (see the top of
 # this file). The overhead press is done seated, back on the pad.
-kind: ~/training/routine
+kind: substrate.reamde.dev/training/routine
 metadata:
   id: day-3
 data:
@@ -864,7 +864,7 @@ data:
       the pad.
     slots:
       - key: calf-extension
-        exercise: ~/training/exercise/calf-extension-machine
+        exercise: substrate.reamde.dev/training/exercise/calf-extension-machine
         setRest: PT1M
         sets:
           - key: s1
@@ -892,7 +892,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: leg-press
-        exercise: ~/training/exercise/leg-press-machine
+        exercise: substrate.reamde.dev/training/exercise/leg-press-machine
         setRest: PT2M
         sets:
           - key: w1
@@ -927,7 +927,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: chest-fly
-        exercise: ~/training/exercise/chest-fly-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/chest-fly-dumbbell
         setRest: PT1M30S
         notes: Elbows soft; stop the stretch with the hands level with the
           chest.
@@ -957,7 +957,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: seated-row
-        exercise: ~/training/exercise/seated-row-machine
+        exercise: substrate.reamde.dev/training/exercise/seated-row-machine
         setRest: PT2M
         sets:
           - key: s1
@@ -985,7 +985,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: overhead-press
-        exercise: ~/training/exercise/overhead-press-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/overhead-press-dumbbell
         setRest: PT2M
         notes: Seated on an upright bench with the back on the pad, so the
           lower back does not arch.

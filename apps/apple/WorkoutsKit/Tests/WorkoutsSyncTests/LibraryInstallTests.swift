@@ -7,9 +7,9 @@ import WorkoutsCore
 /// what a run writes and what it never touches.
 @Suite("Library install")
 struct LibraryInstallTests {
-    let movement = "ada.example.com/training/movement"
-    let exercise = "ada.example.com/training/exercise"
-    let marker = "ada.example.com/training/library"
+    let movement = "substrate.reamde.dev/training/movement"
+    let exercise = "substrate.reamde.dev/training/exercise"
+    let marker = "substrate.reamde.dev/training/library"
 
     func code(_ id: String, since: Int) -> WorkoutsCore.JSONValue {
         .object(["system": .string(ExerciseLibrary.system), "code": .string(id), "version": .string(String(since))])
@@ -19,30 +19,30 @@ struct LibraryInstallTests {
     /// adds records that first appear in `version`.
     func library(version: Int = 1, extra: Bool = false) -> ExerciseLibrary {
         var records = [
-            FlatRecord(kind: "~/training/movement", id: "chest-press", properties: [
+            FlatRecord(kind: "substrate.reamde.dev/training/movement", id: "chest-press", properties: [
                 "name": .string("Chest Press"), "codes": .array([code("chest-press", since: 1)]),
             ]),
-            FlatRecord(kind: "~/training/movement", id: "row", properties: [
+            FlatRecord(kind: "substrate.reamde.dev/training/movement", id: "row", properties: [
                 "name": .string("Row"), "codes": .array([code("row", since: 1)]),
             ]),
-            FlatRecord(kind: "~/training/exercise", id: "chest-press-machine", properties: [
+            FlatRecord(kind: "substrate.reamde.dev/training/exercise", id: "chest-press-machine", properties: [
                 "name": .string("Chest Press (Machine)"), "measurement": .string("weightreps"), "equipment": .string("machine"),
-                "movement": .string("~/training/movement/chest-press"),
+                "movement": .string("substrate.reamde.dev/training/movement/chest-press"),
                 "codes": .array([code("chest-press-machine", since: 1), .object(["system": .string("hevy"), "code": .string("7EB3F7C3")])]),
             ]),
-            FlatRecord(kind: "~/training/exercise", id: "chest-press-dumbbell", properties: [
+            FlatRecord(kind: "substrate.reamde.dev/training/exercise", id: "chest-press-dumbbell", properties: [
                 "name": .string("Chest Press (Dumbbell)"), "measurement": .string("weightreps"), "loadBasis": .string("perimplement"),
-                "implements": .number(2), "movement": .string("~/training/movement/chest-press"),
+                "implements": .number(2), "movement": .string("substrate.reamde.dev/training/movement/chest-press"),
                 "codes": .array([code("chest-press-dumbbell", since: 1)]),
             ]),
-            FlatRecord(kind: "~/training/exercise", id: "row-cable", properties: [
-                "name": .string("Row (Cable)"), "measurement": .string("weightreps"), "movement": .string("~/training/movement/row"),
+            FlatRecord(kind: "substrate.reamde.dev/training/exercise", id: "row-cable", properties: [
+                "name": .string("Row (Cable)"), "measurement": .string("weightreps"), "movement": .string("substrate.reamde.dev/training/movement/row"),
                 "codes": .array([code("row-cable", since: 1)]),
             ]),
         ]
         if extra {
-            records.append(FlatRecord(kind: "~/training/exercise", id: "row-machine", properties: [
-                "name": .string("Row (Machine)"), "measurement": .string("weightreps"), "movement": .string("~/training/movement/row"),
+            records.append(FlatRecord(kind: "substrate.reamde.dev/training/exercise", id: "row-machine", properties: [
+                "name": .string("Row (Machine)"), "measurement": .string("weightreps"), "movement": .string("substrate.reamde.dev/training/movement/row"),
                 "codes": .array([code("row-machine", since: version)]),
             ]))
         }
@@ -147,7 +147,7 @@ struct LibraryInstallTests {
         let held: JSONObject = ["name": .string("Chest Press (Machine)"), "equipment": .string("plateloaded")]
         let library: JSONObject = [
             "name": .string("Chest Press (Machine)"), "equipment": .string("machine"), "laterality": .string("unilateral"),
-            "movement": .string("~/training/movement/chest-press"), "codes": .array([code("chest-press-machine", since: 1)]),
+            "movement": .string("substrate.reamde.dev/training/movement/chest-press"), "codes": .array([code("chest-press-machine", since: 1)]),
         ]
         let patch = LibraryInstall.fill(held, from: library)
         #expect(Set(patch.keys) == ["movement", "codes"])

@@ -6,12 +6,13 @@ import WorkoutsCore
 
 /// The app's whole path against a real substrate, skipped unless
 /// `WORKOUTS_E2E_SERVER` names one and `WORKOUTS_E2E_OWNER_TOKEN` holds a
-/// full-access token of a repository with no training package: the
-/// authorization request, approved by the owner through the approval API the
-/// console's page calls (which installs the health catalogue), the code
-/// exchanged with its PKCE verifier, then the app's own package declared,
-/// the owner's edit to it refused and the package taken over, after which
-/// the app applies nothing and its records still go: the sample routine
+/// full-access token of a repository with no training package. The server
+/// must read the publisher's authority document, live or through
+/// `SUBSTRATE_INSECURE_AUTHORITY_DOCS`, since the approval installs the
+/// training package from it: the authorization request, approved by the
+/// owner through the approval API the console's page calls (which installs
+/// the health catalogue, training and the coach), the code exchanged with
+/// its PKCE verifier, the package read as current, then the sample routine
 /// written on the first run, deleted through the outbox and not written
 /// again, a finished session and its sets written through the outbox, and
 /// all of it read back with the owner's token.
@@ -23,7 +24,7 @@ struct LiveServerTests {
     let ownerToken = ProcessInfo.processInfo.environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""
     let redirect = "http://127.0.0.1:53111/oauth/callback"
 
-    @Test("sign in, approve, install the package, write a session, read it back")
+    @Test("sign in, approve, read the installed package, write a session, read it back")
     func theWholePath() async throws {
         let manifest = WorkoutsManifest.manifest(clientID: WorkoutsManifest.localClientID)
         let probe = try await ServerProbe().probe(server, requirement: manifest.requirement, app: manifest.appName)
@@ -52,7 +53,7 @@ struct LiveServerTests {
             guard case let .object(row) = scope else { return nil }
             return row["scope"]
         }
-        #expect(approved.contains(.string("declare:\(KindNames.packageID(authority: try repository(owner)))")))
+        #expect(approved.contains(.string(WorkoutsManifest.writeScope)))
         var approval: JSONObject = ["scopes": .array(approved), "lifetimeDays": .number(7)]
         if let hash = fields["planHash"] { approval["planHash"] = hash }
         let encoder = JSONEncoder()
@@ -73,53 +74,19 @@ struct LiveServerTests {
         let code = try oauth.callback(query, state: state)
         let session = try await oauth.session(exchanging: code, redirect: redirect, pkce: pkce, server: server)
         #expect(session.isApp)
-        #expect(session.scopes?.contains("declare:\(session.repository)/training") == true)
+        #expect(session.scopes?.contains(WorkoutsManifest.writeScope) == true)
+        #expect(session.details.contains { $0.type == AuthorizationDetail.Types.package && $0.package == KindNames.packageID })
 
-        // The approval installed health; the app now keeps its own package.
-        let api = WorkoutsAPI(client: SubstrateClient(session), authority: session.repository)
-        let baseline = temporaryDirectory()
-        let installer = PackageInstaller(api: api, manifest: try PackageManifest.bundled(), baselineDirectory: baseline)
-        #expect(try await installer.state() == .missing)
-        let installed = try await installer.ensure()
-        #expect(installed == .current(held: installer.manifest.version))
-        #expect(try await installer.ensure() == installed)
-        #expect(PackageBaseline.load(from: baseline)?.kinds.count == 9)
-
-        // The next build's upgrade passes the server's additions-only guard
-        // over the real stored package.
-        let shipped = installer.manifest.version
-        let upgrade = PackageInstaller(api: api, manifest: bumped(installer.manifest, to: shipped + 1), baselineDirectory: baseline)
-        #expect(try await upgrade.ensure() == .current(held: shipped + 1))
-
-        // The owner's edit to the app's kinds is refused: the package is the
-        // app's (decision 0205). The owner takes it over instead, and the
-        // app's next check applies nothing and keeps writing records, which
-        // the rest of this path does.
-        let ownerAPI = WorkoutsAPI(client: owner, authority: session.repository)
-        var setKind = try #require(upgrade.manifest.documents(for: api.rehome).first { document in
-            guard case let .object(object) = document, case let .object(metadata)? = object["metadata"] else { return false }
-            return metadata["id"] == .string("\(session.repository)/training/set")
-        })
-        if case var .object(object) = setKind, case var .object(data)? = object["data"], case var .object(properties)? = data["properties"] {
-            let note: JSONObject = ["type": .string("string"), "description": .string("the owner's own")]
-            properties["ownersNote"] = WorkoutsCore.JSONValue.object(note)
-            data["properties"] = WorkoutsCore.JSONValue.object(properties)
-            object["data"] = WorkoutsCore.JSONValue.object(data)
-            setKind = WorkoutsCore.JSONValue.object(object)
-        }
-        do {
-            try await ownerAPI.applyVocabulary([setKind])
-            Issue.record("the owner's edit to the app's kind landed")
-        } catch let error as ServerError {
-            #expect(error.status == 403 && error.message.contains("managed by"))
-        }
-        let packageID = KindNames.packageID(authority: session.repository)
-        let takeover: JSONObject = ["package": .string(packageID), "confirm": .string(packageID)]
-        _ = try await owner.send("POST", "api/v1/vocabulary/takeover", body: .json(encoder.encode(WorkoutsCore.JSONValue.object(takeover))))
-        let third = PackageInstaller(api: api, manifest: bumped(installer.manifest, to: shipped + 2), baselineDirectory: baseline,
-                                     clientID: manifest.clientID)
-        #expect(try await third.ensure() == .managedElsewhere(held: shipped + 1, by: .owner(takenOverFrom: manifest.clientID)))
-        try await ownerAPI.applyVocabulary([setKind])
+        // The approval installed health, training and the coach from the
+        // catalog and the authority document; the app reads where it stands
+        // and applies nothing.
+        let api = WorkoutsAPI(client: SubstrateClient(session))
+        let check = PackageCheck(api: api, manifest: try PackageManifest.bundled())
+        let installed = try await check.state()
+        #expect(installed.writable && (installed.held ?? 0) >= check.manifest.version, "training: \(installed)")
+        #expect(try await check.ensure { Issue.record("a current package asked the server") } == installed)
+        let ownerAPI = WorkoutsAPI(client: owner)
+        let shipped = installed.held ?? 0
 
         // The first run writes the sample routine and its exercises.
         let directory = temporaryDirectory()
@@ -220,11 +187,10 @@ struct LiveServerTests {
         try await outbox.discard(refusedCreate.id)
         print("live: routine edited at version \(edited.version ?? 0), conflict kept over the coach's notes, duplicated as \(copy.routine.id)")
         for id in ["bulgarian-split-squat-dumbbell", "triceps-pushdown"] {
-            try await owner.send("DELETE", SubstrateClient.recordPath("\(session.repository)/training/exercise", id), query: [("purge", "true")])
+            try await owner.send("DELETE", SubstrateClient.recordPath(codec.kinds.exercise, id), query: [("purge", "true")])
         }
-        let rehomed = Rehome(authority: recordedAuthority)
         func recorded(_ name: String) throws -> [FlatRecord] {
-            try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0, rehome: rehomed) }
+            try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0) }
         }
         var signedOut = try #require(codec.sessionRecords(from: recorded("list-sessions") + recorded("list-sets")).first)
         let onto: [ExerciseID: ExerciseID] = ["romanian-deadlift-dumbbell": "bulgarian-split-squat-dumbbell", "seated-row-machine": "triceps-pushdown"]
@@ -257,9 +223,8 @@ struct LiveServerTests {
 
         // A finished session and its 20 sets, four of them drops, through
         // the outbox.
-        let rehome = Rehome(authority: recordedAuthority)
         func records(_ name: String) throws -> [FlatRecord] {
-            try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0, rehome: rehome) }
+            try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0) }
         }
         let finished = try #require(codec.sessionRecords(from: records("list-sessions") + records("list-sets")).first)
         try await outbox.enqueue(OutboxPlan.finished(finished, codec: codec))
@@ -271,7 +236,7 @@ struct LiveServerTests {
         var snapshot = try await ServerHistory(api: api, codec: codec).snapshot()
         let quiet = HistoryExchange.plan(server: snapshot, local: [finished, signedOut], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
         #expect(quiet.isEmpty, "a session the phone just wrote read as changed: \(quiet)")
-        try await owner.send("DELETE", SubstrateClient.recordPath("\(session.repository)/training/session", finished.session.id.rawValue), query: [("purge", "true")])
+        try await owner.send("DELETE", SubstrateClient.recordPath(codec.kinds.session, finished.session.id.rawValue), query: [("purge", "true")])
         snapshot = try await ServerHistory(api: api, codec: codec).snapshot()
         let deleted = HistoryExchange.plan(server: snapshot, local: [finished, signedOut], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
         #expect(deleted.removals == [finished.id] && deleted.uploads.isEmpty)
@@ -283,27 +248,8 @@ struct LiveServerTests {
         #expect(stored.properties["status"] == .string("finished"))
         let sets = try await ownerAPI.list([codec.kinds.set])
         #expect(sets.count == finished.sets.count + signedOut.sets.count)
-        print("live: \(session.repository) holds \(session.repository)/training at version \(shipped + 1), " +
+        print("live: \(session.repository) holds \(KindNames.packageID) at version \(shipped), " +
             "the sample written and deleted, session \(finished.session.id.rawValue) finished with \(sets.count) sets")
-    }
-
-    /// The manifest as a later build would ship it: the package document at
-    /// `version`, nothing else changed.
-    private func bumped(_ manifest: PackageManifest, to version: Int) -> PackageManifest {
-        var out = manifest
-        out.version = version
-        out.documents = manifest.documents.map { document in
-            guard case var .object(object) = document, object["kind"] == .string("substrate.reamde.dev/core/package"),
-                  case var .object(data)? = object["data"] else { return document }
-            data["version"] = WorkoutsCore.JSONValue.number(Decimal(version))
-            object["data"] = WorkoutsCore.JSONValue.object(data)
-            return WorkoutsCore.JSONValue.object(object)
-        }
-        return out
-    }
-
-    private func repository(_ owner: SubstrateClient) throws -> String {
-        ProcessInfo.processInfo.environment["WORKOUTS_E2E_REPOSITORY"] ?? "ada.example.com"
     }
 
     private func redirectOf(_ data: Data) -> String? {

@@ -73,7 +73,7 @@ struct SubstrateSection: View {
             } header: {
                 Text("Substrate")
             } footer: {
-                Text("Signing in asks your substrate to let \(link.manifest.appName) keep a training package there and write its sessions and sets. Sessions logged before you sign in are sent then.")
+                Text("Signing in asks your substrate to install the Training package and the workout coach and to let \(link.manifest.appName) write its sessions and sets. Sessions logged before you sign in are sent then.")
             }
         }
     }
@@ -82,14 +82,8 @@ struct SubstrateSection: View {
         switch link.package {
         case nil: link.syncing ? "Checking" : "Not checked yet"
         case .missing: "Not installed"
-        case let .behind(held): "Version \(held), upgrading"
+        case let .behind(held): "Version \(held), waiting for the update to version \(link.packageManifest?.version ?? 0)"
         case let .current(held): "Version \(held)"
-        case let .newer(held): "Version \(held), newer than this app"
-        case let .edited(held, _): "Version \(held), changed outside this app"
-        case let .refused(held, _): held.map { "Version \($0), update refused" } ?? "Install refused"
-        case let .managedElsewhere(held, .owner(takenOverFrom: .some)):
-            held.map { "Version \($0), taken over by you" } ?? "Taken over by you"
-        case let .managedElsewhere(held, _): held.map { "Version \($0), managed elsewhere" } ?? "Managed elsewhere"
         }
     }
 

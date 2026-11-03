@@ -1,9 +1,9 @@
-# Example records for ~/training
+# Example records for substrate.reamde.dev/training
 
 > **Where this came from.** Written on 2026-10-30 and revised on 2026-10-31 in rxtx.dev,
 > as `research/workouts/substrate/examples/`, for the app then called Spotter; carried
 > here on 2026-11-02. The records and this page now use the app's own kind names,
-> `~/training/<kind>` (decision record
+> `substrate.reamde.dev/training/<kind>` (decision record
 > [0203](../../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)),
 > where they said `mneme.rxtx.dev/training/<kind>`. The YAML was also rewritten in block
 > style for this repository's `lint:yaml` and `fmt:check`; the values did not change. The
@@ -126,11 +126,11 @@ substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/coverage.yaml
 
 # 4. What landed: 36 exercises, 5 setups, 5 routines, 6 sessions and 111
 #    sets. A list pages at 50 unless --limit says otherwise.
-substratectl get ~/training/exercise
-substratectl get ~/training/setup
-substratectl get ~/training/routine
-substratectl get ~/training/session
-substratectl get ~/training/set --limit 200
+substratectl get substrate.reamde.dev/training/exercise
+substratectl get substrate.reamde.dev/training/setup
+substratectl get substrate.reamde.dev/training/routine
+substratectl get substrate.reamde.dev/training/session
+substratectl get substrate.reamde.dev/training/set --limit 200
 ```
 
 The health catalogue's own three files from the substrate checkout
@@ -515,7 +515,7 @@ by `echo "exit=$?"`:
 
 ```console
 $ substratectl validate <package files> <health catalogue> -f .../exercises.yaml -f .../routines.yaml -f .../sessions.yaml -f .../coverage.yaml
-declarations: 11 documents checked in 2 packages (~/training, substrate.reamde.dev/health)
+declarations: 11 documents checked in 2 packages (substrate.reamde.dev/training, substrate.reamde.dev/health)
 records: 163 documents, envelope checked
 checked by the server only: declared defaults, references into packages beyond these files and the shipped core and llm, and record properties
 exit=0
@@ -568,17 +568,17 @@ with no refusal and no change to any of them:
 
 ```console
 $ substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/exercises.yaml
-~/training/exercise/leg-press-machine created
+substrate.reamde.dev/training/exercise/leg-press-machine created
 … 30 created
 $ substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/routines.yaml
-~/training/routine/fully-body-collection-1 created
-~/training/routine/day-1-strength-foundation created
-~/training/routine/day-2-volume-stability created
-~/training/routine/day-3 created
+substrate.reamde.dev/training/routine/fully-body-collection-1 created
+substrate.reamde.dev/training/routine/day-1-strength-foundation created
+substrate.reamde.dev/training/routine/day-2-volume-stability created
+substrate.reamde.dev/training/routine/day-3 created
 $ substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/sessions.yaml
-~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73 created
-~/training/session/01a17831-8a38-7502-a232-81e9c175d65e created
-~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203 created
+substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73 created
+substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e created
+substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203 created
 … 65 sets created
 $ substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/coverage.yaml
 … 6 exercises, 5 setups, 1 routine, 3 sessions and 46 sets created
@@ -586,7 +586,7 @@ $ substratectl apply -f apps/apple/SubstrateWorkouts/docs/examples/coverage.yaml
 
 Applied before the exercises, `routines.yaml` was refused, naming each
 missing exercise (`props.slots[0].exercise: reference names
-~/training/exercise/leg-press-machine, which does not exist`,
+substrate.reamde.dev/training/exercise/leg-press-machine, which does not exist`,
 and so on).
 
 What the records answered:
