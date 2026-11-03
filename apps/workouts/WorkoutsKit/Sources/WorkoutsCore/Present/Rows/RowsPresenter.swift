@@ -189,22 +189,7 @@ struct RowsBuilder {
         let values = sets.map { set in
             isGroup ? "\(p.exerciseName(state.slot(set.slot)?.exercise ?? ExerciseID(""))) \(set.values)" : set.values
         }
-        let previous = rows.map { evaluator.previous($0.id)?.values }
-        var comparison: RowsChange?
-        if previous.allSatisfy({ $0 != nil }) {
-            let same = zip(rows, previous).allSatisfy { row, last in
-                guard let done = row.performed?.values, let last, let exercise = state.exercise(ofRow: row.id) else {
-                    return false
-                }
-                return RowsText.changes(done, last: last, measurement: exercise.measurement,
-                                        unit: cards[row.slot]?.unit ?? .kg) == [RowsText.sameAsLastTime]
-            }
-            let lastTexts = zip(rows, previous).compactMap { row, last in last.map { compactText($0, row: row) } }
-            comparison = same ? RowsText.sameAsLastTime
-                : RowsChange(text: "last " + lastTexts.joined(separator: ", "), isGain: false)
-        } else if previous.allSatisfy({ $0 == nil }) {
-            comparison = RowsText.firstTime
-        }
+        let comparison = warmupComparison(rows)
         let title = rows.count == 1 ? "Warm-up" : "Warm-ups"
         let spoken = rows.map { row in
             let values = spokenValues(of: row)
@@ -215,6 +200,23 @@ struct RowsBuilder {
         } ?? ""
         return [.warmups(RowsWarmupFold(id: "\(id)-warmups", title: title, values: values.joined(separator: ", "),
                                         comparison: comparison, sets: sets, sentence: "\(title) done: \(spoken)\(tail)."))]
+    }
+
+    /// Done warm-ups against last time's: `as last time`, `last 40 × 12, 60 × 6`,
+    /// `first time`; nil where only some were done last time.
+    func warmupComparison(_ rows: [Row]) -> RowsChange? {
+        let previous = rows.map { evaluator.previous($0.id)?.values }
+        if previous.allSatisfy({ $0 == nil }) { return RowsText.firstTime }
+        guard previous.allSatisfy({ $0 != nil }) else { return nil }
+        let same = zip(rows, previous).allSatisfy { row, last in
+            guard let done = row.performed?.values, let last, let exercise = state.exercise(ofRow: row.id) else {
+                return false
+            }
+            return RowsText.changes(done, last: last, measurement: exercise.measurement,
+                                    unit: cards[row.slot]?.unit ?? .kg) == [RowsText.sameAsLastTime]
+        }
+        let lastTexts = zip(rows, previous).compactMap { row, last in last.map { compactText($0, row: row) } }
+        return same ? RowsText.sameAsLastTime : RowsChange(text: "last " + lastTexts.joined(separator: ", "), isGain: false)
     }
 
     func chainHeader(_ head: Row) -> RowsChainHeader {
@@ -632,9 +634,28 @@ struct RowsBuilder {
         var changes: [RowsChange] = []
         var spoken: [String] = []
         for card in block.cards {
+            let done = state.orderedRows(inSlot: card.slot).filter(\.isCompleted)
+            let working = done.filter { $0.role == .working }
+            // An exercise done as warm-ups alone says them, so its line is
+            // never an empty list.
+            if working.isEmpty {
+                let warmups = done.filter { $0.role == .warmup }
+                let noun = warmups.count == 1 ? "warm-up" : "warm-ups"
+                let shown = warmups.map { row in
+                    let exercise = state.exercise(ofRow: row.id)
+                    return RowsText.values(row.performed?.values ?? SetValues(), measurement: exercise?.measurement ?? .weightreps,
+                                           perSide: exercise?.resolvedLaterality == .alternating)
+                }.joined(separator: ", ")
+                let said = warmups.map(spokenValues(of:)).joined(separator: "; ")
+                let text = warmups.isEmpty ? "no sets" : "\(noun) \(shown)"
+                texts.append(isGroup ? "\(card.name) \(text)" : text.capitalizedFirst)
+                spoken.append((isGroup ? "\(card.name): " : "") + (warmups.isEmpty ? "no sets" : "\(noun), \(said)"))
+                changes.append(warmups.isEmpty ? RowsText.firstTime : warmupComparison(warmups) ?? RowsText.firstTime)
+                continue
+            }
             let text = summaryText(card.slot)
             texts.append(isGroup ? "\(card.name) \(text)" : text)
-            let sets = state.orderedRows(inSlot: card.slot).filter { $0.role == .working && $0.isCompleted }.map { row in
+            let sets = working.map { row in
                 let head = state.rows[row.headID] ?? row
                 let lead = row.isHead || row.side != nil ? "" : "\(title(row, head: head, isGroup: false).lowercased()), "
                 return lead + spokenValues(of: row)
