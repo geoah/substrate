@@ -29,9 +29,9 @@
 # V1 writes no setup; the examples' coverage file has the shape.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: ~/training/setup
+  id: substrate.reamde.dev/training/setup
 data:
-  authority: "~"
+  authority: substrate.reamde.dev
   package: training
   description: >-
     One station an exercise is done on, such as the hotel gym's chest press
@@ -54,7 +54,7 @@ data:
     # measurement and no grid to override.
     exercise:
       type: reference
-      kind: ~/training/exercise
+      kind: substrate.reamde.dev/training/exercise
       required: true
       mustExist: true
       description: the exercise done on it

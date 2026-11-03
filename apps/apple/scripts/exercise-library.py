@@ -50,8 +50,8 @@ FEDB_COMMIT = "f00c92c7dcf1216a928a52c3706c7ce8e2f71ed5"
 FEDB_CATEGORIES = ("strength", "powerlifting", "olympic weightlifting", "strongman")
 FEDB_FIELDS = ("id", "name", "equipment", "category", "force", "mechanic", "primaryMuscles", "secondaryMuscles")
 
-MOVEMENT = "~/training/movement"
-EXERCISE = "~/training/exercise"
+MOVEMENT = "substrate.reamde.dev/training/movement"
+EXERCISE = "substrate.reamde.dev/training/exercise"
 # The code systems an entry carries (exercise.yaml, `codes`).
 LIBRARY_SYSTEM = "substrate-workouts-library"
 FEDB_SYSTEM = "free-exercise-db"

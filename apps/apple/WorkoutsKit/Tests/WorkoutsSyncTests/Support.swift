@@ -110,15 +110,23 @@ enum Fixtures {
     }
 }
 
-/// The repository the fixtures were recorded from: a throwaway server built
-/// from this tree, its training package declared under this authority.
-let recordedAuthority = "probe.example.com"
-
-func api(_ server: ScriptedServer, authority: String = "ada.example.com") -> WorkoutsAPI {
+/// The fixtures were recorded from a throwaway server built from this tree
+/// (the repository probe.example.com), its training package respelled as the
+/// published `substrate.reamde.dev/training` every repository now holds.
+func api(_ server: ScriptedServer) -> WorkoutsAPI {
     var client = SubstrateClient(server: URL(string: "http://localhost:8080")!, token: "substrate_tok_test", transport: server)
     client.pause = { _ in }
-    return WorkoutsAPI(client: client, authority: authority)
+    return WorkoutsAPI(client: client)
 }
+
+/// The published package's row, as the server answers it: `shippedVersion`
+/// is the publisher's number a published install stamps.
+func packageRow(_ id: String, shipped: Int) -> String {
+    #"{"id":"\#(id)","kind":"substrate.reamde.dev/core/package","properties":{"authority":"substrate.reamde.dev","package":"\#(id.split(separator: "/").last!)","source":"published","shippedVersion":\#(shipped),"version":\#(shipped + 2)},"version":3}"#
+}
+
+let packagePath = "/api/v1/substrate.reamde.dev/core/package/substrate.reamde.dev%2Ftraining"
+let notFoundBody = #"{"error":{"code":"not_found","message":"not found"}}"#
 
 func record(_ version: Int) -> String {
     #"{"id":"x","kind":"k","properties":{},"version":\#(version)}"#

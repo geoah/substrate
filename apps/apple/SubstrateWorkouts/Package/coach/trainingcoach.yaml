@@ -1,37 +1,51 @@
-# trainingcoach: the workout coach Substrate Workouts installs and keeps
-# (docs/plans/workouts-coach.md, decision record 0207). A package of its own,
-# so the training package's versions never depend on whether the coach is
-# set up, the owner turns the coach off alone (bundle disable), and the
-# coach's memories stay training data when it is removed.
+# trainingcoach: the workout coach Substrate Workouts' approval installs
+# (docs/plans/workouts-coach.md). A package of its own, published under
+# `substrate.reamde.dev` beside training (decision record 0214), so the
+# training package's versions never depend on whether the coach is set up,
+# the owner turns the coach off alone (bundle disable), and the coach's
+# memories stay training data when it is removed.
 #
-# The agent document is not here: the app builds it at set up from the owner's
-# choices (provider, model, daily cap) and the reach the owner approved, with
-# the prompt rendered from instructions.md, mechanics.md and the training
-# manifests (apps/apple/scripts/workouts-package.py writes coach.json).
+# The agent document, `workoutcoach.yaml` beside this file, is rendered by
+# apps/apple/scripts/workouts-package.py from instructions.md, mechanics.md
+# and a field guide generated from the routine and exercise manifests, so
+# the prompt and the kinds cannot drift. The agent names its provider through
+# the bundle's `model` input (decision record 0217): the owner picks the
+# provider row on the approval page, and the agent runs on the first of its
+# `models` that row prices.
 kind: substrate.reamde.dev/core/package
 metadata:
-  id: ~/trainingcoach
+  id: substrate.reamde.dev/trainingcoach
 data:
-  authority: "~"
+  authority: substrate.reamde.dev
   package: trainingcoach
-  version: 1
+  # 1: the coach, declared by the app under each repository's own authority.
+  # 2: published under substrate.reamde.dev, the agent in the closure, its
+  # provider an input and its models a list. 3: the prompt names training 5.
+  # A changed prompt or agent ships as the next version.
+  version: 3
 ---
-# `requiresAtLeast` training 2: the coach pins and writes `~/training/memory`,
-# which training declares from version 2, and an agent naming a kind the
-# repository lacks is refused at load.
+# `requiresAtLeast` training 2: the coach pins and writes
+# `substrate.reamde.dev/training/memory`, which training declares from
+# version 2, and an agent naming a kind the repository lacks is refused at
+# load.
 kind: substrate.reamde.dev/core/bundle
 metadata:
-  id: ~/trainingcoach
+  id: substrate.reamde.dev/trainingcoach
 data:
-  authority: "~"
+  authority: substrate.reamde.dev
   package: trainingcoach
   description: >-
     Your workout coach: an AI agent that reads your training and health data,
-    remembers your answers and writes routines you agree to. Kept by Substrate
-    Workouts.
+    remembers your answers and writes routines you agree to. Installed by
+    Substrate Workouts.
   requires:
-    - ~/training
+    - substrate.reamde.dev/training
   requiresAtLeast:
-    ~/training: 2
+    substrate.reamde.dev/training: 2
+  inputs:
+    model:
+      kind: substrate.reamde.dev/llm/provider
+      description: the AI provider the coach runs on, picked when the package
+        is installed
   installs:
-    - ~/trainingcoach/workoutCoach
+    - substrate.reamde.dev/trainingcoach/workoutCoach

@@ -2,7 +2,7 @@
   "source": "apps/apple/SubstrateWorkouts/docs/examples/routines.yaml",
   "records": [
     {
-      "kind": "~/training/routine",
+      "kind": "substrate.reamde.dev/training/routine",
       "id": "fully-body-collection-1",
       "properties": {
         "name": "Fully Body Collection #1",
@@ -19,7 +19,7 @@
         "slots": [
           {
             "key": "leg-press",
-            "exercise": "~/training/exercise/leg-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
             "setRest": "PT2M",
             "sets": [
               {
@@ -58,7 +58,7 @@
           },
           {
             "key": "calf-press",
-            "exercise": "~/training/exercise/calf-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/calf-press-machine",
             "setRest": "PT1M",
             "sets": [
               {
@@ -87,7 +87,7 @@
           },
           {
             "key": "seated-leg-curl",
-            "exercise": "~/training/exercise/seated-leg-curl-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/seated-leg-curl-machine",
             "setRest": "PT1M30S",
             "sets": [
               {
@@ -116,7 +116,7 @@
           },
           {
             "key": "leg-extension",
-            "exercise": "~/training/exercise/leg-extension-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/leg-extension-machine",
             "setRest": "PT1M30S",
             "sets": [
               {
@@ -145,7 +145,7 @@
           },
           {
             "key": "hip-thrust",
-            "exercise": "~/training/exercise/hip-thrust-barbell",
+            "exercise": "substrate.reamde.dev/training/exercise/hip-thrust-barbell",
             "setRest": "PT2M",
             "notes": "Ribs down and chin tucked; stop with the hips level with the knees, without arching the lower back.",
             "sets": [
@@ -175,7 +175,7 @@
           },
           {
             "key": "goblet-squat",
-            "exercise": "~/training/exercise/goblet-squat",
+            "exercise": "substrate.reamde.dev/training/exercise/goblet-squat",
             "setRest": "PT2M",
             "sets": [
               {
@@ -204,7 +204,7 @@
           },
           {
             "key": "chest-press",
-            "exercise": "~/training/exercise/chest-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/chest-press-machine",
             "setRest": "PT1M30S",
             "sets": [
               {
@@ -245,7 +245,7 @@
           },
           {
             "key": "seated-row",
-            "exercise": "~/training/exercise/seated-row-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/seated-row-machine",
             "setRest": "PT1M30S",
             "sets": [
               {
@@ -274,7 +274,7 @@
           },
           {
             "key": "shoulder-press",
-            "exercise": "~/training/exercise/shoulder-press-machine-plates",
+            "exercise": "substrate.reamde.dev/training/exercise/shoulder-press-machine-plates",
             "setRest": "PT2M",
             "sets": [
               {
@@ -303,7 +303,7 @@
           },
           {
             "key": "triceps-pushdown",
-            "exercise": "~/training/exercise/triceps-pushdown",
+            "exercise": "substrate.reamde.dev/training/exercise/triceps-pushdown",
             "setRest": "PT1M",
             "sets": [
               {
@@ -332,7 +332,7 @@
           },
           {
             "key": "torso-rotation",
-            "exercise": "~/training/exercise/torso-rotation",
+            "exercise": "substrate.reamde.dev/training/exercise/torso-rotation",
             "setRest": "PT1M",
             "sideSwitch": "PT10S",
             "sideOrder": "left",
@@ -363,7 +363,7 @@
           },
           {
             "key": "bulgarian-split-squat",
-            "exercise": "~/training/exercise/bulgarian-split-squat-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell",
             "setRest": "PT2M",
             "sideSwitch": "PT15S",
             "sideOrder": "left",
@@ -395,7 +395,7 @@
           },
           {
             "key": "single-leg-romanian-deadlift",
-            "exercise": "~/training/exercise/single-leg-romanian-deadlift-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/single-leg-romanian-deadlift-dumbbell",
             "setRest": "PT1M30S",
             "sideSwitch": "PT15S",
             "sideOrder": "left",
@@ -427,7 +427,7 @@
           },
           {
             "key": "plank",
-            "exercise": "~/training/exercise/plank",
+            "exercise": "substrate.reamde.dev/training/exercise/plank",
             "setRest": "PT15S",
             "sets": [
               {
@@ -444,7 +444,7 @@
           },
           {
             "key": "crunch",
-            "exercise": "~/training/exercise/crunch",
+            "exercise": "substrate.reamde.dev/training/exercise/crunch",
             "setRest": "PT0S",
             "sets": [
               {
@@ -461,7 +461,7 @@
           },
           {
             "key": "lumbar-extension-stretch",
-            "exercise": "~/training/exercise/lumbar-extension-stretch",
+            "exercise": "substrate.reamde.dev/training/exercise/lumbar-extension-stretch",
             "setRest": "PT0S",
             "notes": "Hips stay on the floor; press up only as far as is comfortable and hold two seconds at the top.",
             "sets": [
@@ -479,7 +479,7 @@
           },
           {
             "key": "glute-bridge",
-            "exercise": "~/training/exercise/glute-bridge",
+            "exercise": "substrate.reamde.dev/training/exercise/glute-bridge",
             "group": "a",
             "transition": "PT0S",
             "sets": [
@@ -497,7 +497,7 @@
           },
           {
             "key": "bird-dog",
-            "exercise": "~/training/exercise/bird-dog",
+            "exercise": "substrate.reamde.dev/training/exercise/bird-dog",
             "group": "a",
             "notes": "Reps per side, alternating; slow, and the hips stay square.",
             "sets": [
@@ -515,7 +515,7 @@
           },
           {
             "key": "pallof-press",
-            "exercise": "~/training/exercise/cable-core-pallof-press",
+            "exercise": "substrate.reamde.dev/training/exercise/cable-core-pallof-press",
             "setRest": "PT1M",
             "sideSwitch": "PT10S",
             "sideOrder": "left",
@@ -546,7 +546,7 @@
           },
           {
             "key": "glute-focused-step-down",
-            "exercise": "~/training/exercise/glute-focused-step-down",
+            "exercise": "substrate.reamde.dev/training/exercise/glute-focused-step-down",
             "setRest": "PT1M",
             "sideSwitch": "PT10S",
             "sideOrder": "left",
@@ -565,7 +565,7 @@
           },
           {
             "key": "push-up",
-            "exercise": "~/training/exercise/push-up",
+            "exercise": "substrate.reamde.dev/training/exercise/push-up",
             "setRest": "PT1M30S",
             "sets": [
               {
@@ -586,7 +586,7 @@
       }
     },
     {
-      "kind": "~/training/routine",
+      "kind": "substrate.reamde.dev/training/routine",
       "id": "day-1-strength-foundation",
       "properties": {
         "name": "Day 1 – Strength Foundation",
@@ -596,7 +596,7 @@
         "slots": [
           {
             "key": "leg-press",
-            "exercise": "~/training/exercise/leg-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
             "setRest": "PT2M30S",
             "notes": "Feet high and shoulder width; lower only until the hips start to tuck.",
             "sets": [
@@ -658,7 +658,7 @@
           },
           {
             "key": "iso-lateral-chest-press",
-            "exercise": "~/training/exercise/iso-lateral-chest-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine",
             "setRest": "PT2M",
             "sets": [
               {
@@ -698,7 +698,7 @@
           },
           {
             "key": "seated-row",
-            "exercise": "~/training/exercise/seated-row-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/seated-row-machine",
             "sets": [
               {
                 "key": "s1",
@@ -737,7 +737,7 @@
           },
           {
             "key": "lateral-raise",
-            "exercise": "~/training/exercise/lateral-raise-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
             "setRest": "PT1M30S",
             "sets": [
               {
@@ -768,7 +768,7 @@
           },
           {
             "key": "romanian-deadlift",
-            "exercise": "~/training/exercise/romanian-deadlift-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell",
             "setRest": "PT2M",
             "notes": "Bells close to the legs; hinge to mid-shin and end the set when the back starts to round.",
             "sets": [
@@ -814,7 +814,7 @@
       }
     },
     {
-      "kind": "~/training/routine",
+      "kind": "substrate.reamde.dev/training/routine",
       "id": "day-2-volume-stability",
       "properties": {
         "name": "Day 2 – Volume & Stability",
@@ -832,7 +832,7 @@
         "slots": [
           {
             "key": "seated-leg-curl",
-            "exercise": "~/training/exercise/seated-leg-curl-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/seated-leg-curl-machine",
             "setRest": "PT1M30S",
             "sets": [
               {
@@ -872,7 +872,7 @@
           },
           {
             "key": "incline-bench-press",
-            "exercise": "~/training/exercise/incline-bench-press-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/incline-bench-press-dumbbell",
             "group": "a",
             "sets": [
               {
@@ -922,7 +922,7 @@
           },
           {
             "key": "vertical-traction",
-            "exercise": "~/training/exercise/vertical-traction-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/vertical-traction-machine",
             "group": "a",
             "sets": [
               {
@@ -962,7 +962,7 @@
           },
           {
             "key": "goblet-squat",
-            "exercise": "~/training/exercise/goblet-squat",
+            "exercise": "substrate.reamde.dev/training/exercise/goblet-squat",
             "setRest": "PT2M",
             "notes": "Heels down and elbows inside the knees; only as deep as the lower back stays neutral.",
             "sets": [
@@ -1003,7 +1003,7 @@
           },
           {
             "key": "triceps-rope-pushdown",
-            "exercise": "~/training/exercise/triceps-rope-pushdown",
+            "exercise": "substrate.reamde.dev/training/exercise/triceps-rope-pushdown",
             "setRest": "PT1M",
             "sets": [
               {
@@ -1043,7 +1043,7 @@
       }
     },
     {
-      "kind": "~/training/routine",
+      "kind": "substrate.reamde.dev/training/routine",
       "id": "day-3",
       "properties": {
         "name": "Day 3",
@@ -1053,7 +1053,7 @@
         "slots": [
           {
             "key": "calf-extension",
-            "exercise": "~/training/exercise/calf-extension-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/calf-extension-machine",
             "setRest": "PT1M",
             "sets": [
               {
@@ -1093,7 +1093,7 @@
           },
           {
             "key": "leg-press",
-            "exercise": "~/training/exercise/leg-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
             "setRest": "PT2M",
             "sets": [
               {
@@ -1143,7 +1143,7 @@
           },
           {
             "key": "chest-fly",
-            "exercise": "~/training/exercise/chest-fly-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/chest-fly-dumbbell",
             "setRest": "PT1M30S",
             "notes": "Elbows soft; stop the stretch with the hands level with the chest.",
             "sets": [
@@ -1184,7 +1184,7 @@
           },
           {
             "key": "seated-row",
-            "exercise": "~/training/exercise/seated-row-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/seated-row-machine",
             "setRest": "PT2M",
             "sets": [
               {
@@ -1224,7 +1224,7 @@
           },
           {
             "key": "overhead-press",
-            "exercise": "~/training/exercise/overhead-press-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/overhead-press-dumbbell",
             "setRest": "PT2M",
             "notes": "Seated on an upright bench with the back on the pad, so the lower back does not arch.",
             "sets": [

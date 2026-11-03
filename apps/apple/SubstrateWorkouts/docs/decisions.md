@@ -456,6 +456,23 @@ the rest.
   (proposal 087's decision 14).
 - **Source:** geoah/substrate#1100; [README.md](../README.md#signing-in-and-sync).
 
+### T7. The packages are published under `substrate.reamde.dev`
+
+- **Decided by** the owner, 2026-11-03, in
+  [0214](../../../../docs/decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md)
+  and [0221](../../../../docs/decisions/0221-first-party-apps-publish-under-substrate-reamde-dev.md).
+  Replaces T3, T4 and T5.
+- **What:** `substrate.reamde.dev/training` and `substrate.reamde.dev/trainingcoach` are the
+  same name in every repository. The server installs and upgrades them from the authority
+  document the site serves, when the owner approves the app; the app applies nothing, asks for
+  each as a `package` detail at the version the build was written against, and reads the
+  version a repository holds. Training 4 is the first published version; 5 adds the library
+  marker and body measurements (L1, revised).
+- **Why:** `declare:` let an app write vocabulary into the owner's own authority, and a package
+  under each repository's name was a different package in each, with no one version to hold
+  an app build to.
+- **Source:** 0212, 0213, 0214, 0221.
+
 ## After the reviews of #1100
 
 On 2026-11-01 Codex Astra and Fable reviewed #1100, as the owner asked (T1). The lead fixed
@@ -643,7 +660,7 @@ Two more, from the owner's first sessions with #1110's build, besides closing O1
 
 - **The marker is a record, not the newest code.** Fable and Astra showed the newest library code
   on any record could not tell a finished seeding from one cut short, nor from an import that
-  copied a library exercise onto the server. `~/training/library/exercises` (package 4) names the
+  copied a library exercise onto the server. `substrate.reamde.dev/training/library/exercises` (package 5, T7) names the
   version a run writes before its first write and the version held whole only after a run that
   left nothing behind; a repository seeded before the marker existed reads its version from the
   library's movements. Creates go with `ifVersion: 0`.
@@ -653,7 +670,7 @@ Two more, from the owner's first sessions with #1110's build, besides closing O1
   exercise's own group lists win over its movement's muscles when they differ.
 - **Hevy's ids are the import's identity**: workouts, routines and templates, so two of one name
   stay two and an import again, in any order, finds its own. Body measurements come in as
-  `~/training/bodymeasurement` (package 4).
+  `substrate.reamde.dev/training/bodymeasurement` (package 5, T7).
 
 ## Open questions
 

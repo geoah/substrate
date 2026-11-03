@@ -5,41 +5,40 @@ import WorkoutsCore
 /// The requests the app makes, over SubstrateKit's client, with WorkoutsCore's
 /// JSON on both sides: a decimal keeps its digits and an object its key
 /// order, which SubstrateKit's own value (a `Double` per number) would not.
-/// Every record crosses `Rehome` here and nowhere else.
+/// A kind is spelled the same on the phone and in the repository (the
+/// package is published, decision record 0214), so nothing is respelled.
 public struct WorkoutsAPI: Sendable {
     public var client: SubstrateClient
-    public var rehome: Rehome
 
-    public init(client: SubstrateClient, authority: String) {
+    public init(client: SubstrateClient) {
         self.client = client
-        rehome = Rehome(authority: authority)
     }
 
-    /// A record path under `/api/v1/`, the kind as the repository spells it.
-    func path(_ kind: String, _ id: String) -> String { SubstrateClient.recordPath(rehome.remoteKind(kind), id) }
+    /// A record path under `/api/v1/`.
+    func path(_ kind: String, _ id: String) -> String { SubstrateClient.recordPath(kind, id) }
 
     // MARK: Records
 
-    /// One live record, in the phone's spelling, or nil when there is none.
+    /// One live record, or nil when there is none.
     public func get(_ kind: String, _ id: String) async throws -> FlatRecord? {
         let response = try await client.send("GET", path(kind, id), accept: [404])
         if response.status == 404 { return nil }
         let value = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: response.data)
         if case let .object(object) = value, let deleted = object["deletedAt"], deleted != .null { return nil }
-        return try Self.record(value, rehome: rehome)
+        return try Self.record(value)
     }
 
-    /// Every live record of the kinds, in the phone's spelling, by list
-    /// pages, to the end of the list. A read that must stop sooner names a
+    /// Every live record of the kinds, by list pages, to the end of the
+    /// list. A read that must stop sooner names a
     /// limit and is told when it was reached (`ListTruncated`), never handed
     /// a short list as if it were the whole.
     public func list(_ kinds: [String], properties: [String: SubstrateKit.JSONValue] = [:], limit: Int? = nil) async throws -> [FlatRecord] {
-        var query = ListQuery(kinds: kinds.map(rehome.remoteKind), properties: properties, first: 500)
+        var query = ListQuery(kinds: kinds, properties: properties, first: 500)
         var out: [FlatRecord] = []
         while true {
             let response = try await client.send("GET", "api/v1/records", query: query.queryItems)
             let page = try JSONDecoder().decode(Page.self, from: response.data)
-            out += try page.records.map { try Self.record($0, rehome: rehome) }
+            out += try page.records.map { try Self.record($0) }
             guard let cursor = page.cursor, !cursor.isEmpty else { return out }
             if let limit, out.count >= limit { throw ListTruncated(kinds: kinds, limit: limit) }
             query.after = cursor
@@ -51,7 +50,7 @@ public struct WorkoutsAPI: Sendable {
     @discardableResult
     public func write(_ method: String, _ kind: String, _ id: String, properties: JSONObject, ifVersion: Int? = nil) async throws -> Int {
         var body = JSONObject()
-        body["properties"] = rehome.outbound(.object(properties))
+        body["properties"] = .object(properties)
         if let ifVersion { body["ifVersion"] = .number(Decimal(ifVersion)) }
         let response = try await client.send(method, path(kind, id), body: try Self.body(.object(body)))
         return try Self.version(of: response.data)
@@ -66,22 +65,9 @@ public struct WorkoutsAPI: Sendable {
 
     // MARK: The package
 
-    /// One declaration row of the package (its package, bundle or a kind
-    /// row): its `properties` and the row's version, or nil when the
-    /// repository holds none.
-    public func declarationRow(_ kind: String, _ id: String) async throws -> (properties: JSONObject, version: Int)? {
-        let response = try await client.send("GET", SubstrateClient.recordPath(kind, id), accept: [404])
-        if response.status == 404 { return nil }
-        guard case let .object(object) = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: response.data),
-              case let .object(properties)? = object["properties"]
-        else { return nil }
-        if let deleted = object["deletedAt"], deleted != .null { return nil }
-        guard case let .number(version)? = object["version"] else { return (properties, 0) }
-        return (properties, NSDecimalNumber(decimal: version).intValue)
-    }
-
     /// The repository's row of a package, as `properties`, or nil when it
-    /// holds none (or the token may not see it).
+    /// holds none (or the token may not see it: a token sees the rows of
+    /// the packages its read and write scopes name).
     public func packageRow(_ id: String) async throws -> JSONObject? {
         let response = try await client.send("GET", SubstrateClient.recordPath("substrate.reamde.dev/core/package", id), accept: [404])
         if response.status == 404 { return nil }
@@ -90,13 +76,6 @@ public struct WorkoutsAPI: Sendable {
         else { return nil }
         if let deleted = object["deletedAt"], deleted != .null { return nil }
         return properties
-    }
-
-    /// Applies declarations, already in the repository's spelling.
-    public func applyVocabulary(_ documents: [WorkoutsCore.JSONValue]) async throws {
-        let body: WorkoutsCore.JSONValue = .object(["documents": .array(documents)])
-        try await client.send("POST", "api/v1/vocabulary/apply", body: try Self.body(body), timeout: SubstrateClient.Timeout.serverWork,
-                              retries: 0)
     }
 
     // MARK: Wire
@@ -116,15 +95,15 @@ public struct WorkoutsAPI: Sendable {
 
     /// A server record as the codec reads it: `kind`, `id`, `properties`
     /// and `version`, every other field (stamps, labels, property metadata)
-    /// left behind, in the phone's spelling.
-    static func record(_ value: WorkoutsCore.JSONValue, rehome: Rehome) throws -> FlatRecord {
+    /// left behind.
+    static func record(_ value: WorkoutsCore.JSONValue) throws -> FlatRecord {
         guard case let .object(object) = value else { throw CodecError.invalid(kind: "?", id: "?", property: "record", value: "not an object") }
         var flat = JSONObject()
         for key in ["kind", "id", "properties", "version"] {
             if let item = object[key] { flat[key] = item }
         }
         if flat["properties"] == nil { flat["properties"] = .object(JSONObject()) }
-        return rehome.inbound(try FlatRecord(json: .object(flat)))
+        return try FlatRecord(json: .object(flat))
     }
 
     static func version(of data: Data) throws -> Int {

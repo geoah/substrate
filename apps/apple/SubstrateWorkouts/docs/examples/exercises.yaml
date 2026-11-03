@@ -1,13 +1,13 @@
 # Carried into substrate on 2026-11-02 from rxtx.dev, where it was
 # research/workouts/substrate/examples/exercises.yaml, the kinds were the draft
 # mneme.rxtx.dev/training and the app was called Spotter. The kinds are now
-# the app's own ~/training (decision record 0203) and the adapter is
+# the app's own substrate.reamde.dev/training (decision record 0203) and the adapter is
 # substrate-workouts; nothing else changed, so where the comments below
 # mention Mneme they describe the plan of the time. README.md beside this
 # file says how these records relate to the JSON the app bundles.
 #
 # Example records: the thirty exercises in the owner's Hevy screenshots, as
-# records of ~/training/exercise (research draft of 2026-10-30).
+# records of substrate.reamde.dev/training/exercise (research draft of 2026-10-30).
 #
 # Apply this file first: routines and sets point at these ids. Nothing here is
 # applied anywhere yet; README.md beside this file says how and where to.
@@ -49,7 +49,7 @@
 # the fly, the raise, the Romanian deadlift and the split squat, one for the
 # single-leg Romanian deadlift (its slot note: one dumbbell, in the opposite
 # hand). Volume multiplies the logged load by it; comparisons do not.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: leg-press-machine
 data:
@@ -72,7 +72,7 @@ data:
       - system: healthconnect
         code: EXERCISE_SEGMENT_TYPE_LEG_PRESS
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: calf-press-machine
 data:
@@ -94,7 +94,7 @@ data:
         code: Calf_Press
         display: Calf Press
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: seated-leg-curl-machine
 data:
@@ -116,7 +116,7 @@ data:
       - system: healthconnect
         code: EXERCISE_SEGMENT_TYPE_LEG_CURL
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: leg-extension-machine
 data:
@@ -138,7 +138,7 @@ data:
       - system: healthconnect
         code: EXERCISE_SEGMENT_TYPE_LEG_EXTENSION
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: hip-thrust-barbell
 data:
@@ -167,7 +167,7 @@ data:
 # A kettlebell, as free-exercise-db's goblet squat is: the screenshots name no
 # implement. If the owner holds a dumbbell, the equipment becomes dumbbell and
 # the step 2 kg; the code stays, since the movement is the same.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: goblet-squat
 data:
@@ -191,7 +191,7 @@ data:
 # The screenshots' chest press: a selectorized stack in 5 kg pins (the warm-up
 # at 25 kg, the working sets at 35 kg). Same values as the package README's
 # excerpt, so applying both lands one record.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: chest-press-machine
 data:
@@ -212,7 +212,7 @@ data:
 # (bilateral), and the load logged is the plates on one arm (perside), so the
 # step is one 2.5 kg plate. A variation of the stack chest press, whose
 # history a reader may offer when this one has none.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: iso-lateral-chest-press-machine
 data:
@@ -225,12 +225,12 @@ data:
     primaryMuscles: [chest]
     secondaryMuscles: [shoulders, triceps]
     restClass: compound
-    variationOf: ~/training/exercise/chest-press-machine
+    variationOf: substrate.reamde.dev/training/exercise/chest-press-machine
     loadStep:
       value: "2.5"
       unit: kg
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: seated-row-machine
 data:
@@ -250,7 +250,7 @@ data:
 # The myo-rep exercise of Day 1. The stop rule is written out although it is
 # the default (the method's own: stop when a mini-set loses a rep from the
 # first), so the agent sees where to change it.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: lateral-raise-dumbbell
 data:
@@ -279,7 +279,7 @@ data:
 # at once when the back complains, and start far lighter than a 20 kg bar. The
 # owner already does the single-leg version with dumbbells. free-exercise-db's
 # Romanian deadlift is the barbell one, so there is no code.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: romanian-deadlift-dumbbell
 data:
@@ -298,7 +298,7 @@ data:
       value: "2"
       unit: kg
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: incline-bench-press-dumbbell
 data:
@@ -320,7 +320,7 @@ data:
         code: Incline_Dumbbell_Press
         display: Incline Dumbbell Press
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: vertical-traction-machine
 data:
@@ -338,7 +338,7 @@ data:
       value: "5"
       unit: kg
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: triceps-pushdown
 data:
@@ -358,7 +358,7 @@ data:
         code: Triceps_Pushdown
         display: Triceps Pushdown
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: triceps-rope-pushdown
 data:
@@ -373,13 +373,13 @@ data:
     loadStep:
       value: "2.5"
       unit: kg
-    variationOf: ~/training/exercise/triceps-pushdown
+    variationOf: substrate.reamde.dev/training/exercise/triceps-pushdown
     codes:
       - system: free-exercise-db
         code: Triceps_Pushdown_-_Rope_Attachment
         display: Triceps Pushdown - Rope Attachment
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: calf-extension-machine
 data:
@@ -397,7 +397,7 @@ data:
     defaultRepsMin: 12
     defaultRepsMax: 20
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: chest-fly-dumbbell
 data:
@@ -422,7 +422,7 @@ data:
 # No code: free-exercise-db's dumbbell shoulder press is seated, and whether
 # Hevy's "Overhead Press (Dumbbell)" is was not checked. Day 3 asks for it
 # seated; the exercise stays the owner's.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: overhead-press-dumbbell
 data:
@@ -442,7 +442,7 @@ data:
 ---
 # Plate-loaded, logged per arm like the iso-lateral press. free-exercise-db's
 # "Leverage Shoulder Press" loads plates onto the machine's pins.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: shoulder-press-machine-plates
 data:
@@ -465,7 +465,7 @@ data:
 ---
 # The rotary torso machine in the thumbnail, one direction at a time. No code:
 # free-exercise-db's "Torso Rotation" is a stretch on an exercise ball.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: torso-rotation
 data:
@@ -483,7 +483,7 @@ data:
 ---
 # free-exercise-db's "Split Squat with Dumbbells" has the rear foot elevated,
 # which is the Bulgarian split squat.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: bulgarian-split-squat-dumbbell
 data:
@@ -506,7 +506,7 @@ data:
         code: Split_Squat_with_Dumbbells
         display: Split Squat with Dumbbells
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: single-leg-romanian-deadlift-dumbbell
 data:
@@ -521,12 +521,12 @@ data:
     primaryMuscles: [hamstrings]
     secondaryMuscles: [glutes, lowerback]
     restClass: compound
-    variationOf: ~/training/exercise/romanian-deadlift-dumbbell
+    variationOf: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
     loadStep:
       value: "2"
       unit: kg
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: plank
 data:
@@ -544,7 +544,7 @@ data:
       - system: healthconnect
         code: EXERCISE_SEGMENT_TYPE_PLANK
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: crunch
 data:
@@ -568,7 +568,7 @@ data:
 # and an import by eye still find it. The thumbnail is a prone press-up: hips
 # on the floor, the arms lifting the chest. No code: free-exercise-db's lower
 # back curl lifts the chest without the arms.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: lumbar-extension-stretch
 data:
@@ -583,7 +583,7 @@ data:
     defaultRepsMin: 10
     defaultRepsMax: 10
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: glute-bridge
 data:
@@ -604,7 +604,7 @@ data:
 ---
 # Alternating sides inside one set. Reps count per side, as on every
 # alternating and one-side-at-a-time exercise: 10 reps are 10 with each side.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: bird-dog
 data:
@@ -619,7 +619,7 @@ data:
     defaultRepsMin: 8
     defaultRepsMax: 12
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: cable-core-pallof-press
 data:
@@ -640,7 +640,7 @@ data:
         code: Pallof_Press
         display: Pallof Press
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: glute-focused-step-down
 data:
@@ -656,7 +656,7 @@ data:
 # Bodyweight: the effective load is bodyShare times the session's body mass.
 # 0.65 is the figure the exercise kind itself gives for a push-up; open
 # question 22 (what share) is still the owner's.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: push-up
 data:

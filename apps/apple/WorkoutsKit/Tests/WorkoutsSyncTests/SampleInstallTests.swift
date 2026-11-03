@@ -19,29 +19,27 @@ struct SampleInstallTests {
     /// `mustExist` refuses it. `refusing` refuses a PUT of those ids.
     final class Repository: @unchecked Sendable {
         let server = ScriptedServer()
-        let rehome = Rehome(authority: "ada.example.com")
         private let lock = NSLock()
-        /// `remoteKind/id` → (remote kind, id, properties), in the server's spelling.
+        /// `kind/id` → (kind, id, properties).
         private var held: [String: (kind: String, id: String, properties: WorkoutsCore.JSONValue)] = [:]
         private var refused: Set<String> = []
 
         init(_ records: [FlatRecord] = []) {
-            for record in records { put(rehome.remoteKind(record.kind), record.id, rehome.outbound(.object(record.properties))) }
+            for record in records { put(record.kind, record.id, .object(record.properties)) }
             server.on { [unowned self] sent in answer(sent) }
         }
 
         func refusing(_ ids: Set<String>) { lock.withLock { refused = ids } }
 
         func holds(_ kind: String, _ id: String) -> Bool {
-            lock.withLock { held["\(rehome.remoteKind(kind))/\(id)"] != nil }
+            lock.withLock { held["\(kind)/\(id)"] != nil }
         }
 
         func ids(_ kind: String) -> [String] {
-            let remote = rehome.remoteKind(kind)
-            return lock.withLock { held.values.filter { $0.kind == remote }.map(\.id).sorted() }
+            lock.withLock { held.values.filter { $0.kind == kind }.map(\.id).sorted() }
         }
 
-        func purge(_ kind: String, _ id: String) { _ = lock.withLock { held.removeValue(forKey: "\(rehome.remoteKind(kind))/\(id)") } }
+        func purge(_ kind: String, _ id: String) { _ = lock.withLock { held.removeValue(forKey: "\(kind)/\(id)") } }
 
         var puts: [String] { server.methodsAndPaths.filter { $0.hasPrefix("PUT ") } }
 
@@ -145,7 +143,7 @@ struct SampleInstallTests {
         let puts = repository.puts
         #expect(puts.count == 14)
         #expect(puts.dropLast().allSatisfy { $0.contains("/training/exercise/") })
-        #expect(puts.last == "PUT /api/v1/ada.example.com/training/routine/\(sampleRoutine)")
+        #expect(puts.last == "PUT /api/v1/substrate.reamde.dev/training/routine/\(sampleRoutine)")
 
         // The next sync, and the next launch, write nothing more.
         #expect(try await !sample.firstRun(api, remote: phone.remote, bundled: try bundled()))
@@ -274,7 +272,7 @@ struct SampleInstallTests {
         // The delete lands as a purge of the routine, and only the routine.
         #expect(await outbox.flush(api) == .sent)
         let deletes = repository.server.sent.filter { $0.method == "DELETE" }
-        #expect(deletes.map(\.path) == ["/api/v1/ada.example.com/training/routine/\(sampleRoutine)"])
+        #expect(deletes.map(\.path) == ["/api/v1/substrate.reamde.dev/training/routine/\(sampleRoutine)"])
         #expect(deletes.first?.query == "purge=true")
         #expect(await outbox.entries.isEmpty)
         let after = try await remote.refresh(api) { await outbox.waitingDeletes }
@@ -315,7 +313,7 @@ struct SampleInstallTests {
         try await sample.firstRun(api, remote: remote, bundled: try bundled())
         try await outbox.delete(routine: SampleRoutine.id, codec: codec)
 
-        let path = "/api/v1/ada.example.com/training/routine/\(sampleRoutine)"
+        let path = "/api/v1/substrate.reamde.dev/training/routine/\(sampleRoutine)"
         let gate = repository.server.hold("DELETE", path)
         let flush = Task { await outbox.flush(api) }
         await gate.arrived()
@@ -361,9 +359,8 @@ struct SampleInstallTests {
     /// The recorded session, its exercises moved onto the sample's: a session
     /// logged on the sample signed out.
     func sampleSession() throws -> SessionRecords {
-        let rehome = Rehome(authority: recordedAuthority)
         func records(_ name: String) throws -> [FlatRecord] {
-            try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0, rehome: rehome) }
+            try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0) }
         }
         var session = try #require(codec.sessionRecords(from: records("list-sessions") + records("list-sets")).first)
         let onto: [ExerciseID: ExerciseID] = ["romanian-deadlift-dumbbell": "bulgarian-split-squat-dumbbell",

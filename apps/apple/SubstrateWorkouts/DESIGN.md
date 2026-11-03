@@ -80,7 +80,7 @@ those files disagree about a property, the kind files win and this document is w
 
 Recorded as decisions the owner may overturn; this spec does not reopen them.
 
-- **Package.** `~/training`, version 1, the app's own ([Package/](Package/README.md)). Kinds `exercise`, `routine` (label "Workout routine"), `session` (label
+- **Package.** `substrate.reamde.dev/training`, published under the apps' authority and installed by the approval ([Package/](Package/README.md)). Kinds `exercise`, `routine` (label "Workout routine"), `session` (label
   "Training session"), `set`. A routine folder is a string plus a position on the routine.
 - **One record per performed set.** The session embeds its ordered slots; group values are stored once per group.
 - **Effort.** `rpe` as entered (a decimal on the RIR-based scale, half steps), optional `rir`, a scale tag for imports.
@@ -227,14 +227,14 @@ exercise). The next save writes the file as format 2.
 
 In this repository the bundled and fixture JSON are the source, and `apps/apple/scripts/workouts-package.py` writes
 only the package's manifests and `kinds.json`; the generator below is the first build's, and stayed in rxtx.dev. The
-YAML it read is in [`docs/examples/`](docs/examples/README.md), rehomed to `~/training` and checked equal to the JSON
+YAML it read is in [`docs/examples/`](docs/examples/README.md), rehomed to `substrate.reamde.dev/training` and checked equal to the JSON
 record for record; that page says how the two relate.
 
 The examples in rxtx.dev's `research/workouts/substrate/examples/` (now [`docs/examples/`](docs/examples/README.md)) are YAML in `substratectl apply -f` form. The app bundles them
 as JSON in the shape substrate's REST API speaks, the flat record:
 
 ```json
-{"kind": "~/training/exercise", "id": "chest-press-machine", "properties": {"name": "Chest Press (Machine)", "...": "..."}}
+{"kind": "substrate.reamde.dev/training/exercise", "id": "chest-press-machine", "properties": {"name": "Chest Press (Machine)", "...": "..."}}
 ```
 
 A checked-in script turns the YAML into that JSON:
@@ -367,11 +367,11 @@ apps/apple/
 
 ```swift
 public struct KindNames: Sendable, Hashable {
-    public var exercise = "~/training/exercise"
-    public var routine = "~/training/routine"
-    public var session = "~/training/session"
-    public var set = "~/training/set"
-    public var setup = "~/training/setup"
+    public var exercise = "substrate.reamde.dev/training/exercise"
+    public var routine = "substrate.reamde.dev/training/routine"
+    public var session = "substrate.reamde.dev/training/session"
+    public var set = "substrate.reamde.dev/training/set"
+    public var setup = "substrate.reamde.dev/training/setup"
     public var healthWorkout = "substrate.reamde.dev/health/workout"
     public var observationSource = "substrate.reamde.dev/observations/source"
     public static let v1 = KindNames()
