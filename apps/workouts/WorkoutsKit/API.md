@@ -17,20 +17,29 @@ this order:
    from the environment's id source), the instant `.flooredToSecond` and clamped to the previous event's, and the
    `SessionEvent` with every id it needs pre-minted.
 2. `apply`: `SessionEngine.apply(envelope, to: state) throws(EngineError) -> SessionState`. On a throw: the refusal
-   and a `.warning` cue in the presentation, nothing else.
+   and a `.warning` cue in the presentation, nothing else; a refused Start also ends `starting`.
 3. The journal: `SessionJournalFile`, the kit's `JournalFile<EventEnvelope, SessionState>` at
    `active-session.json`, as `journaling(of:)` says: Start `.restart`, an edit `.append`, Discard and `finished`
    `.clear`, `finishRequested` and `finishFailed` `.skip`.
 4. `present`: `SessionPresenter.present(state, catalog:, history:, settings:, now:) -> SessionPresentation`, with the
-   transient state (the entry check, the scroll target, the last refusal, the cover's requests, the cues).
+   transient state (the entry check, the last refusal, each Save's outcome by its receipt). What the device does once
+   is a `Signal` (SubstrateRuntime): `cue` (a `SessionCue`, held back while the journal cannot be written, so Rows'
+   Log never says a set is kept that is not), `cover` (open or close it) and `scroll` (a `ScrollTarget`). The app
+   follows each with `PresentationModel.onSignal`, once per raise.
 5. `effects(of:on:presented:)`, on the live path alone: the notification and the Live Activity through the kit's
-   `Notifications` and `OngoingActivities`, the history write, the Health queue through `WorkoutsServices`.
+   `Notifications` and `OngoingActivities`, the history write, the Health queue through `WorkoutsServices`. The
+   countdown's alert is `showsWhileActive: false` while the cover is on screen (`SessionCommand.coverVisible`), so it
+   is quiet in front of the rest bar; `SessionController.command(for:)` turns a tap on it, read from the kit's
+   `Notifications.responses()`, into `.reveal`, the cover scrolled to Up next, as the Live Activity's tap is.
 
 At open the runtime folds the journal through `apply` (a cache that differs from the fold is written again; a file
 that does not fold is set aside as `active-session.unreadable-<seconds>.json` and the presenter is told), then applies
 `.opened(replayed:)`, whose effects restore the alert and the Live Activity and check a replayed session against
 History. Finish is `finishRequested` (the records from `SessionEngine.records(state, adapter:)`), whose effect writes
-`HistoryStore.write(HistoryEntry(records:))` and then the Health queue entry, then `finished` (or `finishFailed`). At
+`HistoryStore.write(HistoryEntry(records:))` and then the Health queue entry, then `finished` (or `finishFailed`). A
+`FinishRequest` carries a `receipt`, and `SessionScreenPresentation.finishOutcomes[receipt]` answers it: nil inside
+when saved, the reason when the file was not written or the engine refused (`finishRefused`), so the sheet waits for
+its own Save and never reads the last one's words. At
 each foreground, `HealthQueueFile.lost(in: history)` names the pending sessions the queue lost; `enqueue(missing:at:)`
 queues them again, after `setAsideIfUnreadable(at:)`.
 
@@ -321,7 +330,22 @@ schedules through the kit's `Notifications` only when `fireDate` is in the futur
 as a `LinkReport`. Its state holds the catalogue, History, the settings and the signed-in account's standing; its
 commands (`WorkoutsApp.Command`) are the tabs' changes, a sheet that waits naming a receipt answered in
 `WorkoutsPresentation.outcomes`. A sync step names the `AccountRef` it ran for, and one for an account no longer
-signed in changes nothing. Each account's files are a `WorkoutsAccount` from `WorkoutsAccounts` (in the environment,
+signed in changes nothing. What an event changed (an account that moved, a package that became writable, a conflict
+the outbox did not hold) is read in `effects(of:on:from:presented:)` from the state before and after, never kept as a
+flag in the state. `syncing` is set only where a sync runs (a writable package), so `until { !syncing }` ends. The
+session's events reach the app only where they are handed off: `finished`, `discard`, and an engine event that adds
+an exercise made on the phone.
+
+### Transitional, not patterns
+
+Two shapes here are on their way out, and new code does not copy them:
+
+- The settings flow one way: the app's `AppModel` (on the main actor) keeps them and sends each change as
+  `WorkoutsApp.Command.settings`. The runtime's `WorkoutsApp` should own them, with the app's model reading the
+  presentation.
+- `SessionScreenPresentation.state` carries the engine's `SessionState` out to the views, for
+  `FinishPresenter.summary` to work the Finish sheet's numbers out as its draft moves. A presentation carries what a
+  view draws; the summary belongs in the presenter, with the draft as a command. Each account's files are a `WorkoutsAccount` from `WorkoutsAccounts` (in the environment,
 so the link flushes the same `Outbox` the app queues into): `Outbox.workouts(directory:)`, the kit's outbox over
 `outbox.json` with `Outbox.workoutsUpgrade` for a format 1 file and the routine and session helpers in
 `WorkoutsOutbox.swift`.

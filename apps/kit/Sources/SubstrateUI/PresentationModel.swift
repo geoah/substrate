@@ -18,6 +18,7 @@ public final class PresentationModel<Root: Controller> {
     @ObservationIgnored private var following: Task<Void, Never>?
     @ObservationIgnored private var sending: Task<Void, Never>?
     @ObservationIgnored private let commands: AsyncStream<Command>.Continuation
+    @ObservationIgnored private var signalHandlers: [(Root.Presentation) -> Void] = []
     /// The model made the runtime, so it closes it when it goes.
     @ObservationIgnored private var ownsRuntime = false
 
@@ -45,7 +46,9 @@ public final class PresentationModel<Root: Controller> {
         following = Task { [weak self, runtime] in
             for await next in await runtime.presentations() {
                 guard let self else { return }
-                if next != presentation { presentation = next }
+                guard next != presentation else { continue }
+                presentation = next
+                for handler in signalHandlers { handler(next) }
             }
         }
     }
@@ -71,6 +74,28 @@ public final class PresentationModel<Root: Controller> {
         commands.yield(.routed(command, path))
     }
 
+    /// Runs `perform` once for each `Signal` raised at `path` from now on,
+    /// as the presentation that raised it arrives: a haptic played, a cover
+    /// opened, a row scrolled to, never again when the tree is drawn again
+    /// for something else. A signal raised before the call is not acted on.
+    /// A serial other than the last one seen is a new signal, so one that
+    /// starts afresh (its controller made again) acts from its first raise.
+    public func onSignal<Value>(_ path: KeyPath<Root.Presentation, Signal<Value>?>, perform: @escaping @MainActor (Value) -> Void) {
+        var seen = presentation[keyPath: path]?.serial ?? 0
+        signalHandlers.append { presentation in
+            let signal = presentation[keyPath: path]
+            let serial = signal?.serial ?? 0
+            guard serial != seen else { return }
+            seen = serial
+            if let value = signal?.value { perform(value) }
+        }
+    }
+
+    /// The same, for a signal every presentation carries.
+    public func onSignal<Value>(_ path: KeyPath<Root.Presentation, Signal<Value>>, perform: @escaping @MainActor (Value) -> Void) {
+        onSignal(path.appending(path: \Signal<Value>.optional), perform: perform)
+    }
+
     isolated deinit {
         commands.finish()
         following?.cancel()
@@ -79,5 +104,9 @@ public final class PresentationModel<Root: Controller> {
         let runtime = runtime
         Task { await runtime.close() }
     }
+}
+
+private extension Signal {
+    var optional: Signal? { self }
 }
 #endif

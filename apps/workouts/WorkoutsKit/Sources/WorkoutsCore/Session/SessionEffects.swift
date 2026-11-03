@@ -24,7 +24,7 @@ extension SessionController {
             return [.countdownEnded(finished.id, final: final), .health(.afterFinish(finished.then == nil ? .finish : .finishCovered))]
                 + (finished.then.map { [.prepareStart($0)] } ?? [])
         case let .opened(replayed):
-            var effects: [Effect] = [.restore(sync(state, presentation)), .readAlerts, .listSetAside]
+            var effects: [Effect] = [.registerCategory, .restore(sync(state, presentation)), .readAlerts, .listSetAside]
             if replayed, let id = state.session?.session.id { effects.append(.checkHistory(id)) }
             return effects
         case let .alreadyFinished(id, recoverHealth):
@@ -33,7 +33,11 @@ extension SessionController {
             return [.restore(sync(state, presentation)), .readAlerts, .health(.foreground)]
         case let .starting(request):
             return [.prepareStart(request)]
-        case .finishFailed, .startDropped, .tick, .alertsRead, .setAsideFound, .noted:
+        case .noted(.coverVisible):
+            // In front of the cover the alert stays quiet; away from it, it
+            // shows: the one scheduled is replaced with the other.
+            return sync(state, presentation).map { [.countdown($0)] } ?? []
+        case .finishFailed, .finishRefused, .startDropped, .tick, .alertsRead, .setAsideFound, .noted:
             return []
         }
     }
@@ -43,7 +47,7 @@ extension SessionController {
     func sync(_ state: State, _ presentation: SessionScreenPresentation) -> CountdownSync? {
         guard let session = state.session, let presented = presentation.session else { return nil }
         return CountdownSync(session: session.session.id, active: session.phase == .active, title: presented.title,
-                             notification: presented.notification,
+                             notification: presented.notification, quietInFront: presentation.coverVisible,
                              activity: LiveActivityPayload(content: presented.liveActivity, revision: state.revision))
     }
 
@@ -57,7 +61,7 @@ extension SessionController {
         case .prepareStart: "start"
         case .readAlerts: "alerts"
         case .checkHistory: "history"
-        case .writeHistory, .listSetAside, .health: nil
+        case .writeHistory, .listSetAside, .health, .registerCategory: nil
         }
     }
 
@@ -113,7 +117,8 @@ extension SessionController {
                 do {
                     try store.write(finished.entry)
                 } catch {
-                    return .finishFailed("The session could not be saved on this iPhone: \(error.localizedDescription)")
+                    return .finishFailed("The session could not be saved on this iPhone: \(error.localizedDescription)",
+                                         receipt: finished.receipt)
                 }
                 // Queued before the journal goes, so no death between here
                 // and the next launch can lose the Health save.
@@ -126,6 +131,12 @@ extension SessionController {
                 guard let saved = try? store?.read(id) else { return nil }
                 return .alreadyFinished(id, recoverHealth: saved.local.health.status == .pending
                     && saved.records.session.healthKitWorkout == nil)
+            }
+        case .registerCategory:
+            guard let notifications else { return .none }
+            return .once {
+                await notifications.register([NotificationCategory(id: Self.countdownCategory)])
+                return nil
             }
         case .readAlerts:
             guard let notifications else { return .none }
@@ -170,7 +181,7 @@ extension SessionController {
         if sync.active, let notification = sync.notification, notification.fireDate > now {
             await notifications?.schedule(NotificationRequest(
                 id: countdownID, title: notification.title, body: notification.body, fireAt: notification.fireDate,
-                thread: sync.session.rawValue, category: countdownCategory, timeSensitive: true,
+                thread: sync.session.rawValue, category: countdownCategory, timeSensitive: true, showsWhileActive: !sync.quietInFront,
                 userInfo: [sessionKey: sync.session.rawValue]))
         }
         // Finish ends the activity with its summary, never an "All sets

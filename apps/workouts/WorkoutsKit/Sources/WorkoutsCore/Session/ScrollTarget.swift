@@ -1,13 +1,11 @@
-/// A row or a card the session list should bring into view. `serial` makes
-/// a repeat request for the same row a change.
+/// A row or a card the session list should bring into view: a view's own
+/// request, or the session's, which reaches the list as a `Signal`.
 public struct ScrollTarget: Codable, Equatable, Sendable {
     public var row: RowID?
     public var slot: String?
-    public var serial: Int
 
-    public init(row: RowID? = nil, slot: String? = nil, serial: Int = 0) {
+    public init(row: RowID? = nil, slot: String? = nil) {
         self.row = row
         self.slot = slot
-        self.serial = serial
     }
 }

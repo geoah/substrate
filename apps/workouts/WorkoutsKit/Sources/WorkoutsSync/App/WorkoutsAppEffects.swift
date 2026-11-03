@@ -11,18 +11,20 @@ import WorkoutsCore
 /// makes is into the folder of the account it names, and its result is
 /// dropped by the engine when that account is no longer signed in.
 extension WorkoutsApp {
-    public func effects(of event: Event, on state: State, presented presentation: WorkoutsPresentation) -> [Effect] {
+    public func effects(of event: Event, on state: State, from previous: State, presented presentation: WorkoutsPresentation)
+        -> [Effect]
+    {
         let account = state.signedIn
         switch event {
         case .opened:
             return [.loadBundled, .loadHistory]
         case .linked:
-            if state.accountMoved {
+            if state.account != previous.account {
                 // A new account: its folder opened and its outbox followed;
                 // it syncs once its package is known to be writable.
                 return [.stopSync] + (account.map { [.openAccount($0), .followOutbox($0)] } ?? [])
             }
-            return state.becameWritable ? account.map { [.sync($0)] } ?? [] : []
+            return state.canWrite && !previous.canWrite ? account.map { [.sync($0)] } ?? [] : []
         case let .accountOpened(opened, _, _, _, _, _):
             return opened == account && state.canWrite ? [.sync(opened)] : []
         case let .catalogRead(read, _, _, _):
@@ -34,7 +36,10 @@ extension WorkoutsApp {
         case let .exchanged(exchanged, _, _, _, _):
             return exchanged == account ? [.seedLibrary(exchanged)] : []
         case let .outboxRead(read, _, _):
-            return read == account && !state.newConflicts.isEmpty ? [.reread(read, state.newConflicts)] : []
+            // Conflicts not there before: their routines are read again.
+            let known = Set(previous.conflicts.map(\.id))
+            let new = state.conflicts.filter { !known.contains($0.id) }.map { RoutineID($0.recordID) }
+            return read == account && !new.isEmpty ? [.reread(read, new)] : []
         case let .session(event):
             guard let account else { return [] }
             switch event {

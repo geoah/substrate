@@ -55,7 +55,7 @@ react-native-body-highlighter's (MIT), written into `Views/Stats/BodyMapShapes.s
 
 | Path | What |
 | --- | --- |
-| `apple/Sources/` | the app: `App/` (`WorkoutsRoot`, the composition root: the kit's link with `WorkoutsApp` under it on one runtime, and the device services; `SessionModel`, `AppModel` and `SubstrateLink`, which republish the runtime's presentations for the views and send their commands), `Platform/` (the notification delegate, the Live Activity's attributes, HealthKit, haptics), `Shared/` (compiled into the widget too), `Views/` |
+| `apple/Sources/` | the app: `App/` (`WorkoutsRoot`, the composition root: the kit's link with `WorkoutsApp` under it on one runtime, and the device services; `SessionModel`, `AppModel` and `SubstrateLink`, which republish the runtime's presentations for the views and send their commands), `Platform/` (the session screen's presence, the Live Activity's attributes, HealthKit, haptics; the notification delegate is the kit's), `Shared/` (compiled into the widget too), `Views/` |
 | `package/` | the training package's manifests and their long form |
 | `apple/Widgets/` | the Live Activity extension |
 | `WorkoutsKit/Sources/WorkoutsCore` | Foundation and the kit's SubstrateCore, SubstrateRuntime and SubstrateLocal: the model and its record codec, the session engine, the session's controller on the kit's runtime (its journal the kit's `JournalFile`), the rest rules, the suggestion engine, the presenters, the files on the phone, the sample routine and the package's manifests |

@@ -17,7 +17,11 @@ public extension SessionController {
         /// journal removed.
         case finished(FinishedSession)
         /// The history file could not be written: the session stays open.
-        case finishFailed(String)
+        case finishFailed(String, receipt: UUID?)
+        /// A Save the engine refuses before anything is written (no session
+        /// open, one already being saved, a finish it does not accept),
+        /// answered under its receipt.
+        case finishRefused(UUID?, EngineError)
         /// The controller opened; `replayed` says a journal was folded.
         case opened(replayed: Bool)
         /// The replayed session is already in History: Finish wrote its
@@ -51,6 +55,10 @@ public extension SessionController {
         /// The Lock Screen asked for a set the entry check questions: left
         /// for the app.
         case leftForTheApp
+        /// The session cover came on screen or left it.
+        case coverVisible(Bool)
+        /// The cover opened on the session, with Up next brought into view.
+        case reveal(RowID?)
         /// A command the controller refuses before the engine sees it (a
         /// tick whose values are incomplete, a Start of no timer): the
         /// engine refuses it, so it reads as any refusal.

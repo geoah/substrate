@@ -80,6 +80,22 @@ struct ServerAnswerTests {
 
 @Suite("The published manifests")
 struct ManifestTests {
+    @Test("the manifest labels every training kind as its declaration does, so a refused write says what it was")
+    func trainingLabels() throws {
+        let kinds = try PackageManifest.bundled().documents(ofKind: "substrate.reamde.dev/core/kind")
+        #expect(Set(kinds.map(\.id)) == Set(WorkoutsManifest.trainingLabels.keys))
+        for kind in kinds {
+            let label = try #require(WorkoutsManifest.trainingLabels[kind.id])
+            let declared = kind.data["label"]?.object
+            let name = kind.data["names"]?.object?["singular"]?.string ?? ""
+            #expect(label.singular == declared?["singular"]?.string ?? name.prefix(1).uppercased() + name.dropFirst())
+            #expect(label.plural == declared?["plural"]?.string ?? label.singular + "s")
+            let purpose = kind.data["purpose"]?.string ?? "primary"
+            #expect((label.purpose ?? "primary") == purpose, "\(kind.id)")
+        }
+        #expect(WorkoutsManifest.current.kindLabels[WorkoutsKinds.v1.session]?.singular == "Training session")
+    }
+
     @Test("training is published under substrate.reamde.dev, its documents in apply order, with no ~ anywhere")
     func training() throws {
         let manifest = try PackageManifest.bundled()

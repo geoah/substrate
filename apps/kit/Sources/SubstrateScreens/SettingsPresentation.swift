@@ -110,6 +110,8 @@ public enum SettingsRowID: Codable, Hashable, Sendable {
         case action(StatusAction)
         /// A refused write, by its id.
         case refused(ParkedWrite.ID)
+        /// What the server refused of it.
+        case refusedStatus(ParkedWrite.ID)
     }
 
     public enum RepositoryRow: Codable, Hashable, Sendable {

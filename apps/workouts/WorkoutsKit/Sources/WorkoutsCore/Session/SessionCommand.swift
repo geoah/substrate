@@ -74,6 +74,12 @@ public enum SessionCommand: Codable, Equatable, Sendable {
     case discard
     /// The app came to the foreground (§6.3).
     case foreground
+    /// The session cover came on screen or left it: while it shows, the
+    /// countdown's alert stays quiet in front (§9.2).
+    case coverVisible(Bool)
+    /// The Live Activity's or the rest notification's tap: the cover on
+    /// the session in progress, scrolled to Up next (§9.1, §9.2).
+    case reveal
 }
 
 /// The entry check's answer.
@@ -82,19 +88,22 @@ public enum EntryAnswer: String, Codable, Equatable, Sendable {
 }
 
 /// What Save sends: the sheet's start, end, how the unticked rows go, the
-/// session RPE and the notes.
+/// session RPE and the notes, and the receipt its outcome is answered
+/// under (`SessionScreenPresentation.finishOutcomes`).
 public struct FinishRequest: Codable, Equatable, Sendable {
     public var start: Date
     public var end: Date
     public var policy: PendingSetPolicy
     public var sessionRPE: Int?
     public var notes: String?
+    public var receipt: UUID
 
-    public init(start: Date, end: Date, policy: PendingSetPolicy, sessionRPE: Int?, notes: String?) {
+    public init(start: Date, end: Date, policy: PendingSetPolicy, sessionRPE: Int?, notes: String?, receipt: UUID = UUID()) {
         self.start = start
         self.end = end
         self.policy = policy
         self.sessionRPE = sessionRPE
         self.notes = notes
+        self.receipt = receipt
     }
 }
