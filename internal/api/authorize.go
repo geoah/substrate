@@ -133,7 +133,7 @@ type protectedResourceMetadata struct {
 // scopesSupported names the widest scope of each verb: every other scope is
 // a narrower pattern of one of them, which no list could enumerate. `full`
 // is listed so an app knows this server can approve it (decision 0204).
-var scopesSupported = []string{"read:*", "write:*", "agents:*", "decide:*", "full"}
+var scopesSupported = []string{"read:*", "write:*", "agents:*", "decide:*", "call:*", "full"}
 
 func (h *handler) getAuthorizationServerMetadata(w http.ResponseWriter, r *http.Request) {
 	iss := h.issuerOf(r)
@@ -478,6 +478,9 @@ type pageReads struct {
 	kinds    []substrate.KindInfo
 	previous *substrate.AuthorizationPrevious
 	agents   []*substrate.Record
+	// functions are the function rows with their reach, read when a scope
+	// names functions (authorizecall.go).
+	functions []functionRow
 }
 
 // readForPage reads what the approval page's view of req needs of ds.
@@ -492,6 +495,11 @@ func readForPage(ctx context.Context, ds substrate.Dataset, req authorize.Reques
 	}
 	if slices.ContainsFunc(req.Scopes, scope.Scope.OverAgents) {
 		if out.agents, err = agentRows(ctx, ds); err != nil {
+			return out, err
+		}
+	}
+	if slices.ContainsFunc(req.Scopes, func(s scope.Scope) bool { return s.Verb == scope.Call }) {
+		if out.functions, err = readFunctions(ctx, ds); err != nil {
 			return out, err
 		}
 	}
@@ -566,7 +574,8 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 			view.Scopes = append(view.Scopes, substrate.AuthorizationScope{
 				Scope: s.String(), Requested: s.String(), Verb: string(s.Verb),
 				Kinds: []substrate.AuthorizationKind{}, Agents: []*substrate.Record{},
-				Allowed: view.Previous != nil && len(view.Previous.Scopes) == 0,
+				Functions: []substrate.AuthorizationCallFunction{},
+				Allowed:   view.Previous != nil && len(view.Previous.Scopes) == 0,
 			})
 			continue
 		}
@@ -581,12 +590,16 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 			Scope: resolved.String(), Requested: s.String(), Verb: string(resolved.Verb),
 			Write: resolved.Verb == scope.Write, Pattern: resolved.Pattern,
 			Glob: strings.HasSuffix(resolved.Pattern, "*"), Kinds: []substrate.AuthorizationKind{},
-			Agents:  []*substrate.Record{},
-			Allowed: before.Covers(resolved, scopeInternal(resolved, registry)),
+			Agents:    []*substrate.Record{},
+			Functions: []substrate.AuthorizationCallFunction{},
+			Allowed:   before.Covers(resolved, scopeInternal(resolved, registry)),
 		}
-		if resolved.OverAgents() {
+		switch {
+		case resolved.OverAgents():
 			row.Agents = matchedAgents(resolved, p.agents)
-		} else {
+		case resolved.Verb == scope.Call:
+			row.Functions = matchedFunctions(resolved, p.functions, resolvedScopes(req.Scopes, authority), registry)
+		default:
 			row.Kinds = scopeKinds(resolved, p.kinds, view.Setup)
 		}
 		view.Scopes = append(view.Scopes, row)
@@ -605,6 +618,15 @@ func shownApp(req authorize.Request) (authorize.Document, error) {
 		return authorize.Document{}, validation("the app's document does not list the redirect_uri this request names, " + req.RedirectURI)
 	}
 	return *req.Document, nil
+}
+
+// resolvedScopes is every scope of a request with `~` completed.
+func resolvedScopes(scopes []scope.Scope, authority string) []scope.Scope {
+	out := make([]scope.Scope, len(scopes))
+	for i, s := range scopes {
+		out[i] = s.Resolve(authority)
+	}
+	return out
 }
 
 // reachedKinds lists the kinds one resolved scope reaches today.

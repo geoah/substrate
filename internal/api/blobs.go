@@ -47,6 +47,13 @@ const maxConcurrentBlobGets = 8
 
 var blobGetSem = make(chan struct{}, maxConcurrentBlobGets)
 
+// maxConcurrentAppBlobGets is the same bound for apps' tokens, a pool of
+// its own as the PUTs have: an app that reads in a loop holds its own slots,
+// never the owner's.
+const maxConcurrentAppBlobGets = 2
+
+var appBlobGetSem = make(chan struct{}, maxConcurrentAppBlobGets)
+
 // blobTransferDeadline bounds how long a PUT may take to send its body and a
 // GET to take its bytes, so a client that stalls cannot hold a slot.
 var blobTransferDeadline = 10 * time.Minute
@@ -227,11 +234,21 @@ func (h *handler) getBlob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	slots := blobGetSem
+	if _, scoped := ds.(*scopedDataset); scoped {
+		slots = appBlobGetSem
+	}
 	select {
-	case blobGetSem <- struct{}{}:
-		defer func() { <-blobGetSem }()
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
 	case <-ctx.Done():
 		writeUnavailable(w, time.Second, "blob store is busy, retry")
+		return
+	}
+	// The wait for a slot may be long: an app's token revoked or lapsed
+	// meanwhile reads nothing. A full-access token has no lease.
+	if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+		writeSubstrateError(w, r, err)
 		return
 	}
 	info, data, err := ds.GetBlob(ctx, digest)

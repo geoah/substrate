@@ -154,7 +154,7 @@ func scopeKinds(s scope.Scope, kinds []substrate.KindInfo, rows []substrate.Auth
 // purpose is internal, which a glob never reaches. A kind the registry does
 // not hold yet is read as internal, so only its exact scope covers it.
 func scopeInternal(s scope.Scope, registry map[string]substrate.KindInfo) bool {
-	if s.OverAgents() || s.Verb == scope.Webhook || vocabulary.IsTypeGlob(s.Pattern) {
+	if s.OverAgents() || s.Verb == scope.Webhook || s.Verb == scope.Call || vocabulary.IsTypeGlob(s.Pattern) {
 		return false
 	}
 	k, held := registry[s.Pattern]
