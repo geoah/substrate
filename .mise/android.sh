@@ -165,8 +165,9 @@ cmd_smoke() {
   "$adb" logcat -d -s bridge-check:I | grep -q 'done: PASS' || die "a runtime check failed on the release build"
   for run in 1 2 3; do
     "$adb" shell am force-stop "$app"
-    printf 'cold start %s: ' "$run"
-    "$adb" shell am start -W -n "$app/.MainActivity" --ez checks false | sed -n 's/^TotalTime: //p'
+    "$adb" logcat -c
+    printf 'cold start %s: TotalTime %s ms, ' "$run" "$("$adb" shell am start -W -n "$app/.MainActivity" --ez checks false | sed -n 's/^TotalTime: //p' | tr -d '\r')"
+    "$adb" logcat -d -s bridge-check:I | sed -n 's/.*bridge-check: start: .* in \(.*\)/Bridge.start \1/p'
   done
   printf 'release APK: %s bytes\n' "$(wc -c <"$apk" | tr -d ' ')"
   unzip -lv "$apk" | awk '/\.so$/ { printf "  %-48s %10d\n", $8, $1 }' | sort -k2 -n -r

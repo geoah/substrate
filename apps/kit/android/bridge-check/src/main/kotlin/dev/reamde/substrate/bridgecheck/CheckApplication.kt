@@ -2,6 +2,7 @@ package dev.reamde.substrate.bridgecheck
 
 import android.app.Application
 import android.os.SystemClock
+import android.util.Log
 import dev.reamde.substrate.kit.Bridge
 import dev.reamde.substrate.kit.StartResult
 import dev.reamde.substrate.kit.device.KitDevice
@@ -13,6 +14,7 @@ class CheckApplication : Application() {
         val began = SystemClock.elapsedRealtimeNanos()
         start = Bridge.start(this, KitDevice.services(this))
         startMillis = (SystemClock.elapsedRealtimeNanos() - began) / 1e6
+        Log.i("bridge-check", "start: $start in ${"%.1f".format(startMillis)} ms")
     }
 
     companion object {
