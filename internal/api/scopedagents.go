@@ -591,7 +591,7 @@ func (s *scopedDataset) ChangesBefore(ctx context.Context, before int64, f subst
 	if err != nil || !ok {
 		return []substrate.Change{}, err
 	}
-	kept := make([]substrate.Change, 0, min(max(limit, 0), changeBatch))
+	kept := []substrate.Change{}
 	cur := before
 	for {
 		batch, err := s.inner.ChangesBefore(ctx, cur, f, limit)
