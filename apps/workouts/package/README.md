@@ -11,7 +11,7 @@ site's authority document, the app's approval asks for the package as a
 `package` detail at the version the build was written against, and the
 server installs it from the document under this very name, the same in every
 repository. The app carries the documents as JSON
-(`core/Sources/WorkoutsCore/Resources/Package/training.json`, written
+(`WorkoutsKit/Sources/WorkoutsCore/Resources/Package/training.json`, written
 by the same script) for the version it asks for, and applies nothing. The
 workout coach is the second package, `substrate.reamde.dev/trainingcoach`,
 under [coach/](coach/).

@@ -86,7 +86,7 @@ adds its own.
    the glyph reads at 29 px, the shades sit close together, and nothing looks
    glossy.
 4. Write the app's AppIcon set:
-   `node scripts/icons.mjs appiconset <app> <App>/Assets.xcassets/AppIcon.appiconset`
+   `node apps/xcode/scripts/icons.mjs appiconset <app> apps/<app>/apple/Assets.xcassets/AppIcon.appiconset`, from the repository root
    (add `--mac` for a Mac app).
 
 An app in another repository copies `icons.mjs` and adds its own entry, as

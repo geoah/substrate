@@ -58,8 +58,8 @@ react-native-body-highlighter's (MIT), written into `Views/Stats/BodyMapShapes.s
 | `apple/Sources/` | the app: `App/` (the session controller, the model, `SubstrateLink`), `Platform/` (notifications, the Live Activity, HealthKit, haptics), `Shared/` (compiled into the widget too), `Views/` |
 | `package/` | the training package's manifests and their long form |
 | `apple/Widgets/` | the Live Activity extension |
-| `core/Sources/WorkoutsCore` | Foundation only: the model and its record codec, the session engine, the rest rules, the suggestion engine, the presenters, the files on the phone, the sample routine and the package's manifests |
-| `core/Sources/WorkoutsSync` | the app's side of a substrate, over SubstrateKit's client: the package installer, the catalogue, the outbox, the server's history, the manifest |
+| `WorkoutsKit/Sources/WorkoutsCore` | Foundation only: the model and its record codec, the session engine, the rest rules, the suggestion engine, the presenters, the files on the phone, the sample routine and the package's manifests |
+| `WorkoutsKit/Sources/WorkoutsSync` | the app's side of a substrate, over SubstrateKit's client: the package installer, the catalogue, the outbox, the server's history, the manifest |
 
 ## Signing in and sync
 
