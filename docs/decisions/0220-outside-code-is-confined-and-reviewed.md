@@ -27,10 +27,14 @@ rules for document-published code; binary-shipped code keeps its rules.
 Choose the proxy. Outside means a package row carries `publishedFrom`.
 Functions, agents, record mappings, triggers and OAuth metadata are code.
 `SUBSTRATE_OUTSIDE_CODE` defaults to `allow`; `refuse` blocks admission and
-execution. Outside code requires a working filesystem sandbox, syscall
-filter and connect gate, even on Linux in best-effort mode. An explicit
-`SUBSTRATE_INSECURE_UNCONFINED_OUTSIDE_CODE=true` waives confinement and
-warns at boot; it never waives `refuse`.
+execution of all of it. An outside function body, the one form of code the
+sandbox runs, also requires a working filesystem sandbox, syscall filter and
+connect gate, even on Linux in best-effort mode. An agent, a trigger, a
+mapping and an OAuth block run in the server's own process under the
+engine's rules (an agent's reach and daily cap, decisions 0215 and 0217),
+so a host whose kernel lacks a layer, such as one without Landlock, still
+takes them. An explicit `SUBSTRATE_INSECURE_UNCONFINED_OUTSIDE_CODE=true`
+waives the bodies' confinement and warns at boot; it never waives `refuse`.
 
 For outside functions, the kernel connect gate admits only the body's own
 proxy listener. The proxy checks exact DNS names or wildcard suffixes
