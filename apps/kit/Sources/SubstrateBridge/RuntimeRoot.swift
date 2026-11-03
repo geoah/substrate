@@ -3,19 +3,25 @@ import SubstrateCore
 import SubstrateRuntime
 
 /// Any `Runtime` as a bridge root, with no glue per controller: commands are
-/// `RoutedCommand`s as JSON (`Runtime.send(encoded:)`), and each presentation
-/// the runtime publishes goes out as it encoded it, coalesced on the way; one
-/// that did not encode goes out as a `swiftFailure`, and the next still comes.
+/// `RoutedCommand`s as JSON (`Runtime.send(encoded:)`), and each frame the
+/// runtime publishes (`Runtime.encodedFrames()`) goes out as its keyed lists,
+/// whole the first time and as deltas after, never coalesced, then the tree
+/// that names them, coalesced on the way: a presentation always follows the
+/// rows it names, so Kotlin can put them back before it draws. One that did
+/// not encode goes out as a `swiftFailure`, and the next still comes. A new
+/// locale or time zone reaches the runtime, which presents the tree again.
 public final class RuntimeRoot<Root: Controller>: BridgeRoot {
     public let runtime: Runtime<Root>
     private let forwarding: Task<Void, Never>
 
     public init(_ runtime: Runtime<Root>, context: BridgeContext) async {
         self.runtime = runtime
-        let presentations = await runtime.encodedPresentations()
+        let frames = await runtime.encodedFrames()
         forwarding = Task {
-            for await encoded in presentations {
-                switch encoded {
+            let lists = ContextLists(context: context)
+            for await frame in frames {
+                for list in frame.lists { list.hand(to: lists) }
+                switch frame.presentation {
                 case let .success(json): context.present(encoded: json)
                 case let .failure(failure): context.fail(BridgeFailure(.swiftFailure, "a presentation did not encode: \(failure.reason)"))
                 }
@@ -27,9 +33,22 @@ public final class RuntimeRoot<Root: Controller>: BridgeRoot {
         try await runtime.send(encoded: command.data(pretty: false))
     }
 
+    public func environmentChanged(_ environment: BridgeEnvironment) async {
+        await runtime.environmentChanged(locale: environment.locale, timeZone: environment.timeZone)
+    }
+
     public func close() async {
         await runtime.close()
         forwarding.cancel()
+    }
+}
+
+/// A handle's context as what takes a frame's keyed lists.
+private struct ContextLists: KeyedListReceiver {
+    let context: BridgeContext
+
+    func receive<Row>(list name: String, _ list: KeyedList<Row>) {
+        context.publish(list: name, list)
     }
 }
 
@@ -56,6 +75,10 @@ private final class PendingRuntimeRoot<Root: Controller>: BridgeRoot {
 
     func receive(_ command: JSONValue) async throws {
         try await started.value.receive(command)
+    }
+
+    func environmentChanged(_ environment: BridgeEnvironment) async {
+        await started.value.environmentChanged(environment)
     }
 
     func close() async {

@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 import SubstrateDevice
 import SubstrateRuntime
 import SubstrateTesting
@@ -122,12 +123,16 @@ struct KitAdditionsTests {
         #expect(notifications.calls == [.register([reply])])
     }
 
-    @Test func aRequestEncodedBeforeItsNewFieldsShowsAtOnceAndInFront() throws {
-        let old = #"{"id":"n","title":"Rest over","timeSensitive":true,"userInfo":{}}"#
-        let request = try JSONDecoder().decode(NotificationRequest.self, from: Data(old.utf8))
-        #expect(request.fireAt == nil)
-        #expect(request.showsWhileActive)
-        #expect(request.timeSensitive)
+    // A request crosses to Android as a bridged value, so every field it
+    // carries comes back as it went: shown at once, quiet in front, its
+    // category and its user info.
+    @Test func aRequestCrossesTheBridgeWithEveryField() throws {
+        let request = NotificationRequest(id: "n", title: "Rest over", body: "Bench press, set 3", fireAt: nil, thread: "session",
+                                          category: "rest", timeSensitive: true, showsWhileActive: false, userInfo: ["session": "s1"])
+        let back = try ValueCoding.decode(NotificationRequest.self, from: ValueCoding.encode(request))
+        #expect(back == request)
+        #expect(back.fireAt == nil)
+        #expect(!back.showsWhileActive)
     }
 
     #if canImport(SwiftUI)

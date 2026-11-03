@@ -283,5 +283,50 @@
       "expensive": false,
       "online": true
     }
+  },
+  {
+    "type": "Ledger.Presentation",
+    "json": {
+      "count": "2 rows",
+      "drawn": "Tuesday",
+      "rows": {
+        "revision": 7,
+        "rows": [
+          {
+            "id": "a",
+            "text": "🧪 emoji 😀, עברית, é, tab\t, quote\", backslash\\, nul\u0000, 中文, ￿"
+          },
+          {
+            "id": "b",
+            "text": "B"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "NotificationRequest",
+    "json": {
+      "body": "Due today",
+      "fireAt": "2026-11-03T09:00:00Z",
+      "id": "due|a",
+      "showsWhileActive": true,
+      "thread": "today",
+      "timeSensitive": true,
+      "title": "Buy milk",
+      "userInfo": {
+        "task": "a"
+      }
+    }
+  },
+  {
+    "type": "Ledger.Command",
+    "json": {
+      "note": {
+        "value": {
+          "n": 1234567890123456789012345678901234567890.5
+        }
+      }
+    }
   }
 ]

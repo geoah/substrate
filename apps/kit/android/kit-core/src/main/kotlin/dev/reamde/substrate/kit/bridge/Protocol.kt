@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "c03b41d05af3e1af84fc3b9740c7326d741343717674202925e522ba00091bb5"
+    public const val VALUE: String = "2669d74c6efb8a14b9976fedfdc1d7a52c48e849444512ffb9dd42a8699ebe8b"
 }
 
 /**
@@ -67,6 +67,17 @@ public object ExactJson : KSerializer<JsonElement> {
     }
 }
 
+/**
+ * SubstrateRuntime's `KeyedList`: its rows and the revision they are at.
+ * A presentation crosses with each one as a reference to the list sent
+ * apart, and `KeyedListTree` puts the rows back before it is decoded.
+ */
+@Serializable
+public data class KeyedList<Row>(
+    val revision: Long,
+    val rows: List<Row>,
+)
+
 /** Swift's synthesized enum coding: an object of one key, the case, holding its payload. */
 public class SwiftEnumSerializer<T : Any>(
     private val serialName: String,
@@ -95,6 +106,102 @@ public class SwiftEnumSerializer<T : Any>(
         return json.json.decodeFromJsonElement(case.serializer, payload)
     }
 }
+
+@Serializable
+public data class AboutPresentation(
+    val title: String,
+    val version: LabeledValue,
+    val channel: LabeledValue? = null,
+    val update: UpdateOffer? = null,
+    val check: String? = null,
+)
+
+@Serializable(with = AccessAction.Serializer::class)
+public sealed interface AccessAction {
+    @Serializable
+    public data object Review : AccessAction
+
+    @Serializable
+    public data object SignInAgain : AccessAction
+
+    @Serializable
+    public data object MoveToAppAccess : AccessAction
+
+    @Serializable
+    public data object Retry : AccessAction
+
+    @Serializable
+    public data class OpenFix(
+        @SerialName("_0") val value: String,
+    ) : AccessAction
+
+    public object Serializer : KSerializer<AccessAction> by SwiftEnumSerializer(
+        "AccessAction",
+        listOf(
+            SwiftEnumSerializer.Case("review", Review::class, Review.serializer()),
+            SwiftEnumSerializer.Case("signInAgain", SignInAgain::class, SignInAgain.serializer()),
+            SwiftEnumSerializer.Case("moveToAppAccess", MoveToAppAccess::class, MoveToAppAccess.serializer()),
+            SwiftEnumSerializer.Case("retry", Retry::class, Retry.serializer()),
+            SwiftEnumSerializer.Case("openFix", OpenFix::class, OpenFix.serializer()),
+        ),
+    )
+
+    @Serializable
+    public enum class Offer {
+        @SerialName("review") review,
+        @SerialName("signInAgain") signInAgain,
+        @SerialName("moveToAppAccess") moveToAppAccess,
+        @SerialName("retry") retry,
+        @SerialName("openFix") openFix,
+    }
+}
+
+@Serializable
+public data class AccessBanner(
+    val tone: ScreenTone,
+    val lines: List<IssueLine>,
+)
+
+@Serializable
+public data class AccessEndedPresentation(
+    val symbol: ScreenSymbol,
+    val title: String,
+    val message: String,
+    val signInAgain: String,
+)
+
+@Serializable
+public data class ActionButton<Action>(
+    val title: String,
+    val action: Action,
+)
+
+@Serializable
+public data class AppMenuPresentation(
+    val sections: List<AppMenuSection>,
+    val selected: String,
+)
+
+@Serializable
+public data class AppMenuSection(
+    val id: String,
+    val title: String,
+    val symbol: String,
+    val badge: Long? = null,
+)
+
+@Serializable
+public data class ApprovedAccess(
+    val title: String,
+    val scopes: List<ApprovedScope>,
+    val until: LabeledValue,
+)
+
+@Serializable
+public data class ApprovedScope(
+    val scope: String,
+    val words: String,
+)
 
 @Serializable
 public data class BridgeFailure(
@@ -143,6 +250,16 @@ public data class BridgeStats(
     val cancelled: Long,
     val deliveryFailures: Long,
     val open: Long,
+)
+
+@Serializable
+public data class ChangeLine(
+    val id: String,
+    val symbol: ScreenSymbol,
+    val tone: ScreenTone,
+    val words: String,
+    val detail: String? = null,
+    val detailStands: Boolean,
 )
 
 @Serializable(with = CheckCommand.Serializer::class)
@@ -283,6 +400,50 @@ public enum class CheckTransport {
     @SerialName("urlSession") urlSession,
 }
 
+@Serializable
+public data class ConnectPresentation(
+    val field: ConnectPresentation.Field,
+    val door: ConnectPresentation.Door,
+    val found: @Serializable(with = ExactJson::class) JsonElement? = null,
+    val tooOld: ServerTooOldPresentation? = null,
+    val problem: ProblemPresentation? = null,
+    val button: ConnectPresentation.Button? = null,
+    val cancel: String? = null,
+    val footer: ConnectPresentation.Footer? = null,
+    val unrevoked: List<ProblemPresentation>,
+) {
+    @Serializable
+    public data class Button(
+        val title: String,
+        val busy: Boolean,
+        val enabled: Boolean,
+    )
+
+    @Serializable
+    public enum class Door {
+        @SerialName("none") none,
+        @SerialName("browser") browser,
+        @SerialName("password") password,
+        @SerialName("tooOld") tooOld,
+    }
+
+    @Serializable
+    public data class Field(
+        val text: String,
+        val placeholder: String,
+        val label: String,
+        val disabled: Boolean,
+        val revision: Long,
+    )
+
+    @Serializable
+    public data class Footer(
+        val found: String? = null,
+        val repository: String? = null,
+        val note: String,
+    )
+}
+
 @Serializable(with = DNSAnswer.Serializer::class)
 public sealed interface DNSAnswer {
     @Serializable
@@ -379,11 +540,148 @@ public data class EnvironmentUpdate(
     val timeZone: String,
 )
 
+@Serializable(with = FixturePresentation.Serializer::class)
+public sealed interface FixturePresentation {
+    @Serializable
+    public data class Connect(
+        @SerialName("_0") val value: ConnectPresentation,
+    ) : FixturePresentation
+
+    @Serializable
+    public data class ServerTooOld(
+        @SerialName("_0") val value: ServerTooOldPresentation,
+    ) : FixturePresentation
+
+    @Serializable
+    public data class AccessBanner(
+        @SerialName("_0") val value: dev.reamde.substrate.kit.bridge.AccessBanner,
+    ) : FixturePresentation
+
+    @Serializable
+    public data class AccessEnded(
+        @SerialName("_0") val value: AccessEndedPresentation,
+    ) : FixturePresentation
+
+    @Serializable
+    public data class Review(
+        @SerialName("_0") val value: ReviewPresentation,
+    ) : FixturePresentation
+
+    @Serializable
+    public data class Repository(
+        @SerialName("_0") val value: RepositoryPresentation,
+    ) : FixturePresentation
+
+    @Serializable
+    public data class Status(
+        @SerialName("_0") val value: StatusPresentation,
+    ) : FixturePresentation
+
+    @Serializable
+    public data class Settings(
+        @SerialName("_0") val value: SettingsPresentation,
+    ) : FixturePresentation
+
+    @Serializable
+    public data class Problem(
+        @SerialName("_0") val value: ProblemPresentation,
+    ) : FixturePresentation
+
+    @Serializable
+    public data class About(
+        @SerialName("_0") val value: AboutPresentation,
+    ) : FixturePresentation
+
+    @Serializable
+    public data class Menu(
+        @SerialName("_0") val value: AppMenuPresentation,
+    ) : FixturePresentation
+
+    public object Serializer : KSerializer<FixturePresentation> by SwiftEnumSerializer(
+        "FixturePresentation",
+        listOf(
+            SwiftEnumSerializer.Case("connect", Connect::class, Connect.serializer()),
+            SwiftEnumSerializer.Case("serverTooOld", ServerTooOld::class, ServerTooOld.serializer()),
+            SwiftEnumSerializer.Case("accessBanner", AccessBanner::class, AccessBanner.serializer()),
+            SwiftEnumSerializer.Case("accessEnded", AccessEnded::class, AccessEnded.serializer()),
+            SwiftEnumSerializer.Case("review", Review::class, Review.serializer()),
+            SwiftEnumSerializer.Case("repository", Repository::class, Repository.serializer()),
+            SwiftEnumSerializer.Case("status", Status::class, Status.serializer()),
+            SwiftEnumSerializer.Case("settings", Settings::class, Settings.serializer()),
+            SwiftEnumSerializer.Case("problem", Problem::class, Problem.serializer()),
+            SwiftEnumSerializer.Case("about", About::class, About.serializer()),
+            SwiftEnumSerializer.Case("menu", Menu::class, Menu.serializer()),
+        ),
+    )
+}
+
+@Serializable
+public data class GalleryPresentation(
+    val drawn: Long,
+    val fixtures: List<ScreenFixture>,
+)
+
 @Serializable
 public data class Handle(
     val id: Long,
     val generation: Long,
 )
+
+@Serializable
+public data class IssueLine(
+    val symbol: ScreenSymbol,
+    val tone: ScreenTone,
+    val title: String,
+    val message: String,
+    val changes: List<ChangeLine>,
+    val more: String? = null,
+    val action: ActionButton<AccessAction>? = null,
+)
+
+@Serializable
+public data class LabeledValue(
+    val label: String,
+    val value: String,
+    val verbatim: Boolean,
+)
+
+@Serializable
+public data class LedgerRow(
+    val id: String,
+    val text: String,
+)
+
+@Serializable
+public data class LinkPresentation<App>(
+    val snapshot: LinkSnapshot,
+    val repository: RepositoryPresentation? = null,
+    val banner: AccessBanner? = null,
+    val ended: AccessEndedPresentation? = null,
+    val status: StatusPresentation,
+    val signOutProblem: ProblemPresentation? = null,
+    val app: App? = null,
+)
+
+@Serializable
+public data class LinkSnapshot(
+    val phase: LinkSnapshot.Phase,
+    val server: String? = null,
+    val repository: String? = null,
+    val scopes: List<String>? = null,
+    val accessEnds: String? = null,
+    val generation: Long,
+    val online: Boolean? = null,
+    val packages: Map<String, Long>,
+    val waiting: Long,
+    val refused: Long,
+) {
+    @Serializable
+    public enum class Phase {
+        @SerialName("signedOut") signedOut,
+        @SerialName("signedIn") signedIn,
+        @SerialName("accessEnded") accessEnded,
+    }
+}
 
 @Serializable(with = ListMessage.Serializer::class)
 public sealed interface ListMessage {
@@ -428,6 +726,28 @@ public data class NetworkPath(
 )
 
 @Serializable
+public enum class NotificationPermission {
+    @SerialName("notAsked") notAsked,
+    @SerialName("off") off,
+    @SerialName("notTimeSensitive") notTimeSensitive,
+    @SerialName("on") on,
+}
+
+@Serializable
+public data class NotificationRequest(
+    val id: String,
+    val title: String,
+    val subtitle: String? = null,
+    val body: String? = null,
+    val fireAt: String? = null,
+    val thread: String? = null,
+    val category: String? = null,
+    val timeSensitive: Boolean,
+    val showsWhileActive: Boolean,
+    val userInfo: Map<String, String>,
+)
+
+@Serializable
 public enum class Op {
     @SerialName("open") open,
     @SerialName("opened") opened,
@@ -454,8 +774,86 @@ public data class OpenRequest(
 )
 
 @Serializable
+public data class PackageLine(
+    val id: String,
+    val row: LabeledValue,
+)
+
+@Serializable
+public data class ProblemFix(
+    val title: String,
+    val action: ProblemFix.Action,
+) {
+    @Serializable
+    public enum class Action {
+        @SerialName("signInAgain") signInAgain,
+        @SerialName("review") review,
+        @SerialName("tryAgain") tryAgain,
+    }
+}
+
+@Serializable
+public data class ProblemPresentation(
+    val title: String? = null,
+    val message: String,
+    val tone: ScreenTone,
+    val symbol: ScreenSymbol,
+    val fix: ProblemFix? = null,
+)
+
+@Serializable
+public data class RefusedWrite(
+    val id: String,
+    val label: String,
+    val status: String,
+    val recordID: String,
+    val words: String? = null,
+    val retry: ActionButton<StatusAction>,
+    val discard: ActionButton<StatusAction>,
+)
+
+@Serializable
+public data class RefusedWrites(
+    val title: String,
+    val rows: List<RefusedWrite>,
+    val footer: String,
+)
+
+@Serializable
+public data class RepositoryPresentation(
+    val title: String,
+    val server: LabeledValue,
+    val repository: LabeledValue,
+    val serverVersion: LabeledValue? = null,
+    val approved: ApprovedAccess? = null,
+    val access: LabeledValue? = null,
+    val changeAccess: String? = null,
+    val unrevoked: List<ProblemPresentation>,
+    val signOut: String,
+    val footer: String,
+)
+
+@Serializable
 public data class ResyncRequest(
     val list: String,
+)
+
+@Serializable
+public data class ReviewPresentation(
+    val title: String,
+    val intro: String,
+    val sections: List<ReviewSection>,
+    val continueTitle: String,
+    val footer: String,
+    val cancelTitle: String,
+)
+
+@Serializable
+public data class ReviewSection(
+    val id: String,
+    val title: String,
+    val rows: List<ChangeLine>,
+    val footer: String? = null,
 )
 
 @Serializable
@@ -463,6 +861,62 @@ public data class RouteCommand(
     val path: List<String>,
     val command: @Serializable(with = ExactJson::class) JsonElement,
 )
+
+@Serializable
+public data class ScreenFixture(
+    val name: String,
+    val presentation: FixturePresentation,
+)
+
+@Serializable
+public enum class ScreenKind {
+    @SerialName("connect") connect,
+    @SerialName("serverTooOld") serverTooOld,
+    @SerialName("accessBanner") accessBanner,
+    @SerialName("accessEnded") accessEnded,
+    @SerialName("review") review,
+    @SerialName("repository") repository,
+    @SerialName("status") status,
+    @SerialName("settings") settings,
+    @SerialName("problem") problem,
+    @SerialName("about") about,
+    @SerialName("menu") menu,
+}
+
+@Serializable
+public enum class ScreenSymbol {
+    @SerialName("serverUpdate") serverUpdate,
+    @SerialName("warning") warning,
+    @SerialName("approval") approval,
+    @SerialName("clock") clock,
+    @SerialName("ended") ended,
+    @SerialName("offline") offline,
+    @SerialName("key") key,
+    @SerialName("server") server,
+    @SerialName("found") found,
+    @SerialName("accessEnded") accessEnded,
+    @SerialName("allowed") allowed,
+    @SerialName("leftOut") leftOut,
+    @SerialName("install") install,
+    @SerialName("upgrade") upgrade,
+    @SerialName("create") create,
+    @SerialName("webhook") webhook,
+    @SerialName("cannot") cannot,
+    @SerialName("upToDate") upToDate,
+    @SerialName("sending") sending,
+    @SerialName("device") device,
+    @SerialName("problem") problem,
+}
+
+@Serializable
+public enum class ScreenTone {
+    @SerialName("quiet") quiet,
+    @SerialName("positive") positive,
+    @SerialName("informative") informative,
+    @SerialName("supporting") supporting,
+    @SerialName("caution") caution,
+    @SerialName("critical") critical,
+}
 
 @Serializable(with = SecureItem.Serializer::class)
 public sealed interface SecureItem {
@@ -514,6 +968,345 @@ public sealed interface SecureOutcome {
     )
 }
 
+@Serializable
+public data class ServerTooOldPresentation(
+    val symbol: ScreenSymbol,
+    val title: String,
+    val summary: String,
+    val cannotTitle: String? = null,
+    val missing: List<ChangeLine>,
+    val note: String,
+    val tryAgain: String? = null,
+    val changeServer: String? = null,
+)
+
+@Serializable(with = SettingsCommand.Serializer::class)
+public sealed interface SettingsCommand {
+    @Serializable
+    public data class Toggle(
+        val row: SettingsRowID,
+        val on: Boolean,
+    ) : SettingsCommand
+
+    @Serializable
+    public data class Choose(
+        val row: SettingsRowID,
+        val option: String,
+    ) : SettingsCommand
+
+    @Serializable
+    public data class Open(
+        val row: SettingsRowID,
+    ) : SettingsCommand
+
+    @Serializable
+    public data class Perform(
+        val row: SettingsRowID,
+    ) : SettingsCommand
+
+    public object Serializer : KSerializer<SettingsCommand> by SwiftEnumSerializer(
+        "SettingsCommand",
+        listOf(
+            SwiftEnumSerializer.Case("toggle", Toggle::class, Toggle.serializer()),
+            SwiftEnumSerializer.Case("choose", Choose::class, Choose.serializer()),
+            SwiftEnumSerializer.Case("open", Open::class, Open.serializer()),
+            SwiftEnumSerializer.Case("perform", Perform::class, Perform.serializer()),
+        ),
+    )
+}
+
+@Serializable
+public data class SettingsOption(
+    val id: String,
+    val label: String,
+)
+
+@Serializable
+public data class SettingsPresentation(
+    val title: String,
+    val sections: List<SettingsSection>,
+)
+
+@Serializable
+public data class SettingsRow(
+    val id: SettingsRowID,
+    val label: String,
+    val detail: String? = null,
+    val control: SettingsRow.Control,
+) {
+    @Serializable(with = SettingsRow.Control.Serializer::class)
+    public sealed interface Control {
+        @Serializable
+        public data class Toggle(
+            @SerialName("_0") val value: Boolean,
+        ) : Control
+
+        @Serializable
+        public data class Choice(
+            val selected: String,
+            val options: List<SettingsOption>,
+        ) : Control
+
+        @Serializable
+        public data class Value(
+            @SerialName("_0") val value: String,
+            val verbatim: Boolean,
+        ) : Control
+
+        @Serializable
+        public data object Link : Control
+
+        @Serializable
+        public data class Action(
+            val destructive: Boolean,
+            val enabled: Boolean,
+        ) : Control
+
+        @Serializable
+        public data class Note(
+            @SerialName("_0") val value: ScreenTone,
+        ) : Control
+
+        @Serializable
+        public data class Problem(
+            @SerialName("_0") val value: ProblemPresentation,
+        ) : Control
+
+        public object Serializer : KSerializer<SettingsRow.Control> by SwiftEnumSerializer(
+            "SettingsRow.Control",
+            listOf(
+                SwiftEnumSerializer.Case("toggle", Toggle::class, Toggle.serializer()),
+                SwiftEnumSerializer.Case("choice", Choice::class, Choice.serializer()),
+                SwiftEnumSerializer.Case("value", Value::class, Value.serializer()),
+                SwiftEnumSerializer.Case("link", Link::class, Link.serializer()),
+                SwiftEnumSerializer.Case("action", Action::class, Action.serializer()),
+                SwiftEnumSerializer.Case("note", Note::class, Note.serializer()),
+                SwiftEnumSerializer.Case("problem", Problem::class, Problem.serializer()),
+            ),
+        )
+    }
+}
+
+@Serializable(with = SettingsRowID.Serializer::class)
+public sealed interface SettingsRowID {
+    @Serializable
+    public data class App(
+        @SerialName("_0") val value: String,
+    ) : SettingsRowID
+
+    @Serializable
+    public data class Status(
+        @SerialName("_0") val value: SettingsRowID.StatusRow,
+    ) : SettingsRowID
+
+    @Serializable
+    public data class Repository(
+        @SerialName("_0") val value: SettingsRowID.RepositoryRow,
+    ) : SettingsRowID
+
+    @Serializable
+    public data class Storage(
+        @SerialName("_0") val value: SettingsRowID.StorageRow,
+    ) : SettingsRowID
+
+    @Serializable
+    public data class About(
+        @SerialName("_0") val value: SettingsRowID.AboutRow,
+    ) : SettingsRowID
+
+    public object Serializer : KSerializer<SettingsRowID> by SwiftEnumSerializer(
+        "SettingsRowID",
+        listOf(
+            SwiftEnumSerializer.Case("app", App::class, App.serializer()),
+            SwiftEnumSerializer.Case("status", Status::class, Status.serializer()),
+            SwiftEnumSerializer.Case("repository", Repository::class, Repository.serializer()),
+            SwiftEnumSerializer.Case("storage", Storage::class, Storage.serializer()),
+            SwiftEnumSerializer.Case("about", About::class, About.serializer()),
+        ),
+    )
+
+    @Serializable(with = SettingsRowID.AboutRow.Serializer::class)
+    public sealed interface AboutRow {
+        @Serializable
+        public data object Version : AboutRow
+
+        @Serializable
+        public data object Channel : AboutRow
+
+        @Serializable
+        public data object Check : AboutRow
+
+        @Serializable
+        public data object Update : AboutRow
+
+        public object Serializer : KSerializer<SettingsRowID.AboutRow> by SwiftEnumSerializer(
+            "SettingsRowID.AboutRow",
+            listOf(
+                SwiftEnumSerializer.Case("version", Version::class, Version.serializer()),
+                SwiftEnumSerializer.Case("channel", Channel::class, Channel.serializer()),
+                SwiftEnumSerializer.Case("check", Check::class, Check.serializer()),
+                SwiftEnumSerializer.Case("update", Update::class, Update.serializer()),
+            ),
+        )
+    }
+
+    @Serializable(with = SettingsRowID.RepositoryRow.Serializer::class)
+    public sealed interface RepositoryRow {
+        @Serializable
+        public data object Server : RepositoryRow
+
+        @Serializable
+        public data object Repository : RepositoryRow
+
+        @Serializable
+        public data object ServerVersion : RepositoryRow
+
+        @Serializable
+        public data class Scope(
+            @SerialName("_0") val value: String,
+        ) : RepositoryRow
+
+        @Serializable
+        public data object Until : RepositoryRow
+
+        @Serializable
+        public data object Access : RepositoryRow
+
+        @Serializable
+        public data object ChangeAccess : RepositoryRow
+
+        @Serializable
+        public data class Unrevoked(
+            @SerialName("_0") val value: Long,
+        ) : RepositoryRow
+
+        @Serializable
+        public data object SignOut : RepositoryRow
+
+        public object Serializer : KSerializer<SettingsRowID.RepositoryRow> by SwiftEnumSerializer(
+            "SettingsRowID.RepositoryRow",
+            listOf(
+                SwiftEnumSerializer.Case("server", Server::class, Server.serializer()),
+                SwiftEnumSerializer.Case("repository", Repository::class, Repository.serializer()),
+                SwiftEnumSerializer.Case("serverVersion", ServerVersion::class, ServerVersion.serializer()),
+                SwiftEnumSerializer.Case("scope", Scope::class, Scope.serializer()),
+                SwiftEnumSerializer.Case("until", Until::class, Until.serializer()),
+                SwiftEnumSerializer.Case("access", Access::class, Access.serializer()),
+                SwiftEnumSerializer.Case("changeAccess", ChangeAccess::class, ChangeAccess.serializer()),
+                SwiftEnumSerializer.Case("unrevoked", Unrevoked::class, Unrevoked.serializer()),
+                SwiftEnumSerializer.Case("signOut", SignOut::class, SignOut.serializer()),
+            ),
+        )
+    }
+
+    @Serializable(with = SettingsRowID.StatusRow.Serializer::class)
+    public sealed interface StatusRow {
+        @Serializable
+        public data object Sentence : StatusRow
+
+        @Serializable
+        public data object Problem : StatusRow
+
+        @Serializable
+        public data class Package(
+            @SerialName("_0") val value: String,
+        ) : StatusRow
+
+        @Serializable
+        public data class Action(
+            @SerialName("_0") val value: StatusAction,
+        ) : StatusRow
+
+        @Serializable
+        public data class Refused(
+            @SerialName("_0") val value: String,
+        ) : StatusRow
+
+        @Serializable
+        public data class RefusedStatus(
+            @SerialName("_0") val value: String,
+        ) : StatusRow
+
+        public object Serializer : KSerializer<SettingsRowID.StatusRow> by SwiftEnumSerializer(
+            "SettingsRowID.StatusRow",
+            listOf(
+                SwiftEnumSerializer.Case("sentence", Sentence::class, Sentence.serializer()),
+                SwiftEnumSerializer.Case("problem", Problem::class, Problem.serializer()),
+                SwiftEnumSerializer.Case("package", Package::class, Package.serializer()),
+                SwiftEnumSerializer.Case("action", Action::class, Action.serializer()),
+                SwiftEnumSerializer.Case("refused", Refused::class, Refused.serializer()),
+                SwiftEnumSerializer.Case("refusedStatus", RefusedStatus::class, RefusedStatus.serializer()),
+            ),
+        )
+    }
+
+    @Serializable(with = SettingsRowID.StorageRow.Serializer::class)
+    public sealed interface StorageRow {
+        @Serializable
+        public data class Area(
+            @SerialName("_0") val value: @Serializable(with = ExactJson::class) JsonElement,
+        ) : StorageRow
+
+        @Serializable
+        public data object Clear : StorageRow
+
+        public object Serializer : KSerializer<SettingsRowID.StorageRow> by SwiftEnumSerializer(
+            "SettingsRowID.StorageRow",
+            listOf(
+                SwiftEnumSerializer.Case("area", Area::class, Area.serializer()),
+                SwiftEnumSerializer.Case("clear", Clear::class, Clear.serializer()),
+            ),
+        )
+    }
+}
+
+@Serializable
+public data class SettingsSection(
+    val id: SettingsSectionID,
+    val title: String? = null,
+    val rows: List<SettingsRow>,
+    val footer: String? = null,
+)
+
+@Serializable(with = SettingsSectionID.Serializer::class)
+public sealed interface SettingsSectionID {
+    @Serializable
+    public data class App(
+        @SerialName("_0") val value: String,
+    ) : SettingsSectionID
+
+    @Serializable
+    public data object Status : SettingsSectionID
+
+    @Serializable
+    public data object Refused : SettingsSectionID
+
+    @Serializable
+    public data object Repository : SettingsSectionID
+
+    @Serializable
+    public data object ApprovedAccess : SettingsSectionID
+
+    @Serializable
+    public data object Storage : SettingsSectionID
+
+    @Serializable
+    public data object About : SettingsSectionID
+
+    public object Serializer : KSerializer<SettingsSectionID> by SwiftEnumSerializer(
+        "SettingsSectionID",
+        listOf(
+            SwiftEnumSerializer.Case("app", App::class, App.serializer()),
+            SwiftEnumSerializer.Case("status", Status::class, Status.serializer()),
+            SwiftEnumSerializer.Case("refused", Refused::class, Refused.serializer()),
+            SwiftEnumSerializer.Case("repository", Repository::class, Repository.serializer()),
+            SwiftEnumSerializer.Case("approvedAccess", ApprovedAccess::class, ApprovedAccess.serializer()),
+            SwiftEnumSerializer.Case("storage", Storage::class, Storage.serializer()),
+            SwiftEnumSerializer.Case("about", About::class, About.serializer()),
+        ),
+    )
+}
+
 @Serializable(with = StartAnswer.Serializer::class)
 public sealed interface StartAnswer {
     @Serializable
@@ -545,6 +1338,57 @@ public data class StartConfig(
     val cache: String,
     val sdk: Long,
     val debug: Boolean,
+)
+
+@Serializable(with = StatusAction.Serializer::class)
+public sealed interface StatusAction {
+    @Serializable
+    public data object SendNow : StatusAction
+
+    @Serializable
+    public data object Review : StatusAction
+
+    @Serializable
+    public data object SignIn : StatusAction
+
+    @Serializable
+    public data object Renew : StatusAction
+
+    @Serializable
+    public data class Retry(
+        @SerialName("_0") val value: String,
+    ) : StatusAction
+
+    @Serializable
+    public data class Discard(
+        @SerialName("_0") val value: String,
+    ) : StatusAction
+
+    public object Serializer : KSerializer<StatusAction> by SwiftEnumSerializer(
+        "StatusAction",
+        listOf(
+            SwiftEnumSerializer.Case("sendNow", SendNow::class, SendNow.serializer()),
+            SwiftEnumSerializer.Case("review", Review::class, Review.serializer()),
+            SwiftEnumSerializer.Case("signIn", SignIn::class, SignIn.serializer()),
+            SwiftEnumSerializer.Case("renew", Renew::class, Renew.serializer()),
+            SwiftEnumSerializer.Case("retry", Retry::class, Retry.serializer()),
+            SwiftEnumSerializer.Case("discard", Discard::class, Discard.serializer()),
+        ),
+    )
+}
+
+@Serializable
+public data class StatusPresentation(
+    val title: String,
+    val symbol: ScreenSymbol,
+    val tone: ScreenTone,
+    val sentence: String,
+    val problem: ProblemPresentation? = null,
+    val packages: List<PackageLine>,
+    val actions: List<ActionButton<StatusAction>>,
+    val busy: Boolean,
+    val footer: String? = null,
+    val refused: RefusedWrites? = null,
 )
 
 @Serializable(with = TransportChunk.Serializer::class)
@@ -633,6 +1477,47 @@ public data class TransportResponse(
     val bodyFile: String? = null,
 )
 
+@Serializable
+public data class UpdateOffer(
+    val title: String,
+    val message: String,
+    val install: String,
+    val later: String,
+)
+
+public object ConnectController {
+    @Serializable(with = ConnectController.Command.Serializer::class)
+    public sealed interface Command {
+        @Serializable
+        public data class Edit(
+            @SerialName("_0") val value: String,
+        ) : Command
+
+        @Serializable
+        public data object Proceed : Command
+
+        @Serializable
+        public data object CancelSignIn : Command
+
+        @Serializable
+        public data object ChangeServer : Command
+
+        @Serializable
+        public data object CheckAgain : Command
+
+        public object Serializer : KSerializer<ConnectController.Command> by SwiftEnumSerializer(
+            "ConnectController.Command",
+            listOf(
+                SwiftEnumSerializer.Case("edit", Edit::class, Edit.serializer()),
+                SwiftEnumSerializer.Case("proceed", Proceed::class, Proceed.serializer()),
+                SwiftEnumSerializer.Case("cancelSignIn", CancelSignIn::class, CancelSignIn.serializer()),
+                SwiftEnumSerializer.Case("changeServer", ChangeServer::class, ChangeServer.serializer()),
+                SwiftEnumSerializer.Case("checkAgain", CheckAgain::class, CheckAgain.serializer()),
+            ),
+        )
+    }
+}
+
 public object Counter {
     @Serializable(with = Counter.Command.Serializer::class)
     public sealed interface Command {
@@ -656,39 +1541,198 @@ public object Counter {
     )
 }
 
+public object GalleryRoot {
+    @Serializable(with = GalleryRoot.Command.Serializer::class)
+    public sealed interface Command {
+        @Serializable
+        public data object Refresh : Command
+
+        public object Serializer : KSerializer<GalleryRoot.Command> by SwiftEnumSerializer(
+            "GalleryRoot.Command",
+            listOf(
+                SwiftEnumSerializer.Case("refresh", Refresh::class, Refresh.serializer()),
+            ),
+        )
+    }
+}
+
+public object Ledger {
+    @Serializable(with = Ledger.Command.Serializer::class)
+    public sealed interface Command {
+        @Serializable
+        public data class Add(
+            val id: String,
+            val text: String,
+        ) : Command
+
+        @Serializable
+        public data class Change(
+            val id: String,
+            val text: String,
+        ) : Command
+
+        @Serializable
+        public data class Remove(
+            val id: String,
+        ) : Command
+
+        @Serializable
+        public data class Note(
+            val value: @Serializable(with = ExactJson::class) JsonElement,
+        ) : Command
+
+        public object Serializer : KSerializer<Ledger.Command> by SwiftEnumSerializer(
+            "Ledger.Command",
+            listOf(
+                SwiftEnumSerializer.Case("add", Add::class, Add.serializer()),
+                SwiftEnumSerializer.Case("change", Change::class, Change.serializer()),
+                SwiftEnumSerializer.Case("remove", Remove::class, Remove.serializer()),
+                SwiftEnumSerializer.Case("note", Note::class, Note.serializer()),
+            ),
+        )
+    }
+
+    @Serializable
+    public data class Presentation(
+        val rows: KeyedList<LedgerRow>,
+        val count: String,
+        val drawn: String,
+        val note: @Serializable(with = ExactJson::class) JsonElement? = null,
+    )
+}
+
+public object LinkController {
+    @Serializable(with = LinkController.Command.Serializer::class)
+    public sealed interface Command {
+        @Serializable
+        public data object SignedIn : Command
+
+        @Serializable
+        public data class Refresh(
+            val force: Boolean,
+        ) : Command
+
+        @Serializable
+        public data object SendNow : Command
+
+        @Serializable
+        public data class Retry(
+            @SerialName("_0") val value: String,
+        ) : Command
+
+        @Serializable
+        public data class Discard(
+            @SerialName("_0") val value: String,
+        ) : Command
+
+        @Serializable
+        public data object SignOut : Command
+
+        public object Serializer : KSerializer<LinkController.Command> by SwiftEnumSerializer(
+            "LinkController.Command",
+            listOf(
+                SwiftEnumSerializer.Case("signedIn", SignedIn::class, SignedIn.serializer()),
+                SwiftEnumSerializer.Case("refresh", Refresh::class, Refresh.serializer()),
+                SwiftEnumSerializer.Case("sendNow", SendNow::class, SendNow.serializer()),
+                SwiftEnumSerializer.Case("retry", Retry::class, Retry.serializer()),
+                SwiftEnumSerializer.Case("discard", Discard::class, Discard.serializer()),
+                SwiftEnumSerializer.Case("signOut", SignOut::class, SignOut.serializer()),
+            ),
+        )
+    }
+}
+
 /** Every bridged value's serializer by its Swift name, for the round-trip fixtures. */
 public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
+    "AboutPresentation" to AboutPresentation.serializer(),
+    "AccessAction" to AccessAction.Serializer,
+    "AccessAction.Offer" to AccessAction.Offer.serializer(),
+    "AccessBanner" to AccessBanner.serializer(),
+    "AccessEndedPresentation" to AccessEndedPresentation.serializer(),
+    "AppMenuPresentation" to AppMenuPresentation.serializer(),
+    "AppMenuSection" to AppMenuSection.serializer(),
+    "ApprovedAccess" to ApprovedAccess.serializer(),
+    "ApprovedScope" to ApprovedScope.serializer(),
     "BridgeFailure" to BridgeFailure.serializer(),
     "BridgeFailure.Code" to BridgeFailure.Code.serializer(),
     "BridgeQuery" to BridgeQuery.Serializer,
     "BridgeStats" to BridgeStats.serializer(),
+    "ChangeLine" to ChangeLine.serializer(),
     "CheckCommand" to CheckCommand.Serializer,
     "CheckPresentation" to CheckPresentation.serializer(),
     "CheckResult" to CheckResult.Serializer,
     "CheckRow" to CheckRow.serializer(),
     "CheckTransport" to CheckTransport.serializer(),
+    "ConnectController.Command" to ConnectController.Command.Serializer,
+    "ConnectPresentation" to ConnectPresentation.serializer(),
+    "ConnectPresentation.Button" to ConnectPresentation.Button.serializer(),
+    "ConnectPresentation.Door" to ConnectPresentation.Door.serializer(),
+    "ConnectPresentation.Field" to ConnectPresentation.Field.serializer(),
+    "ConnectPresentation.Footer" to ConnectPresentation.Footer.serializer(),
     "Counter.Command" to Counter.Command.Serializer,
     "Counter.Presentation" to Counter.Presentation.serializer(),
     "DNSAnswer" to DNSAnswer.Serializer,
     "DeviceRequest" to DeviceRequest.Serializer,
     "Envelope" to Envelope.serializer(),
     "EnvironmentUpdate" to EnvironmentUpdate.serializer(),
+    "FixturePresentation" to FixturePresentation.Serializer,
+    "GalleryPresentation" to GalleryPresentation.serializer(),
+    "GalleryRoot.Command" to GalleryRoot.Command.Serializer,
     "Handle" to Handle.serializer(),
+    "IssueLine" to IssueLine.serializer(),
+    "LabeledValue" to LabeledValue.serializer(),
+    "Ledger.Command" to Ledger.Command.Serializer,
+    "Ledger.Presentation" to Ledger.Presentation.serializer(),
+    "LedgerRow" to LedgerRow.serializer(),
+    "LinkController.Command" to LinkController.Command.Serializer,
+    "LinkSnapshot" to LinkSnapshot.serializer(),
+    "LinkSnapshot.Phase" to LinkSnapshot.Phase.serializer(),
     "ListMessage" to ListMessage.Serializer,
     "ListRow" to ListRow.serializer(),
     "NetworkPath" to NetworkPath.serializer(),
+    "NotificationPermission" to NotificationPermission.serializer(),
+    "NotificationRequest" to NotificationRequest.serializer(),
     "Op" to Op.serializer(),
     "OpenRequest" to OpenRequest.serializer(),
+    "PackageLine" to PackageLine.serializer(),
+    "ProblemFix" to ProblemFix.serializer(),
+    "ProblemFix.Action" to ProblemFix.Action.serializer(),
+    "ProblemPresentation" to ProblemPresentation.serializer(),
+    "RefusedWrite" to RefusedWrite.serializer(),
+    "RefusedWrites" to RefusedWrites.serializer(),
+    "RepositoryPresentation" to RepositoryPresentation.serializer(),
     "ResyncRequest" to ResyncRequest.serializer(),
+    "ReviewPresentation" to ReviewPresentation.serializer(),
+    "ReviewSection" to ReviewSection.serializer(),
     "RouteCommand" to RouteCommand.serializer(),
+    "ScreenFixture" to ScreenFixture.serializer(),
+    "ScreenKind" to ScreenKind.serializer(),
+    "ScreenSymbol" to ScreenSymbol.serializer(),
+    "ScreenTone" to ScreenTone.serializer(),
     "SecureItem" to SecureItem.Serializer,
     "SecureOutcome" to SecureOutcome.Serializer,
+    "ServerTooOldPresentation" to ServerTooOldPresentation.serializer(),
+    "SettingsCommand" to SettingsCommand.Serializer,
+    "SettingsOption" to SettingsOption.serializer(),
+    "SettingsPresentation" to SettingsPresentation.serializer(),
+    "SettingsRow" to SettingsRow.serializer(),
+    "SettingsRow.Control" to SettingsRow.Control.Serializer,
+    "SettingsRowID" to SettingsRowID.Serializer,
+    "SettingsRowID.AboutRow" to SettingsRowID.AboutRow.Serializer,
+    "SettingsRowID.RepositoryRow" to SettingsRowID.RepositoryRow.Serializer,
+    "SettingsRowID.StatusRow" to SettingsRowID.StatusRow.Serializer,
+    "SettingsRowID.StorageRow" to SettingsRowID.StorageRow.Serializer,
+    "SettingsSection" to SettingsSection.serializer(),
+    "SettingsSectionID" to SettingsSectionID.Serializer,
     "StartAnswer" to StartAnswer.Serializer,
     "StartConfig" to StartConfig.serializer(),
+    "StatusAction" to StatusAction.Serializer,
+    "StatusPresentation" to StatusPresentation.serializer(),
     "TransportChunk" to TransportChunk.Serializer,
     "TransportFailureKind" to TransportFailureKind.serializer(),
     "TransportHeader" to TransportHeader.serializer(),
     "TransportOutcome" to TransportOutcome.Serializer,
     "TransportRequest" to TransportRequest.serializer(),
     "TransportResponse" to TransportResponse.serializer(),
+    "UpdateOffer" to UpdateOffer.serializer(),
 )

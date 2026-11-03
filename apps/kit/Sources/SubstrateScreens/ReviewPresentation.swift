@@ -1,7 +1,9 @@
+import SubstrateCore
+
 /// What the app will ask the owner for, before it opens the browser: the
 /// access it needs and what it sets up on their server, in the words the
 /// approval page uses, so nothing there is a surprise.
-public struct ReviewPresentation: Codable, Hashable, Sendable {
+public struct ReviewPresentation: Bridged, Hashable, Sendable {
     public var title: String
     public var intro: String
     public var sections: [ReviewSection]
@@ -22,7 +24,7 @@ public struct ReviewPresentation: Codable, Hashable, Sendable {
 
 /// One list of a review: the access asked for, what was left out last
 /// time, or what is set up on the server.
-public struct ReviewSection: Codable, Hashable, Sendable, Identifiable {
+public struct ReviewSection: Bridged, Hashable, Sendable, Identifiable {
     public var id: String
     public var title: String
     public var rows: [ChangeLine]

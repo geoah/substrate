@@ -1,11 +1,12 @@
 import Foundation
+import SubstrateCore
 
 /// What every controller may know about the connection to the repository,
 /// delivered down the tree as `linkChanged`. It carries no secret: the token
 /// stays inside the session store and the transport, so a snapshot can be
 /// presented, logged, or sent over the Android bridge.
-public struct LinkSnapshot: Codable, Equatable, Sendable {
-    public enum Phase: String, Codable, Equatable, Sendable {
+public struct LinkSnapshot: Bridged, Equatable {
+    public enum Phase: String, Bridged, Equatable {
         case signedOut
         case signedIn
         /// The token was refused or its access ended: only signing in again

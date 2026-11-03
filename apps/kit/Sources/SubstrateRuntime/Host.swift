@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// One controller as it runs: its state, its transient state, its
 /// presentation, its journal, its effects in flight and its children.
@@ -335,6 +336,17 @@ final class Host<C: Controller>: @unchecked Sendable {
         }
     }
 
+    /// The locale or the time zone moved: this controller and every one
+    /// under it is presented again, since each presenter reads them.
+    func environmentChanged() {
+        guard !closed else { return }
+        dirty = true
+        for key in children.keys.sorted() {
+            children[key]?.environmentChanged()
+        }
+        loop.requestPresent(.now)
+    }
+
     // MARK: Composition
 
     /// A new snapshot from the link above: this controller's event for it,
@@ -420,9 +432,9 @@ final class Host<C: Controller>: @unchecked Sendable {
     func route(_ path: ArraySlice<ChildKey>, command: RoutedValue) throws {
         guard let first = path.first else {
             switch command {
-            case let .encoded(data):
+            case let .encoded(json):
                 do {
-                    send(try JSONDecoder().decode(C.Command.self, from: data))
+                    send(try ValueCoding.decode(C.Command.self, from: json))
                 } catch {
                     throw UnroutableCommand(path: self.path, reason: "The command did not decode: \(error)")
                 }
@@ -481,6 +493,6 @@ final class Host<C: Controller>: @unchecked Sendable {
 /// A command on its way down a tree: as JSON from the Android bridge, or a
 /// value from Swift.
 enum RoutedValue: Sendable {
-    case encoded(Data)
+    case encoded(JSONValue)
     case value(any Sendable)
 }

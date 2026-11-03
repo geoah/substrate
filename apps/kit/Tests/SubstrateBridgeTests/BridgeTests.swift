@@ -5,7 +5,7 @@ import SubstrateCore
 import SubstrateRuntime
 import Testing
 
-@Suite("The bridge's runtime, off Android")
+@Suite("The bridge's runtime, off Android", .timeLimit(.minutes(2)))
 struct BridgeTests {
     @Test func aMessageBeforeStartIsRefused() throws {
         let runtime = BridgeRuntime()
@@ -326,5 +326,80 @@ struct BridgeTests {
         #expect(command["e"] == .number(JSONNumber("1e-400")!))
         #expect(command["big"] == .number(JSONNumber("2e999")!))
         #expect(try BridgeCodec.text(Envelope(op: .command, body: command)).contains(digits))
+    }
+
+    // MARK: A runtime root's keyed lists, environment and commands
+
+    func ledger(_ runtime: BridgeRuntime) throws -> Handle {
+        try #require(try post(runtime, Envelope(op: .open, body: ["root": "ledger"])).handle)
+    }
+
+    func send(_ runtime: BridgeRuntime, _ handle: Handle, _ command: Ledger.Command) throws {
+        let body = try BridgeCodec.value(RouteCommand(command: try BridgeCodec.value(command)))
+        #expect(try post(runtime, Envelope(op: .command, handle: handle, body: body)).op == .accepted)
+    }
+
+    @Test func aRuntimeRootsKeyedListCrossesApartWholeThenAsDeltasAndBeforeTheTreeThatNamesIt() async throws {
+        let (runtime, outlet, _) = started()
+        let handle = try ledger(runtime)
+        let first = try await outlet.next { $0.op == .presentation && $0.handle == handle }
+        #expect(first.body?["rows"] == ["$list": "rows", "revision": 1])
+        let whole = try #require(outlet.messages.firstIndex { $0.op == .list && $0.handle == handle })
+        #expect(whole < outlet.messages.firstIndex { $0.op == .presentation && $0.handle == handle }!)
+        #expect(try BridgeCodec.decode(ListMessage.self, from: outlet.messages[whole].body) == .whole(list: "rows", revision: 1, rows: []))
+
+        try send(runtime, handle, .add(id: "a", text: "A"))
+        let second = try await outlet.next { $0.op == .presentation && $0.body?["count"] == "1 row" }
+        #expect(second.body?["rows"] == ["$list": "rows", "revision": 2])
+        try send(runtime, handle, .add(id: "b", text: "B"))
+        try send(runtime, handle, .change(id: "a", text: "A again"))
+        _ = try await outlet.next { $0.op == .presentation && $0.body?["rows"]?["revision"] == 4 }
+        let lists = try outlet.messages.filter { $0.op == .list }.map { try BridgeCodec.decode(ListMessage.self, from: $0.body) }
+        // Every revision crossed, in order, each a delta of only what moved.
+        #expect(lists == [
+            .whole(list: "rows", revision: 1, rows: []),
+            .delta(list: "rows", base: 1, revision: 2, inserted: [ListRow(id: "a", value: ["id": "a", "text": "A"])], changed: [],
+                   removed: [], order: ["a"]),
+            .delta(list: "rows", base: 2, revision: 3, inserted: [ListRow(id: "b", value: ["id": "b", "text": "B"])], changed: [],
+                   removed: [], order: ["a", "b"]),
+            .delta(list: "rows", base: 3, revision: 4, inserted: [], changed: [ListRow(id: "a", value: ["id": "a", "text": "A again"])],
+                   removed: [], order: ["a", "b"]),
+        ])
+        // Each tree came after the list revision it names.
+        for (index, message) in outlet.messages.enumerated() where message.op == .presentation {
+            let named = try #require(message.body?["rows"]?["revision"]?.int)
+            let sent = outlet.messages[..<index].filter { $0.op == .list }.count
+            #expect(named == sent, "a tree named revision \(named) after \(sent) list messages")
+        }
+    }
+
+    @Test func aLocaleOrTimeZoneChangePresentsARuntimeRootAgainInIt() async throws {
+        let (runtime, outlet, _) = started()
+        let handle = try ledger(runtime)
+        let first = try await outlet.next { $0.op == .presentation && $0.handle == handle }
+        func drawn(_ locale: String, _ zone: String) -> String {
+            var style = Date.FormatStyle(date: .complete, time: .shortened)
+            style.locale = Locale(identifier: locale)
+            style.timeZone = TimeZone(identifier: zone)!
+            return Ledger.epoch.formatted(style)
+        }
+        #expect(first.body?["drawn"]?.string == drawn("en-GB", "Europe/London"))
+        let update = try BridgeCodec.value(EnvironmentUpdate(locale: "el-GR", timeZone: "Asia/Tokyo"))
+        #expect(try post(runtime, Envelope(op: .environment, body: update)).op == .accepted)
+        let again = try await outlet.next { $0.op == .presentation && $0.body?["drawn"]?.string == drawn("el-GR", "Asia/Tokyo") }
+        #expect(again.handle == handle)
+    }
+
+    @Test func aRuntimeRootsCommandKeepsEveryDigitOfAValueInIt() async throws {
+        let (runtime, outlet, _) = started()
+        let handle = try ledger(runtime)
+        _ = try await outlet.next { $0.op == .presentation && $0.handle == handle }
+        let digits = "1234567890123456789012345678901234567890.0987654321"
+        let text = #"{"v":1,"op":"command","handle":{"id":\#(handle.id),"generation":\#(handle.generation)},"#
+            + #""body":{"path":[],"command":{"note":{"value":{"n":\#(digits),"tiny":1e-400}}}}}"#
+        #expect(try BridgeCodec.decodeEnvelope(runtime.post(text)).op == .accepted)
+        let noted = try await outlet.next { $0.op == .presentation && $0.body?["note"] != nil }
+        #expect(noted.body?["note"]?["n"] == .number(JSONNumber(digits)!))
+        #expect(noted.body?["note"]?["tiny"] == .number(JSONNumber("1e-400")!))
     }
 }

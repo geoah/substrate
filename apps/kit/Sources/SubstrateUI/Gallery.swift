@@ -50,7 +50,29 @@ public enum Gallery {
             guard case let .about(about) = presentation else { return nil }
             return AnyView(Form { AboutScreen(about) }.formStyle(.grouped))
         },
+        .menu: { presentation in
+            guard case let .menu(menu) = presentation else { return nil }
+            // A Mac draws no tab bar, so the gallery, drawn on one, shows the
+            // sidebar; an iPhone shows the tabs.
+            return AnyView(AppMenuView(menu, title: ScreenFixtures.manifest.appName, layout: .sidebar, select: { _ in }) { section in
+                DestinationStandIn(section: section)
+            })
+        },
     ]
+
+    /// Where an app's own screen stands under its menu.
+    struct DestinationStandIn: View {
+        let section: AppMenuSection
+
+        var body: some View {
+            NavigationStack {
+                Text("The app's \(section.title) screen")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .navigationTitle(section.title)
+            }
+        }
+    }
 
     /// Where an app's own password form stands: the kit draws the door,
     /// the app the form.

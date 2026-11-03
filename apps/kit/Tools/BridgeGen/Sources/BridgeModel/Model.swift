@@ -8,8 +8,24 @@ public indirect enum BridgedType: Equatable, Sendable {
     case double
     /// `JSONValue`: any JSON, carried as it is.
     case json
+    /// An instant, as `ValueCoding` writes it: an RFC 3339 string.
+    case date
+    /// A `URL`, as its absolute string.
+    case url
+    /// A `UUID`, as its string.
+    case uuid
+    /// A type outside the model that crosses as the JSON its own coding
+    /// writes, for Kotlin to carry and never read (`bridge.json`'s `opaque`).
+    case opaque(String)
     /// A `Bridged` declaration, by its qualified Swift name (`BridgeFailure.Code`).
     case named(String)
+    /// A generic `Bridged` struct with its arguments (`ActionButton<AccessAction>`).
+    case generic(String, [BridgedType])
+    /// One of the enclosing generic struct's parameters.
+    case parameter(String)
+    /// SubstrateRuntime's `KeyedList` of a bridged row: `{revision, rows}`,
+    /// which a presentation crosses as a reference to the list apart.
+    case keyedList(BridgedType)
     case optional(BridgedType)
     case array(BridgedType)
     /// `[String: T]`.
@@ -23,7 +39,14 @@ public indirect enum BridgedType: Equatable, Sendable {
         case .int: "Int"
         case .double: "Double"
         case .json: "JSON"
+        case .date: "Date"
+        case .url: "URL"
+        case .uuid: "UUID"
+        case let .opaque(name): "JSON(\(name))"
         case let .named(name): name
+        case let .generic(name, arguments): "\(name)<\(arguments.map(\.spelling).joined(separator: ", "))>"
+        case let .parameter(name): name
+        case let .keyedList(row): "KeyedList<\(row.spelling)>"
         case let .optional(wrapped): "\(wrapped.spelling)?"
         case let .array(element): "[\(element.spelling)]"
         case let .dictionary(value): "[String: \(value.spelling)]"
@@ -32,8 +55,12 @@ public indirect enum BridgedType: Equatable, Sendable {
 }
 
 public struct Field: Equatable, Sendable {
+    /// The key Swift's synthesized coding writes: the label, or `_0`, `_1`
+    /// for a payload's unlabelled values by their place.
     public var name: String
     public var type: BridgedType
+
+    public var isUnlabelled: Bool { name.first == "_" && name.dropFirst().allSatisfy(\.isNumber) }
 }
 
 public struct Case: Equatable, Sendable {
@@ -57,6 +84,11 @@ public struct Declaration: Equatable, Sendable {
     public var kind: DeclarationKind
     public var fields: [Field]
     public var cases: [Case]
+    /// A generic struct's type parameters, in order.
+    public var parameters: [String] = []
+    /// Read from another configuration's sources (`uses`): known here, and
+    /// generated there.
+    public var external = false
 
     /// The declaration it is nested in, if any.
     public var parent: String? {
@@ -73,6 +105,9 @@ public struct Declaration: Equatable, Sendable {
 /// Every declaration the sources hold, sorted by name.
 public struct Model: Equatable, Sendable {
     public var declarations: [Declaration]
+
+    /// The declarations this configuration generates.
+    public var own: Model { Model(declarations: declarations.filter { !$0.external }) }
 
     public func declaration(_ name: String) -> Declaration? {
         declarations.first { $0.name == name }

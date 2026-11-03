@@ -18,14 +18,21 @@ substrateSwift {
 }
 
 // The round trip's middle leg reads the fixtures Swift wrote and writes
-// Kotlin's encoding of them where android.sh hands it back to Swift.
+// Kotlin's encoding of them where android.sh hands it back to Swift: the
+// bridge's values, and every shared screen's fixtures.
 tasks.withType<Test>().configureEach {
     val fixtures = layout.projectDirectory.file("../fixtures/roundtrip.json")
     val written = layout.buildDirectory.file("roundtrip/$name/kotlin.json")
+    val screens = layout.projectDirectory.file("../fixtures/screens.json")
+    val screensWritten = layout.buildDirectory.file("roundtrip/$name/screens.json")
     inputs.file(fixtures)
+    inputs.file(screens)
     outputs.file(written)
+    outputs.file(screensWritten)
     systemProperty("substrate.roundtrip.fixtures", fixtures.asFile.path)
     systemProperty("substrate.roundtrip.out", written.get().asFile.path)
+    systemProperty("substrate.screens.fixtures", screens.asFile.path)
+    systemProperty("substrate.screens.out", screensWritten.get().asFile.path)
 }
 
 dependencies {

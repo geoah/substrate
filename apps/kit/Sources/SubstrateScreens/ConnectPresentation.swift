@@ -1,9 +1,10 @@
 import SubstrateAPI
+import SubstrateCore
 
 /// The connect screen (§5.6): one field that takes a server's address or a
 /// repository's name, then the door the server found takes.
-public struct ConnectPresentation: Codable, Equatable, Sendable {
-    public enum Door: String, Codable, Equatable, Sendable {
+public struct ConnectPresentation: Bridged, Equatable, Sendable {
+    public enum Door: String, Bridged, Equatable, Sendable {
         /// No server found yet.
         case none
         /// The browser sign-in.
@@ -14,7 +15,7 @@ public struct ConnectPresentation: Codable, Equatable, Sendable {
         case tooOld
     }
 
-    public struct Field: Codable, Equatable, Sendable {
+    public struct Field: Bridged, Equatable, Sendable {
         public var text: String
         public var placeholder: String
         public var label: String
@@ -32,7 +33,7 @@ public struct ConnectPresentation: Codable, Equatable, Sendable {
         }
     }
 
-    public struct Button: Codable, Equatable, Sendable {
+    public struct Button: Bridged, Equatable, Sendable {
         public var title: String
         public var busy: Bool
         public var enabled: Bool
@@ -44,7 +45,7 @@ public struct ConnectPresentation: Codable, Equatable, Sendable {
         }
     }
 
-    public struct Footer: Codable, Equatable, Sendable {
+    public struct Footer: Bridged, Equatable, Sendable {
         /// "Server found: ada.example.com", once one is.
         public var found: String?
         /// "Repository: ada.example.com", where it was found from a name.

@@ -73,7 +73,7 @@ struct SettingsRowView: View {
                 HStack {
                     Text(row.label).foregroundStyle(Color.primary)
                     Spacer()
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                    Image(systemName: DesignTokens.Control.disclosure.systemName).font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                 }
             }
         case let .action(destructive, enabled):
@@ -102,8 +102,8 @@ struct SettingsRowView: View {
     /// something to act on, something that stopped; none for quiet words.
     static func mark(_ tone: ScreenTone) -> String? {
         switch tone {
-        case .positive: "checkmark"
-        case .informative: "info.circle"
+        case .positive: DesignTokens.Control.check.systemName
+        case .informative: DesignTokens.Control.info.systemName
         case .caution, .critical: ScreenSymbol.warning.systemName
         case .quiet, .supporting: nil
         }

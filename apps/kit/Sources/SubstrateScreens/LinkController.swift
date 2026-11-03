@@ -21,7 +21,7 @@ import SubstrateRuntime
 /// packages. The outbox's reports move the Status screen, and a write the
 /// app queues starts a flush wherever the link can send.
 public struct LinkController<App: LinkedApp>: Controller {
-    public enum Command: Codable, Equatable, Sendable {
+    public enum Command: Bridged, Equatable {
         /// A sign-in stored a new session: it is loaded again.
         case signedIn
         /// The status check, at most every `checkInterval` unless forced.

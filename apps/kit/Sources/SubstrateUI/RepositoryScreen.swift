@@ -25,7 +25,7 @@ public struct RepositoryScreen: View {
                         Label {
                             Text(scope.words).fixedSize(horizontal: false, vertical: true)
                         } icon: {
-                            Image(systemName: "checkmark").foregroundStyle(.green)
+                            Image(systemName: DesignTokens.Control.check.systemName).foregroundStyle(ScreenTone.positive.color)
                         }
                         .font(.footnote)
                         .foregroundStyle(.secondary)

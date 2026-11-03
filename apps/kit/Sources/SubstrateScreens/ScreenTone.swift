@@ -1,6 +1,8 @@
+import SubstrateCore
+
 /// What a mark or a card says by its colour, which each system's design
 /// tokens draw in its own (§7.4).
-public enum ScreenTone: String, Codable, Hashable, Sendable {
+public enum ScreenTone: String, Bridged, Hashable, Sendable, CaseIterable {
     /// No colour of its own: secondary text.
     case quiet
     /// Allowed, done, up to date.

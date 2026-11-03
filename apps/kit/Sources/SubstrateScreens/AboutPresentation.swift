@@ -1,5 +1,7 @@
+import SubstrateCore
+
 /// The build, its channel and an update when one is offered (§5.6's About).
-public struct AboutPresentation: Codable, Hashable, Sendable {
+public struct AboutPresentation: Bridged, Hashable, Sendable {
     public var title: String
     public var version: LabeledValue
     /// The feed the build follows; nil for a local build.
@@ -34,7 +36,7 @@ public struct AboutPresentation: Codable, Hashable, Sendable {
 }
 
 /// A newer build, offered.
-public struct UpdateOffer: Codable, Hashable, Sendable {
+public struct UpdateOffer: Bridged, Hashable, Sendable {
     public var title: String
     public var message: String
     public var install: String

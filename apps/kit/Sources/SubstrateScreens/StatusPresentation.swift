@@ -1,8 +1,11 @@
+import Foundation
+import SubstrateCore
+
 /// Where the app stands with its repository (§5.6's Status): a sentence,
 /// why where there is a reason (the server's or the system's words, never
 /// run into the sentence), each package, what the owner can do about it,
 /// and the writes the server refused, each with Retry and Discard.
-public struct StatusPresentation: Codable, Hashable, Sendable {
+public struct StatusPresentation: Bridged, Hashable, Sendable {
     public var title: String
     public var symbol: ScreenSymbol
     public var tone: ScreenTone
@@ -33,17 +36,17 @@ public struct StatusPresentation: Codable, Hashable, Sendable {
 }
 
 /// What the owner can do from the Status screen.
-public enum StatusAction: Codable, Hashable, Sendable {
+public enum StatusAction: Bridged, Hashable, Sendable {
     case sendNow
     case review
     case signIn
     case renew
-    case retry(ParkedWrite.ID)
-    case discard(ParkedWrite.ID)
+    case retry(UUID)
+    case discard(UUID)
 }
 
 /// The writes the server refused, listed for the owner.
-public struct RefusedWrites: Codable, Hashable, Sendable {
+public struct RefusedWrites: Bridged, Hashable, Sendable {
     public var title: String
     public var rows: [RefusedWrite]
     public var footer: String
@@ -57,8 +60,8 @@ public struct RefusedWrites: Codable, Hashable, Sendable {
 
 /// One refused write: what it was of, what was refused, its record, the
 /// server's words.
-public struct RefusedWrite: Codable, Hashable, Sendable, Identifiable {
-    public var id: ParkedWrite.ID
+public struct RefusedWrite: Bridged, Hashable, Sendable, Identifiable {
+    public var id: UUID
     /// The kind of record, in the app's words: "Training session", "Task".
     public var label: String
     /// What was refused: "Write refused", "Change refused", "Delete refused".
@@ -68,7 +71,7 @@ public struct RefusedWrite: Codable, Hashable, Sendable, Identifiable {
     public var retry: ActionButton<StatusAction>
     public var discard: ActionButton<StatusAction>
 
-    public init(id: ParkedWrite.ID, label: String, status: String, recordID: String, words: String?, retry: ActionButton<StatusAction>,
+    public init(id: UUID, label: String, status: String, recordID: String, words: String?, retry: ActionButton<StatusAction>,
                 discard: ActionButton<StatusAction>)
     {
         self.id = id
@@ -83,7 +86,7 @@ public struct RefusedWrite: Codable, Hashable, Sendable, Identifiable {
 
 /// A package the app needs, as the Status screen lists it: "Training
 /// package", "Version 2".
-public struct PackageLine: Codable, Hashable, Sendable, Identifiable {
+public struct PackageLine: Bridged, Hashable, Sendable, Identifiable {
     /// The package's id.
     public var id: String
     public var row: LabeledValue

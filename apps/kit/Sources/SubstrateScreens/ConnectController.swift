@@ -14,7 +14,7 @@ import SubstrateRuntime
 /// the app's own password door; one too old says what it lacks. Without a
 /// password door, a server the app would fall back for is too old.
 public struct ConnectController: Controller {
-    public enum Command: Codable, Equatable, Sendable {
+    public enum Command: Bridged, Equatable {
         case edit(String)
         /// The screen's one button: Continue to find the server, then sign
         /// in to it.

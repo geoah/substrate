@@ -21,7 +21,17 @@ final class Outlet: BridgeOutlet, @unchecked Sendable {
         }
         guard let envelope = try? BridgeCodec.decodeEnvelope(message) else { return BridgeFailure(.malformed, message) }
         if lock.withLock({ refusing })(envelope) { return BridgeFailure(.jniFailure, "the test refused \(envelope.op.rawValue)") }
-        lock.withLock { kept.append(envelope) }
+        let ready = lock.withLock { () -> [(CheckedContinuation<Envelope, Never>, Envelope)] in
+            kept.append(envelope)
+            var ready: [(CheckedContinuation<Envelope, Never>, Envelope)] = []
+            waiters.removeAll { waiter in
+                guard let found = kept.dropFirst(waiter.after).first(where: waiter.matches) else { return false }
+                ready.append((waiter.continuation, found))
+                return true
+            }
+            return ready
+        }
+        for (continuation, found) in ready { continuation.resume(returning: found) }
         return nil
     }
 
@@ -41,13 +51,27 @@ final class Outlet: BridgeOutlet, @unchecked Sendable {
         gate.signal()
     }
 
-    /// The first message after `index` that `matches`, waiting up to two seconds.
+    private struct Waiter {
+        var after: Int
+        var matches: (Envelope) -> Bool
+        var continuation: CheckedContinuation<Envelope, Never>
+    }
+
+    private var waiters: [Waiter] = []
+
+    /// The first message after `index` that `matches`: one delivered already,
+    /// or the one `deliver` hands over when it arrives. Nothing here reads a
+    /// clock, so a loaded machine only makes it slower; a message that never
+    /// comes is the suite's time limit's to report.
     func next(after index: Int = 0, _ matches: @escaping (Envelope) -> Bool) async throws -> Envelope {
-        for _ in 0 ..< 400 {
-            if let found = messages.dropFirst(index).first(where: matches) { return found }
-            try await Task.sleep(for: .milliseconds(5))
+        await withCheckedContinuation { continuation in
+            let found: Envelope? = lock.withLock {
+                if let found = kept.dropFirst(index).first(where: matches) { return found }
+                waiters.append(Waiter(after: index, matches: matches, continuation: continuation))
+                return nil
+            }
+            if let found { continuation.resume(returning: found) }
         }
-        throw BridgeFailure(.swiftFailure, "no such message among \(messages.map(\.op))")
     }
 }
 
