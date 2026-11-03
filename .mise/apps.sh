@@ -558,7 +558,7 @@ conditional_probe() {
 }
 
 lease_take() {
-	local what="$1" now token expires holder held_what
+	local what="$1" now token expires held_what
 	mkdir -p "$WORK/lease"
 	LEASE_HOLDER="$(openssl rand -hex 12)"
 	conditional_probe
@@ -573,13 +573,13 @@ lease_take() {
 	200)
 		token="$(jq -r '.token // 0' "$WORK/lease/held.json")"
 		expires="$(jq -r '.expires // 0' "$WORK/lease/held.json")"
-		holder="$(jq -r '.holder // ""' "$WORK/lease/held.json")"
 		held_what="$(jq -r '.release // ""' "$WORK/lease/held.json")"
 		if [ "$expires" -gt "$now" ]; then
 			die "another publisher holds the release lease (token $token, $held_what) until $(date -u -r "$expires" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$expires" +%Y-%m-%dT%H:%M:%SZ); wait for it, or for it to expire if that publisher died"
 		fi
 		token=$((token + 1))
-		[ -z "$holder" ] || say "taking over the lease past its expiry (token $((token - 1)), $held_what)"
+		# A lease given up at the end of a run is written expired at 0.
+		[ "$expires" = 0 ] || say "taking over the lease past its expiry (token $((token - 1)), $held_what)"
 		lease_body "$token" $((now + LEASE_TTL)) "$what" >"$WORK/lease/mine.json"
 		store_write release "$LEASE_KEY" "$WORK/lease/mine.json" no-cache "match:$ETAG"
 		;;
@@ -1239,9 +1239,12 @@ release_env() {
 	*) die "SUBSTRATE_APPLE_RELEASE_URL is an https address: $SUBSTRATE_APPLE_RELEASE_URL" ;;
 	esac
 	if [ -z "$DRY" ]; then
+		[ -z "${SUBSTRATE_APPLE_SITE_PUBLISHED+x}" ] || die "SUBSTRATE_APPLE_SITE_PUBLISHED tries the merge against a saved document, which only a dry run may"
 		: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID to a key that may write the bucket}"
 		: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"
 		[ -z "${SUBSTRATE_APPS_RELEASE_ANDROID_BUILD:-}" ] || die "SUBSTRATE_APPS_RELEASE_ANDROID_BUILD stands a test build in for android:release:build, which only a dry run may"
+		[ -z "${SUBSTRATE_APPS_RELEASE_PLACEHOLDERS:-}" ] || die "SUBSTRATE_APPS_RELEASE_PLACEHOLDERS stands placeholders in for the builds, which only a dry run may"
+		[ -z "${SUBSTRATE_APPS_RELEASE_STOP_AFTER:-}" ] || die "SUBSTRATE_APPS_RELEASE_STOP_AFTER is a dry run's"
 	fi
 	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then site_url >/dev/null || exit 1; fi
 }
@@ -1284,11 +1287,11 @@ release() {
 		REL_DIR="$WORK/releases/$build"
 		STAGE="$REL_DIR/stage"
 		[ ! -e "$REL_DIR" ] || die "build $build is already staged here; SUBSTRATE_APPS_RELEASE_BUILD=$build resumes it"
-		mkdir -p "$STAGE" "$REL_DIR/work"
 	fi
 	say "releasing ${RELEASE_APPS[*]} as $version ($channel)${DRY:+, a dry run}"
 
 	lease_take "$version"
+	[ -n "$resume" ] || mkdir -p "$STAGE" "$REL_DIR/work"
 	for app in "${RELEASE_APPS[@]}"; do read_published "$app"; done
 	if [ -z "$resume" ]; then
 		build_all
@@ -1318,6 +1321,7 @@ site() {
 	: "${SUBSTRATE_APPLE_SITE_URL:?set SUBSTRATE_APPLE_SITE_URL to the https origin of the site}"
 	site_url >/dev/null || exit 1
 	if [ -z "$DRY" ]; then
+		[ -z "${SUBSTRATE_APPLE_SITE_PUBLISHED+x}" ] || die "SUBSTRATE_APPLE_SITE_PUBLISHED tries the merge against a saved document, which only a dry run may"
 		: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID to a key that may write the site}"
 		: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"
 	fi
