@@ -137,7 +137,10 @@ extension ChatApp {
             status.append(ConversationNote(kind: .background, title: nil,
                                            message: "\(live.name) is working on this chat in the background. Its answer shows here when it finishes."))
         }
-        if let error = live.error { status.append(ConversationNote(kind: .failed, title: "\(live.name) couldn't answer", message: error)) }
+        // A run that failed before this conversation was opened left its
+        // words on the thread alone; the list marks it failed, so the chat says why.
+        let failure = live.error ?? (working || row?.status != "error" ? nil : row?.reason ?? "The run ended in an error.")
+        if let failure { status.append(ConversationNote(kind: .failed, title: "\(live.name) couldn't answer", message: failure)) }
         if let failed = live.reloadFailed { status.append(ConversationNote(kind: .reloadFailed, title: nil, message: failed, action: "Try Again")) }
         if live.deleted {
             status.append(ConversationNote(kind: .deleted, title: "This chat was deleted",

@@ -309,6 +309,20 @@ struct ListRules {
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
     }
 
+    @Test func aChatWhoseRunFailedEarlierSaysWhyWhenOpened() async throws {
+        let failed = threadJSON(version: 3, status: "error")
+            .replacingOccurrences(of: #""lastReply":"Hello""#, with: #""reason":"401 Unauthorized""#)
+        let threads = #"{"head":10,"generation":"g","records":[\#(failed)]}"#
+        let rig = ChatRig(baseRoutes(threads: threads, status: "error"))
+        try await rig.signIn()
+        await rig.harness.send(.show(thread: "t1", scene: "s"))
+        let key = try #require(await rig.harness.state.scenes["s"]?.current)
+        try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
+        let notes = try #require(await rig.conversation(key)?.status)
+        #expect(notes.map(\.kind) == [.failed])
+        #expect(notes.first?.message == "401 Unauthorized")
+    }
+
     @Test func aWindowLeavingKeepsAConversationAnotherShows() async throws {
         let rig = ChatRig()
         try await rig.signIn()
