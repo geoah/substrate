@@ -22,6 +22,8 @@ struct RowsSetLine<MenuItems: View>: View {
     var isMarked = false
     /// A done set: a tap on its check unticks it.
     var onUntick: (() -> Void)?
+    /// What a tap does, said aloud, where it is not the session's (the routine page's plan).
+    var tapHint: String?
     let onTap: () -> Void
     /// The set's `…` menu; none when there are no items.
     @ViewBuilder var menuItems: () -> MenuItems
@@ -108,6 +110,7 @@ struct RowsSetLine<MenuItems: View>: View {
     }
 
     private var hint: String {
+        if let tapHint { return tapHint }
         if collapsed { return "Opens it again" }
         switch item.tap {
         case .fix: return "Opens it to fix"
