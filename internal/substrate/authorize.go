@@ -113,6 +113,10 @@ const (
 	// BlockAccountDeleted: the account was deleted and its deletion is not
 	// collected yet, so it cannot be created again.
 	BlockAccountDeleted = "account-deleted"
+	// BlockNotPublished: no authority document lists the package at the
+	// version the app needs, or the package's authority publishes no
+	// document this server can read (decision 0212).
+	BlockNotPublished = "not-published"
 	// BlockUnsupported: what the row names is not something this door sets
 	// up: a kind that is no account, a property it may not set, a trigger
 	// that takes no webhook, or one its provider signs.
@@ -202,6 +206,21 @@ type AuthorizationPackage struct {
 	Kinds     []AuthorizationKind        `json:"kinds,omitempty"`
 	Functions []AuthorizationFunction    `json:"functions,omitempty"`
 	Triggers  []AuthorizationTrigger     `json:"triggers,omitempty"`
+	// Publisher is present for a package an authority document publishes
+	// rather than this server's catalog ships (decision 0212).
+	Publisher *AuthorizationPackagePublisher `json:"publisher,omitempty"`
+}
+
+// AuthorizationPackagePublisher is where a document-published package comes
+// from: its publisher's authority, the document's own name for it, the
+// document the package is listed in, and whether a file this server was
+// configured to read (SUBSTRATE_INSECURE_AUTHORITY_DOCS) stood in for the
+// authority's DNS record and document.
+type AuthorizationPackagePublisher struct {
+	Authority   string `json:"authority"`
+	Name        string `json:"name,omitempty"`
+	DocumentURL string `json:"documentUrl"`
+	FromFile    bool   `json:"fromFile,omitempty"`
 }
 
 // AuthorizationPackageStep is one package a requested one requires, with

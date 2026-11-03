@@ -165,6 +165,14 @@ type TokenInfo struct {
 	AppAuthority         string `json:"appAuthority,omitempty"`
 	AppAuthorityFromFile bool   `json:"appAuthorityFromFile,omitempty"`
 	AppLocal             bool   `json:"appLocal,omitempty"`
+	// AppPackages, AppSoftwareVersion and AppCheckedAt are what the app's
+	// build said of itself (decision 0213): the floor each of its package
+	// details asks for, by package id, its own version, and when it last
+	// checked in. An upgrade that narrows a package is held while a live
+	// token's floor is under the candidate.
+	AppPackages        map[string]int64 `json:"appPackages,omitempty"`
+	AppSoftwareVersion string           `json:"appSoftwareVersion,omitempty"`
+	AppCheckedAt       *time.Time       `json:"appCheckedAt,omitempty"`
 	// Agents are the agents the owner approved the app to declare (decision
 	// 0207), each with its reach and cap; absent on every other token.
 	Agents []AgentApproval `json:"agents,omitempty"`
@@ -197,6 +205,10 @@ type MintTokenInput struct {
 	AppAuthority         string
 	AppAuthorityFromFile bool
 	AppLocal             bool
+	// AppPackages and AppSoftwareVersion are TokenInfo's: what the app's
+	// build asked for when the owner approved it.
+	AppPackages        map[string]int64
+	AppSoftwareVersion string
 	// Agents are the approved agents of a scoped token, none on any other.
 	Agents []AgentApproval
 }

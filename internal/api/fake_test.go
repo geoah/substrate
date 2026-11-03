@@ -1460,6 +1460,10 @@ func (d *fakeDataset) MarkDomainVerified(context.Context) (time.Time, error) {
 	return at, nil
 }
 
+func (d *fakeDataset) RecordAppBuild(context.Context, map[string]int64, string) error {
+	return d.fail("RecordAppBuild")
+}
+
 // The two Service doors that carry no bearer. This fake resolves neither a
 // signed state nor a public trigger, and both refusals are ErrNotFound
 // because the door must not distinguish them (substrate.Service).
