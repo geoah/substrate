@@ -1,5 +1,8 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateCore
+import SubstrateDeviceApple
 
 /// The Console app's sign-in (decision 0204): the kit's app authorization
 /// flow asking for `full`, since the app is the whole console. A server that
@@ -36,7 +39,7 @@ enum ConsoleSignIn {
     static func session(_ probe: ServerProbe.Result) async throws -> Session {
         guard let oauth = OAuthClient(manifest: manifest, probe: probe) else { throw URLError(.badServerResponse) }
         let session = try await oauth.signIn(server: probe.origin, repository: probe.repository,
-                                             keepingRejectedIn: ConsoleSessions.store(for: probe.origin))
+                                             keepingRejectedIn: ConsoleSessions.store(for: probe.origin), browser: WebAuthenticator())
         guard session.tokenID != nil else {
             try? await session.revoke()
             throw NoTokenID(server: probe.origin)

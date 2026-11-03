@@ -29,6 +29,10 @@ packages:
   # libraries alone.
   WorkoutsKit:
     path: ../workouts/WorkoutsKit
+  # Substrate Chat below its views: the list and its conversations on the
+  # kit's runtime, the transcript fold, the words, what the device keeps.
+  ChatKit:
+    path: ../chat/ChatKit
   # Substrate Tasks' core (TasksCore): its root under the kit's link, the
   # task editor and the presenters, with no UI framework.
   TasksKit:

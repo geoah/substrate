@@ -401,6 +401,15 @@ for target in PORTABLE_KIT:
     if target in kit.targets:
         check_portable(kit.source_dir(target), set())
 
+# An app's core is its Swift package named for it (WorkoutsKit/, ChatKit/):
+# its libraries are held as the kit's portable ones are.
+for package in packages_under(APPS):
+    if os.path.relpath(package.dir, APPS).split(os.sep)[0] == "kit" or not os.path.basename(package.dir).endswith("Kit"):
+        continue
+    for target, info in sorted(package.targets.items()):
+        if info["kind"] == "target":
+            check_portable(package.source_dir(target), set(package.targets))
+
 
 # --- the Android bridge imports only what Android has --------------------
 #

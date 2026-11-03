@@ -1,5 +1,6 @@
-import SwiftUI
+import ChatKit
 import SubstrateKit
+import SwiftUI
 
 /// The server first, the kit's connect screen against Chat's manifest. A
 /// substrate that can give the app access of its own is signed in to in the
@@ -9,17 +10,17 @@ import SubstrateKit
 /// needs an update. Below the door, a token an earlier sign-in left that its
 /// server has not revoked yet, with where to revoke it by hand.
 struct SignInView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(ChatHost.self) private var host
     @AppStorage("signin.server") private var address = ""
 
     var body: some View {
-        ConnectView(manifest: ChatManifest.manifest, address: $address, unrevoked: model.unrevoked) {
+        ConnectView(manifest: ChatManifest.manifest, address: $address, unrevoked: SessionStore.chat.pendingRevocations()) {
             // The app's own icon, drawn by scripts/icons.mjs like the AppIcon
             // set, light and dark.
             ConnectHeader(appName: ChatManifest.appName, tagline: "Talk to the agents in your substrate.",
                           icon: Image("AppMark"))
         } onSignIn: { probe in
-            try await model.signIn(probe)
+            try await host.signIn(probe)
         } passwordDoor: { probe in
             PasswordDoor(probe: probe)
         }
@@ -28,7 +29,7 @@ struct SignInView: View {
 
 /// The password door, for a server without app authorization.
 private struct PasswordDoor: View {
-    @Environment(AppModel.self) private var model
+    @Environment(ChatHost.self) private var host
     @AppStorage("signin.repository") private var repository = ""
     let probe: ServerProbe.Result
     @State private var password = ""
@@ -76,7 +77,7 @@ private struct PasswordDoor: View {
             }
 
             if let problem {
-                ProblemLine(title: "Couldn't sign in", message: problem)
+                ProblemBox(title: "Couldn't sign in", message: problem)
                     .card(tint: .red)
                     .padding(.top, 16)
             }
@@ -121,7 +122,7 @@ private struct PasswordDoor: View {
         Task {
             defer { busy = false }
             do {
-                try await model.signIn(server: probe.origin, repository: repository.trimmingCharacters(in: .whitespaces),
+                try await host.signIn(server: probe.origin, repository: repository.trimmingCharacters(in: .whitespaces),
                                        password: password, totp: totpRequired ? code : nil)
                 password = ""
                 code = ""
@@ -132,41 +133,10 @@ private struct PasswordDoor: View {
     }
 }
 
-/// The server refused the token: what happened, and the one way out. An
-/// app session's access ended or was revoked, in the kit's words.
-struct ExpiredView: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        if let session = model.session, session.isApp {
-            AccessEndedView(appName: ChatManifest.appName, host: ServerAddress.display(session.server)) {
-                model.signInAgain()
-            }
-        } else {
-            VStack(spacing: 20) {
-                Image(systemName: "person.crop.circle.badge.exclamationmark")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.orange)
-                    .symbolRenderingMode(.hierarchical)
-                Text("Signed out by the server")
-                    .font(.title2.weight(.semibold))
-                Text("\(model.session.map { ServerAddress.display($0.server) } ?? "The server") no longer accepts this sign-in: the token was revoked, or the repository was reset. Sign in again to carry on.")
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                Button("Sign In Again") { model.signInAgain() }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.large)
-            }
-            .padding(32)
-            .frame(maxWidth: 440)
-        }
-    }
-}
-
 /// Signed in, but the owner left out talking to the agents: the one thing
 /// this app is for.
 struct NoChatAccessView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(ChatHost.self) private var host
     @State private var changingAccess = false
 
     var body: some View {
@@ -178,42 +148,33 @@ struct NoChatAccessView: View {
             Text("Substrate Chat can't talk to your assistants")
                 .font(.title2.weight(.semibold))
                 .multilineTextAlignment(.center)
-            Text("The approval on \(model.session.map { ServerAddress.display($0.server) } ?? "your substrate") left out talking to your agents. Change its access and keep that one checked.")
+            Text("The approval on \(host.chats?.host ?? "your substrate") left out talking to your agents. Change its access and keep that one checked.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-            if let problem = model.authorizeProblem {
-                ProblemLine(title: "Access didn't change", message: problem)
+            if let problem = host.authorizeProblem {
+                ProblemBox(title: "Access didn't change", message: problem)
                     .card(tint: .red)
             }
             Button {
                 changingAccess = true
             } label: {
                 HStack(spacing: 8) {
-                    if model.authorizing { ProgressView().controlSize(.small) }
+                    if host.authorizing { ProgressView().controlSize(.small) }
                     Text("Change Access…")
                 }
             }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
-            .disabled(model.authorizing && !WebAuthenticator.opensBrowser)
-            if model.authorizing, WebAuthenticator.opensBrowser {
-                Button("Cancel") { model.cancelAuthorization() }
+            .disabled(host.authorizing && !WebAuthenticator.opensBrowser)
+            if host.authorizing, WebAuthenticator.opensBrowser {
+                Button("Cancel") { host.cancelAuthorization() }
                     .buttonStyle(.borderless)
             }
-            Button("Sign Out", role: .destructive) { model.signOut() }
+            Button("Sign Out", role: .destructive) { host.signOut() }
                 .buttonStyle(.borderless)
         }
         .padding(32)
         .frame(maxWidth: 440)
-        .sheet(isPresented: $changingAccess) {
-            if let session = model.session {
-                ReviewChangesSheet(changingAccessFor: ChatManifest.manifest, session: session, changes: model.reviewChanges,
-                                   onContinue: {
-                                       changingAccess = false
-                                       Task { await model.reauthorize() }
-                                   },
-                                   onCancel: { changingAccess = false })
-            }
-        }
+        .sheet(isPresented: $changingAccess) { ReviewSheet(isPresented: $changingAccess, changingAccess: true) }
     }
 }

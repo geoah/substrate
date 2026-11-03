@@ -18,13 +18,15 @@ import Foundation
 /// `effects`, `key`, `nextChange`, `children`, `link`, `journal`), and its
 /// argument label says what it answers about: `of` an event, an effect or a
 /// presentation; `for` a command or the link; `at` the open or a tick;
-/// `from` a child; `in` a state or an environment.
+/// `from` a child; `replacing` the value before; `in` a state or an
+/// environment.
 ///
 /// **The defaults**, in the extension below, so a controller writes only
 /// what it uses: no journal, so nothing is journaled; the transient state
 /// unchanged by an applied or a refused event; every event presented at
 /// once; no effects, no keys, no work; no next change and no tick event; no
-/// event at open, for the link or from a child; no children; no link.
+/// event at open, for the link, from a child or for a new value; no event
+/// resets; no children; no link.
 public protocol Controller: Sendable {
     associatedtype Command: Codable & Equatable & Sendable
     associatedtype Event: Codable & Equatable & Sendable
@@ -76,6 +78,16 @@ public protocol Controller: Sendable {
     /// A child's applied event as this controller's own, for its engine to
     /// fold; nil leaves it the child's alone.
     func event(fromChild key: ChildKey, _ event: Child.Event) -> Event?
+    /// The same, with the child's state after its event, for a parent whose
+    /// rules turn on what the child holds (Chat's list drops a read for a
+    /// thread whose conversation owns the transcript). The default is
+    /// `event(fromChild:_:)`, which sees the event alone.
+    func event(fromChild key: ChildKey, _ event: Child.Event, after state: Child.State) -> Event?
+    /// The event a child applies when its parent hands it a value that
+    /// differs (`children(in:)`), so what changed reaches its engine and its
+    /// effects (the thread a conversation shows moved: attach, or poll);
+    /// nil takes the value alone.
+    func event(replacing previous: Self) -> Event?
 
     // MARK: What an applied event asks for
 
@@ -83,6 +95,13 @@ public protocol Controller: Sendable {
     /// cannot be rebuilt without is kept; one whose outcome waits on work
     /// outside the engine is skipped, and its outcome is a second event.
     func journaling(of event: Event) -> Journaling
+    /// Whether an applied event starts the controller over: its controller
+    /// generation moves, so every effect running under it is cancelled and
+    /// every result still on its way dropped, and its children are closed
+    /// and made again from the state the event left (a sign-out). The
+    /// engine makes that state, and `on` it is the state it made; the
+    /// event's own effects start after.
+    func resetting(of event: Event, on state: State) -> Bool
     /// The transient state after an event the engine applied.
     func transient(after event: Event, applied state: State, from transient: Transient) -> Transient
     /// The transient state after an event the engine refused.
@@ -120,6 +139,9 @@ public extension Controller {
     func event(atTick instant: Date) -> Event? { nil }
     func event(forLink link: LinkSnapshot) -> Event? { nil }
     func event(fromChild key: ChildKey, _ event: Child.Event) -> Event? { nil }
+    func event(fromChild key: ChildKey, _ event: Child.Event, after state: Child.State) -> Event? { self.event(fromChild: key, event) }
+    func event(replacing previous: Self) -> Event? { nil }
+    func resetting(of event: Event, on state: State) -> Bool { false }
     func journaling(of event: Event) -> Journaling { .skip }
     func transient(after event: Event, applied state: State, from transient: Transient) -> Transient { transient }
     func transient(afterRefusing event: Event, because error: any Error, from transient: Transient) -> Transient { transient }

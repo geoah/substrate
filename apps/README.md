@@ -705,12 +705,17 @@ iOS and macOS 26. It is the console's agent chat as a native app: it carries
 no console, speaks only the API, and keeps a repository's chats on the device
 so every screen draws before it asks the server anything. The design, the
 feature list and what the reviews of it changed are in
-[chat/DESIGN.md](chat/DESIGN.md).
+[chat/DESIGN.md](chat/DESIGN.md). Everything below its views is `ChatKit`
+(`chat/ChatKit`), a Swift package over the kit's portable libraries that
+builds and tests on Linux too (`mise run apps:test:linux`): the chat list as
+the app's root under the kit's `LinkController`, each conversation a child of
+it, and DESIGN.md's seven rules as the runtime's behaviour, each with a test
+by its number. The app draws its presentations and sends its commands.
 
 ```bash
 mise run apple:build:chat     # the Mac app and the iOS simulator app
 mise run apple:sim:chat       # the iOS app on a booted (or the first) iPhone simulator
-mise run apple:test:chat      # its unit tests, on the Mac
+mise run apple:test:chat      # ChatKit's tests, then the app target's, on the Mac
 mise run apps:release prerelease chat   # both platforms, signed and published under chat/
 ```
 
@@ -758,7 +763,8 @@ again: it is theirs to add with Settings → Change Access, whose review
 offers it back, and which runs the flow and keeps the old access until the
 new one is kept. A 403 says to allow it there, never to sign in again. Chat's
 requests and their errors are the kit's `SubstrateClient`; it adds only the
-agent streams and the change feed. Sign Out revokes an app token under the
+agent streams, read through the transport's line stream, and the change feed
+is the kit's `WatchFollower`. Sign Out revokes an app token under the
 client id it was approved for (none, for a session an earlier build kept
 without one), and a password one with its own `DELETE /tokens/{id}`; a
 revocation the server does not confirm is kept, tried again at launch, and
@@ -935,8 +941,9 @@ console/apple/Support/              the console app's Info.plist per platform an
 console/apple/Assets.xcassets       the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../docs/app-icons.md))
 console/apple/Sources/App/          the app, its macOS menus, ServerStore, ConsoleSessions
 console/apple/Sources/Shell/        the scheme handler, the web view's controller, the connect screen and sign-in, the debug driver
-chat/apple/Sources/                 Substrate Chat: App/, API/, Model/ (the transcript fold, the words), Store/, Voice/, Markdown/, Views/
-chat/apple/Tests/                   its tests: the fold, the stream lines, the Markdown parser, the words
+chat/ChatKit/                       Substrate Chat below its views: ChatApp/ (the list under the link), Conversation/ (one chat's run), Model/ (the fold, the words, Markdown blocks), API/, Local/ (the cache folder), Presentation/; and its tests, the seven rules by number among them; portable
+chat/apple/Sources/                 Substrate Chat's app: App/ (ChatHost, the device services, App Intents), Views/, Markdown/, Voice/
+chat/apple/Tests/                   what only the Apple app holds: the loopback receiver, the Keychain item, inline Markdown
 sync/apple/Sources/                 Substrate Sync: App/, API/, Sync/ (the mappings, the readers, the engine), Views/, Debug/
 sync/apple/Share/                   its share extension
 sync/apple/Tests/                   its tests: ids, labels, dates, the Health goldens

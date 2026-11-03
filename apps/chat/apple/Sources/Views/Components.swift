@@ -1,11 +1,11 @@
 import SwiftUI
-import SubstrateKit
 
 /// An agent's name in a capsule tinted with a colour of the id's own, so one
 /// agent reads the same in the list, the composer and Settings.
 struct AgentPill: View {
     @Environment(\.colorScheme) private var scheme
     let id: String?
+    let name: String
     /// The chat is running: a pulsing dot before the name.
     var running = false
     /// The composer's picker: the field's height and close to its type, with
@@ -16,7 +16,7 @@ struct AgentPill: View {
         let tint = agentTint(id, dark: scheme == .dark)
         HStack(spacing: 5) {
             if running { PulsingDot(color: tint) }
-            Text(id.map(agentName) ?? "No assistant")
+            Text(name)
                 .lineLimit(1)
                 .truncationMode(.tail)
             if picker {
@@ -40,32 +40,6 @@ func agentTint(_ id: String?, dark: Bool) -> Color {
     var h: UInt64 = 1_469_598_103_934_665_603
     for byte in id.utf8 { h = (h ^ UInt64(byte)) &* 1_099_511_628_211 }
     return Color(hue: Double(h % 360) / 360, saturation: dark ? 0.5 : 0.7, brightness: dark ? 0.95 : 0.62)
-}
-
-/// A problem in a sentence, with an icon, where a status would be.
-struct ProblemLine: View {
-    var title: String?
-    let message: String
-    var tint: Color = .red
-    var systemImage = "exclamationmark.triangle.fill"
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: systemImage)
-                .foregroundStyle(tint)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                if let title { Text(title).font(.subheadline.weight(.semibold)) }
-                Text(message)
-                    .font(.subheadline)
-                    .foregroundStyle(title == nil ? .primary : .secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .accessibilityElement(children: .combine)
-    }
 }
 
 /// A card in the transcript: a plain fill, never glass (glass is for the
@@ -138,21 +112,4 @@ struct PulsingDot: View {
             }
             .accessibilityLabel("Working")
     }
-}
-
-extension Date {
-    /// "now", "3 min. ago", "Yesterday", "Mon", "12 Oct".
-    var listStamp: String {
-        let cal = Calendar.current
-        if Date().timeIntervalSince(self) < 60 { return "now" }
-        if cal.isDateInToday(self) { return formatted(date: .omitted, time: .shortened) }
-        if cal.isDateInYesterday(self) { return "Yesterday" }
-        if Date().timeIntervalSince(self) < 6 * 86400 { return formatted(.dateTime.weekday(.abbreviated)) }
-        return formatted(.dateTime.day().month(.abbreviated))
-    }
-}
-
-/// The bytes of a cache as a person reads them.
-func byteWords(_ n: Int) -> String {
-    ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
 }

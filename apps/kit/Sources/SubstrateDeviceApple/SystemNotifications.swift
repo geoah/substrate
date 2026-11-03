@@ -29,6 +29,7 @@ public struct SystemNotifications: Notifications {
         guard interval > 0 else { return }
         let content = UNMutableNotificationContent()
         content.title = request.title
+        if let subtitle = request.subtitle { content.subtitle = subtitle }
         if let body = request.body { content.body = body }
         content.sound = .default
         #if os(iOS)
@@ -47,6 +48,23 @@ public struct SystemNotifications: Notifications {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [id])
         center.removeDeliveredNotifications(withIdentifiers: [id])
+    }
+
+    public func cancel(thread: String) async {
+        let center = UNUserNotificationCenter.current()
+        let ids = await center.deliveredNotifications().filter { $0.request.content.threadIdentifier == thread }.map(\.request.identifier)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+
+    public func cancelAll() async {
+        let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
+        try? await center.setBadgeCount(0)
+    }
+
+    public func setBadge(_ count: Int) async {
+        try? await UNUserNotificationCenter.current().setBadgeCount(count)
     }
 
     public func pending(prefix: String) async -> [String] {

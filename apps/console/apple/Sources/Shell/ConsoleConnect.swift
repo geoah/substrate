@@ -1,4 +1,5 @@
-import SubstrateKit
+import SubstrateCore
+import SubstrateUI
 import SwiftUI
 
 /// Where the app points and how it signs in: the kit's connect screen, as in

@@ -8,6 +8,9 @@ public final class RecordedNotifications: Notifications, @unchecked Sendable {
         case requestPermission
         case schedule(NotificationRequest)
         case cancel(String)
+        case cancelThread(String)
+        case cancelAll
+        case badge(Int)
     }
 
     private let lock = NSLock()
@@ -31,7 +34,8 @@ public final class RecordedNotifications: Notifications, @unchecked Sendable {
                 switch call {
                 case let .schedule(request): out[request.id] = request
                 case let .cancel(id): out[id] = nil
-                case .requestPermission: break
+                case .cancelAll: out = [:]
+                case .requestPermission, .cancelThread, .badge: break
                 }
             }
             return out
@@ -58,6 +62,18 @@ public final class RecordedNotifications: Notifications, @unchecked Sendable {
 
     public func cancel(_ id: String) async {
         lock.withLock { kept.append(.cancel(id)) }
+    }
+
+    public func cancel(thread: String) async {
+        lock.withLock { kept.append(.cancelThread(thread)) }
+    }
+
+    public func cancelAll() async {
+        lock.withLock { kept.append(.cancelAll) }
+    }
+
+    public func setBadge(_ count: Int) async {
+        lock.withLock { kept.append(.badge(count)) }
     }
 
     public func pending(prefix: String) async -> [String] {

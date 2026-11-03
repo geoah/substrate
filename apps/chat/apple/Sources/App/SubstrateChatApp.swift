@@ -1,48 +1,71 @@
-import SwiftUI
-import UserNotifications
+import ChatKit
 import SubstrateKit
+import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
+
+#if os(iOS)
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool
+    {
+        MainActor.assumeIsolated { ChatServices.start() }
+        return true
+    }
+}
+#endif
 
 @main
 struct SubstrateChatApp: App {
     #if os(iOS)
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     #endif
-    @State private var model = AppModel.shared
+    @State private var host: ChatHost
     @StateObject private var updates = Updater()
     @Environment(\.scenePhase) private var phase
 
     init() {
-        UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
+        ChatServices.start()
+        _host = State(initialValue: ChatHost.shared)
         ChatShortcuts.updateAppShortcutParameters()
     }
 
     var body: some Scene {
         WindowGroup(id: "chats") {
             RootView()
-                .environment(model)
+                .environment(host)
                 .environmentObject(updates)
                 .updateOffer(updates)
-                .onChange(of: phase) { _, phase in
-                    #if os(iOS)
-                    if phase == .active { updates.checkIfDue() }
-                    #endif
+                .onChange(of: phase, initial: true) { _, phase in
+                    switch phase {
+                    case .active:
+                        host.send(.phase(.active))
+                        host.model.send(.refresh(force: false))
+                        #if os(iOS)
+                        updates.checkIfDue()
+                        #endif
+                    case .inactive: host.send(.phase(.inactive))
+                    case .background: host.send(.phase(.background))
+                    @unknown default: break
+                    }
                 }
+                .onChange(of: host.chats?.offered) { _, _ in ChatShortcuts.updateAppShortcutParameters() }
         }
         #if os(macOS)
         .defaultSize(width: 1080, height: 760)
         .windowToolbarStyle(.unified)
         .commands {
-            ChatCommands(model: model)
+            ChatCommands(host: host)
             UpdateCommands(updates: updates)
         }
         #endif
 
         #if os(macOS)
         Settings {
-            if let store = model.store {
+            if host.chats?.signedIn == true {
                 SettingsView()
-                    .environment(model)
-                    .environment(store)
+                    .environment(host)
                     .environmentObject(updates)
                     .frame(width: 560, height: 620)
             } else {
@@ -56,36 +79,39 @@ struct SubstrateChatApp: App {
 }
 
 #if os(macOS)
-/// The Mac's menus: New Chat, Stop, and Sign Out.
+/// The Mac's menus: New Chat, Stop, and Refresh.
 struct ChatCommands: Commands {
-    let model: AppModel
+    let host: ChatHost
     @FocusedValue(\.conversation) private var conversation
     @Environment(\.openWindow) private var openWindow
+
+    private var signedIn: Bool { host.chats?.signedIn == true }
 
     var body: some Commands {
         // New Chat takes ⌘N, so the window SwiftUI's own item opened moves to ⌥⌘N.
         CommandGroup(replacing: .newItem) {
-            Button("New Chat") { model.route(.newChat(agent: nil, listen: false)) }
+            Button("New Chat") { host.route(.newChat(agent: nil, listen: false)) }
                 .keyboardShortcut("n")
-                .disabled(model.store == nil)
+                .disabled(!signedIn)
             Button("New Window") { openWindow(id: "chats") }
                 .keyboardShortcut("n", modifiers: [.command, .option])
-            Button("New Chat with Voice") { model.route(.newChat(agent: nil, listen: true)) }
+            Button("New Chat with Voice") { host.route(.newChat(agent: nil, listen: true)) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
-                .disabled(model.store == nil)
+                .disabled(!signedIn)
         }
         CommandMenu("Chat") {
-            Button("Stop Answering") { conversation?.stop() }
+            Button("Stop Answering") { if let conversation { host.send(.stop, to: conversation) } }
                 .keyboardShortcut(".")
-                .disabled(conversation?.streaming != true)
-            Button("Refresh") { model.store?.refresh() }
+                .disabled(conversation.flatMap { host.chats?.conversations[$0] }?.streaming != true)
+            Button("Refresh") { host.send(.refresh) }
                 .keyboardShortcut("r")
-                .disabled(model.store == nil)
+                .disabled(!signedIn)
         }
     }
 }
 #endif
 
 extension FocusedValues {
-    @Entry var conversation: Conversation?
+    /// The conversation the focused window shows.
+    @Entry var conversation: ChildKey?
 }
