@@ -60,8 +60,7 @@ public struct DomainRecord: Hashable, Sendable {
     /// that says two things says nothing) or the one that does cannot be
     /// read. Each string is one TXT record, its character-strings joined.
     public static func parse(_ txts: [String]) throws -> DomainRecord? {
-        let ours = txts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0 == version || $0.hasPrefix(version + " ") }
+        let ours = txts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter(opensWithVersion)
         guard let text = ours.first else { return nil }
         guard ours.count == 1 else {
             throw Malformed(reason: "\(ours.count) records open with \(version), and a name may carry one")
@@ -98,6 +97,15 @@ public struct DomainRecord: Hashable, Sendable {
             throw Malformed(reason: "sha256= pins a document and the record names none with doc=")
         }
         return record
+    }
+
+    /// Whether `text` is `version` as its first word: alone, or followed by
+    /// any whitespace, as the server's `strings.Fields` reads it. A longer
+    /// word (`v=substrate10`) is another version.
+    static func opensWithVersion(_ text: String) -> Bool {
+        guard text.hasPrefix(version) else { return false }
+        let rest = text.dropFirst(version.count)
+        return rest.isEmpty || rest.first?.isWhitespace == true
     }
 
     /// The origin a `server=` value names, `https://host[:port]` lower-cased
