@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/geoah/substrate/internal/catalog"
+
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -207,9 +209,15 @@ func Moved(approved, now []substrate.AuthorizationSetup) int {
 		if row.Package == nil {
 			continue
 		}
+		// The approval is of a closure, not a name: a publisher that lists
+		// another version, or another closure under one, since the owner
+		// approved has moved the plan.
+		if was.Package == nil || row.Package.Shipped != was.Package.Shipped || digestOf(row.Package.Publisher) != digestOf(was.Package.Publisher) {
+			return i
+		}
 		for _, step := range row.Package.Requires {
-			if was.Package == nil || !slices.ContainsFunc(was.Package.Requires, func(s substrate.AuthorizationPackageStep) bool {
-				return s.ID == step.ID && s.Action == step.Action
+			if !slices.ContainsFunc(was.Package.Requires, func(s substrate.AuthorizationPackageStep) bool {
+				return s.ID == step.ID && s.Action == step.Action && s.Shipped == step.Shipped && digestOf(s.Publisher) == digestOf(step.Publisher)
 			}) {
 				return i
 			}
@@ -230,7 +238,11 @@ func (r *Runner) setUpRow(ctx context.Context, ds substrate.Dataset, actor subst
 			return fmt.Errorf("%w: this server ships no catalog", substrate.ErrNotFound)
 		}
 		if approved.Action != substrate.SetupEnable {
-			if _, _, err := r.catalog.InstallConfirmed(ctx, actor, d.Package, ds, nil); err != nil {
+			var expect *catalog.PublishedCandidate
+			if pkg := approved.Package; pkg != nil && pkg.Publisher != nil && pkg.Publisher.Digest != "" {
+				expect = &catalog.PublishedCandidate{Version: pkg.Shipped, Digest: pkg.Publisher.Digest}
+			}
+			if _, _, err := r.catalog.InstallReviewed(ctx, actor, d.Package, ds, nil, expect); err != nil {
 				return err
 			}
 		}
@@ -420,4 +432,13 @@ func ownersToRead(err error) bool {
 	}
 	var ve *substrate.ValidationError
 	return errors.As(err, &ve)
+}
+
+// digestOf is a document-published closure's digest, "" for one the binary
+// ships.
+func digestOf(p *substrate.AuthorizationPackagePublisher) string {
+	if p == nil {
+		return ""
+	}
+	return p.Digest
 }

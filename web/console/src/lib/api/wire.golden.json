@@ -298,6 +298,7 @@
   },
   "AuthorizationPackagePublisher": {
     "authority": true,
+    "digest": false,
     "documentUrl": true,
     "fromFile": false,
     "name": false

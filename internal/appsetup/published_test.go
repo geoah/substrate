@@ -234,3 +234,37 @@ func TestAPublishedUpgradeIsPreviewedThroughTheCatalog(t *testing.T) {
 	wantBlocked(t, "the coach needing a refused update first", row.Blocked, substrate.BlockUpgradeNeedsReview, ProviderPage(trainingPkg))
 	wantBlocked(t, "the training step", row.Package.Requires[0].Blocked, substrate.BlockUpgradeNeedsReview, ProviderPage(trainingPkg))
 }
+
+// An approval is of the closures the owner saw: a row, or a requirement,
+// that would now install another version or another closure under the same
+// version has moved the plan, and the runner stops before writing.
+func TestAnApprovalIsBoundToTheClosuresItShowed(t *testing.T) {
+	published := func(digest string) *substrate.AuthorizationPackagePublisher {
+		return &substrate.AuthorizationPackagePublisher{Authority: "publisher.example", DocumentURL: "https://publisher.example/authority.json", Digest: digest}
+	}
+	row := func(shipped int64, digest string, reqShipped int64, reqDigest string) []substrate.AuthorizationSetup {
+		return []substrate.AuthorizationSetup{{
+			Type: substrate.DetailPackage, Action: substrate.SetupInstall,
+			Package: &substrate.AuthorizationPackage{
+				ID: "publisher.example/notes", Shipped: shipped, Publisher: published(digest),
+				Requires: []substrate.AuthorizationPackageStep{{ID: "publisher.example/base", Action: substrate.SetupInstall, Shipped: reqShipped, Publisher: published(reqDigest)}},
+			},
+		}}
+	}
+	approved := row(1, "aa", 3, "bb")
+	for _, tc := range []struct {
+		name string
+		now  []substrate.AuthorizationSetup
+		want int
+	}{
+		{"the same closures", row(1, "aa", 3, "bb"), -1},
+		{"a newer version listed", row(2, "cc", 3, "bb"), 0},
+		{"another closure under the same version", row(1, "dd", 3, "bb"), 0},
+		{"a requirement's newer version", row(1, "aa", 4, "ee"), 0},
+		{"a requirement's other closure", row(1, "aa", 3, "ff"), 0},
+	} {
+		if got := Moved(approved, tc.now); got != tc.want {
+			t.Errorf("%s: Moved = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
