@@ -309,6 +309,13 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 			return nil, err
 		}
 	}
+	// A published agent spends the owner's provider, so it ships its own
+	// daily cap (decision 0217), whether the binary or a document brought it.
+	if opts.Published {
+		if err := vocabulary.PublishedAgentBudgets(docs); err != nil {
+			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+		}
+	}
 	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
 		return nil, err
 	}

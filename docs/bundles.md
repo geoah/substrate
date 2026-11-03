@@ -1057,3 +1057,8 @@ holding a narrowing release back.
 
 **Take over…** makes a document-published package yours to edit and stops
 publisher upgrades. Your records remain in the package.
+
+An agent can consume an input of kind `substrate.reamde.dev/llm/provider`
+by naming it in `providerInput`, beside its ordered `models` list. It
+uses the same bound, default, sole resolution as other inputs; it does
+not need `inject: functions`. The owner's binding survives upgrades.

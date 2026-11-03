@@ -127,3 +127,44 @@ func functionWrites(id string, data map[string]any) []string {
 	}
 	return out
 }
+
+// AgentProviderInputs reads the provider inputs consumed by this closure's agents.
+func (b *Bundle) AgentProviderInputs() []substrate.AuthorizationProviderInput {
+	return AgentProviderInputs(b.ID, b.vocabularyDocs)
+}
+
+// AgentProviderInputs groups the agents in declarations by their provider input.
+func AgentProviderInputs(pkg string, docs []map[string]any) []substrate.AuthorizationProviderInput {
+	var out []substrate.AuthorizationProviderInput
+	for _, d := range docs {
+		if vocabulary.KindName(mstr(d, "kind")) != vocabulary.DocAgent {
+			continue
+		}
+		data := mmap(d, "data")
+		input := mstr(data, "providerInput")
+		if input == "" {
+			continue
+		}
+		var models []string
+		entries, _ := data["models"].([]any)
+		for _, entry := range entries {
+			if s, ok := entry.(string); ok {
+				models = append(models, s)
+			}
+		}
+		cap, _ := vocabulary.VersionValue(mmap(data, "budgets")["spendCentsPerDay"])
+		agent := substrate.AuthorizationProviderAgent{Agent: docID(d), Models: models, SpendCentsPerDay: int(cap)}
+		found := false
+		for i := range out {
+			if out[i].Input == input {
+				out[i].Agents = append(out[i].Agents, agent)
+				found = true
+				break
+			}
+		}
+		if !found {
+			out = append(out, substrate.AuthorizationProviderInput{Package: pkg, Input: input, Agents: []substrate.AuthorizationProviderAgent{agent}})
+		}
+	}
+	return out
+}
