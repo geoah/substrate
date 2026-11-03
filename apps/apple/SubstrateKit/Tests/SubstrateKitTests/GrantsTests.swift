@@ -114,12 +114,12 @@ import Testing
 /// The console's sentences (web/console's app-scopes.ts), word for word.
 @Suite struct GrantWords {
     @Test func aKindScopeSaysEveryPowerItHolds() {
-        #expect(ScopeWords.sentence("write:providers.substrate.reamde.dev/apple/place") == "See, add, change and delete your Apple places")
-        #expect(ScopeWords.sentence("read:*") == "See all your records, including kinds added later")
-        #expect(ScopeWords.sentence("read:providers.substrate.reamde.dev/apple/*") == "See your Apple records, including kinds added later")
-        #expect(ScopeWords.sentence("read:ada.example.com/*") == "See your records from ada.example.com, including kinds added later")
-        #expect(ScopeWords.sentence("read:providers.substrate.reamde.dev/applehealth/account") == "See your Apple Health accounts")
-        #expect(ScopeWords.sentence("read:samples.substrate.reamde.dev/tasks/task") == "See your tasks")
+        #expect(ScopeWords.sentence("write:providers.substrate.reamde.dev/apple/place") == "See, add, change and delete your Apple places, and search them by meaning, which spends your embedding budget")
+        #expect(ScopeWords.sentence("read:*") == "See all your records, including kinds added later, and search them by meaning, which spends your embedding budget")
+        #expect(ScopeWords.sentence("read:providers.substrate.reamde.dev/apple/*") == "See your Apple records, including kinds added later, and search them by meaning, which spends your embedding budget")
+        #expect(ScopeWords.sentence("read:ada.example.com/*") == "See your records from ada.example.com, including kinds added later, and search them by meaning, which spends your embedding budget")
+        #expect(ScopeWords.sentence("read:providers.substrate.reamde.dev/applehealth/account") == "See your Apple Health accounts, and search them by meaning, which spends your embedding budget")
+        #expect(ScopeWords.sentence("read:samples.substrate.reamde.dev/tasks/task") == "See your tasks, and search them by meaning, which spends your embedding budget")
     }
 
     @Test func kindsReachedTodayAreNamedByTheirLabels() {
@@ -127,7 +127,16 @@ import Testing
             ScopeKind(identity: "providers.substrate.reamde.dev/apple/\($0)")
         } + [ScopeKind(identity: "providers.substrate.reamde.dev/apple/syncstate", purpose: "internal")]
         #expect(ScopeWords.sentence("write:providers.substrate.reamde.dev/apple/*", kinds: kinds)
-            == "See, add, change and delete your Apple contacts, calendars, reminders, places and shares, and 1 more kind, including kinds added later")
+            == "See, add, change and delete your Apple contacts, calendars, reminders, places and shares, and 1 more kind, including kinds added later, and search them by meaning, which spends your embedding budget")
+    }
+
+    @Test func aCallScopeSaysItRunsCodeOnlyAsFarAsTheAppReaches() {
+        #expect(ScopeWords.sentence("call:*")
+            == "Run any of your functions, including functions added later; each runs only where the app may already see and change what it reads and writes")
+        #expect(ScopeWords.sentence("call:ada.example.com/tasks/*", functions: ["Summarize", "Report"])
+            == "Run Summarize and Report, including functions added later; each runs only where the app may already see and change what it reads and writes")
+        #expect(ScopeWords.sentence("call:ada.example.com/tasks/summarize")
+            == "Run Summarize; it runs only where the app may already see and change what it reads and writes")
     }
 
     @Test func anAgentScopeSaysItReadsEveryChat() {
@@ -159,8 +168,8 @@ import Testing
             manifest.kindLabels["providers.substrate.reamde.dev/apple/\(name)"] = KindLabel(singular: singular, plural: plural, purpose: purpose)
         }
         #expect(manifest.scopeWords("write:providers.substrate.reamde.dev/apple/*")
-            == "See, add, change and delete your Apple contacts and events, and 2 more kinds, including kinds added later")
-        #expect(manifest.scopeWords("read:providers.substrate.reamde.dev/apple/event") == "See your Apple events")
+            == "See, add, change and delete your Apple contacts and events, and 2 more kinds, including kinds added later, and search them by meaning, which spends your embedding budget")
+        #expect(manifest.scopeWords("read:providers.substrate.reamde.dev/apple/event") == "See your Apple events, and search them by meaning, which spends your embedding budget")
     }
 }
 
@@ -188,7 +197,7 @@ import Testing
 
     @Test func everySentenceIsTheConsoles() throws {
         let entries = try JSONDecoder().decode([Entry].self, from: Data(contentsOf: Self.fixture))
-        #expect(Set(entries.map { ScopeWords.split($0.scope).verb }) == ["read", "write", "agents", "decide", "declare", "webhook"])
+        #expect(Set(entries.map { ScopeWords.split($0.scope).verb }) == ["read", "write", "agents", "decide", "declare", "call", "webhook"])
         // A manifest that names nothing itself, so a webhook's package reads
         // by its id, as the console's packageName reads it.
         let manifest = AppManifest(appName: "App", clientID: "http://localhost/client.json", scopes: [])
@@ -205,7 +214,7 @@ import Testing
         #expect(kindDisplayPlural("x.example.com/llm/agentmemory") == "Agent memories")
         #expect(kindDisplayPlural("x.example.com/x/codeofconduct") == "Codes of conduct")
         #expect(kindDisplayPlural("x.example.com/x/ofnote") == "Of notes")
-        #expect(ScopeWords.sentence("read:x.example.com//*") == "See your records from x.example.com, including kinds added later")
+        #expect(ScopeWords.sentence("read:x.example.com//*") == "See your records from x.example.com, including kinds added later, and search them by meaning, which spends your embedding budget")
         #expect(ScopeWords.agentWords("x.example.com/llm/") == "X.example.com/llm/")
     }
 }

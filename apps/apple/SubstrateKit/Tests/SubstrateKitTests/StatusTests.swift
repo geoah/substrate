@@ -99,7 +99,7 @@ final class TransportBox: @unchecked Sendable {
         """#)
         let status = await run(stub, session: appSession())
         #expect(status.issues == [.needsApproval(changes: [
-            Change(kind: .scope, words: "See, add, change and delete your Apple places"),
+            Change(kind: .scope, words: "See, add, change and delete your Apple places, and search them by meaning, which spends your embedding budget"),
             Change(kind: .upgrade, words: "Update Apple", detail: "Version 2 to 3"),
         ])])
         // The body names its details `details`, as the API's other bodies
@@ -306,9 +306,9 @@ final class TransportBox: @unchecked Sendable {
         #expect(manifest.check(for: session).scope == "write:providers.substrate.reamde.dev/apple/* \(place)")
         let stub = server(check: #"{"scopes":{"missing":["\#(place)"]},"setup":\#(rows(["none", "none", "none", "none"]))}"#)
         let status = await run(stub, session: session, manifest: manifest)
-        #expect(status.changes == [Change(kind: .scope, words: "See, add, change and delete your Apple places")])
+        #expect(status.changes == [Change(kind: .scope, words: "See, add, change and delete your Apple places, and search them by meaning, which spends your embedding budget")])
         let review = manifest.review(status, session: session)
-        #expect(review.filter(\.leftOut).map(\.words) == ["See your Apple Health accounts", "See your Apple Health deliveries"])
+        #expect(review.filter(\.leftOut).map(\.words) == ["See your Apple Health accounts, and search them by meaning, which spends your embedding budget", "See your Apple Health deliveries, and search them by meaning, which spends your embedding budget"])
         #expect(ReviewHeading(changes: review, firstSignIn: false) == .moreAccess)
         #expect(ReviewHeading(changes: review.filter(\.leftOut), firstSignIn: false) == .renew)
         // `~` is the repository's authority, as the token stores it.
@@ -356,13 +356,13 @@ final class TransportBox: @unchecked Sendable {
     @Test func aKindIsWordedByItsDeclaredLabel() async {
         var bare = syncManifest()
         bare.kindLabels = [:]
-        #expect(bare.scopeWords("read:providers.substrate.reamde.dev/applehealth/export") == "See your Apple Health exports")
+        #expect(bare.scopeWords("read:providers.substrate.reamde.dev/applehealth/export") == "See your Apple Health exports, and search them by meaning, which spends your embedding budget")
         let manifest = syncManifest()
-        #expect(manifest.scopeWords("read:providers.substrate.reamde.dev/applehealth/export") == "See your Apple Health deliveries")
-        #expect(manifest.scopeWords("read:providers.substrate.reamde.dev/applehealth/account") == "See your Apple Health accounts")
+        #expect(manifest.scopeWords("read:providers.substrate.reamde.dev/applehealth/export") == "See your Apple Health deliveries, and search them by meaning, which spends your embedding budget")
+        #expect(manifest.scopeWords("read:providers.substrate.reamde.dev/applehealth/account") == "See your Apple Health accounts, and search them by meaning, which spends your embedding budget")
         let stub = server(check: #"{"scopes":{"missing":["read:providers.substrate.reamde.dev/applehealth/export"]},"setup":\#(rows(["none", "none", "create", "none"]))}"#)
         #expect(await run(stub, session: appSession()).changes == [
-            Change(kind: .scope, words: "See your Apple Health deliveries"),
+            Change(kind: .scope, words: "See your Apple Health deliveries, and search them by meaning, which spends your embedding budget"),
             Change(kind: .account, words: "Create the Apple Health account “Ada's iPhone”", detail: "Timezone: Europe/London"),
         ])
     }
@@ -464,9 +464,9 @@ final class TransportBox: @unchecked Sendable {
     @Test func aFirstSignInPlansEveryRow() throws {
         let changes = syncManifest().plannedChanges()
         #expect(changes.map(\.words) == [
-            "See, add, change and delete your Apple records, including kinds added later",
-            "See your Apple Health accounts",
-            "See your Apple Health deliveries",
+            "See, add, change and delete your Apple records, including kinds added later, and search them by meaning, which spends your embedding budget",
+            "See your Apple Health accounts, and search them by meaning, which spends your embedding budget",
+            "See your Apple Health deliveries, and search them by meaning, which spends your embedding budget",
             "Send data to your repository through the Apple Health webhook, for any Apple Health account, and see every delivery to it that could not be filed, whoever sent it",
             "Install Apple",
             "Install Apple Health",
