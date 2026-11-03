@@ -11,7 +11,10 @@ public struct LinkGeneration: Sendable {
         self.folder = folder
     }
 
-    private static let name = "link.json"
+    /// The file at the folder's top that keeps it: an app that empties the
+    /// folder at a sign-out keeps this one, or the next sign-in would start
+    /// again from 0 and a job from before would pass.
+    public static let fileName = "link.json"
 
     private struct File: Codable {
         var generation: Int
@@ -19,7 +22,7 @@ public struct LinkGeneration: Sendable {
 
     /// The generation now; 0 for a folder that never had one.
     public var current: Int {
-        guard let data = try? folder.read(Self.name, in: .root),
+        guard let data = try? folder.read(Self.fileName, in: .root),
               let file = try? JSONDecoder().decode(File.self, from: data)
         else { return 0 }
         return file.generation
@@ -29,7 +32,7 @@ public struct LinkGeneration: Sendable {
     @discardableResult
     public func bump() throws -> Int {
         let next = current + 1
-        try folder.write(JSONEncoder().encode(File(generation: next)), to: Self.name, in: .root)
+        try folder.write(JSONEncoder().encode(File(generation: next)), to: Self.fileName, in: .root)
         return next
     }
 

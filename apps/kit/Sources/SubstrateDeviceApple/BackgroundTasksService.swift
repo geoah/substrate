@@ -10,6 +10,8 @@ import UIKit
 /// iOS 26's `BGContinuedProcessingTask`, a fresh identifier under the
 /// declared prefix each time (registering one twice ends the app), or the
 /// short time any app leaving the screen gets where iOS will not run one.
+/// A refresh request carries no payload of its own, so each job's is kept
+/// in the defaults under its name until the run it becomes.
 public final class BackgroundTasksService: BackgroundWork, @unchecked Sendable {
     /// The continued tasks' identifiers are this followed by a UUID; the
     /// Info.plist permits it followed by `*`.
@@ -18,6 +20,8 @@ public final class BackgroundTasksService: BackgroundWork, @unchecked Sendable {
     private var tasks: [String: BGTask] = [:]
     private var held: [BackgroundRun] = []
     private var listeners: [UUID: AsyncStream<BackgroundRun>.Continuation] = [:]
+    private var expiring: [UUID: AsyncStream<String>.Continuation] = [:]
+    private let defaults: UserDefaults
     private var continued: [String: Continued] = [:]
 
     /// The progress units of a continued task: it never knows how long the
@@ -33,8 +37,9 @@ public final class BackgroundTasksService: BackgroundWork, @unchecked Sendable {
     }
 
     @MainActor
-    public init(jobs: [String], continuedPrefix: String) {
+    public init(jobs: [String], continuedPrefix: String, defaults: UserDefaults = .standard) {
         self.continuedPrefix = continuedPrefix
+        self.defaults = defaults
         for job in jobs {
             BGTaskScheduler.shared.register(forTaskWithIdentifier: job, using: .main) { [weak self] task in
                 self?.began(task, job: job)
@@ -43,10 +48,15 @@ public final class BackgroundTasksService: BackgroundWork, @unchecked Sendable {
     }
 
     private func began(_ task: BGTask, job: String) {
-        let run = BackgroundRun(id: UUID().uuidString, job: job, budget: 30)
+        let run = BackgroundRun(id: UUID().uuidString, job: job, budget: 30, payload: payload(of: job))
         task.expirationHandler = { [weak self] in
-            guard let self, let task = lock.withLock({ tasks.removeValue(forKey: run.id) }) else { return }
+            // A run taken back before anyone listened is never handed over.
+            guard let self, let task = lock.withLock({ () -> BGTask? in
+                held.removeAll { $0.id == run.id }
+                return tasks.removeValue(forKey: run.id)
+            }) else { return }
             task.setTaskCompleted(success: false)
+            for continuation in lock.withLock({ Array(expiring.values) }) { continuation.yield(run.id) }
         }
         let listening = lock.withLock { () -> [AsyncStream<BackgroundRun>.Continuation] in
             tasks[run.id] = task
@@ -57,9 +67,17 @@ public final class BackgroundTasksService: BackgroundWork, @unchecked Sendable {
     }
 
     public func schedule(_ job: BackgroundJob) async {
+        // Kept first: a run the request becomes reads it.
+        defaults.set(try? JSONEncoder().encode(job.payload), forKey: Self.payloadKey(job.name))
         let request = BGAppRefreshTaskRequest(identifier: job.name)
         request.earliestBeginDate = job.earliest
         try? BGTaskScheduler.shared.submit(request)
+    }
+
+    private static func payloadKey(_ job: String) -> String { "substrate.background.payload." + job }
+
+    private func payload(of job: String) -> [String: String] {
+        defaults.data(forKey: Self.payloadKey(job)).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
     }
 
     public func runs() -> AsyncStream<BackgroundRun> {
@@ -72,6 +90,14 @@ public final class BackgroundTasksService: BackgroundWork, @unchecked Sendable {
         }
         for run in waiting { continuation.yield(run) }
         continuation.onTermination = { [weak self] _ in self?.lock.withLock { _ = self?.listeners.removeValue(forKey: id) } }
+        return stream
+    }
+
+    public func expirations() -> AsyncStream<String> {
+        let (stream, continuation) = AsyncStream<String>.makeStream()
+        let id = UUID()
+        lock.withLock { expiring[id] = continuation }
+        continuation.onTermination = { [weak self] _ in self?.lock.withLock { _ = self?.expiring.removeValue(forKey: id) } }
         return stream
     }
 
