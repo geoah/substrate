@@ -45,7 +45,7 @@ struct CoachTests {
         guard case let .object(budgets)? = agent["budgets"], case let .number(cap)? = budgets["spendCentsPerDay"] else {
             Issue.record("no daily cap"); return
         }
-        #expect(cap == 100)
+        #expect(cap.int == 100)
         let bundle = try #require(coach.documents(ofKind: "substrate.reamde.dev/core/bundle").first)
         guard case let .object(inputs)? = bundle.data["inputs"], case let .object(model)? = inputs["model"] else {
             Issue.record("no model input"); return

@@ -113,7 +113,7 @@ public struct WorkoutsAPI: Sendable {
         guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: data),
               case let .number(number)? = object["version"]
         else { return 0 }
-        return NSDecimalNumber(decimal: number).intValue
+        return number.int ?? 0
     }
 
     static func body(_ value: JSONValue) throws -> RequestBody {

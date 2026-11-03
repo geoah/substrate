@@ -15,10 +15,10 @@ public enum RequestBody: Sendable {
     /// `application/x-www-form-urlencoded`, each pair encoded once.
     case form([(String, String)])
 
-    /// A value as JSON: a whole number as an integer, since the server reads
-    /// a version or a count into one, and slashes unescaped.
+    /// A value as JSON text: each number with every digit it holds, each
+    /// object's keys in their order, slashes unescaped (`JSONValue.data`).
     public static func jsonValue(_ value: JSONValue) throws -> RequestBody {
-        .json(try JSONSerialization.data(withJSONObject: value.any, options: [.withoutEscapingSlashes, .fragmentsAllowed]))
+        .json(value.data(pretty: false))
     }
 
     /// An encodable value as JSON, slashes unescaped.

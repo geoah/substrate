@@ -82,7 +82,7 @@ public final class LibraryInstall: @unchecked Sendable {
         // version from the library's movements, which only a seeding writes.
         // A marker without a version is a first run cut short.
         let from: Int = if let marker {
-            if case let .number(version)? = marker.properties["version"] { NSDecimalNumber(decimal: version).intValue } else { 0 }
+            if case let .number(version)? = marker.properties["version"] { version.int ?? 0 } else { 0 }
         } else {
             listed.filter { $0.kind == kinds.movement }.compactMap { ExerciseLibrary.since($0.properties) }.max() ?? 0
         }
