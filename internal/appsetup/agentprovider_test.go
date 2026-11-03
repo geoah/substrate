@@ -223,11 +223,11 @@ data:
 	capture := &capturingAddons{publishing: published}
 	configureAddons(capture)
 	addon := substrate.AppAddon{Package: pkg, Version: 1, AddonFor: basePkg}
-	if blocked := capture.plan(ctx, ds, substrate.TokenInfo{}, addon); blocked == nil || blocked.Reason != substrate.BlockNoModel {
+	if _, blocked := capture.plan(ctx, ds, substrate.TokenInfo{}, addon); blocked == nil || blocked.Reason != substrate.BlockNoModel {
 		t.Fatalf("two offered providers and no binding installed the add-on: %+v", blocked)
 	}
 	ds.providers = ds.providers[:1]
-	if blocked := capture.plan(ctx, ds, substrate.TokenInfo{}, addon); blocked != nil {
+	if expect, blocked := capture.plan(ctx, ds, substrate.TokenInfo{}, addon); blocked != nil || len(expect) != 1 || expect[pkg] == nil || expect[pkg].Version != 1 {
 		t.Fatalf("the repository's only provider did not resolve the input: %+v", blocked)
 	}
 }
