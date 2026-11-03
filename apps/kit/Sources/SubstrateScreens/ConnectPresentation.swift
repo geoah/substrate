@@ -19,9 +19,13 @@ public struct ConnectPresentation: Codable, Equatable, Sendable {
         public var placeholder: String
         public var label: String
         public var disabled: Bool
+        /// Moves when the controller wrote `text` itself, which the field
+        /// then shows over what it holds.
+        public var revision: Int
 
-        public init(text: String, placeholder: String, label: String, disabled: Bool) {
+        public init(text: String, placeholder: String, label: String, disabled: Bool, revision: Int = 0) {
             self.text = text
+            self.revision = revision
             self.placeholder = placeholder
             self.label = label
             self.disabled = disabled

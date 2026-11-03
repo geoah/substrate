@@ -63,11 +63,12 @@ let package = Package(
         .target(name: "SubstrateDeviceApple", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateResolv"]),
         // The SwiftUI screens and record views.
         .target(name: "SubstrateUI", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateDeviceApple",
+            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal", "SubstrateScreens",
+            "SubstrateDeviceApple",
         ]),
         .target(name: "SubstrateKit", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateDeviceApple",
-            "SubstrateUI",
+            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateScreens",
+            "SubstrateDeviceApple", "SubstrateUI",
         ]),
         .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateLocal", "SubstrateScreens", "SubstrateTesting"]),
     ],

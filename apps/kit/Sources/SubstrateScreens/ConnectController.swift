@@ -124,6 +124,7 @@ public struct ConnectController: Controller {
             next.problem = nil
         case let .located(result):
             next.address = ConnectState.shown(result)
+            next.addressRevision += 1
             next.retryable = false
             next.phase = .found(result)
         case let .locateFailed(problem, retryable):
@@ -140,7 +141,7 @@ public struct ConnectController: Controller {
             if case let .signingIn(found) = state.phase { next.phase = .found(found) }
             if let problem { next.problem = problem }
         case .serverChanged:
-            next = ConnectState()
+            next = ConnectState(addressRevision: state.addressRevision + 1)
         }
         return next
     }
@@ -210,7 +211,7 @@ public struct ConnectController: Controller {
         } ?? .none
         let unrevoked = UnrevokedPresenter.present(appName: app, unrevoked: unrevoked)
         let field = ConnectPresentation.Field(text: state.address, placeholder: "ada.example.com", label: "Repository or server",
-                                              disabled: state.busy)
+                                              disabled: state.busy, revision: state.addressRevision)
         if let found, door == .tooOld, case let .tooOld(running, needed, missing) = found.verdict {
             return ConnectPresentation(field: field, door: door, found: found,
                                        tooOld: .present(appName: app, host: found.host, running: running, needed: needed, missing: missing,

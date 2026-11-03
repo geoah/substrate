@@ -7,4 +7,5 @@
 @_exported import SubstrateDevice
 @_exported import SubstrateDeviceApple
 @_exported import SubstrateRuntime
+@_exported import SubstrateScreens
 @_exported import SubstrateUI

@@ -16,9 +16,14 @@ public struct ConnectState: Codable, Equatable, Sendable {
     /// The last check failed in a way the same check may not: the name's DNS
     /// lookup did not answer, so the button offers Try Again.
     public var retryable: Bool
+    /// Moved each time the controller writes the address itself (the name a
+    /// server was found from, an empty field for another server), never by
+    /// an edit, so a field echoing what was typed is never written over.
+    public var addressRevision: Int
 
-    public init(address: String = "", phase: Phase = .idle, problem: String? = nil, retryable: Bool = false) {
+    public init(address: String = "", phase: Phase = .idle, problem: String? = nil, retryable: Bool = false, addressRevision: Int = 0) {
         self.address = address
+        self.addressRevision = addressRevision
         self.phase = phase
         self.problem = problem
         self.retryable = retryable
