@@ -360,12 +360,16 @@ app_packages() {
 }
 
 # The authority document the site serves now, on stdout: the body of a 200,
-# `{}` for a 404 (a first publish), and a refusal for anything else, since a
-# document that cannot be read could list versions this publish would then
-# drop. SUBSTRATE_APPLE_SITE_PUBLISHED names a file to read instead (empty:
-# a first publish), for trying the merge by hand.
+# `{}` for a key that is not there (a first publish), and a refusal for
+# anything else, since a document that cannot be read could list versions
+# this publish would then drop. A bucket that forbids listing answers an
+# anonymous read of a missing key with 403, not 404, so a 403 is settled
+# with the release's key: a signed HEAD of the key at `target` answers 404
+# when it is absent and 200 when it is there, in which case the document is
+# read signed. SUBSTRATE_APPLE_SITE_PUBLISHED names a file to read instead
+# (empty: a first publish), for trying the merge by hand.
 published_document() {
-	local site="$1" authority="$2" body status
+	local site="$1" authority="$2" target="$3" body status
 	if [ -n "${SUBSTRATE_APPLE_SITE_PUBLISHED+x}" ]; then
 		if [ -z "$SUBSTRATE_APPLE_SITE_PUBLISHED" ]; then
 			echo '{}'
@@ -388,6 +392,27 @@ published_document() {
 			echo '{}'
 			return
 			;;
+		403)
+			if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+				echo "apple: reading $site/.well-known/substrate/authority.json anonymously answered 403, which a bucket also answers for a key that is not there; set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to settle it with a signed read, or SUBSTRATE_APPLE_SITE_PUBLISHED to try the merge against a saved document" >&2
+				return 1
+			fi
+			local signed
+			signed="$(s3 -I -o /dev/null -w '%{http_code}' --max-time 20 "$target/.well-known/substrate/authority.json")" || signed="unreachable"
+			case "$signed" in
+			404)
+				echo '{}'
+				return
+				;;
+			200)
+				body="$(s3 -f --max-time 20 "$target/.well-known/substrate/authority.json")" || return 1
+				;;
+			*)
+				echo "apple: reading $site/.well-known/substrate/authority.json anonymously answered 403 and the signed read of $target/.well-known/substrate/authority.json answered $signed" >&2
+				return 1
+				;;
+			esac
+			;;
 		*)
 			echo "apple: reading $site/.well-known/substrate/authority.json answered $status" >&2
 			return 1
@@ -407,6 +432,62 @@ published_document() {
 	echo "$body"
 }
 
+# Every closure this tree publishes for the first time (a package and
+# version the live document does not list under this digest), checked as the
+# server admits it before anything is uploaded, since a published version
+# never changes: substratectl, built from this tree, parses the closure the
+# way the server's catalog does (`publish --check`), refuses a version the
+# document lists under another digest, one below the newest listed, and a
+# narrowing of the newest published closure unless
+# SUBSTRATE_APPLE_SITE_ALLOW_NARROWING=1 passes `--allow-narrowing`. The
+# document goes to it as a file, with each package's newest published
+# closure fetched beside it under the name the file lists, because a
+# file-backed document's closures are read from the document's directory
+# and never fetched. Runs in a dry run too: it uploads nothing.
+check_publications() {
+	local out="$1" published="$2" built="$3" authority="$4" site="$5"
+	local new
+	new="$(jq -r --argjson published "$published" '.[] as $b |
+		select([($published.packages // [])[] | select(.package == $b.package) | (.versions // [])[] |
+			select(.version == $b.version and (.sha256 | ascii_downcase) == ($b.sha256 | ascii_downcase))] | length == 0) |
+		"\($b.package) \($b.version)"' <<<"$built")"
+	[ -n "$new" ] || return 0
+	local tmp
+	tmp="$(mktemp -d)"
+	echo "apple: building substratectl from this tree to check the closures it publishes"
+	(cd ../.. && go build -o "$tmp/substratectl" ./cmd/substratectl) || {
+		rm -rf "$tmp"
+		return 1
+	}
+	local doc="$tmp/authority.json"
+	jq --arg authority "$authority" '{authority: $authority, name: (.name // "Substrate"),
+		packages: [(.packages // [])[] | . as $p | . + {versions: [($p.versions // [])[] | . + {closure: "\($p.package)-\(.version).yaml"}]}]}' \
+		<<<"$published" >"$doc"
+	local pkg version newest nv nurl args
+	while read -r pkg version; do
+		newest="$(jq -r --arg pkg "$pkg" '[(.packages // [])[] | select(.package == $pkg) | (.versions // [])[]] | sort_by(-.version) | first // empty |
+			"\(.version) \(.closure)"' <<<"$published")"
+		if [ -n "$newest" ]; then
+			read -r nv nurl <<<"$newest"
+			curl -fsS --max-time 60 -o "$tmp/$pkg-$nv.yaml" "$nurl" || {
+				echo "apple: fetching the published $authority/$pkg version $nv closure from $nurl failed; the candidate cannot be compared with it" >&2
+				rm -rf "$tmp"
+				return 1
+			}
+		fi
+		args=(publish "$authority/$pkg" --check --file "$out/packages/$pkg-$version.yaml" --version "$version"
+			--closure "$site/packages/$pkg-$version.yaml" --document "$doc")
+		if [ "${SUBSTRATE_APPLE_SITE_ALLOW_NARROWING:-}" = 1 ]; then args+=(--allow-narrowing); fi
+		if ! "$tmp/substratectl" "${args[@]}" >/dev/null; then
+			echo "apple: $authority/$pkg version $version is not a closure the server would admit, so nothing is published; fix it, or ship it as the next version" >&2
+			rm -rf "$tmp"
+			return 1
+		fi
+		echo "apple: checked $authority/$pkg version $version as the server admits it"
+	done <<<"$new"
+	rm -rf "$tmp"
+}
+
 # The site under SUBSTRATE_APPLE_SITE_URL, an https origin on a host of its
 # own, served at its root: Apple's association file naming every app id
 # for `webcredentials` and for `applinks` on its own callback path, the
@@ -417,7 +498,9 @@ published_document() {
 # this tree ships are built by apps/apple/scripts/workouts-package.py; every
 # version the live document already lists is carried forward as it is, and
 # a listed version whose closure this tree builds with another digest is
-# refused, because a published version never changes. The closures go up
+# refused, because a published version never changes. A closure published
+# for the first time is checked as the server admits it before anything goes
+# up (check_publications). The closures go up
 # first and the document last, so the document never names a closure that is
 # not there yet, and closures.lock.json beside the package sources is
 # written last of all with what is published, for the generator's offline
@@ -457,7 +540,7 @@ publish_site() {
 
 	# What the site serves today: every version it lists stays listed.
 	local published
-	published="$(published_document "$site" "$authority")" || return 1
+	published="$(published_document "$site" "$authority" "$target")" || return 1
 	local conflicts
 	conflicts="$(jq -r --argjson built "$built" '[.packages // [] | .[] as $lp | ($lp.versions // [])[] as $lv |
 		$built[] | select(.package == $lp.package and .version == $lv.version and .sha256 != $lv.sha256) |
@@ -478,11 +561,18 @@ publish_site() {
 		done <<<"$stale"
 		return 1
 	fi
+	check_publications "$out" "$published" "$built" "$authority" "$site" || return 1
+	# Every published entry carried forward whole (its `addonFor` and
+	# whatever else the document says of it), its versions joined with this
+	# tree's, newest first; a package the document does not list yet is
+	# added.
 	local packages
 	packages="$(jq -c --argjson built "$built" '
-		((.packages // []) + ($built | group_by(.package) | map({package: .[0].package, versions: map({version, closure, sha256})})))
-		| group_by(.package)
-		| map({package: .[0].package, versions: (map(.versions[]) | group_by(.version) | map(first) | sort_by(-.version))})
+		($built | group_by(.package) | map({key: .[0].package, value: map({version, closure, sha256})}) | from_entries) as $new
+		| (.packages // []) as $old
+		| ($old | map(.package)) as $names
+		| ([$old[] | . + {versions: (((.versions // []) + ($new[.package] // [])) | group_by(.version) | map(first) | sort_by(-.version))}]
+			+ [$new | to_entries[] | select(.key as $name | $names | index($name) | not) | {package: .key, versions: (.value | sort_by(-.version))}])
 		| sort_by(.package)' <<<"$published")"
 
 	local details="[]" ids="[]" apps="[]"

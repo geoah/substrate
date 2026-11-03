@@ -110,12 +110,18 @@ every release publishes again:
   names the authority as `substrate_authority`.
 
 A published version never changes: the task reads the live document first
-(absent is a first publish), carries every version it lists forward as it
-is, and refuses to publish a listed version whose closure this tree builds
+(absent is a first publish; a bucket that forbids listing answers 403 for a
+missing key, which the release's key settles with a signed read), carries
+every package it lists forward whole, its versions joined with this tree's,
+and refuses to publish a listed version whose closure this tree builds
 with another digest, or a version below the newest listed that was never
-published. The closures go up first and the document last, so the document
-never names a closure that is not there yet, and a release publishes the
-site before it uploads the build that needs it.
+published. Every closure it publishes for the first time is checked as the
+server admits it before anything goes up: `substratectl publish --check`,
+built from the tree, parses it like the server's catalog against the live
+document and its newest published closure, and refuses a narrowing unless
+`SUBSTRATE_APPLE_SITE_ALLOW_NARROWING=1`. The closures go up first and the
+document last, so the document never names a closure that is not there yet,
+and a release publishes the site before it uploads the build that needs it.
 `SUBSTRATE_APPLE_SITE_DRY_RUN=1` builds everything under `build/site`, prints
 what it would upload and writes nothing anywhere else; with
 `SUBSTRATE_APPLE_SITE_PUBLISHED=<file>` the merge is tried against a saved
