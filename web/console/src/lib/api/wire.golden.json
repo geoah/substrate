@@ -1,4 +1,10 @@
 {
+  "AddonInstallResult": {
+    "package": true,
+    "problem": false,
+    "state": true,
+    "tokenId": true
+  },
   "AffectedRecord": {
     "deleted": false,
     "id": true,
@@ -213,10 +219,12 @@
     "verified": true
   },
   "AuthorizationApproval": {
+    "addons": false,
     "lifetimeDays": true,
     "planHash": false,
     "providerChoices": false,
-    "scopes": true
+    "scopes": true,
+    "settings": false
   },
   "AuthorizationBlock": {
     "fix": false,
@@ -263,6 +271,7 @@
     "purpose": false
   },
   "AuthorizationPackage": {
+    "addonFor": false,
     "description": false,
     "functions": false,
     "held": false,
@@ -274,6 +283,7 @@
     "reach": false,
     "required": true,
     "requires": false,
+    "settings": false,
     "shipped": false,
     "tier": false,
     "triggers": false
@@ -378,6 +388,17 @@
     "scope": true,
     "verb": true,
     "write": true
+  },
+  "AuthorizationSetting": {
+    "description": false,
+    "id": true,
+    "required": true,
+    "secret": true
+  },
+  "AuthorizationSettingValue": {
+    "id": true,
+    "secret": true,
+    "value": true
   },
   "AuthorizationSetup": {
     "account": false,

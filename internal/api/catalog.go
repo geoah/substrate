@@ -255,13 +255,14 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 	// batch committed, so `landed` here is what was actually written. Reading
 	// the states back instead would answer from a registry that may have moved
 	// under the transaction.
-	writeJSON(w, http.StatusOK, bundleTaken{BundleStatus: st, SuggestedMappings: suggested})
+	writeJSON(w, http.StatusOK, bundleTaken{BundleStatus: st, SuggestedMappings: suggested, Addons: b.AddonResults})
 }
 
 // bundleTaken is what the two doors answer: the landed bundle's computed
 // status, plus the state of each suggested mapping the closure carries. A
 // closure with none marshals exactly as the status alone did.
 type bundleTaken struct {
+	Addons []substrate.AddonInstallResult `json:"addons,omitempty"`
 	substrate.BundleStatus
 	SuggestedMappings []substrate.SuggestedMapping `json:"suggestedMappings,omitempty"`
 }

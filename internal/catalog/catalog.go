@@ -50,6 +50,7 @@ import (
 // (internal/substrate/wire_test.go); the closure documents stay here,
 // unexported, and never marshal.
 type Bundle struct {
+	AddonResults []substrate.AddonInstallResult `json:"-"`
 	substrate.CatalogBundle
 
 	// vocabularyDocs is the closure — the core schema documents (bundle.yaml),
@@ -114,9 +115,10 @@ func (b *Bundle) HeldID(held map[string]bool, homeAuthority string) string {
 
 // Catalog is the parsed set of shipped bundles, indexed by id.
 type Catalog struct {
-	reader  *authority.Reader
-	bundles []*Bundle
-	byID    map[string]*Bundle
+	reader       *authority.Reader
+	addonPlanner AddonPlanner
+	bundles      []*Bundle
+	byID         map[string]*Bundle
 	// warnings names the shipped directories that failed to parse — a
 	// half-built or malformed example never bricks the catalog, but the
 	// operator changelog should say it was dropped.
@@ -527,7 +529,9 @@ func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, i
 	if err != nil {
 		return nil, nil, err
 	}
-	return b, report, nil
+	result := *b
+	result.AddonResults = c.installAddons(ctx, ds, append(requirements, b))
+	return &result, report, nil
 }
 
 func (c *Catalog) installed(ctx context.Context, b *Bundle, ds substrate.Dataset, confirm *substrate.ConversionConfirm) ([]substrate.SuggestedMapping, error) {
