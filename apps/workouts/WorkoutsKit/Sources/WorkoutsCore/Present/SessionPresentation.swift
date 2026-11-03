@@ -720,6 +720,11 @@ public struct AccessoryPresentation: Codable, Equatable, Sendable {
     public var detail: String?
     /// `detail`'s set alone, `Chest Press (Machine), set 2`: it gives way first on a narrow bar.
     public var set: String?
+    /// `set`'s exercise, `Chest Press (Machine)`: the one part cut on a narrow
+    /// bar, at its end, so the set's label and values stay whole.
+    public var exercise: String?
+    /// `set`'s label after the exercise, `set 2`, `warm-up`.
+    public var setLabel: String?
     /// `detail`'s values alone, `40 kg × 11` or `holding`: never cut.
     public var values: String?
     /// That set: a tap on the bar opens the session at it.
@@ -731,11 +736,13 @@ public struct AccessoryPresentation: Codable, Equatable, Sendable {
     /// A timed set's start while it runs: the bar counts up from it in place of the rest.
     public var timerStartedAt: Date?
 
-    public init(title: String, set: String?, values: String?, row: RowID? = nil, isPaused: Bool, restEndsAt: Date?,
-                timerStartedAt: Date? = nil)
+    public init(title: String, exercise: String?, setLabel: String?, values: String?, row: RowID? = nil, isPaused: Bool,
+                restEndsAt: Date?, timerStartedAt: Date? = nil)
     {
         self.title = title
-        self.set = set
+        self.exercise = exercise
+        self.setLabel = setLabel
+        set = exercise.map { exercise in setLabel.map { "\(exercise), \($0)" } ?? exercise }
         self.values = values
         detail = set.map { set in values.map { "\(set), \($0)" } ?? set }
         self.row = row

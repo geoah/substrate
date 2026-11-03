@@ -241,10 +241,21 @@ struct RowsTitleView: View {
     var body: some View {
         Button(action: togglePause) {
             VStack(spacing: 0) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                // The bar's buttons leave the title little room: a name that
+                // does not fit on one line takes two smaller ones, wrapped
+                // between its words, and only then is cut, at its end.
+                ViewThatFits(in: .horizontal) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(title)
+                        .font(.footnote.weight(.semibold))
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(.primary)
                 TimelineView(.periodic(from: header.clockStart, by: 60)) { context in
                     let end = header.clockPausedAt ?? context.date
                     let length = Format.sessionLength(Seconds(max(0, end.timeIntervalSince(header.clockStart))))

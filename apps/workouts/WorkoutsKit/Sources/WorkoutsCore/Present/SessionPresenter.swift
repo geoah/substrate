@@ -119,7 +119,8 @@ struct Presenting {
         let isTiming = timerStart != nil && timedID == upNext?.row
         return AccessoryPresentation(
             title: title,
-            set: upNext.map { "\($0.exercise), \($0.label.spoken)" },
+            exercise: upNext?.exercise,
+            setLabel: upNext?.label.spoken,
             values: isTiming ? "holding" : upNext.flatMap { $0.values.isEmpty ? nil : $0.values },
             row: upNext?.row,
             isPaused: isPaused,

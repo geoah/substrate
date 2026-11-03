@@ -71,13 +71,20 @@ struct InProgressAccessory: View {
             .lineLimit(1)
     }
 
-    /// The set, which truncates, then its values, which never do.
+    /// The exercise, which is cut at its end, then the set's label and its
+    /// values, which never are.
     private func nextSet(font: Font) -> some View {
         HStack(spacing: 0) {
-            if let set = accessory.set {
-                Text(accessory.values == nil ? set : "\(set), ")
+            if let exercise = accessory.exercise {
+                Text(accessory.setLabel == nil && accessory.values == nil ? exercise : "\(exercise), ")
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.tail)
+            }
+            if let label = accessory.setLabel {
+                Text(accessory.values == nil ? label : "\(label), ")
+                    .lineLimit(1)
+                    .fixedSize()
+                    .layoutPriority(1)
             }
             if let values = accessory.values {
                 Text(values)
