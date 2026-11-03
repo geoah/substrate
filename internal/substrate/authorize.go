@@ -86,6 +86,9 @@ const (
 	SetupEnable  = "enable"
 	SetupNone    = "none"
 	SetupUnknown = "unknown"
+	// SetupWait is an approved add-on whose provider is not installed: it
+	// installs when the owner installs that provider (decision 0216).
+	SetupWait = "wait"
 )
 
 // The reasons a setup row cannot run, which a client words and acts on
