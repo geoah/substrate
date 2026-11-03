@@ -935,6 +935,52 @@ description = "Publish the apps' site: the association file, the authority docum
 run = ".mise/apple.sh site"
 
 # =============================================================================
+# Android (apps/gradle, the kit's modules under apps/kit/android)
+# =============================================================================
+#
+# Every task is a subcommand of .mise/android.sh. The open-source Swift the
+# Swift SDK for Android was built for, and the JDK, are each task's own
+# `tools`, never this file's [tools]: the apple:* tasks build with Xcode's
+# swift, which a [tools] swift would shadow. lint:toolchain holds every
+# android:* task's tools equal, and the swift one equal to the Gradle
+# catalog's and to the bundle android.sh installs.
+
+[tasks."android:sdk"]
+description = "Install the pinned Android SDK packages and the Swift SDK for Android (by URL and checksum), and link the bundle to the NDK"
+tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
+run = ".mise/android.sh sdk"
+
+[tasks."android:generate"]
+description = "Write the bridge's golden, its Kotlin and the protocol fingerprint from the Bridged declarations (apps/kit/android/bridge.json)"
+tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
+run = ".mise/android.sh generate"
+
+[tasks."android:generate:check"]
+description = "Fail when the bridge's golden, its Kotlin or the fingerprint is stale"
+tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
+run = ".mise/android.sh generate:check"
+
+[tasks."android:build"]
+description = "Cross-compile the kit for Android and build kit-core, kit-device and bridge-check, debug and release (SUBSTRATE_ABIS, default arm64-v8a,x86_64)"
+tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
+run = ".mise/android.sh build"
+
+[tasks."android:test"]
+description = "The bridge's tests off a device: the generator, the Swift bridge on this host, the Kotlin unit tests and the Swift-Kotlin-Swift round trip"
+tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
+run = ".mise/android.sh test"
+
+[tasks."android:smoke"]
+description = "On a booted emulator: the release build's runtime checks, three cold starts, the APK's libraries, then the instrumented contract tests"
+tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
+run = ".mise/android.sh smoke"
+
+[tasks."android:lock"]
+description = "Rewrite the Gradle dependency locks after a change to gradle/libs.versions.toml"
+tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
+run = ".mise/android.sh lock"
+
+# =============================================================================
 # Image
 # =============================================================================
 
@@ -1218,6 +1264,17 @@ description = "CI job `apps linux`: the kit and WorkoutsKit built and tested on 
 # fixture the kit's tests read, or this pipeline's own definition runs it.
 depends = ["apps:test:linux"]
 
+[tasks."ci:android"]
+description = "CI job `android build`: the Android toolchain installed, the generator checked, the bridge's tests, and the kit cross-compiled for both ABIs"
+# Gated on `changes`' `apps` answer, as `ci:apps` is. Sequential: each step
+# needs the SDK the first installs.
+run = [
+  "mise run android:sdk",
+  "mise run android:generate:check",
+  "mise run android:test",
+  "mise run android:build",
+]
+
 [tasks."ci:image"]
 description = "CI job `image builds and boots` — the image builds from a clean tree and serves under compose.yaml"
 # Build, then boot. The build alone passed for a release image that could not
@@ -1260,6 +1317,7 @@ depends = [
   "ci:console:test",
   "ci:image",
   "ci:apps",
+  "ci:android",
 ]
 
 [tasks."ci:quick"]

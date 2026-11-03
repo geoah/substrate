@@ -1,5 +1,8 @@
-/// Whether the device can reach a network, and on what terms.
-public struct NetworkPath: Codable, Hashable, Sendable {
+import SubstrateCore
+
+/// Whether the device can reach a network, and on what terms. Bridged: the
+/// Android connectivity service answers with it.
+public struct NetworkPath: Bridged, Hashable {
     public var online: Bool
     /// A cellular or hotspot network the person pays for by the byte.
     public var expensive: Bool

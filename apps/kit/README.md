@@ -14,10 +14,11 @@ Workouts use it; an app adds it as a local package (`project.yml`'s
 ## The libraries
 
 Each library depends only on the ones above it in this table, which
-`mise run lint:apps` holds. The portable ones (every one but the last two)
+`mise run lint:apps` holds. The portable ones (every one above the Apple rows)
 import Foundation and the kit alone, and build and test on iOS, macOS and
 Linux (`mise run apps:test:linux`), as Android's Swift does; the Apple ones
-compile to nothing elsewhere. The package is in Swift 6 language mode.
+compile to nothing elsewhere, and the Android ones build everywhere with
+their JNI half on Android alone. The package is in Swift 6 language mode.
 
 | Library | What it holds |
 | --- | --- |
@@ -31,6 +32,8 @@ compile to nothing elsewhere. The package is in Swift 6 language mode.
 | `SubstrateTesting` | the fakes tests use: `StubTransport` and `ScriptedServer` (scripted servers, by route and by rule), `ScriptedLines` (answers read line by line), `MemoryStorage`, `TableResolver`, `ScriptedBrowser`, `ScriptedConnectivity`, `TemporaryFolders`; and the runtime's harness: `ControllerHarness` with `TestClock`, `SequentialIDs` and `MemoryJournal` |
 | `SubstrateDeviceApple` | the device services on Apple frameworks: `KeychainStorage`, `WebAuthenticator` (`ASWebAuthenticationSession`, the claimed callback or the loopback redirect), `LoopbackReceiver`, `DNSServiceTXTResolver` and the `SubstrateResolv` C target behind it, `PathMonitor` (`NWPathMonitor`), `ApplicationFolders` |
 | `SubstrateUI` | the renderers of SubstrateScreens' presentations (`ConnectScreen`, `AccessBannerView`, `AccessEndedScreen`, `ReviewScreen` and `ReviewSectionsView`, `ServerTooOldScreen`, `RepositoryScreen`, `StatusScreen`, `SettingsScreen`, `AboutScreen`, `ProblemView`, `ChangeLineView`) with the design tokens, `Gallery` (each screen's renderer), `PresentationModel` (a root's presentations republished on the main actor) and `AppEnvironment.apple`; the views apps call by their own initialisers, now thin wrappers over those (`ConnectView`, which runs a `ConnectController`, `ServerTooOldView`, `AppStatusBanner`, `ReviewChangesSheet` and its `ReviewChangesSections`, `AccessEndingBanner`, `AccessEndedView`, `AccountSection` (the Repository screen under the apps' word, Account), `UnrevokedNotices`, `ChangeRow`, `ProblemBox`), `StatusBadge`; and the record views (`KindGlyph`, `RecordPill`, `RecordSheet`, `RecordDetailView`, `RecordValueView`) |
+| `SubstrateBridge` | the Android bridge (§5.5, [android/](android/README.md)): `BridgeRuntime` (`start`, `post`, what `deliver` is handed), the `Envelope` and its `Op`s, `Handle`s with generations, `BridgeRoot` and `RootRegistry`, `RuntimeRoot` (any `Runtime` as a root) and `RouteCommand`, `BridgeContext` (a handle's presentations, keyed lists and `DeviceChannel`, and its `AppEnvironment`), `ListMessage`, `BridgeFailure`, `Redaction`, `StartConfig` and `BridgeEnvironment`, `ProtocolFingerprint`; the device services over it: `BridgeTransport`, `BridgeSecureStore`, `BridgeTXTResolver`, `BridgeConnectivity`, `BridgeFolders`, with `DeviceRequest` and their answers; the JNI surface in `Android/`, compiled on Android alone over the `SubstrateJNI` C target |
+| `SubstrateBridgeCheck` | `CheckRoot` and `Counter`, the roots the bridge's runtime checks open on a device |
 
 `SubstrateKit` is every library but `SubstrateTesting` and `SubstrateLocal`
 under one import (`SubstrateLocal`'s outbox shares its names with

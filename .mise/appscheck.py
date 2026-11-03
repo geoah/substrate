@@ -30,8 +30,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APPS = os.path.join(ROOT, "apps")
 KIT = os.path.join(APPS, "kit")
 
-# The folders under apps/ that are not apps: the kit and the Xcode project.
-NOT_APPS = {"kit", "xcode"}
+# The folders under apps/ that are not apps: the kit, the Xcode project and
+# the Gradle root.
+NOT_APPS = {"kit", "xcode", "gradle"}
 
 # Build output a laptop leaves in the tree, which no rule reads.
 SKIP_DIRS = {".build", "build", ".swiftpm", "DerivedData", "node_modules"}
@@ -305,8 +306,10 @@ for package in packages_under(APPS):
 # portable library never reaches an Apple-only one, and an app that takes one
 # library takes only what is under it. The order is §5.3's: a library added
 # to the package is added here too, in its place, or this refuses it.
-# SubstrateResolv is the C half of SubstrateDeviceApple; SubstrateKit is the
-# umbrella every app imports today, over every library but the test fakes.
+# SubstrateResolv is the C half of SubstrateDeviceApple, SubstrateJNI the C
+# half of SubstrateBridge; SubstrateKit is the umbrella every app imports
+# today, over every library but the test fakes. The Android rows come last
+# and take no Apple row: they build where no Apple framework is.
 
 KIT_ORDER = [
     "SubstrateCore",
@@ -319,8 +322,12 @@ KIT_ORDER = [
     "SubstrateTesting",
     "SubstrateDeviceApple",
     "SubstrateUI",
+    "SubstrateBridge",
+    "SubstrateBridgeCheck",
 ]
-KIT_HELPERS = {"SubstrateResolv": {"SubstrateDeviceApple"}}
+KIT_HELPERS = {"SubstrateResolv": {"SubstrateDeviceApple"}, "SubstrateJNI": {"SubstrateBridge"}}
+APPLE_ROWS = {"SubstrateDeviceApple", "SubstrateUI"}
+ANDROID_ROWS = {"SubstrateBridge", "SubstrateBridgeCheck"}
 UMBRELLA = "SubstrateKit"
 # The third-party products a kit library may take, by library.
 KIT_EXTERNAL = {("SubstrateAuth", "Crypto", "swift-crypto")}
@@ -354,6 +361,8 @@ for target, info in sorted(kit.targets.items()):
             flag(f"apps/kit's {target} depends on {dep}, which comes after it: a library depends only on the ones before it")
         if dep == "SubstrateTesting":
             flag(f"apps/kit's {target} depends on SubstrateTesting, which only tests take")
+        if target in ANDROID_ROWS and dep in APPLE_ROWS:
+            flag(f"apps/kit's {target} depends on {dep}, an Apple library, and it builds for Android")
 
 
 # --- the portable code imports only what Linux and Android have ----------
@@ -391,6 +400,75 @@ def check_portable(directory, own):
 for target in PORTABLE_KIT:
     if target in kit.targets:
         check_portable(kit.source_dir(target), set())
+
+
+# --- the Android bridge imports only what Android has --------------------
+#
+# SubstrateBridge and SubstrateBridgeCheck build into the library an Android
+# app loads, and on every host the kit's tests run on. They import what the
+# portable code may, SubstrateJNI (the NDK's headers, empty off Android),
+# and the NDK's `Android` module only under `#if os(Android)`, where the
+# JNI half of the bridge lives.
+
+ANDROID_GUARDED = {"Android": "os(Android)"}
+
+for target in sorted(ANDROID_ROWS):
+    if target not in kit.targets:
+        continue
+    for path in swift_files(kit.source_dir(target)):
+        for number, module, conditions in imports(path):
+            if module in ALLOWED or module in KIT_MODULES - APPLE_ROWS or module == "SubstrateJNI":
+                continue
+            guard = GUARDED.get(module) or ANDROID_GUARDED.get(module)
+            if guard and any(guard in c for c in conditions):
+                continue
+            where = f" outside `#if {guard}`" if guard else ""
+            flag(f"{rel(path)}:{number} imports {module}{where}, which the Android bridge may not")
+
+
+# --- only kit-device and an app's android/ touch an Android service ------
+#
+# A device service is a protocol in SubstrateDevice and an implementation
+# per system (§5.4); on Android the implementations are kit-device's, and an
+# app's own device code lives in its android/ folder. Kotlin anywhere else
+# in the kit that reaches a system service (`getSystemService`, the network,
+# the Keystore, location, notifications, background work) is device code in
+# the wrong module, and the next app would not find it there.
+
+SERVICE_KOTLIN = re.compile(
+    r"getSystemService\(|^import\s+(android\.(net|security|location|hardware|bluetooth|telephony|app\.(NotificationManager|job))\b|androidx\.work\b)",
+    re.M,
+)
+for path in walk(os.path.join(KIT, "android")):
+    if not path.endswith(".kt"):
+        continue
+    if os.path.relpath(path, os.path.join(KIT, "android")).split(os.sep)[0] == "kit-device":
+        continue
+    for number, line in enumerate(read(path).splitlines(), 1):
+        if SERVICE_KOTLIN.search(line):
+            flag(f"{rel(path)}:{number} touches an Android service, which only kit-device and an app's android/ may")
+
+
+# --- the kit's Gradle modules depend only on the ones before them --------
+#
+# kit-core (the Swift library and the bridge), then kit-device (the device
+# services), then kit-ui (the composables): the same order as the Swift
+# rows, so the bridge never reaches the services that answer it. Every
+# module apps/gradle/settings.gradle.kts includes exists.
+
+GRADLE_ORDER = ["kit-core", "kit-device", "kit-ui"]
+settings = os.path.join(APPS, "gradle", "settings.gradle.kts")
+if os.path.exists(settings):
+    for name, folder in re.findall(r'module\(\s*":([\w-]+)",\s*"([^"]+)"\s*\)', read(settings)):
+        build = os.path.join(APPS, "gradle", folder, "build.gradle.kts")
+        if not os.path.exists(build):
+            flag(f"apps/gradle/settings.gradle.kts includes :{name} from {folder}, which has no build.gradle.kts")
+            continue
+        if name not in GRADLE_ORDER:
+            continue
+        for dep in re.findall(r'project\(\s*":([\w-]+)"\s*\)', read(build)):
+            if dep in GRADLE_ORDER and GRADLE_ORDER.index(dep) >= GRADLE_ORDER.index(name):
+                flag(f"{rel(build)} depends on :{dep}, which comes after :{name}")
 for app in apps:
     for package in packages_under(os.path.join(APPS, app)):
         own = set(package.targets)
@@ -558,6 +636,13 @@ for path in [os.path.join(APPS, "xcode", "project.yml")] + [os.path.join(APPS, a
         continue
     for url in re.findall(r"^\s+url:\s*(\S+)", read(path), re.M):
         used.setdefault(url.rstrip("/").split("/")[-1].removesuffix(".git"), rel(path))
+
+# The Android build's: every library in the Gradle catalog, by its Maven
+# group (`androidx.*` as one, AndroidX).
+catalog = os.path.join(APPS, "gradle", "gradle", "libs.versions.toml")
+if os.path.exists(catalog):
+    for group in re.findall(r'module\s*=\s*"([^:"]+):', read(catalog)):
+        used.setdefault("androidx" if group.startswith("androidx.") else group, rel(catalog))
 
 readme = read(os.path.join(APPS, "README.md"))
 section = re.search(r"^## Third-party packages\n(.*?)(?=^## |\Z)", readme, re.M | re.S)

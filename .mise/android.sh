@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+# The Android build of the apps (docs/plans/app-kit.md §5.5, §8): one
+# subcommand per `android:*` task in .mise.toml.
+#
+#   sdk             install the pinned SDK packages and the Swift SDK for
+#                   Android, and link the bundle to the NDK
+#   generate        write bridge.golden.json, the Kotlin and the fingerprint
+#   generate:check  fail when any of them is stale
+#   build           every module, debug and release, for SUBSTRATE_ABIS
+#   test            the generator's tests and check, the bridge's Swift tests
+#                   on this host, the Kotlin unit tests, and the round trip
+#                   (Swift encodes, Kotlin decodes and encodes, Swift decodes)
+#   smoke           on a booted emulator or device: the release build's
+#                   runtime checks, three cold starts, the instrumented tests
+#   lock            rewrite the Gradle dependency locks
+#
+# The tasks run with the open-source Swift and the JDK as task tools
+# (`tools =` on each task), so `swift` here is never Xcode's and the
+# apple:* tasks keep Xcode's. lint:toolchain holds the pins below to the
+# Gradle catalog and to those task tools.
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+# --- the pins ---------------------------------------------------------------
+swift_version=6.4.2
+swift_sdk_bundle=swift-${swift_version}-RELEASE_android.artifactbundle
+swift_sdk_url=https://download.swift.org/swift-${swift_version}-release/android-sdk/swift-${swift_version}-RELEASE/${swift_sdk_bundle}.tar.gz
+swift_sdk_checksum=4d6ad63ea74becd58e123ff58b1b48c3be5ec0db0dff0ea5abe37ac007dd3233
+ndk_version=30.0.16248370
+sdk_packages=(
+  "platform-tools"
+  "platforms;android-37.0"
+  "build-tools;36.0.0"
+  "ndk;${ndk_version}"
+)
+
+abis=${SUBSTRATE_ABIS:-arm64-v8a,x86_64}
+
+if [[ -z ${ANDROID_HOME:-} ]]; then
+  if [[ -d $HOME/Library/Android/sdk ]]; then
+    ANDROID_HOME=$HOME/Library/Android/sdk
+  elif [[ -n ${ANDROID_SDK_ROOT:-} ]]; then
+    ANDROID_HOME=$ANDROID_SDK_ROOT
+  fi
+fi
+export ANDROID_HOME
+ndk_home=${ANDROID_HOME:-}/ndk/$ndk_version
+adb=${ANDROID_HOME:-}/platform-tools/adb
+
+die() {
+  printf 'android: %s\n' "$*" >&2
+  exit 1
+}
+
+need_sdk() {
+  [[ -n ${ANDROID_HOME:-} && -d $ANDROID_HOME ]] || die "no Android SDK; set ANDROID_HOME, then run \`mise run android:sdk\`"
+  [[ -d $ndk_home ]] || die "no NDK $ndk_version; run \`mise run android:sdk\`"
+}
+
+# The task's swift, refused unless it is the open-source build of the pin.
+need_swift() {
+  local version
+  version=$(swift --version 2>/dev/null | grep -m1 -o 'swift-[0-9.]*-RELEASE' || true)
+  [[ $version == "swift-${swift_version}-RELEASE" ]] ||
+    die "swift on PATH is not the open-source ${swift_version} (run this through \`mise run android:…\`)"
+  SUBSTRATE_SWIFT=$(command -v swift)
+  export SUBSTRATE_SWIFT
+}
+
+gradle() {
+  (cd apps/gradle && ./gradlew --console=plain "-Psubstrate.abis=$abis" "$@")
+}
+
+sdkmanager_bin() {
+  local candidate
+  for candidate in "$ANDROID_HOME"/cmdline-tools/latest/bin/sdkmanager "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager; do
+    [[ -x $candidate ]] && {
+      printf '%s' "$candidate"
+      return
+    }
+  done
+  command -v sdkmanager || die "no sdkmanager under $ANDROID_HOME/cmdline-tools; install the Android command-line tools"
+}
+
+swift_sdks_dir() {
+  local dir
+  for dir in "$HOME/Library/org.swift.swiftpm/swift-sdks" "$HOME/.swiftpm/swift-sdks"; do
+    [[ -d $dir/$swift_sdk_bundle ]] && {
+      printf '%s' "$dir"
+      return
+    }
+  done
+}
+
+cmd_sdk() {
+  [[ -n ${ANDROID_HOME:-} ]] || die "set ANDROID_HOME to where the Android SDK goes"
+  need_swift
+  local sdkmanager
+  sdkmanager=$(sdkmanager_bin)
+  yes | "$sdkmanager" --licenses >/dev/null || true
+  "$sdkmanager" --install "${sdk_packages[@]}"
+
+  if [[ -z $(swift_sdks_dir) ]]; then
+    swift sdk install "$swift_sdk_url" --checksum "$swift_sdk_checksum"
+  fi
+  local bundle
+  bundle=$(swift_sdks_dir)/$swift_sdk_bundle
+  [[ -d $bundle ]] || die "the Swift SDK for Android did not install"
+  # The bundle's script links its sysroot to this NDK; run again whenever the
+  # link names another one.
+  local linked
+  linked=$(readlink "$bundle/swift-android/ndk-sysroot/usr/include" 2>/dev/null || true)
+  if [[ $linked != "$ndk_home"/* ]]; then
+    ANDROID_NDK_HOME=$ndk_home "$bundle/swift-android/scripts/setup-android-sdk.sh"
+  fi
+  printf 'android: SDK at %s, NDK %s, Swift SDK %s\n' "$ANDROID_HOME" "$ndk_version" "$bundle"
+}
+
+# Swift for this host, not for Android: Xcode's on a Mac, whose SDK the
+# kit's Apple libraries and their macros need and whose .build the apple:*
+# tasks share; the task's open-source one elsewhere.
+host_swift() {
+  if [[ $(uname -s) == Darwin ]]; then
+    xcrun swift "$@"
+  else
+    swift "$@"
+  fi
+}
+
+bridgegen() {
+  host_swift build --package-path apps/kit/Tools/BridgeGen --product bridgegen --quiet
+  "$(host_swift build --package-path apps/kit/Tools/BridgeGen --show-bin-path)/bridgegen" "$@" apps/kit/android/bridge.json
+}
+
+cmd_build() {
+  need_sdk
+  need_swift
+  gradle :kit-core:assembleDebug :kit-core:assembleRelease :kit-device:assembleDebug :kit-device:assembleRelease \
+    :bridge-check:assembleDebug :bridge-check:assembleRelease
+}
+
+cmd_test() {
+  need_sdk
+  need_swift
+  bridgegen --check
+  host_swift test --package-path apps/kit/Tools/BridgeGen
+  # The bridge's envelope, handles, calls, streams and keyed lists, and the
+  # Swift half of the round trip, on this host.
+  host_swift test --package-path apps/kit --filter SubstrateBridgeTests
+  local kotlin_out=$root/apps/kit/android/kit-core/build/roundtrip/testDebugUnitTest/kotlin.json
+  # kit-core's RoundTripTest writes Kotlin's encoding of the fixtures there.
+  gradle :kit-core:testDebugUnitTest :kit-device:testDebugUnitTest
+  [[ -f $kotlin_out ]] || die "the Kotlin round trip wrote nothing to $kotlin_out"
+  SUBSTRATE_ROUNDTRIP_KOTLIN=$kotlin_out host_swift test --package-path apps/kit --filter KotlinRoundTrip
+}
+
+cmd_smoke() {
+  need_sdk
+  need_swift
+  [[ $($adb devices | grep -c 'device$') -ge 1 ]] || die "no booted emulator or device; start one (\`emulator -avd <name>\`)"
+  gradle :bridge-check:assembleRelease
+  local apk=apps/kit/android/bridge-check/build/outputs/apk/release/bridge-check-release.apk
+  local app=dev.reamde.substrate.bridgecheck
+  "$adb" install -r "$apk" >/dev/null
+  "$adb" logcat -c
+  "$adb" shell am start -W -n "$app/.MainActivity" >/dev/null
+  local waited=0
+  until "$adb" logcat -d -s bridge-check:I | grep -q 'done:'; do
+    ((waited++ < 300)) || die "the runtime checks did not finish in five minutes"
+    sleep 1
+  done
+  "$adb" logcat -d -s bridge-check:I | sed -n 's/.*bridge-check: //p'
+  "$adb" logcat -d -s bridge-check:I | grep -q 'done: PASS' || die "a runtime check failed on the release build"
+  for run in 1 2 3; do
+    "$adb" shell am force-stop "$app"
+    "$adb" logcat -c
+    printf 'cold start %s: TotalTime %s ms, ' "$run" "$("$adb" shell am start -W -n "$app/.MainActivity" --ez checks false | sed -n 's/^TotalTime: //p' | tr -d '\r')"
+    "$adb" logcat -d -s bridge-check:I | sed -n 's/.*bridge-check: start: .* in \(.*\)/Bridge.start \1/p'
+  done
+  printf 'release APK: %s bytes\n' "$(wc -c <"$apk" | tr -d ' ')"
+  unzip -lv "$apk" | awk '/\.so$/ { printf "  %-48s %10d\n", $8, $1 }' | sort -k2 -n -r
+  gradle :kit-device:connectedDebugAndroidTest :bridge-check:connectedDebugAndroidTest
+}
+
+cmd_lock() {
+  need_sdk
+  need_swift
+  gradle :kit-core:dependencies :kit-device:dependencies :bridge-check:dependencies --write-locks >/dev/null
+  (cd apps/gradle && ./gradlew --console=plain -p build-logic dependencies --write-locks >/dev/null)
+}
+
+case ${1:-} in
+sdk) cmd_sdk ;;
+generate) bridgegen ;;
+generate:check) bridgegen --check ;;
+build) cmd_build ;;
+test) cmd_test ;;
+smoke) cmd_smoke ;;
+lock) cmd_lock ;;
+*) die "unknown subcommand ${1:-}; see the header of .mise/android.sh" ;;
+esac

@@ -1,0 +1,256 @@
+[
+  {
+    "type": "DeviceRequest",
+    "json": {
+      "transportFetch": {
+        "request": {
+          "body": "AAECAwQ=",
+          "headers": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "method": "POST",
+          "timeoutMillis": 30000,
+          "url": "https://example.com/ü?q=1&r=%20"
+        }
+      }
+    }
+  },
+  {
+    "type": "DeviceRequest",
+    "json": {
+      "connectivityWatch": {}
+    }
+  },
+  {
+    "type": "DeviceRequest",
+    "json": {
+      "secureWrite": {
+        "account": "a",
+        "store": "session",
+        "value": "c2VjcmV0"
+      }
+    }
+  },
+  {
+    "type": "DeviceRequest",
+    "json": {
+      "dnsTXT": {
+        "name": "_substrate.example.com",
+        "timeoutMillis": 5000
+      }
+    }
+  },
+  {
+    "type": "StartAnswer",
+    "json": {
+      "failed": {
+        "failure": {
+          "code": "protocolMismatch",
+          "message": "two trees"
+        }
+      }
+    }
+  },
+  {
+    "type": "StartAnswer",
+    "json": {
+      "started": {
+        "fingerprint": "abc"
+      }
+    }
+  },
+  {
+    "type": "TransportOutcome",
+    "json": {
+      "failed": {
+        "kind": "secureConnectionFailed",
+        "message": "handshake"
+      }
+    }
+  },
+  {
+    "type": "TransportChunk",
+    "json": {
+      "line": {
+        "text": "🧪 emoji 😀, עברית, é, tab\t, quote\", backslash\\, nul\u0000, 中文, ￿"
+      }
+    }
+  },
+  {
+    "type": "SecureItem",
+    "json": {
+      "missing": {}
+    }
+  },
+  {
+    "type": "SecureItem",
+    "json": {
+      "reset": {
+        "reason": "key invalidated"
+      }
+    }
+  },
+  {
+    "type": "DNSAnswer",
+    "json": {
+      "answered": {
+        "rcode": 0,
+        "records": [
+          [
+            "v=substrate1 ",
+            "server=https://example.com"
+          ],
+          []
+        ]
+      }
+    }
+  },
+  {
+    "type": "ListMessage",
+    "json": {
+      "delta": {
+        "base": 4,
+        "changed": [],
+        "inserted": [
+          {
+            "id": "b",
+            "value": {
+              "text": "B"
+            }
+          }
+        ],
+        "list": "rows",
+        "order": [
+          "b",
+          "c"
+        ],
+        "removed": [
+          "a"
+        ],
+        "revision": 5
+      }
+    }
+  },
+  {
+    "type": "CheckCommand",
+    "json": {
+      "secure": {
+        "account": "a"
+      }
+    }
+  },
+  {
+    "type": "CheckCommand",
+    "json": {
+      "fetch": {
+        "url": "http://127.0.0.1/",
+        "via": "urlSession"
+      }
+    }
+  },
+  {
+    "type": "CheckResult",
+    "json": {
+      "ok": {
+        "detail": "🧪 emoji 😀, עברית, é, tab\t, quote\", backslash\\, nul\u0000, 中文, ￿",
+        "millis": 0.125,
+        "name": "echo"
+      }
+    }
+  },
+  {
+    "type": "TransportRequest",
+    "json": {
+      "headers": [],
+      "method": "GET",
+      "timeoutMillis": 1,
+      "url": "https://example.com"
+    }
+  },
+  {
+    "type": "TransportRequest",
+    "json": {
+      "url": "https://example.com",
+      "method": "GET",
+      "headers": [],
+      "body": null,
+      "bodyFile": null,
+      "timeoutMillis": 1
+    }
+  },
+  {
+    "type": "CheckPresentation",
+    "json": {
+      "step": 1,
+      "result": null
+    }
+  },
+  {
+    "type": "BridgeStats",
+    "json": {
+      "cancelled": 0,
+      "coalesced": 0,
+      "delivered": -9223372036854775808,
+      "deliveryFailures": 0,
+      "dropped": 9007199254740993,
+      "open": 0,
+      "overflowed": 0,
+      "posted": 9223372036854775807,
+      "refused": 0
+    }
+  },
+  {
+    "type": "Handle",
+    "json": {
+      "generation": 9223372036854775806,
+      "id": 9223372036854775807
+    }
+  },
+  {
+    "type": "Envelope",
+    "json": {
+      "body": {
+        "decimal": 0.1,
+        "integer": 9223372036854775807,
+        "long": 12345678901234567890.12345678901234567,
+        "negative": -0.000000000000000000000000001,
+        "nested": {
+          "empty": {},
+          "list": [
+            1,
+            "two",
+            true,
+            null
+          ]
+        }
+      },
+      "handle": {
+        "generation": 2,
+        "id": 1
+      },
+      "op": "presentation",
+      "v": 1
+    }
+  },
+  {
+    "type": "CheckResult",
+    "json": {
+      "ok": {
+        "detail": "",
+        "millis": 1e-300,
+        "name": "double"
+      }
+    }
+  },
+  {
+    "type": "NetworkPath",
+    "json": {
+      "constrained": false,
+      "expensive": false,
+      "online": true
+    }
+  }
+]
