@@ -12,22 +12,23 @@ struct SubstrateWorkoutsApp: App {
     /// running app, so it waits for Finish or Discard.
     @State private var heldOffer: ReleaseIndex.Release?
 
-    private let app = AppModel.shared
-    private let session = SessionController.shared
-    private let link = SubstrateLink.shared
+    private let root = WorkoutsRoot.shared
+    private var app: AppModel { root.app }
+    private var session: SessionModel { root.session }
+    private var link: SubstrateLink { root.link }
 
     init() {
         // Everything a launch from a Live Activity button or a notification
         // tap needs is wired here, before the app finishes launching: the
         // system performs the intent, or delivers the tap, right after.
-        CountdownCoordinator.install()
-        let session = SessionController.shared
+        NotificationDelegate.shared.install()
+        let root = WorkoutsRoot.shared
         LiveActivityActions.handler = { action in
-            // `handle` loads and folds the journal before it applies (§6.3).
-            await session.handle(action)
+            // The runtime folds the journal before it applies (§6.3).
+            await root.session.handle(action)
         }
-        Notifications.shared.onOpenSession = { DeepLinks.openSession() }
-        HealthExporter.shared.onEntryChanged = { entry in AppModel.shared.replace(entry) }
+        HealthExporter.shared.onEntryChanged = { entry in root.app.replace(entry) }
+        HealthExporter.shared.onLinked = { id, workout, revision in root.send(.healthLinked(id, workout: workout, revision: revision)) }
         #if DEBUG
         Self.seedPreviewHistory()
         #endif
@@ -40,7 +41,7 @@ struct SubstrateWorkoutsApp: App {
     /// (the README's screenshots).
     private static func seedPreviewHistory() {
         guard ProcessInfo.processInfo.arguments.contains("-WorkoutsSeedPreviewHistory"),
-              let directory = AppModel.shared.directory else { return }
+              let directory = AppModel.workoutsDirectory() else { return }
         let store = HistoryStore(directory: directory)
         guard store.loadAll().entries.isEmpty else { return }
         for entry in PreviewData.history {
@@ -69,15 +70,11 @@ struct SubstrateWorkoutsApp: App {
                 }
                 .workoutsHaptics()
                 .onOpenURL { url in DeepLinks.handle(url) }
-                .task { await session.prepare() }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             guard phase == .active else { return }
-            Task { await session.sceneBecameActive() }
-            Task {
-                await link.status.refresh()
-                await link.sync()
-            }
+            session.send(.foreground)
+            link.refresh()
         }
     }
 }

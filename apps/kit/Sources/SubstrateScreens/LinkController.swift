@@ -225,6 +225,10 @@ public struct LinkController<App: LinkedApp>: Controller {
             return [.followNetwork, .followOutbox] + (session == nil ? [] : [.check, .readPackages] + flush)
         case .checkStarted, .reported(.needsApproval):
             return [.check]
+        case .checked:
+            // The check carries the build's floors, and the server upgrades
+            // a package behind them at once where it may: read them again.
+            return state.session == nil || packages.isEmpty ? [] : [.readPackages]
         case let .network(path):
             // Back online: what waits goes.
             return path.online && state.canSend && state.outbox.sendable > 0 ? [.flush] : []

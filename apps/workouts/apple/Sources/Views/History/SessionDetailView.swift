@@ -9,7 +9,7 @@ struct SessionDetailView: View {
     let sessionID: SessionID
 
     @Environment(AppModel.self) private var app
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
     @State private var askDelete = false
     @State private var retrying = false
@@ -29,11 +29,13 @@ struct SessionDetailView: View {
                 .confirmationDialog(HistoryPresenter.deleteQuestion, isPresented: $askDelete, titleVisibility: .visible) {
                     Button("Delete", role: .destructive) {
                         // The page closes only once the session is gone.
-                        do {
-                            try app.deleteSession(sessionID)
-                            dismiss()
-                        } catch {
-                            deleteFailure = error.localizedDescription
+                        Task {
+                            do {
+                                try await app.deleteSession(sessionID)
+                                dismiss()
+                            } catch {
+                                deleteFailure = error.localizedDescription
+                            }
                         }
                     }
                     Button("Cancel", role: .cancel) {}

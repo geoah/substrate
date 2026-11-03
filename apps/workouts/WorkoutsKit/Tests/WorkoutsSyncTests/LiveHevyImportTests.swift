@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
@@ -56,7 +57,7 @@ struct LiveHevyImportTests {
         // What `SubstrateLink.exchangeHistory` queues for a phone holding the
         // imported sessions and their new exercises.
         let directory = temporaryDirectory()
-        let outbox = Outbox(directory: directory, writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         let before = try await ServerHistory(api: api, codec: codec).snapshot()
         let exchange = HistoryExchange.plan(server: before, local: plan.sessions, queued: [], versions: [:], tombstones: [], codec: codec)
         #expect(exchange.uploads.count == plan.sessions.count)
@@ -133,7 +134,7 @@ struct LiveHevyImportTests {
 
         // Exercises first (routine slots and sets must find them), then the
         // routines, then the sessions, as the app queues them.
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         let held = Set(try await api.list([codec.kinds.exercise]).map(\.id))
         var entries = plan.exercises.filter { !held.contains($0.id.rawValue) }.map { OutboxPlan.exerciseAdded($0, codec: codec) }
         entries += plan.routines.map { OutboxPlan.routineCreated($0, codec: codec) }
@@ -209,7 +210,7 @@ struct LiveHevyImportTests {
             + "\(export.templates.count) own exercises, missing \(export.missingTemplates); \(plan.sessions.count) sessions, problems \(plan.problems.count)")
         #expect(plan.sessions.count == export.workouts.count && plan.routines.count == export.routines.count)
         #expect(plan.measurements.count == export.measurements.count)
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         let held = Set(try await api.list([codec.kinds.exercise]).map(\.id))
         var entries = plan.exercises.filter { !held.contains($0.id.rawValue) }.map { OutboxPlan.exerciseAdded($0, codec: codec) }
         entries += plan.routines.map { OutboxPlan.routineCreated($0, codec: codec) }

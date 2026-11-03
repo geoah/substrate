@@ -14,7 +14,7 @@ struct RowsSessionView: View {
     let finish: () -> Void
     let showExercise: (ExerciseID) -> Void
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
     @Environment(RowsScreenModel.self) private var screen
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -197,7 +197,7 @@ struct RowsSessionView: View {
     /// The jump menu, a deep link, an added exercise, the entry check's Edit,
     /// Finish's way back. The open set takes the least scroll that shows it,
     /// and never while a finger is on the list (§7.6a).
-    private func scroll(to target: ScrollTarget, proxy: ScrollViewProxy) {
+    private func scroll(to target: WorkoutsCore.ScrollTarget, proxy: ScrollViewProxy) {
         if target.row != layout.openRow { screen.jumped() }
         if let row = target.row, row == layout.openRow {
             if scrollPhase == .idle {

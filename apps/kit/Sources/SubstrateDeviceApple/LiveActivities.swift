@@ -101,8 +101,9 @@ public final class LiveActivities<Attributes: OngoingActivityAttributes>: Ongoin
         let id = activity.id
         guard lock.withLock({ watched.insert(id).inserted }) else { return }
         let owner = activity.attributes.activityID
-        let updates = activity.activityStateUpdates
         Task { [weak self] in
+            // Found again here: an `Activity` does not cross into a task.
+            guard let updates = Activity<Attributes>.activities.first(where: { $0.id == id })?.activityStateUpdates else { return }
             for await state in updates {
                 guard let self else { return }
                 if state == .dismissed, !lock.withLock({ endedHere.contains(id) }) { markDismissed(owner) }

@@ -61,7 +61,7 @@ public extension SessionState {
 
 /// A row's label (req 37): the short form the set grid shows and the spoken
 /// form the Live Activity, notifications and VoiceOver use (§4.10).
-public struct SetLabel: Equatable, Sendable {
+public struct SetLabel: Codable, Equatable, Sendable {
     /// `W`, `2`, `2a`, `M`, `1L`.
     public var short: String
     /// `warm-up 2`, `set 2`, `set 2, drop 1`, `set 1, left side`.

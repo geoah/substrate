@@ -2,6 +2,9 @@ import Foundation
 @testable import WorkoutsCore
 import Testing
 import SubstrateCore
+import SubstrateLocal
+import SubstrateRuntime
+import SubstrateTesting
 
 /// A scratch directory under the system's temporary directory, removed by `remove()`.
 struct TemporaryDirectory {
@@ -48,7 +51,61 @@ private func fold(_ events: [TallyEvent]) -> TallyState {
     return state
 }
 
-private typealias Journal = SessionJournal<TallyEvent, TallyState>
+/// The session's journal is the kit's `JournalFile`, in the app's folder
+/// under the name and format every build has kept.
+private struct Journal {
+    let file: JournalFile<TallyEvent, TallyState>
+    let url: URL
+
+    init(directory: URL, writingOptions: Data.WritingOptions) {
+        let folder = try! RepositoryFolder(adopting: directory, writingOptions: writingOptions)
+        file = JournalFile(folder: folder, name: SessionJournalFile.fileName, area: .root, format: SessionJournalFile.format)
+        url = directory.appendingPathComponent(SessionJournalFile.fileName)
+    }
+
+    var exists: Bool { FileManager.default.fileExists(atPath: url.path) }
+    func write(events: [TallyEvent], state: TallyState) throws { try file.write(events: events, state: state) }
+    func read() throws -> StoredJournal<TallyEvent, TallyState>? { try file.read() }
+    func delete() throws { try file.delete() }
+    func setAside(at instant: Date) throws -> URL { url.deletingLastPathComponent().appendingPathComponent(try file.setAside(at: instant)) }
+}
+
+/// A controller over the tally, so the fold at open is the runtime's, as
+/// the session's is.
+private struct TallyController: Controller {
+    typealias Command = TallyEvent
+    typealias Event = TallyEvent
+    typealias State = TallyState
+    typealias Presentation = TallyState
+
+    let journal: Journal
+    var broken = false
+
+    struct Broken: Error {}
+
+    var initialState: TallyState { TallyState() }
+    func events(for command: TallyEvent, in context: Enrichment<TallyController>) -> [TallyEvent] { [command] }
+    func apply(_ event: TallyEvent, to state: TallyState) throws -> TallyState {
+        if broken { throw Broken() }
+        var next = state
+        next.total += event.load.value
+        next.count += 1
+        next.last = event.at
+        next.target = SetTarget(plannedSet: "s\(next.count)", load: event.load, rpeMin: Decimal(string: "9.5"), rpeMax: Decimal(string: "9.5"))
+        return next
+    }
+    func present(_ input: PresenterInput<TallyController>) -> TallyState { input.state }
+    func journaling(of event: TallyEvent) -> Journaling { .append }
+    func journal(in environment: AppEnvironment) -> (any JournalStore<TallyEvent, TallyState>)? { journal.file }
+}
+
+/// The state a runtime opens to over the journal, as the session's does at launch.
+private func opened(_ journal: Journal, broken: Bool = false) async -> (state: TallyState, presentation: String?) {
+    let harness = ControllerHarness(TallyController(journal: journal, broken: broken))
+    let state = await harness.state
+    let problem = harness.trace.compactMap { entry -> String? in if case let .setAside(_, place) = entry { place } else { nil } }.first
+    return (state, problem)
+}
 
 private func events(_ count: Int) -> [TallyEvent] {
     var generator = SeededGenerator(seed: 3)
@@ -91,22 +148,20 @@ struct JournalTests {
     }
 
     @Test("a matching cache loads as it is")
-    func loadMatching() throws {
+    func loadMatching() async throws {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
         let journal = Journal(directory: directory.url, writingOptions: .atomic)
         let log = events(3)
         try journal.write(events: log, state: fold(log))
         let before = try Data(contentsOf: journal.url)
-        let loaded = try #require(try journal.load(fold: fold))
-        #expect(loaded.cacheMatched)
-        #expect(loaded.state == fold(log))
-        #expect(loaded.events == log)
+        #expect(await opened(journal).state == fold(log))
+        #expect(try journal.read()?.events == log)
         #expect(try Data(contentsOf: journal.url) == before)
     }
 
     @Test("a stale cache loses to the fold, and the file is rewritten with it")
-    func refoldMismatch() throws {
+    func refoldMismatch() async throws {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
         let journal = Journal(directory: directory.url, writingOptions: .atomic)
@@ -114,15 +169,13 @@ struct JournalTests {
         var stale = fold(log)
         stale.count = 99
         try journal.write(events: log, state: stale)
-        let loaded = try #require(try journal.load(fold: fold))
-        #expect(!loaded.cacheMatched)
-        #expect(loaded.cachedState == stale)
-        #expect(loaded.state == fold(log))
+        #expect(try journal.read()?.cachedState == stale)
+        #expect(await opened(journal).state == fold(log))
         #expect(try journal.read()?.cachedState == fold(log))
     }
 
     @Test("a cache that no longer decodes counts as a mismatch; the events still load")
-    func undecodableCache() throws {
+    func undecodableCache() async throws {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
         let journal = Journal(directory: directory.url, writingOptions: .atomic)
@@ -133,9 +186,7 @@ struct JournalTests {
         try JSONValue.object(file).data().write(to: journal.url)
         let contents = try #require(try journal.read())
         #expect(contents.cachedState == nil)
-        let loaded = try #require(try journal.load(fold: fold))
-        #expect(!loaded.cacheMatched)
-        #expect(loaded.state == fold(log))
+        #expect(await opened(journal).state == fold(log))
         #expect(try journal.read()?.cachedState == fold(log))
     }
 
@@ -147,22 +198,22 @@ struct JournalTests {
         let log = events(1)
         try journal.write(events: log, state: fold(log))
         var file = try #require(try JSONValue(data: Data(contentsOf: journal.url)).objectValue)
-        #expect(WorkoutsFormats.journalFormat == 1)
+        #expect(SessionJournalFile.format == 1)
         #expect(file["format"] == .number(1))
         #expect(file.keys.sorted() == ["events", "format", "state"])
         file["format"] = .number(2)
         try JSONValue.object(file).data().write(to: journal.url)
-        #expect(throws: JournalError.unsupportedFormat(2)) { try journal.read() }
+        #expect(throws: JournalFormatMismatch(found: 2, expected: 1)) { try journal.read() }
     }
 
     @Test("no file means no session; delete removes it and may repeat")
-    func absentAndDelete() throws {
+    func absentAndDelete() async throws {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
         let journal = Journal(directory: directory.url.appendingPathComponent("not-yet"), writingOptions: .atomic)
         #expect(!journal.exists)
         #expect(try journal.read() == nil)
-        #expect(try journal.load(fold: fold) == nil)
+        #expect(await opened(journal).state == TallyState())
         let log = events(1)
         try journal.write(events: log, state: fold(log))
         #expect(journal.exists)
@@ -188,7 +239,7 @@ struct JournalTests {
     }
 
     @Test("a stale cache whose rewrite fails still loads the fold")
-    func refoldWithoutWrite() throws {
+    func refoldWithoutWrite() async throws {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
         let journal = Journal(directory: directory.url, writingOptions: .atomic)
@@ -197,21 +248,23 @@ struct JournalTests {
         // A directory that takes no new file stands in for a full disk.
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.url.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.url.path) }
-        let loaded = try #require(try journal.load(fold: fold))
-        #expect(loaded.state == fold(log))
-        #expect(!loaded.cacheMatched)
+        #expect(await opened(journal).state == fold(log))
+        #expect(try journal.read()?.cachedState == fold(Array(log.prefix(2))))
     }
 
-    @Test("a fold that throws reaches the caller and leaves the file alone")
-    func foldThrows() throws {
-        struct Broken: Error {}
+    @Test("a fold that throws sets the file aside, so a new session cannot write over it")
+    func foldThrows() async throws {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
         let journal = Journal(directory: directory.url, writingOptions: .atomic)
         let log = events(2)
         try journal.write(events: log, state: fold(log))
         let before = try Data(contentsOf: journal.url)
-        #expect(throws: Broken.self) { try journal.load { _ in throw Broken() } }
-        #expect(try Data(contentsOf: journal.url) == before)
+        let open = await opened(journal, broken: true)
+        #expect(open.state == TallyState())
+        let place = try #require(open.presentation)
+        #expect(place.hasPrefix("active-session.unreadable-"))
+        #expect(!journal.exists)
+        #expect(try Data(contentsOf: directory.url.appendingPathComponent(place)) == before)
     }
 }

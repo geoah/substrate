@@ -74,10 +74,12 @@ struct HistoryView: View {
 
     private func delete(_ id: SessionID) {
         // Swipe to delete is on the list itself, so nothing pushed shows the session.
-        do {
-            try app.deleteSession(id)
-        } catch {
-            failure = error.localizedDescription
+        Task {
+            do {
+                try await app.deleteSession(id)
+            } catch {
+                failure = error.localizedDescription
+            }
         }
     }
 

@@ -7,7 +7,7 @@ import Foundation
 
 /// What the presenter needs beyond the session: the owner's calendar, and for
 /// screens that are not a session the settings a session would have snapshot.
-public struct PresenterSettings: Equatable, Sendable {
+public struct PresenterSettings: Codable, Equatable, Sendable {
     /// The owner's calendar: its time zone for local times, whole days to past sessions.
     public var calendar: Calendar
     /// The unit totals are shown in outside a session (a session uses its own snapshot).
@@ -33,7 +33,7 @@ public struct PresenterSettings: Equatable, Sendable {
 }
 
 /// Everything a session's screens show.
-public struct SessionPresentation: Equatable, Sendable {
+public struct SessionPresentation: Codable, Equatable, Sendable {
     public var sessionID: SessionID
     /// The routine's name, or "Training session".
     public var title: String
@@ -127,7 +127,7 @@ public struct SessionPresentation: Equatable, Sendable {
 }
 
 /// The header's three labelled stats (§7.6).
-public struct SessionHeaderStats: Equatable, Sendable {
+public struct SessionHeaderStats: Codable, Equatable, Sendable {
     /// The stats' labels, in order. The sets stat counts working sets only,
     /// so its label says so: warm-ups ticked do not move it.
     public static let durationTitle = "Duration"
@@ -170,7 +170,7 @@ public struct SessionHeaderStats: Equatable, Sendable {
 }
 
 /// A plain exercise, or a group with its members.
-public struct ExerciseBlock: Equatable, Sendable, Identifiable {
+public struct ExerciseBlock: Codable, Equatable, Sendable, Identifiable {
     /// The slot's key, or `group-<key>`.
     public var id: String
     public var group: GroupHeader?
@@ -184,7 +184,7 @@ public struct ExerciseBlock: Equatable, Sendable, Identifiable {
 }
 
 /// A group's header row (§7.6).
-public struct GroupHeader: Equatable, Sendable {
+public struct GroupHeader: Codable, Equatable, Sendable {
     public var key: String
     public var kind: GroupKind
     public var pairing: Pairing?
@@ -216,7 +216,7 @@ public struct GroupHeader: Equatable, Sendable {
 }
 
 /// One exercise card (§7.6).
-public struct ExerciseCard: Equatable, Sendable, Identifiable {
+public struct ExerciseCard: Codable, Equatable, Sendable, Identifiable {
     public var slot: String
     public var exercise: ExerciseID
     public var name: String
@@ -295,7 +295,7 @@ public struct ExerciseCard: Equatable, Sendable, Identifiable {
 }
 
 /// One of a slot's rests in the "Rest…" menu and the rest picker (§7.6).
-public struct SlotRestOption: Equatable, Sendable {
+public struct SlotRestOption: Codable, Equatable, Sendable {
     public var kind: SlotRestKind
     public var seconds: Seconds
     /// What the rest goes back to when the gym's value is cleared.
@@ -323,7 +323,7 @@ public struct SlotRestOption: Equatable, Sendable {
 }
 
 /// A row's state in the grid (§7.6).
-public enum RowState: String, Equatable, Sendable {
+public enum RowState: String, Codable, Equatable, Sendable {
     case pending
     /// The row the session points at: a leading accent bar.
     case upNext
@@ -335,7 +335,7 @@ public enum RowState: String, Equatable, Sendable {
 }
 
 /// One row of the set grid.
-public struct SetRowPresentation: Equatable, Sendable, Identifiable {
+public struct SetRowPresentation: Codable, Equatable, Sendable, Identifiable {
     public var id: RowID
     public var slot: String
     /// `W`, `2`, `2a`, `M`, `1L`, with the spoken form, the F badge and Top or Back-off.
@@ -454,7 +454,7 @@ public struct SetRowPresentation: Equatable, Sendable, Identifiable {
 }
 
 /// One value cell (§5.5): a typed or performed value in black, else the ghost in grey.
-public struct GridCell: Equatable, Sendable {
+public struct GridCell: Codable, Equatable, Sendable {
     public var column: GridColumn
     public var field: ValueField
     /// The text shown: `40`, `11`, `1:07`, `≈15`, `to failure`; nil when empty.
@@ -508,7 +508,7 @@ public struct GridCell: Equatable, Sendable {
 }
 
 /// A timed row's TIME cell (§7.6), or a carry's stopwatch below its row.
-public enum TimedSetState: Equatable, Sendable {
+public enum TimedSetState: Codable, Equatable, Sendable {
     /// The play button. `target` is what Play sends: the shown duration to
     /// count down to, nil for a stopwatch.
     case ready(target: Seconds?)
@@ -519,7 +519,7 @@ public enum TimedSetState: Equatable, Sendable {
 }
 
 /// What a pending row commits if Finish marks it done.
-public struct UntickedRow: Equatable, Sendable {
+public struct UntickedRow: Codable, Equatable, Sendable {
     public var row: RowID
     /// Nil when nothing complete can be committed: Finish drops the row. A
     /// pre-filled RPE as the row's `commitValues` has it.
@@ -532,7 +532,7 @@ public struct UntickedRow: Equatable, Sendable {
 }
 
 /// The Up next row as every surface describes it (§5.6).
-public struct UpNextPresentation: Equatable, Sendable {
+public struct UpNextPresentation: Codable, Equatable, Sendable {
     public var row: RowID
     public var slot: String
     /// `Chest Press (Machine)`. A grouped set is named by its exercise and
@@ -563,7 +563,7 @@ public struct UpNextPresentation: Equatable, Sendable {
 }
 
 /// The rest bar's forms (§7.6).
-public enum RestBarPresentation: Equatable, Sendable {
+public enum RestBarPresentation: Codable, Equatable, Sendable {
     /// No countdown: "Next: Seated Row (Machine), set 1: 50 kg × 9"; a tap scrolls to it.
     case upNext(String)
     /// A rest, a pause, a transition or the standalone timer counting down.
@@ -582,7 +582,7 @@ public enum RestBarPresentation: Equatable, Sendable {
 }
 
 /// A countdown in the rest bar.
-public struct RestCountdownPresentation: Equatable, Sendable {
+public struct RestCountdownPresentation: Codable, Equatable, Sendable {
     /// `Rest`, `Warm-up rest`, `Round rest`, `Rest before next exercise`,
     /// `Switch sides`, `Pause`, `Go: Bird Dog in`, `Timer`.
     public var label: String
@@ -607,7 +607,7 @@ public struct RestCountdownPresentation: Equatable, Sendable {
     public var isManual: Bool { slot == nil }
 }
 
-public struct TimedSetBar: Equatable, Sendable {
+public struct TimedSetBar: Codable, Equatable, Sendable {
     public var row: RowID
     /// `Plank, set 1`.
     public var label: String
@@ -626,7 +626,7 @@ public struct TimedSetBar: Equatable, Sendable {
 /// The Live Activity's content (§9.1), every string preformatted, because the
 /// widget does not link WorkoutsKit. The app copies it into
 /// `WorkoutsActivityAttributes.ContentState` and adds its effects revision.
-public struct LiveActivityContent: Equatable, Sendable {
+public struct LiveActivityContent: Codable, Equatable, Sendable {
     /// The activity's title: the routine's name or "Training session".
     public var title: String
     public var clockStart: Date
@@ -675,8 +675,8 @@ public struct LiveActivityContent: Equatable, Sendable {
 
 /// The Live Activity's countdown. `kind`'s raw values are the app's
 /// `ContentState.Countdown.Kind`'s.
-public struct LiveActivityCountdown: Equatable, Sendable {
-    public enum Kind: String, Equatable, Sendable, CaseIterable {
+public struct LiveActivityCountdown: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Equatable, Sendable, CaseIterable {
         case rest, roundRest, blockRest, transition, pause, sideSwitch, timedSet, manual
     }
 
@@ -696,7 +696,7 @@ public struct LiveActivityCountdown: Equatable, Sendable {
 }
 
 /// The countdown notification's copy (§9.2).
-public struct CountdownNotification: Equatable, Sendable {
+public struct CountdownNotification: Codable, Equatable, Sendable {
     /// `Rest over`, `Round 2`, `Go`, `Time`, `Timer done`.
     public var title: String
     /// `Next: Chest Press (Machine), set 2: 35 kg × 14`; nil for the standalone timer.
@@ -712,7 +712,7 @@ public struct CountdownNotification: Equatable, Sendable {
 }
 
 /// The tab bar's in-progress accessory (§7.5).
-public struct AccessoryPresentation: Equatable, Sendable {
+public struct AccessoryPresentation: Codable, Equatable, Sendable {
     /// The routine's name or "Training session".
     public var title: String
     /// The next set with its values, `Chest Press (Machine), set 2, 40 kg × 11`, or the

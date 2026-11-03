@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateLocal
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -106,7 +107,7 @@ struct LiveServerTests {
         #expect(catalog.exercises.count == 13)
 
         // Deleted through the outbox: gone from the server, its exercises stay.
-        let outbox = Outbox(directory: directory, writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         let codec = RecordCodec()
         try await outbox.delete(routine: SampleRoutine.id, codec: codec)
         #expect(await outbox.flush(api) == .sent)

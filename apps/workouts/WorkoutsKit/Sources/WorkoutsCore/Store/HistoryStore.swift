@@ -2,7 +2,7 @@ import Foundation
 import SubstrateCore
 
 /// One finished session as its history file holds it.
-public struct HistoryEntry: Hashable, Sendable, Identifiable {
+public struct HistoryEntry: Codable, Hashable, Sendable, Identifiable {
     public var records: SessionRecords
     /// What only this phone knows, never a record property.
     public var local: HistoryLocal

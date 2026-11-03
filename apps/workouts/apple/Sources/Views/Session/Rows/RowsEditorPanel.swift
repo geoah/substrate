@@ -22,7 +22,7 @@ struct RowsEditorPanel: View {
     /// the set while it is out (§7.6a). Nil for a fix.
     var onLogVisibility: ((Bool) -> Void)?
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
     @Environment(RowsScreenModel.self) private var screen
     @Environment(\.dynamicTypeSize) private var typeSize
