@@ -39,6 +39,10 @@ data:
 	if err := ValidateSettings(rows, nil); err == nil || !strings.Contains(err.Error(), substrate.BlockNeedsSetting) {
 		t.Fatalf("required empty: %v", err)
 	}
+	missing := NewRunner(cat).Run(context.Background(), ds, substrate.ActorConsole, details, rows, everything(), RunOptions{}, func([]string) bool { return true })
+	if missing.Failure == nil || missing.Failure.Message != "Check the settings and add-ons, then approve again." {
+		t.Fatalf("missing settings failure: %+v", missing.Failure)
+	}
 	values := []substrate.AuthorizationSettingValue{{ID: id + "/key", Secret: true, Value: "test-only-private-value"}}
 	if err := ValidateSettings(rows, values); err != nil {
 		t.Fatal(err)
