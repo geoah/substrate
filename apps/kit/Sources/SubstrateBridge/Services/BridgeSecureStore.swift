@@ -27,6 +27,10 @@ public struct BridgeSecureStore: SessionStorage {
     /// unavailable: not a Keychain status, and never zero.
     public static let unavailableStatus: Int32 = -1
 
+    /// One DataStore file and keyset per store name, in this app's
+    /// `noBackupFilesDir`: two storages of one name hold the same items.
+    public var location: String { "android-secure-store:\(store)" }
+
     public func read(account: String) -> StoredItem {
         switch wait(.secureRead(store: store, account: account), as: SecureItem.self) {
         case let .success(.found(value)):
