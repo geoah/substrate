@@ -59,13 +59,24 @@ func (ds *dataset) StartDomainVerification(ctx context.Context) (substrate.Domai
 }
 
 // MarkDomainVerified stamps the repository record verified now and spends
-// the pending proof, so the next Verify domain mints a fresh one.
-func (ds *dataset) MarkDomainVerified(ctx context.Context) (time.Time, error) {
+// the pending proof, so the next Verify domain mints a fresh one. The proof
+// is compared under the row's lock: two checks of one proof stamp once, and a
+// check that read a proof spent since spends nothing.
+func (ds *dataset) MarkDomainVerified(ctx context.Context, proof string) (time.Time, error) {
 	var at time.Time
 	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		row, err := ds.repositoryRow(t)
 		if err != nil {
 			return err
+		}
+		if proof != "" {
+			state, err := domainStateOf(row.Props)
+			if err != nil {
+				return err
+			}
+			if state.Proof != proof {
+				return fmt.Errorf("%w: the proof this check read is no longer the pending one: run the check again", substrate.ErrConflict)
+			}
 		}
 		at = t.now
 		_, err = t.put(substrate.PutInput{

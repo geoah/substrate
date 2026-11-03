@@ -237,8 +237,10 @@ What this refuses:
 - `alice.github.io`: GitHub controls the `github.io` zone, so Alice cannot
   add `_substrate.alice.github.io`. Publishing needs a domain whose DNS the
   publisher controls.
-- A lapsed domain: once the record is gone, the next check (every approval,
-  every set up check and the daily reread of documents) finds no publisher.
+- A lapsed domain: once the record is gone, the next check (every approval
+  and token exchange, and the daily reread of documents for its packages)
+  finds no publisher. A token keeps the actor it was minted with until the
+  app is approved again.
   Its apps become unverified and its packages stop upgrading; what is
   installed stays. A new owner who adds a record is a new publisher to every
   server, and telling the two apart is

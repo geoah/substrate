@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"sort"
 	"strings"
 )
 
@@ -59,9 +60,8 @@ var ErrMalformed = errors.New("the _substrate record is malformed")
 func Parse(txts []string) (rec Record, found bool, err error) {
 	var ours []string
 	for _, t := range txts {
-		t = strings.TrimSpace(t)
-		if t == Version || strings.HasPrefix(t, Version+" ") {
-			ours = append(ours, t)
+		if fields := strings.Fields(t); len(fields) > 0 && fields[0] == Version {
+			ours = append(ours, strings.Join(fields, " "))
 		}
 	}
 	switch len(ours) {
@@ -112,6 +112,27 @@ func Parse(txts []string) (rec Record, found bool, err error) {
 		return Record{}, true, fmt.Errorf("%w: sha256= pins a document and the record names none with doc=", ErrMalformed)
 	}
 	return rec, true, nil
+}
+
+// String renders the record the way a publisher writes it: the version, the
+// keys this binary reads in a fixed order, then every other key sorted, so a
+// record rewritten from a parsed one keeps what the binary does not read.
+func (r Record) String() string {
+	parts := []string{Version}
+	for _, kv := range [][2]string{{"server", r.Server}, {"proof", r.Proof}, {"doc", r.Doc}, {"sha256", r.SHA256}} {
+		if kv[1] != "" {
+			parts = append(parts, kv[0]+"="+kv[1])
+		}
+	}
+	keys := make([]string, 0, len(r.Other))
+	for k := range r.Other {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		parts = append(parts, k+"="+r.Other[k])
+	}
+	return strings.Join(parts, " ")
 }
 
 // httpsOrigin holds a server= value to an https origin: no path beyond `/`,

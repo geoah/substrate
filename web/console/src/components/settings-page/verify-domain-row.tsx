@@ -104,6 +104,12 @@ export function VerifyDomainRow() {
               </dd>
             </dl>
           )}
+          {proof && (
+            <p className="text-faint">
+              A name carries one such record. If it already has one, replace it
+              with this value, which keeps what the old one said.
+            </p>
+          )}
           {check.isError && (
             <p role="alert" className="text-destructive">
               The check didn’t run:{" "}
