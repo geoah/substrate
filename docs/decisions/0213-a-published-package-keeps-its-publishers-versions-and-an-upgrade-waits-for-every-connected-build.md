@@ -25,7 +25,11 @@ Chosen: managed token properties record each app build's package floors,
 software version and last check-in. The calling token alone may record a
 check-in. `appPackages` is a keyed integer property: a JSON object on the wire,
 with package ids validated in Go and positive integer floors. Software versions contain
-at most 64 printable characters.
+at most 64 printable characters. A check-in writes immediately when the
+package floors or software version change; otherwise it writes only when
+the stored check-in is at least a day old (or absent). The timestamp has
+daily granularity: the hold depends on a live token and its floor, not on
+the minute it last checked in.
 
 A release narrows when it removes or renames declarations, properties or
 enumerated values. Every live token recording a floor below that release

@@ -93,9 +93,11 @@ The rules this binds:
   effects are held to the callee's own grant. An exact kind is covered
   when the grant reads or writes it under every rule a scope keeps (a glob
   never reaches an internal kind, and a kind the repository lacks needs an
-  exact scope because its purpose is unknown); a glob is covered by a scope at least
-  as wide; a write of a glob that reaches `core` or `llm` is never
-  covered, since no scope writes them. The refusal names what is missing
+  exact scope because its purpose is unknown). Code globs use decision
+  0215's effective reach rule: core and llm globs are refused for reads and
+  writes; other globs require a scope at least as wide and exact scopes
+  for every currently matched internal kind. The live registry is checked
+  on every call, including kinds installed after approval. The refusal names what is missing
   (`read <kind>`, `write <kind>`). The function then runs under its own
   permissions, as a trigger's or a chat's turn does (0195): the app's actor
   is the caller and the scoped mark stops at the call.

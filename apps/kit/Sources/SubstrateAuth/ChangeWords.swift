@@ -111,6 +111,11 @@ public extension AppManifest {
                 return Change(kind: .upgrade, words: "Update \(name)", detail: versionWords(package))
             case AuthorizationSetup.Actions.none:
                 return Change(kind: .install, words: "\(name) is installed")
+            case AuthorizationSetup.Actions.enable:
+                // Installed, and the approval still binds it (its agents' AI
+                // provider, decision 0217): set up, as the console says, not
+                // installed again.
+                return Change(kind: .install, words: "Set up \(name)")
             default:
                 return Change(kind: .install, words: "Install \(name)", detail: package.shipped > 0 ? "Version \(package.shipped)" : nil)
             }

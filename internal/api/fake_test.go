@@ -262,13 +262,31 @@ func (s *fakeService) Authenticate(_ context.Context, secret string) (substrate.
 	s.mu.Lock()
 	t, ok := s.tokens[secret]
 	s.mu.Unlock()
-	if !ok {
+	if !ok || t.info.Retired {
 		return nil, substrate.TokenInfo{}, substrate.ErrAuth
 	}
 	if s.wrap != nil {
 		return s.wrap(s.datasets[t.repository]), t.info, nil
 	}
 	return s.datasets[t.repository], t.info, nil
+}
+
+func (s *fakeService) RevokeToken(ctx context.Context, secret, clientID string) error {
+	if s.authErr != nil {
+		return s.authErr
+	}
+	s.mu.Lock()
+	t, ok := s.tokens[secret]
+	s.mu.Unlock()
+	if !ok || (clientID != "" && clientID != t.info.ClientID) {
+		return nil
+	}
+	var ds substrate.Dataset = s.datasets[t.repository]
+	if s.wrap != nil {
+		ds = s.wrap(s.datasets[t.repository])
+	}
+	_, err := ds.Delete(ctx, substrate.ActorAPI, tokenType, t.info.ID, substrate.DeleteInput{})
+	return err
 }
 
 func (s *fakeService) Close() error { return nil }
@@ -1556,3 +1574,5 @@ func sortedRecordIDs(m map[string]*substrate.Record) []string {
 }
 
 var errBoom = errors.New("boom")
+
+func (d *fakeDataset) CompleteAppAddon(context.Context, string, string) error { return nil }

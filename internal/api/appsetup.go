@@ -175,7 +175,7 @@ func previousToken(ctx context.Context, ds substrate.Dataset, client authorize.C
 	}
 	var newest *substrate.TokenInfo
 	for i := range tokens {
-		if tokens[i].ClientID == client.ID && (newest == nil || tokens[i].Created.After(newest.Created)) {
+		if !tokens[i].Retired && tokens[i].ClientID == client.ID && (newest == nil || tokens[i].Created.After(newest.Created)) {
 			newest = &tokens[i]
 		}
 	}
@@ -450,10 +450,10 @@ func (h *handler) refreshBelowFloor(ctx context.Context, ds substrate.Dataset, d
 		}
 		res, err := h.refresher.RefreshPackage(ctx, ds, id)
 		if err != nil {
-			slog.Warn("authorize: a package below its app's floor could not be refreshed", "package", id, "error", err)
+			slog.Warn("authorize: a package below its app's floor could not be refreshed", "package", logLine(id), "error", logLine(err.Error()))
 			continue
 		}
-		slog.Info("authorize: a check refreshed a package below its app's floor", "package", id, "outcome", res.Outcome, "reason", res.Reason)
+		slog.Info("authorize: a check refreshed a package below its app's floor", "package", logLine(id), "outcome", res.Outcome, "reason", logLine(res.Reason))
 	}
 }
 
@@ -572,4 +572,10 @@ func (m *checkMemo) keep(principal string, body []byte, now time.Time, out subst
 		}
 	}
 	m.last[principal] = checkAnswer{body: sha256.Sum256(body), at: now, out: out}
+}
+
+// logLine is a caller-supplied value as one log line: an app names package
+// ids and a request id rides the URL, and neither may start a forged line.
+func logLine(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\n", ""), "\r", "")
 }

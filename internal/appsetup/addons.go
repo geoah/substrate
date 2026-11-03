@@ -56,38 +56,38 @@ type addonCatalog interface {
 // the page's checked scopes bound it at approval (decision 0215), and a
 // token without scopes is a full approval.
 func configureAddons(cat addonCatalog) {
-	cat.SetAddonPlanner(func(ctx context.Context, ds substrate.Dataset, token substrate.TokenInfo, addon substrate.AppAddon) *substrate.AuthorizationBlock {
+	cat.SetAddonPlanner(func(ctx context.Context, ds substrate.Dataset, token substrate.TokenInfo, addon substrate.AppAddon) (catalog.InstallExpectations, *substrate.AuthorizationBlock) {
 		approved := scope.FullApproval()
 		if token.Scopes != nil {
 			var err error
 			if approved, err = scope.ApprovalOf(token.Scopes); err != nil {
-				return block(substrate.BlockUnsupported, "The approval that keeps this add-on waiting cannot be read; approve the app again.", "")
+				return nil, block(substrate.BlockUnsupported, "The approval that keeps this add-on waiting cannot be read; approve the app again.", "")
 			}
 		}
 		rows, _, err := Plan(ctx, ds, cat, []substrate.AuthorizationDetail{{Type: substrate.DetailPackage, Package: addon.Package, Version: addon.Version}}, Options{Approved: approved})
 		if err != nil {
-			return block(substrate.BlockUnsupported, "The waiting add-on could not be planned.", "")
+			return nil, block(substrate.BlockUnsupported, "The waiting add-on could not be planned.", "")
 		}
 		row := rows[0]
 		if row.Package.AddonFor != addon.AddonFor {
-			return block(substrate.BlockUnsupported, "The add-on now names a different provider; approve it again.", ProviderPage(addon.Package))
+			return nil, block(substrate.BlockUnsupported, "The add-on now names a different provider; approve it again.", ProviderPage(addon.Package))
 		}
 		if row.Blocked != nil {
-			return row.Blocked
+			return nil, row.Blocked
 		}
 		if row.Action == substrate.SetupWait {
-			return block(substrate.BlockUnsupported, "The add-on's provider is still missing.", "")
+			return nil, block(substrate.BlockUnsupported, "The add-on's provider is still missing.", "")
 		}
 		if err := ValidateSettings(rows, nil); err != nil {
-			return block(substrate.BlockNeedsSetting, "Fill the add-on's required settings on its package page.", ProviderPage(addon.Package))
+			return nil, block(substrate.BlockNeedsSetting, "Fill the add-on's required settings on its package page.", ProviderPage(addon.Package))
 		}
 		// An add-on whose agents would install with a provider input
 		// nothing resolves waits: the approval kept no choice for it.
 		if ok, err := inputsResolve(ctx, ds, row); err != nil {
-			return block(substrate.BlockUnsupported, "The waiting add-on could not be planned.", "")
+			return nil, block(substrate.BlockUnsupported, "The waiting add-on could not be planned.", "")
 		} else if !ok {
-			return block(substrate.BlockNoModel, "Choose the add-on's AI provider on its package page, then install it there.", ProviderPage(addon.Package))
+			return nil, block(substrate.BlockNoModel, "Choose the add-on's AI provider on its package page, then install it there.", ProviderPage(addon.Package))
 		}
-		return nil
+		return installExpectations(row.Package), nil
 	})
 }

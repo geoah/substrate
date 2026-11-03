@@ -1,4 +1,3 @@
-import { OAuthHosts } from "@/components/packages/outside-code"
 /** One provider (`/providers/$authority/$pkg`; a provider is a bundle, and
  * a bundle's id is its package). The page a person finishes setting a
  * provider up on and comes back to: its state, the four set-up steps with
@@ -26,6 +25,7 @@ import {
 import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
+import { OAuthHosts } from "@/components/packages/outside-code"
 import { AccountsSection } from "@/components/providers/accounts-section"
 import {
   ImportAgainNote,

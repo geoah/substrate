@@ -55,33 +55,26 @@ func ApprovalFrom(g Grant) Approved { return Approved{scopes: slices.Clone(g.sco
 // Full reports whether everything is covered.
 func (a Approved) Full() bool { return a.full }
 
-// Covers reports whether the approval covers one reach: a kind, or a glob
-// over kinds as the grant grammar spells one, read or written. A write
-// scope covers a read; a glob scope covers a glob reach it is at least as
-// wide as, and a kind reach it matches, unless internal says the kind's
-// declared purpose is `internal`, which only its exact scope reaches. The
-// auth kinds are covered by nothing, and no scope writes the core or llm
-// package, so a write there is covered by `full` alone.
-func (a Approved) Covers(pattern string, write, internal bool) bool {
+// Covers uses the same effective reach rule as call and chat admission.
+// internalKinds must include the installed and candidate internal kinds.
+func (a Approved) Covers(pattern string, write, internal bool, internalKinds ...string) bool {
 	if a.full {
 		return true
 	}
-	want := Scope{Verb: Read, Pattern: pattern}
+	verb := Read
 	if write {
-		want.Verb = Write
+		verb = Write
 	}
-	if !vocabulary.IsTypeGlob(pattern) {
-		if vocabulary.AuthKinds[pattern] || (write && inUnwritable(pattern)) {
-			return false
-		}
-	}
-	return slices.ContainsFunc(a.scopes, func(held Scope) bool { return Covers(held, want, internal) })
+	return (Grant{scopes: a.scopes}).ReachCovered(verb, pattern, internal, internalKinds...)
 }
 
 // Covering is the scope that would cover one reach, as a block names it:
 // `write:<pattern>` or `read:<pattern>`, and `full` where no scope can,
 // since no scope reaches the auth kinds or writes the core or llm package.
 func Covering(pattern string, write bool) string {
+	if vocabulary.IsTypeGlob(pattern) && globReachesUnwritable(pattern) {
+		return FullScope.String()
+	}
 	s := Scope{Verb: Read, Pattern: pattern}
 	if write {
 		s.Verb = Write

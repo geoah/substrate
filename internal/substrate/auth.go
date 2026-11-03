@@ -83,9 +83,9 @@ func DecisionFrom(ctx context.Context) string {
 
 // The CLIENT ID of an app's token rides the context beside its scopes: the
 // full client id (its client id metadata document URL) the owner approved.
-// The actor an app writes under names only the URL's host, `app:<host>`, so
-// two apps on one host, and every loopback build, share an actor; the client
-// id is what tells them apart where that matters, the label and annotation
+// The actor is `app:<authority>` for a verified publisher, `app:local` for
+// a loopback approval, and `app:<host>` of the client id otherwise. Apps may
+// share an actor; the client id tells them apart in the label and annotation
 // namespace an app keeps. The only writer is `withRequestAuth`, and only for
 // a scoped token: a full-access app token writes as a door.
 type clientIDKey struct{}
@@ -150,6 +150,8 @@ type TokenInfo struct {
 	// mint refuses an empty list, so absence stays the one spelling of full
 	// access on the record and on the wire.
 	Scopes []string `json:"scopes,omitempty"`
+	// Retired grants remain listable and revocable but never authenticate.
+	Retired bool `json:"retired,omitempty"`
 	// ClientID is the app's client_id URL and ClientName the name it claimed
 	// when the owner approved it; both are empty on a token nobody minted
 	// for an app.

@@ -347,7 +347,8 @@ Two shapes here are on their way out, and new code does not copy them:
   `FinishPresenter.summary` to work the Finish sheet's numbers out as its draft moves. A presentation carries what a
   view draws; the summary belongs in the presenter, with the draft as a command. Each account's files are a `WorkoutsAccount` from `WorkoutsAccounts` (in the environment,
 so the link flushes the same `Outbox` the app queues into): `Outbox.workouts(directory:)`, the kit's outbox over
-`outbox.json` with `Outbox.workoutsUpgrade` for a format 1 file and the routine and session helpers in
+`outbox.json` with `Outbox.workoutsUpgrade` for a format 1 file (respelled, with nothing it knew about `~/training`
+kept: no version, chain or guard, and no session write, which the history exchange derives again) and the routine and session helpers in
 `WorkoutsOutbox.swift`.
 
 ## Finish sheet (§7.7)

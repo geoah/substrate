@@ -118,7 +118,7 @@ func TestReachCoveredHoldsAFunctionsReachToTheGrant(t *testing.T) {
 			t.Errorf("write:* covers a function's write of %q", pattern)
 		}
 	}
-	if !everything.ReachCovered(Write, "a.example.com/*", false) || !everything.ReachCovered(Read, "*", false) {
+	if !everything.ReachCovered(Write, "a.example.com/*", false) || everything.ReachCovered(Read, "*", false) {
 		t.Fatal("write:* does not cover a function's write of a.example.com/* and read of *")
 	}
 }

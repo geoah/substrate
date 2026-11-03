@@ -776,7 +776,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	if shown, err := h.authz.Claim(id, authority); err == nil && shown.State == substrate.AuthorizationPending {
 		if why := h.publisherMoved(ctx, shown); why != "" {
 			if _, err := h.authz.Deny(id, authority, func(authorize.Request) error { return nil }); err != nil && !errors.Is(err, authorize.ErrNotPending) {
-				slog.Warn("authorize: ending a request whose publisher moved", "request", id, "error", err)
+				slog.Warn("authorize: ending a request whose publisher moved", "request", logLine(id), "error", err)
 			}
 			writeError(w, http.StatusConflict, codeConflict, "who publishes this app changed since the page loaded: "+why+". This request has ended: start again from the app")
 			return
@@ -1255,22 +1255,7 @@ func (h *handler) postOAuthRevoke(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "token is required")
 		return
 	}
-	ctx := r.Context()
-	ds, info, err := h.svc.Authenticate(ctx, token)
-	if err != nil {
-		if errors.Is(err, substrate.ErrAuth) {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "the server could not look the token up")
-		return
-	}
-	if cid := form.Get("client_id"); cid != "" && cid != info.ClientID {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, tokenType, info.ID, substrate.DeleteInput{}); err != nil &&
-		!errors.Is(err, substrate.ErrNotFound) {
+	if err := h.svc.RevokeToken(r.Context(), token, form.Get("client_id")); err != nil {
 		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "the token could not be revoked")
 		return
 	}

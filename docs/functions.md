@@ -416,13 +416,9 @@ metadata block, and the runner provisions a cached virtual environment with
 `uv` at registration:
 
 ```python
-
 # /// script
-
 # dependencies = ["google-api-python-client"]
-
 # requires-python = ">=3.11"
-
 # ///
 ```
 
@@ -765,7 +761,6 @@ override where the kind binds `override`.
 page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"],
                          where={"at": {"gte": "2026-09-24T00:00:00Z",
                                        "lt": "2026-09-25T00:00:00Z"}})
-
 # page["records"]: [{"id": "abc_20260924T130000Z", "computed": True, ...}, ...]
 ```
 
@@ -793,7 +788,6 @@ trip like any other. A larger `budget.maxBuckets` does not help, because it
 is lowered again; a larger `permissions.reads.budgets.rows` does.
 
 ```python
-
 # permissions.reads.kinds grants observations/trace and observations/metric
 res = host.records.aggregate({
     "filter": {"kinds": ["substrate.reamde.dev/observations/trace"]},
@@ -804,7 +798,6 @@ res = host.records.aggregate({
         "reducers": [{"percentile": 0.05}, "min"],
     },
 })
-
 # res["rows"]: [{"start": "2026-09-01T00:00:00+03:00", "values": [...], ...}, ...]
 ```
 

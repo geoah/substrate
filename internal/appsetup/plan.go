@@ -40,10 +40,8 @@ type Catalog interface {
 	Requirements(ctx context.Context, id string, ds substrate.Dataset) ([]*catalog.Bundle, []catalog.Unmet, error)
 	Upgrade(ctx context.Context, id string, ds substrate.Dataset, held *substrate.BundleStatus) (*substrate.BundleUpgrade, error)
 	InstallConfirmed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*catalog.Bundle, []substrate.SuggestedMapping, error)
-	// InstallReviewed is InstallConfirmed held to the document-published
-	// closure the owner approved: another version or digest is refused
-	// before anything lands.
-	InstallReviewed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm, expect *catalog.PublishedCandidate) (*catalog.Bundle, []substrate.SuggestedMapping, error)
+	// InstallApproved binds every package written to the approved install set.
+	InstallApproved(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, expect catalog.InstallExpectations) (*catalog.Bundle, []substrate.SuggestedMapping, error)
 }
 
 // accountConfigTrait is the trait an account detail's kind implements.
@@ -525,7 +523,7 @@ func (p *planner) binaryChain(ctx context.Context, b *catalog.Bundle, steps []*c
 	for _, dep := range steps {
 		p.bundles[dep.ID] = dep
 		step := substrate.AuthorizationPackageStep{
-			ID: dep.ID, Description: dep.Description, Action: p.stepAction(dep.ID), Held: p.held(dep.ID), Shipped: dep.Version,
+			ID: dep.ID, Description: dep.Description, Action: p.stepAction(dep.ID), Held: p.held(dep.ID), Shipped: dep.Version, Publisher: publisherOf(dep),
 		}
 		problem, err := p.stepBlock(ctx, dep, floors[dep.ID])
 		if err != nil {
@@ -627,7 +625,7 @@ func (p *planner) reach(ctx context.Context, b *catalog.Bundle, chain []*catalog
 		for _, by := range r.By {
 			entry.By = append(entry.By, substrate.AuthorizationReachBy{Type: by.Type, ID: by.ID})
 		}
-		entry.Covered = p.opts.Approved.Covers(r.Pattern, r.Write, !vocabulary.IsTypeGlob(r.Pattern) && internal(r.Pattern))
+		entry.Covered = p.opts.Approved.Covers(r.Pattern, r.Write, !vocabulary.IsTypeGlob(r.Pattern) && internal(r.Pattern), p.internalKinds(chain)...)
 		out = append(out, entry)
 	}
 	return out, nil
@@ -639,14 +637,14 @@ func (p *planner) reach(ctx context.Context, b *catalog.Bundle, chain []*catalog
 // up check reads a kind the repository lacks.
 func (p *planner) internalIn(chain []*catalog.Bundle) func(kind string) bool {
 	return func(kind string) bool {
-		if k, held := p.kinds[kind]; held {
-			purpose, _ := k.Definition["purpose"].(string)
-			return purpose == vocabulary.PurposeInternal
-		}
 		for _, b := range chain {
 			if k, ok := b.Kind(kind); ok {
 				return k.Purpose == vocabulary.PurposeInternal
 			}
+		}
+		if k, held := p.kinds[kind]; held {
+			purpose, _ := k.Definition["purpose"].(string)
+			return purpose == vocabulary.PurposeInternal
 		}
 		return true
 	}
@@ -901,4 +899,24 @@ func (p *planner) triggerProperties(ctx context.Context, id string) (map[string]
 		}
 	}
 	return nil, nil
+}
+
+// Candidate purposes take precedence: an upgrade may make a public kind internal.
+func (p *planner) internalKinds(chain []*catalog.Bundle) []string {
+	purposes := map[string]bool{}
+	for ref, k := range p.kinds {
+		purposes[ref] = k.Definition["purpose"] == vocabulary.PurposeInternal
+	}
+	for _, b := range chain {
+		for _, k := range b.Kinds() {
+			purposes[k.Identity] = k.Purpose == vocabulary.PurposeInternal
+		}
+	}
+	var out []string
+	for ref, internal := range purposes {
+		if internal {
+			out = append(out, ref)
+		}
+	}
+	return out
 }

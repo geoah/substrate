@@ -167,8 +167,10 @@ stamp() {
 # --- where things go -------------------------------------------------------
 
 # The URL of an app's client ID metadata document, for the app named in $1.
-# Its host heads the owner's approval page and names the app's actor
-# (`app:<host>`), so it is a host the publisher alone serves: the site's
+# Its host heads the owner's approval page and, for an app no authority
+# document lists, names the app's actor (`app:<host>`; a verified app writes
+# as `app:<authority>` and a loopback build as `app:local`, decision 0209),
+# so it is a host the publisher alone serves: the site's
 # `/apps/<app>/client.json` when SUBSTRATE_APPLE_SITE_URL is set (see
 # site_build), else SUBSTRATE_APPLE_CLIENT_URL, an https folder there the
 # same key may write (a custom domain, or a virtual-hosted bucket), else the

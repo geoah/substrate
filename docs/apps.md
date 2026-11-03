@@ -198,9 +198,10 @@ the publisher adds once, and a document it names:
 
    `authority` must be the name the record was looked up under. The server
    fetches the document the way it fetches a client document (public
-   addresses, no redirects, 5 seconds), up to 64 KB, refuses a key it does
-   not read, and caches a success for 10 minutes. `packages` is read and
-   not yet used.
+   addresses, no redirects, 5 seconds), up to 64 KB, ignores a key it does
+   not read, and caches a success for 10 minutes. `packages` lists the
+   packages the authority publishes, which an app's approval installs
+   ([publish a package](#publish-a-package)).
 4. The `redirect_uri` is `https` on the authority or a name under it, such
    as `https://apps.example.org/workouts/callback`.
 
@@ -705,12 +706,16 @@ door and that trigger's parked list
 
 Everything else answers `403`: the vocabulary, the catalog, a function
 call from a token with no `call:` scope, the agent call API, the export and
-the token endpoints. Writes are attributed to the app's own actor,
-`app:` and the host of its client id, whatever `X-Substrate-Actor` says; no
-request can claim that name. Two apps on one host share it, and the
-changelog's principal (the token, which names the exact client id) tells
-them apart. Labels and annotations an app writes go in its own namespace,
-`app:<host>/…`, like an agent's or a function's.
+the token endpoints. Writes are attributed to the app's own actor, whatever
+`X-Substrate-Actor` says: `app:<authority>` for an app whose publisher was
+verified, `app:local` for one whose access went to a loopback address, and
+`app:<host>` of its client id otherwise
+([0209](decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)); no
+request can claim that name. Two apps of one publisher, or on one host,
+share it, and the changelog's principal (the token, which names the exact
+client id) tells them apart. Labels and annotations an app writes go in its
+own namespace, the actor and a slash (`app:example.org/…`), like an
+agent's or a function's.
 
 ### Talk to agents
 
@@ -722,7 +727,8 @@ records their chats are made of:
   naming a thread of another agent does;
 - `POST /api/v1/substrate.reamde.dev/core/agent/{id}/chat`, the id one
   path segment (`%2F` for its slashes), streaming as it does for the owner.
-  The message is written as the app's, `app:<host>`; the agent runs under
+  The message is written as the app's own actor (`app:<authority>`,
+  `app:local` or `app:<host>`, as above); the agent runs under
   its own permissions, so it reads and writes what it would in the
   owner's chat. A chat's `context` may name only records the app's own
   token reads; any other path is refused with the `404 not_found` a read
@@ -739,8 +745,9 @@ A `decide:<pattern>` scope reaches the change requests
 (`substrate.reamde.dev/core/recordpatchrequest`) whose `thread` is a thread
 of a matching agent: list and read, and a `PATCH` of `decision` to
 `accepted` or `rejected` with the request's `ifVersion`, optionally an
-`adjustedDiff` on an accept and a note under the app's own namespace
-(`app:<host>/note`). The accept applies the change as the owner's would,
+`adjustedDiff` on an accept and a note under the app's own namespace (its
+actor and `/note`: `app:example.org/note` for an app example.org
+publishes). The accept applies the change as the owner's would,
 and the decision is recorded as the app's. An accept that would revoke a
 token or write an account is refused. `decide:` without `agents:` decides
 but does not chat.
