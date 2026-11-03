@@ -339,7 +339,10 @@ implementation and a fake. Four rules:
   parent-host fallback), or a failure that stops discovery, as
   `ServerLocator` tells them apart today.
 - A long-lived source is a stream with an explicit end, error and cancel
-  (§5.5).
+  (§5.5). The transport's line stream is not in step 3's `HTTPTransport`:
+  its only readers today are Chat's watch and agent turn streams, which
+  read `URLSession.bytes` directly, so the shape lands with them in step 5,
+  where moving them onto it is the change and their tests hold it.
 - A service that is a screen (camera, code scanner, photo picker) is a UI
   **component**: the UI shows it and sends the controller a command with its
   result.

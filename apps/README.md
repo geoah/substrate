@@ -639,8 +639,9 @@ package, and for `substrate.reamde.dev/trainingcoach` with the workout coach
 in its closure, as `package` details at the versions the build was written
 against, and the server installs them from the authority document. The app
 applies no vocabulary and reads the version a repository holds. Its model
-and engines are a Swift package of their own, `WorkoutsKit` (`workouts/WorkoutsKit`)
-(Foundation only), and its sign-in is SubstrateKit's. Everything else, the
+and engines are a Swift package of their own, `WorkoutsKit` (`workouts/WorkoutsKit`),
+over Foundation and the kit's portable libraries, so it builds and tests on
+Linux too (`mise run apps:test:linux`), and its sign-in is SubstrateKit's. Everything else, the
 outbox, the cached routines and the package's rules, is in
 [its README](workouts/README.md).
 
@@ -704,7 +705,7 @@ xcode/project.yml                   the xcodegen spec, the only project source; 
 xcode/Shared/Updater.swift          the updater every app compiles in
 xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync and Chat
 xcode/scripts/feed.swift            a release's index.json, appcast.xml, install page and manifest
-kit/                                the apps' shared Swift package: records, values, kind names and glyphs, the linked-record pill and its read-only view ([its README](kit/README.md))
+kit/                                the apps' shared Swift package: SubstrateCore, SubstrateDevice, SubstrateAPI, SubstrateAuth and SubstrateTesting, which build for Linux and Android too, SubstrateDeviceApple and SubstrateUI, and SubstrateKit over all of them ([its README](kit/README.md))
 console/apple/Support/              the console app's Info.plist per platform and its entitlements
 console/apple/Assets.xcassets       the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../docs/app-icons.md))
 console/apple/Sources/App/          the app, its macOS menus, ServerStore, ConsoleSessions
@@ -716,5 +717,5 @@ sync/apple/Share/                   its share extension
 sync/apple/Tests/                   its tests: ids, labels, dates, the Health goldens
 workouts/apple/                     Substrate Workouts: Sources/ (App/, Platform/, Shared/, Views/), Widgets/ (its Live Activity)
 workouts/package/                   its published training and trainingcoach packages
-workouts/WorkoutsKit/                      its Swift package: WorkoutsCore (model, engines, presenters) and WorkoutsSync (package, catalogue, outbox), with their tests
+workouts/WorkoutsKit/               its Swift package: WorkoutsCore (model, engines, presenters) and WorkoutsSync (package, catalogue, outbox), with their tests; portable, over the kit's portable libraries
 ```

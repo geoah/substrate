@@ -24,8 +24,9 @@ packages:
   # record views (../kit/README.md).
   SubstrateKit:
     path: ../kit
-  # Substrate Workouts' model, session and suggestion engines (WorkoutsCore,
-  # Foundation only) and its sync with a substrate (WorkoutsSync).
+  # Substrate Workouts' model, session and suggestion engines (WorkoutsCore)
+  # and its sync with a substrate (WorkoutsSync), over the kit's portable
+  # libraries alone.
   WorkoutsKit:
     path: ../workouts/WorkoutsKit
 settings:

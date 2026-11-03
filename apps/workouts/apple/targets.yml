@@ -1,7 +1,7 @@
 targets:
   SubstrateWorkouts:
     # iPhone only, iOS 27: strength sessions in the gym. The model and both
-    # engines are WorkoutsKit's, Foundation only; sign-in, the session and
+    # engines are WorkoutsKit's, with no UI framework; sign-in, the session and
     # the status check are SubstrateKit's; the updater is the shared file in
     # apps/xcode/Shared, whose iOS path reads this app's own release feed.
     type: application

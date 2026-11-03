@@ -1,25 +1,42 @@
 # SubstrateKit
 
-What every Apple app that speaks to a substrate shares, as a Swift package
-(iOS and macOS 26, no dependencies): which server it is and whether it is new
-enough, the requests and their errors, signing in through the app
-authorization flow, keeping the session, asking whether the app is still set
-up, and the screens for all of it. Beside that, the record and its values as
-the console draws them. The console's shell (Substrate), Substrate Sync and
-Substrate Chat use it; an app adds it as a local package (`project.yml`'s
-`packages:`) and imports `SubstrateKit`. The design
-it implements is [docs/plans/app-setup.md](../../docs/plans/app-setup.md).
+What every app that speaks to a substrate shares, as one Swift package of
+libraries: which server it is and whether it is new enough, the requests and
+their errors, signing in through the app authorization flow, keeping the
+session, asking whether the app is still set up, and the screens for all of
+it. Beside that, the record and its values as the console draws them. The
+console's shell (Substrate), Substrate Sync, Substrate Chat and Substrate
+Workouts use it; an app adds it as a local package (`project.yml`'s
+`packages:`). The design it implements is
+[docs/plans/app-setup.md](../../docs/plans/app-setup.md), and its layout is
+[docs/plans/app-kit.md](../../docs/plans/app-kit.md)'s §5.3.
 
-## What is in it
+## The libraries
 
-| Folder | What |
+Each library depends only on the ones above it in this table, which
+`mise run lint:apps` holds. The portable ones (every one but the last two)
+import Foundation and the kit alone, and build and test on iOS, macOS and
+Linux (`mise run apps:test:linux`), as Android's Swift does; the Apple ones
+compile to nothing elsewhere. The package is in Swift 6 language mode.
+
+| Library | What it holds |
 | --- | --- |
-| `Server/` | `ServerAddress.origin(of:)`, the one normaliser from a typed address to `https://host[:port]`, and `page(_:path:)` for a console path the server gave; `Discovery`, all of `/.well-known/substrate/server.json`; `AuthorizationServerMetadata` (RFC 8414) and `mismatch(server:)`; `ServerVersion`, which orders `v0.113.0`, `v0.113.0-4-gabc1234` and `0.114.0-pre.1`, refuses `dev`, and is said one way on every screen (`display`); `ServerRequirement` and its verdict; `ServerProbe`, which reads both documents; `ServerLocator`, which finds the server behind a repository's name; `DomainRecord`, the `_substrate` TXT record read by the server's rules, and `DNSServiceTXTResolver`, which looks it up |
-| `API/` | `SubstrateClient` over an `HTTPTransport` (a `URLSession` that never follows a redirect, unless a test scripts one): the bearer token, `Timeout` tiers, `Retry-After` on 429 and 503 for a request that may run twice, `ServerError`, `TransportError`, `SessionExpired`, `InsufficientScope`, `Redirected`, `explain(_:app:server:)`, `segment(_:)`, records, lists, blobs, webhook deliveries, parked deliveries, `/authorizations/check` and the password door |
-| `Auth/` | `AppManifest`, `AuthorizationDetail` and the check's wire shapes, `PKCE`, `OAuthClient`, `LoopbackReceiver`, `WebAuthenticator`, `Session` and its `revoke`, `SessionStore` and its pending revocations, `Grants` and `ScopeWords` |
-| `Status/` | `AppStatusCheck`, which turns discovery, the requirement, the check and the expiry into `AppStatus.issues`; `Change`, one thing an approval would do, in words; `AppStatusModel`, the check kept current |
-| `UI/` | `ConnectView`, `ServerTooOldView`, `AppStatusBanner`, `ReviewChangesSheet` and its `ReviewChangesSections`, `AccessEndingBanner`, `AccessEndedView`, `AccountSection`, `UnrevokedNotices`, `ChangeRow`, `StatusBadge`, `ProblemBox` |
-| `Records/` | `Record`, `JSONValue`, a kind's name and glyph, `RecordPill` and the read-only record view, `RecordDirectory` over a `RecordReader` |
+| `SubstrateCore` | `JSONValue` (a number keeps its decimal digits, an object its key order: `JSONObject`) with `DecimalText`; `Record`, `FlatRecord` (the record as the REST API speaks it) and `CodecError`; `KindReference`, `RecordReference`, `KindDeclaration`; `Timestamp` (RFC 3339) and `ISODuration`; a kind's and a property's name in words (`KindNames`, `kindDisplayName`, `propertyLabel`), its glyph (`KindGlyphSpec`, `KindHue`), `ValueShape` and `valueWords`; `ServerAddress`; the errors (`ServerError`, `TransportError`, `Redirected`, `SessionExpired`, `InsufficientScope`, `LoginRefused`, `OAuthRefusal`) and `explain(_:app:server:)`; `Grants`, `ScopeWords` and `ScopeKind` |
+| `SubstrateDevice` | the device services' protocols and their values: `HTTPTransport` with `URLSessionTransport`, which never follows a redirect; `SessionStorage`, the secure store, with `StoredItem` (missing told from failed) and `SecureStoreRefused`; `BrowserSignIn` with `SignInRoute`, `SignInRedirect`, `SignInAnswer` and `SignInCancelled`; `TXTResolver`, whose `TXTAnswer` keeps records, a confirmed absence, an unconfirmed absence and a failure apart |
+| `SubstrateAPI` | `SubstrateClient`: `Timeout` tiers, `Retry-After`, `segment(_:)`, records, lists (`ListQuery`, `RecordPage`), blobs, webhook deliveries, parked deliveries, the password door; `RecordReader`, `HTTPRecordReader` and `RecordDirectory`; `Discovery`, `AuthorizationServerMetadata` and `ServerMismatch`, `ServerVersion`, `ServerRequirement`, `ServerProbe`; `DomainRecord` and `ServerLocator` over a `TXTResolver` |
+| `SubstrateAuth` | `AppManifest`, `KindLabel`, `AuthorizationDetail` and the check's wire shapes with `checkAuthorization`; `PKCE` (SHA-256 from CryptoKit, or swift-crypto where it is missing); `OAuthClient`, whose `signIn` takes the device's `BrowserSignIn`, `TokenResponse`, `RepositoryMismatch`; `Session` and its `revoke`; `SessionStore`, its pending revocations and its transitions, over a `SessionStorage`; `AppStatusCheck`, `AppStatus`, `AppIssue`, `Change` and its words, `AppStatusModel` |
+| `SubstrateTesting` | the fakes tests use: `StubTransport` (a scripted server), `MemoryStorage`, `TableResolver`, `ScriptedBrowser` |
+| `SubstrateDeviceApple` | the device services on Apple frameworks: `KeychainStorage`, `WebAuthenticator` (`ASWebAuthenticationSession`, the claimed callback or the loopback redirect), `LoopbackReceiver`, `DNSServiceTXTResolver` and the `SubstrateResolv` C target behind it |
+| `SubstrateUI` | the SwiftUI screens (`ConnectView`, `ServerTooOldView`, `AppStatusBanner`, `ReviewChangesSheet` and its `ReviewChangesSections`, `AccessEndingBanner`, `AccessEndedView`, `AccountSection`, `UnrevokedNotices`, `ChangeRow`, `StatusBadge`, `ProblemBox`) and the record views (`KindGlyph`, `RecordPill`, `RecordSheet`, `RecordDetailView`, `RecordValueView`) |
+
+`SubstrateKit` is every library but `SubstrateTesting` under one import,
+with the Apple device services as the defaults the single module had: a
+`ServerLocator(probe:)` reads DNS through DNS-SD, `OAuthClient.signIn`
+without a `browser:` signs in through `WebAuthenticator`, and
+`SessionStore(service:accessGroup:…)` keeps the session in the Keychain.
+The console, Chat and Sync import it. Code that must build for Linux or
+Android (an app's core: WorkoutsCore and WorkoutsSync) imports the
+portable libraries it uses instead and passes its device services in.
 
 ## How an app uses it
 
@@ -106,9 +123,11 @@ An app that is the whole console asks for `scopes: ["full"]` alone (decision
 0204): the server's metadata must list `full`, the approval is whole, and the
 token has no scopes; `Grants.full` reads it as everything.
 
-`OAuthClient.signIn` takes the redirect one of two ways. A manifest with an
-https client id and a `claimedRedirect` (a release, stamped from its
-Info.plist with `AppManifest.claimedRedirect(infoKey:)`) opens
+`OAuthClient.signIn` takes the redirect one of two ways, through the
+device's `BrowserSignIn` (`WebAuthenticator` on an Apple device). A
+manifest with an https client id and a `claimedRedirect` (a release,
+stamped from its Info.plist with `AppManifest.claimedRedirect(infoKey:)`)
+opens
 `ASWebAuthenticationSession` with `callback: .https(host:path:)`, on iOS and
 macOS alike; the system hands the callback only to the app the host's
 association file names, which the app's associated domains entitlement
@@ -227,7 +246,9 @@ sentence, never rebuilt here.
 ## Tests
 
 `mise run apple:test:kit` (or `swift test` here) runs the suite, which stubs
-the server with a scripted transport. With `SUBSTRATEKIT_SNAPSHOTS` naming a
+the server with a scripted transport, and `mise run apps:test:linux` runs it
+on Linux, where the tests of the Apple libraries and the SwiftUI screens
+compile out. With `SUBSTRATEKIT_SNAPSHOTS` naming a
 directory, `swift test --filter Snapshots` also draws every screen in its
 usual states to PNG files there, at an iPhone's size in light mode, for a
 person to look at.
