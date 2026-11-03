@@ -900,6 +900,7 @@ describe("AuthorizePage", () => {
       glob: true,
       kinds: [],
       agents: [],
+      functions: [],
     }
     const covered = {
       ...INSTALL,
