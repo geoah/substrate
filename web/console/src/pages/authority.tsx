@@ -13,6 +13,8 @@ import { Link, useNavigate } from "@tanstack/react-router"
 import { FileCode2Icon, MessageSquareIcon } from "lucide-react"
 
 import { AgentCard } from "@/components/agent/agent-ref"
+import { PublisherDetails } from "@/components/packages/publisher"
+import { catalogQueryOptions } from "@/lib/api/catalog"
 import { AppManagedSection } from "@/components/packages/app-managed"
 
 import { CopyButton } from "@/components/identity/copy-button"
@@ -329,6 +331,11 @@ export function PackagePage() {
   const [technical] = useTechnicalDetails()
   const registry = useQuery(kindsQueryOptions)
   const packages = useQuery(packagesQueryOptions)
+  const catalog = useQuery(catalogQueryOptions)
+  const publisher = catalog.data?.find(
+    (item) => item.id === `${authority}/${pkg}`
+  )?.publisher
+  const published = packages.data?.get(`${authority}/${pkg}`)?.publishedFrom
   const functions = useQuery(functionsQueryOptions)
   const kinds = useMemo(
     () =>
@@ -427,6 +434,16 @@ export function PackagePage() {
               <PackageTool key={t.ref} tool={t} technical={technical} />
             ))}
           </ul>
+        </section>
+      )}
+      {published && (
+        <section className="space-y-4">
+          {publisher && <PublisherDetails publisher={publisher} />}
+          <AppManagedSection
+            app={`bundle:${authority}:${pkg}`}
+            publisher={authority}
+            packageId={`${authority}/${pkg}`}
+          />
         </section>
       )}
       {app && (

@@ -124,7 +124,11 @@ type vocabularyBatch struct {
 	// Install): the shipped version of the bundle's own package, stamped on
 	// that package row as `shippedVersion` (stampShipped). Zero on every
 	// other batch, which leaves a stamped row's value alone.
-	shippedVersion int64
+	shippedVersion           int64
+	publishedFrom            string
+	publishedDigest          string
+	expectedPublishedVersion int64
+	publishedNarrows         bool
 	// confirm is the caller's consent to a lossy conversion plan, or nil: the
 	// batch refuses a lossy plan without one, or with one for another plan
 	// (convert.go admitConversion, decision 0067).
@@ -309,7 +313,8 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 		origin:         opts.Origin,
 		originVersion:  opts.OriginVersion,
 		shippedVersion: opts.ShippedVersion,
-		confirm:        opts.Confirm,
+		publishedFrom:  opts.PublishedFrom, publishedDigest: opts.PublishedDigest, expectedPublishedVersion: opts.ExpectedPublishedVersion, publishedNarrows: opts.PublishedNarrows,
+		confirm: opts.Confirm,
 		extra: func(t *txn) error {
 			for _, in := range dataDocs {
 				// A trigger's callable is validated against the candidate here
@@ -642,6 +647,7 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 			meta: b.meta, prune: true, origin: b.origin, originVersion: b.originVersion,
 			logPackages:    true,
 			shippedPackage: shippedPackage(b), shippedVersion: b.shippedVersion,
+			publishedFrom: b.publishedFrom, publishedDigest: b.publishedDigest, expectedPublishedVersion: b.expectedPublishedVersion, publishedNarrows: b.publishedNarrows,
 		})
 		if err != nil {
 			return err
@@ -1418,8 +1424,12 @@ type projectOpts struct {
 	originVersion int64
 	// shippedPackage and shippedVersion, when set, stamp the package row
 	// shippedPackage names with `shippedVersion` (stampShipped).
-	shippedPackage string
-	shippedVersion int64
+	shippedPackage           string
+	shippedVersion           int64
+	publishedFrom            string
+	publishedDigest          string
+	expectedPublishedVersion int64
+	publishedNarrows         bool
 	// versions, when set, is the version each projected row is stamped with,
 	// keyed as skip keys it, overriding the declaration's own. A repository
 	// migration (repomigrate.go) rewrites rows whose versions the store
@@ -2050,9 +2060,38 @@ func (t *txn) stampShipped(reg *vocabulary.Registry, projecting map[string]bool,
 	if _, declared := ty.Prop(propPackageShippedVersion); !declared {
 		return nil
 	}
-	e, err := t.putKind(ty, substrate.PutInput{Kind: kindPackage, ID: g.Identity, Properties: map[string]any{
-		propPackageShippedVersion: opts.shippedVersion,
-	}})
+	props := map[string]any{propPackageShippedVersion: opts.shippedVersion}
+	if opts.publishedFrom != "" {
+		row, err := t.loadRow(eref{Kind: kindPackage, ID: g.Identity}, false)
+		if err != nil {
+			return err
+		}
+		if row != nil {
+			held, _ := vocabulary.VersionValue(row.Props[propPackageShippedVersion])
+			if held != opts.expectedPublishedVersion {
+				return fmt.Errorf("%w: %s changed since its published upgrade was checked", substrate.ErrConflict, g.Identity)
+			}
+			if opts.publishedNarrows {
+				if err := t.checkPublishedHolders(g.Identity, opts.shippedVersion); err != nil {
+					return err
+				}
+			}
+
+			digest, _ := row.Props["publishedDigest"].(string)
+			if held > opts.shippedVersion {
+				return fmt.Errorf("%w: %s never downgrades from %d to %d", substrate.ErrConflict, g.Identity, held, opts.shippedVersion)
+			}
+			if held == opts.shippedVersion && digest != "" && digest != opts.publishedDigest {
+				return fmt.Errorf("%w: %s version %d has another published digest", substrate.ErrConflict, g.Identity, held)
+			}
+			if row.Props["takenOverFrom"] != nil {
+				return fmt.Errorf("%w: %s was taken over by its owner", substrate.ErrConflict, g.Identity)
+			}
+		}
+		props["publishedFrom"] = opts.publishedFrom
+		props["publishedDigest"] = opts.publishedDigest
+	}
+	e, err := t.putKind(ty, substrate.PutInput{Kind: kindPackage, ID: g.Identity, Properties: props})
 	if err != nil {
 		return fmt.Errorf("substrate/engine: stamp the shipped version of %s: %w", g.Identity, err)
 	}
