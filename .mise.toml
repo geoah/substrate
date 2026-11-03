@@ -892,6 +892,24 @@ run = ".mise/apple.sh build:workouts"
 description = "Run WorkoutsKit's tests (Substrate Workouts' model, session and suggestion engines, and its sync) on the Mac"
 run = ".mise/apple.sh test:workouts"
 
+[tasks."apps:test:linux"]
+description = "The kit and WorkoutsKit, built and tested on Linux in the swift container"
+# Android's Swift runs on the same open-source Foundation as Linux, so a
+# package that imports an Apple framework, or uses a part Foundation leaves
+# out there, fails here first, on a laptop with Docker as in CI. The image is
+# swift:6.4 pinned by the digest of its multi-arch index, so an arm64 Mac and
+# an amd64 runner build on one toolchain. The tree is mounted read-only and
+# the build goes to the container's /tmp, never into a package's .build,
+# which the Mac's own builds own.
+run = """
+docker run --rm -v "$PWD:/src:ro" -w /src/apps \
+  swift:6.4@sha256:119ff7d833ea622851b459513333bb4bda5ebb32b7acd05dd05077d5b0383129 \
+  bash -euc 'for p in kit workouts/WorkoutsKit; do
+    swift build --package-path "$p" --scratch-path "/tmp/$p"
+    swift test --package-path "$p" --scratch-path "/tmp/$p"
+  done'
+"""
+
 [tasks."apple:release:workouts"]
 description = "Build, sign and publish Substrate Workouts as a release (prerelease, or stable) under workouts/, with its own feeds"
 run = ".mise/apple.sh release:workouts"
@@ -1182,6 +1200,12 @@ depends = [
 description = "CI job `console test`: the console's vitest suite"
 depends = ["console:test"]
 
+[tasks."ci:apps"]
+description = "CI job `apps linux`: the kit and WorkoutsKit built and tested on Linux"
+# Gated on `changes`' `apps` answer: only a change to apps/, the console
+# fixture the kit's tests read, or this pipeline's own definition runs it.
+depends = ["apps:test:linux"]
+
 [tasks."ci:image"]
 description = "CI job `image builds and boots` — the image builds from a clean tree and serves under compose.yaml"
 # Build, then boot. The build alone passed for a release image that could not
@@ -1223,6 +1247,7 @@ depends = [
   "ci:console",
   "ci:console:test",
   "ci:image",
+  "ci:apps",
 ]
 
 [tasks."ci:quick"]

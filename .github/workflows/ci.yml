@@ -292,6 +292,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       go: ${{ steps.changes.outputs.go }}
+      apps: ${{ steps.apps.outputs.apps }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -302,6 +303,9 @@ jobs:
       # without diffing.
       - id: changes
         run: .mise/changescheck.sh
+      # The same diff, asked whether it touches what `apps linux` builds.
+      - id: apps
+        run: .mise/changescheck.sh apps
 
   go:
     name: go test
@@ -840,6 +844,30 @@ jobs:
       # shared 10 GB cache budget competing for eviction against the Go caches
       # above, which save 51s and 77s. Re-measure before adding one back.
       - run: mise run ci:console:test
+
+  # The kit and Substrate Workouts' core, built and tested on Linux in the
+  # swift container `ci:apps` pins, since what builds for Android builds
+  # here first. Not required, and gated on `changes`' `apps` answer: a
+  # change outside apps/ and this pipeline cannot move its result. mise is
+  # here for the task alone, which needs Docker and no tool, so it installs
+  # none.
+  apps-linux:
+    name: apps linux
+    needs: changes
+    if: needs.changes.outputs.apps == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          experimental: true
+          version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
+          install: false
+      - run: mise run ci:apps
 
   # Builds the image from source and BOOTS it under compose.yaml, with fresh
   # volumes and a throwaway Postgres. The release ships the same runtime stage

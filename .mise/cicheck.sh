@@ -120,13 +120,15 @@ g add -A && g commit --quiet -m base
 # every scenario answer "a push runs every job" and its CI=true would turn the
 # laptop fallback into a refusal. The PR runs never saw that, main did.
 scrub=(env -u GITHUB_EVENT_NAME -u GITHUB_BASE_REF -u GITHUB_REF -u GITHUB_SHA -u CI -u GITHUB_OUTPUT -u CHANGES_CHECK_BASE)
+# `question` is the argument the gate is asked, empty for its default (go).
 gate_out=""
 gate_status=0
 gate_output_lines=0
+question=""
 gate() {
   local output="$tmp/output"
   : >"$output"
-  gate_out="$(cd "$repo" && "${scrub[@]}" GITHUB_OUTPUT="$output" "$@" "$changescheck" 2>"$tmp/stderr")"
+  gate_out="$(cd "$repo" && "${scrub[@]}" GITHUB_OUTPUT="$output" "$@" "$changescheck" ${question:+"$question"} 2>"$tmp/stderr")"
   gate_status=$?
   gate_output_lines="$(grep -c . "$output")"
 }
@@ -141,11 +143,11 @@ scenario() {
   g add -A && g commit --quiet --allow-empty -m "$name"
   gate CHANGES_CHECK_BASE=main
   case "$gate_out" in
-  *"go=${expected}"*) ;;
-  *) flag "${name}: expected go=${expected}, got '${gate_out}' (exit ${gate_status})" ;;
+  *"${question:-go}=${expected}"*) ;;
+  *) flag "${name}: expected ${question:-go}=${expected}, got '${gate_out}' (exit ${gate_status})" ;;
   esac
   [ "$gate_status" -eq 0 ] || flag "${name}: exit ${gate_status}, expected 0"
-  [ "$gate_output_lines" -eq 1 ] || flag "${name}: GITHUB_OUTPUT has ${gate_output_lines} lines, expected exactly one go= line"
+  [ "$gate_output_lines" -eq 1 ] || flag "${name}: GITHUB_OUTPUT has ${gate_output_lines} lines, expected exactly one ${question:-go}= line"
   g checkout --quiet main
 }
 
@@ -175,6 +177,26 @@ scenario record-schema true touch_file web/console/src/lib/record-schema.ts
 # A rename onto an inert path: git's rename detection would report only the
 # destination, docs/x.md, and the gate would wave a deleted Go file through.
 scenario rename-go-onto-docs true g mv internal/engine/x.go docs/x.md
+
+# The second question, `apps`: the `apps linux` job reads apps/, the console
+# fixture the kit's scope words are held to, and its own definition, and a
+# change anywhere else (a Go file, the rest of the console) skips it.
+question=apps
+scenario apps-docs-only false touch_file docs/a.md
+scenario apps-go-file false touch_file internal/engine/x.go
+scenario apps-other-console false touch_file web/console/p.json
+scenario apps-kit-source true seed apps/kit/Sources/SubstrateCore/New.swift
+scenario apps-app-json true seed apps/tasks/app.json '{}'
+scenario apps-scope-fixture true seed web/console/src/lib/app-scopes.fixture.json '[]'
+scenario apps-the-workflow-itself true touch_file .github/workflows/ci.yml
+scenario apps-the-tasks true seed .mise.toml '[tasks]'
+gate GITHUB_EVENT_NAME=push
+case "$gate_out" in *"apps=true"*) ;; *) flag "apps push: expected apps=true, got '${gate_out}'" ;; esac
+question=nonsense
+gate CHANGES_CHECK_BASE=main
+[ "$gate_status" -ne 0 ] || flag "an unknown question: exit 0, expected a refusal"
+[ "$gate_output_lines" -eq 0 ] || flag "an unknown question: GITHUB_OUTPUT got a line, expected none"
+question=""
 
 # The base resolved from the branch rather than CHANGES_CHECK_BASE: `main`
 # exists and origin/main does not, which is the laptop case.

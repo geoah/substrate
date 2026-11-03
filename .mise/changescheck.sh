@@ -30,18 +30,35 @@
 # a base this cannot resolve or a diff git refuses is a change nobody looked
 # at, and the workflow's `go gate` turns the missing answer into a red check.
 #
-# Output: `go=true` or `go=false` on stdout, and the same line appended to
-# $GITHUB_OUTPUT when the runner provides one, which is how the workflow reads
-# it. CHANGES_CHECK_BASE overrides the base commit, for trying it by hand:
+# The same diff answers a second question, `apps` (the first argument;
+# none is `go`): does the change touch what the `apps linux` job builds? That
+# job reads only the Swift packages under apps/, the console fixture the
+# kit's scope words are held to, and its own definition (.mise.toml, this
+# workflow), so there the list is the RELEVANT set: a change elsewhere cannot
+# move its result, and a docs or Go change skips its build.
+#
+# Output: `go=true` or `go=false` (`apps=` for the second question) on stdout,
+# and the same line appended to $GITHUB_OUTPUT when the runner provides one,
+# which is how the workflow reads it. CHANGES_CHECK_BASE overrides the base
+# commit, for trying it by hand:
 #   CHANGES_CHECK_BASE=HEAD~1 mise run ci:changes
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
+gate="${1:-go}"
+case "$gate" in
+go | apps) ;;
+*)
+  echo "ci:changes: no question named ${gate}; ask go or apps" >&2
+  exit 2
+  ;;
+esac
+
 emit() {
-  echo "ci:changes: go=$1 ($2)"
+  echo "ci:changes: ${gate}=$1 ($2)"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
-    echo "go=$1" >>"$GITHUB_OUTPUT"
+    echo "${gate}=$1" >>"$GITHUB_OUTPUT"
   fi
 }
 
@@ -104,6 +121,22 @@ inert() {
   esac
 }
 
+# What the `apps linux` job reads, and nothing else is.
+apps_input() {
+  case "$1" in
+  apps/* | web/console/src/lib/app-scopes.fixture.json) return 0 ;;
+  .mise.toml | .github/workflows/ci.yml) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
+relevant() {
+  case "$gate" in
+  go) ! inert "$1" ;;
+  apps) apps_input "$1" ;;
+  esac
+}
+
 # The diff against the working tree, captured so a git failure (a base that
 # names no commit) is this script's failure and not a silently empty list.
 # --no-renames: a detected rename reports only its destination, so moving a
@@ -118,10 +151,10 @@ untracked="$(git ls-files --others --exclude-standard)"
 
 while IFS= read -r path; do
   [ -n "$path" ] || continue
-  if ! inert "$path"; then
-    emit true "${path} can change a Go result"
+  if relevant "$path"; then
+    emit true "${path} can change the ${gate} result"
     exit 0
   fi
 done <<<"${changed}"$'\n'"${untracked}"
 
-emit false "no changed file since ${base_commit} is read by a Go test"
+emit false "no changed file since ${base_commit} is read by the ${gate} jobs"
