@@ -35,7 +35,7 @@ func publishedFixture(t *testing.T, versions ...int) (*Catalog, string) {
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c, err := LoadWithReader(authority.NewReader(authority.Options{LocalDocuments: map[string]string{"example.com": path}}))
+	c, err := LoadWithReader(authority.NewReader(authority.Options{LocalDocuments: map[string]string{"example.com": path}}), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,4 +146,30 @@ func publishedClosure(id string, version int) string {
 	body := requiringClosure(id, version)
 	a, p, _ := strings.Cut(id, "/")
 	return body + "  installs: [" + id + "/item]\n---\nkind: substrate.reamde.dev/core/kind\nmetadata:\n  id: " + id + "/item\ndata:\n  authority: " + a + "\n  package: " + p + "\n  names:\n    singular: item\n  properties:\n    name:\n      type: string\n"
+}
+
+// A package the binary seeds outside the catalog (core, llm, console,
+// observations) is never resolved from a document, even one that lists it:
+// a hosted file or a DNS answer must not replace what the binary ships.
+func TestASeededPackageIsNeverReadFromADocument(t *testing.T) {
+	dir := t.TempDir()
+	body := []byte(publishedClosure("example.com/core", 1))
+	sum := sha256.Sum256(body)
+	if err := os.WriteFile(filepath.Join(dir, "core.yaml"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(authority.AuthorityDocument{Authority: "example.com", Packages: []authority.AuthorityPackage{{
+		Package: "core", Versions: []authority.AuthorityPackageVersion{{Version: 1, Closure: "core.yaml", SHA256: hex.EncodeToString(sum[:])}},
+	}}})
+	path := filepath.Join(dir, "authority.json")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := LoadWithReader(authority.NewReader(authority.Options{LocalDocuments: map[string]string{"example.com": path}}), []string{"example.com/core"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Resolve(context.Background(), "example.com/core", 0); !errors.Is(err, ErrNotPublished) || !strings.Contains(err.Error(), "shipped by this server") {
+		t.Fatalf("resolve of a seeded package = %v, want it refused as shipped", err)
+	}
 }

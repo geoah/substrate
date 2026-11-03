@@ -53,7 +53,7 @@ func (c *Catalog) Resolve(ctx context.Context, id string, atLeast int64) (*Bundl
 	if !vocabulary.ValidAuthority(a) || !vocabulary.ValidPackage(p) {
 		return nil, fmt.Errorf("%w: %s is not a package id", ErrNotPublished, id)
 	}
-	if a == "providers.substrate.reamde.dev" || a == "samples.substrate.reamde.dev" {
+	if a == "providers.substrate.reamde.dev" || a == "samples.substrate.reamde.dev" || c.seeded[id] {
 		return nil, fmt.Errorf("%w: %s must be shipped by this server", ErrNotPublished, id)
 	}
 	if c.reader == nil {
