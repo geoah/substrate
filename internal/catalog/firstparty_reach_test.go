@@ -44,15 +44,15 @@ type appRequest struct {
 // firstPartyRequests reads every app's app.json and keeps the apps that ask
 // for packages to be set up, by name: an app that asks for none has no
 // closure to hold its scopes to. It answers too every package an app
-// publishes.
-func firstPartyRequests(t *testing.T) (map[string]appRequest, []string) {
+// publishes, with the app's folder.
+func firstPartyRequests(t *testing.T) (map[string]appRequest, map[string]string) {
 	t.Helper()
 	files, err := filepath.Glob(filepath.Join("..", "..", "apps", "*", "app.json"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("find the apps' app.json: %v (%d found)", err, len(files))
 	}
 	out := map[string]appRequest{}
-	var published []string
+	published := map[string]string{}
 	for _, file := range files {
 		raw, err := os.ReadFile(file)
 		if err != nil {
@@ -65,7 +65,9 @@ func firstPartyRequests(t *testing.T) (map[string]appRequest, []string) {
 		if app.Name == "" {
 			t.Fatalf("%s names no app", file)
 		}
-		published = append(published, app.Publishes...)
+		for _, id := range app.Publishes {
+			published[id] = filepath.Base(filepath.Dir(file))
+		}
 		if len(app.Asks) > 0 {
 			out[app.Name] = app
 		}
@@ -75,7 +77,6 @@ func firstPartyRequests(t *testing.T) (map[string]appRequest, []string) {
 			t.Fatalf("no app.json asks for %s's packages", name)
 		}
 	}
-	slices.Sort(published)
 	return out, published
 }
 
@@ -235,10 +236,21 @@ func TestTheFirstPartyAppsScopesCoverThePackagesTheyAskFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	requests, publishes := firstPartyRequests(t)
+	// Workouts' closures are the generated ones the app carries; every other
+	// app's (Tasks', and each one `mise run apps:new` makes) is read from its
+	// package/ folder as the site builds it.
 	published := map[string]*Bundle{
 		"substrate.reamde.dev/training":      workoutsClosure(t, "training", "substrate.reamde.dev/training"),
 		"substrate.reamde.dev/trainingcoach": workoutsClosure(t, "coach", "substrate.reamde.dev/trainingcoach"),
-		"substrate.reamde.dev/tasks":         folderClosure(t, "tasks", "substrate.reamde.dev/tasks"),
+	}
+	for id, app := range publishes {
+		if _, ok := published[id]; !ok {
+			published[id] = folderClosure(t, app, id)
+		}
+	}
+	if _, ok := published["substrate.reamde.dev/tasks"]; !ok {
+		t.Fatal("no app.json publishes substrate.reamde.dev/tasks")
 	}
 	purposes := shippedPurposes(t, cat)
 	for _, b := range published {
@@ -266,16 +278,19 @@ func TestTheFirstPartyAppsScopesCoverThePackagesTheyAskFor(t *testing.T) {
 		}
 		return append(out, b.Reach()...)
 	}
-	requests, publishes := firstPartyRequests(t)
 	// The closures read here as an app's own are the ones the apps say
 	// their sites publish, no more and no fewer.
-	var carried []string
+	var carried, said []string
 	for id := range published {
 		carried = append(carried, id)
 	}
+	for id := range publishes {
+		said = append(said, id)
+	}
 	slices.Sort(carried)
-	if !slices.Equal(carried, publishes) {
-		t.Fatalf("the apps publish %v, and this test reads the closures of %v", publishes, carried)
+	slices.Sort(said)
+	if !slices.Equal(carried, said) {
+		t.Fatalf("the apps publish %v, and this test reads the closures of %v", said, carried)
 	}
 	for name, c := range requests {
 		t.Run(name, func(t *testing.T) {
