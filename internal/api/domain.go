@@ -79,9 +79,27 @@ func fetchServerInstance(ctx context.Context, origin string) (string, error) {
 	return doc.Server.Instance, nil
 }
 
-// domainRecord is the TXT value a repository publishes to prove its name.
-func domainRecord(server, proof string) string {
-	return domains.Version + " server=" + server + " proof=" + proof
+// domainRecord is the TXT value a repository publishes to prove its name:
+// the record the name already publishes with server= and proof= set, so a
+// name that is also a publisher keeps its doc= and sha256= and every key
+// this binary does not read. One label carries one `v=substrate1` record, so
+// the owner replaces the record rather than adding a second.
+func domainRecord(existing domains.Record, server, proof string) string {
+	existing.Server, existing.Proof = server, proof
+	return existing.String()
+}
+
+// publishedRecord reads repository's `_substrate` record for the value to
+// merge into, the zero record when there is none or it cannot be read: the
+// check that follows says why a record does not prove the name.
+func (h *handler) publishedRecord(ctx context.Context, repository string) domains.Record {
+	ctx, cancel := context.WithTimeout(ctx, domainCheckTimeout)
+	defer cancel()
+	rec, found, err := domains.Lookup(ctx, h.resolver, repository)
+	if err != nil || !found {
+		return domains.Record{}
+	}
+	return rec
 }
 
 // postDomain answers the record to publish, minting the proof when none is
@@ -94,9 +112,10 @@ func (h *handler) postDomain(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, r, err)
 		return
 	}
+	repository := ds.Repository().ID
 	writeJSON(w, http.StatusOK, substrate.DomainProof{
-		Name:       domains.Label + "." + ds.Repository().ID,
-		Record:     domainRecord(h.issuerOf(r), state.Proof),
+		Name:       domains.Label + "." + repository,
+		Record:     domainRecord(h.publishedRecord(ctx, repository), h.issuerOf(r), state.Proof),
 		Proof:      state.Proof,
 		VerifiedAt: state.VerifiedAt,
 	})
@@ -113,6 +132,7 @@ func (h *handler) postDomainVerify(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
 	repository := ds.Repository().ID
+	proof := ""
 	if !h.underPublicHost(repository) {
 		state, err := ds.DomainState(ctx)
 		if err != nil {
@@ -123,8 +143,9 @@ func (h *handler) postDomainVerify(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, substrate.DomainCheck{VerifiedAt: state.VerifiedAt, Reason: reason})
 			return
 		}
+		proof = state.Proof
 	}
-	at, err := ds.MarkDomainVerified(ctx)
+	at, err := ds.MarkDomainVerified(ctx, proof)
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
@@ -134,41 +155,49 @@ func (h *handler) postDomainVerify(w http.ResponseWriter, r *http.Request) {
 
 // checkDomain answers why repository's `_substrate` record does not prove the
 // name for this server, or "" when it does. Each reason names what the owner
-// changes. issuer is only the origin the reasons suggest; the checks never
-// trust it unless it is the configured public URL.
+// changes, and none carries a resolver's or a dial's own error, which would
+// name the deployment's network. issuer is only the origin the reasons
+// suggest; the checks never trust it unless it is the configured public URL.
 func (h *handler) checkDomain(ctx context.Context, repository, proof, issuer string) string {
 	label := domains.Label + "." + repository
 	if proof == "" {
 		return "no verification is pending: start one with Verify domain, then publish the record it shows at " + label
 	}
-	want := domainRecord(issuer, proof)
 	ctx, cancel := context.WithTimeout(ctx, domainCheckTimeout)
 	defer cancel()
 	rec, found, err := domains.Lookup(ctx, h.resolver, repository)
+	want := domainRecord(rec, issuer, proof)
 	switch {
 	case errors.Is(err, domains.ErrMalformed):
-		return fmt.Sprintf("the TXT record at %s cannot be read (%v): replace it with %q", label, err, want)
+		return fmt.Sprintf("the TXT record at %s cannot be read (%v): replace it with %q", label, err, domainRecord(domains.Record{}, issuer, proof))
 	case err != nil:
-		return fmt.Sprintf("the DNS lookup of %s failed (%v): try again once the name's DNS answers", label, err)
+		return fmt.Sprintf("the DNS lookup of %s did not answer: try again once the name's DNS answers", label)
 	case !found:
 		return fmt.Sprintf("no TXT record opening with %q at %s: add %q, and check again once it has propagated", domains.Version, label, want)
 	case rec.Proof == "":
-		return fmt.Sprintf("the record at %s carries no proof=: add proof=%s", label, proof)
+		return fmt.Sprintf("the record at %s carries no proof=: replace it with %q", label, want)
 	case rec.Proof != proof:
 		return fmt.Sprintf("the record at %s carries proof=%s, and the pending proof is %s: replace it with %q", label, rec.Proof, proof, want)
 	case rec.Server == "":
-		return fmt.Sprintf("the record at %s names no server=: add server=%s", label, issuer)
+		return fmt.Sprintf("the record at %s names no server=: replace it with %q", label, want)
 	}
-	// With a configured public URL, server= must name exactly that origin.
-	if h.publicURL != "" && rec.Server != strings.ToLower(h.publicURL) {
-		return fmt.Sprintf("server=%s names another substrate: point it at %s", rec.Server, h.publicURL)
+	// With a configured public URL, server= must name exactly that origin,
+	// and that decides it: the proof shows the name's controller pointed the
+	// record here, and reading the origin's server.json back would add
+	// nothing, while a server whose public name resolves to a private address
+	// from inside could never read it.
+	if h.publicURL != "" {
+		if rec.Server != strings.ToLower(h.publicURL) {
+			return fmt.Sprintf("server=%s names another substrate: point it at %s", rec.Server, h.publicURL)
+		}
+		return ""
 	}
-	// The instance comparison is a consistency check that server= reaches
-	// this server, not authentication of the server: a proxy that forwards
-	// to this server answers with this server's id.
+	// Without one, the instance comparison is a consistency check that
+	// server= reaches this server, not authentication of the server: a proxy
+	// that forwards to this server answers with this server's id.
 	instance, err := h.instances(ctx, rec.Server)
 	if err != nil {
-		return fmt.Sprintf("server=%s could not be read as a substrate (%v): point server= at %s", rec.Server, err, issuer)
+		return fmt.Sprintf("server=%s could not be read as a substrate: point server= at %s", rec.Server, issuer)
 	}
 	if mine := h.svc.InstanceID(); mine == "" || instance != mine {
 		return fmt.Sprintf("server=%s names another substrate: point it at %s", rec.Server, issuer)

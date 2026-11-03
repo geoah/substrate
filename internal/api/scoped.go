@@ -1321,7 +1321,7 @@ func (s *scopedDataset) StartDomainVerification(context.Context) (substrate.Doma
 	return substrate.DomainState{}, errScope("domain verification")
 }
 
-func (s *scopedDataset) MarkDomainVerified(context.Context) (time.Time, error) {
+func (s *scopedDataset) MarkDomainVerified(context.Context, string) (time.Time, error) {
 	return time.Time{}, errScope("domain verification")
 }
 
