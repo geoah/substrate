@@ -103,3 +103,28 @@ func TestRemoteClosureHasABoundedBody(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A fetched closure is kept by its digest: the approval page plans on
+// every read, and a published version's bytes never change, so the second
+// read of one costs no fetch.
+func TestAFetchedClosureIsReadOncePerDigest(t *testing.T) {
+	body := []byte("kind: substrate.reamde.dev/core/package\n")
+	sum := sha256.Sum256(body)
+	fetches := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetches++
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+	r := NewReader(Options{Client: server.Client()})
+	v := AuthorityPackageVersion{Version: 1, Closure: server.URL + "/v1.yaml", SHA256: hex.EncodeToString(sum[:])}
+	for range 3 {
+		got, err := r.Closure(context.Background(), Source{}, v)
+		if err != nil || string(got) != string(body) {
+			t.Fatalf("closure = %q, %v", got, err)
+		}
+	}
+	if fetches != 1 {
+		t.Fatalf("fetched %d times, want once", fetches)
+	}
+}

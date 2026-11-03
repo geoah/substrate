@@ -321,13 +321,19 @@ func TestAWebhookScopeIsStoredNeverRequestedAndReachesOneTrigger(t *testing.T) {
 	}
 }
 
-func TestAGrantNamesAPackageThroughItsReadAndWriteScopesAlone(t *testing.T) {
+// A grant names a package through a scope that reaches into it: a read or
+// write over its kinds, or an agents or decide scope over its agents, since
+// a package of agents alone is reached by nothing else (decision 0214). A
+// webhook scope names one trigger.
+func TestAGrantNamesAPackageThroughTheScopesThatReachIntoIt(t *testing.T) {
 	const pkg = "providers.example.com/applehealth"
 	for _, stored := range [][]string{
 		{"read:providers.example.com/applehealth/account"},
 		{"write:providers.example.com/applehealth/*"},
 		{"read:providers.example.com/*"},
 		{"read:*"},
+		{"agents:providers.example.com/applehealth/*"},
+		{"decide:*"},
 	} {
 		g, err := NewGrant(stored)
 		if err != nil {
@@ -344,9 +350,8 @@ func TestAGrantNamesAPackageThroughItsReadAndWriteScopesAlone(t *testing.T) {
 		{"write:providers.example.com/apple/*"},
 		{"read:providers.example.com/applehealthx/*"},
 		{"read:example.com/*"},
-		// The verbs that read no kind whole.
-		{"agents:providers.example.com/applehealth/*"},
-		{"decide:*"},
+		{"agents:providers.example.com/apple/*"},
+		// A webhook scope names one trigger, never a package.
 		{"webhook:applehealth-webhook"},
 	} {
 		g, err := NewGrant(stored)
@@ -485,5 +490,25 @@ func TestFullIsRequestedAloneAndNeverStored(t *testing.T) {
 	}
 	if RequestsFull([]Scope{{Verb: Read, Pattern: "*"}}) {
 		t.Error("read:* read as full")
+	}
+}
+
+// A package of agents alone, such as a coach, is named by the scope that
+// talks to them, so the app may learn whether it is set up; a webhook scope
+// names one trigger and never a package.
+func TestAnAgentScopeNamesItsPackage(t *testing.T) {
+	g, err := NewGrant([]string{"agents:substrate.reamde.dev/trainingcoach/*", "decide:example.org/notes/scribe", "webhook:example.org-hook"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for pkg, want := range map[string]bool{
+		"substrate.reamde.dev/trainingcoach": true,
+		"example.org/notes":                  true,
+		"substrate.reamde.dev/training":      false,
+		"example.org":                        false,
+	} {
+		if got := g.NamesPackage(pkg); got != want {
+			t.Errorf("NamesPackage(%q) = %v, want %v", pkg, got, want)
+		}
 	}
 }
