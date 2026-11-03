@@ -544,16 +544,11 @@ private struct ExerciseProgressRow: View {
                         }
                     }
                 }
-                HStack(spacing: 12) {
-                    ForEach(exercise.facts) { fact in
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(fact.label)
-                                .foregroundStyle(.secondary)
-                            Text(fact.value)
-                                .monospacedDigit()
-                        }
-                        .font(.caption)
-                    }
+                // A fact never breaks inside itself: they stack when a row
+                // cannot hold them all.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) { facts }
+                    VStack(alignment: .leading, spacing: 2) { facts }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -573,6 +568,19 @@ private struct ExerciseProgressRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(exercise.name)
         .accessibilityValue(spoken)
+    }
+
+    private var facts: some View {
+        ForEach(exercise.facts) { fact in
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(fact.label)
+                    .foregroundStyle(.secondary)
+                Text(fact.value)
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            .fixedSize()
+        }
     }
 
     private var spoken: String {
@@ -741,14 +749,12 @@ private struct BalanceBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(balance.title)
                     .font(.subheadline.weight(.semibold))
-                Spacer(minLength: 8)
                 Text(balance.note)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
             }
             GeometryReader { proxy in
                 let gap: CGFloat = 2
@@ -796,35 +802,77 @@ private struct BalanceBar: View {
     }
 }
 
-/// Working sets per muscle group, largest first, each bar labelled with its count.
+/// Working sets per muscle group, largest first: the group's name, a bar
+/// on a track, and its count, one row each. Laid out by hand rather than
+/// charted, so a name never shifts off its bar; at the accessibility sizes
+/// the name sits over its bar.
 private struct MuscleChart: View {
     let groups: [StatsMuscleGroup]
-    @ScaledMetric(relativeTo: .caption) private var rowHeight = 30
+    @ScaledMetric(relativeTo: .caption) private var barHeight: CGFloat = 8
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        let most = groups.map(\.sets).max() ?? 1
-        Chart(groups) { group in
-            BarMark(x: .value("Working sets", group.sets), y: .value("Muscle group", group.label))
-                .foregroundStyle(Color.accentColor.gradient)
-                .cornerRadius(3)
-                .annotation(position: .trailing, alignment: .leading, spacing: 4) {
-                    Text(group.text)
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+        let most = max(groups.map(\.sets).max() ?? 1, 0.0001)
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(groups) { group in
+                    VStack(alignment: .leading, spacing: 4) {
+                        label(group)
+                        HStack(spacing: 8) {
+                            bar(group, most: most)
+                            count(group)
+                        }
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(group.label)
+                    .accessibilityValue(group.text)
                 }
-                .accessibilityLabel(group.label)
-                .accessibilityValue(group.text)
-        }
-        .chartXScale(domain: 0 ... most * 1.45)
-        .chartXAxis(.hidden)
-        .chartYAxis {
-            AxisMarks(position: .leading) { _ in
-                AxisValueLabel()
-                    .font(.caption)
+            }
+        } else {
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 10) {
+                ForEach(groups) { group in
+                    GridRow(alignment: .center) {
+                        label(group)
+                        bar(group, most: most)
+                        count(group)
+                            .gridColumnAlignment(.trailing)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(group.label)
+                    .accessibilityValue(group.text)
+                }
             }
         }
-        .frame(height: CGFloat(groups.count) * rowHeight)
+    }
+
+    private func label(_ group: StatsMuscleGroup) -> some View {
+        Text(group.label)
+            .font(.subheadline)
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    private func bar(_ group: StatsMuscleGroup, most: Double) -> some View {
+        Capsule()
+            .fill(Color(.tertiarySystemFill))
+            .frame(height: barHeight)
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .leading) {
+                GeometryReader { proxy in
+                    Capsule()
+                        .fill(Color.accentColor.gradient)
+                        .frame(width: max(barHeight, proxy.size.width * min(1, group.sets / most)))
+                }
+            }
+    }
+
+    private func count(_ group: StatsMuscleGroup) -> some View {
+        Text(group.text)
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .fixedSize()
     }
 }
 

@@ -448,7 +448,7 @@ public struct StatsMuscle: Equatable, Sendable, Identifiable {
 /// The routine page's header: its folder and what the plan holds.
 public struct RoutineSummaryPresentation: Equatable, Sendable {
     public var folder: String?
-    /// Exercises, Working sets, Last done.
+    /// Exercises, Sets per session, Last done.
     public var facts: [LabelledValue]
 
     public init(folder: String?, facts: [LabelledValue]) {
@@ -471,7 +471,7 @@ public enum StatsPresenter {
     public static func summary(_ routine: Routine, history: [HistoryEntry], settings: PresenterSettings) -> RoutineSummaryPresentation {
         var facts = [
             LabelledValue("Exercises", "\(routine.slots.count)"),
-            LabelledValue("Working sets", "\(routine.slots.reduce(0) { $0 + $1.sets.count { $0.role == .working } })"),
+            LabelledValue("Sets per session", "\(routine.slots.reduce(0) { $0 + $1.sets.count { $0.role == .working } })"),
         ]
         if let last = history.lazy.map(\.records.session).filter({ $0.routine == routine.id }).max(by: { $0.at < $1.at }) {
             facts.append(LabelledValue("Last done", Format.day(last.at, in: HistoryPresenter.zone(of: last, settings))))

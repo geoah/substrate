@@ -1,3 +1,4 @@
+import WorkoutsCore
 import SwiftUI
 
 @main
@@ -27,7 +28,26 @@ struct SubstrateWorkoutsApp: App {
         }
         Notifications.shared.onOpenSession = { DeepLinks.openSession() }
         HealthExporter.shared.onEntryChanged = { entry in AppModel.shared.replace(entry) }
+        #if DEBUG
+        Self.seedPreviewHistory()
+        #endif
     }
+
+    #if DEBUG
+    /// `-WorkoutsSeedPreviewHistory`: the previews' two sessions of the
+    /// sample written into an empty History before it loads, so a
+    /// simulator shows a routine's last times and its progress signed out
+    /// (the README's screenshots).
+    private static func seedPreviewHistory() {
+        guard ProcessInfo.processInfo.arguments.contains("-WorkoutsSeedPreviewHistory"),
+              let directory = AppModel.shared.directory else { return }
+        let store = HistoryStore(directory: directory)
+        guard store.loadAll().entries.isEmpty else { return }
+        for entry in PreviewData.history {
+            try? store.write(entry)
+        }
+    }
+    #endif
 
     var body: some Scene {
         WindowGroup {

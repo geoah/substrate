@@ -10,16 +10,19 @@ import SwiftUI
 /// `RowsRoundHeaderView`, `RowsChainHeaderView`), drawn from
 /// `RoutinePlanPresentation`.
 ///
-/// Read only, a tap on a set begins an edit with that set open (where the
-/// routine can be edited at all). Editing, a tap opens the set in place
-/// (`PlanSetPanel`), each line's `…` and each card's hold the rest, and
-/// Add set, Add warm-up and Add exercise sit where a session has them.
+/// Read only, the plan is only read: no line has a glyph or answers a tap,
+/// and an exercise's name, with its chevron, opens its history. Edit (the
+/// toolbar's) is the one way into the editor, so a tap never changes what
+/// the page is. Editing, the lines take the session's glyphs, a tap opens
+/// the set in place (`PlanSetPanel`), each line's `…` and each card's hold
+/// the rest, and Add set, Add warm-up and Add exercise sit where a session
+/// has them.
 struct RoutinePlanCards: View {
     let plan: RoutinePlanPresentation
     var edit: PlanEditState?
-    /// Read only: begins an edit, with the set open when one was tapped;
-    /// nil where the routine cannot be edited.
-    var beginEdit: ((RoutinePlanSetRef?) -> Void)?
+    /// Read only and empty: begins an edit from "Add an exercise"; nil
+    /// where the routine cannot be edited.
+    var beginEdit: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -27,7 +30,7 @@ struct RoutinePlanCards: View {
                 emptyCard
             }
             ForEach(Array(plan.blocks.enumerated()), id: \.element.id) { index, block in
-                PlanBlockCard(block: block, index: index, count: plan.blocks.count, plan: plan, edit: edit, beginEdit: beginEdit)
+                PlanBlockCard(block: block, index: index, count: plan.blocks.count, plan: plan, edit: edit)
             }
             if let edit {
                 Button {
@@ -62,7 +65,7 @@ struct RoutinePlanCards: View {
                 .font(.body)
                 .foregroundStyle(.secondary)
             if edit == nil, let beginEdit {
-                Button("Add an exercise") { beginEdit(nil) }
+                Button("Add an exercise") { beginEdit() }
                     .font(.subheadline.weight(.semibold))
                     .frame(minHeight: 44)
             }
@@ -80,10 +83,12 @@ private struct PlanBlockCard: View {
     let count: Int
     let plan: RoutinePlanPresentation
     let edit: PlanEditState?
-    let beginEdit: ((RoutinePlanSetRef?) -> Void)?
 
     @Environment(AppModel.self) private var app
-    @ScaledMetric(relativeTo: .body) private var separatorIndent: CGFloat = 48
+    @ScaledMetric(relativeTo: .body) private var glyphIndent: CGFloat = 48
+
+    /// Under the labels: read only, the lines have no glyph before them.
+    private var separatorIndent: CGFloat { edit == nil ? 16 : glyphIndent }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -157,7 +162,13 @@ private struct PlanBlockCard: View {
             .accessibilityHint(block.group == nil ? "Opens the exercise's rests, notes and sets" : "Opens the group's kind, rounds and rest")
         } else if block.group == nil, let member = block.members.first, member.isKnown {
             NavigationLink(value: member.exercise) {
-                text
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    text
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(.isHeader)
@@ -240,9 +251,9 @@ private struct PlanBlockCard: View {
         case let .set(line):
             lineView(line)
         case let .round(header):
-            RowsRoundHeaderView(header: header)
+            RowsRoundHeaderView(header: header, isPlan: edit == nil)
         case let .chainHeader(header):
-            RowsChainHeaderView(header: header)
+            RowsChainHeaderView(header: header, isPlan: edit == nil)
         case .warmups, .miniSets:
             EmptyView()
         }
@@ -264,14 +275,10 @@ private struct PlanBlockCard: View {
                 setMenu(ref, edit)
             }
             .id(line.id)
-        } else if let beginEdit, let ref {
-            RowsSetLine(item: tappable(line), tapHint: "Edits the routine, this set open") {
-                beginEdit(ref)
-            } menuItems: {
+        } else {
+            RowsSetLine(item: line, isPlan: edit == nil, onTap: {}) {
                 EmptyView()
             }
-        } else {
-            RowsSetLine(item: line) {}
         }
     }
 

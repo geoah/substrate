@@ -36,10 +36,11 @@ uv run --with pyyaml apps/apple/scripts/exercise-library.py   # the exercise lib
 **A routine's page** opens on its folder, notes and what the plan holds, then Plan or
 Progress. The plan is the routine as a started session draws it, read only: a card per
 exercise or group, each planned set a line with its label, its targets (load, reps or hold,
-the RPE), its tags and last time, groups by round. A tap on an exercise opens its history. On
-the signed-in substrate, Edit or a tap on any set edits the routine in place: the set opens as
-a session's panel with steppers, RPE stops and its rest, each line's and card's `…` hold the
-rest, and Save queues one guarded write as before. Progress, and the **Stats** tab for every
+the RPE), its tags and last time, groups by round, with no glyph to tick and nothing that
+answers a tap but an exercise's name, which opens its history. On the signed-in substrate,
+Edit, and only Edit, edits the routine in place: the lines take the session's glyphs, a tap
+opens a set as a session's panel with steppers, RPE stops and its rest, each line's and
+card's `…` hold the rest, and Save queues one guarded write as before. Progress, and the **Stats** tab for every
 routine or one, show the period's sessions and rate, volume, working sets and time per
 session, the weeks trained, volume over time, the last session against the one before, each
 exercise's best with its trend, personal records, a body map (`BodyMap`) with push/pull and
@@ -405,6 +406,23 @@ larger text puts each value on a line of its own, steppers kept.
 | RPE, labelled | Largest text, docked | Largest text, timed | Largest text, Stop in view |
 | --- | --- | --- | --- |
 | ![RPE label](docs/screenshots/session-after-rpe-label.jpg) | ![AX docked](docs/screenshots/session-after-accessibility-size.jpg) | ![AX timed](docs/screenshots/session-after-accessibility-timed.jpg) | ![AX Stop](docs/screenshots/session-after-accessibility-stop.jpg) |
+
+A routine's page and its progress after the owner's review of them
+(2026-11-03, iPhone 18 Pro simulator, signed in to a throwaway substrate,
+with the previews' two sessions of the sample as History: a Debug build
+launched with `-WorkoutsSeedPreviewHistory` writes them into an empty
+History). Read only, the plan has no glyph to tick and answers no tap but an
+exercise's name, so Edit is plainly the way in, and editing looks like it;
+a wrapped line's second row starts under the text after its label, with last
+time quieter than the target; and the sets per muscle group are rows of
+their own, the name beside its bar. They are
+`docs/screenshots/review-after-*.jpg`; `review-before-*.jpg` are the same
+moments before.
+
+| Read only | A superset, read only | Editing | Muscles |
+| --- | --- | --- | --- |
+| ![Read only](docs/screenshots/review-after-plan-top.jpg) | ![Superset](docs/screenshots/review-after-plan-superset.jpg) | ![Editing](docs/screenshots/review-after-plan-editing.jpg) | ![Muscles](docs/screenshots/review-after-progress-muscles.jpg) |
+| ![Read only, before](docs/screenshots/review-before-plan-top.jpg) | ![Superset, before](docs/screenshots/review-before-plan-superset.jpg) | ![Editing, before](docs/screenshots/review-before-plan-editing.jpg) | ![Muscles, before](docs/screenshots/review-before-progress-muscles.jpg) |
 
 `docs/screenshots/rows-*.jpg` are the Rows layout from the app's build in
 rxtx.dev (Spotter, geoah/rxtx.dev#118), with example sessions loaded as history: drops, a past set being
