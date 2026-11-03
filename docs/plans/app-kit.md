@@ -75,7 +75,7 @@ which hold what every screen needs.
 **How Chat is built.** `ChatStore` (963 lines) holds the chat list, the
 watch, the cache and seven ordering rules (read epochs, run numbers, overlay
 ownership, `SubstrateChat/DESIGN.md`), and it calls notifications and App
-Intents itself. Each `Conversation` (649 lines) runs up to six tasks with
+Intents itself. Each `Conversation` (649 lines) runs up to seven tasks with
 run epochs that drop late callbacks and a 50 ms flush of streamed deltas.
 Its pure parts (the transcript fold, the stream line parsers) sit underneath.
 
@@ -202,14 +202,15 @@ gallery check (§7.4).
 
 ### 5.1 The loop
 
-Workouts' shape, named once and used for every screen. The words are this
-plan's and go into `docs/terms.md` in step 3 (§7.3); none is taken there.
+Workouts' shape, named once and used for every screen. The words are
+defined for apps in `docs/terms.md` in step 3 (§7.3).
 
 ```
-command ──controller──▶ event ──engine──▶ state ──presenter──▶ presentation
-   ▲        (enriches:                        │
-   │        ids, now, lookups)                └─ effects(event, state) ──▶ work ──▶ event
-   └──────────────────────── UI ◀─────────────────────────────────────────────────────┘
+command ──controller──▶ event ──engine──▶ state ──journal──▶ presenter ──▶ presentation
+   ▲        (enriches:                                                         │
+   │        ids, now, lookups)               effects(event, state, presentation)
+   │                                                     │
+   └──────── UI ◀──── presentation          work ──▶ result event ──▶ (the same loop)
 ```
 
 - **Command**: what the UI asks for (`tap Done on row 3`). The UI sends
@@ -220,54 +221,83 @@ command ──controller──▶ event ──engine──▶ state ──presen
   on a UI thread.
 - **Engine**: `apply(event, to: state) throws -> State`, pure. Folding the
   journal's events through it gives the same state every time.
-- **Effects**: `effects(of: event, on: state) -> [Effect]`, pure, run only
-  on the live path, never on a replay. An effect is work the runtime does
-  through the client, the local store or a device service, and its result
-  comes back as an event.
+- **Journal**: optional per controller. Workouts' session has one (its
+  events are its truth); Chat's conversation does not (the server is). The
+  engine says which events are journaled.
 - **Presenter**: `present(state, inputs) -> Presentation`, pure. Its inputs
   are declared (catalogue, history, settings, the instant, the locale), so a
   test pins every one.
+- **Effects**: `effects(of: event, on: state, presented: presentation) ->
+  [Effect]`, pure, run only on the live path, never on a replay. An effect is
+  work the runtime does through the client, the local store or a device
+  service; its result comes back as an event through the same loop. The
+  presentation is an input because some effects are made from it (Workouts'
+  `platformSync` sends the Live Activity the presenter's text).
 - **Presentation**: a value of strings, numbers, enums and ids that a view
-  draws. It is the only thing a UI reads.
+  draws. It is the only thing a UI reads. A presentation's `nextChange`
+  instant has the runtime deliver a `tick` event then (Workouts' rest
+  timer), so no view keeps a timer of its own.
 
-A **journal** is optional per controller: Workouts' session has one (its
-events are its truth), Chat's conversation does not (the server is).
+**The order is the contract**, Workouts' today: engine, then the journal
+written synchronously with no suspension before it, then present, then
+effects. A step that must not be journaled until something outside the
+engine succeeds is two events: Workouts' finish becomes `finishRequested`
+(applied, not journaled), an effect that writes the history file, then
+`finished`, which deletes the journal, or `finishFailed`, which leaves the
+session open. A crash between them replays to an open session, never to a
+finished one with no history.
+
+**A controller's state is two parts**: the engine's state (journaled where
+there is a journal) and transient state the presenter also reads but no
+replay needs (Workouts' entry check, scroll target, last refusal). Both are
+values, and both are inputs to the presenter.
 
 ### 5.2 Composition
 
-Fable's review found this missing, and it is the decision tens of apps
-inherit.
+The decision tens of apps inherit.
 
 - **Dependencies arrive in an environment value**: the client, the local
   store, the device services, the clock, the id source, the locale and time
   zone, and the bundle the resources come from (§3.2: none of the last three
-  can be read from the process on Android). A
-  controller is made with one, a test passes fakes, and nothing reaches for
-  a shared instance.
-- **The link is every app's root.** `LinkController` (today's generic half
-  of Workouts' `SubstrateLink` and Chat's `AppModel`) owns the connection to
+  can be read from the process on Android). A controller is made with one, a
+  test passes fakes, and nothing reaches for a shared instance.
+- **The link is every app's root.** `LinkController` owns the connection to
   one repository: the session and its revocations, the status check, the
-  versions of the app's packages, connectivity, the outbox's state. Its
-  presentation is the Connect, Access, Account and status screens (§5.6).
-- **Shared state flows down as events.** A screen's controller does not
-  hold the link; the runtime delivers the link's snapshot to it as an event
-  (`linkChanged`), so a test drives it like any other input.
-- **A parent owns its children's lifetimes.** Children are keyed (Chat's
-  conversations by thread id) and live until the parent drops the key, so a
-  stream survives navigation as Chat's does today.
-- **Effects are keyed and cancellable.** Starting an effect with a key
-  cancels the one running under it, and every result carries the epoch it
-  was started in, so a late result is dropped. That is Chat's seven rules
-  as the runtime's behaviour rather than each app's code.
-- **Long-lived effects** (the watch, an agent turn's stream) deliver events
-  until cancelled. A controller that receives many coalesces before it
-  presents: Chat's 50 ms flush becomes a setting of the runtime.
+  versions of the app's packages, connectivity, the outbox's state. Chat's
+  `AppModel` is already that half; Workouts' sync run, catalogue, sample and
+  drafts stay in a Workouts controller fed by the link. Its presentation is
+  the Connect, Access, Account and Status screens (§5.6). **The link's
+  snapshot carries no secret**: the token stays inside `SubstrateAuth` and the
+  transport, so it never reaches a child, a presentation or a bridge message
+  other than a transport request (§5.4).
+- **One presentation tree per root.** A child controller's presentation is a
+  subtree of its parent's, and a step that changes both publishes one tree.
+  Chat's handover, where a settled turn's rows land and its live overlay
+  clears in one step, stays one step: on Android it is one message, not two.
+- **State flows down as events, and up as events.** The runtime delivers
+  the link's snapshot to a controller as `linkChanged`. A child reaches its
+  parent with `child(key, event)`, which the parent's engine folds; what both
+  need (Chat's transcript rows) is the parent's, and the child reads it from
+  the parent's state. A child never calls its parent.
+- **Children are keyed by the client's own id**, minted when the child is
+  made (Chat's conversation UUID). Server ids arrive later as events (Chat's
+  `thread` event binds a thread id), and the parent's engine applies its rules
+  to them (binding a thread closes any other conversation on it). A child
+  lives until the parent drops its key, so a stream survives navigation.
+- **Two grains of epoch.** Starting an effect under a key cancels the one
+  running under that key, and its result carries the key's epoch, so a late
+  result is dropped. Closing or resetting a controller bumps its **controller
+  generation**, which drops every result still outstanding, whatever its key
+  (Chat's `run` guard). Chat's seven rules become the runtime's behaviour.
+- **Coalescing is per event.** An event says whether it presents now
+  (structure: a turn started, a card arrived) or within a window (a streamed
+  text delta, Chat's 50 ms), and the runtime presents once per window.
 
-**The proof is Chat, in step 4.** Its list becomes a controller with
-conversations as keyed children; a turn's stream is a keyed effect; its read
-epochs and run numbers are the runtime's epochs. If Chat needs rules the
-runtime cannot express, the runtime changes before Workouts and Tasks build
-on it.
+**The proof is Chat, in step 5.** Its list becomes a controller with
+conversations as keyed children, a turn's stream a keyed effect, its read
+epochs and run numbers the runtime's two grains, and its handover one tree.
+If Chat needs a rule the runtime cannot express, the runtime changes before
+Workouts and Tasks build on it.
 
 ### 5.3 The kit's libraries
 
@@ -304,9 +334,10 @@ implementation and a fake. Four rules:
 
 - A request and its answer are values. An implementation holds no callback
   into the core.
-- An answer is typed by outcome, never collapsed: DNS answers records, no
-  record, or a failure that stops discovery, as `ServerLocator` tells them
-  apart today.
+- An answer is typed by outcome, never collapsed: DNS answers records, a
+  confirmed absence, an unconfirmed absence (which allows only the
+  parent-host fallback), or a failure that stops discovery, as
+  `ServerLocator` tells them apart today.
 - A long-lived source is a stream with an explicit end, error and cancel
   (§5.5).
 - A service that is a screen (camera, code scanner, photo picker) is a UI
@@ -318,7 +349,7 @@ First cut, the ones the converted apps and Tasks use:
 | Service | What the core sees | Apple | Android |
 | --- | --- | --- | --- |
 | Transport | request → head, then body or ordered chunks; cancel | `URLSession` | OkHttp |
-| DNS | TXT records, no record, or failed | dnssd, libresolv on a negative answer | `DnsResolver.rawQuery` (API 29+), TXT parsed in Swift |
+| DNS | TXT records, confirmed absent, unconfirmed absent, or failed | dnssd, libresolv on a negative answer | `DnsResolver.rawQuery` (API 29+), TXT segments joined and bounded in Swift |
 | Secure store | read, write, delete by key; missing vs unavailable | Keychain, access group | Keystore-wrapped Tink keyset, ciphertext in DataStore |
 | Browser sign-in | open this URL; the callback's query, or cancelled | `ASWebAuthenticationSession`: claimed callback in a release, loopback in a local build | Auth Tab with a verified App Link in a release (a Custom Tab where Auth Tab is missing), loopback in a local build |
 | App folders | data, cache; protected until first unlock; excluded from backup | `FileManager`, data protection | `filesDir`, `noBackupFilesDir`, `cacheDir` |
@@ -343,8 +374,10 @@ the contract is what the Apple apps do today:
   keyset is wrapped by a Keystore key and DataStore holds ciphertext only.
 - A token to revoke is kept until the server confirms the revocation
   (`SessionStore`'s pending revocations), across restarts.
-- A token never appears in a presentation, a WorkManager input, a bridge
-  message other than the secure store's own, or a log.
+- A token never appears in a presentation, a link snapshot, a WorkManager
+  input or a log. The only bridge messages that carry one are the secure
+  store's and the transport's (the bearer header out, a token endpoint's
+  answer back), and the bridge redacts both wherever it records a message.
 - A release signs in only through the claimed callback; a failed App Link
   verification is a failure, never a fallback to loopback. Loopback is a
   local build's client id and nothing else, bound to the loopback address,
@@ -352,12 +385,20 @@ the contract is what the Apple apps do today:
   arrives after the activity was recreated completes the exchange it belongs
   to, or is refused; it never starts another.
 
+**Where state lives on Android.** The secure store's DataStore file and
+Tink keyset, and the repository's folder (outbox, record cache, journal),
+live under `noBackupFilesDir`; the backup and device-transfer rules exclude
+them by name as well, so a restore never revives a token or a queue of
+writes for a session that no longer exists. Caches live under `cacheDir`.
+
 **Background work runs headless.** A job starts the runtime without an
 activity, opens the repository's folder, reads the current session at run
 time (never from its inputs), checkpoints through the outbox, and stops when
-cancelled. Every job names the link's generation it was scheduled under, and
-a job from before a sign-out does nothing. It runs in the app's own process,
-because actors do not coordinate file writes across processes.
+cancelled. The **link generation** is persisted in the repository's folder,
+bumped by a sign-out, named by every job when it is scheduled and checked
+before every write, so a job from before a sign-out writes nothing. It runs
+in the app's own process, because actors do not coordinate file writes across
+processes.
 
 ### 5.5 The Android bridge
 
@@ -366,38 +407,54 @@ changes when an app adds a controller.
 
 **The surface**, written in Swift with `@_cdecl`:
 
-- `start(config)`, once per process: records the `JavaVM`, takes global
-  references to the Kotlin receiver (cached at `JNI_OnLoad`, since a Swift
-  thread sees only the system class loader), binds libdispatch's main queue
-  to the main Looper, takes the device's locale, time zone and resource
-  folder, and compares the protocol fingerprint (below) with the one Kotlin
-  was built with, refusing to start on a mismatch.
+- `start(config)`, once per process, from `Application.onCreate` on the
+  main thread, so a background job starts it without an activity: records
+  the `JavaVM`, takes global references to the Kotlin receiver (cached at
+  `JNI_OnLoad`, since a Swift thread sees only the system class loader),
+  binds libdispatch's main queue to the main Looper, takes the device's
+  locale, time zone and resource folder, and compares the protocol
+  fingerprint (below) with the one Kotlin was built with. A failure (a
+  mismatch, a library that will not load) is a structured, terminal answer
+  the app shows as a problem; nothing is half started.
 - `post(message) -> reply`: every message from Kotlin, synchronous only in
   that it validates and queues; the work runs on Swift's executors.
 - Swift calls one Kotlin method, `deliver(message)`, from a thread it has
   attached to the JVM, keeping that call short, inside a local frame, with
   the string as UTF-16; a thread-local destructor detaches the thread when
-  it ends.
+  it ends. Every JNI call's failure (attach, local frame, a pending Kotlin
+  exception) is checked and becomes a structured error; nothing is
+  force-unwrapped. The spike's bridge took none of these checks, so it is a
+  seed, not the bridge.
 
 **The messages** are one envelope: `{v, op, handle, id, seq, body}`.
 
-- `open` (a controller, its environment's settings) answers a **handle**: an
-  id and a generation. `close` is idempotent. A message for a closed handle
-  or an old generation is dropped and counted.
+- `open` (a root controller, its environment's settings) answers a
+  **handle**: an id and a **handle generation**. One handle carries one
+  presentation tree (§5.2), children included. `close` is idempotent: it
+  cancels the handle's effects and answers each request still outstanding
+  with `cancelled`, exactly once. A message for a closed handle or an old
+  generation is dropped and counted.
 - `command` sends a command to a handle. `presentation` delivers a handle's
   latest presentation; presentations are snapshots, so a slow consumer gets
   the newest and the ones in between are skipped, after encoding is
   coalesced on the Swift side.
 - A long collection in a presentation (a transcript, a task list) is a
-  **keyed list**: the first message carries it whole, later ones carry the
-  rows inserted, changed and removed by id, so a streamed reply re-encodes
-  one row, not the transcript (§3.2). Kotlin keeps the list; a gap in the
-  sequence asks for the whole list again.
+  **keyed list** with a revision. The first message carries it whole at a
+  revision; each later one is a delta from a base revision to the next,
+  carrying the rows inserted, changed and removed by id and the order as
+  ids, so a streamed reply re-encodes one row, not the transcript (§3.2).
+  Deltas are never coalesced: Kotlin applies them in revision order and
+  only then publishes the snapshot its `StateFlow` may coalesce. A delta
+  whose base is not the list's revision asks for the whole list again; the
+  reset carries its revision, and deltas older than it are dropped.
 - `request` and `reply` carry a device-service call by id, answered exactly
   once; a reply to an unknown or answered id is refused. `chunk`, `end`,
   `error` and `cancel` carry a stream by id and sequence number, in order,
   with a bounded queue whose overflow cancels the stream with an error the
-  controller sees. Watch rows and device answers are never coalesced.
+  controller sees; a stream ends exactly once, with `end`, `error` or
+  `cancel`, whichever comes first. Watch rows and device answers are never
+  coalesced, and a value Kotlin cannot queue is that overflow, never a
+  silent drop.
 - Bytes (a blob, an image) never travel in JSON: they are files in the app
   folders, and messages carry their paths.
 - `error` is structured: malformed message, unknown controller, a Swift
@@ -488,7 +545,8 @@ apps/
   presenters and model, with no UI framework. `apple/` and `android/` are
   thin UIs and the app's own device code.
 - **Nothing in `apps/<app>` imports another app**, and each app's scripts,
-  docs and locks live under it.
+  docs and locks live under it: Workouts' `package/closures.lock.json` and
+  `library/library.lock.json` move with it, and the site reads them there.
 - **What does not move**: bundle ids, Keychain services and access groups,
   App Groups, and every on-device path (`Application Support/Workouts/`,
   `SubstrateChat/`), so an installed app upgrades in place.
@@ -533,10 +591,15 @@ builds every core on Linux and for Android.
   presenter, by value, with the clock, ids and locale pinned (presenter text
   depends on the locale today: `Format/Formatters.swift`).
 - One concept per file, named for it; no `utils`, no `types.swift`.
-- The words are `docs/terms.md`'s. Step 3 adds an apps section defining
-  command, controller, engine, effect, presenter, presentation, journal,
-  link, device service and outbox, and none of them takes a word the table
-  already uses: not adapter, mirror, stream, sync, feature, group or account.
+- The words are `docs/terms.md`'s. Step 3 adds an apps section defining,
+  "in an app", command, controller, engine, effect, presenter,
+  presentation, journal, link, device service and outbox, with the
+  generations named apart (watch generation, handle generation, controller
+  generation, link generation). Engine, effect and link already mean
+  something on the server (`internal/engine`, a function's returned effects,
+  a reference), so the section says which sense an app's code means. The
+  kit takes none of adapter, mirror, stream, sync, feature, group or
+  account.
 - Each library and each app has a README saying what it holds.
 - `mise run apps:new <id>` scaffolds `apps/<id>/` from `apps/template/`;
   CI runs it and builds the result, so the template cannot rot. Substrate
@@ -598,20 +661,28 @@ and keeps every guarantee `apple.sh` gives today.
    authority document and the document last; each client document lists
    every platform's callback; Apple's association file; Android's
    `assetlinks.json` with the fingerprint read from the signed APK itself.
-4. **Activate** last, with one `release.json` per app that names every
-   platform's build, written after their artifacts. A failure before this
-   step leaves the previous release current, and a rerun with the same
-   build resumes.
-5. **One publisher at a time**: a lease object in the bucket, taken before
-   step 3 and released after step 4.
+4. **Activate** last, per app: its `release.json` names every platform's
+   build and is written after their artifacts, then the feeds the installed
+   apps read today (`index.json`, Sparkle's `appcast.xml`, the iOS manifest)
+   are rewritten from it, so an installed app finds the release that moves
+   its feed. Atomicity is per app: a release of three apps can leave one
+   activated and two not, and a rerun of the same build activates the rest,
+   reading what is already published before it writes.
+5. **One publisher at a time.** The publisher creates a lease object with a
+   conditional write (`If-None-Match: *`), holding an expiry and a fencing
+   token; it renews while it works, re-reads the published state after
+   taking the lease, and checks the token before each write. A lease past
+   its expiry may be taken over, and the taker re-reads everything. A
+   bucket that cannot write conditionally is refused, not raced.
 
-The feeds the installed apps read today keep being written, so an app finds
-the release that moves its feed. `SUBSTRATE_APPS_RELEASE_DRY_RUN=1` runs
-every step against `build/`, the site included, and changes no lock file.
+`SUBSTRATE_APPS_RELEASE_DRY_RUN=1` runs every step against `build/`, the site
+included, and changes no lock file.
 
-**Android specifics.** `versionCode` is the minutes since 2026-01-01 at the
-build's UTC time, checked against the highest published one, so it rises
-across channels and reruns. The signing key is made once, kept by the owner
+**Android specifics.** `versionCode` is allocated under the lease: the
+larger of the minutes since 2026-01-01 at the build's UTC time and the
+highest published code plus one, written into the staged `release.json`; a
+rerun of the same staged build reuses it, and nothing else does. The signing
+key is made once, kept by the owner
 as a secret outside the tree, and its fingerprint is what `assetlinks.json`
 names; losing it means every install is replaced by hand, as losing
 Sparkle's key does on the Mac, and `apps/README.md` says how to rotate it.
@@ -633,8 +704,10 @@ Android.
   full reference, which every surface already shows.
 - **Its words are the sample's** wherever the meaning is the same: a task
   has `name` (its `displayTemplate`), `description`, `status`, `dueAt` and
-  `priority` on the same ladder; a `list` holds tasks the way the sample's
-  `project` does. The kinds go through the kind review before they ship.
+  `priority` on the same ladder. Tasks belong to a `list`, not a `project`:
+  the sample's project has a lifecycle and dates of its own, while a list is
+  only the owner's grouping and order. The kinds go through the kind review
+  before they ship, which may still settle on the sample's word.
 - **What it exercises**: sign-in and approval, the package version, the
   record screens, offline writes through the outbox, live updates through
   the watch, due-date reminders through notifications, background work,
@@ -646,22 +719,22 @@ Android.
 
 | Step | What | Review |
 | --- | --- | --- |
-| 1 | This plan | Fable and Astra; a confirmation round |
-| 2 | **Relocation, mechanical**: the layout of §6 with `git mv` and path fixes only (`apple.sh`, `.mise.toml`, the scripts, `internal/catalog`'s reach test, `#filePath` goldens, XcodeGen paths, docs links), `app.yaml` beside `scopes.json` | Astra |
-| 3 | **The kit**: the split into §5.3's libraries behind compatibility exports, Swift 6 mode, `SubstrateRuntime`, the duplicates retired, `lint:apps`, the terms, the Linux job | Fable |
-| 4 | **Chat** onto the runtime: the composition proof (§5.2); the console shell's sign-in (`ConsoleSignIn`, `ConsoleConnect`, `ServerStore`) onto `SubstrateAuth` | Astra |
-| 5 | **The shared screens' first cut and `SubstrateLocal`**, with the Apple views | Fable |
-| 6 | **Workouts** onto the link, the outbox and the shared screens | Astra |
-| 7 | **Android**: the pinned toolchain, the bridge and its contract tests, the generator, `kit-core`, `kit-ui`, `kit-device`, the gallery, and what the spike did not reach (§3.2) | Astra |
+| 1 | This plan | Fable and Astra, then a confirmation round by each |
+| 2 | **Relocation, mechanical**: the layout of §6 with `git mv` and path fixes only (`apple.sh`, `.mise.toml`, the scripts, `internal/catalog`'s reach test, `#filePath` goldens, XcodeGen paths, docs links); module names, bundle ids, Keychain groups, `scopes.json`'s readers, serialized fields and on-device paths unchanged | Astra |
+| 3 | **The kit split**: §5.3's libraries behind compatibility exports, Swift 6 mode, the duplicates retired, `app.yaml`, `lint:apps`, the terms, the Linux job | Astra |
+| 4 | **The runtime and the shared screens**: `SubstrateRuntime` (§5.1, §5.2), `LinkController`, the first cut of §5.6 with their Apple views, `SubstrateLocal` | Fable |
+| 5 | **Chat** onto the runtime: the composition proof; the console shell's sign-in (`ConsoleSignIn`, `ConsoleConnect`, `ServerStore`) onto `SubstrateAuth` | Astra |
+| 6 | **Workouts** onto the link, the outbox, the runtime's journal order and the shared screens | Fable |
+| 7 | **Android**: the pinned toolchain, the bridge (§5.5) and its contract tests, the generator, `kit-core`, `kit-ui`, `kit-device`, the gallery, and what the spike did not reach (§3.2) | Astra |
 | 8 | **Substrate Tasks**: kinds through the kind review, `apps:new`, both platforms | Fable |
 | 9 | **`apps:release` and `apps:site`**, dry run end to end | Astra |
 | 10 | Screenshots from the gallery and the simulators, the pull request | |
 
-Steps 2 and 3 land in order; 7's toolchain and generator start after 3, and
-9 after 2. One owner merges and holds the shared files (`apps/xcode/`,
-`apps/gradle/`, `.mise.toml`, `docs/terms.md`, the kit's public interfaces
-once step 3 freezes them); every other step writes inside its own app or
-module.
+Steps 2 to 4 land in order, and the runtime's interfaces freeze with step 4;
+7's toolchain and generator start after 3, and 9 after 2. One owner merges
+and holds the shared files (`apps/xcode/`, `apps/gradle/`, `.mise.toml`,
+`docs/terms.md`, the kit's public interfaces); every other step writes inside
+its own app or module.
 
 ## 12. What this plan does not do
 
@@ -714,3 +787,20 @@ security, toolchain, release, migration) reviewed it. What changed:
 start binds the main Looper and caches the class, the environment carries
 the locale, time zone and resource bundle, and the JNI thread rules are
 written into §5.5.
+
+**Confirmation round, 2026-11-03**, on draft three with the spike. Fable:
+the loop's order is now the contract (journal before any suspension, a
+finish that is two events, transient state beside the journaled state),
+effects see the presentation and a `nextChange` becomes a `tick`, children
+reach their parent by `child(key, event)` inside one presentation tree,
+children are keyed by the client's id, epochs have two grains, coalescing is
+per event, the link's snapshot holds no secret, the kit's words are defined
+"in an app", and the shared screens now come before Chat and Workouts.
+Astra: the transport may carry credentials and the bridge redacts them,
+DNS keeps the unconfirmed absence, state on Android lives under
+`noBackupFilesDir` and the link generation is persisted, the bridge starts
+from `Application.onCreate` and checks every JNI call, close completes what
+is outstanding, keyed lists carry revisions and are never coalesced, a
+stream ends once, the lease is a conditional write with a fencing token,
+activation is per app and rewrites the old feeds, and `versionCode` is
+allocated under the lease.
