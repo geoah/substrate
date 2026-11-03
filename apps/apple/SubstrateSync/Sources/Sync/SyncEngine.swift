@@ -1166,9 +1166,13 @@ actor SyncEngine {
         func need(_ scope: String, _ held: Bool) {
             if !held, !lacking.contains(scope) { lacking.append(scope) }
         }
+        // The app reads the account and the deliveries, both internal kinds
+        // no glob reaches; the request asks for the writes the applehealth
+        // package's own code needs (decision 0215), so the scope named is the
+        // one the owner left unticked.
         if source == .health {
-            need("read:\(healthAccountKind)", grants.reads(healthAccountKind))
-            need("read:\(healthExportKind)", grants.reads(healthExportKind))
+            need("write:\(healthAccountKind)", grants.reads(healthAccountKind, purpose: "internal"))
+            need("write:\(healthExportKind)", grants.reads(healthExportKind, purpose: "internal"))
             need("webhook:\(trigger)", grants.delivers(trigger))
         }
         for kind in writes(source) { need("write:\(appleKinds)*", grants.writes(kind)) }
