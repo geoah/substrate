@@ -74,6 +74,7 @@ func loadFnNetwork(t *testing.T, entry string) error {
 // connect, not the loader.
 func TestNetworkEntryGrammar(t *testing.T) {
 	good := []string{
+		`"*.example.com"`,
 		`"api.example.com"`,       // a bare host
 		`"api.example.com:443"`,   // a host with a port
 		`"example.com."`,          // a rooted DNS name (one trailing dot)
@@ -97,7 +98,6 @@ func TestNetworkEntryGrammar(t *testing.T) {
 	bad := map[string]string{
 		`"https://api.example.com"`: "is a URL",
 		`"api.example.com/api/v1"`:  "is neither a host, a host:port nor a CIDR",
-		`"*.example.com"`:           "carries a glob",
 		`"api.example.com:70000"`:   "port outside 1..65535",
 		`""`:                        "is empty",          // an empty entry
 		`"not a host"`:              "is not a hostname", // a space in the host

@@ -104,6 +104,7 @@ const (
 // uv provisioned.
 func policyFor(spec Spec, work string, readExec ...string) sandbox.Policy {
 	return sandbox.Policy{
+		Outside: spec.Outside, Hosts: spec.Network, UnconfinedOutside: spec.UnconfinedOutside,
 		ReadExec:  append(append([]string{}, systemReadExec...), readExec...),
 		ReadOnly:  systemReadOnly,
 		ReadWrite: append([]string{work}, deviceReadWrite...),

@@ -63,12 +63,12 @@ func requireConnectGate(t *testing.T, r *Runner) {
 }
 
 // Thirteen cases below guard on the confinement, and under
-// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly thirteen must reach that guard: a
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly fourteen must reach that guard: a
 // kernel or image change that turns them into skips cannot leave a green build
-// behind, and a fourteenth case cannot be added, or one of the thirteen
+// behind, and a fifteenth case cannot be added, or one of the fourteen
 // removed, without this number moving with it.
 func TestMain(m *testing.M) {
-	os.Exit(sandboxtest.Run(m, 13))
+	os.Exit(sandboxtest.Run(m, 14))
 }
 
 // The exploit that motivated retiring the shared interpreter: a function in

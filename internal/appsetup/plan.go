@@ -338,6 +338,7 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 		// Shipped is the version approving would install: the binary's, or
 		// the newest the publisher lists at the floor or later.
 		info.Description, info.Tier, info.Shipped, info.Publisher = b.Description, b.Tier, b.Version, publisherOf(b)
+		info.OAuthHosts = slices.Clone(b.OAuthHosts)
 		if problem, err = p.packageBlock(ctx, b, d.Package, d.Version); err != nil {
 			return row, err
 		}
@@ -437,6 +438,7 @@ func (p *planner) publishedChain(ctx context.Context, b *catalog.Bundle, actionO
 				}
 				if !actionOnly {
 					step.Kinds, step.Functions, step.Triggers = p.facts(dep)
+					step.OAuthHosts = slices.Clone(dep.OAuthHosts)
 				}
 			}
 			if problem != nil {
@@ -488,6 +490,7 @@ func (p *planner) binaryChain(ctx context.Context, b *catalog.Bundle, steps []*c
 		}
 		if !actionOnly {
 			step.Kinds, step.Functions, step.Triggers = p.facts(dep)
+			step.OAuthHosts = slices.Clone(dep.OAuthHosts)
 		}
 		out = append(out, step)
 	}
