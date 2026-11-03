@@ -105,10 +105,9 @@ before, since anything on your computer may send the same client id.
 
 App tokens are listed under **Apps** in Settings, with the app, its scopes,
 when you approved it and when it expires. **Revoke** deletes the token, like
-any other. A package an app installed under a `declare:` scope stays the
-app's when you revoke it: its collections read "Managed by <app>" and their
-definitions stay read only until you take the package over from its page
-([keep a package of your own](#keep-a-package-of-your-own)).
+any other. A package an approval installed stays when you revoke the app,
+whoever publishes it: the row said so when you approved it, and you pause or
+remove it from its page under Providers.
 
 ## For an app
 
@@ -209,11 +208,10 @@ receives a token equal to the owner's password.
 
 The token records the verified authority, and the app writes as
 `app:<authority>`. An app whose access went to a loopback address writes as
-`app:local`, and any other as `app:` and the host of its client id. What a
-package the app declares is owned by stays its client id, whichever actor it
-writes as. Its label and annotation keys go under its actor's namespace, and
-a token may still write keys under `app:` and the host of its client id,
-the namespace an earlier binary gave it.
+`app:local`, and any other as `app:` and the host of its client id. Its
+label and annotation keys go under its actor's namespace, and a token may
+still write keys under `app:` and the host of its client id, the namespace
+an earlier binary gave it.
 
 The page shows the publisher it checked, and an approval and the token
 exchange check it again: when the record was withdrawn or now names
@@ -324,10 +322,15 @@ GET /oauth/authorize?response_type=code
   &state=af0ifjsldkj
 ```
 
-PKCE with `S256` is required, and `scope` is required. A malformed request is
-answered with an error page, never a redirect, because the redirect URI is
-not verified yet. The owner's answer comes back to the redirect URI as
-`code`, `state` and `iss` (RFC 9207), or as `error=access_denied`.
+PKCE with `S256` is required, and `scope` is required. `software_version`
+(RFC 7591's name) is optional: the build's own version, at most 64 printable
+characters, which the token records beside the least version of each
+`package` entry, so the server knows which build holds which packages
+([0214](decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md)).
+A malformed request is answered with an error page, never a redirect,
+because the redirect URI is not verified yet. The owner's answer comes back
+to the redirect URI as `code`, `state` and `iss` (RFC 9207), or as
+`error=access_denied`.
 
 ### Ask for set up
 
@@ -359,9 +362,11 @@ not list them ignores the parameter and would approve the scopes alone, so
 send details only to a server that lists them.
 
 **`package`**: a provider or a first-party catalogue this server's catalog
-ships. Approving installs it, or upgrades it to the version the catalog
-ships, after what it requires, as the provider page does; one held at
-`version` or later is left as it is.
+ships, or a package an authority document publishes
+([keep a package of your own](#keep-a-package-of-your-own)). Approving
+installs it, or upgrades it, to the version the catalog ships or the newest
+the document lists at `version` or later, after what it requires, as the
+provider page does; one held at `version` or later is left as it is.
 
 | Member | Required | Holds |
 | --- | --- | --- |
@@ -411,7 +416,8 @@ that cannot be installed blocks the row of the package that needs it.
 | `reason` | The row cannot run because | `fix` |
 | --- | --- | --- |
 | `server-update` | the catalog ships the package, or one it requires, below the version needed | none: only a newer server ships it |
-| `not-shipped` | the catalog does not ship the package, or one it requires (the owner's own packages and the samples they imported included) | none |
+| `not-shipped` | this server ships no catalog at all, or a package the catalog ships requires one it does not | none |
+| `not-published` | neither the catalog nor an authority document this server can read offers the package, or one it requires, at the version needed (the owner's own packages and the samples they imported included); `problem` carries the catalog's words, which name the package and the reason | none |
 | `sample` | the package, or one it requires, is a sample, which the owner adds from All data | `/data` |
 | `quarantined` | the repository's copy of the package, or of one it requires, is quarantined | its provider page |
 | `declared-by-owner` | the owner declared the package, or one it requires, by hand (its package record is `installed` and no provider install stamped it, whether it declares kinds or only functions or traits), and installing or upgrading the published one would replace theirs; one they hold as a bundle at the version needed is in place and left alone | its provider page |
@@ -432,190 +438,46 @@ waits on its redirect URI may wait up to 25 minutes.
 
 ### Keep a package of your own
 
-An app whose records are of kinds no catalogue ships keeps them in a package
-of its own, under the repository's own authority
-([0203](decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)).
-It asks for `declare:~/<package>` beside the scopes that write the package's
-records, and the approval page says "Install your <package> package and add
-to it as the app changes; … The app will own these kinds: you can't edit them
-unless you take them over, and their records stay yours". A package the app
-needs from the catalog, such as one its kinds name, is a `package` detail of
-the same request.
-
-The package is the app's
-([0205](decisions/0205-an-app-owns-the-package-it-declares.md)): its
-`package`, `bundle` and `kind` documents change only through the app that
-declared it, under the `declare:` scope. "The app" is its **client id**: the
-package row's `declaredBy` names it as `app:<host>` for a reader, and
-`declaredByClient` beside it holds the full client id the owner approved,
-which is what the server compares. Two apps served from one host, and two
-loopback apps, are two owners; a renewed token for the same client id is the
-same app. Every other hand is refused with `403` naming the app: the owner's
-token through the console, `substratectl` or the API, a full-access app
-token (which writes as a door, the owner's own hand), an agent, a function,
-another app holding the same scope, and an uninstall. The records of its
-kinds stay the owner's, to read, write and delete as before. An app in turn
-writes only into a package it declared: a package the owner declared, or
-took over, refuses its apply with `403`.
-
-**A local build is another app.** A build that signs in with a loopback
-client id and the release build with its https one are two client ids, so
-whichever declares the package first owns it and the other is refused. Point
-a local build at a separate repository, or take the package over in the one
-you share. A package an app declared under an older server carries only
-`app:<host>`; the first apply from a client id on that host claims it and
-stamps the client id, and only that client id owns it after.
-
-**Refused at approval.** A `declare:` scope over a package the owner keeps,
-or one another client id declared, cannot be approved: the approval page
-shows why on the scope and leaves it unchecked, and
-`POST /api/v1/authorizations/{request}` naming it answers `403` before any
-code exists. The rest of the request can still be approved. A renewal for
-the app that declared the package passes.
-
-**The bundle's switch stays the owner's.** Disabling and enabling the app's
-bundle (`PATCH` of its bundle row's `disabled`, or **Pause** and **Resume**
-on the package page) change no declaration, so they stay the owner's, as the
-runtime off switch an owner, or an agent acting for them, relies on. Purging
-its data (`purging`) deletes every record of its kinds and is refused with
-`403` until the owner takes the package over, like an uninstall.
-
-**What it requires stays.** The owner's uninstall of a package the app's
-bundle `requires:` (for Substrate Workouts' `~/training`, the health
-catalogue) is refused with `403` (`guard`), naming the app's package: the
-app's package would otherwise be quarantined at the next open, and nobody
-could mend it. Take the app's package over, or remove it, first.
+An app whose records are of kinds no catalogue ships publishes them as a
+package under its own authority
+([0214](decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md)):
+the authority's `_substrate` record names an authority document
+([name your publisher](#name-your-publisher)), the document lists the
+package's versions, each with the URL of its closure (the multi-document
+YAML a bundle directory ships: the `package` and `bundle` documents and
+every declaration and data document of the package) and the closure's
+SHA-256, and the app asks for the package with a `package` entry like any
+other:
 
 ```
-scope=declare:~/training write:~/training/* read:substrate.reamde.dev/health/workout
-authorization_details=[{"type":"package","package":"substrate.reamde.dev/health","version":1}]
+scope=write:substrate.reamde.dev/training/* read:substrate.reamde.dev/health/workout
+authorization_details=[{"type":"package","package":"substrate.reamde.dev/health","version":1},
+  {"type":"package","package":"substrate.reamde.dev/training","version":3}]
+software_version=3.2.1
 ```
 
-The token then reads `GET /api/v1/substrate.reamde.dev/core/package/<authority>%2F<package>`,
-whose `properties.version` is the version the repository holds (404 when it
-holds none), and sends its manifests, `~` replaced by the repository's
-authority, to `POST /api/v1/vocabulary/apply`:
+The approval page reads the document and names the publisher beside the
+package ("Installs Training 3, published by Substrate
+(substrate.reamde.dev)"), with the publisher's verification in its technical
+details, and says the package stays after the app is revoked. Approving
+installs the newest version the document lists at `version` or later, after
+what the package requires, which resolves the same way: a package the
+server's catalog ships comes from the catalog, whatever a document lists,
+and another published package from its own document. The package lands
+`published` under its publisher's authority, closed to every token as a
+shipped provider's is, and the records of its kinds are the owner's as any
+provider's are. A package listed only below `version`, or whose authority
+publishes no document this server can read, blocks the row as
+`not-published`, in the server's words. An agent the app needs ships in such
+a package, bounded by its own declared reach and its own daily cap, and runs
+until the owner pauses or removes the package; nothing an app sends in a
+request declares one.
 
-- every document is a `package`, `bundle` or `kind` declaration of that
-  package; anything else, another package's or a function, trigger, agent,
-  mapping or trait, refuses the batch with `403`;
-- a bundle only lists its closure: `authority`, `package`, `description`,
-  `requires`, `requiresAtLeast` and `installs`. `modules`, `oauth2`, `inputs`
-  and any other key refuse the batch with `403`, and so does a kind that
-  declares `indices` or a property that turns `embed` on, which spend the
-  owner's database and provider;
-- a kind's `displayTemplate` reads through a reference (`{person}`,
-  `{person.name}`, `{people[].name}`) only when the token reads the
-  reference's pinned kind, or every kind implementing its `trait:` pin, and
-  never through an unpinned one; otherwise the batch answers `403`, because
-  the title the engine renders from the referent is what the token reads
-  back;
-- the apply only adds. A kind document that leaves out a property, field,
-  enum value, state, transition or trait the stored kind holds, whoever
-  added it, refuses the batch with `409`, and so does a bundle that would
-  replace a package without listing every declaration its stored bundle
-  lists. Removing anything, and a change the engine would have to confirm
-  as lossy, stay the owner's;
-- an unchanged declaration keeps its version, and a changed one lands at the
-  next, so an app compares the version it ships with the one held: install
-  when there is none, apply again when it is older, stop and say so when it
-  is newer.
-
-The token also reads the package's kind rows
-(`GET /api/v1/substrate.reamde.dev/core/kind/<authority>%2F<package>%2F<name>`),
-whose `version` an app may record after each apply it makes and compare
-before the next. The server already refuses the owner's edits, so a kind
-whose version moved is a safety net, not a choice to offer: it means the
-package predates the app's install or was taken over.
-
-**The owner's way back.** The owner takes the package over, deliberately:
-**Take over…** on the package's page in the console, which asks for the
-package's identity to be typed, or
-`substratectl takeover <authority>/<package> --confirm <authority>/<package>`,
-both `POST /api/v1/vocabulary/takeover` with
-`{"package": "<authority>/<package>", "confirm": "<authority>/<package>"}`.
-Only the owner's own token takes a package over (a full-access app token is
-one), and only one an app manages (`409` otherwise). It rewrites the row:
-`declaredBy` becomes the hand that took it, `takenOverFrom` names the app it
-was taken from, by client id, and `declaredByClient` goes. The answer is that
-row, and the changelog entry carries the same. Nothing else changes: no
-kind, no record, no token. From then on the owner edits the package as any of
-theirs, and the app's next apply into it answers `403`, while its record
-writes still land, so an app stops applying on that `403` and keeps sending
-records. It cannot be handed back, and there is no reverse operation.
-Revoking the app leaves the package locked.
-
-A repository migration or a rebuild from the changelog is not a hand: it
-rewrites the rows wholesale, ownership stamps included, and the package stays
-whose it was.
-
-The guard reads the stored package before the engine applies the batch, and
-the apply takes no expected version, so an owner's edit that lands in between
-is not seen by it.
-
-A request names only `declare:~/<package>`: a package under another
-authority, a glob or a kind is refused with an error page. A `builtin` or
-`published` package is refused at the apply, as for any token.
-
-### Declare an agent of your own
-
-An app keeps one AI agent in a package of its own when the owner approves it
-by name ([0207](decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md)).
-It asks with an `agent` authorization detail, beside `declare:~/<package>`
-for the package the agent lives in:
-
-```json
-{"type": "agent", "agent": "~/trainingcoach/workoutCoach",
- "reads": ["~/training/routine", "~/training/memory", "substrate.reamde.dev/health/sleep"],
- "writes": ["~/training/routine", "~/training/memory"],
- "spendCentsPerDay": 100}
-```
-
-- `agent` is `~/<package>/<name>`, a camelCase name under the repository's
-  own authority. A request without `declare:~/<package>` is refused. An
-  approval without it, unchecked by the owner or refused because another
-  hand keeps the package, approves the rest and leaves the agent off the
-  token; the row says why in `withheld`.
-- `reads` (1 to 24) and `writes` (up to 16) are kinds named in full, `~`
-  allowed: never a glob, an auth kind or a kind of
-  `substrate.reamde.dev/core` or `…/llm`. Every write is also a read.
-- `spendCentsPerDay` is required, from 1 to 200.
-
-The approval page shows the agent with what it reads and changes, its cap,
-that it asks questions in the chat and that what it reads goes to the AI
-provider it runs on. Approving writes nothing: the token stores the
-approval in its `agents`, never in its scopes, so the app's own token reads
-none of the agent's kinds, and the token response echoes the detail, every
-`~` resolved. `/authorizations/check` answers the row `none` while the
-token's approval covers the detail and `enable` when a wider reach or a
-higher cap needs the owner again.
-
-The app then applies the agent document with its package and bundle through
-`POST /api/v1/vocabulary/apply`. The apply admits it only as approved:
-tools `substrate.reamde.dev/core/query`, `…/write` and `…/ask` and nothing
-beside them (no `background`, no `toolsFrom`, no sub-agents, no
-`hiddenFromChat`, no `resume`, purpose absent or `primary`); reads and writes
-within the approval, plus `substrate.reamde.dev/llm/interaction` beside
-`ask`; `budgets.spendCentsPerDay` at most the approved cap; a provider row
-that prices the model with input and output rates above zero; and
-`params.engineGuidance` left on. The token reads the agent's row, and the
-definitions (not the records) of the kinds the agent is approved to read,
-so it declares only kinds the server holds. An app removes such a package,
-when it declares no kinds, with `PATCH` of its bundle's `uninstalled`, as
-the owner would.
-
-The engine runs the agent only while the app holds an unexpired, unrevoked
-token approving it and every such token's approval covers it, on a priced
-model, from a person's chat or the owner's call (never a trigger, a
-function or a judge), and never as another agent's sub-agent; it checks
-again before every model call, so revoking the app or reaching the cap
-stops a running turn. Another app's `agents:` scope reaches the agent, its
-row and its chats only when that app's reads cover every kind the agent
-reads. `/authorizations/check` answers the agent row `none` when the
-request leaves out its `declare:` scope or that scope would be refused,
-with the reason in `withheld`. One request names one agent detail. The owner turns the agent off
-by pausing its bundle, which the app's next apply keeps paused, and makes it
-their own by taking the package over.
+No scoped token applies vocabulary: `POST /api/v1/vocabulary/apply`, its
+preview and the bundle doors answer `403` to every app's token. A
+`declare:` scope and an `agent` detail, which an earlier server took, are
+refused with an error page naming what replaced them, and a token that
+still carries `declare:` no longer authenticates: sign in again.
 
 ### Exchange the code
 
@@ -666,10 +528,16 @@ deliver to, `<issuer>/webhooks/<repository>/<trigger>`.
 ### Check that it is still set up
 
 `POST /api/v1/authorizations/check` takes the app's own token and the request
-it would send now, `{"scope": "…", "details": […]}`: `details` is the
-`authorization_details` array, read by the same rules and bounds as at the
-authorization endpoint, and what would refuse the request there answers
-`400` here. It answers what has moved since the app was approved:
+it would send now, `{"scope": "…", "details": […], "softwareVersion": "…"}`:
+`details` is the `authorization_details` array and `softwareVersion` the
+build's version, read by the same rules and bounds as at the authorization
+endpoint, and what would refuse the request there answers `400` here. Every
+check first records the least version of each `package` entry and the
+software version on the token that asked, and a package an authority
+document publishes that the repository holds below the version asked for is
+refreshed from its publisher, so an update the server applies on its own
+lands before the answer. It answers what has moved since the app was
+approved:
 
 ```json
 {
@@ -696,7 +564,8 @@ authorization endpoint, and what would refuse the request there answers
   or `enable`. A row that cannot run keeps its action and carries `blocked`,
   as on the approval page ([the reasons](#ask-for-set-up)). A package row
   carries the versions required, held and shipped (`held` absent when the
-  repository holds none, `shipped` when the catalog ships none), and a
+  repository holds none, `shipped` the version approving would install,
+  absent when neither the catalog nor a document offers one), and a
   webhook row the package whose code its trigger runs. A row the token
   cannot see is `unknown`, with no `blocked` and nothing but what names it
   (a package's `id` and `required`, an account's `kind` and `id`, a
@@ -901,7 +770,6 @@ A scope is a verb and a pattern:
 | `agents` | agent ids | chats with the matching agents and their threads ([talk to agents](#talk-to-agents)) |
 | `decide` | agent ids | the change requests the matching agents propose ([talk to agents](#talk-to-agents)) |
 | `webhook` | one trigger id, never a pattern | delivering to that webhook and its parked list ([deliver to a webhook](#deliver-to-a-webhook)) |
-| `declare` | one package of the repository's own, `~/<package>`, never a pattern | applying that package's declarations and reading its package row; the app then owns the package ([keep a package of your own](#keep-a-package-of-your-own)) |
 
 | Pattern | Reaches |
 | --- | --- |
@@ -925,7 +793,11 @@ scope reaches:
 - a write to `substrate.reamde.dev/core` or `substrate.reamde.dev/llm`, which
   hold the functions, triggers, agents, providers and policies, beyond the
   few writes `agents:` and `decide:` carry;
-- a write to an account or a bundle input, the connections the owner manages.
+- a write to an account or a bundle input, the connections the owner manages;
+- an agent, through `agents:`, that reads a kind the token's own `read` and
+  `write` scopes do not cover: a glob the agent reads is covered by a glob at
+  least as wide, an `internal` kind by its exact scope alone, so an agent is
+  no channel to data the app could not read itself.
 
 ### Full access
 
@@ -966,9 +838,13 @@ is nothing to revoke: the token works again once the binary rolls forward,
 and an app that took the refusal for its access ending signs in again then.
 What a set up installed stays after any rollback.
 
-A binary from before agent approvals ignores a token's `agents`: the token
-still authenticates, and an app's agent runs without the check that a live
-approval covers it. Nothing is refused.
+A binary from before published packages reached the approval
+([0214](decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md))
+takes a `declare:` scope and an `agent` detail again, and reads a token's
+`agents` where an older token still carries them; a token minted since
+carries neither, and its build facts are ignored, so nothing is refused.
+This binary refuses a token that still carries `declare:` (fail closed):
+the app signs in again, and its package arrives as a published one.
 
 A binary from before app authorization reads an app's token as a
 full-access one, since it does not know `scopes`. Before rolling back past

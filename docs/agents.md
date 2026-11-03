@@ -1337,22 +1337,16 @@ where they happen:
 
 ### An app's agent
 
-An agent in a package an app owns
-([0205](decisions/0205-an-app-owns-the-package-it-declares.md)) was declared
-by that app under an approval the owner gave by name
-([0207](decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md),
-[apps](apps.md#declare-an-agent-of-your-own)). On every entry, chat, call,
-trigger, wake, retry and judge alike, it runs only while the app holds an
-unexpired, undeleted token whose approved agent covers its reads, writes
-and daily cap (every such live token, so the lowest cap holds), while its
-provider row prices its model above zero, and only as a root run from a
-person: as a sub-agent it is refused, so its own cap always holds it, and
-so are a trigger, a function's call and a policy's judge. Before every model call after the first it is admitted again (the
-approval, the bundle, its cap), and a failure settles the thread `stopped`
-with the reason. The refusal names the app: "… is stopped: Substrate
-Workouts, the app that keeps it, holds no live approval for it." Signing in
-to the app again restores it. A package the owner took over is theirs, and
-none of this applies.
+An agent an app brings ships in a package the app's authority publishes,
+which the app's approval installs
+([0214](decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md),
+[apps](apps.md#keep-a-package-of-your-own)). It is an agent of that package
+like any other: it runs on every entry under its own declared reach and its
+own `budgets.spendCentsPerDay`, nothing reads the app's token to admit it,
+and it stops when the owner pauses or removes the package. An app's token
+reaches it through `agents:` only when the app's own `read` and `write`
+scopes cover every kind the agent reads, which holds for every agent an
+app talks to, not only one an app brought.
 
 ## Calling an agent
 
