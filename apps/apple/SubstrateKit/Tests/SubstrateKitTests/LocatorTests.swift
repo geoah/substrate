@@ -188,8 +188,6 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
         let failures: [Error] = [
             URLError(.timedOut),
             DNSServiceTXTResolver.Failed(name: "_substrate.alice.substrate.example.org", code: -65537),
-            // SERVFAIL: DNS-SD says NoSuchRecord and the plain resolver disagrees.
-            DNSServiceTXTResolver.Unconfirmed(name: "_substrate.alice.substrate.example.org"),
         ]
         for failure in failures {
             let transport = HostTransport().substrate("substrate.example.org").substrate("other.example.net")
@@ -204,6 +202,34 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
             }
             #expect(!transport.requested.contains("alice.substrate.example.org\(ServerLocator.repositoryDocumentPath)"))
             #expect(!transport.requested.contains("substrate.example.org/.well-known/substrate/server.json"))
+        }
+    }
+
+    /// A negative answer the plain resolver could not confirm (SERVFAIL, or
+    /// a VPN's resolver that does not answer) skips the web host, which only
+    /// a confirmed absence lets answer, and still finds the parent, whose
+    /// zone holds the name: a default name signs in on any network.
+    @Test func anUnconfirmedNegativeStillFindsTheParent() async throws {
+        let transport = HostTransport().substrate("substrate.example.org").substrate("other.example.net")
+            .on("alice.substrate.example.org", ServerLocator.repositoryDocumentPath, json: #"{"server":"https://other.example.net"}"#)
+        let resolver = TableResolver(failure: DNSServiceTXTResolver.Unconfirmed(name: "_substrate.alice.substrate.example.org"))
+        let found = try await locator(transport, resolver).locate("alice.substrate.example.org", requirement: requirement, app: "App")
+        #expect(found.origin.absoluteString == "https://substrate.example.org")
+        #expect(found.repository == "alice.substrate.example.org")
+        #expect(!transport.requested.contains("alice.substrate.example.org\(ServerLocator.repositoryDocumentPath)"))
+    }
+
+    /// With no substrate at the parent, the unconfirmed lookup is what the
+    /// person reads, and it says which of the two answers disagreed.
+    @Test func anUnconfirmedNegativeWithNoParentStandsAsTheLookupFailure() async throws {
+        let transport = HostTransport()
+        let resolver = TableResolver(failure: DNSServiceTXTResolver.Unconfirmed(name: "_substrate.ada.example.com", answered: true))
+        do {
+            _ = try await locator(transport, resolver).locate("ada.example.com", requirement: requirement, app: "App")
+            Issue.record("an unconfirmed lookup with no parent server found one")
+        } catch let failed as ServerLocator.LookupFailed {
+            #expect(failed.unconfirmedNegative)
+            #expect(failed.underlying.contains("gave two answers"))
         }
     }
 
