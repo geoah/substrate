@@ -32,9 +32,11 @@ import {
   mergeBundles,
   pendingShippedUpgrades,
   presentPackages,
+  publisherUnreadable,
   requirementTree,
   upgradeAvailable,
   upgradeBlocked,
+  upgradeHolders,
   type BundleRow,
   type RequirementNode,
 } from "@/lib/bundles"
@@ -128,6 +130,10 @@ function entryOf(
         quarantineReason: row.status?.quarantineReason,
         upgradeBlockers:
           installed && upgradeBlocked(row) ? (row.upgrade?.blockers ?? []) : [],
+        upgradeHolders:
+          installed && upgradeBlocked(row) ? upgradeHolders(row.upgrade) : [],
+        upgradePublisherUnread:
+          installed && upgradeBlocked(row) && publisherUnreadable(row.upgrade),
         otherSetup,
         steps,
         oauth: view?.oauth,

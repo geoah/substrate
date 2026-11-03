@@ -1371,6 +1371,105 @@ describe("ProviderPage", () => {
         ).toEqual({ confirm: { planHash: "cafe", changelogSeq: 41 } })
       )
     })
+
+    it("sends a published update that needs review through the dialog, binds it to the version reviewed, and asks again when the publisher moved", async () => {
+      serve({
+        catalog: [
+          {
+            ...CATALOG,
+            upgrade: {
+              available: true,
+              from: 3,
+              to: 4,
+              work: 0,
+              lossy: false,
+              reviewRequired: true,
+              candidateVersion: 4,
+              candidateDigest: "sha256:abc",
+              changes: [
+                { kind: "kind", id: `${GOOGLE}/legacy`, from: 3 },
+                { kind: "function", id: `${GOOGLE}/sync`, from: 3, to: 4 },
+              ],
+            },
+          },
+        ],
+      })
+      const base = fetchMock.getMockImplementation()!
+      let refusals = 0
+      fetchMock.mockImplementation(async (url, init) => {
+        if (init?.method === "POST" && String(url).endsWith("/install")) {
+          refusals++
+          return jsonResponse(409, {
+            error: {
+              code: "conflict",
+              message: "the publisher lists version 5 now",
+            },
+          })
+        }
+        return base(url, init)
+      })
+      renderPage(<ProviderPage />)
+      expect(await screen.findByText("Update available")).toBeTruthy()
+      // No one-click update: the button opens the review.
+      fireEvent.click(screen.getByRole("button", { name: /^Update$/ }))
+      const dialog = await screen.findByRole("dialog")
+      expect(
+        within(dialog).getByText("Review the publisher’s changes to Google")
+      ).toBeTruthy()
+      expect(
+        within(dialog).getByText(/Its publisher listed version 4 with changes/)
+      ).toBeTruthy()
+      expect(
+        within(dialog).getByText(`kind ${GOOGLE}/legacy: removed`)
+      ).toBeTruthy()
+      expect(
+        within(dialog).getByText(`function ${GOOGLE}/sync: version 3 → 4`)
+      ).toBeTruthy()
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Approve the changes and update",
+        })
+      )
+      await waitFor(() => expect(refusals).toBe(1))
+      expect(
+        calls("POST").find((c) => c.url.endsWith("/install"))?.body
+      ).toEqual({ expect: { version: 4, digest: "sha256:abc" } })
+      expect(
+        await within(dialog).findByText(
+          /The publisher listed another version since you reviewed this one/
+        )
+      ).toBeTruthy()
+    })
+
+    it("holds a review the preview did not version, saying so", async () => {
+      serve({
+        catalog: [
+          {
+            ...CATALOG,
+            upgrade: {
+              available: true,
+              from: 3,
+              to: 4,
+              work: 0,
+              lossy: false,
+              reviewRequired: true,
+            },
+          },
+        ],
+      })
+      renderPage(<ProviderPage />)
+      expect(await screen.findByText("Update available")).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: /^Update$/ }))
+      const dialog = await screen.findByRole("dialog")
+      expect(
+        within(dialog).getByRole<HTMLButtonElement>("button", {
+          name: "Approve the changes and update",
+        }).disabled
+      ).toBe(true)
+      expect(
+        within(dialog).getByText(/did not say which version this preview is of/)
+      ).toBeTruthy()
+    })
   })
 
   describe("settings", () => {

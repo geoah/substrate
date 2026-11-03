@@ -11,7 +11,13 @@ import { describe, expect, it } from "vitest"
 
 import type { BundleStatus } from "@/lib/api/bundles"
 import type { CatalogItem } from "@/lib/api/catalog"
-import { ApiError, type BundleUpgrade, type KindInfo } from "@/lib/api/types"
+import {
+  ApiError,
+  type BundleUpgrade,
+  type BundleUpgradeHolder,
+  type KindInfo,
+} from "@/lib/api/types"
+import { shortDateTime } from "@/lib/format"
 import {
   accountKindOf,
   bundleRecordRows,
@@ -36,7 +42,14 @@ import {
   readyMappings,
   heldVersions,
   needsConfirmation,
+  needsConsent,
   confirmationOf,
+  changeLines,
+  expectationOf,
+  reviewNeeded,
+  holderFreeBlockers,
+  holderWords,
+  publisherUnreadable,
   settingSetupCount,
   stepLines,
   upgradableBundleCount,
@@ -929,6 +942,74 @@ describe("requiresAtLeast: the floor under a requirement (decision record 0070)"
   })
 })
 
+describe("a published upgrade's holders", () => {
+  const workouts: BundleUpgradeHolder = {
+    clientName: "Workouts",
+    clientId: "https://workouts.example.com/client.json",
+    softwareVersion: "2.1",
+    checkedAt: "2026-11-03T10:12:00Z",
+    floor: 3,
+  }
+  const held: BundleUpgrade = {
+    available: true,
+    work: 0,
+    lossy: false,
+    from: 3,
+    to: 4,
+    holders: [workouts],
+    blockers: [
+      'Workouts (https://workouts.example.com/client.json), build "2.1", asks for version 3; last checked 2026-11-03T10:12:00Z',
+      "training/session: 3 records still hold nickname",
+    ],
+  }
+
+  it("drops the blocker lines that restate a holder, and keeps the rest", () => {
+    expect(holderFreeBlockers(held.blockers!, held.holders!)).toEqual([
+      "training/session: 3 records still hold nickname",
+    ])
+    expect(holderFreeBlockers(held.blockers!, [])).toEqual(held.blockers)
+  })
+
+  it("says a holder in one line, with or without a build and a check-in", () => {
+    expect(holderWords(workouts)).toBe(
+      `Workouts build 2.1 asks for version 3; last checked in ${shortDateTime(
+        "2026-11-03T10:12:00Z"
+      )}`
+    )
+    expect(
+      holderWords({
+        clientName: "",
+        clientId: "https://workouts.example.com/client.json",
+        floor: 3,
+      })
+    ).toBe(
+      "https://workouts.example.com/client.json asks for version 3; no check-in recorded"
+    )
+  })
+
+  it("reads an unreadable publisher off the review flag and the line that names it, never off a holder", () => {
+    const unread: BundleUpgrade = {
+      available: true,
+      work: 0,
+      lossy: false,
+      reviewRequired: true,
+      blockers: ["the publisher no longer lists held version 3"],
+    }
+    expect(publisherUnreadable(unread)).toBe(true)
+    expect(publisherUnreadable({ ...unread, holders: [workouts] })).toBe(false)
+    expect(publisherUnreadable({ ...unread, reviewRequired: false })).toBe(
+      false
+    )
+    expect(
+      publisherUnreadable({
+        ...unread,
+        blockers: ["training/session: 3 records still hold nickname"],
+      })
+    ).toBe(false)
+    expect(publisherUnreadable(undefined)).toBe(false)
+  })
+})
+
 describe("needsConfirmation: what a click has to consent to", () => {
   const base: BundleUpgrade = {
     available: true,
@@ -951,10 +1032,65 @@ describe("needsConfirmation: what a click has to consent to", () => {
 
   it("hands back exactly the previewed hash and head", () => {
     expect(confirmationOf({ ...base, discardsEdits: true })).toEqual({
-      planHash: "d15c",
-      changelogSeq: 9,
+      confirm: { planHash: "d15c", changelogSeq: 9 },
     })
     expect(confirmationOf(base)).toBeUndefined()
+  })
+
+  it("asks for a review where code changed or the server marked one, and binds it to the version reviewed", () => {
+    const review: BundleUpgrade = {
+      ...base,
+      planHash: undefined,
+      reviewRequired: true,
+      candidateVersion: 4,
+      candidateDigest: "sha256:abc",
+    }
+    expect(reviewNeeded(base)).toBe(false)
+    expect(reviewNeeded(review)).toBe(true)
+    expect(
+      reviewNeeded({
+        ...base,
+        codeChanges: [{ kind: "function", id: "x/y/z", diff: "-a\n+b" }],
+      })
+    ).toBe(true)
+    // A review is not a lossy confirmation, so the chain's consent dialog
+    // does not take it for one.
+    expect(needsConfirmation(review)).toBe(false)
+    expect(needsConsent(review)).toBe(true)
+    expect(expectationOf(review)).toEqual({ version: 4, digest: "sha256:abc" })
+    expect(expectationOf(base)).toBeUndefined()
+    expect(confirmationOf(review)).toEqual({
+      expect: { version: 4, digest: "sha256:abc" },
+    })
+    // Both at once: the plan's consent and the reviewed version.
+    expect(
+      confirmationOf({ ...review, planHash: "d15c", lossy: true })
+    ).toEqual({
+      confirm: { planHash: "d15c", changelogSeq: 9 },
+      expect: { version: 4, digest: "sha256:abc" },
+    })
+    // A review the preview did not version has nothing to bind to.
+    expect(
+      confirmationOf({ ...review, candidateVersion: undefined })
+    ).toBeUndefined()
+  })
+
+  it("lists the declarations an upgrade moves, with their versions", () => {
+    expect(
+      changeLines({
+        ...base,
+        changes: [
+          { kind: "kind", id: "x/training/session", from: 2, to: 3 },
+          { kind: "function", id: "x/training/plan", to: 3 },
+          { kind: "kind", id: "x/training/legacy", from: 2 },
+        ],
+      })
+    ).toEqual([
+      "kind x/training/session: version 2 → 3",
+      "function x/training/plan: added at version 3",
+      "kind x/training/legacy: removed",
+    ])
+    expect(changeLines(undefined)).toEqual([])
   })
 })
 
