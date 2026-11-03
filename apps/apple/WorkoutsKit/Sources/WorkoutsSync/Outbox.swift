@@ -245,8 +245,15 @@ public struct OutboxNotSaved: LocalizedError, Sendable {
 /// call, never by its position, and `reset` bumps a generation the flush
 /// checks before it touches anything.
 public actor Outbox {
+    /// The file's `format`: 2 since the package was published. A format 1
+    /// file, from a build that spelled the package `~/training` on the
+    /// phone, is read through `LegacyKinds`, every entry's kind and
+    /// properties and every version and chain key, and written back once at
+    /// this format.
+    public static let fileFormat = 2
+
     struct File: Codable {
-        var format = 1
+        var format = Outbox.fileFormat
         var entries: [OutboxEntry] = []
         /// The version each record was last written or read at.
         var versions: [String: Int] = [:]
@@ -267,7 +274,20 @@ public actor Outbox {
             entries = try c.decodeIfPresent([OutboxEntry].self, forKey: .entries) ?? []
             versions = try c.decodeIfPresent([String: Int].self, forKey: .versions) ?? [:]
             chains = try c.decodeIfPresent([String: [String: Int]].self, forKey: .chains) ?? [:]
+            guard format < Outbox.fileFormat else { return }
+            for index in entries.indices {
+                entries[index].kind = LegacyKinds.respell(entries[index].kind)
+                entries[index].properties = entries[index].properties.map(LegacyKinds.respell)
+            }
+            versions = Dictionary(versions.map { (LegacyKinds.respell($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
+            chains = Dictionary(chains.map { (LegacyKinds.respell($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
+            format = Outbox.fileFormat
+            respelled = true
         }
+
+        /// Whether the file was read from a format before this one, through
+        /// `LegacyKinds`; never written.
+        var respelled = false
 
         /// The version an edit made on `base` asserts: `base`, moved along
         /// the app's own writes since.
@@ -310,6 +330,10 @@ public actor Outbox {
         }
         do {
             file = try JSONDecoder().decode(File.self, from: data)
+            // A file from before the package was published is written back
+            // once in the published spelling, best effort: a write that
+            // fails reads the same way at the next launch.
+            if file.respelled { try? Self.encoded(file).write(to: url, options: writingOptions) }
         } catch {
             // Never an empty queue over writes nobody can read: the file is
             // kept beside, and said so.
@@ -727,16 +751,20 @@ public actor Outbox {
 
     private func save() throws {
         do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try encoder.encode(file).write(to: url, options: writingOptions)
+            try Self.encoded(file).write(to: url, options: writingOptions)
             saveProblem = nil
             landedUnsaved = false
         } catch {
             saveProblem = error.localizedDescription
             throw error
         }
+    }
+
+    private static func encoded(_ file: File) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
+        return try encoder.encode(file)
     }
 }
 

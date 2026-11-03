@@ -24,9 +24,9 @@
 # NO TEMPORAL BINDING. A movement has no instant of its own.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: ~/training/movement
+  id: substrate.reamde.dev/training/movement
 data:
-  authority: "~"
+  authority: substrate.reamde.dev
   package: training
   description: >-
     A movement such as Chest Press: what you search for, the muscles it works

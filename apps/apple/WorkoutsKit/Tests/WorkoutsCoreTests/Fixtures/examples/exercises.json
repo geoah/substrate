@@ -2,7 +2,7 @@
   "source": "apps/apple/SubstrateWorkouts/docs/examples/exercises.yaml",
   "records": [
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "leg-press-machine",
       "properties": {
         "name": "Leg Press (Machine)",
@@ -36,7 +36,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "calf-press-machine",
       "properties": {
         "name": "Calf Press (Machine)",
@@ -64,7 +64,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "seated-leg-curl-machine",
       "properties": {
         "name": "Seated Leg Curl (Machine)",
@@ -94,7 +94,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "leg-extension-machine",
       "properties": {
         "name": "Leg Extension (Machine)",
@@ -124,7 +124,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "hip-thrust-barbell",
       "properties": {
         "name": "Hip Thrust (Barbell)",
@@ -161,7 +161,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "goblet-squat",
       "properties": {
         "name": "Goblet Squat",
@@ -191,7 +191,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "chest-press-machine",
       "properties": {
         "name": "Chest Press (Machine)",
@@ -214,7 +214,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "iso-lateral-chest-press-machine",
       "properties": {
         "name": "Iso-Lateral Chest Press (Machine)",
@@ -230,7 +230,7 @@
           "triceps"
         ],
         "restClass": "compound",
-        "variationOf": "~/training/exercise/chest-press-machine",
+        "variationOf": "substrate.reamde.dev/training/exercise/chest-press-machine",
         "loadStep": {
           "value": "2.5",
           "unit": "kg"
@@ -238,7 +238,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "seated-row-machine",
       "properties": {
         "name": "Seated Row (Machine)",
@@ -261,7 +261,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "lateral-raise-dumbbell",
       "properties": {
         "name": "Lateral Raise (Dumbbell)",
@@ -293,7 +293,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "romanian-deadlift-dumbbell",
       "properties": {
         "name": "Romanian Deadlift (Dumbbell)",
@@ -321,7 +321,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "incline-bench-press-dumbbell",
       "properties": {
         "name": "Incline Bench Press (Dumbbell)",
@@ -352,7 +352,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "vertical-traction-machine",
       "properties": {
         "name": "Vertical Traction (Machine)",
@@ -378,7 +378,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "triceps-pushdown",
       "properties": {
         "name": "Triceps Pushdown",
@@ -404,7 +404,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "triceps-rope-pushdown",
       "properties": {
         "name": "Triceps Rope Pushdown",
@@ -420,7 +420,7 @@
           "value": "2.5",
           "unit": "kg"
         },
-        "variationOf": "~/training/exercise/triceps-pushdown",
+        "variationOf": "substrate.reamde.dev/training/exercise/triceps-pushdown",
         "codes": [
           {
             "system": "free-exercise-db",
@@ -431,7 +431,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "calf-extension-machine",
       "properties": {
         "name": "Calf Extension (Machine)",
@@ -452,7 +452,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "chest-fly-dumbbell",
       "properties": {
         "name": "Chest Fly (Dumbbell)",
@@ -482,7 +482,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "overhead-press-dumbbell",
       "properties": {
         "name": "Overhead Press (Dumbbell)",
@@ -505,7 +505,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "shoulder-press-machine-plates",
       "properties": {
         "name": "Shoulder Press (Machine Plates)",
@@ -534,7 +534,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "torso-rotation",
       "properties": {
         "name": "Torso Rotation",
@@ -553,7 +553,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "bulgarian-split-squat-dumbbell",
       "properties": {
         "name": "Bulgarian Split Squat (Dumbbell)",
@@ -588,7 +588,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "single-leg-romanian-deadlift-dumbbell",
       "properties": {
         "name": "Single Leg Romanian Deadlift (Dumbbell)",
@@ -608,7 +608,7 @@
           "lowerback"
         ],
         "restClass": "compound",
-        "variationOf": "~/training/exercise/romanian-deadlift-dumbbell",
+        "variationOf": "substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell",
         "loadStep": {
           "value": "2",
           "unit": "kg"
@@ -616,7 +616,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "plank",
       "properties": {
         "name": "Plank",
@@ -641,7 +641,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "crunch",
       "properties": {
         "name": "Crunch",
@@ -668,7 +668,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "lumbar-extension-stretch",
       "properties": {
         "name": "Lumbar Extension Stretch",
@@ -688,7 +688,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "glute-bridge",
       "properties": {
         "name": "Glute Bridge",
@@ -714,7 +714,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "bird-dog",
       "properties": {
         "name": "Bird Dog",
@@ -734,7 +734,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "cable-core-pallof-press",
       "properties": {
         "name": "Cable Core Pallof Press",
@@ -763,7 +763,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "glute-focused-step-down",
       "properties": {
         "name": "Glute Focused Step Down",
@@ -780,7 +780,7 @@
       }
     },
     {
-      "kind": "~/training/exercise",
+      "kind": "substrate.reamde.dev/training/exercise",
       "id": "push-up",
       "properties": {
         "name": "Push Up",

@@ -14,9 +14,8 @@ struct OutboxTests {
 
     /// The recorded session, finished, and its 20 sets, four of them drops.
     func finished() throws -> SessionRecords {
-        let rehome = Rehome(authority: recordedAuthority)
         func records(_ name: String) throws -> [FlatRecord] {
-            try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0, rehome: rehome) }
+            try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0) }
         }
         var session = try #require(codec.sessionRecords(from: records("list-sessions") + records("list-sets")).first)
         // As the engine hands it over: sets in any order.
@@ -65,9 +64,9 @@ struct OutboxTests {
         #expect(state == .sent)
         #expect(await outbox.entries.isEmpty)
         let paths = server.methodsAndPaths
-        #expect(paths.first == "PUT /api/v1/ada.example.com/training/session/\(records.session.id.rawValue)")
-        #expect(paths.last == "PATCH /api/v1/ada.example.com/training/session/\(records.session.id.rawValue)")
-        #expect(paths.dropFirst().dropLast().allSatisfy { $0.hasPrefix("PUT /api/v1/ada.example.com/training/set/") })
+        #expect(paths.first == "PUT /api/v1/substrate.reamde.dev/training/session/\(records.session.id.rawValue)")
+        #expect(paths.last == "PATCH /api/v1/substrate.reamde.dev/training/session/\(records.session.id.rawValue)")
+        #expect(paths.dropFirst().dropLast().allSatisfy { $0.hasPrefix("PUT /api/v1/substrate.reamde.dev/training/set/") })
         // Every reference went out in the repository's spelling.
         for sent in server.sent where sent.method == "PUT" {
             let text = String(decoding: try JSONEncoder().encode(sent.body), as: UTF8.self)
@@ -78,8 +77,8 @@ struct OutboxTests {
     @Test("a conflict on Finish reads the record and sends the change again on top")
     func conflict() async throws {
         let server = ScriptedServer()
-        server.answer("GET", "/api/v1/ada.example.com/training/session/s1", 200,
-                      #"{"id":"s1","kind":"ada.example.com/training/session","properties":{},"version":5}"#)
+        server.answer("GET", "/api/v1/substrate.reamde.dev/training/session/s1", 200,
+                      #"{"id":"s1","kind":"substrate.reamde.dev/training/session","properties":{},"version":5}"#)
         server.on { sent in
             guard sent.method == "PATCH" else { return nil }
             if case let .object(body)? = sent.body, body["ifVersion"] == .number(5) { return (200, record(6)) }
@@ -95,17 +94,17 @@ struct OutboxTests {
         // The create answered version 1, which somebody moved to 5: the
         // first patch is refused, the record read, and the patch sent again.
         #expect(server.methodsAndPaths == [
-            "PUT /api/v1/ada.example.com/training/session/s1",
-            "PATCH /api/v1/ada.example.com/training/session/s1",
-            "GET /api/v1/ada.example.com/training/session/s1",
-            "PATCH /api/v1/ada.example.com/training/session/s1",
+            "PUT /api/v1/substrate.reamde.dev/training/session/s1",
+            "PATCH /api/v1/substrate.reamde.dev/training/session/s1",
+            "GET /api/v1/substrate.reamde.dev/training/session/s1",
+            "PATCH /api/v1/substrate.reamde.dev/training/session/s1",
         ])
     }
 
     @Test("a revision below the stored one is a newer write landed first: dropped")
     func staleRevision() async throws {
         let server = ScriptedServer()
-        server.answer("PUT", "/api/v1/ada.example.com/training/set/a", 422,
+        server.answer("PUT", "/api/v1/substrate.reamde.dev/training/set/a", 422,
                       #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.revision: 1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"]}}"#)
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([OutboxEntry(method: .put, kind: codec.kinds.set, recordID: "a", properties: [:], session: "s")])
@@ -130,7 +129,7 @@ struct OutboxTests {
     @Test("a refusal parks the write, holds the rest of its session and lets another session go")
     func refusalHoldsItsSession() async throws {
         let server = ScriptedServer()
-        server.answer("PUT", "/api/v1/ada.example.com/training/session/bad", 422,
+        server.answer("PUT", "/api/v1/substrate.reamde.dev/training/session/bad", 422,
                       #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.sport: expected one of strength"]}}"#)
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
         let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
@@ -144,8 +143,8 @@ struct OutboxTests {
         #expect(words.contains("props.sport"))
         #expect(await outbox.entries.map(\.recordID) == ["bad", "bad-1"])
         #expect(await outbox.parked.map(\.recordID) == ["bad"])
-        #expect(!server.methodsAndPaths.contains("PUT /api/v1/ada.example.com/training/set/bad-1"))
-        #expect(server.methodsAndPaths.contains("PUT /api/v1/ada.example.com/training/session/good"))
+        #expect(!server.methodsAndPaths.contains("PUT /api/v1/substrate.reamde.dev/training/set/bad-1"))
+        #expect(server.methodsAndPaths.contains("PUT /api/v1/substrate.reamde.dev/training/session/good"))
         // Parked, it is not sent again on its own, and the state still says so.
         let before = server.sent.count
         guard case .refused = await outbox.flush(api(server)) else { Issue.record("a parked write stopped being reported"); return }
@@ -198,80 +197,99 @@ struct OutboxTests {
 
 @Suite("The package")
 struct PackageTests {
-    @Test("a repository without the package gets this build's manifests, under its authority, then reads current")
-    func installsWhenMissing() async throws {
+    @Test("a repository without the package, or whose row the token cannot see, is missing; nothing is applied")
+    func missing() async throws {
         let server = ScriptedServer()
+        server.answer("GET", packagePath, 404, notFoundBody)
+        let check = PackageCheck(api: api(server), manifest: try PackageManifest.bundled())
+        #expect(try await check.state() == .missing)
+        let asked = Locked(0)
+        #expect(try await check.ensure { asked.value += 1 } == .missing)
+        #expect(asked.value == 0)
+        #expect(!server.sent.contains { $0.method != "GET" })
+    }
+
+    @Test("the version held is the publisher's shippedVersion, and the row's own version where none was stamped")
+    func heldVersion() async throws {
         let manifest = try PackageManifest.bundled()
-        let installed = Locked(false)
-        server.on { sent in
-            guard sent.method == "GET", sent.path == "/api/v1/substrate.reamde.dev/core/package/ada.example.com%2Ftraining" else { return nil }
-            return installed.value ? (200, #"{"id":"ada.example.com/training","kind":"substrate.reamde.dev/core/package","properties":{"version":\#(manifest.version)},"version":1}"#)
-                : (404, #"{"error":{"code":"not_found","message":"not found"}}"#)
-        }
-        server.on { sent in
-            guard sent.method == "POST", sent.path == "/api/v1/vocabulary/apply" else { return nil }
-            installed.value = true
-            return (200, #"{"records":[]}"#)
-        }
-        let installer = PackageInstaller(api: api(server), manifest: manifest)
-        #expect(try await installer.state() == .missing)
-        #expect(try await installer.ensure() == .current(held: manifest.version))
-        let apply = try #require(server.sent.first { $0.method == "POST" })
-        guard case let .object(body)? = apply.body, case let .array(documents)? = body["documents"] else {
-            Issue.record("no documents"); return
-        }
-        #expect(documents.count == manifest.documents.count)
+        let stamped = ScriptedServer()
+        stamped.answer("GET", packagePath, 200, packageRow(manifest.package, shipped: manifest.version))
+        #expect(try await PackageCheck(api: api(stamped), manifest: manifest).state() == .current(held: manifest.version))
+        let bare = ScriptedServer()
+        bare.answer("GET", packagePath, 200, #"{"id":"substrate.reamde.dev/training","kind":"substrate.reamde.dev/core/package","properties":{"version":\#(manifest.version + 1)},"version":4}"#)
+        #expect(try await PackageCheck(api: api(bare), manifest: manifest).state() == .current(held: manifest.version + 1))
     }
 
-    @Test("an older version is upgraded; a newer one is left alone and stops the writes")
-    func versions() async throws {
-        #expect(PackageState.of(held: nil, shipped: 2) == .missing)
-        #expect(PackageState.of(held: 1, shipped: 2) == .behind(held: 1))
-        #expect(PackageState.of(held: 2, shipped: 2) == .current(held: 2))
-        #expect(PackageState.of(held: 3, shipped: 2) == .newer(held: 3))
-        #expect(PackageState.current(held: 2).writable)
-        #expect(!PackageState.newer(held: 3).writable && !PackageState.behind(held: 1).writable)
-
-        let server = ScriptedServer()
-        server.answer("GET", "/api/v1/substrate.reamde.dev/core/package/ada.example.com%2Ftraining", 200,
-                      #"{"id":"ada.example.com/training","kind":"substrate.reamde.dev/core/package","properties":{"version":99},"version":4}"#)
-        let installer = PackageInstaller(api: api(server), manifest: try PackageManifest.bundled())
-        #expect(try await installer.ensure() == .newer(held: 99))
-        #expect(!server.sent.contains { $0.method == "POST" })
+    @Test("a newer version is current: additive, so this build keeps writing; an older one is behind and not written to")
+    func versions() throws {
+        #expect(PackageState.of(held: nil, needed: 2) == .missing)
+        #expect(PackageState.of(held: 1, needed: 2) == .behind(held: 1))
+        #expect(PackageState.of(held: 2, needed: 2) == .current(held: 2))
+        #expect(PackageState.of(held: 3, needed: 2) == .current(held: 3))
+        #expect(PackageState.current(held: 3).writable && !PackageState.behind(held: 1).writable && !PackageState.missing.writable)
     }
 
-    @Test("a token without the declare scope is told so, as needing approval")
-    func needsApproval() async throws {
+    @Test("a repository behind the build asks the server once, through the set up check, and reads the row again")
+    func behindAsksTheServer() async throws {
+        let manifest = try PackageManifest.bundled()
         let server = ScriptedServer()
-        server.answer("GET", "/api/v1/substrate.reamde.dev/core/package/ada.example.com%2Ftraining", 404, #"{"error":{"code":"not_found","message":"x"}}"#)
+        let upgraded = Locked(false)
         server.on { sent in
-            sent.method == "POST" ? (403, #"{"error":{"code":"forbidden","message":"an app's token does not declare"}}"#) : nil
+            guard sent.method == "GET", sent.path == packagePath else { return nil }
+            return (200, packageRow(manifest.package, shipped: upgraded.value ? manifest.version : manifest.version - 1))
         }
-        let installer = PackageInstaller(api: api(server), manifest: try PackageManifest.bundled())
-        await #expect(throws: ServerError.self) { try await installer.ensure() }
+        let check = PackageCheck(api: api(server), manifest: manifest)
+        #expect(try await check.state() == .behind(held: manifest.version - 1))
+        // The server applied the kinds-only upgrade when the check named the floor.
+        let applied = try await check.ensure { upgraded.value = true }
+        #expect(applied == .current(held: manifest.version))
+        // One that waits for the owner's review stays behind, and nothing is written.
+        let waiting = ScriptedServer()
+        waiting.answer("GET", packagePath, 200, packageRow(manifest.package, shipped: manifest.version - 1))
+        let asked = Locked(0)
+        let still = try await PackageCheck(api: api(waiting), manifest: manifest).ensure { asked.value += 1 }
+        #expect(still == .behind(held: manifest.version - 1) && asked.value == 1)
+        #expect(!waiting.sent.contains { $0.method != "GET" })
+        let status = SyncStatus.derive(signedIn: true, package: still, outbox: .sent, waiting: 2, known: manifest.version)
+        #expect(status == .packageBehind(held: manifest.version - 1, known: manifest.version))
+        #expect(status.sentence.contains("waits for your approval on your substrate"))
     }
 }
 
 @Suite("Sign-in")
 struct SignInTests {
-    @Test("the request asks to keep the package, write its records, and set up health")
-    func theRequest() {
+    @Test("the request asks for the published packages at this build's versions, the writes, the reads and the coach")
+    func theRequest() throws {
         let manifest = WorkoutsManifest.manifest(clientID: WorkoutsManifest.localClientID)
-        #expect(manifest.scopes.contains("declare:~/training"))
-        #expect(manifest.scopes.contains("write:~/training/*"))
-        #expect(manifest.details.contains { $0.type == "package" && $0.package == "substrate.reamde.dev/health" })
-        #expect(manifest.requirement.scopeVerbs.contains("declare"))
+        #expect(manifest.scopes.first == "write:substrate.reamde.dev/training/*")
+        #expect(manifest.scopes.contains("agents:substrate.reamde.dev/trainingcoach/*"))
+        #expect(manifest.scopes.contains("read:providers.substrate.reamde.dev/applehealth/account"))
+        #expect(!manifest.scopes.contains { $0.hasPrefix("declare:") || $0.contains("~") })
+        let training = try PackageManifest.bundled()
+        let coach = try PackageManifest.coach()
+        #expect(manifest.details.map { "\($0.package ?? "")@\($0.version ?? 0)" } == [
+            "substrate.reamde.dev/health@1", "\(training.package)@\(training.version)", "\(coach.package)@\(coach.version)",
+        ])
+        #expect(training.version >= 4 && coach.version >= 2)
+        #expect(manifest.details.allSatisfy { $0.type == AuthorizationDetail.Types.package && !$0.optional })
+        #expect(manifest.requirement.scopeVerbs == ["write", "agents", "read"])
+        #expect(manifest.requirement.detailTypes == [AuthorizationDetail.Types.package])
         #expect(manifest.isLocal)
+        #expect(!manifest.softwareVersion.isEmpty)
+        #expect(WorkoutsManifest.manifest(clientID: WorkoutsManifest.localClientID, softwareVersion: "0.120.0 (1)").softwareVersion == "0.120.0 (1)")
     }
 
-    @Test("a server that cannot take the declare scope is too old, never a browser away")
+    @Test("a server without agents, or without package details, is too old, never a browser away")
     func tooOld() throws {
         let manifest = WorkoutsManifest.manifest(clientID: WorkoutsManifest.localClientID)
-        let old = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"{"issuer":"http://localhost:8080","authorization_endpoint":"http://localhost:8080/oauth/authorize","token_endpoint":"http://localhost:8080/oauth/token","scopes_supported":["read:*","write:*","agents:*","decide:*"],"authorization_details_types_supported":["package","account","webhook"]}"#.utf8))
-        let verdict = manifest.requirement.verdict(version: "v0.114.0", metadata: old)
-        #expect(!verdict.isCompatible)
-        let new = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"{"issuer":"http://localhost:8080","authorization_endpoint":"http://localhost:8080/oauth/authorize","token_endpoint":"http://localhost:8080/oauth/token","scopes_supported":["read:*","write:*","agents:*","decide:*","declare:~/<package>"],"authorization_details_types_supported":["package","account","webhook"]}"#.utf8))
-        #expect(manifest.requirement.verdict(version: "dev", metadata: new).isCompatible)
+        let noAgents = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"{"issuer":"http://localhost:8080","authorization_endpoint":"http://localhost:8080/oauth/authorize","token_endpoint":"http://localhost:8080/oauth/token","scopes_supported":["read:*","write:*"],"authorization_details_types_supported":["package","account","webhook"]}"#.utf8))
+        #expect(!manifest.requirement.verdict(version: "v0.114.0", metadata: noAgents).isCompatible)
+        let noDetails = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"{"issuer":"http://localhost:8080","authorization_endpoint":"http://localhost:8080/oauth/authorize","token_endpoint":"http://localhost:8080/oauth/token","scopes_supported":["read:*","write:*","agents:*","decide:*"]}"#.utf8))
+        #expect(!manifest.requirement.verdict(version: "dev", metadata: noDetails).isCompatible)
+        let fine = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"{"issuer":"http://localhost:8080","authorization_endpoint":"http://localhost:8080/oauth/authorize","token_endpoint":"http://localhost:8080/oauth/token","scopes_supported":["read:*","write:*","agents:*","decide:*"],"authorization_details_types_supported":["package","account","webhook"]}"#.utf8))
+        #expect(manifest.requirement.verdict(version: "dev", metadata: fine).isCompatible)
+        #expect(manifest.door(for: ServerProbe.Result(origin: URL(string: "http://localhost:8080")!, discovery: Discovery(server: .init(version: "dev")),
+                                                      metadata: noAgents, verdict: manifest.requirement.verdict(version: "dev", metadata: noAgents))) == .tooOld)
     }
 
     @Test("the status says what the owner can do, in order of what blocks most")
@@ -280,10 +298,11 @@ struct SignInTests {
         #expect(SyncStatus.derive(signedIn: true, package: nil, outbox: .idle, waiting: 0, known: 1) == .preparing)
         #expect(SyncStatus.derive(signedIn: true, package: .current(held: 1), outbox: .signedOut, waiting: 2, known: 1) == .signedOut)
         #expect(SyncStatus.derive(signedIn: true, package: .missing, outbox: .needsApproval, waiting: 0, known: 1) == .needsApproval)
-        #expect(SyncStatus.derive(signedIn: true, package: .newer(held: 2), outbox: .sent, waiting: 5, known: 1) == .packageNewer(held: 2, known: 1))
+        #expect(SyncStatus.derive(signedIn: true, package: .behind(held: 1), outbox: .sent, waiting: 5, known: 2) == .packageBehind(held: 1, known: 2))
+        #expect(SyncStatus.derive(signedIn: true, package: .missing, outbox: .sent, waiting: 5, known: 2) == .preparing)
         #expect(SyncStatus.derive(signedIn: true, package: .current(held: 1), outbox: .sent, waiting: 0, known: 1) == .ready(waiting: 0))
+        #expect(SyncStatus.derive(signedIn: true, package: .current(held: 2), outbox: .sent, waiting: 0, known: 1) == .ready(waiting: 0))
         #expect(SyncStatus.derive(signedIn: true, package: .current(held: 1), outbox: .offline("x"), waiting: 4, known: 1) == .offline(waiting: 4, reason: "x"))
-        #expect(SyncStatus.packageNewer(held: 2, known: 1).sentence.contains("Update the app"))
     }
 }
 

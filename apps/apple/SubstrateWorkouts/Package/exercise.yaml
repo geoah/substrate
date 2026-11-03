@@ -2,7 +2,7 @@
 #
 # THE ID IS CHOSEN BY THE WRITER and reads as the movement:
 # `chest-press-machine`, so the record path is
-# `~/training/exercise/chest-press-machine` and a reference
+# `substrate.reamde.dev/training/exercise/chest-press-machine` and a reference
 # reads well in a routine. The name may change; the id does not. Two rows
 # for one movement (an agent minted a duplicate) are joined with a merge,
 # and a filter on a reference also matches the merged-away id. This kind
@@ -51,9 +51,9 @@
 # how future sets are read and never a stored one.
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: ~/training/exercise
+  id: substrate.reamde.dev/training/exercise
 data:
-  authority: "~"
+  authority: substrate.reamde.dev
   package: training
   description: >-
     One movement the owner trains, such as Chest Press (Machine): which numbers
@@ -390,7 +390,7 @@ data:
     # may offer the parent's history when the variation has none.
     variationOf:
       type: reference
-      kind: ~/training/exercise
+      kind: substrate.reamde.dev/training/exercise
       description: the exercise this one is a variation of, such as the flat
         press for an incline press
     # The movement it is the equipment version of (`movement.yaml`). No
@@ -398,7 +398,7 @@ data:
     # outlives its setup, and keeps its own muscles where it names any.
     movement:
       type: reference
-      kind: ~/training/movement
+      kind: substrate.reamde.dev/training/movement
       description: the movement it is a version of, such as Chest Press for
         Chest Press (Machine)
     # The same fields, names and types as
