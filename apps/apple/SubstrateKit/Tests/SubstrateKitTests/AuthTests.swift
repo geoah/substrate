@@ -40,6 +40,9 @@ import Testing
         #expect(items["code_challenge_method"] == "S256")
         #expect(items["redirect_uri"] == "http://127.0.0.1:5000/oauth/callback")
         #expect(items["state"] == "st")
+        // RFC 7591's name for the build, which the token records with the
+        // details' floors (decision 0213).
+        #expect(items["software_version"] == "0.120.0 (20261103.101500)")
         let details = try #require(items["authorization_details"])
         #expect(details == #"[{"package":"providers.substrate.reamde.dev/apple","type":"package","version":3},{"package":"providers.substrate.reamde.dev/applehealth","type":"package","version":5},{"id":"substrate-sync-1a2b3c4d","kind":"providers.substrate.reamde.dev/applehealth/account","properties":{"displayName":"Ada's iPhone","timezone":"Europe/London"},"type":"account"},{"trigger":"applehealth-webhook","type":"webhook"}]"#)
         // Encoded once: JSON's punctuation is escaped in the URL itself.
