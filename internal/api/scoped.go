@@ -1324,3 +1324,9 @@ func (s *scopedDataset) StartDomainVerification(context.Context) (substrate.Doma
 func (s *scopedDataset) MarkDomainVerified(context.Context) (time.Time, error) {
 	return time.Time{}, errScope("domain verification")
 }
+
+// RecordAppBuild writes only the calling token's own build facts, which the
+// engine reads off the request's principal.
+func (s *scopedDataset) RecordAppBuild(ctx context.Context, packages map[string]int64, softwareVersion string) error {
+	return s.inner.RecordAppBuild(ctx, packages, softwareVersion)
+}
