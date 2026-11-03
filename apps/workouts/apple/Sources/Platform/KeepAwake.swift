@@ -6,23 +6,26 @@ import UIKit
 /// `isIdleTimerDisabled = keepAwake && coverVisible && scenePhase == .active`,
 /// re-evaluated when any of the three changes, and off when the cover closes.
 ///
-/// The notification delegate and the countdown coordinator read `isVisible`
-/// too: while the cover shows, the rest bar and a haptic say a countdown
-/// ended, so the banner stays quiet (§9.2).
+/// The session hears when the cover comes and goes: while it shows, the rest
+/// bar and a haptic say a countdown ended, so the alert it schedules is
+/// quiet in front (§9.2).
 @MainActor
 final class SessionScreen {
     static let shared = SessionScreen()
 
     /// The session cover is on screen.
     private(set) var isVisible = false
+    /// Told each time the cover comes or goes: the root sends it to the
+    /// session. Unset in a preview, which has no session to tell.
+    var visibilityChanged: ((Bool) -> Void)?
     private var keepAwake = true
     private var isActive = true
 
-    /// The cover is on screen and the app in the foreground.
-    var isShowing: Bool { isVisible && isActive }
-
     fileprivate func update(visible: Bool? = nil, keepAwake: Bool? = nil, phase: ScenePhase? = nil) {
-        if let visible { isVisible = visible }
+        if let visible, visible != isVisible {
+            isVisible = visible
+            visibilityChanged?(visible)
+        }
         if let keepAwake { self.keepAwake = keepAwake }
         if let phase { isActive = phase == .active }
         let disabled = self.keepAwake && isVisible && isActive

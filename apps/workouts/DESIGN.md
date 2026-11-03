@@ -347,7 +347,7 @@ apps/apple/
     SubstrateWorkoutsApp.swift
     Shared/         WorkoutsActivityAttributes.swift SessionIntents.swift          (app + widget)
     App/            WorkoutsRoot.swift SessionModel.swift AppModel.swift SubstrateLink.swift DeepLinks.swift
-    Platform/       NotificationDelegate.swift WorkoutsActivityContent.swift WorkoutsPlatform.swift
+    Platform/       WorkoutsActivityContent.swift WorkoutsPlatform.swift
                     HealthExporter.swift BodyMassReader.swift KeepAwake.swift Haptics.swift
     Views/
       RootView.swift
@@ -2642,8 +2642,9 @@ with `.immediate`. A `.dismissed` state from `activityStateUpdates` is respected
   | timed set target          | "Time"       | "Plank, set 1: 1:07 reached"                                  |
   | standalone timer          | "Timer done" | none                                                          |
 
-- A `UNUserNotificationCenterDelegate` returns no presentation options while the session cover is visible (the haptic
-  and the bar already say it) and `[.banner, .sound]` otherwise. Tapping a notification opens the cover.
+- The alert is scheduled `showsWhileActive: false` while the session cover is visible (the haptic and the bar already
+  say it), and again showing when the cover closes; the kit's notification delegate shows it in front otherwise.
+  Tapping a notification is a response the app turns into `SessionCommand.reveal`, which opens the cover.
 - Permission (`.alert`, `.sound`) is requested at the first Start. If the time-sensitive entitlement does not provision
   (§9.10), the same requests go out at the default `.active` level with no code change other than the entitlement.
   Settings reads the state back: "Rest alerts: on, time sensitive"; "on, not time sensitive. A Focus may hold them

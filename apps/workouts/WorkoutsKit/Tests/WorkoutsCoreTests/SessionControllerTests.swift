@@ -19,14 +19,17 @@ struct SessionControllerTests {
         let harness: ControllerHarness<SessionController>
         let notifications: RecordedNotifications
         let activities: RecordedActivities
+        let health: RecordedHealth
 
         init(directory: URL, clock: TestClock = TestClock(), performsEffects: Bool = true, history: HistoryIndex = HistoryIndex()) throws {
             self.directory = directory
             notifications = RecordedNotifications()
             activities = RecordedActivities()
+            health = RecordedHealth()
             var environment = AppEnvironment.testing(clock: clock)
             environment.devices.notifications = notifications
             environment.devices.activities = activities
+            environment.workouts = health
             let controller = SessionController(catalog: try BundledCatalog().loadNow(), history: history, settings: WorkoutsSettings(),
                                                adapter: "substrate-workouts@test", directory: directory)
             harness = ControllerHarness(controller, clock: clock, environment: environment, performsEffects: performsEffects)
@@ -46,10 +49,19 @@ struct SessionControllerTests {
             return try #require(await presentation.session)
         }
 
-        func finish(policy: PendingSetPolicy = .drop) async {
+        /// Save, answered under the receipt it returns.
+        @discardableResult
+        func finish(policy: PendingSetPolicy = .drop) async -> UUID {
             let now = harness.clock.now
-            await harness.send(.finish(FinishRequest(start: now.addingTimeInterval(-600), end: now, policy: policy, sessionRPE: 7,
-                                                     notes: nil)))
+            let request = FinishRequest(start: now.addingTimeInterval(-600), end: now, policy: policy, sessionRPE: 7, notes: nil)
+            await harness.send(.finish(request))
+            return request.receipt
+        }
+
+        /// How the Save under `receipt` went, once it is answered.
+        func outcome(_ receipt: UUID) async throws -> String? {
+            try await harness.until(timeout: .seconds(60)) { await $0.presentation.finishOutcomes[receipt] != nil }
+            return try #require(await presentation.finishOutcomes[receipt])
         }
     }
 
@@ -90,7 +102,7 @@ struct SessionControllerTests {
         #expect(rig.activities.showing[session.sessionID.rawValue]?.title == session.title)
         // The first Start asks for the notification permission.
         #expect(rig.notifications.calls.contains(.requestPermission))
-        #expect(await rig.presentation.cover?.shown == true)
+        #expect(await rig.presentation.cover.value == true)
     }
 
     @Test("a tick is appended to the journal before the presentation, with the values the row showed")
@@ -107,7 +119,7 @@ struct SessionControllerTests {
         let stored = try #require(try SessionJournalFile(folder: RepositoryFolder(adopting: directory.url)).read())
         #expect(stored.events.count == 2)
         #expect(await rig.harness.state.session?.rows[row]?.isCompleted == true)
-        #expect(await rig.presentation.cue?.kind == .logged)
+        #expect(await rig.presentation.cue.value?.kind == .logged)
     }
 
     @Test("Save is two events: the finish asked is not journaled, the history file is written, and only then does the journal go")
@@ -129,8 +141,8 @@ struct SessionControllerTests {
         #expect(Self.steps(trace).contains("effect writeHistory"))
         #expect(!rig.journalExists)
         #expect(rig.historyFile(session.sessionID))
-        #expect(await rig.presentation.cover?.shown == false)
-        #expect(await rig.presentation.cue?.kind == .finishSaved)
+        #expect(await rig.presentation.cover.value == false)
+        #expect(await rig.presentation.cue.value?.kind == .finishSaved)
         try await rig.harness.until(timeout: .seconds(60)) { _ in rig.activities.calls.contains { if case .end = $0 { true } else { false } } }
     }
 
@@ -196,7 +208,7 @@ struct SessionControllerTests {
         #expect(await rig.presentation.session?.sessionID == session.sessionID)
         #expect(await rig.harness.state.finishing == nil)
         #expect(rig.journalExists)
-        #expect(await rig.presentation.cue?.kind == .warning)
+        #expect(await rig.presentation.cue.value?.kind == .warning)
     }
 
     @Test("the open restores the alert and the Live Activity, reads the permission and checks a replayed session against History")
@@ -210,11 +222,11 @@ struct SessionControllerTests {
         let relaunched = try Rig(directory: directory.url, performsEffects: false)
         _ = await relaunched.presentation
         let effects = relaunched.harness.effects.map { String(describing: $0).prefix { $0 != "(" } }
-        #expect(effects == ["restore", "readAlerts", "listSetAside", "checkHistory"])
+        #expect(effects == ["registerCategory", "restore", "readAlerts", "listSetAside", "checkHistory"])
         // A replayed event runs no effect of its own: only the open's.
         let replayed = relaunched.harness.trace.contains { if case .replayed(_, 1) = $0 { true } else { false } }
         #expect(replayed)
-        guard case let .restore(sync)? = relaunched.harness.effects.first else { Issue.record("no restore"); return }
+        guard case let .restore(sync)? = relaunched.harness.effects.dropFirst().first else { Issue.record("no restore"); return }
         #expect(sync?.session == session.sessionID)
     }
 
@@ -230,7 +242,7 @@ struct SessionControllerTests {
         #expect(shown <= resting)
         rig.harness.clearTrace()
         await rig.harness.advance(by: resting.timeIntervalSince(rig.harness.clock.now) + 1)
-        try await rig.harness.until(timeout: .seconds(60)) { await $0.presentation.cue.map { [.countdownEnded, .shortCountdownEnded].contains($0.kind) } ?? false }
+        try await rig.harness.until(timeout: .seconds(60)) { await $0.presentation.cue.value.map { [.countdownEnded, .shortCountdownEnded].contains($0.kind) } ?? false }
         #expect(Self.steps(rig.harness.trace).contains("presented"))
         #expect(!Self.steps(rig.harness.trace).contains { $0.hasPrefix("journaled") })
     }
@@ -239,20 +251,52 @@ struct SessionControllerTests {
     func entryCheck() async throws {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
-        let rig = try Rig(directory: directory.url)
-        let session = try await rig.start()
-        let row = try #require(session.cards.flatMap(\.rows).first { $0.state == .pending && $0.commitValues?.load != nil })
-        // Ten times the load it shows.
-        let load = try #require(row.commitValues?.load)
-        await rig.harness.send(.edit(row.id, SetValuesPatch(load: .set(Mass(value: load.value * 10, unit: load.unit)))))
-        await rig.harness.send(.tick(row.id))
-        let asked = await rig.presentation.entryCheck
-        if asked != nil {
-            #expect(await rig.harness.state.session?.rows[row.id]?.isCompleted == false)
-            await rig.harness.send(.answerEntryCheck(.keep))
-            #expect(await rig.presentation.entryCheck == nil)
+        let clock = TestClock()
+        // The first working set the sample routine starts with, and three
+        // past sessions of its exercise at 35 kg × 12: ten times as much is
+        // far from them.
+        let probe = try Rig(directory: directory.url, clock: clock)
+        let started = try await probe.start()
+        let state = try #require(await probe.harness.state.session)
+        let row = try #require(started.cards.flatMap(\.rows).first { row in
+            guard let held = state.rows[row.id], held.isHead, held.role == .working, row.state == .pending,
+                  row.commitValues?.load != nil else { return false }
+            return state.exercise(ofRow: row.id)?.measurement == .weightreps
+        })
+        let exercise = try #require(state.exercise(ofRow: row.id)).id
+        let unit = try #require(row.commitValues?.load?.unit)
+        await probe.harness.runtime.close()
+        try FileManager.default.removeItem(at: probe.journalURL)
+        let past = (1 ... 3).map { week in
+            Self.pastSession("p\(week)", at: clock.now.addingTimeInterval(TimeInterval(-week * 7 * 86400)), exercise: exercise,
+                             load: Mass(value: 35, unit: unit), reps: 12)
         }
+
+        let rig = try Rig(directory: directory.url, clock: clock, history: HistoryIndex(past))
+        let session = try await rig.start()
+        let asked = try #require(session.cards.flatMap(\.rows).first { $0.id == row.id })
+        #expect(asked.state == .pending)
+        await rig.harness.send(.edit(row.id, SetValuesPatch(load: .set(Mass(value: 350, unit: unit)), reps: .set(12))))
+        await rig.harness.send(.tick(row.id))
+        let question = try #require(await rig.presentation.entryCheck)
+        #expect(question.row == row.id)
+        #expect(question.warning.correctedLoad == Mass(value: 35, unit: unit))
+        #expect(await rig.harness.state.session?.rows[row.id]?.isCompleted == false)
+        #expect(await rig.presentation.cue.value?.kind == .warning)
+        await rig.harness.send(.answerEntryCheck(.keep))
+        #expect(await rig.presentation.entryCheck == nil)
         #expect(await rig.harness.state.session?.rows[row.id]?.isCompleted == true)
+    }
+
+    /// One finished session of `exercise`: a working set of `load` × `reps`.
+    static func pastSession(_ id: String, at date: Date, exercise: ExerciseID, load: Mass, reps: Int) -> SessionRecords {
+        let session = SessionID(id)
+        let set = PerformedSet(id: SetID("\(id)-0"), at: date.addingTimeInterval(60), session: session, exercise: exercise, slot: "s",
+                               order: 1, ordinal: 1, loadMode: .external, load: load, reps: reps, rpe: 8,
+                               target: SetTarget(repsMin: 8, repsMax: 12, rpeMin: 8, rpeMax: 8))
+        return SessionRecords(session: TrainingSession(id: session, at: date, endsAt: date.addingTimeInterval(3600), status: .finished,
+                                                       slots: [SessionSlot(key: "s", exercise: exercise)], timezone: "UTC"),
+                              sets: [set])
     }
 
     @Test("a refused command changes nothing and says why, with the warning haptic")
@@ -265,6 +309,178 @@ struct SessionControllerTests {
         await rig.harness.send(.untick(RowID("no-such-row")))
         #expect(await rig.harness.state == before)
         #expect(await rig.presentation.lastRefusal != nil)
-        #expect(await rig.presentation.cue?.kind == .warning)
+        #expect(await rig.presentation.cue.value?.kind == .warning)
     }
+
+    // MARK: Save, answered under its receipt
+
+    @Test("a Save that failed and then one that succeeded are each answered under their own receipt")
+    func failedThenSaved() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let rig = try Rig(directory: directory.url)
+        let session = try await rig.start()
+        let blocker = directory.url.appendingPathComponent("history")
+        try Data().write(to: blocker)
+        let failed = await rig.finish()
+        let reason = try await rig.outcome(failed)
+        #expect(reason?.hasPrefix("The session could not be saved on this iPhone") == true)
+        #expect(await rig.presentation.session?.sessionID == session.sessionID)
+        // The disk has room again: the next Save is answered by its own
+        // outcome, never by the last one's problem still shown.
+        try FileManager.default.removeItem(at: blocker)
+        let saved = await rig.finish()
+        #expect(try await rig.outcome(saved) == nil)
+        #expect(await rig.presentation.session == nil)
+        #expect(rig.historyFile(session.sessionID))
+    }
+
+    @Test("two Saves the engine refuses in the same words are each answered")
+    func refusedTwiceAlike() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let rig = try Rig(directory: directory.url, performsEffects: false)
+        await rig.harness.send(.start(.empty))
+        let start = try #require(rig.harness.effects.compactMap { if case let .prepareStart(request) = $0 { request } else { nil } }.first)
+        let controller = SessionController(catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
+                                           directory: directory.url)
+        await rig.harness.deliver(controller.start(start, bodyMass: nil, environment: rig.harness.environment))
+        // The first Save's history file is still being written (held):
+        // the two after it are refused alike, and neither waits forever.
+        let first = await rig.finish()
+        let second = await rig.finish()
+        let third = await rig.finish()
+        let refusal = try await rig.outcome(second)
+        #expect(refusal != nil)
+        #expect(try await rig.outcome(third) == refusal)
+        #expect(await rig.presentation.finishOutcomes[first] == nil)
+        #expect(await rig.harness.state.finishing != nil)
+    }
+
+    @Test("a Save with no session open is refused under its receipt")
+    func refusedWithNoSession() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let rig = try Rig(directory: directory.url)
+        _ = await rig.presentation
+        let receipt = await rig.finish()
+        #expect(try await rig.outcome(receipt) == String(describing: EngineError.noSession))
+    }
+
+    // MARK: Start
+
+    @Test("a Start the engine refuses once the device has answered leaves the cover's progress")
+    func startRefusedMidFlight() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let rig = try Rig(directory: directory.url)
+        let open = try await rig.start()
+        // A second Start already under way when the first one's session
+        // opened (a Live Activity's, a second tap): the engine refuses it.
+        await rig.harness.deliver(.starting(.empty))
+        #expect(await rig.presentation.starting)
+        try await rig.harness.until(timeout: .seconds(60)) { await !$0.presentation.starting }
+        #expect(await rig.presentation.lastRefusal == String(describing: EngineError.sessionActive))
+        #expect(await rig.presentation.session?.sessionID == open.sessionID)
+    }
+
+    // MARK: The countdown's alert, and a tap on it
+
+    @Test("the alert is quiet in front of the cover and shows away from it, and its category is registered at open")
+    func quietInFrontOfTheCover() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let rig = try Rig(directory: directory.url)
+        let session = try await rig.start()
+        await rig.harness.send(.tick(try Self.loggable(session)))
+        func alert() async throws -> NotificationRequest {
+            try await rig.harness.until(timeout: .seconds(60)) { _ in rig.notifications.pending[SessionController.countdownID] != nil }
+            return try #require(rig.notifications.pending[SessionController.countdownID])
+        }
+        #expect(try await alert().showsWhileActive)
+        await rig.harness.send(.coverVisible(true))
+        try await rig.harness.until(timeout: .seconds(60)) { _ in
+            rig.notifications.pending[SessionController.countdownID]?.showsWhileActive == false
+        }
+        await rig.harness.send(.coverVisible(false))
+        try await rig.harness.until(timeout: .seconds(60)) { _ in
+            rig.notifications.pending[SessionController.countdownID]?.showsWhileActive == true
+        }
+        #expect(rig.notifications.categories == [NotificationCategory(id: SessionController.countdownCategory)])
+    }
+
+    @Test("a tap on the rest notification reveals the session: the cover, and Up next brought into view")
+    func tapReveals() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let rig = try Rig(directory: directory.url)
+        let session = try await rig.start()
+        let tap = NotificationResponse(id: SessionController.countdownID, category: SessionController.countdownCategory, action: .open)
+        let command = try #require(SessionController.command(for: tap))
+        #expect(command == .reveal)
+        #expect(SessionController.command(for: NotificationResponse(id: "x", category: "other", action: .open)) == nil)
+        let before = await rig.presentation.cover.serial
+        await rig.harness.send(command)
+        let presented = await rig.presentation
+        #expect(presented.cover.value == true && presented.cover.serial == before + 1)
+        #expect(presented.scroll.value?.row == session.upNext?.row)
+    }
+
+    // MARK: A session History already holds
+
+    @Test("a replayed session History already holds closes, and its Health save, never queued, is queued again")
+    func alreadyFinishedRecoversHealth() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let entry = try await Self.finishedAndReplayed(in: directory.url, health: HealthSaveState(status: .pending))
+        let relaunched = try Rig(directory: directory.url)
+        try await relaunched.harness.until(timeout: .seconds(60)) { await $0.state.session == nil }
+        try await relaunched.harness.until(timeout: .seconds(60)) { _ in relaunched.health.recovered == [entry.id] }
+        #expect(relaunched.harness.effects.contains(.health(.recover(entry.id))))
+    }
+
+    @Test("a replayed session History already holds with its Health save done closes and saves nothing again")
+    func alreadyFinishedWithHealthSaved() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let entry = try await Self.finishedAndReplayed(in: directory.url, health: HealthSaveState(status: .saved))
+        let relaunched = try Rig(directory: directory.url)
+        try await relaunched.harness.until(timeout: .seconds(60)) { await $0.state.session == nil }
+        let closed = relaunched.harness.effects.contains { if case .restore(nil) = $0 { true } else { false } }
+        #expect(closed)
+        #expect(!relaunched.harness.effects.contains(.health(.recover(entry.id))))
+        #expect(relaunched.health.recovered.isEmpty)
+        #expect(!relaunched.journalExists)
+    }
+
+    /// A session whose history file was written, with `health`, and whose
+    /// journal the app died before removing.
+    static func finishedAndReplayed(in directory: URL, health: HealthSaveState) async throws -> HistoryEntry {
+        let clock = TestClock()
+        let first = try Rig(directory: directory, clock: clock, performsEffects: false)
+        await first.harness.send(.start(.empty))
+        let start = try #require(first.harness.effects.compactMap { if case let .prepareStart(request) = $0 { request } else { nil } }.first)
+        let controller = SessionController(catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
+                                           directory: directory)
+        await first.harness.deliver(controller.start(start, bodyMass: nil, environment: first.harness.environment))
+        await first.finish()
+        var entry = try #require(await first.harness.state.finishing).entry
+        entry.local = HistoryLocal(health: health)
+        try HistoryStore(directory: directory).write(entry)
+        await first.harness.runtime.close()
+        return entry
+    }
+}
+
+/// Workouts' Health services, recorded: what was queued, recovered and worked.
+final class RecordedHealth: WorkoutsServices, @unchecked Sendable {
+    private let lock = NSLock()
+    private var kept: [SessionID] = []
+
+    var recovered: [SessionID] { lock.withLock { kept } }
+
+    func bodyMass(typed: Mass?) async -> Mass? { typed }
+    func queueHealthSave(_ session: SessionID) async {}
+    func recoverHealthSave(_ session: SessionID) async { lock.withLock { kept.append(session) } }
+    func processHealth(_ trigger: HealthTrigger) async {}
 }

@@ -1,5 +1,5 @@
-/// A haptic the session asks for (§9.3), drawn by the platform. `serial`
-/// moves with each, so the same cue twice plays twice.
+/// A haptic the session asks for (§9.3), drawn by the platform as a
+/// `Signal`, so the same cue twice plays twice.
 public struct SessionCue: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Equatable, Sendable {
         /// The Table's tick.
@@ -18,11 +18,9 @@ public struct SessionCue: Codable, Equatable, Sendable {
     /// Played only while the session cover shows: a countdown that
     /// notifies alerts through the banner elsewhere in the app.
     public var onlyOnSessionScreen: Bool
-    public var serial: Int
 
-    public init(kind: Kind, onlyOnSessionScreen: Bool = false, serial: Int) {
+    public init(kind: Kind, onlyOnSessionScreen: Bool = false) {
         self.kind = kind
         self.onlyOnSessionScreen = onlyOnSessionScreen
-        self.serial = serial
     }
 }

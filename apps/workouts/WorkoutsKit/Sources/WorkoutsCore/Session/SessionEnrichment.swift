@@ -38,6 +38,12 @@ extension SessionController {
             return [.noted(.scroll(target))]
         case .dismissEntryCheck:
             return context.transient.entryCheck == nil ? [] : [.noted(.answered(edit: false))]
+        case let .coverVisible(visible):
+            return context.transient.coverVisible == visible ? [] : [.noted(.coverVisible(visible))]
+        case .reveal:
+            // With none open, the app stays where it is.
+            guard state.session != nil else { return [] }
+            return [.noted(.reveal(presented?.upNext?.row ?? presented?.timedRow))]
         default:
             break
         }
@@ -158,7 +164,7 @@ extension SessionController {
                               state: state, ids: ids)
             }
         case .start, .finishThenStart, .finishFlowShown, .cancelStartAfterFinish, .discardThenStart, .discard, .finish, .foreground,
-             .scroll, .dismissEntryCheck:
+             .scroll, .dismissEntryCheck, .coverVisible, .reveal:
             return []
         }
     }
@@ -209,18 +215,26 @@ extension SessionController {
 
     /// Save (§6.1, §7.7): `finish`, built from the same projection the sheet
     /// showed for the policy, with the records it makes, which the effect
-    /// writes to the history file.
+    /// writes to the history file. A Save the engine would refuse is
+    /// refused under its receipt, so the sheet hears of it.
     private func finish(_ request: FinishRequest, state: State, presentation: SessionPresentation?, now: Date, calendar: Calendar,
                         ids: MintedIDs, then: StartRequest?) -> [Event]
     {
-        guard var session = state.session, state.finishing == nil, var presented = presentation else { return [] }
+        guard var session = state.session, state.finishing == nil, var presented = presentation else {
+            return [.finishRefused(request.receipt, .noSession)]
+        }
         var events: [Event] = []
         var after = state.lastAt
         let trimmed = request.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         // `finish` keeps the notes when given none, so clearing them is its own event.
         if trimmed?.isEmpty == true, session.session.notes != nil {
             let cleared = envelope(.setNote(target: .session, text: nil), now: now, after: after, ids: ids)
-            guard let next = try? SessionEngine.apply(cleared, to: session) else { return [.engine(cleared)] }
+            let next: SessionState
+            do {
+                next = try SessionEngine.apply(cleared, to: session)
+            } catch {
+                return [.finishRefused(request.receipt, error)]
+            }
             events.append(.engine(cleared))
             after = cleared.at
             session = next
@@ -236,14 +250,15 @@ extension SessionController {
             start: request.start.flooredToSecond, end: ended, sessionRPE: request.sessionRPE.map { Decimal($0) },
             notes: trimmed.flatMap { $0.isEmpty ? nil : $0 }, utcOffset: calendar.timeZone.secondsFromGMT(for: ended) / 60))
         let finish = envelope(event, now: now, after: after, ids: ids)
-        guard let finished = try? SessionEngine.apply(finish, to: session) else {
-            // The engine refuses it again on the live path, which says why.
-            return events + [.finishRequested(finish, FinishedSession(entry: HistoryEntry(records: SessionEngine.records(session, adapter: adapter)),
-                                                                      then: then, activity: nil))]
+        let finished: SessionState
+        do {
+            finished = try SessionEngine.apply(finish, to: session)
+        } catch {
+            return events + [.finishRefused(request.receipt, error)]
         }
         let records = SessionEngine.records(finished, adapter: adapter)
         return events + [.finishRequested(finish, FinishedSession(entry: HistoryEntry(records: records), then: then,
-                                                                  activity: presented.liveActivity))]
+                                                                  activity: presented.liveActivity, receipt: request.receipt))]
     }
 
     /// The event with its id and instant: floored to the second and never

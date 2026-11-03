@@ -10,7 +10,8 @@ import WorkoutsCore
 /// anything: the session's controller (WorkoutsCore's `SessionController`)
 /// is the one writer, on its own executor. What this adds is the device's
 /// half of a presentation the views cannot draw: the haptic a cue asks for,
-/// and the cover a request opens or closes.
+/// and the cover a request opens or closes, each a `Signal` the root
+/// follows once (`WorkoutsRoot`).
 @MainActor
 @Observable
 final class SessionModel {
@@ -20,9 +21,6 @@ final class SessionModel {
     var scrollTarget: ScrollTarget?
 
     @ObservationIgnored weak var root: WorkoutsRoot?
-    @ObservationIgnored private var playedCue = 0
-    @ObservationIgnored private var followedCover = 0
-    @ObservationIgnored private var followedScroll = 0
     @ObservationIgnored private var loggedRefusal: String?
     @ObservationIgnored private let logger = Logger(subsystem: "dev.reamde.substrate.workouts", category: "session")
     /// Previews draw a fixed presentation and send nothing.
@@ -44,18 +42,6 @@ final class SessionModel {
     func apply(_ next: SessionScreenPresentation) {
         guard next != screen else { return }
         screen = next
-        if let cue = next.cue, cue.serial != playedCue {
-            playedCue = cue.serial
-            play(cue)
-        }
-        if let cover = next.cover, cover.serial != followedCover {
-            followedCover = cover.serial
-            root?.app.isSessionPresented = cover.shown
-        }
-        if let scroll = next.scroll, scroll.serial != followedScroll {
-            followedScroll = scroll.serial
-            scrollTarget = scroll
-        }
         if let refusal = next.lastRefusal, refusal != loggedRefusal {
             logger.error("Refused: \(refusal, privacy: .public)")
         }
@@ -64,7 +50,7 @@ final class SessionModel {
 
     /// §9.3's haptic. A countdown that notifies stays quiet unless the
     /// session cover shows: elsewhere in the app the banner alerts instead.
-    private func play(_ cue: SessionCue) {
+    func play(_ cue: SessionCue) {
         if cue.onlyOnSessionScreen, !SessionScreen.shared.isVisible { return }
         if [.countdownEnded, .shortCountdownEnded, .targetReached].contains(cue.kind),
            UIApplication.shared.applicationState != .active { return }
@@ -142,18 +128,15 @@ final class SessionModel {
     }
 
     /// Save in the Finish sheet: returns false, the session kept open, when
-    /// the engine refuses or the history file cannot be written.
+    /// the engine refuses or the history file cannot be written. Waits for
+    /// this Save's own outcome, under its receipt.
     @discardableResult
     func finish(start: Date, end: Date, policy: PendingSetPolicy, sessionRPE: Int?, notes: String?) async -> Bool {
-        guard !preview, let id = presentation?.sessionID else { return false }
-        let refusal = screen.lastRefusal
-        send(.finish(FinishRequest(start: start, end: end, policy: policy, sessionRPE: sessionRPE, notes: notes)))
-        await root?.until { tree in
-            guard let screen = tree.app?.session else { return true }
-            return screen.session?.sessionID != id || screen.finishProblem != nil
-                || (!screen.finishing && screen.lastRefusal != nil && screen.lastRefusal != refusal)
-        }
-        return presentation?.sessionID != id
+        guard !preview, presentation != nil else { return false }
+        let request = FinishRequest(start: start, end: end, policy: policy, sessionRPE: sessionRPE, notes: notes)
+        send(.finish(request))
+        await root?.until { $0.app?.session.map { $0.finishOutcomes[request.receipt] != nil } ?? true }
+        return screen.finishOutcomes[request.receipt] == .some(nil)
     }
 
     /// Delete set with an Undo (§7.6a): what puts it back, or nil when

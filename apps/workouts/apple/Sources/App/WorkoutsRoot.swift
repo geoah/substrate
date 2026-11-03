@@ -41,11 +41,17 @@ final class WorkoutsRoot {
         return "substrate-workouts@\(version)"
     }
 
-    /// What Settings → Substrate says, in Workouts' words.
+    /// What Settings → Substrate says, in Workouts' words: a session is
+    /// written when it finishes, not as each set is ticked, and Discard on a
+    /// refused write gives up the rest of its session's.
     static let words = StatusWords(
         app: WorkoutsManifest.appName, device: "this iPhone", kept: "sessions",
         packageNames: [WorkoutsKinds.packageID: "Training", Coach.package: "Workout coach"],
-        local: "Not signed in. Routines and exercises come with this app, and sessions stay on this iPhone.")
+        local: "Not signed in. Routines and exercises come with this app, and sessions stay on this iPhone.",
+        footer: "Sessions are written to {server} when they finish, and wait on this iPhone while it cannot be reached. "
+            + "Routines and exercises come from it and are kept for the gym.",
+        refusedFooter: "Retry sends the change again. Discard gives up the change and the rest of its session\u{2019}s changes "
+            + "waiting behind it; the session stays on this iPhone. A routine whose delete you discard comes back at the next sync.")
 
     private init() {
         let directory = AppModel.workoutsDirectory()
@@ -54,7 +60,8 @@ final class WorkoutsRoot {
         let accounts = WorkoutsAccounts(base: directory)
         var environment = AppEnvironment.apple()
         environment.client = ClientSource { SessionStore.workouts.load().map { SubstrateClient($0) } }
-        environment.devices.notifications = SystemNotifications()
+        let notifications = SystemNotifications()
+        environment.devices.notifications = notifications
         environment.devices.activities = LiveActivities<WorkoutsActivityAttributes>(
             content: WorkoutsActivityAttributes.contentState, dismissedKey: "workouts.liveActivity.dismissed")
         environment.workouts = WorkoutsPlatform()
@@ -76,6 +83,20 @@ final class WorkoutsRoot {
         Task { [weak self] in
             for await next in await runtime.presentations() {
                 self?.apply(next)
+            }
+        }
+        // What the session asks of the device once: a haptic, the cover
+        // opened or closed, a row brought into view.
+        model.onSignal(\.app?.session?.cue) { [weak self] cue in self?.session.play(cue) }
+        model.onSignal(\.app?.session?.cover) { [weak self] shown in self?.app.isSessionPresented = shown }
+        model.onSignal(\.app?.session?.scroll) { [weak self] target in self?.session.scrollTarget = target }
+        SessionScreen.shared.visibilityChanged = { [weak self] visible in self?.send(.coverVisible(visible)) }
+        // A tap on a notification, the one that launched the app included,
+        // is a command.
+        Task { [weak self] in
+            for await response in notifications.responses() {
+                guard let command = SessionController.command(for: response) else { continue }
+                self?.send(command)
             }
         }
     }

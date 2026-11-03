@@ -73,10 +73,22 @@ public struct WorkoutsApp: LinkedApp {
 
     public func event(forLink link: LinkSnapshot) -> Event? { .linked(link) }
 
+    /// The session's events the app's effects hand off: a finished session
+    /// and a discarded one, and an exercise made on the phone that a session
+    /// added. Every other one is the session's alone, so a tick draws the
+    /// app's tree no further than the session.
     public func event(fromChild key: ChildKey, _ event: SessionController.Event) -> Event? {
         switch event {
-        case .finished, .discard, .engine: .session(event)
-        default: nil
+        case .finished, .discard:
+            return .session(event)
+        case let .engine(envelope):
+            switch envelope.event {
+            case let .addExercise(added) where added.exercise.isLocal: return .session(event)
+            case let .replaceExercise(replaced) where replaced.exercise.isLocal: return .session(event)
+            default: return nil
+            }
+        default:
+            return nil
         }
     }
 
@@ -113,8 +125,6 @@ public struct WorkoutsApp: LinkedApp {
             next.link = link
             let held = link.packages[WorkoutsKinds.packageID]
             next.package = next.signedIn == nil ? nil : held.map { PackageState.of(held: $0, needed: WorkoutsManifest.trainingVersion) }
-            next.accountMoved = next.signedIn != state.account
-            next.becameWritable = next.canWrite && !state.canWrite
             if next.signedIn != state.account {
                 // Another account, or none: its facts start afresh.
                 next.account = next.signedIn
@@ -185,8 +195,6 @@ public struct WorkoutsApp: LinkedApp {
         case let .outboxRead(account, waiting, conflicts):
             guard current(account) else { return state }
             next.waitingRoutines = waiting
-            let known = Set(state.conflicts.map(\.id))
-            next.newConflicts = conflicts.filter { !known.contains($0.id) }.map { RoutineID($0.recordID) }
             next.conflicts = conflicts
         case let .draft(draft):
             next.draft = draft
@@ -230,7 +238,9 @@ public struct WorkoutsApp: LinkedApp {
             }
         case let .queued(command):
             switch command {
-            case .sync: if state.signedIn != nil { next.syncing = true }
+            // Syncing only where the effect runs one: a package not yet
+            // writable starts none, and nothing would end it.
+            case .sync: if state.canWrite { next.syncing = true }
             case .addSampleRoutine: if state.canWrite { next.addingSample = true }
             case let .saveRoutine(editor, _): if state.draft?.routine.id == editor.routine.id { next.draft = nil }
             case .dropDraft: next.draft = nil

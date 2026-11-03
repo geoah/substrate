@@ -22,6 +22,8 @@ public extension SessionController {
         case writeHistory(FinishedSession)
         /// Whether History already holds the replayed session.
         case checkHistory(SessionID)
+        /// The countdown's category, through the device's service.
+        case registerCategory
         case readAlerts
         case listSetAside
         case health(HealthWork)
@@ -33,6 +35,8 @@ public extension SessionController {
         public var active: Bool
         public var title: String
         public var notification: CountdownNotification?
+        /// The cover is on screen: the alert is quiet in front of it.
+        public var quietInFront: Bool
         public var activity: LiveActivityPayload
     }
 
