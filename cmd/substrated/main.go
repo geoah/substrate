@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/api"
+	"github.com/geoah/substrate/internal/authority"
 	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/catalog"
@@ -248,24 +249,11 @@ func run() error {
 	// BOTH SHIPPED TREES: the provider packages under kinds/ and the sample
 	// packages under samples/. A catalog built from one of them serves half
 	// the shipped set and 404s every install of the other.
-	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
-	if err != nil {
-		return err
-	}
-	for _, warn := range cat.Warnings() {
-		slog.Warn("catalog: dropped a shipped bundle directory", "detail", warn)
-	}
-	slog.Info("catalog loaded", "bundles", len(cat.Bundles()))
-
-	if cfg.InviteCode == "" {
-		// Loud, and at boot: anyone who can reach this port may create a user.
-		slog.Warn("no SUBSTRATE_INVITE_CODE: registration asks for no invite code — set one before anyone else can reach this substrate")
-	}
 	authorityDocs, err := cfg.AuthorityDocs()
 	if err != nil {
 		return err
 	}
-	if err := authorize.CheckLocalDocuments(authorityDocs); err != nil {
+	if err := authority.CheckLocalDocuments(authorityDocs); err != nil {
 		return fmt.Errorf("SUBSTRATE_INSECURE_AUTHORITY_DOCS: %w", err)
 	}
 	for authority, path := range authorityDocs {
@@ -273,6 +261,35 @@ func run() error {
 		// which apps read as its.
 		slog.Warn("SUBSTRATE_INSECURE_AUTHORITY_DOCS is set: apps are verified against a local file for this authority, never its DNS record: local development only",
 			"authority", authority, "path", path)
+	}
+	reader := authority.NewReader(authority.Options{LocalDocuments: authorityDocs})
+	cat, err := catalog.LoadWithReader(reader, catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		return err
+	}
+	for _, warn := range cat.Warnings() {
+		slog.Warn("catalog: dropped a shipped bundle directory", "detail", warn)
+	}
+	slog.Info("catalog loaded", "bundles", len(cat.Bundles()))
+	loops.Add(1)
+	go func() {
+		defer loops.Done()
+		timer := time.NewTimer(time.Minute)
+		defer timer.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+			}
+			refreshPublishers(ctx, svc, cat)
+			timer.Reset(24 * time.Hour)
+		}
+	}()
+
+	if cfg.InviteCode == "" {
+		// Loud, and at boot: anyone who can reach this port may create a user.
+		slog.Warn("no SUBSTRATE_INVITE_CODE: registration asks for no invite code — set one before anyone else can reach this substrate")
 	}
 	// Closed by the server's shutdown (newServer), so the streams it would
 	// otherwise wait on end first.
@@ -285,7 +302,7 @@ func run() error {
 		PublicURL:    cfg.PublicURL,
 		InviteCode:   cfg.InviteCode,
 		TOTPDisabled: cfg.InsecureDisableTOTP,
-		Publishers:   authorize.NewVerifier(authorize.PublisherOptions{LocalDocuments: authorityDocs}),
+		Publishers:   authorize.NewVerifier(authorize.PublisherOptions{Reader: reader}),
 		Metrics:      cfg.Metrics,
 		Draining:     draining,
 	})
@@ -684,4 +701,32 @@ func drainEmbedQueues(ctx context.Context, busy []embedQueue, deadline time.Time
 func setupLogger(level string) {
 	lvl, _ := config.ParseLogLevel(level)
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})))
+}
+
+// refreshPublishers serializes repositories so a publisher check never fans
+// out into a machine-wide burst of admissions.
+func refreshPublishers(ctx context.Context, svc substrate.Service, cat *catalog.Catalog) {
+	repos, err := svc.Repositories(ctx)
+	if err != nil {
+		slog.Error("publisher refresh: repositories", "error", err)
+		return
+	}
+	for _, repo := range repos {
+		if ctx.Err() != nil {
+			return
+		}
+		ds, err := svc.Dataset(ctx, repo.ID)
+		if err != nil {
+			slog.Error("publisher refresh: repository", "repository", repo.ID, "error", err)
+			continue
+		}
+		results, err := cat.Refresh(ctx, ds)
+		if err != nil {
+			slog.Error("publisher refresh", "repository", repo.ID, "error", err)
+			continue
+		}
+		for _, r := range results {
+			slog.Info("publisher refresh", "repository", repo.ID, "package", r.ID, "outcome", r.Outcome, "reason", r.Reason)
+		}
+	}
 }

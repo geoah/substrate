@@ -11,7 +11,7 @@ data:
     owner approved and the app's client id. A token without scopes has full
     access to its repository; sessions are these records, login mints one,
     and revoking one is an ordinary record delete.
-  version: 11
+  version: 12
   purpose: internal
   names:
     singular: token
@@ -78,6 +78,7 @@ data:
     # app's own scopes stay what the app itself uses, and the engine runs the
     # agent only while a live token of its app approves its reach.
     agents:
+      deprecated: true
       type: object
       repeated: true
       description: the agents the owner approved this app to declare, with
@@ -101,3 +102,34 @@ data:
           min: 1
           max: 200
           description: the most it may spend in 24 hours, in cents
+    appPackages:
+      type: int
+      keyed: true
+      min: 1
+      managed: true
+      description: the package version floors this app build asked for
+    appSoftwareVersion:
+      type: string
+      max: 64
+      managed: true
+      description: the app build's own version, at most 64 printable characters
+    appCheckedAt:
+      type: datetime
+      managed: true
+      description: when this app build last checked its set up
+    appAddons:
+      type: object
+      repeated: true
+      managed: true
+      description: the optional packages waiting for a provider
+      fields:
+        package:
+          type: string
+          required: true
+        version:
+          type: int
+          required: true
+          min: 1
+        addonFor:
+          type: string
+          required: true

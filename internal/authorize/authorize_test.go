@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/geoah/substrate/internal/egress"
 )
 
 func TestAClientIDIsAnHTTPSDocumentURLOrALoopbackApp(t *testing.T) {
@@ -175,13 +177,13 @@ func TestTheFetcherDialsPublicAddressesAlone(t *testing.T) {
 		// The deprecated site-local block, which Go calls global unicast.
 		"fec0::1",
 	} {
-		if Public(netip.MustParseAddr(s)) {
-			t.Errorf("Public(%s) = true, want refused", s)
+		if egress.Public(netip.MustParseAddr(s)) {
+			t.Errorf("egress.Public(%s) = true, want refused", s)
 		}
 	}
 	for _, s := range []string{"93.184.215.14", "2606:2800:21f:cb07:6820:80da:af6b:8b2c", "1.1.1.1"} {
-		if !Public(netip.MustParseAddr(s)) {
-			t.Errorf("Public(%s) = false, want admitted", s)
+		if !egress.Public(netip.MustParseAddr(s)) {
+			t.Errorf("egress.Public(%s) = false, want admitted", s)
 		}
 	}
 
@@ -196,7 +198,7 @@ func TestTheFetcherDialsPublicAddressesAlone(t *testing.T) {
 		_, _ = w.Write([]byte(`{"client_id":"` + srv.URL + `/client.json","redirect_uris":["https://x.example/cb"]}`))
 	}))
 	defer srv.Close()
-	guarded := confinedTransport()
+	guarded := egress.ConfinedClient().Transport.(*http.Transport)
 	guarded.TLSClientConfig = srv.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
 	c := Client{ID: srv.URL + "/client.json", Host: "x"}
 	_, err := newFetcher(&http.Client{Transport: guarded, Timeout: fetchTimeout}, time.Now).Fetch(context.Background(), c)

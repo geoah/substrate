@@ -11,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/geoah/substrate/internal/authorize"
+	"github.com/geoah/substrate/internal/egress"
+
 	"github.com/geoah/substrate/internal/domains"
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -53,7 +54,7 @@ func fetchServerInstance(ctx context.Context, origin string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := authorize.ConfinedClient().Do(req)
+	resp, err := egress.ConfinedClient().Do(req)
 	if err != nil {
 		return "", err
 	}

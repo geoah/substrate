@@ -1707,3 +1707,17 @@ Each of those is a deliberate absence, not an oversight.
 
 Next: [the live tests](testing.md), the one suite that talks to real LLM
 providers.
+
+## Publisher refresh
+
+A minute after boot and every 24 hours, the server checks the authority
+documents of installed packages carrying `publishedFrom`, processing one
+repository at a time. Each outcome is logged with the repository and
+package. Only additive kinds-only releases apply automatically, as the
+bundle. Code changes and other edits wait for owner review. Live app builds
+whose recorded floors are below a narrowing release hold it back.
+
+A failed lookup or a removed document leaves the installed package intact.
+The catalog's upgrade offer reports the reason. Local authority documents
+use closure paths relative to the document directory; absolute paths,
+parent-directory escapes and symlinks escaping that directory are refused.

@@ -139,7 +139,7 @@ type Dataset interface {
 	// lossy is refused here, under ErrLossyConversion; it takes the confirmed
 	// form below.
 	ApplyVocabularyDocuments(ctx context.Context, actor Actor, docs []map[string]any) ([]*Record, error)
-	// TakeOverPackage makes a package an app declared under its `declare:`
+	// TakeOverPackage stops following a document publisher, or makes a package an app declared under its `declare:`
 	// scope the owner's (decision 0205): its row's declaredBy becomes actor,
 	// so the owner's doors write its declarations again. confirm repeats the
 	// package identity; only the owner's own hand may take one; nothing but

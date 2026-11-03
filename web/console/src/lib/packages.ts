@@ -22,6 +22,7 @@ import { originOfKind, type Origin } from "@/lib/origin"
 const PACKAGE_PAGE = 500
 
 export interface PackageRow {
+  publishedFrom?: string
   /** `<authority>/<package>`, the row's id. */
   id: string
   /** The actor whose transaction created the row; absent on a package
@@ -42,6 +43,9 @@ export function packageRows(
     const declaredByClient = record.properties?.declaredByClient
     out.set(record.id, {
       id: record.id,
+      ...(typeof record.properties?.publishedFrom === "string"
+        ? { publishedFrom: record.properties.publishedFrom }
+        : {}),
       ...(typeof declaredBy === "string" && declaredBy ? { declaredBy } : {}),
       ...(typeof declaredByClient === "string" && declaredByClient
         ? { declaredByClient }
