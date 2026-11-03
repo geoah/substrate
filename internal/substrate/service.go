@@ -53,6 +53,11 @@ type Service interface {
 	// the repository holding the matching token record.
 	Authenticate(ctx context.Context, tokenSecret string) (Dataset, TokenInfo, error)
 
+	// RevokeToken deletes only the token matching the secret, including a
+	// retired grant. A nonempty clientID must match its approved app. Unknown
+	// secrets and client mismatches succeed without revealing a token exists.
+	RevokeToken(ctx context.Context, tokenSecret, clientID string) error
+
 	// --- the doors that carry no bearer ---
 	//
 	// CompleteOAuth is the Service half of the connect flow: the callback

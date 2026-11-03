@@ -958,6 +958,7 @@
     "expiresAt": false,
     "id": true,
     "label": true,
+    "retired": false,
     "scopes": false
   },
   "TriggerFailure": {

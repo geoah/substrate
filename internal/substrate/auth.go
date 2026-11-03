@@ -150,6 +150,8 @@ type TokenInfo struct {
 	// mint refuses an empty list, so absence stays the one spelling of full
 	// access on the record and on the wire.
 	Scopes []string `json:"scopes,omitempty"`
+	// Retired grants remain listable and revocable but never authenticate.
+	Retired bool `json:"retired,omitempty"`
 	// ClientID is the app's client_id URL and ClientName the name it claimed
 	// when the owner approved it; both are empty on a token nobody minted
 	// for an app.

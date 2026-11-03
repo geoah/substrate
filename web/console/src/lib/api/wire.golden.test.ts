@@ -603,6 +603,7 @@ const aggregateValue: Shape<AggregateValue> = {
 }
 
 const tokenInfo: Shape<TokenInfo> = {
+  retired: false,
   id: true,
   label: true,
   createdAt: true,
