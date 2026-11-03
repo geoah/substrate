@@ -77,9 +77,9 @@ data:
   wherever it appears as a sub-agent.
 - **`prompt`** (required, at most 64 KiB): the row is the prompt store, and the
   changelog's full retention is its version history.
-- **`provider`** (required): a `substrate.reamde.dev/llm/provider` record id — **where**
+- **`provider`** (required unless `providerInput` is named): a `substrate.reamde.dev/llm/provider` record id — **where**
   the completions are bought, resolved at dispatch and never at load.
-- **`model`** (required): the model id sent on every completion, a plain string
+- **`model`** (required beside `provider`): the model id sent on every completion, a plain string
   the provider's endpoint understands — a gateway's alias
   (`anthropic/claude-opus-5`) on a row pointed at that gateway, the bare
   `claude-opus-5` on an `anthropic`-wire row.
@@ -1512,3 +1512,14 @@ repository. A repository has one writer
 so that process is the one every attach and stop reaches.
 
 Next: the [bundles catalog](bundles-catalog.md), what ships today.
+
+
+## Providers of published agents
+
+A published agent can name `providerInput: model` and `models: [first, second]`
+instead of `provider` and `model`. The input belongs to its own bundle
+and has kind `substrate.reamde.dev/llm/provider`. One to eight model ids
+are accepted, best first. The bound provider, the record named `default`,
+or the sole provider resolves it. The first model priced exactly or behind
+a gateway prefix runs; no match refuses the run. Published agents must
+declare `budgets.spendCentsPerDay` between 0 and 1000 US cents.
