@@ -1199,11 +1199,8 @@ list providers: an agent names one by id, and its panel shows which. All four be
 `data.properties`, never a declaration.
 
 ```yaml
-
 # OpenRouter — the OpenAI wire at its own endpoint. So is LiteLLM, Together,
-
 # Groq or a local Ollama: same wire, different baseURL. A LiteLLM row in front
-
 # of Anthropic models adds `cache: {breakpoints: true}`.
 kind: substrate.reamde.dev/llm/provider
 metadata: {id: openrouter}
@@ -1217,7 +1214,6 @@ data:
       - {name: HTTP-Referer, value: https://substrate.example}
       - {name: X-Title, value: substrate}
 ---
-
 # Anthropic, natively. No baseURL: the official endpoint.
 kind: substrate.reamde.dev/llm/provider
 metadata: {id: anthropic}
@@ -1229,7 +1225,6 @@ data:
     pricing:
       - {model: claude-opus-5-5, inputPer1M: "4", outputPer1M: "20", cacheReadPer1M: "0.20"}
 ---
-
 # Azure OpenAI. The deployment endpoint is the row's, and so is the key.
 kind: substrate.reamde.dev/llm/provider
 metadata: {id: azure}
@@ -1240,7 +1235,6 @@ data:
     baseURL: https://example-resource.openai.azure.com
     apiKey: …
 ---
-
 # The embeddings provider: one row per repository declares embedModel.
 kind: substrate.reamde.dev/llm/provider
 metadata: {id: vectors}
