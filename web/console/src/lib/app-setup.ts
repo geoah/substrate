@@ -123,20 +123,20 @@ export function publisherWords(
 }
 
 /** The everyday line of a package row an authority document publishes
- * (decision 0214): what approving installs or updates to, and who publishes
- * it. "Installs Training 3, published by Substrate (substrate.reamde.dev)".
- * Undefined for a package this server's catalog ships, whose versions
- * `versionWords` says. */
+ * (decision 0214): the version approving installs or updates to, in the
+ * words `versionWords` gives a row this server's catalog ships, and who
+ * publishes it. "Version 3, published by Substrate (substrate.reamde.dev)".
+ * The row's title already names the package, and "Installs Training 3"
+ * read as a product name. Undefined for a package the catalog ships. */
 export function publishedWords(row: AuthorizationSetup): string | undefined {
   const pkg = row.package
   if (!pkg?.publisher) return undefined
   const who = `published by ${publisherWords(pkg.publisher)}`
-  const name = packageName(pkg.id)
   if (row.blocked || row.action === "none" || !pkg.shipped)
     return `Published by ${publisherWords(pkg.publisher)}`
   if (row.action === "upgrade" && pkg.held)
-    return `Updates ${name} from version ${pkg.held} to ${pkg.shipped}, ${who}`
-  return `Installs ${name} ${pkg.shipped}, ${who}`
+    return `From version ${pkg.held} to ${pkg.shipped}, ${who}`
+  return `Version ${pkg.shipped}, ${who}`
 }
 
 /** An AI provider input as the approval page names it: the package's name,

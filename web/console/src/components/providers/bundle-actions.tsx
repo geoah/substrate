@@ -381,16 +381,15 @@ export function UpgradeButton({
         <TooltipContent className="max-w-96">
           <div className="space-y-1">
             {motion && <p>Version {motion}</p>}
-            {upgrade?.holders?.map((holder) => (
-              <p key={holder.clientId}>
-                Waiting for {holder.clientName || holder.clientId}
-                {holder.softwareVersion ? ` (${holder.softwareVersion})` : ""}:
-                floor {holder.floor}. {holder.clientId}.
-                {holder.checkedAt
-                  ? ` Last checked ${new Date(holder.checkedAt).toLocaleString()}.`
-                  : " No check-in recorded."}
-              </p>
-            ))}
+            {upgrade?.holders && upgrade.holders.length > 0 && (
+              <>
+                <p>
+                  Waiting for connected app builds that still ask for the
+                  version you hold.
+                </p>
+                <HolderList holders={upgrade.holders} />
+              </>
+            )}
 
             {steps.map((s) => (
               <p key={s}>{s}</p>
