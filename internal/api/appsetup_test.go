@@ -311,7 +311,7 @@ func resolvedSyncScopes() []string {
 func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 	e := newSetupEnv(t)
 	md := decodeJSON[authorizationServerMetadata](t, e.do(http.MethodGet, asMetadataPath, "", nil, ""))
-	if strings.Join(md.AuthorizationDetailsTypesSupported, ",") != "package,account,webhook,agent" {
+	if strings.Join(md.AuthorizationDetailsTypesSupported, ",") != "package,account,webhook" {
 		t.Fatalf("authorization_details_types_supported = %v", md.AuthorizationDetailsTypesSupported)
 	}
 	id := e.park(setupRequest(syncScopes, syncDetails))
@@ -453,13 +453,15 @@ func TestASetUpThatCannotRunIsBlockedAndRefused(t *testing.T) {
 			action:  substrate.SetupInstall, reason: substrate.BlockServerUpdate,
 			problem: "This server ships version 5; the app needs version 99. The server needs an update first.",
 		},
+		// A package neither the binary nor an authority document offers
+		// is not published, in the catalog's words, which name it.
 		"a package outside the catalog": {
 			details: `[{"type":"package","package":"example.com/notes","version":1}]`,
-			action:  substrate.SetupInstall, reason: substrate.BlockNotShipped, problem: "does not offer",
+			action:  substrate.SetupInstall, reason: substrate.BlockNotPublished, problem: "example.com/notes is not in this server's catalog",
 		},
 		"an installed package of your own": {
 			details: `[{"type":"package","package":"` + own + `","version":1},{"type":"webhook","trigger":"stripe-webhook"}]`,
-			action:  substrate.SetupNone, reason: substrate.BlockNotShipped, problem: "does not offer",
+			action:  substrate.SetupNone, reason: substrate.BlockNotPublished, problem: own + " is not in this server's catalog",
 		},
 		"an account of a package not requested": {
 			details: `[{"type":"package","package":"` + applePkg + `","version":3},
@@ -505,8 +507,9 @@ func TestASetUpThatCannotRunIsBlockedAndRefused(t *testing.T) {
 				t.Fatalf("row %d = %+v %+v, want %s blocked for %s with %q and fix %q", c.row, row, row.Blocked, c.action, c.reason, c.problem, c.fix)
 			}
 			// The owner reads it as a sentence, and the technical view
-			// shows the ids beside it.
-			if !regexp.MustCompile(`^[A-Z][^:/]*\.$`).MatchString(row.Blocked.Problem) {
+			// shows the ids beside it; the catalog's own words, on a package
+			// it could not find, name what they looked for.
+			if c.reason != substrate.BlockNotPublished && !regexp.MustCompile(`^[A-Z][^:/]*\.$`).MatchString(row.Blocked.Problem) {
 				t.Fatalf("problem %q is not a sentence free of ids", row.Blocked.Problem)
 			}
 			// Blocked keeps the denial and refuses the approval.

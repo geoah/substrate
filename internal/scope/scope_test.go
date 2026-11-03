@@ -419,60 +419,36 @@ func TestAVerbRefusalNamesTheVerbsItsSurfaceTakes(t *testing.T) {
 		t.Error("a webhook scope naming a path was admitted")
 	}
 	_, err := Parse("delete:*")
-	if err == nil || !strings.Contains(err.Error(), "read, write, agents, decide, declare or webhook") {
-		t.Errorf("a stored scope's unknown verb = %v, want the six verbs named", err)
+	if err == nil || !strings.Contains(err.Error(), "read, write, agents, decide or webhook") {
+		t.Errorf("a stored scope's unknown verb = %v, want the five verbs named", err)
 	}
 	_, err = ParseRequest("delete:*")
-	if err == nil || !strings.Contains(err.Error(), "read, write, agents, decide or declare") || strings.Contains(err.Error(), "webhook") {
-		t.Errorf("a request's unknown verb = %v, want the five requestable verbs named", err)
+	if err == nil || !strings.Contains(err.Error(), "read, write, agents or decide") || strings.Contains(err.Error(), "webhook") {
+		t.Errorf("a request's unknown verb = %v, want the four requestable verbs named", err)
 	}
 }
 
-// A DECLARE SCOPE KEEPS ONE PACKAGE OF THE OWNER'S OWN (decision 0203): a
-// request names it under `~`, never a glob, a kind or another authority; the
-// stored scope is resolved; the grant declares that package in that
-// repository alone, reads and writes no kind through it, and names the
-// package to the set up check.
-func TestADeclareScopeKeepsOnePackageOfTheOwnersOwn(t *testing.T) {
-	for _, bad := range []string{"declare:*", "declare:~/*", "declare:~/training/set", "declare:~", "declare:training"} {
-		if _, err := ParseRequest(bad); err == nil {
-			t.Errorf("ParseRequest(%q) admitted it", bad)
+// DECLARE IS RETIRED (decision 0214): a request naming it is refused with
+// words pointing at a `package` detail, whatever package it names, and a
+// stored token carrying it fails closed rather than reading as a narrower
+// grant, so the app signs in again under the new grammar.
+func TestADeclareScopeIsRefusedInARequestAndFailsClosedWhenStored(t *testing.T) {
+	for _, raw := range []string{"declare:~/training", "declare:ada.example.com/training", "declare:*", "declare:~"} {
+		_, err := ParseRequest(raw + " write:~/training/*")
+		if err == nil || !strings.Contains(err.Error(), "retired") || !strings.Contains(err.Error(), "`package` authorization detail") {
+			t.Errorf("ParseRequest(%q) = %v, want a refusal pointing at a package detail", raw, err)
 		}
 	}
-	for _, foreign := range []string{"declare:substrate.reamde.dev/training", "declare:ada.example.com/training"} {
-		if _, err := ParseRequest(foreign); err == nil {
-			t.Errorf("ParseRequest(%q) admitted a package named by its authority", foreign)
+	for _, stored := range [][]string{
+		{"declare:ada.example.com/training"},
+		{"write:ada.example.com/training/*", "declare:ada.example.com/training"},
+	} {
+		if err := CheckStored(stored); err == nil || !strings.Contains(err.Error(), "retired") {
+			t.Errorf("CheckStored(%v) = %v, want a refusal naming the retired verb", stored, err)
 		}
-	}
-	got, err := ParseRequest("declare:~/training write:~/training/*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	stored := got[0].Resolve("ada.example.com")
-	if stored.String() != "declare:ada.example.com/training" {
-		t.Fatalf("resolved = %s", stored)
-	}
-	g, err := NewGrant([]string{stored.String()})
-	if err != nil {
-		t.Fatalf("a resolved declare scope is not storable: %v", err)
-	}
-	if !g.DeclaresIn("ada.example.com/training", "ada.example.com") {
-		t.Error("the grant does not declare the package it names")
-	}
-	if g.DeclaresIn("ada.example.com/notes", "ada.example.com") {
-		t.Error("the grant declares a package it does not name")
-	}
-	if g.DeclaresIn("ada.example.com/training", "bob.example.com") {
-		t.Error("the grant declares a package outside the repository's own authority")
-	}
-	if g.Reads("ada.example.com/training/set", false) || g.Writes("ada.example.com/training/set", false) {
-		t.Error("a declare scope reads or writes records")
-	}
-	if !g.NamesPackage("ada.example.com/training") {
-		t.Error("a declare scope does not name its package to the set up check")
-	}
-	if !g.Covers(stored, false) {
-		t.Error("a declare scope does not cover itself")
+		if _, err := NewGrant(stored); err == nil {
+			t.Errorf("NewGrant(%v) read a token carrying declare as a grant", stored)
+		}
 	}
 }
 

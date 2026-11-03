@@ -251,11 +251,25 @@ func TestAQuarantinedPackageIsBlocked(t *testing.T) {
 	wantBlocked(t, "app", row.Blocked, substrate.BlockQuarantined, ProviderPage(basePkg))
 }
 
-// A sample is the console's own door, a package the catalog does not ship is
-// nobody's, and a server too old ships too little: asked for or needed first.
+// A sample is the console's own door, a package no source offers is nobody's,
+// and a server too old ships too little: asked for or needed first.
 func TestWhatTheCatalogCannotInstallIsBlocked(t *testing.T) {
 	cat := testCatalog(t)
 	ds := newFakeDataset()
+	// A package neither the binary nor a document offers is not published,
+	// in the catalog's words; a server with no catalog at all offers
+	// nothing.
+	row := plan(t, ds, cat, pkgDetail("example.com/nowhere", 1))[0]
+	if row.Action != substrate.SetupInstall || row.Blocked == nil || row.Blocked.Reason != substrate.BlockNotPublished ||
+		!strings.HasPrefix(row.Blocked.Problem, "This package is not published where this server can install it: ") ||
+		!strings.Contains(row.Blocked.Problem, "example.com/nowhere") || !strings.HasSuffix(row.Blocked.Problem, ".") {
+		t.Fatalf("a package nothing offers = %+v %+v", row, row.Blocked)
+	}
+	rows, _, err := Plan(context.Background(), ds, nil, []substrate.AuthorizationDetail{pkgDetail(appPkg, 1)}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBlocked(t, "with no catalog", rows[0].Blocked, substrate.BlockNotShipped, "")
 	for name, c := range map[string]struct {
 		detail  substrate.AuthorizationDetail
 		reason  string
@@ -264,7 +278,6 @@ func TestWhatTheCatalogCannotInstallIsBlocked(t *testing.T) {
 		problem string
 	}{
 		"a sample":                 {detail: pkgDetail(samplePkg, 1), reason: substrate.BlockSample, fix: "/data"},
-		"not shipped":              {detail: pkgDetail("example.com/nowhere", 1), reason: substrate.BlockNotShipped},
 		"a version not shipped":    {detail: pkgDetail(appPkg, 5), reason: substrate.BlockServerUpdate, problem: "This server ships version 4; the app needs version 5. The server needs an update first."},
 		"a sample needed first":    {detail: pkgDetail(needsSample, 1), reason: substrate.BlockSample, fix: "/data", step: samplePkg},
 		"nothing ships what first": {detail: pkgDetail(needsMissing, 1), reason: substrate.BlockNotShipped, step: "example.com/gone"},

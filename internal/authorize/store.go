@@ -78,8 +78,12 @@ type Request struct {
 	// Details are the app's checked `authorization_details` (ParseDetails):
 	// what approving sets up.
 	Details []substrate.AuthorizationDetail
-	Created time.Time
-	Expires time.Time
+	// SoftwareVersion is the app build's own version (ParseSoftwareVersion),
+	// which the token minted from the approval records beside the floors of
+	// the package details (decision 0213); "" when the app sent none.
+	SoftwareVersion string
+	Created         time.Time
+	Expires         time.Time
 	// Repository is the repository that claimed the request: the first owner
 	// to read it on the approval page. Every later read, approval or denial
 	// must come from the same repository, so a request id that leaks does not

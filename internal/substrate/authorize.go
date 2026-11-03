@@ -68,12 +68,7 @@ const (
 	DetailPackage = "package"
 	DetailAccount = "account"
 	DetailWebhook = "webhook"
-	DetailAgent   = "agent"
 )
-
-// AppAgentSpendCeilingCents is the most an app's agent may spend a day, in
-// cents, whatever its approval asks (decision 0207).
-const AppAgentSpendCeilingCents = 200
 
 // The actions a setup row may need: what approving would do to it. SetupNone
 // is in place already; SetupUnknown answers a check for a row the token
@@ -151,18 +146,11 @@ type AuthorizationDetail struct {
 	// Trigger: a `webhook` detail; URL only in the token response.
 	Trigger string `json:"trigger,omitempty"`
 	URL     string `json:"url,omitempty"`
-	// Agent, Reads, Writes and SpendCentsPerDay: an `agent` detail
-	// (decision 0207), the one agent the app may declare, the exact kinds it
-	// reads and writes and its daily cap.
-	Agent            string   `json:"agent,omitempty"`
-	Reads            []string `json:"reads,omitempty"`
-	Writes           []string `json:"writes,omitempty"`
-	SpendCentsPerDay int      `json:"spendCentsPerDay,omitempty"`
 }
 
 // AuthorizationSetup is one detail as approving would set it up: the action
-// it needs and the facts behind it. Exactly one of Package, Account, Webhook
-// and Agent is present, by Type.
+// it needs and the facts behind it. Exactly one of Package, Account and
+// Webhook is present, by Type.
 type AuthorizationSetup struct {
 	Type   string `json:"type"`
 	Action string `json:"action"`
@@ -176,7 +164,6 @@ type AuthorizationSetup struct {
 	Package  *AuthorizationPackage     `json:"package,omitempty"`
 	Account  *AuthorizationAccount     `json:"account,omitempty"`
 	Webhook  *AuthorizationWebhookPlan `json:"webhook,omitempty"`
-	Agent    *AuthorizationAgentPlan   `json:"agent,omitempty"`
 }
 
 // AuthorizationBlock is why a setup row cannot run: a Block* reason a client
@@ -191,10 +178,13 @@ type AuthorizationBlock struct {
 
 // AuthorizationPackage is a package row's facts. Held is the catalog release
 // the repository holds (its shippedVersion when published, else its stored
-// version), absent when it holds none; Shipped is what this server's catalog
-// ships, absent when it ships none. A check answers ID, Required, Held and
-// Shipped alone, and ID and Required alone for a row it cannot see. A
-// client names a package from its ID; the catalog carries no other name.
+// version), absent when it holds none; Shipped is the version approving
+// would install: what this server's catalog ships, or, for a package an
+// authority document publishes, the newest version the document lists at
+// the app's floor or later, absent when neither offers one. A check answers
+// ID, Required, Held and Shipped alone, and ID and Required alone for a row
+// it cannot see. A client names a package from its ID; the catalog carries
+// no other name.
 type AuthorizationPackage struct {
 	ID          string `json:"id"`
 	Description string `json:"description,omitempty"`
@@ -228,17 +218,19 @@ type AuthorizationPackagePublisher struct {
 
 // AuthorizationPackageStep is one package a requested one requires, with
 // what it brings of its own. Blocked is present when it cannot be installed
-// or upgraded, which blocks the row that requires it.
+// or upgraded, which blocks the row that requires it. Publisher is present
+// for a requirement an authority document publishes, as on the row.
 type AuthorizationPackageStep struct {
-	ID          string                  `json:"id"`
-	Description string                  `json:"description,omitempty"`
-	Action      string                  `json:"action"`
-	Blocked     *AuthorizationBlock     `json:"blocked,omitempty"`
-	Held        int64                   `json:"held,omitempty"`
-	Shipped     int64                   `json:"shipped,omitempty"`
-	Kinds       []AuthorizationKind     `json:"kinds,omitempty"`
-	Functions   []AuthorizationFunction `json:"functions,omitempty"`
-	Triggers    []AuthorizationTrigger  `json:"triggers,omitempty"`
+	ID          string                         `json:"id"`
+	Description string                         `json:"description,omitempty"`
+	Action      string                         `json:"action"`
+	Blocked     *AuthorizationBlock            `json:"blocked,omitempty"`
+	Held        int64                          `json:"held,omitempty"`
+	Shipped     int64                          `json:"shipped,omitempty"`
+	Kinds       []AuthorizationKind            `json:"kinds,omitempty"`
+	Functions   []AuthorizationFunction        `json:"functions,omitempty"`
+	Triggers    []AuthorizationTrigger         `json:"triggers,omitempty"`
+	Publisher   *AuthorizationPackagePublisher `json:"publisher,omitempty"`
 }
 
 // AuthorizationFunction is code a package ships: what runs on the owner's
@@ -279,38 +271,6 @@ type AuthorizationWebhookPlan struct {
 	Allowed bool   `json:"allowed,omitempty"`
 }
 
-// AuthorizationAgentPlan is an agent row: the agent the app may declare
-// and keep (decision 0207), what it may read and write, each kind as the
-// repository holds it (Held false for one it does not hold yet), and its
-// daily cap. Approving sets nothing up: the token carries the approval, and
-// the app declares the agent with it. Allowed is true when the previous
-// token's approval already covers this one. An approval without the agent
-// package's declare scope leaves the agent off the token. A check answers
-// Agent alone.
-type AuthorizationAgentPlan struct {
-	Agent            string                   `json:"agent"`
-	Reads            []AuthorizationAgentKind `json:"reads,omitempty"`
-	Writes           []AuthorizationAgentKind `json:"writes,omitempty"`
-	SpendCentsPerDay int                      `json:"spendCentsPerDay,omitempty"`
-	Allowed          bool                     `json:"allowed,omitempty"`
-	// TalkedToBy names the apps the owner already let talk to their agents
-	// whose reads cover everything this agent reads: they can ask it
-	// questions and read its chats (decision 0207). Another app reaches it
-	// only once it can read all of that itself.
-	TalkedToBy []string `json:"talkedToBy,omitempty"`
-	// Withheld says why approving leaves the agent out: its package's
-	// declare scope is refused, since another hand keeps the package
-	// (decision 0205). The rest of the request is approved as usual.
-	Withheld string `json:"withheld,omitempty"`
-}
-
-// AuthorizationAgentKind is one kind an app's agent reads or writes.
-type AuthorizationAgentKind struct {
-	Identity string     `json:"identity"`
-	Label    *KindLabel `json:"label,omitempty"`
-	Held     bool       `json:"held,omitempty"`
-}
-
 // AuthorizationPrevious is the newest token the repository holds for the
 // requesting client id. Never present for a local app, whose client id
 // nothing verifies.
@@ -318,8 +278,6 @@ type AuthorizationPrevious struct {
 	ApprovedAt time.Time  `json:"approvedAt"`
 	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
 	Scopes     []string   `json:"scopes"`
-	// Agents are the agents that token approves its app to declare.
-	Agents []AgentApproval `json:"agents,omitempty"`
 }
 
 // AuthorizationFailure is why a set up stopped, in the owner's words: Row
@@ -332,11 +290,15 @@ type AuthorizationFailure struct {
 }
 
 // AuthorizationCheck is `POST /api/v1/authorizations/check`'s body: the
-// request an app would send now, its `scope` parameter and its
-// `authorization_details`, held to the rules /oauth/authorize holds them to.
+// request an app would send now, its `scope` parameter, its
+// `authorization_details` and its `software_version`, held to the rules
+// /oauth/authorize holds them to. The check records the build on the
+// calling token (decision 0213): the floor of each package detail and
+// SoftwareVersion.
 type AuthorizationCheck struct {
-	Scope   string                `json:"scope"`
-	Details []AuthorizationDetail `json:"details"`
+	Scope           string                `json:"scope"`
+	Details         []AuthorizationDetail `json:"details"`
+	SoftwareVersion string                `json:"softwareVersion,omitempty"`
 }
 
 // AuthorizationCheckResult says whether a token still has what its app
@@ -443,11 +405,6 @@ type AuthorizationScope struct {
 	// one (write covers read; a wider pattern covers a narrower one), so the
 	// page can fold it under what was allowed before.
 	Allowed bool `json:"allowed,omitempty"`
-	// Refused says why this scope cannot be approved, empty when it can: a
-	// `declare:` scope over a package the owner keeps, or one another app
-	// declared (decision 0205). The page leaves it unchecked and says why,
-	// and an approval that names it is refused before a token is issued.
-	Refused string `json:"refused,omitempty"`
 }
 
 // AuthorizationKind is one kind a scope reaches today, or one a package the
