@@ -427,6 +427,17 @@ const SENTENCE_CASES: Omit<SentenceCase, "sentence">[] = [
     ],
   },
   { scope: "write:ada.example.com/notes/note", kinds: [] },
+  {
+    scope: `write:${APPLEHEALTH}/account`,
+    kinds: [
+      labelled(
+        `${APPLEHEALTH}/account`,
+        "Apple Health account",
+        "Apple Health accounts",
+        "internal"
+      ),
+    ],
+  },
   { scope: "agents:*", kinds: [] },
   { scope: "agents:b.example.com/*", kinds: [] },
   { scope: "agents:ada.example.com/llm/*", kinds: [] },
