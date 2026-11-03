@@ -409,18 +409,16 @@ every account the repository holds under it. `list` and `status` take
 `-o json` or `-o yaml`: `list` prints one array and writes its
 `quarantined:` lines to stderr, and `status` prints one object.
 
-A package an app installed under its `declare:` scope is the app's
-([0205](decisions/0205-an-app-owns-the-package-it-declares.md)): `apply`,
-`patch` and `delete` of its package, bundle or kind documents,
-`bundle uninstall` and `bundle purge` answer `403` naming the app, while its
-records stay yours to write and `bundle disable` and `bundle enable` stay
-yours to run. So does an uninstall of a package the app's bundle requires,
-naming the app's package. `substratectl takeover <authority>/<package>
---confirm <authority>/<package>` makes it yours: the package's `declaredBy`
-becomes the actor you write as, `takenOverFrom` names the app, nothing else
-moves, and the app's next change to it is refused. It prints the app it took
-the package from. It cannot be handed back, and without `--confirm`
-repeating the package it refuses before it sends anything.
+A package an app declared under an earlier server's `declare:` scope is
+yours like any other
+([0214](decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md)):
+`apply`, `patch`, `delete`, `bundle uninstall` and `bundle purge` of it are
+refused by nothing. Its package row still names the app that declared it;
+`substratectl takeover <authority>/<package> --confirm <authority>/<package>`
+rewrites that: `declaredBy` becomes the actor you write as, `takenOverFrom`
+names the app, and nothing else moves. It prints the app it took the package
+from, cannot be handed back, and without `--confirm` repeating the package
+it refuses before it sends anything.
 
 `substratectl catalog` lists every package the binary ships, seeded `core`
 first, then the catalog's providers and samples: whether this repository
