@@ -90,7 +90,8 @@ struct WorkoutsAppTests {
                                        to: [WorkoutsApp.sessionKey])
         try await harness.until(timeout: .seconds(60)) { await $0.presentation.history.contains { $0.id == id } }
         #expect(await harness.presentation.finished == 1)
-        let outbox = try #require(WorkoutsAccounts(base: directory).account(Self.account)?.outbox)
+        // The app's own outbox for the account: one actor per file.
+        let outbox = try #require(harness.environment.accounts?.account(Self.account)?.outbox)
         try await harness.until(timeout: .seconds(60)) { _ in await outbox.entries.contains { $0.batch == id.rawValue } }
         let batch = await outbox.entries.filter { $0.batch == id.rawValue }
         #expect(batch.first?.method == .put)

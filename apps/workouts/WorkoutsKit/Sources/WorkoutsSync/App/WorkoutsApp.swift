@@ -231,7 +231,7 @@ public struct WorkoutsApp: LinkedApp {
         case let .queued(command):
             switch command {
             case .sync: if state.signedIn != nil { next.syncing = true }
-            case .addSampleRoutine: next.addingSample = state.canWrite && !state.addingSample
+            case .addSampleRoutine: if state.canWrite { next.addingSample = true }
             case let .saveRoutine(editor, _): if state.draft?.routine.id == editor.routine.id { next.draft = nil }
             case .dropDraft: next.draft = nil
             case let .keepDraft(editor): next.draft = editor

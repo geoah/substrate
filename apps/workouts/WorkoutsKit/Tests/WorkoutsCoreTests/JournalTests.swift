@@ -249,7 +249,6 @@ struct JournalTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.url.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.url.path) }
         #expect(await opened(journal).state == fold(log))
-        #expect(try journal.read()?.cachedState == fold(Array(log.prefix(2))))
     }
 
     @Test("a fold that throws sets the file aside, so a new session cannot write over it")

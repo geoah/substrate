@@ -72,6 +72,7 @@ extension WorkoutsApp {
         case .sync:
             return account.map { state.canWrite ? [.sync($0)] : [] } ?? []
         case .addSampleRoutine:
+            // One at a time: Add is disabled while one runs.
             guard let account, state.addingSample else { return [] }
             return [.addSample(account)]
         case let .deleteRoutine(id):
