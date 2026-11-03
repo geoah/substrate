@@ -1,6 +1,9 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import WorkoutsCore
+import SubstrateCore
 
 /// The exercise library seeded into one server and repository: its
 /// movements and their exercises, written into the training package as
@@ -130,7 +133,7 @@ public final class LibraryInstall: @unchecked Sendable {
             patch[key] = value
         }
         guard case let .array(theirs)? = library["codes"] else { return patch }
-        var codes: [WorkoutsCore.JSONValue] = []
+        var codes: [JSONValue] = []
         if case let .array(mine)? = held["codes"] { codes = mine }
         let present = Set(codes.compactMap(identity))
         let missing = theirs.filter { identity($0).map { !present.contains($0) } ?? false }
@@ -166,7 +169,7 @@ public final class LibraryInstall: @unchecked Sendable {
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
-    private static func identity(_ value: WorkoutsCore.JSONValue) -> String? {
+    private static func identity(_ value: JSONValue) -> String? {
         guard case let .object(coding) = value, case let .string(system)? = coding["system"], case let .string(code)? = coding["code"]
         else { return nil }
         return "\(system)\u{1F}\(code)"

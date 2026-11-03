@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 // DESIGN §10.1 PresenterTests: columns per measurement, labels (§4.10), ghost
 // precedence (§5.5), PREVIOUS matching (§5.4), the reason line only on Up
@@ -14,7 +15,7 @@ private func d(_ text: String) -> Decimal { Decimal(string: text, locale: Locale
 /// The 30 October session (Fully Body Collection #1 at 13:42, 82.4 kg), with
 /// the three example sessions as history.
 struct NextFullyBody {
-    static let start = DateText.parse("2026-10-30T13:42:00Z")!
+    static let start = Timestamp.parse("2026-10-30T13:42:00Z")!
     var script: EngineScript
     let history: HistoryIndex
 
@@ -162,7 +163,7 @@ struct PresenterGridTests {
     @Test("Ghost precedence: the target when there is no suggestion")
     func ghostFromTarget() throws {
         // On 27 October the chest press had no history: its warm-up shows the plan.
-        let start = DateText.parse("2026-10-27T13:30:00Z")!
+        let start = Timestamp.parse("2026-10-27T13:30:00Z")!
         let history = try Progression.history(before: start)
         let script = try Progression.start(at: start)
         let presentation = SessionPresenter.present(try script.current, history: history, settings: Progression.settings, now: start)
@@ -198,7 +199,7 @@ struct PresenterGridTests {
         let previous = try #require(row.previous)
         #expect(previous.values.rpe == d("9.5"))
         #expect(previous.copy == SetValuesPatch(load: .set(.kg(35)), reps: .set(13), rpe: .set(d("9.5")), rpeMethod: .copied))
-        #expect(previous.date == DateText.parse("2026-10-27T13:30:00Z"))
+        #expect(previous.date == Timestamp.parse("2026-10-27T13:30:00Z"))
         #expect(!previous.deload)
         // Last time had one chest press slot, so a second one today has no PREVIOUS.
         let exercise = try #require(try EngineFixtures.exercises()["chest-press-machine"])
@@ -703,8 +704,8 @@ struct PresenterScreenTests {
         #expect(cards.first?.exercises.hasPrefix("Leg Press (Machine), Calf Press (Machine), Seated Leg Curl (Machine)") == true)
         #expect(list.unreadable == nil)
         var broken = catalog
-        broken.unreadable = [UnreadableRecord(source: "x", kind: KindNames.v1.routine, id: "a", reason: "r"),
-                             UnreadableRecord(source: "x", kind: KindNames.v1.routine, id: "b", reason: "r")]
+        broken.unreadable = [UnreadableRecord(source: "x", kind: WorkoutsKinds.v1.routine, id: "a", reason: "r"),
+                             UnreadableRecord(source: "x", kind: WorkoutsKinds.v1.routine, id: "b", reason: "r")]
         broken.routines["loose"] = Routine(id: "loose", name: "Loose")
         let other = RoutinePresenter.list(broken, history: history, settings: Progression.settings)
         #expect(other.unreadable == "2 routines could not be read")

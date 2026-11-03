@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 /// SplitMix64: a seeded generator, so minted ids are reproducible in tests.
 struct SeededGenerator: RandomNumberGenerator {
@@ -39,7 +40,7 @@ struct UUIDv7Tests {
     func timestamp() throws {
         var generator = SeededGenerator(seed: 1)
         for text in ["2026-10-27T13:30:00Z", "2026-10-22T11:34:08Z", "1970-01-01T00:00:00Z"] {
-            let date = try #require(DateText.parse(text))
+            let date = try #require(Timestamp.parse(text))
             let id = UUIDv7.make(at: date, using: &generator)
             #expect(UUIDv7.date(of: id) == date)
             let millis = UInt64(date.timeIntervalSince1970 * 1000)

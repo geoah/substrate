@@ -1,8 +1,11 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 /// The workout coach as its published package declares it (decision records
 /// 0214, 0215 and 0217): the closure this build carries, the agent in it,
@@ -13,7 +16,7 @@ struct CoachTests {
 
     var agent: JSONObject { coach.documents(ofKind: Coach.agentKind).first { $0.id == Coach.agent }?.data ?? [:] }
 
-    func strings(_ value: WorkoutsCore.JSONValue?) -> [String] {
+    func strings(_ value: JSONValue?) -> [String] {
         guard case let .array(items)? = value else { return [] }
         return items.compactMap { if case let .string(s) = $0 { s } else { nil } }
     }
@@ -28,9 +31,9 @@ struct CoachTests {
         #expect(documents == ["substrate.reamde.dev/core/package", "substrate.reamde.dev/core/bundle", Coach.agentKind])
         let bundle = try #require(coach.documents(ofKind: "substrate.reamde.dev/core/bundle").first)
         #expect(bundle.id == Coach.package)
-        #expect(strings(bundle.data["requires"]) == [KindNames.packageID])
+        #expect(strings(bundle.data["requires"]) == [WorkoutsKinds.packageID])
         #expect(strings(bundle.data["installs"]) == [Coach.agent])
-        #expect(!String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.array(coach.documents)), as: UTF8.self).contains("~"))
+        #expect(!String(decoding: try JSONEncoder().encode(JSONValue.array(coach.documents)), as: UTF8.self).contains("~"))
     }
 
     @Test("the agent takes its provider through the bundle's model input, names its models best first, and caps its spend")
@@ -62,11 +65,11 @@ struct CoachTests {
     @Test("the agent reads the training log, the health and observation kinds and the clinical catalogue, and writes plans, memories and its questions")
     func reach() throws {
         let reach = ClosureReach.of(coach.documents)
-        let training = reach.reads.filter { $0.hasPrefix(KindNames.packageID + "/") }
-        #expect(Set(training) == Set(["exercise", "setup", "routine", "session", "set", "memory"].map { "\(KindNames.packageID)/\($0)" }))
+        let training = reach.reads.filter { $0.hasPrefix(WorkoutsKinds.packageID + "/") }
+        #expect(Set(training) == Set(["exercise", "setup", "routine", "session", "set", "memory"].map { "\(WorkoutsKinds.packageID)/\($0)" }))
         #expect(reach.reads.contains("substrate.reamde.dev/health/workout") && reach.reads.contains("substrate.reamde.dev/health/sleep"))
         #expect(reach.reads.contains("substrate.reamde.dev/observations/observation") && reach.reads.contains("substrate.reamde.dev/clinical/*"))
-        #expect(Set(reach.writes) == Set(["exercise", "setup", "routine", "memory"].map { "\(KindNames.packageID)/\($0)" } + ["substrate.reamde.dev/llm/interaction"]))
+        #expect(Set(reach.writes) == Set(["exercise", "setup", "routine", "memory"].map { "\(WorkoutsKinds.packageID)/\($0)" } + ["substrate.reamde.dev/llm/interaction"]))
         #expect(!reach.writes.contains { $0.hasSuffix("/session") || $0.hasSuffix("/set") })
         #expect(reach.reads.count <= 24 && Set(reach.reads).count == reach.reads.count)
         // Every write but the interaction the ask tool lands is a read too.
@@ -75,7 +78,7 @@ struct CoachTests {
         guard case let .object(context)? = agent["context"], case let .array(pinned)? = context["pinned"], case let .object(pin)? = pinned.first else {
             Issue.record("no pinned memory"); return
         }
-        #expect(pin["kind"] == .string("\(KindNames.packageID)/memory"))
+        #expect(pin["kind"] == .string("\(WorkoutsKinds.packageID)/memory"))
     }
 
     /// Decision 0215: a package's code reaches no further than the approved

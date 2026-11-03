@@ -1,6 +1,16 @@
 import Foundation
 import Testing
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+@testable import SubstrateAPI
+@testable import SubstrateAuth
+@testable import SubstrateCore
+@testable import SubstrateDevice
+@testable import SubstrateDeviceApple
 @testable import SubstrateKit
+@testable import SubstrateUI
+import SubstrateTesting
 
 /// A transport that holds every request until it is released.
 final class HeldTransport: HTTPTransport, @unchecked Sendable {

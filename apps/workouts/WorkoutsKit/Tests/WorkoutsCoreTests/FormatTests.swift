@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 // DESIGN §10.1 FormatTests: every formatter example in §4.13 and research
 // 03 §12, plus the labels and headers the screens read from the same place.
@@ -102,13 +103,13 @@ struct FormatTests {
     @Test("Dates in en_GB on the session's clock: Tue 27 Oct, 13:30; October 2026")
     func dates() throws {
         let london = try #require(TimeZone(identifier: "Europe/London"))
-        let gmt = try #require(DateText.parse("2026-10-27T13:30:00Z"))
+        let gmt = try #require(Timestamp.parse("2026-10-27T13:30:00Z"))
         #expect(Format.day(gmt, in: london) == "Tue 27 Oct")
         #expect(Format.dayAndTime(gmt, in: london) == "Tue 27 Oct, 13:30")
         #expect(Format.dayWithYear(gmt, in: london) == "Tue 27 Oct 2026")
         #expect(Format.month(gmt, in: london) == "October 2026")
         // Before the clocks went back, BST: 11:34Z is 12:34 on the wall.
-        let bst = try #require(DateText.parse("2026-10-22T11:34:08Z"))
+        let bst = try #require(Timestamp.parse("2026-10-22T11:34:08Z"))
         #expect(Format.time(bst, in: london) == "12:34")
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// A workout routine (`routine.yaml`; no traits): the plan the console's
 /// agent writes. The record's server `version` is kept for `routineVersion`.

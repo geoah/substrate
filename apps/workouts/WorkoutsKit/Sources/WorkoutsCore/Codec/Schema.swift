@@ -59,7 +59,7 @@ public struct KindSchema: Sendable, Hashable {
 }
 
 extension RecordCodec {
-    static func movementSchema(_ kinds: KindNames) -> KindSchema {
+    static func movementSchema(_ kinds: WorkoutsKinds) -> KindSchema {
         KindSchema(kind: kinds.movement, traits: [], traitProperties: [], properties: [
             .string("name", required: true),
             .string("aliases", repeated: true),
@@ -88,7 +88,7 @@ extension RecordCodec {
         ])
     }
 
-    static func exerciseSchema(_ kinds: KindNames) -> KindSchema {
+    static func exerciseSchema(_ kinds: WorkoutsKinds) -> KindSchema {
         KindSchema(kind: kinds.exercise, traits: [], traitProperties: [], properties: [
             .string("name", required: true),
             .string("aliases", repeated: true),
@@ -119,7 +119,7 @@ extension RecordCodec {
         ])
     }
 
-    static func routineSchema(_ kinds: KindNames) -> KindSchema {
+    static func routineSchema(_ kinds: WorkoutsKinds) -> KindSchema {
         KindSchema(kind: kinds.routine, traits: [], traitProperties: [], properties: [
             .string("name", required: true),
             .string("folder"),
@@ -144,7 +144,7 @@ extension RecordCodec {
         ])
     }
 
-    static func sessionSchema(_ kinds: KindNames) -> KindSchema {
+    static func sessionSchema(_ kinds: WorkoutsKinds) -> KindSchema {
         KindSchema(
             kind: kinds.session,
             traits: ["substrate.reamde.dev/core/temporal(range)", "substrate.reamde.dev/core/revised"],
@@ -192,7 +192,7 @@ extension RecordCodec {
         )
     }
 
-    static func setSchema(_ kinds: KindNames) -> KindSchema {
+    static func setSchema(_ kinds: WorkoutsKinds) -> KindSchema {
         KindSchema(
             kind: kinds.set,
             traits: ["substrate.reamde.dev/core/temporal(point)", "substrate.reamde.dev/core/revised"],
@@ -273,7 +273,7 @@ extension RecordCodec {
         )
     }
 
-    static func setupSchema(_ kinds: KindNames) -> KindSchema {
+    static func setupSchema(_ kinds: WorkoutsKinds) -> KindSchema {
         KindSchema(kind: kinds.setup, traits: [], traitProperties: [], properties: [
             .string("name", required: true),
             .reference("exercise", kind: kinds.exercise, required: true),

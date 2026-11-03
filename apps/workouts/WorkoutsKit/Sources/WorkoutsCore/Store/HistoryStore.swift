@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// One finished session as its history file holds it.
 public struct HistoryEntry: Hashable, Sendable, Identifiable {
@@ -179,7 +180,7 @@ public struct HistoryStore: Sendable {
 /// set written before those fields existed. The file is rewritten as format
 /// 2 the next time it is saved.
 public enum HistoryMigration {
-    public static func fromFormat1(_ records: [FlatRecord], kinds: KindNames) -> [FlatRecord] {
+    public static func fromFormat1(_ records: [FlatRecord], kinds: WorkoutsKinds) -> [FlatRecord] {
         records.map { record in
             var record = record
             var properties = record.properties

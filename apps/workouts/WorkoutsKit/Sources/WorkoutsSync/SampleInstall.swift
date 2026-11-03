@@ -1,5 +1,6 @@
 import Foundation
 import WorkoutsCore
+import SubstrateCore
 
 /// Whether the sample routine was written into one server and repository
 /// (decision S1, owner 2026-11-02). The app writes the sample once, the first

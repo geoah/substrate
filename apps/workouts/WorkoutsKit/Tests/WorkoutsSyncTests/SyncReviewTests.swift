@@ -1,8 +1,11 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 private let notFound = #"{"error":{"code":"not_found","message":"not found"}}"#
 private let codec = RecordCodec()

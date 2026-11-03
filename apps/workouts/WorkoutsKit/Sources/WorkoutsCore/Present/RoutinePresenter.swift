@@ -143,7 +143,7 @@ public enum RoutinePresenter {
                 }
             )
         }
-        let unreadable = catalog.unreadable.count { $0.kind == KindNames.v1.routine }
+        let unreadable = catalog.unreadable.count { $0.kind == WorkoutsKinds.v1.routine }
         return RoutineListPresentation(
             sections: sections,
             unreadable: unreadable == 0 ? nil : "\(Format.count(unreadable, "routine")) could not be read"

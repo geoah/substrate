@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 // DESIGN §10.3: the whole path (records, the history index, SuggestionInputs,
 // suggest) over sessions.json alone, history newest first, as the examples
@@ -176,7 +177,7 @@ struct ExampleProgressionTests {
 
     @Test("Fri 30 Oct, before anything is done: every row of §10.3's table")
     func nextFullyBody() throws {
-        let start = DateText.parse("2026-10-30T13:42:00Z")!
+        let start = Timestamp.parse("2026-10-30T13:42:00Z")!
         let history = try Progression.history(before: start)
         var script = try Progression.start(at: start)
         var state = try script.current
@@ -209,7 +210,7 @@ struct ExampleProgressionTests {
 
     @Test("Fri 30 Oct: the push-up's reps are approximate, pre-filled as planned (rirstop)")
     func pushUpHint() throws {
-        let start = DateText.parse("2026-10-30T13:42:00Z")!
+        let start = Timestamp.parse("2026-10-30T13:42:00Z")!
         let history = try Progression.history(before: start)
         let script = try Progression.start(at: start)
         let presentation = SessionPresenter.present(try script.current, history: history, settings: Progression.settings, now: start)

@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// The unit a load was entered in.
 public enum MassUnit: String, Codable, Sendable, CaseIterable {

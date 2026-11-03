@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// One movement the owner trains (`exercise.yaml`; no traits). Fields follow
 /// the kind file's order. The suggestion settings are optional; each says what

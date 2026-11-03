@@ -1,4 +1,5 @@
 import Observation
+import SubstrateCore
 import WorkoutsCore
 import SwiftUI
 import UIKit

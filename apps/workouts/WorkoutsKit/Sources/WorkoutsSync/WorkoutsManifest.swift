@@ -1,5 +1,8 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateCore
+import SubstrateDevice
 import WorkoutsCore
 
 /// What Substrate Workouts asks a substrate for (decision record 0214):
@@ -38,7 +41,7 @@ public enum WorkoutsManifest {
     public static let healthSleep = "substrate.reamde.dev/health/sleep"
     public static let healthAccount = "providers.substrate.reamde.dev/applehealth/account"
 
-    public static let writeScope = "write:\(KindNames.packageID)/*"
+    public static let writeScope = "write:\(WorkoutsKinds.packageID)/*"
 
     /// The coach's reads outside training, as its closure declares them
     /// (apps/workouts/scripts/workouts-package.py, COACH_READS): the two health
@@ -63,7 +66,7 @@ public enum WorkoutsManifest {
     /// published packages, in the order they land.
     public static let details = [
         AuthorizationDetail.package(healthPackage, atLeast: 1),
-        AuthorizationDetail.package(KindNames.packageID, atLeast: trainingVersion),
+        AuthorizationDetail.package(WorkoutsKinds.packageID, atLeast: trainingVersion),
         AuthorizationDetail.package(Coach.package, atLeast: coachVersion),
     ]
 
@@ -80,7 +83,7 @@ public enum WorkoutsManifest {
             requirement: requirement,
             claimedRedirect: claimedRedirect,
             passwordFallback: .never,
-            names: [healthPackage: "Health", KindNames.packageID: "Training", Coach.package: "Workout coach"],
+            names: [healthPackage: "Health", WorkoutsKinds.packageID: "Training", Coach.package: "Workout coach"],
             kindLabels: [
                 healthWorkout: KindLabel(singular: "Workout", plural: "Workouts"),
                 healthSleep: KindLabel(singular: "Sleep", plural: "Sleep"),

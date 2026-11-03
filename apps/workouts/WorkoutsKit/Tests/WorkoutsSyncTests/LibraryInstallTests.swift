@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 /// The exercise library's seeding (`LibraryInstall`): the server's marker,
 /// what a run writes and what it never touches.
@@ -11,7 +12,7 @@ struct LibraryInstallTests {
     let exercise = "substrate.reamde.dev/training/exercise"
     let marker = "substrate.reamde.dev/training/library"
 
-    func code(_ id: String, since: Int) -> WorkoutsCore.JSONValue {
+    func code(_ id: String, since: Int) -> JSONValue {
         .object(["system": .string(ExerciseLibrary.system), "code": .string(id), "version": .string(String(since))])
     }
 

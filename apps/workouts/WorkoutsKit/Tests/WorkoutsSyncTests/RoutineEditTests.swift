@@ -1,8 +1,11 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 /// A routine edited on the phone: nothing the editor does not show is lost
 /// across a read, an edit and the write; the write is a guarded PATCH of
@@ -17,16 +20,16 @@ struct RoutineEditTests {
     /// repository is public), and `sample-every-feature`. Set
     /// `WORKOUTS_REAL_ROUTINES` to a folder of server answers
     /// (`<id>.json`) to run the same checks on the real records.
-    static func serverRecords() throws -> [(name: String, json: WorkoutsCore.JSONValue)] {
-        var out: [(String, WorkoutsCore.JSONValue)] = []
+    static func serverRecords() throws -> [(name: String, json: JSONValue)] {
+        var out: [(String, JSONValue)] = []
         for name in ["routine-floor-first", "routine-sample"] {
-            out.append((name, try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: Fixtures.data(name))))
+            out.append((name, try JSONDecoder().decode(JSONValue.self, from: Fixtures.data(name))))
         }
         if let folder = ProcessInfo.processInfo.environment["WORKOUTS_REAL_ROUTINES"] {
             for url in try FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: folder), includingPropertiesForKeys: nil)
                 where url.pathExtension == "json"
             {
-                out.append((url.lastPathComponent, try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: Data(contentsOf: url))))
+                out.append((url.lastPathComponent, try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))))
             }
         }
         return out
@@ -35,7 +38,7 @@ struct RoutineEditTests {
     /// A server answer with fields this build does not know written at every
     /// level, as the coach or a later package would: on the routine, each
     /// group, each slot and each planned set.
-    static func withUnknownFields(_ json: WorkoutsCore.JSONValue) throws -> WorkoutsCore.JSONValue {
+    static func withUnknownFields(_ json: JSONValue) throws -> JSONValue {
         guard case var .object(record) = json, case var .object(properties)? = record["properties"] else { throw CocoaError(.coderReadCorrupt) }
         properties["coachRationale"] = .string("written by the coach")
         if case let .array(groups)? = properties["groups"] {
@@ -68,7 +71,7 @@ struct RoutineEditTests {
     /// (§3.4 rule 4), filled in on both sides: the same record either way.
     /// The top-level `title` is the server's, from the kind's
     /// `displayTemplate`; the codec never reads or writes it.
-    static func normalized(_ value: WorkoutsCore.JSONValue) -> WorkoutsCore.JSONValue {
+    static func normalized(_ value: JSONValue) -> JSONValue {
         guard case var .object(properties) = value else { return value }
         properties["title"] = nil
         if case let .array(slots)? = properties["slots"] {
@@ -89,7 +92,7 @@ struct RoutineEditTests {
     }
 
     /// Every path at which two JSON values differ: `slots[3].sets[0].repsMax`.
-    static func differences(_ a: WorkoutsCore.JSONValue?, _ b: WorkoutsCore.JSONValue?, at path: String = "") -> [String] {
+    static func differences(_ a: JSONValue?, _ b: JSONValue?, at path: String = "") -> [String] {
         switch (a, b) {
         case let (.object(x)?, .object(y)?):
             let keys = Set(x.map(\.key)).union(y.map(\.key)).sorted()
@@ -102,14 +105,14 @@ struct RoutineEditTests {
     }
 
     /// Reads a server answer as the app does.
-    func read(_ json: WorkoutsCore.JSONValue) throws -> (FlatRecord, Routine) {
+    func read(_ json: JSONValue) throws -> (FlatRecord, Routine) {
         let record = try WorkoutsAPI.record(json)
         return (record, try codec.decodeRoutine(record))
     }
 
     /// Applies an edit and answers the paths that changed against the
     /// server's properties, and the PATCH's keys.
-    func edited(_ json: WorkoutsCore.JSONValue, _ edit: (inout RoutineEditor) throws -> Void) throws -> (paths: [String], patch: Set<String>, after: WorkoutsCore.JSONValue) {
+    func edited(_ json: JSONValue, _ edit: (inout RoutineEditor) throws -> Void) throws -> (paths: [String], patch: Set<String>, after: JSONValue) {
         let (record, routine) = try read(json)
         var editor = RoutineEditor(routine)
         try edit(&editor)

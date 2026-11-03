@@ -1,8 +1,14 @@
 import Foundation
-import SubstrateKit
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 /// The app's whole path against a real substrate, skipped unless
 /// `WORKOUTS_E2E_SERVER` names one and `WORKOUTS_E2E_OWNER_TOKEN` holds a
@@ -47,9 +53,9 @@ struct LiveServerTests {
         // row with the set up it plans.
         let owner = SubstrateClient(server: server, token: ownerToken)
         let view = try await owner.send("GET", "api/v1/authorizations/\(id)").data
-        let page = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: view)
+        let page = try JSONDecoder().decode(JSONValue.self, from: view)
         guard case let .object(fields) = page, case let .array(scopes)? = fields["scopes"] else { Issue.record("no scopes"); return }
-        let approved = scopes.compactMap { scope -> WorkoutsCore.JSONValue? in
+        let approved = scopes.compactMap { scope -> JSONValue? in
             guard case let .object(row) = scope else { return nil }
             return row["scope"]
         }
@@ -59,7 +65,7 @@ struct LiveServerTests {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
         var answer = try await owner.send("POST", "api/v1/authorizations/\(id)",
-                                          body: .json(encoder.encode(WorkoutsCore.JSONValue.object(approval))),
+                                          body: .json(encoder.encode(JSONValue.object(approval))),
                                           timeout: SubstrateClient.Timeout.serverWork).data
         var next = redirectOf(answer)
         // The set up runs before the code exists; the page reads the request
@@ -75,7 +81,7 @@ struct LiveServerTests {
         let session = try await oauth.session(exchanging: code, redirect: redirect, pkce: pkce, server: server)
         #expect(session.isApp)
         #expect(session.scopes?.contains(WorkoutsManifest.writeScope) == true)
-        #expect(session.details.contains { $0.type == AuthorizationDetail.Types.package && $0.package == KindNames.packageID })
+        #expect(session.details.contains { $0.type == AuthorizationDetail.Types.package && $0.package == WorkoutsKinds.packageID })
 
         // The approval installed health, training and the coach from the
         // catalog and the authority document; the app reads where it stands
@@ -248,12 +254,12 @@ struct LiveServerTests {
         #expect(stored.properties["status"] == .string("finished"))
         let sets = try await ownerAPI.list([codec.kinds.set])
         #expect(sets.count == finished.sets.count + signedOut.sets.count)
-        print("live: \(session.repository) holds \(KindNames.packageID) at version \(shipped), " +
+        print("live: \(session.repository) holds \(WorkoutsKinds.packageID) at version \(shipped), " +
             "the sample written and deleted, session \(finished.session.id.rawValue) finished with \(sets.count) sets")
     }
 
     private func redirectOf(_ data: Data) -> String? {
-        guard case let .object(object)? = try? JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: data) else { return nil }
+        guard case let .object(object)? = try? JSONDecoder().decode(JSONValue.self, from: data) else { return nil }
         for key in ["redirect", "next"] {
             if case let .string(url)? = object[key], !url.isEmpty { return url }
         }

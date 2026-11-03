@@ -1,6 +1,9 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import WorkoutsCore
+import SubstrateCore
 
 /// The requests the app makes, over SubstrateKit's client, with WorkoutsCore's
 /// JSON on both sides: a decimal keeps its digits and an object its key
@@ -23,7 +26,7 @@ public struct WorkoutsAPI: Sendable {
     public func get(_ kind: String, _ id: String) async throws -> FlatRecord? {
         let response = try await client.send("GET", path(kind, id), accept: [404])
         if response.status == 404 { return nil }
-        let value = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: response.data)
+        let value = try JSONDecoder().decode(JSONValue.self, from: response.data)
         if case let .object(object) = value, let deleted = object["deletedAt"], deleted != .null { return nil }
         return try Self.record(value)
     }
@@ -32,7 +35,7 @@ public struct WorkoutsAPI: Sendable {
     /// list. A read that must stop sooner names a
     /// limit and is told when it was reached (`ListTruncated`), never handed
     /// a short list as if it were the whole.
-    public func list(_ kinds: [String], properties: [String: SubstrateKit.JSONValue] = [:], limit: Int? = nil) async throws -> [FlatRecord] {
+    public func list(_ kinds: [String], properties: [String: JSONValue] = [:], limit: Int? = nil) async throws -> [FlatRecord] {
         var query = ListQuery(kinds: kinds, properties: properties, first: 500)
         var out: [FlatRecord] = []
         while true {
@@ -71,7 +74,7 @@ public struct WorkoutsAPI: Sendable {
     public func packageRow(_ id: String) async throws -> JSONObject? {
         let response = try await client.send("GET", SubstrateClient.recordPath("substrate.reamde.dev/core/package", id), accept: [404])
         if response.status == 404 { return nil }
-        guard case let .object(object) = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: response.data),
+        guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: response.data),
               case let .object(properties)? = object["properties"]
         else { return nil }
         if let deleted = object["deletedAt"], deleted != .null { return nil }
@@ -81,14 +84,14 @@ public struct WorkoutsAPI: Sendable {
     // MARK: Wire
 
     struct Page: Decodable {
-        var records: [WorkoutsCore.JSONValue]
+        var records: [JSONValue]
         var cursor: String?
 
         enum CodingKeys: String, CodingKey { case records, cursor }
 
         init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            records = try c.decodeIfPresent([WorkoutsCore.JSONValue].self, forKey: .records) ?? []
+            records = try c.decodeIfPresent([JSONValue].self, forKey: .records) ?? []
             cursor = try? c.decodeIfPresent(String.self, forKey: .cursor)
         }
     }
@@ -96,7 +99,7 @@ public struct WorkoutsAPI: Sendable {
     /// A server record as the codec reads it: `kind`, `id`, `properties`
     /// and `version`, every other field (stamps, labels, property metadata)
     /// left behind.
-    static func record(_ value: WorkoutsCore.JSONValue) throws -> FlatRecord {
+    static func record(_ value: JSONValue) throws -> FlatRecord {
         guard case let .object(object) = value else { throw CodecError.invalid(kind: "?", id: "?", property: "record", value: "not an object") }
         var flat = JSONObject()
         for key in ["kind", "id", "properties", "version"] {
@@ -107,13 +110,13 @@ public struct WorkoutsAPI: Sendable {
     }
 
     static func version(of data: Data) throws -> Int {
-        guard case let .object(object) = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: data),
+        guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: data),
               case let .number(number)? = object["version"]
         else { return 0 }
         return NSDecimalNumber(decimal: number).intValue
     }
 
-    static func body(_ value: WorkoutsCore.JSONValue) throws -> RequestBody {
+    static func body(_ value: JSONValue) throws -> RequestBody {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
         return .json(try encoder.encode(value))

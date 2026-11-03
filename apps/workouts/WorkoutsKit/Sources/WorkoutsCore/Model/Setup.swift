@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// One station an exercise is done on, such as the hotel gym's chest press
 /// (`setup.yaml`; no traits). A set names it (`set.setup`), and PREVIOUS and

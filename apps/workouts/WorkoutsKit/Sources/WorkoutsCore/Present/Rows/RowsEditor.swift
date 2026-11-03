@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 // The editor open in place on the Rows layout: the set to do now (`log`), or
 // a done set being fixed (`fix`). Every control carries the `SetValuesPatch`

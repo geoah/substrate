@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// Hevy's workout export, `workout_data.csv` (Profile → Settings → Export &
 /// Import Data → Export Data → Export Workouts): one row per set, a workout
@@ -479,7 +480,7 @@ public enum HevyImport {
     /// record at noon of its day, every value Hevy holds kept.
     static func measurementRecord(_ entry: HevyAPI.BodyMeasurement, day: Date, adapter: String) -> FlatRecord {
         var properties = JSONObject()
-        properties["at"] = .string(DateText.format(day.addingTimeInterval(12 * 3600)))
+        properties["at"] = .string(Timestamp.format(day.addingTimeInterval(12 * 3600), precision: .seconds))
         func mass(_ key: String, _ value: Double?) {
             guard let value = value.flatMap(HevyAPI.decimal) else { return }
             properties[key] = .object(["value": .string(DecimalText.format(value)), "unit": .string("kg")])
@@ -501,7 +502,7 @@ public enum HevyImport {
         }
         properties["adapter"] = .string(adapter)
         let id = entry.id.map { "hevy-\($0)" } ?? "hevy-\(entry.date)"
-        return FlatRecord(kind: KindNames.v1.bodyMeasurement, id: id, properties: properties)
+        return FlatRecord(kind: WorkoutsKinds.v1.bodyMeasurement, id: id, properties: properties)
     }
 
     /// A Hevy routine as a workout routine: its exercises in order as slots,

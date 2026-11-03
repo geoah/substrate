@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 /// Every example session (the three of sessions.json and the three of
 /// coverage.json, one of them in progress) with its sets.

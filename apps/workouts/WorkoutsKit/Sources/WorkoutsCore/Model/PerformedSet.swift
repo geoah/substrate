@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// One performed set (`set.yaml`; traits `temporal(point)` and `revised`). A
 /// drop, a mini-set or one side is a record of its own, chained to its head.

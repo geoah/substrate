@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 // Fixes from the data and UI review of the Rows layout (2026-10-31): the
 // Table's RPE sheet rates what it confirms, a planned set's unknown fields
@@ -11,7 +12,7 @@ import Testing
 // test but the volume one failed before its fix; that one pins the rule the
 // package README and DESIGN §4.11 now state.
 
-private let kinds = KindNames.v1
+private let kinds = WorkoutsKinds.v1
 
 /// One press slot whose planned sets aim at RPE 8, with a set rest of 90 s.
 private func pressSession() throws -> EngineScript {

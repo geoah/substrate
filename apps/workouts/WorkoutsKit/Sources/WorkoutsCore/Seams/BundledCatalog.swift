@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// The catalogue signed out: the sample routine and its exercises bundled
 /// with the build (`Resources/Bundled`, which `apps/workouts/scripts/workouts-package.py`

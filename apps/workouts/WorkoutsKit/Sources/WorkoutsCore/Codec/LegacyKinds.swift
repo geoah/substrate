@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// The training kinds as the builds before the package was published
 /// spelled them on the phone: `~/training/…`, swapped for the repository's
@@ -11,13 +12,13 @@ import Foundation
 /// format, after which nothing is left to respell.
 public enum LegacyKinds {
     /// The package id those builds spelled.
-    public static let packageID = "~/\(KindNames.package)"
+    public static let packageID = "~/\(WorkoutsKinds.package)"
 
     /// `text` in the published spelling, or itself when it does not name
     /// the package: the package id, a kind under it or a record path.
     public static func respell(_ text: String) -> String {
-        if text == packageID { return KindNames.packageID }
-        if text.hasPrefix(packageID + "/") { return KindNames.packageID + text.dropFirst(packageID.count) }
+        if text == packageID { return WorkoutsKinds.packageID }
+        if text.hasPrefix(packageID + "/") { return WorkoutsKinds.packageID + text.dropFirst(packageID.count) }
         return text
     }
 

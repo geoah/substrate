@@ -202,7 +202,7 @@ struct ProposalCard: View {
     }
 
     private var change: RecordChange {
-        RecordChange(op: op, kind: targetKind, id: targetID, title: recordTitle(target.map { .object($0.properties) }),
+        RecordChange(op: op, kind: targetKind, id: targetID, title: recordTitle(target.map { .object(JSONObject($0.properties)) }),
                      values: values)
     }
 

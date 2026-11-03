@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 // The session engine (DESIGN §4, §10.1, §10.5): every event's success and
 // each error, the invariants and the journal's fold after every event, Finish

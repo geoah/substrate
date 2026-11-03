@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// A routine being edited on the phone: the routine as it stood when the
 /// edit began (`base`, its server version included) and the routine as the

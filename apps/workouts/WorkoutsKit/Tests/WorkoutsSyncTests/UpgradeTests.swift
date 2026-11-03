@@ -1,8 +1,11 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 /// The account folder the last release left on the phone, its outbox and
 /// catalogue cache spelled `~/training/…` (decision T3): read once in the
@@ -41,11 +44,11 @@ struct UpgradeTests {
         #expect(text.contains("\"\(codec.kinds.exercise)/leg-press-machine\"") && text.contains("\"\(codec.kinds.session)/\(session)\""))
         #expect(await outbox.version(of: codec.kinds.routine, "day-1-strength-foundation") == 1)
         #expect(await outbox.version(of: codec.kinds.exercise, "leg-press-machine") == 2)
-        #expect(await outbox.versions.keys.allSatisfy { $0.hasPrefix(KindNames.packageID + "/") })
+        #expect(await outbox.versions.keys.allSatisfy { $0.hasPrefix(WorkoutsKinds.packageID + "/") })
 
         // Written back once, at the current format, every key respelled.
         let rewritten = try Data(contentsOf: url)
-        let file = try #require(try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: rewritten).objectValue)
+        let file = try #require(try JSONDecoder().decode(JSONValue.self, from: rewritten).objectValue)
         #expect(file["format"] == .number(Decimal(Outbox.fileFormat)) && Outbox.fileFormat == 2)
         #expect(!String(decoding: rewritten, as: UTF8.self).contains("~/"))
         #expect(file["chains"]?.objectValue?.keys.sorted() == ["\(codec.kinds.routine)/day-1-strength-foundation"])
@@ -64,7 +67,7 @@ struct UpgradeTests {
         _ = try legacyOutbox(in: directory)
         let server = ScriptedServer()
         server.on { sent in
-            guard sent.path.hasPrefix("/api/v1/\(KindNames.packageID)/") else { return (404, notFoundBody) }
+            guard sent.path.hasPrefix("/api/v1/\(WorkoutsKinds.packageID)/") else { return (404, notFoundBody) }
             if sent.method == "PUT" { return (200, record(1)) }
             guard sent.method == "PATCH", case let .object(body)? = sent.body, body["ifVersion"] == .number(1) else { return nil }
             return (200, record(2))
@@ -93,8 +96,8 @@ struct UpgradeTests {
         let plain = JSONEncoder()
         plain.outputFormatting = [.withoutEscapingSlashes]
         let text = String(decoding: try plain.encode(RecordFile(format: 1, records: records)), as: UTF8.self)
-            .replacingOccurrences(of: KindNames.packageID + "/", with: "~/training/")
-        #expect(text.contains("\"~/training/routine\"") && !text.contains(KindNames.packageID))
+            .replacingOccurrences(of: WorkoutsKinds.packageID + "/", with: "~/training/")
+        #expect(text.contains("\"~/training/routine\"") && !text.contains(WorkoutsKinds.packageID))
         let remote = RemoteCatalog(directory: temporaryDirectory(), codec: codec, writingOptions: .atomic)
         try FileManager.default.createDirectory(at: remote.cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(text.utf8).write(to: remote.cacheURL)

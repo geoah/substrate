@@ -1,22 +1,58 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// What every Apple app that speaks to a substrate shares: the server and
-// whether it is new enough, the requests, signing in through the app
-// authorization flow, the session, whether the app is still set up, the
-// screens for each, and the record as the console draws it (README.md).
+// What every app that speaks to a substrate shares, as libraries that each
+// depend only on the ones listed before them (README.md, and
+// `mise run lint:apps`, which holds the order). The portable ones build for
+// iOS, macOS, Linux and Android; SubstrateDeviceApple and SubstrateUI
+// compile to nothing off Apple systems. SubstrateKit is every library under
+// one import, for the apps written against the single module it once was.
 let package = Package(
     name: "SubstrateKit",
     platforms: [.iOS("26.0"), .macOS("26.0")],
     products: [
         .library(name: "SubstrateKit", targets: ["SubstrateKit"]),
+        .library(name: "SubstrateCore", targets: ["SubstrateCore"]),
+        .library(name: "SubstrateDevice", targets: ["SubstrateDevice"]),
+        .library(name: "SubstrateAPI", targets: ["SubstrateAPI"]),
+        .library(name: "SubstrateAuth", targets: ["SubstrateAuth"]),
+        .library(name: "SubstrateTesting", targets: ["SubstrateTesting"]),
+        .library(name: "SubstrateDeviceApple", targets: ["SubstrateDeviceApple"]),
+        .library(name: "SubstrateUI", targets: ["SubstrateUI"]),
+    ],
+    dependencies: [
+        // SHA-256 for PKCE where CryptoKit is not: Linux and Android.
+        .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1"),
     ],
     targets: [
-        .target(name: "SubstrateKit", dependencies: ["SubstrateResolv"]),
+        // The JSON value, the record and its flat wire form, kind references
+        // and their words, RFC 3339 and ISO 8601, the errors and `explain`,
+        // the scope words.
+        .target(name: "SubstrateCore"),
+        // The device services' protocols and their request and answer values.
+        .target(name: "SubstrateDevice", dependencies: ["SubstrateCore"]),
+        // The client, discovery, versions, the requirement and the locator.
+        .target(name: "SubstrateAPI", dependencies: ["SubstrateCore", "SubstrateDevice"]),
+        // The manifest, the sign-in, the session and the status check.
+        .target(name: "SubstrateAuth", dependencies: [
+            "SubstrateCore", "SubstrateDevice", "SubstrateAPI",
+            .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .android])),
+        ]),
+        // The scripted server and the fake device services tests use.
+        .target(name: "SubstrateTesting", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth"]),
         // The plain resolver's verdict on a TXT query, which tells a SERVFAIL
         // from a name without the record where DNS-SD cannot.
-        .target(name: "SubstrateResolv", linkerSettings: [.linkedLibrary("resolv")]),
-        .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit"]),
+        .target(name: "SubstrateResolv", linkerSettings: [.linkedLibrary("resolv", .when(platforms: [.macOS, .iOS]))]),
+        // The device services on Apple frameworks.
+        .target(name: "SubstrateDeviceApple", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateResolv"]),
+        // The SwiftUI screens and record views.
+        .target(name: "SubstrateUI", dependencies: [
+            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateDeviceApple",
+        ]),
+        .target(name: "SubstrateKit", dependencies: [
+            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateDeviceApple", "SubstrateUI",
+        ]),
+        .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateTesting"]),
     ],
-    swiftLanguageModes: [.v5]
+    swiftLanguageModes: [.v6]
 )

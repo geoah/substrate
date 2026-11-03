@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 // The data-model review's decisions (2026-10-31) as the app holds them:
 // the codec reads substrate's canonical reference objects and keeps unknown
@@ -12,7 +13,7 @@ import Testing
 
 private func d(_ text: String) -> Decimal { Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))! }
 
-private let kinds = KindNames.v1
+private let kinds = WorkoutsKinds.v1
 
 /// Every reference of a record, at every level, as substrate serves it:
 /// `{"ref": "<kind>/<id>"}` in place of the bare path.
@@ -368,7 +369,7 @@ struct ReviewEffortTests {
 
         // The 26 October leg press set 1 was logged with the plan's RPE pre-filled.
         let routine = try #require(try EngineFixtures.routines()["day-1-strength-foundation"])
-        var next = EngineScript(at: DateText.parse("2026-10-29T12:00:00Z")!)
+        var next = EngineScript(at: Timestamp.parse("2026-10-29T12:00:00Z")!)
         try next.start(routine, exercises: Array(try EngineFixtures.exercises().values))
         let history = try Progression.history(before: next.now)
         let set1 = try #require(Previous.find(for: try next.row("leg-press", 2), in: next.current, history: history))

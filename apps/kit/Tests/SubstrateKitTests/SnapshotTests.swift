@@ -3,7 +3,17 @@ import AppKit
 import Foundation
 import SwiftUI
 import Testing
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+@testable import SubstrateAPI
+@testable import SubstrateAuth
+@testable import SubstrateCore
+@testable import SubstrateDevice
+@testable import SubstrateDeviceApple
 @testable import SubstrateKit
+@testable import SubstrateUI
+import SubstrateTesting
 
 /// Every screen of the kit in the states an app shows it in, drawn to PNG
 /// files in the directory SUBSTRATEKIT_SNAPSHOTS names, for a person to look

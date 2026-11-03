@@ -1,6 +1,16 @@
 import Foundation
 import Testing
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+@testable import SubstrateAPI
+@testable import SubstrateAuth
+@testable import SubstrateCore
+@testable import SubstrateDevice
+@testable import SubstrateDeviceApple
 @testable import SubstrateKit
+@testable import SubstrateUI
+import SubstrateTesting
 
 /// The cases internal/domains/record_test.go holds the server's parser to,
 /// so the app reads one record as the server does.
@@ -55,6 +65,7 @@ import Testing
 
     /// RFC 1035's TXT rdata: each character-string carries its length, and
     /// one record's strings are one value.
+    #if canImport(dnssd)
     @Test func joinsARecordSplitAcrossStrings() {
         let first = Array("v=substrate1 server=".utf8)
         let second = Array("https://a.example.org".utf8)
@@ -64,37 +75,12 @@ import Testing
         // A length past the end reads what is there.
         #expect(DNSServiceTXTResolver.text([9] + Array("abc".utf8)) == "abc")
     }
-}
-
-/// A TXT table, keyed by the name looked up, that keeps every name asked.
-final class TableResolver: TXTResolver, @unchecked Sendable {
-    private let lock = NSLock()
-    private let table: [String: [String]]
-    private let failure: Error?
-    private var names: [String] = []
-
-    init(_ table: [String: [String]] = [:], failure: Error? = nil) {
-        self.table = table
-        self.failure = failure
-    }
-
-    var asked: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return names
-    }
-
-    func txt(_ name: String) async throws -> [String]? {
-        lock.lock()
-        names.append(name)
-        lock.unlock()
-        if let failure { throw failure }
-        return table[name]
-    }
+    #endif
 }
 
 /// Servers by host: each answers its discovery and its metadata, issued
 /// under its own origin, and a host may serve `repository.json` instead.
+/// Every field is read and written under `lock`.
 final class HostTransport: HTTPTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var routes: [String: (Int, String)] = [:]
@@ -123,10 +109,10 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         guard let url = request.url, let host = url.host(percentEncoded: false) else { throw URLError(.badURL) }
         let key = "\(host)\(url.path(percentEncoded: true))"
-        lock.lock()
-        sentTo.append(key)
-        let answer = routes[key]
-        lock.unlock()
+        let answer = lock.withLock {
+            sentTo.append(key)
+            return routes[key]
+        }
         // A host that serves nothing answers as a web server that is not a
         // substrate: a page.
         let (status, body) = answer ?? (404, "<html>not found</html>")
@@ -185,15 +171,15 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     /// A lookup that failed said nothing, so neither the web host nor the
     /// parent may answer for the record it missed.
     @Test func aFailedLookupStopsDiscovery() async throws {
-        let failures: [Error] = [
-            URLError(.timedOut),
-            DNSServiceTXTResolver.Failed(name: "_substrate.alice.substrate.example.org", code: -65537),
+        let failures: [TXTAnswer] = [
+            .failed("Looking up _substrate.alice.substrate.example.org took too long."),
+            .failed("Looking up _substrate.alice.substrate.example.org failed (DNS-SD error -65537)."),
         ]
         for failure in failures {
             let transport = HostTransport().substrate("substrate.example.org").substrate("other.example.net")
                 .on("alice.substrate.example.org", ServerLocator.repositoryDocumentPath, json: #"{"server":"https://other.example.net"}"#)
             do {
-                _ = try await locator(transport, TableResolver(failure: failure))
+                _ = try await locator(transport, TableResolver(answer: failure))
                     .locate("alice.substrate.example.org", requirement: requirement, app: "App")
                 Issue.record("a failed lookup fell through to another server: \(failure)")
             } catch let failed as ServerLocator.LookupFailed {
@@ -212,7 +198,7 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     @Test func anUnconfirmedNegativeStillFindsTheParent() async throws {
         let transport = HostTransport().substrate("substrate.example.org").substrate("other.example.net")
             .on("alice.substrate.example.org", ServerLocator.repositoryDocumentPath, json: #"{"server":"https://other.example.net"}"#)
-        let resolver = TableResolver(failure: DNSServiceTXTResolver.Unconfirmed(name: "_substrate.alice.substrate.example.org"))
+        let resolver = TableResolver(answer: .unconfirmedAbsent("Looking up _substrate.alice.substrate.example.org failed: the DNS servers did not answer it."))
         let found = try await locator(transport, resolver).locate("alice.substrate.example.org", requirement: requirement, app: "App")
         #expect(found.origin.absoluteString == "https://substrate.example.org")
         #expect(found.repository == "alice.substrate.example.org")
@@ -223,7 +209,7 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     /// person reads, and it says which of the two answers disagreed.
     @Test func anUnconfirmedNegativeWithNoParentStandsAsTheLookupFailure() async throws {
         let transport = HostTransport()
-        let resolver = TableResolver(failure: DNSServiceTXTResolver.Unconfirmed(name: "_substrate.ada.example.com", answered: true))
+        let resolver = TableResolver(answer: .unconfirmedAbsent("Looking up _substrate.ada.example.com gave two answers: the system said there is no record and the DNS servers returned one."))
         do {
             _ = try await locator(transport, resolver).locate("ada.example.com", requirement: requirement, app: "App")
             Issue.record("an unconfirmed lookup with no parent server found one")
@@ -357,6 +343,7 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
         #expect(local.signInRedirect == nil)
     }
 
+    #if canImport(AuthenticationServices)
     @Test func theCallbackIsReadOnlyFromTheClaimedAddress() throws {
         let back = try #require(URL(string: "https://substrate.example.org/apps/workouts/callback?code=c&state=s&iss=https%3A%2F%2Fada.example.com"))
         #expect(try WebAuthenticator.query(back, redirect: redirect) == ["code": "c", "state": "s", "iss": "https://ada.example.com"])
@@ -368,6 +355,8 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
             #expect(throws: OAuthRefusal.self, "\(other)") { try WebAuthenticator.query(URL(string: other)!, redirect: redirect) }
         }
     }
+
+    #endif
 
     @Test func theAuthorizeURLHintsTheRepository() throws {
         let meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(metadataJSON().utf8))

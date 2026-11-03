@@ -1,6 +1,9 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import WorkoutsCore
+import SubstrateCore
 
 /// One write waiting for the server, in the phone's spelling.
 public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {

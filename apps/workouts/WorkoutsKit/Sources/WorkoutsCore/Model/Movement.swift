@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// What a person searches for, such as Chest Press (`movement.yaml`; no
 /// traits), and the muscles it works. Its exercises are the equipment

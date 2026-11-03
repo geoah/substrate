@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 // The routine page's and the Stats tab's numbers, over the three example
 // sessions: Day 1 on Thu 22 Oct and Mon 26 Oct, Fully Body Collection #1 on
@@ -9,7 +10,7 @@ import Testing
 private func d(_ text: String) -> Decimal { Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))! }
 
 private enum Stats {
-    static let now = DateText.parse("2026-10-30T13:42:00Z")!
+    static let now = Timestamp.parse("2026-10-30T13:42:00Z")!
     static let dayOne = RoutineID("day-1-strength-foundation")
     static let fullBody = RoutineID("fully-body-collection-1")
 
@@ -31,7 +32,7 @@ private enum Stats {
     }
 
     static func session(on day: String) throws -> SessionRecords {
-        try #require(ExampleFixtures.sessions("sessions").first { DateText.format($0.session.at).hasPrefix(day) })
+        try #require(ExampleFixtures.sessions("sessions").first { Timestamp.format($0.session.at, precision: .seconds).hasPrefix(day) })
     }
 
     static func total(_ stats: StatsPresentation, _ label: String) throws -> StatsTotal {

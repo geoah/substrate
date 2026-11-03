@@ -1,6 +1,16 @@
 import Foundation
 import Testing
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+@testable import SubstrateAPI
+@testable import SubstrateAuth
+@testable import SubstrateCore
+@testable import SubstrateDevice
+@testable import SubstrateDeviceApple
 @testable import SubstrateKit
+@testable import SubstrateUI
+import SubstrateTesting
 
 @Suite struct Proofs {
     /// RFC 7636, appendix B.
@@ -268,6 +278,7 @@ import Testing
         try await password.revoke(transport: gone)
     }
 
+    #if canImport(Security)
     @Test func aSignOutKeepsTheTokenUntilTheServerRevokesIt() async throws {
         let store = SessionStore(service: "dev.reamde.substrate.kit.tests", account: "test-\(UUID().uuidString)")
         defer {
@@ -293,31 +304,7 @@ import Testing
         #expect(await store.revokePending(current: session, transport: busy) == [])
         #expect(store.pendingRevocations().isEmpty)
     }
-}
-
-/// Storage in memory that refuses to write the accounts in `refusing`, as a
-/// Keychain locked before the first unlock does.
-final class MemoryStorage: SessionStorage, @unchecked Sendable {
-    private let lock = NSLock()
-    private var items: [String: Data] = [:]
-    let refusing: Set<String>
-
-    init(refusing: Set<String> = []) {
-        self.refusing = refusing
-    }
-
-    func read(account: String) -> SessionStore.Item {
-        lock.withLock { items[account].map(SessionStore.Item.found) ?? .missing }
-    }
-
-    func write(_ data: Data, account: String) throws {
-        guard !refusing.contains(account) else { throw SessionStore.NotSaved(status: errSecInteractionNotAllowed) }
-        lock.withLock { items[account] = data }
-    }
-
-    func delete(account: String) {
-        lock.withLock { items[account] = nil }
-    }
+    #endif
 }
 
 /// A token stops being used on this device only once it is kept to revoke
@@ -483,13 +470,6 @@ actor PausedTransport: HTTPTransport {
     }
 }
 
-extension MemoryStorage {
-    /// An item as an earlier run left it, whatever this storage refuses now.
-    func writeUnchecked(_ data: Data, account: String) {
-        lock.withLock { items[account] = data }
-    }
-}
-
 @Suite struct Sessions {
     @Test func syncsSessionStillDecodes() throws {
         let old = #"{"server":"https://ada.example.com","repository":"ada.example.com","secret":"sub_x","tokenID":"tok_1"}"#
@@ -539,19 +519,23 @@ extension MemoryStorage {
         #expect(try JSONDecoder().decode(Session.self, from: JSONEncoder().encode(asked)).requestedScopes == ["read:*"])
         // An RFC 3339 stamp reads too.
         let stamped = #"{"version":2,"server":"https://a.example.com","repository":"a.example.com","secret":"s","expiresAt":"2026-12-01T10:00:00.123456789Z"}"#
-        #expect(try JSONDecoder().decode(Session.self, from: Data(stamped.utf8)).expiresAt == Timestamp.parse("2026-12-01T10:00:00.123Z"))
+        let expiresAt = try #require(try JSONDecoder().decode(Session.self, from: Data(stamped.utf8)).expiresAt)
+        #expect(abs(expiresAt.timeIntervalSince(try #require(Timestamp.parse("2026-12-01T10:00:00.123Z")))) < 0.001)
     }
 
+    #if canImport(Security)
     @Test func theStoreAsksTheKeychainForOneItem() {
-        let store = SessionStore(service: "dev.reamde.substrate.sync", accessGroup: "TEAMID.dev.reamde.substrate.sync")
+        let store = KeychainStorage(service: "dev.reamde.substrate.sync", accessGroup: "TEAMID.dev.reamde.substrate.sync")
         let query = store.query(account: "session")
         #expect(query[kSecAttrService as String] as? String == "dev.reamde.substrate.sync")
         #expect(query[kSecAttrAccessGroup as String] as? String == "TEAMID.dev.reamde.substrate.sync")
         #expect(query[kSecAttrAccount as String] as? String == "session")
-        #expect(SessionStore.Accessibility.afterFirstUnlockThisDeviceOnly.attribute == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
+        #expect(store.attribute == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
     }
+    #endif
 }
 
+#if canImport(Darwin)
 @Suite(.timeLimit(.minutes(1))) struct Loopback {
     @Test func theReceiverHandsOverTheRedirectsQueryAndNamesTheApp() async throws {
         let receiver = try await LoopbackReceiver.start(appName: "Substrate Sync")
@@ -568,3 +552,4 @@ extension MemoryStorage {
         #expect(String(decoding: body, as: UTF8.self).contains("Signed in. You can close this tab and go back to Substrate Sync."))
     }
 }
+#endif

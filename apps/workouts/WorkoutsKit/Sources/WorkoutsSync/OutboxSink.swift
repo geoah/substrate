@@ -1,5 +1,6 @@
 import Foundation
 import WorkoutsCore
+import SubstrateCore
 
 /// The session controller's sync seam (`SessionSyncSink`) over the outbox: a
 /// finished session, a Health link, a new exercise, a discard and a delete

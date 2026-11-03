@@ -1,5 +1,8 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateCore
+import SubstrateDevice
 import WorkoutsCore
 
 /// A package as this build carries it (`Resources/Package/training.json` and
@@ -15,9 +18,9 @@ public struct PackageManifest: Sendable {
     /// The version this build declares. Each release that changes a
     /// declaration ships the next one, additive only.
     public var version: Int
-    public var documents: [WorkoutsCore.JSONValue]
+    public var documents: [JSONValue]
 
-    public init(package: String, version: Int, documents: [WorkoutsCore.JSONValue]) {
+    public init(package: String, version: Int, documents: [JSONValue]) {
         self.package = package
         self.version = version
         self.documents = documents
@@ -37,7 +40,7 @@ public struct PackageManifest: Sendable {
     }
 
     static func decode(_ data: Data) throws -> PackageManifest {
-        guard case let .object(object) = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: data),
+        guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: data),
               case let .string(package)? = object["package"],
               case let .number(version)? = object["version"],
               case let .array(documents)? = object["documents"]

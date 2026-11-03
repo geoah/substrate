@@ -1,6 +1,16 @@
 import Foundation
 import Testing
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+@testable import SubstrateAPI
+@testable import SubstrateAuth
+@testable import SubstrateCore
+@testable import SubstrateDevice
+@testable import SubstrateDeviceApple
 @testable import SubstrateKit
+@testable import SubstrateUI
+import SubstrateTesting
 
 /// An HTTP server on a loopback port of its own, so two of them are two
 /// origins: each connection is answered `answer`, and every request that

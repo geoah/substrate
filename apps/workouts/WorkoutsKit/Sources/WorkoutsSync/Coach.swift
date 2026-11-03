@@ -1,6 +1,9 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import WorkoutsCore
+import SubstrateCore
 
 /// The workout coach (docs/plans/workouts-coach.md): an AI agent shipped in
 /// `substrate.reamde.dev/trainingcoach`, a published package the app's
@@ -10,7 +13,7 @@ import WorkoutsCore
 /// decision record 0217). This app only asks for the package and talks to
 /// the agent through its `agents:` scope.
 public enum Coach {
-    public static let package = "\(KindNames.authority)/trainingcoach"
+    public static let package = "\(WorkoutsKinds.authority)/trainingcoach"
     public static let agent = "\(package)/workoutCoach"
     public static let agentKind = "substrate.reamde.dev/core/agent"
     /// The scope that reaches the coach, its chats and its questions.
@@ -38,7 +41,7 @@ public struct ClosureReach: Sendable, Hashable {
 
     /// The reach of `documents`, a closure as `PackageManifest` carries it,
     /// each entry once and sorted.
-    public static func of(_ documents: [WorkoutsCore.JSONValue]) -> ClosureReach {
+    public static func of(_ documents: [JSONValue]) -> ClosureReach {
         var reads: Set<String> = []
         var writes: Set<String> = []
         for document in documents {
@@ -82,7 +85,7 @@ public struct ClosureReach: Sendable, Hashable {
 
     /// Kind references as a grant lists them: strings, or stored `{ref}`
     /// objects whose path ends in the kind.
-    static func references(_ value: WorkoutsCore.JSONValue?) -> [String] {
+    static func references(_ value: JSONValue?) -> [String] {
         guard case let .array(items)? = value else { return [] }
         return items.compactMap { item in
             switch item {

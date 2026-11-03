@@ -1,5 +1,9 @@
 #include "SubstrateResolv.h"
 
+// The resolver this reads behind DNS-SD is Apple's; elsewhere the target
+// is empty and nothing calls it.
+#ifdef __APPLE__
+
 #include <netdb.h>
 #include <resolv.h>
 #include <string.h>
@@ -30,3 +34,5 @@ SubstrateTXTOutcome substrate_txt_outcome(const char *name, int timeoutSeconds) 
         return SubstrateTXTNoRecovery;
     }
 }
+
+#endif

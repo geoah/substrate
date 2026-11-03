@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 /// A scratch directory under the system's temporary directory, removed by `remove()`.
 struct TemporaryDirectory {

@@ -1,8 +1,11 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 /// The outbox's order and its answers to the server: the session before its
 /// sets, a chain's head before its members, Finish under `ifVersion` raising

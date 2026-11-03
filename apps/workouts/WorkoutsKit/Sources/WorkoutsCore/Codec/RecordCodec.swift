@@ -1,11 +1,12 @@
 import Foundation
+import SubstrateCore
 
 /// Converts the model to and from substrate's flat records (§3.4). Decoding
 /// checks the kind and refuses what the kind would refuse; encoding writes
 /// what substrate stores, in declaration order, and round-trips every record
 /// it decodes.
 public struct RecordCodec: Sendable {
-    public let kinds: KindNames
+    public let kinds: WorkoutsKinds
     public let movementSchema: KindSchema
     public let exerciseSchema: KindSchema
     public let routineSchema: KindSchema
@@ -13,7 +14,7 @@ public struct RecordCodec: Sendable {
     public let setSchema: KindSchema
     public let setupSchema: KindSchema
 
-    public init(kinds: KindNames = .v1) {
+    public init(kinds: WorkoutsKinds = .v1) {
         self.kinds = kinds
         movementSchema = Self.movementSchema(kinds)
         exerciseSchema = Self.exerciseSchema(kinds)

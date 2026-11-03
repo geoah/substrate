@@ -1,5 +1,8 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateCore
+import SubstrateDevice
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
@@ -27,7 +30,7 @@ struct LiveHevyImportTests {
         let client = SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? "")
         let api = WorkoutsAPI(client: client)
         let codec = RecordCodec()
-        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(KindNames.packageID) in \(repository) first")
+        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(WorkoutsKinds.packageID) in \(repository) first")
 
         // The exercise library, seeded as the sync seeds it, and read back as
         // the catalogue; a second run writes nothing.
@@ -112,7 +115,7 @@ struct LiveHevyImportTests {
         let repository = try #require(environment["WORKOUTS_E2E_REPOSITORY"])
         let api = WorkoutsAPI(client: SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""))
         let codec = RecordCodec()
-        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(KindNames.packageID) in \(repository) first")
+        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(WorkoutsKinds.packageID) in \(repository) first")
         let library = try ExerciseLibrary.bundled()
         try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic).ensure(api, library: library)
         let catalog = try await RemoteCatalog(directory: temporaryDirectory(), writingOptions: .atomic).refresh(api)
@@ -168,7 +171,7 @@ struct LiveHevyImportTests {
         let repository = try #require(environment["WORKOUTS_E2E_REPOSITORY"])
         let api = WorkoutsAPI(client: SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""))
         let codec = RecordCodec()
-        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(KindNames.packageID) in \(repository) first")
+        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(WorkoutsKinds.packageID) in \(repository) first")
 
         // An owner's exercise at a library id, with no load basis.
         try await api.write("PUT", codec.kinds.exercise, "bench-press-dumbbell",

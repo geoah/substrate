@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 /// The generated example records (`Fixtures/examples/*.json`) and
 /// `Fixtures/kinds.json`, from `apps/workouts/scripts/workouts-package.py`.
@@ -76,7 +77,7 @@ private func normalizedValue(_ value: JSONValue, _ property: PropertySchema) -> 
     case let (.duration, .string(text)):
         ISODuration.parse(text).map { .number(Decimal($0)) } ?? value
     case let (.datetime, .string(text)):
-        DateText.parse(text).map { .number(Decimal($0.timeIntervalSince1970)) } ?? value
+        Timestamp.parse(text).map { .number(Decimal($0.timeIntervalSince1970)) } ?? value
     case let (.quantity, .object(fields)):
         if case let .string(text)? = fields["value"], let number = DecimalText.parse(text) {
             .object(["value": .number(number), "unit": fields["unit"] ?? .null])
@@ -109,7 +110,7 @@ private func record(_ kind: String, _ properties: JSONObject) -> FlatRecord {
     record(kind, "x", properties)
 }
 
-private let kinds = KindNames.v1
+private let kinds = WorkoutsKinds.v1
 
 /// A minimal valid set record to vary one property at a time.
 private func setProperties(_ changes: [String: JSONValue?] = [:]) -> JSONObject {
@@ -381,7 +382,7 @@ struct CodecTypeTests {
         let set = try codec.decodeSet(record(kinds.set, setProperties([
             "at": .string("2026-10-27T14:30:00+01:00"), "startedAt": .string("2026-10-27T13:28:59.750Z"),
         ])))
-        #expect(set.at == DateText.parse("2026-10-27T13:30:00Z"))
+        #expect(set.at == Timestamp.parse("2026-10-27T13:30:00Z"))
         #expect(set.startedAt?.timeIntervalSince1970 == 1_793_107_739.75)
         let encoded = codec.encode(set).properties
         #expect(encoded["at"] == .string("2026-10-27T13:30:00Z"))
@@ -393,7 +394,7 @@ struct CodecTypeTests {
         ("1970-01-01T00:00:00Z", 0.0), ("2024-02-29T12:00:00+05:30", 1_709_188_200.0), ("2026-10-27t13:30:00z", 1_793_107_800.0),
     ])
     func datetimeText(input: String, seconds: Double) {
-        #expect(DateText.parse(input)?.timeIntervalSince1970 == seconds)
+        #expect(Timestamp.parse(input)?.timeIntervalSince1970 == seconds)
     }
 
     @Test("datetime text refuses what is not RFC 3339", arguments: [
@@ -401,13 +402,13 @@ struct CodecTypeTests {
         "2026-10-27T24:00:00Z", "2026-10-27T13:30:00+0100", "2026-10-27T13:30:00.Z", "2026-10-27T13:30:00Zjunk",
     ])
     func datetimeRefuses(input: String) {
-        #expect(DateText.parse(input) == nil)
+        #expect(Timestamp.parse(input) == nil)
     }
 
     @Test("datetime text formats the examples' instants")
     func datetimeFormat() {
         for text in ["2026-10-22T11:34:08Z", "2026-10-26T13:00:17Z", "2000-02-29T23:59:59Z", "1969-12-31T23:59:59Z"] {
-            #expect(DateText.parse(text).map(DateText.format) == text)
+            #expect(Timestamp.parse(text).map { Timestamp.format($0, precision: .seconds) } == text)
         }
     }
 
@@ -619,7 +620,7 @@ struct CodecRuleTests {
 
     @Test("the kind names come from one place and can be replaced")
     func kindNames() throws {
-        var names = KindNames.v1
+        var names = WorkoutsKinds.v1
         names.exercise = "example.dev/catalogue/exercise"
         let codec = RecordCodec(kinds: names)
         let exercise = try codec.decodeExercise(record(names.exercise, [

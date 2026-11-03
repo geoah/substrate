@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// `local-exercises.json`: exercises the owner added on the phone, as flat
 /// exercise records (`{"format": 2, "records": [...]}`), written on add

@@ -1,8 +1,11 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 /// The codec against what a substrate answers: records read back from a
 /// throwaway server built from this tree (Fixtures/), with their stamps,
@@ -18,9 +21,9 @@ struct ServerAnswerTests {
 
     @Test("a GET of an exercise decodes, under the published kind name")
     func anExercise() throws {
-        let value = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: Fixtures.data("get-exercise"))
+        let value = try JSONDecoder().decode(JSONValue.self, from: Fixtures.data("get-exercise"))
         let record = try WorkoutsAPI.record(value)
-        #expect(record.kind == KindNames.v1.exercise)
+        #expect(record.kind == WorkoutsKinds.v1.exercise)
         #expect(record.kind == "substrate.reamde.dev/training/exercise")
         let exercise = try codec.decodeExercise(record)
         #expect(exercise.id.rawValue == "chest-press-machine")
@@ -64,7 +67,7 @@ struct ServerAnswerTests {
 
     @Test("the package row says the version the repository holds")
     func thePackageRow() throws {
-        let value = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: Fixtures.data("get-package"))
+        let value = try JSONDecoder().decode(JSONValue.self, from: Fixtures.data("get-package"))
         guard case let .object(object) = value, case let .object(properties)? = object["properties"],
               case let .number(version)? = properties["version"]
         else { Issue.record("no version in the package row"); return }
@@ -80,9 +83,9 @@ struct ManifestTests {
     @Test("training is published under substrate.reamde.dev, its documents in apply order, with no ~ anywhere")
     func training() throws {
         let manifest = try PackageManifest.bundled()
-        #expect(manifest.package == KindNames.packageID)
+        #expect(manifest.package == WorkoutsKinds.packageID)
         #expect(manifest.version >= 4)
-        let text = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.array(manifest.documents)), as: UTF8.self)
+        let text = String(decoding: try JSONEncoder().encode(JSONValue.array(manifest.documents)), as: UTF8.self)
         #expect(!text.contains("~"))
         #expect(text.contains(#""authority":"substrate.reamde.dev""#))
         let kinds = manifest.documents.compactMap { doc -> String? in

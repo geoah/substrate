@@ -1,5 +1,6 @@
 import Foundation
 import WorkoutsCore
+import SubstrateCore
 
 /// What one sync does between the phone's history and one repository's
 /// sessions, decided from three records the phone keeps:
@@ -116,7 +117,7 @@ public enum HistoryExchange {
     }
 
     /// The versions of a session's records, keyed as the outbox keys them.
-    static func stamps(_ session: FlatRecord, _ sets: [FlatRecord], kinds: KindNames) -> [String: Int] {
+    static func stamps(_ session: FlatRecord, _ sets: [FlatRecord], kinds: WorkoutsKinds) -> [String: Int] {
         var out: [String: Int] = [:]
         for record in [session] + sets {
             if let version = record.version { out["\(record.kind)/\(record.id)"] = version }
@@ -127,7 +128,7 @@ public enum HistoryExchange {
     /// Whether another writer changed the session since the phone last wrote
     /// or read it: a record at a version the phone did not see, or a set
     /// added or removed.
-    static func changed(_ session: FlatRecord, _ sets: [FlatRecord], mine: SessionRecords, versions: [String: Int], kinds: KindNames) -> Bool {
+    static func changed(_ session: FlatRecord, _ sets: [FlatRecord], mine: SessionRecords, versions: [String: Int], kinds: WorkoutsKinds) -> Bool {
         if Set(sets.map(\.id)) != Set(mine.sets.map(\.id.rawValue)) { return true }
         for (key, version) in stamps(session, sets, kinds: kinds) where versions[key] != version {
             return true

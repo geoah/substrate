@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// The exercise library this build carries (`Resources/Bundled/library.json`,
 /// from `apps/workouts/scripts/exercise-library.py`): movements and their

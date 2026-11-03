@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// A training session (`session.yaml`; traits `temporal(range)` and
 /// `revised`): one visit to the gym as the app ran it.

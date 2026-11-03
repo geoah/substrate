@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// Reads one record's properties, or one object's fields, by declared type
 /// (§3.4 rule 6). Every read marks its name as known; at every level what
@@ -119,7 +120,7 @@ struct PropertyReader {
 
     mutating func datetime(_ name: String) throws(CodecError) -> Date? {
         guard let value = take(name) else { return nil }
-        guard case let .string(text) = value, let date = DateText.parse(text) else { throw invalid(name, value) }
+        guard case let .string(text) = value, let date = Timestamp.parse(text) else { throw invalid(name, value) }
         return date
     }
 
@@ -329,7 +330,7 @@ struct PropertyWriter {
     mutating func bool(_ name: String, _ value: Bool?) { put(name, value.map(JSONValue.bool)) }
     mutating func decimal(_ name: String, _ value: Decimal?) { put(name, value.map { .string(DecimalText.format($0)) }) }
     mutating func duration(_ name: String, _ value: Seconds?) { put(name, value.map { .string(ISODuration.format($0)) }) }
-    mutating func datetime(_ name: String, _ value: Date?) { put(name, value.map { .string(DateText.format($0)) }) }
+    mutating func datetime(_ name: String, _ value: Date?) { put(name, value.map { .string(Timestamp.format($0, precision: .seconds)) }) }
 
     mutating func mass(_ name: String, _ value: Mass?) {
         put(name, value.map { Self.quantity($0.value, $0.unit.rawValue) })

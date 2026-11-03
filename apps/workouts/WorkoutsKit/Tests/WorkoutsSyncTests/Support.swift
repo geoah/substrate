@@ -1,7 +1,13 @@
 import Foundation
-import SubstrateKit
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 /// A scripted server: each request is answered by the first rule whose
 /// method and path match, and every request is kept, in order.
@@ -10,7 +16,7 @@ final class ScriptedServer: HTTPTransport, @unchecked Sendable {
         var method: String
         var path: String
         var query: String?
-        var body: WorkoutsCore.JSONValue?
+        var body: JSONValue?
     }
 
     typealias Rule = @Sendable (Sent) -> (Int, String)?
@@ -37,8 +43,8 @@ final class ScriptedServer: HTTPTransport, @unchecked Sendable {
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let url = request.url!
-        var body: WorkoutsCore.JSONValue?
-        if let data = request.httpBody { body = try? JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: data) }
+        var body: JSONValue?
+        if let data = request.httpBody { body = try? JSONDecoder().decode(JSONValue.self, from: data) }
         let sent = Sent(method: request.httpMethod ?? "GET", path: url.path(percentEncoded: true), query: url.query(percentEncoded: false), body: body)
         let gate = lock.withLock { gates.removeValue(forKey: "\(sent.method) \(sent.path)") }
         if let gate { await gate.arriveAndWait() }

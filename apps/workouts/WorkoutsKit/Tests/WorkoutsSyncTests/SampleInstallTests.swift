@@ -1,8 +1,11 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 /// The sample routine on a server (decision S1): written once, into a
 /// repository with no routines, never again once the owner deletes it, on
@@ -21,7 +24,7 @@ struct SampleInstallTests {
         let server = ScriptedServer()
         private let lock = NSLock()
         /// `kind/id` → (kind, id, properties).
-        private var held: [String: (kind: String, id: String, properties: WorkoutsCore.JSONValue)] = [:]
+        private var held: [String: (kind: String, id: String, properties: JSONValue)] = [:]
         private var refused: Set<String> = []
 
         init(_ records: [FlatRecord] = []) {
@@ -43,7 +46,7 @@ struct SampleInstallTests {
 
         var puts: [String] { server.methodsAndPaths.filter { $0.hasPrefix("PUT ") } }
 
-        private func put(_ kind: String, _ id: String, _ properties: WorkoutsCore.JSONValue) {
+        private func put(_ kind: String, _ id: String, _ properties: JSONValue) {
             lock.withLock { held["\(kind)/\(id)"] = (kind, id, properties) }
         }
 
@@ -84,7 +87,7 @@ struct SampleInstallTests {
 
         /// The first `…/training/exercise/<id>` the properties name that the
         /// repository lacks.
-        private func missingExercise(_ value: WorkoutsCore.JSONValue) -> String? {
+        private func missingExercise(_ value: JSONValue) -> String? {
             switch value {
             case let .string(text):
                 guard let range = text.range(of: "/training/exercise/") else { return nil }
@@ -102,13 +105,13 @@ struct SampleInstallTests {
             }
         }
 
-        private func page(_ records: [(kind: String, id: String, properties: WorkoutsCore.JSONValue)]) -> String {
-            let items: [WorkoutsCore.JSONValue] = records.map {
+        private func page(_ records: [(kind: String, id: String, properties: JSONValue)]) -> String {
+            let items: [JSONValue] = records.map {
                 .object(["kind": .string($0.kind), "id": .string($0.id), "properties": $0.properties, "version": .number(1)])
             }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.withoutEscapingSlashes]
-            let data = try! encoder.encode(WorkoutsCore.JSONValue.object(["records": .array(items)]))
+            let data = try! encoder.encode(JSONValue.object(["records": .array(items)]))
             return String(decoding: data, as: UTF8.self)
         }
     }

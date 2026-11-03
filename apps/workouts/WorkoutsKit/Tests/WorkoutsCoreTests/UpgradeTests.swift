@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import WorkoutsCore
+import SubstrateCore
 
 /// The files the last release left on the phone, every training kind
 /// spelled `~/training/…` (decision T3): each store reads them once in the
@@ -35,13 +36,13 @@ struct UpgradeTests {
     /// old build spelled it, so a file reads as that build wrote it.
     func legacy(_ records: [FlatRecord]) throws -> [FlatRecord] {
         let text = String(decoding: try Self.plain.encode(records), as: UTF8.self)
-            .replacingOccurrences(of: KindNames.packageID + "/", with: legacyPrefix)
+            .replacingOccurrences(of: WorkoutsKinds.packageID + "/", with: legacyPrefix)
         return try JSONDecoder().decode([FlatRecord].self, from: Data(text.utf8))
     }
 
     @Test("the respell moves the package id, a kind and a record path and leaves every other string alone")
     func respell() {
-        #expect(LegacyKinds.respell("~/training") == KindNames.packageID)
+        #expect(LegacyKinds.respell("~/training") == WorkoutsKinds.packageID)
         #expect(LegacyKinds.respell("~/training/set") == codec.kinds.set)
         #expect(LegacyKinds.respell("~/training/exercise/leg-press-machine") == "\(codec.kinds.exercise)/leg-press-machine")
         #expect(LegacyKinds.respell("substrate.reamde.dev/health/workout") == "substrate.reamde.dev/health/workout")

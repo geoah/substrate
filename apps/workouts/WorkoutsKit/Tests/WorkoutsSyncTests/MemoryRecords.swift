@@ -1,7 +1,10 @@
 import Foundation
-import SubstrateKit
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 /// A substrate's records in memory, behind a scripted server: the list read
 /// (`GET /api/v1/records`, by `filter.kinds`), one record's read, and PUT,
@@ -12,7 +15,7 @@ final class MemoryRecords: @unchecked Sendable {
     struct Stored {
         var kind: String
         var id: String
-        var properties: WorkoutsCore.JSONObject
+        var properties: JSONObject
         var version: Int
     }
 
@@ -28,7 +31,7 @@ final class MemoryRecords: @unchecked Sendable {
 
     var api: WorkoutsAPI { WorkoutsSyncTests.api(server) }
 
-    func put(_ kind: String, _ id: String, _ properties: WorkoutsCore.JSONObject) {
+    func put(_ kind: String, _ id: String, _ properties: JSONObject) {
         lock.withLock { records["\(kind)/\(id)"] = Stored(kind: kind, id: id, properties: properties, version: 1) }
     }
 
@@ -47,7 +50,7 @@ final class MemoryRecords: @unchecked Sendable {
         if sent.method == "GET", path == "/api/v1/records" {
             let query = sent.query?.removingPercentEncoding ?? ""
             let listed = lock.withLock { records.values.filter { query.contains("\"\($0.kind)\"") }.sorted { $0.id < $1.id } }
-            return (200, json(["records": .array(listed.map(Self.value))]))
+            return (200, json(.object(["records": .array(listed.map(Self.value))])))
         }
         guard path.hasPrefix("/api/v1/") else { return nil }
         let rest = String(path.dropFirst("/api/v1/".count))
@@ -89,14 +92,14 @@ final class MemoryRecords: @unchecked Sendable {
         }
     }
 
-    private static func value(_ stored: Stored) -> WorkoutsCore.JSONValue {
+    private static func value(_ stored: Stored) -> JSONValue {
         .object(["kind": .string(stored.kind), "id": .string(stored.id), "properties": .object(stored.properties),
                  "version": .number(Decimal(stored.version))])
     }
 
-    private func json(_ object: WorkoutsCore.JSONObject) -> String { json(.object(object)) }
+    private func json(_ object: JSONObject) -> String { json(.object(object)) }
 
-    private func json(_ value: WorkoutsCore.JSONValue) -> String {
+    private func json(_ value: JSONValue) -> String {
         String(decoding: (try? JSONEncoder().encode(value)) ?? Data(), as: UTF8.self)
     }
 }

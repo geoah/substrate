@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateCore
 
 // The Rows layout (§7.6 Rows, the owner's chosen session screen) over the
 // example sessions and routines: the moments the design's screens show, each
@@ -20,7 +21,7 @@ struct RowsSession {
 
     /// Thu 29 Oct 12:00, Day 1 – Strength Foundation, after the 22 and 26 October Day 1 sessions.
     static func dayOne() throws -> RowsSession {
-        let start = DateText.parse("2026-10-29T12:00:00Z")!
+        let start = Timestamp.parse("2026-10-29T12:00:00Z")!
         let exercises = try EngineFixtures.exercises()
         let routine = try #require(try EngineFixtures.routines()["day-1-strength-foundation"])
         var script = EngineScript(at: start, seed: 31)

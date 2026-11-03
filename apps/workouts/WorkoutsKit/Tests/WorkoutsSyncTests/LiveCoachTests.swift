@@ -1,8 +1,14 @@
 import Foundation
-import SubstrateKit
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateDevice
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
+import SubstrateCore
 
 /// The workout coach's install against a real substrate, skipped unless
 /// `WORKOUTS_E2E_COACH_SERVER` names one and `WORKOUTS_E2E_OWNER_TOKEN` holds
@@ -27,7 +33,7 @@ struct LiveCoachTests {
         let manifest = WorkoutsManifest.manifest(clientID: WorkoutsManifest.localClientID)
         let probe = try await ServerProbe().probe(server, requirement: manifest.requirement, app: manifest.appName)
         let metadata = try #require(probe.metadata)
-        #expect(manifest.details(for: metadata).map(\.package) == [WorkoutsManifest.healthPackage, KindNames.packageID, Coach.package])
+        #expect(manifest.details(for: metadata).map(\.package) == [WorkoutsManifest.healthPackage, WorkoutsKinds.packageID, Coach.package])
         let oauth = OAuthClient(manifest: manifest, metadata: metadata)
         let pkce = try PKCE()
         let state = try PKCE.state()
@@ -38,7 +44,7 @@ struct LiveCoachTests {
         let id = try #require(location.split(separator: "/").last.map(String.init))
 
         let owner = SubstrateClient(server: server, token: ownerToken)
-        let page = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: try await owner.send("GET", "api/v1/authorizations/\(id)").data)
+        let page = try JSONDecoder().decode(JSONValue.self, from: try await owner.send("GET", "api/v1/authorizations/\(id)").data)
         guard case let .object(fields) = page, case let .array(scopes)? = fields["scopes"], case let .array(setup)? = fields["setup"] else {
             Issue.record("no scopes")
             return
@@ -50,7 +56,7 @@ struct LiveCoachTests {
             return row
         }.first
         #expect(coachRow != nil && coachRow?["blocked"] == nil, "the coach's row: \(String(describing: coachRow))")
-        let approved = scopes.compactMap { scope -> WorkoutsCore.JSONValue? in
+        let approved = scopes.compactMap { scope -> JSONValue? in
             guard case let .object(row) = scope else { return nil }
             return row["scope"]
         }
@@ -59,7 +65,7 @@ struct LiveCoachTests {
         if let inputs = fields["inputs"] { approval["inputs"] = inputs }
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
-        var answer = try await owner.send("POST", "api/v1/authorizations/\(id)", body: .json(encoder.encode(WorkoutsCore.JSONValue.object(approval))),
+        var answer = try await owner.send("POST", "api/v1/authorizations/\(id)", body: .json(encoder.encode(JSONValue.object(approval))),
                                           timeout: SubstrateClient.Timeout.serverWork).data
         var next = redirectOf(answer)
         for _ in 0 ..< 120 where next == nil {
@@ -76,7 +82,7 @@ struct LiveCoachTests {
         let training = try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state()
         #expect(training.writable, "training: \(training)")
 
-        let row = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: try await owner.send(
+        let row = try JSONDecoder().decode(JSONValue.self, from: try await owner.send(
             "GET", SubstrateClient.recordPath(Coach.agentKind, Coach.agent)).data)
         guard case let .object(record) = row, case let .object(properties)? = record["properties"] else {
             Issue.record("no agent row")
@@ -88,7 +94,7 @@ struct LiveCoachTests {
     }
 
     private func redirectOf(_ data: Data) -> String? {
-        guard case let .object(object)? = try? JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: data) else { return nil }
+        guard case let .object(object)? = try? JSONDecoder().decode(JSONValue.self, from: data) else { return nil }
         for key in ["redirect", "next"] {
             if case let .string(url)? = object[key], !url.isEmpty { return url }
         }
