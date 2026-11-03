@@ -172,3 +172,55 @@ func TestARefreshDoesNotFollowADocumentThatMoved(t *testing.T) {
 		t.Fatalf("the moved document upgraded the package: %v, %v", row.Properties["shippedVersion"], err)
 	}
 }
+
+// A package a later binary ships is never upgraded from the document it was
+// installed from: the binary wins on a refresh as on an install.
+func TestARefreshLeavesAPackageTheBinaryNowShipsToTheCatalog(t *testing.T) {
+	ds := newDataset(t)
+	ctx := context.Background()
+	const id = "publisher.example/notes"
+	closure := func(v int) string {
+		return fmt.Sprintf("kind: substrate.reamde.dev/core/package\nmetadata:\n  id: %s\ndata:\n  authority: publisher.example\n  package: notes\n  version: %d\n---\nkind: substrate.reamde.dev/core/bundle\nmetadata:\n  id: %s\ndata:\n  authority: publisher.example\n  package: notes\n  description: Notes.\n  installs: [publisher.example/notes/note]\n---\nkind: substrate.reamde.dev/core/kind\nmetadata:\n  id: publisher.example/notes/note\ndata:\n  authority: publisher.example\n  package: notes\n  names:\n    singular: note\n  properties:\n    name:\n      type: string\n", id, v, id)
+	}
+	dir := t.TempDir()
+	var listed []authority.AuthorityPackageVersion
+	for _, v := range []int{1, 2} {
+		file, body := fmt.Sprintf("v%d.yaml", v), closure(v)
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256([]byte(body))
+		listed = append(listed, authority.AuthorityPackageVersion{Version: v, Closure: file, SHA256: hex.EncodeToString(sum[:])})
+	}
+	install := authority.AuthorityDocument{Authority: "publisher.example", Packages: []authority.AuthorityPackage{{Package: "notes", Versions: listed[:1]}}}
+	raw, _ := json.Marshal(install)
+	path := filepath.Join(dir, "authority.json")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	docs := map[string]string{"publisher.example": path}
+	c, err := catalog.LoadWithReader(authority.NewReader(authority.Options{LocalDocuments: docs}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+		t.Fatal(err)
+	}
+	install.Packages[0].Versions = listed
+	raw, _ = json.Marshal(install)
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	later, err := catalog.LoadWithReader(authority.NewReader(authority.Options{LocalDocuments: docs}), []string{id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := later.RefreshPackage(ctx, ds, id)
+	if err != nil || got.Outcome != "upgrade-needs-review" || !strings.Contains(got.Reason, "ships with this server") {
+		t.Fatalf("refresh of a package the binary now ships = %+v, %v; want it left to the catalog", got, err)
+	}
+	row, err := ds.Get(ctx, "substrate.reamde.dev/core/package", id)
+	if err != nil || fmt.Sprint(row.Properties["shippedVersion"]) != "1" {
+		t.Fatalf("the document upgraded a package the binary ships: %v, %v", row.Properties["shippedVersion"], err)
+	}
+}
