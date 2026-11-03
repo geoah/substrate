@@ -75,9 +75,13 @@ AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… mise run apple:release
 Substrate Chat each publish a client ID metadata document, `client.json`,
 and a release stamps its URL into the build as the app's OAuth client id.
 That URL's host is what the owner is shown at the head of the approval
-page, and what the server names the app's actor, so every write the app
-makes is recorded as `app:<host>`. Two apps published on one host share
-that actor. The host must therefore be one only the publisher serves: the
+page, and the server names the app's actor from what the approval proved
+(decision 0209): `app:<authority>` for an app its authority's document
+lists (`app:substrate.reamde.dev` for these apps in a release with a site),
+`app:local` for a build whose access went to a loopback address, and
+`app:<host>` of the client id for one nobody verified. Two apps under one
+authority, or unverified on one host, share that actor. The host must
+therefore be one only the publisher serves: the
 documents go to `sync/client.json` and `chat/client.json` under
 `SUBSTRATE_APPLE_CLIENT_URL`, an https folder on a host of the publisher's own
 that the same key may write (a custom domain, or a virtual-hosted bucket,
@@ -557,7 +561,9 @@ app's claimed https callback in a release with a site, and to a loopback
 port the app listens on (RFC 8252) in any other build, and the code is
 exchanged with
 its PKCE verifier; the app never sees the password, and its writes are
-recorded as `app:<host>`. A release publishes the app's client ID metadata
+recorded as `app:substrate.reamde.dev` in a release the site's authority
+document lists, `app:local` in a loopback build, and `app:<host>` of its
+client id in one nobody verified. A release publishes the app's client ID metadata
 document as `chat/client.json` (see
 [Releases and updates](#releases-and-updates) for the host it goes on) and
 stamps that URL into the build (`SubstrateChatClientID`); any other build
