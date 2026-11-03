@@ -1449,11 +1449,14 @@ func (d *fakeDataset) StartDomainVerification(context.Context) (substrate.Domain
 	return d.domain, nil
 }
 
-func (d *fakeDataset) MarkDomainVerified(context.Context) (time.Time, error) {
+func (d *fakeDataset) MarkDomainVerified(_ context.Context, proof string) (time.Time, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.fail("MarkDomainVerified"); err != nil {
 		return time.Time{}, err
+	}
+	if proof != "" && d.domain.Proof != proof {
+		return time.Time{}, fmt.Errorf("%w: the proof this check read is no longer the pending one", substrate.ErrConflict)
 	}
 	at := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 	d.domain.Proof, d.domain.VerifiedAt = "", &at

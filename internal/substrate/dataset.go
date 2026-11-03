@@ -294,8 +294,11 @@ type Dataset interface {
 	// already published.
 	StartDomainVerification(ctx context.Context) (DomainState, error)
 	// MarkDomainVerified stamps `domainVerifiedAt` on the repository record
-	// and spends the pending proof. The caller has checked the name.
-	MarkDomainVerified(ctx context.Context) (time.Time, error)
+	// and spends the pending proof, which must still be proof, the one the
+	// caller checked in DNS: a proof another check spent, or one minted
+	// since, answers ErrConflict. An empty proof is a name the caller
+	// verified without a record, and spends whatever is pending.
+	MarkDomainVerified(ctx context.Context, proof string) (time.Time, error)
 
 	// --- app builds (decision 0213) ---
 	// RecordAppBuild records, on the request's own app token

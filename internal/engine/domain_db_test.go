@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -29,9 +30,16 @@ func TestADomainProofIsMintedOnceAndSpentByAVerify(t *testing.T) {
 		t.Fatalf("state = %+v, %v", st, err)
 	}
 
-	at, err := ds.MarkDomainVerified(ctx)
+	if _, err := ds.MarkDomainVerified(ctx, "notthisone"); !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("a mark of a proof that is not pending = %v, want ErrConflict", err)
+	}
+	at, err := ds.MarkDomainVerified(ctx, first.Proof)
 	if err != nil {
 		t.Fatalf("mark: %v", err)
+	}
+	// A second check of the proof the first one spent stamps nothing.
+	if _, err := ds.MarkDomainVerified(ctx, first.Proof); !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("a second mark of a spent proof = %v, want ErrConflict", err)
 	}
 	st, err := ds.DomainState(ctx)
 	if err != nil || st.Proof != "" || st.VerifiedAt == nil || !st.VerifiedAt.Equal(at) {

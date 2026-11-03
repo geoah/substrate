@@ -64,9 +64,35 @@ func loadInstanceID(root string, readOnly bool) (string, error) {
 		if errors.Is(err, fs.ErrExist) {
 			return loadInstanceID(root, true)
 		}
-		return "", fmt.Errorf("substrate/engine: write %s: %w", path, err)
+		// A data root without hard links (an SMB share, some volume
+		// drivers) publishes the id by an exclusive create: still one
+		// winner, though a crash between the create and the write leaves a
+		// file the next boot refuses, naming it.
+		if err := writeExclusive(path, id+"\n"); err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				return loadInstanceID(root, true)
+			}
+			return "", fmt.Errorf("substrate/engine: write %s: %w", path, err)
+		}
 	}
 	return id, nil
+}
+
+// writeExclusive creates path, which must not exist, holding content.
+func writeExclusive(path, content string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(content); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // newInstanceID mints 26 characters of lowercase base32 over 16 random bytes.

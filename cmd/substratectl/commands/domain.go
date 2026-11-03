@@ -70,9 +70,9 @@ func (a *app) domainShowCommand() *cobra.Command {
 					return err
 				}
 				if res.VerifiedAt != nil {
-					fmt.Fprintf(a.out, "\nverified %s; publishing this record and checking again renews it\n", res.VerifiedAt.Format(time.RFC3339))
+					fmt.Fprintf(a.out, "\nverified %s; publishing this record and checking again stamps it again\n", res.VerifiedAt.Format(time.RFC3339))
 				} else {
-					fmt.Fprintln(a.out, "\nadd the record to the name's DNS, then run: substratectl domain verify")
+					fmt.Fprintln(a.out, "\npublish it as the name's one _substrate record (replacing any there), then run: substratectl domain verify")
 				}
 				return nil
 			})

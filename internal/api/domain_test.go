@@ -167,7 +167,7 @@ func TestVerifyDomainNamesWhatTheOwnerChangesWhenTheCheckFails(t *testing.T) {
 					return nil, &net.DNSError{Err: "server misbehaving", Name: "x", IsTemporary: true}
 				})
 			},
-			want: "the DNS lookup of _substrate." + fakeRepository + " failed",
+			want: "the DNS lookup of _substrate." + fakeRepository + " did not answer",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -278,6 +278,51 @@ func TestWithAPublicURLServerMustNameItExactly(t *testing.T) {
 	e.dns = publish(proof.Record)
 	if got := e.verify(); !got.Verified {
 		t.Fatalf("verify naming the public URL = %+v, want verified", got)
+	}
+}
+
+// With a public URL, server= naming it exactly decides the server check: a
+// server whose public name resolves to a private address from inside cannot
+// read its own server.json, and reading it would prove nothing more.
+func TestWithAPublicURLTheServerIsNotReadBack(t *testing.T) {
+	e := newDomainEnvAt(t, domains.Static{}, domainOrigin)
+	delete(e.instances, domainOrigin)
+	proof := e.start()
+	e.dns = publish(proof.Record)
+	if got := e.verify(); !got.Verified {
+		t.Fatalf("verify = %+v, want verified without reading server.json", got)
+	}
+}
+
+// A name that also publishes (doc=, sha256=, a key this binary does not
+// read) is shown its own record with server= and proof= merged in, because
+// one label carries one `v=substrate1` record; a check of that merged record
+// passes, and the publisher's keys survive it.
+func TestVerifyDomainKeepsWhatTheNameAlreadyPublishes(t *testing.T) {
+	sum := strings.Repeat("ab", 32)
+	e := newDomainEnvAt(t, publish("v=substrate1 doc=https://example.org/authority.json sha256="+sum+" later=1"), domainOrigin)
+	proof := e.start()
+	want := "v=substrate1 server=" + domainOrigin + " proof=" + proof.Proof +
+		" doc=https://example.org/authority.json sha256=" + sum + " later=1"
+	if proof.Record != want {
+		t.Fatalf("record = %q, want %q", proof.Record, want)
+	}
+	e.dns = publish(proof.Record)
+	if got := e.verify(); !got.Verified {
+		t.Fatalf("verify of the merged record = %+v, want verified", got)
+	}
+}
+
+// A lookup that fails says so in fixed words: the resolver's own error names
+// the deployment's network, and the answer goes to whoever asked.
+func TestAFailedLookupNamesNothingOfTheServersNetwork(t *testing.T) {
+	e := newDomainEnv(t, domains.Static{})
+	e.start()
+	e.dns = resolverFunc(func(context.Context, string) ([]string, error) {
+		return nil, &net.DNSError{Err: "read udp 10.43.0.10:53: i/o timeout", Name: "x", Server: "10.43.0.10:53", IsTimeout: true}
+	})
+	if got := e.verify(); got.Verified || strings.Contains(got.Reason, "10.43") || strings.Contains(got.Reason, "timeout") {
+		t.Fatalf("verify = %+v, want a refusal that names no address", got)
 	}
 }
 

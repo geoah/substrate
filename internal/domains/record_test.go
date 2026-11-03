@@ -89,3 +89,22 @@ type resolverFunc func(context.Context, string) ([]string, error)
 func (f resolverFunc) LookupTXT(ctx context.Context, name string) ([]string, error) {
 	return f(ctx, name)
 }
+
+// A record written with tabs or doubled spaces is still the record, and one
+// that is read back renders every key it carried, the ones this binary does
+// not read included, so a record rewritten from it loses nothing.
+func TestARecordReadsWithAnyWhitespaceAndRendersWhatItCarries(t *testing.T) {
+	rec, found, err := Parse([]string{"v=substrate1\tserver=https://substrate.example.net  proof=abc123\tlater=x"})
+	if err != nil || !found {
+		t.Fatalf("Parse = %v, %v", found, err)
+	}
+	if rec.Server != "https://substrate.example.net" || rec.Proof != "abc123" || rec.Other["later"] != "x" {
+		t.Fatalf("Parse = %+v", rec)
+	}
+	if got, want := rec.String(), "v=substrate1 server=https://substrate.example.net proof=abc123 later=x"; got != want {
+		t.Fatalf("String = %q, want %q", got, want)
+	}
+	if _, found, _ := Parse([]string{"v=substrate10 server=https://x.example"}); found {
+		t.Fatal("a longer version word read as this one")
+	}
+}
