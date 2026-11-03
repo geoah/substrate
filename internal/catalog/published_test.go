@@ -20,7 +20,7 @@ import (
 func publishedFixture(t *testing.T, versions ...int) (*Catalog, string) {
 	t.Helper()
 	dir := t.TempDir()
-	p := authority.AuthorityPackage{Package: "notes"}
+	p := authority.AuthorityPackage{Package: "notes", AddonFor: "provider.example/base"}
 	for _, v := range versions {
 		body := []byte(publishedClosure("example.com/notes", v))
 		sum := sha256.Sum256(body)
@@ -45,7 +45,7 @@ func publishedFixture(t *testing.T, versions ...int) (*Catalog, string) {
 func TestPublishedResolution(t *testing.T) {
 	c, _ := publishedFixture(t, 1, 3, 2)
 	b, err := c.Resolve(context.Background(), "example.com/notes", 2)
-	if err != nil || b.Version != 3 || !b.Origin().FromFile {
+	if err != nil || b.Version != 3 || !b.Origin().FromFile || b.Origin().AddonFor != "provider.example/base" {
 		t.Fatalf("resolve: %+v %v", b, err)
 	}
 	if _, err := c.Resolve(context.Background(), "example.com/notes", 4); !errors.Is(err, ErrNotPublished) {
