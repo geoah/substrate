@@ -18,9 +18,8 @@ import SubstrateTesting
 /// Every shared screen's fixtures through the gallery's renderers, then the
 /// views apps call by their own initialisers, drawn to PNG files in the
 /// directory SUBSTRATEKIT_SNAPSHOTS names (`mise run apps:gallery`), for a
-/// person to look at; skipped without it. A view is hosted in an offscreen
-/// window and its layer cached, since `ImageRenderer` draws a text field or
-/// a list as a placeholder.
+/// person to look at; skipped without it, drawn by `OffscreenDrawing` as an
+/// app's gallery draws its own.
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATEKIT_SNAPSHOTS"] != nil))
 @MainActor
 struct Snapshots {
@@ -164,26 +163,7 @@ struct Snapshots {
     /// mode, lets it settle, and writes what it drew.
     func draw(_ name: String, _ view: some View, in directory: URL? = nil) async throws {
         let directory = directory ?? self.directory
-        _ = NSApplication.shared
-        let hosting = NSHostingView(rootView: view
-            .frame(width: Self.size.width, height: Self.size.height)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .environment(\.colorScheme, .light)
-            // An offscreen window is never key, and its controls would draw
-            // as a background window's.
-            .environment(\.controlActiveState, .key))
-        hosting.frame = CGRect(origin: .zero, size: Self.size)
-        let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.appearance = NSAppearance(named: .aqua)
-        window.contentView = hosting
-        hosting.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(300))
-        hosting.layoutSubtreeIfNeeded()
-        let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
-        hosting.cacheDisplay(in: hosting.bounds, to: rep)
-        let png = try #require(rep.representation(using: .png, properties: [:]))
-        try png.write(to: directory.appendingPathComponent("\(name).png"))
-        window.contentView = nil
+        try await OffscreenDrawing.png(view, size: Self.size).write(to: directory.appendingPathComponent("\(name).png"))
     }
 }
 #endif

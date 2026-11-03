@@ -15,10 +15,15 @@ public struct StatusPresentation: Codable, Hashable, Sendable {
     public var busy: Bool
     public var footer: String?
     public var refused: RefusedWrites?
+    /// What an app's column says while a refused write waits for the owner,
+    /// so it is seen outside Settings: "1 change needs you".
+    public var notice: NoticeLine?
 
     public init(title: String, symbol: ScreenSymbol, tone: ScreenTone, sentence: String, problem: ProblemPresentation? = nil,
-                packages: [PackageLine], actions: [ActionButton<StatusAction>], busy: Bool, footer: String?, refused: RefusedWrites?)
+                packages: [PackageLine], actions: [ActionButton<StatusAction>], busy: Bool, footer: String?, refused: RefusedWrites?,
+                notice: NoticeLine? = nil)
     {
+        self.notice = notice
         self.title = title
         self.symbol = symbol
         self.tone = tone

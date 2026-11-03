@@ -1,0 +1,420 @@
+import Foundation
+import SubstrateAPI
+import SubstrateCore
+import SubstrateLocal
+import SubstrateRuntime
+
+/// The records of the kinds an app shows, kept linked to the repository: read
+/// once, then followed through the watch, kept in the `RecordCache`, with the
+/// outbox's waiting writes laid over them (`RecordFold`), so a change made
+/// offline shows at once and stays shown until its record is read again.
+/// Every write goes to the outbox, in the order made (`WriteLine`); the link
+/// sends them.
+///
+/// It is not a controller of its own: an app's root keeps its state
+/// (`LinkedRecordsState`) beside its own, wraps its events and effects in its
+/// own (`case records(LinkedRecords.Event)`), and asks it at each stage, so
+/// its engine reads the records it enriches commands against and its
+/// presenter folds nothing. What the read and the watch do next follows from
+/// how an event moved the phase, never from a flag the engine keeps.
+public struct LinkedRecords: Equatable, Sendable {
+    public enum Event: Codable, Equatable, Sendable {
+        case linked(LinkSnapshot)
+        case loaded([Record], cursor: WatchCursor?, queue: [OutboxEntry])
+        case listed([Record], cursor: WatchCursor?)
+        case readFailed(String, LinkReport?)
+        /// A record read again, or removed by the watch, by `kind/id`.
+        case changed(String, Record?)
+        case rereadFailed([String])
+        case watchOpened(WatchCursor)
+        case watchInterrupted(String)
+        case watchEnded(WatchStop, String)
+        case relistNeeded
+        /// The outbox's queue, and the writes it took since it opened.
+        case queueReported([OutboxEntry], landed: Set<UUID>)
+        case enqueued(Set<UUID>, queue: [OutboxEntry], landed: Set<UUID>)
+        case notQueued(Set<UUID>, String)
+        /// The owner's change, laid over at once.
+        case wrote(LocalWrite)
+        case refreshAsked
+        /// The app came to the front: a watch that stopped is opened again.
+        case foregrounded
+        case clearAsked
+        case cleared
+    }
+
+    public enum Effect: Equatable, Sendable {
+        case load
+        case followOutbox
+        case read
+        case follow(WatchCursor?)
+        case stopFollowing
+        case reread([String])
+        case enqueue(LocalWrite)
+        case clear
+    }
+
+    public typealias State = LinkedRecordsState
+
+    public let kinds: [String]
+    /// Nil while no repository is signed in: nothing is read or written.
+    public let cache: RecordCache?
+    public let outbox: Outbox?
+    /// The app's words: its name, the device, and what it calls the records
+    /// (`kept`: "Reading your tasks…").
+    public let words: StatusWords
+    public let line: WriteLine
+
+    public init(kinds: [String], cache: RecordCache?, outbox: Outbox?, words: StatusWords, line: WriteLine = WriteLine()) {
+        self.kinds = kinds
+        self.cache = cache
+        self.outbox = outbox
+        self.words = words
+        self.line = line
+    }
+
+    public static func == (lhs: LinkedRecords, rhs: LinkedRecords) -> Bool {
+        lhs.kinds == rhs.kinds && lhs.cache === rhs.cache && lhs.outbox === rhs.outbox && lhs.words == rhs.words && lhs.line === rhs.line
+    }
+
+    /// What the app's event at open asks for: the device's copy read, and
+    /// the outbox followed.
+    public var openEffects: [Effect] { [.load, .followOutbox] }
+
+    // MARK: The engine
+
+    public func apply(_ event: Event, to state: State) -> State {
+        var next = state
+        switch event {
+        case let .linked(link):
+            let before = state.link
+            next.link = link
+            // A watch stopped for good opens again when the access may have
+            // come back: a new sign-in, or the network back.
+            startOrStop(&next, restart: before?.signedIn != true || (before?.online != true && link.online == true))
+        case let .loaded(records, cursor, queue):
+            next.server = keyed(records)
+            next.cursor = cursor
+            next.queue = queue.filter { kinds.contains($0.kind) }
+            next.loaded = true
+            fold(&next)
+            startOrStop(&next, restart: false)
+        case let .listed(records, cursor):
+            next.server = keyed(records)
+            next.cursor = cursor ?? state.cursor
+            fold(&next)
+            // A read that ends after a sign-out starts no watch.
+            if next.link?.signedIn == true, next.phase == .reading { next.phase = .following }
+        case let .readFailed(words, _):
+            next.phase = .stopped(words)
+        case let .changed(key, record):
+            next.server[key] = record.flatMap { $0.deletedAt == nil && kinds.contains($0.kind) ? $0 : nil }
+            next.stale.remove(key)
+            fold(&next)
+        case let .rereadFailed(keys):
+            next.stale.formUnion(keys)
+        case let .watchOpened(cursor):
+            next.cursor = cursor
+            next.phase = .following
+        case let .watchInterrupted(words):
+            next.phase = .interrupted(words)
+        case let .watchEnded(_, words):
+            next.phase = .stopped(words)
+        case .relistNeeded:
+            next.cursor = nil
+            next.phase = .reading
+        case let .queueReported(entries, landed):
+            report(entries, confirming: [], landed: landed, into: &next)
+        case let .enqueued(ids, queue, landed):
+            report(queue, confirming: ids, landed: landed, into: &next)
+        case let .notQueued(ids, _):
+            next.queue.removeAll { ids.contains($0.id) }
+            next.unconfirmed.subtract(ids)
+            fold(&next)
+        case let .wrote(write):
+            guard !write.entries.isEmpty else { break }
+            if let batch = write.replacing { next.queue.removeAll { $0.batch == batch } }
+            next.queue += write.entries
+            next.unconfirmed.formUnion(write.entries.map(\.id))
+            fold(&next)
+        case .refreshAsked:
+            if next.link?.signedIn == true, next.loaded, next.phase != .reading { next.phase = .reading }
+        case .foregrounded:
+            startOrStop(&next, restart: true)
+        case .clearAsked:
+            break
+        case .cleared:
+            next.server = [:]
+            next.cursor = nil
+            next.stale = []
+            fold(&next)
+            next.phase = .idle
+            startOrStop(&next, restart: true)
+        }
+        return next
+    }
+
+    private func keyed(_ records: [Record]) -> [String: Record] {
+        var out: [String: Record] = [:]
+        for record in records where kinds.contains(record.kind) && record.deletedAt == nil {
+            out[RecordFold.key(record.kind, record.id)] = record
+        }
+        return out
+    }
+
+    private func fold(_ state: inout State) {
+        state.records = RecordFold.fold(state.server, state.queue)
+    }
+
+    /// Signed in and loaded with nothing reading: the watch resumes where it
+    /// was, or the repository is read first; a watch stopped for good, only
+    /// where `restart` says the reason may be gone. Signed out: it stops.
+    private func startOrStop(_ state: inout State, restart: Bool) {
+        if state.link?.signedIn == true {
+            guard state.loaded, state.phase == .idle || (restart && !state.phase.running) else { return }
+            state.phase = state.cursor == nil ? .reading : .following
+        } else if state.phase.running {
+            state.phase = .idle
+        }
+    }
+
+    /// The outbox's queue as it reported it. A write that left it and that
+    /// the outbox says landed is laid over the server's copy until that
+    /// record is read again, so the owner never sees it undone in between;
+    /// one that left otherwise (discarded, dropped as stale, reset away) is
+    /// not. A write queued here and not in the report yet stays laid over,
+    /// unless the report is the one its own queueing answered, after which
+    /// it has left.
+    private func report(_ entries: [OutboxEntry], confirming ids: Set<UUID>, landed: Set<UUID>, into state: inout State) {
+        let reported = Set(entries.map(\.id))
+        var waiting = state.unconfirmed.subtracting(reported)
+        let left = state.queue.filter { !reported.contains($0.id) && (!waiting.contains($0.id) || ids.contains($0.id)) }
+        waiting.subtract(ids)
+        for entry in left where landed.contains(entry.id) && !entry.parked {
+            state.server[entry.key] = RecordFold.apply(entry, to: state.server[entry.key])
+        }
+        state.queue = entries.filter { kinds.contains($0.kind) } + state.queue.filter { waiting.contains($0.id) }
+        state.unconfirmed = waiting
+        fold(&state)
+    }
+
+    // MARK: The effects
+
+    /// What an applied event asks for. The read and the watch follow the
+    /// phase it moved: to reading, a read; to following from anything but a
+    /// watch waiting to open again, a watch; from running to idle, the
+    /// watch stopped. A write goes to the outbox, and a record a write of
+    /// which left the queue, or whose read failed, is read again.
+    public func effects(of event: Event, on state: State, from previous: State) -> [Effect] {
+        var out: [Effect] = []
+        switch event {
+        case let .wrote(write):
+            if !write.entries.isEmpty { out.append(.enqueue(write)) }
+        case .queueReported, .enqueued:
+            let kept = Set(state.queue.map(\.id))
+            var keys: [String] = []
+            for entry in previous.queue where !kept.contains(entry.id) && !keys.contains(entry.key) { keys.append(entry.key) }
+            if !keys.isEmpty { out.append(.reread(keys)) }
+        case .clearAsked:
+            out.append(.clear)
+        case .watchOpened, .foregrounded:
+            if !state.stale.isEmpty { out.append(.reread(state.stale.sorted())) }
+        case let .linked(link):
+            if link.online == true, previous.link?.online != true, !state.stale.isEmpty { out.append(.reread(state.stale.sorted())) }
+        default:
+            break
+        }
+        if state.phase != previous.phase {
+            switch state.phase {
+            case .reading:
+                out.append(.read)
+            case .following:
+                if case .interrupted = previous.phase {} else { out.append(.follow(state.cursor)) }
+            case .idle where previous.phase.running:
+                out.append(.stopFollowing)
+            default:
+                break
+            }
+        }
+        return out
+    }
+
+    /// A write is never cancelled for another: the line keeps their order.
+    public func key(of effect: Effect) -> String? {
+        switch effect {
+        case .load: "records.load"
+        case .followOutbox: "records.outbox"
+        case .read: "records.read"
+        case .follow, .stopFollowing: "records.watch"
+        case .clear: "records.clear"
+        case .reread, .enqueue: nil
+        }
+    }
+
+    /// A 401 or a 403 `insufficient_scope` from the read or the watch.
+    public func report(of event: Event) -> LinkReport? {
+        switch event {
+        case let .readFailed(_, report): report
+        case .watchEnded(.signedOut, _): .accessEnded
+        case .watchEnded(.needsApproval, _): .needsApproval
+        default: nil
+        }
+    }
+
+    /// A burst of watch rows or outbox reports is drawn once per window.
+    public func coalescing(of event: Event) -> Coalescing {
+        switch event {
+        case .changed, .queueReported: .within(.milliseconds(100))
+        default: .now
+        }
+    }
+
+    public func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
+        let (kinds, cache, outbox, line, words) = (kinds, cache, outbox, line, words)
+        let source = environment.client
+        switch effect {
+        case .load:
+            return .once {
+                var records: [Record] = []
+                if let cache { for kind in kinds { records += await cache.records(of: kind) } }
+                return .loaded(records, cursor: await cache?.cursor, queue: await outbox?.entries ?? [])
+            }
+        case .followOutbox:
+            guard let outbox else { return .none }
+            return .relay { continuation in
+                for await _ in await outbox.changes() { continuation.yield(.queueReported(await outbox.entries, landed: await outbox.landed)) }
+            }
+        case .read:
+            return .once {
+                guard let client = await source.current() else { return nil }
+                do {
+                    let page = try await client.listAll(ListQuery(kinds: kinds, first: 200), limit: 10000)
+                    await cache?.listed(page, kinds: kinds)
+                    try? await outbox?.saw(Dictionary(page.records.map { (RecordFold.key($0.kind, $0.id), $0.version) }) { a, _ in a })
+                    let cursor = page.generation.isEmpty ? nil : WatchCursor(seq: page.head, generation: page.generation)
+                    return .listed(page.records, cursor: await cache?.cursor ?? cursor)
+                } catch {
+                    return .readFailed(explain(error, app: words.app, server: client.server), LinkReport(error))
+                }
+            }
+        case let .follow(cursor):
+            return .relay { continuation in
+                guard let client = await source.current() else { return }
+                let follower = WatchFollower(client: client, kinds: kinds, app: words.app)
+                for await event in follower.follow(from: cursor) {
+                    switch event {
+                    case let .opened(cursor):
+                        await cache?.bookmark(cursor)
+                        continuation.yield(.watchOpened(cursor))
+                    case let .row(row):
+                        await cache?.apply(row)
+                        let key = RecordFold.key(row.kind, row.recordID)
+                        if row.removes {
+                            continuation.yield(.changed(key, nil))
+                        } else {
+                            switch await Self.read(row.kind, row.recordID, client: client, cache: cache, outbox: outbox, words: words) {
+                            case let .read(event): continuation.yield(event)
+                            case .failed: continuation.yield(.rereadFailed([key]))
+                            }
+                        }
+                    case .relist:
+                        continuation.yield(.relistNeeded)
+                    case let .interrupted(reason):
+                        continuation.yield(.watchInterrupted(reason))
+                    case let .ended(end):
+                        continuation.yield(Self.stopped(end, words: words))
+                    }
+                }
+            }
+        case .stopFollowing:
+            return .cancel
+        case let .reread(keys):
+            return .relay { continuation in
+                guard let client = await source.current() else {
+                    continuation.yield(.rereadFailed(keys))
+                    return
+                }
+                var failed: [String] = []
+                for key in keys {
+                    guard let reference = RecordReference(path: key) else { continue }
+                    switch await Self.read(reference.kind, reference.recordID, client: client, cache: cache, outbox: outbox, words: words) {
+                    case let .read(event): continuation.yield(event)
+                    case .failed: failed.append(key)
+                    }
+                }
+                if !failed.isEmpty { continuation.yield(.rereadFailed(failed)) }
+            }
+        case let .enqueue(write):
+            guard let outbox else { return .none }
+            let ticket = line.ticket()
+            return .once {
+                await line.wait(ticket)
+                defer { line.done(ticket) }
+                let ids = Set(write.entries.map(\.id))
+                do {
+                    if let batch = write.replacing, let entry = write.entries.first {
+                        try await outbox.purge(batch: batch, with: entry)
+                    } else {
+                        try await outbox.enqueue(write.entries)
+                    }
+                    return .enqueued(ids, queue: await outbox.entries, landed: await outbox.landed)
+                } catch {
+                    return .notQueued(ids, "\(words.device.capitalizedFirst) could not keep the change: \(error.localizedDescription)")
+                }
+            }
+        case .clear:
+            return .once {
+                await cache?.clear()
+                return .cleared
+            }
+        }
+    }
+
+    private enum Read {
+        case read(Event)
+        /// Not read now (the network, the server): the record is read again
+        /// at the next chance.
+        case failed
+    }
+
+    /// One record read again after the watch named it, or a write of it
+    /// landed: kept in the cache, its version told to the outbox.
+    private static func read(_ kind: String, _ id: String, client: SubstrateClient, cache: RecordCache?, outbox: Outbox?,
+                             words: StatusWords) async -> Read
+    {
+        do {
+            let record = try await client.record(kind, id)
+            await cache?.refreshed(kind, id, as: record)
+            if let record { try? await outbox?.saw([RecordFold.key(kind, id): record.version]) }
+            return .read(.changed(RecordFold.key(kind, id), record))
+        } catch is SessionExpired {
+            return .read(stopped(.signedOut, words: words))
+        } catch is InsufficientScope {
+            return .read(stopped(.needsApproval, words: words))
+        } catch {
+            return .failed
+        }
+    }
+
+    private static func stopped(_ end: WatchEnd, words: StatusWords) -> Event {
+        switch end {
+        case .signedOut: .watchEnded(.signedOut, "Your access ended.")
+        case .needsApproval: .watchEnded(.needsApproval, "Your approval does not reach your \(words.kept).")
+        case let .refused(reason): .watchEnded(.refused, reason)
+        }
+    }
+
+    // MARK: The presenter
+
+    /// The line about reading the records, nil when nothing is worth
+    /// saying: the first read, the watch waiting to open again, or stopped.
+    public func notice(_ state: State) -> NoticeLine? {
+        guard state.link?.signedIn == true else { return nil }
+        switch state.phase {
+        case .reading where state.records.isEmpty: return NoticeLine("Reading your \(words.kept)…", symbol: .sending, tone: .quiet)
+        case let .interrupted(reason): return NoticeLine(reason, symbol: .offline, tone: .caution)
+        case let .stopped(reason): return NoticeLine("Your \(words.kept) are not being updated: \(reason)", symbol: .warning, tone: .critical)
+        default: return nil
+        }
+    }
+}

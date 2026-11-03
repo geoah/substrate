@@ -1,3 +1,5 @@
+import SubstrateRuntime
+
 import Foundation
 import SubstrateLocal
 
@@ -42,8 +44,10 @@ public enum SettingsPresenter {
         if let problem = status.problem {
             rows.append(SettingsRow(id: .status(.problem), label: problem.title ?? "", control: .problem(problem)))
         }
+        // The package by its name, and under it its full reference: two
+        // packages may share a name, never a reference.
         rows += status.packages.map {
-            SettingsRow(id: .status(.package($0.id)), label: $0.row.label, control: .value($0.row.value, verbatim: false))
+            SettingsRow(id: .status(.package($0.id)), label: $0.row.label, detail: $0.id, control: .value($0.row.value, verbatim: false))
         }
         rows += status.actions.map { action in
             SettingsRow(id: .status(.action(action.action)), label: action.title, control: .action(destructive: false, enabled: !status.busy))
@@ -79,6 +83,20 @@ public enum SettingsPresenter {
         rows.append(SettingsRow(id: .storage(.clear), label: "Clear Saved Copies", control: .action(destructive: true, enabled: clearable)))
         return SettingsSection(id: .storage, title: "Storage", rows: rows,
                                footer: "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.")
+    }
+
+    /// An app's Settings as one screen: its own sections, then the link's
+    /// status and repository, then storage and about, every app's in the
+    /// same order.
+    public static func screen<App>(_ sections: [SettingsSection], link: LinkPresentation<App>, storage: SettingsSection?,
+                                   about: AboutPresentation) -> SettingsPresentation
+    {
+        var all = sections
+        all += status(link.status)
+        if let repository = link.repository { all += self.repository(repository) }
+        if let storage { all.append(storage) }
+        all.append(self.about(about))
+        return SettingsPresentation(sections: all)
     }
 
     public static func about(_ about: AboutPresentation) -> SettingsSection {

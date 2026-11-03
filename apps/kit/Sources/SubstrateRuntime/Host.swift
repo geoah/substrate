@@ -372,7 +372,7 @@ final class Host<C: Controller>: @unchecked Sendable {
         defer { reconciling = false }
         repeat {
             reconcileAgain = false
-            let wanted = controller.children(in: state)
+            let wanted = controller.children(in: state, environment: loop.environment)
             for key in children.keys.sorted() where wanted[key] == nil {
                 children.removeValue(forKey: key)?.close()
                 dirty = true

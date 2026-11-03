@@ -24,6 +24,7 @@ public final class ScriptedServer: HTTPTransport, @unchecked Sendable {
     private var rules: [Rule] = []
     private var kept: [Sent] = []
     private var holds: [String: HeldRequest] = [:]
+    private var headers: [String: [String: String]] = [:]
 
     public init() {}
 
@@ -36,6 +37,12 @@ public final class ScriptedServer: HTTPTransport, @unchecked Sendable {
     /// Answers `method path` with a status and a body, every time.
     public func answer(_ method: String, _ path: String, _ status: Int, _ body: String) {
         on { $0.method == method && $0.path == path ? (status, body) : nil }
+    }
+
+    /// The same, with headers on the answer (a 403's `WWW-Authenticate`).
+    public func answer(_ method: String, _ path: String, _ status: Int, _ body: String, headers: [String: String]) {
+        lock.withLock { self.headers["\(method) \(path)"] = headers }
+        answer(method, path, status, body)
     }
 
     /// Holds the next `method path` request on the wire until the hold is
@@ -55,6 +62,7 @@ public final class ScriptedServer: HTTPTransport, @unchecked Sendable {
                         query: components?.query, body: body)
         let held = lock.withLock { holds.removeValue(forKey: "\(sent.method) \(sent.path)") }
         if let held { await held.arriveAndWait() }
+        let extra = lock.withLock { headers["\(sent.method) \(sent.path)"] ?? [:] }
         let (status, text) = lock.withLock { () -> (Int, String) in
             kept.append(sent)
             for rule in rules {
@@ -64,7 +72,7 @@ public final class ScriptedServer: HTTPTransport, @unchecked Sendable {
         }
         if status == -1 { throw URLError(.notConnectedToInternet) }
         let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
-                                       headerFields: ["Content-Type": "application/json"])!
+                                       headerFields: ["Content-Type": "application/json"].merging(extra) { $1 })!
         return (Data(text.utf8), response)
     }
 }

@@ -60,9 +60,11 @@ public enum StatusPresenter {
             ProblemPresentation(title: "Refused by your substrate", message: reason, tone: .caution)
         default: nil
         }
+        let notice = parked.isEmpty ? nil
+            : NoticeLine(parked.count == 1 ? "1 change needs you" : "\(parked.count) changes need you", symbol: .warning, tone: .caution)
         return StatusPresentation(title: "Substrate", symbol: symbol, tone: tone, sentence: sentence, problem: problem, packages: lines,
                                   actions: actions, busy: sending,
-                                  footer: words.footer(host: host), refused: refused)
+                                  footer: words.footer(host: host), refused: refused, notice: notice)
     }
 
     /// What the server refused of the write, a fact apart from what the

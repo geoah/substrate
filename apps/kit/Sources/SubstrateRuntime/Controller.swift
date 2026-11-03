@@ -133,6 +133,10 @@ public protocol Controller: Sendable {
     /// value that differs replaces the controller running under its key,
     /// whose state stays.
     func children(in state: State) -> [ChildKey: Child]
+    /// The same, with the environment, for a parent whose children's values
+    /// are read in the device's time zone or locale (a task's day, from its
+    /// moment). The default is `children(in:)`, which sees the state alone.
+    func children(in state: State, environment: AppEnvironment) -> [ChildKey: Child]
     /// The link's snapshot this state makes, delivered down the tree inside
     /// the step that changed it; nil for every controller but the link.
     func link(in state: State) -> LinkSnapshot?
@@ -160,6 +164,7 @@ public extension Controller {
     func key(of effect: Effect) -> String? { nil }
     func nextChange(of presentation: Presentation) -> Date? { nil }
     func children(in state: State) -> [ChildKey: Child] { [:] }
+    func children(in state: State, environment: AppEnvironment) -> [ChildKey: Child] { children(in: state) }
     func link(in state: State) -> LinkSnapshot? { nil }
     func journal(in environment: AppEnvironment) -> (any JournalStore<Event, State>)? { nil }
 }

@@ -78,6 +78,9 @@ public actor Outbox {
     public private(set) var saveProblem: String?
     /// Moved by every change the app makes to the queue, never by a flush.
     private var revision = 0
+    /// The writes the server took since the outbox opened, the latest
+    /// `landedLimit` of them, oldest first.
+    private var landedIDs: [UUID] = []
     private var watchers: [Int: AsyncStream<OutboxSummary>.Continuation] = [:]
     private var nextWatcher = 0
 
@@ -112,6 +115,16 @@ public actor Outbox {
     }
 
     public var entries: [OutboxEntry] { file.entries }
+
+    /// How many landed writes `landed` remembers: more than a reader that
+    /// follows `changes()` misses between two reads.
+    public static let landedLimit = 1024
+
+    /// The writes the server took since the outbox opened, by id. A reader
+    /// that saw an entry leave the queue tells a landed write, which it lays
+    /// over the server's copy until it reads the record again, from one
+    /// discarded, dropped as stale or reset away, which it does not.
+    public var landed: Set<UUID> { Set(landedIDs) }
 
     /// The entries the server refused, waiting for the owner.
     public var parked: [OutboxEntry] { file.entries.filter(\.parked) }
@@ -395,6 +408,8 @@ public actor Outbox {
                     }
                     file.entries.removeAll { $0.id == entry.id }
                 }
+                landedIDs.append(entry.id)
+                if landedIDs.count > Self.landedLimit { landedIDs.removeFirst(landedIDs.count - Self.landedLimit) }
             case let .failure(error):
                 switch Self.classify(error) {
                 case .drop:

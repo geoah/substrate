@@ -43,6 +43,18 @@ public protocol Notifications: Sendable {
 }
 
 public extension Notifications {
+    /// A whole plan made the one this device keeps: every request under
+    /// `prefix` the plan no longer holds cancelled, then each it holds
+    /// scheduled, which replaces one of the same id. An app that reminds of
+    /// what its records say (a task's due time) calls this with the plan its
+    /// presenter made, so a record that moved or went takes its reminder
+    /// with it, and nothing of another app's prefix is touched.
+    func reconcile(_ plan: [NotificationRequest], prefix: String) async {
+        let wanted = Set(plan.map(\.id))
+        for id in await pending(prefix: prefix) where !wanted.contains(id) { await cancel(id) }
+        for request in plan { await schedule(request) }
+    }
+
     func register(_ categories: [NotificationCategory]) async {}
     func cancel(thread: String) async {}
     func cancelAll() async {}
