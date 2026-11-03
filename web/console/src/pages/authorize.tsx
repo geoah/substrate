@@ -15,7 +15,12 @@
  * be blocked. An error never navigates anywhere. */
 
 import { useEffect, useState, type ReactNode } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import { BoxesIcon, ChevronRightIcon } from "lucide-react"
 
 import { Fact, Problem, Warning } from "@/components/authorize/parts"
@@ -337,6 +342,8 @@ function Approval({
   reread,
   onSettingUp,
   readError,
+  onChecked,
+  planning,
 }: {
   id: string
   request: AuthorizationRequest
@@ -347,6 +354,12 @@ function Approval({
   /** The latest read of the request failed, while the page still shows an
    * earlier one. */
   readError: unknown
+  /** The scopes left checked changed: the set up is planned against them
+   * (decision 0215), so the page reads the request again with them. */
+  onChecked: (scopes: string[]) => void
+  /** That read is still on its way: the plan shown is the last one, so
+   * nothing is approved until the new one is in. */
+  planning: boolean
 }) {
   const { app } = request
   const [technical, setTechnical] = useTechnicalDetails()
@@ -430,12 +443,15 @@ function Approval({
       : "Approve"
 
   function toggle(scope: string, checked: boolean) {
-    setUnchecked((prev) => {
-      const next = new Set(prev)
-      if (checked) next.delete(scope)
-      else next.add(scope)
-      return next
-    })
+    const next = new Set(unchecked)
+    if (checked) next.delete(scope)
+    else next.add(scope)
+    setUnchecked(next)
+    // Only a request with set up has a plan to make again.
+    if (request.details.length > 0)
+      onChecked(
+        request.scopes.filter((s) => !next.has(s.scope)).map((s) => s.scope)
+      )
   }
 
   function approve() {
@@ -700,7 +716,7 @@ function Approval({
               Deny
             </Button>
             <Button
-              disabled={settled || chosen.length === 0 || blocked}
+              disabled={settled || chosen.length === 0 || blocked || planning}
               onClick={approve}
             >
               {pendingVerdict === "approve" && <Spinner />}
@@ -766,14 +782,19 @@ function AuthorizeDoor() {
   const { request: id } = authorizeRoute.useParams()
   const client = useQueryClient()
   const [technical] = useTechnicalDetails()
-  const queryKey = ["authorization", id]
+  // The scopes left checked, once the owner changed them: the set up is
+  // planned against them (decision 0215), so each change is a read of its
+  // own, the page keeping the last answer up while it waits.
+  const [checked, setChecked] = useState<string[] | undefined>(undefined)
+  const queryKey = ["authorization", id, checked ?? null]
   // Read once, right after an approval whose set up runs, and every second
   // while it runs: a refetch after any other answer would only find the
   // request gone. A dropped connection or a busy server is still retried,
   // the console's default for a read; a 404 never is.
   const authorization = useQuery({
     queryKey,
-    queryFn: ({ signal }) => getAuthorization(id, signal),
+    queryFn: ({ signal }) => getAuthorization(id, signal, checked),
+    placeholderData: keepPreviousData,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -808,6 +829,8 @@ function AuthorizeDoor() {
             void authorization.refetch({ cancelRefetch: false })
           }}
           readError={authorization.isError ? authorization.error : undefined}
+          onChecked={setChecked}
+          planning={authorization.isPlaceholderData}
         />
       ) : authorization.isPending ? (
         <Card aria-busy>

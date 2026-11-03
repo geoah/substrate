@@ -28,6 +28,7 @@ import type {
   AuthorizationAgentPlan,
   AuthorizationPackage,
   AuthorizationPackageStep,
+  AuthorizationReach,
   AuthorizationSetup,
   AuthorizationWebhookPlan,
   SetupAction,
@@ -43,9 +44,11 @@ import {
   dollars,
   factCounts,
   grantWords,
+  networkWords,
   packageName,
   propertyLabel,
   propertyValue,
+  reachWords,
   setupTitle,
   versionWords,
 } from "@/lib/app-setup"
@@ -133,19 +136,61 @@ function version(n: number | undefined): string {
   return n ? `version ${n}` : "none"
 }
 
-/** A package's own kinds, functions and triggers, each counted and opened
- * on demand, so a long closure is not one wall of references. */
+/** A list of references, one per line. */
+function Refs({ items }: { items: readonly string[] }) {
+  return (
+    <ul className="flex flex-col gap-0.5 pl-3">
+      {items.map((w) => (
+        <li key={w}>
+          <Mono>{w}</Mono>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** One kind or glob a package's code reaches (decision 0215): the verb,
+ * what reaches it, and the scope that covers it or would. */
+function ReachLine({ reach }: { reach: AuthorizationReach }) {
+  return (
+    <li className="flex flex-col gap-0.5">
+      <span>
+        <Mono>{reach.pattern}</Mono>, {reach.write ? "written" : "read"} by{" "}
+        {reach.by.map((b, i) => (
+          <span key={`${b.type}/${b.id}`}>
+            {i > 0 && ", "}
+            {b.type} <Mono>{b.id}</Mono>
+          </span>
+        ))}
+      </span>
+      <span
+        className={reach.covered ? "text-muted-foreground" : "text-destructive"}
+      >
+        {reach.covered ? "Covered by " : "Not covered: needs "}
+        <Mono>{reach.scope}</Mono>
+      </span>
+    </li>
+  )
+}
+
+/** A package's own kinds, functions, triggers and reach, each counted and
+ * opened on demand, so a long closure is not one wall of references. */
 function OwnFacts({
   facts,
   of,
 }: {
-  facts: Pick<AuthorizationPackage, "kinds" | "functions" | "triggers">
+  facts: Pick<
+    AuthorizationPackage,
+    "kinds" | "functions" | "triggers" | "reach"
+  >
   of: string
 }) {
   const kinds = facts.kinds ?? []
   const functions = facts.functions ?? []
   const triggers = facts.triggers ?? []
-  if (kinds.length + functions.length + triggers.length === 0) return null
+  const reach = facts.reach ?? []
+  if (kinds.length + functions.length + triggers.length + reach.length === 0)
+    return null
   return (
     <div className="flex flex-col gap-1 text-xs">
       {kinds.length > 0 && (
@@ -169,21 +214,48 @@ function OwnFacts({
             {functions.map((f) => (
               <li key={f.id} className="flex flex-col gap-0.5">
                 <Mono>{f.id}</Mono>
+                {f.reads && f.reads.length > 0 ? (
+                  <>
+                    <span className="text-muted-foreground">May read</span>
+                    <Refs items={f.reads} />
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">Reads nothing</span>
+                )}
                 {f.writes && f.writes.length > 0 ? (
                   <>
                     <span className="text-muted-foreground">May write</span>
-                    <ul className="flex flex-col gap-0.5 pl-3">
-                      {f.writes.map((w) => (
-                        <li key={w}>
-                          <Mono>{w}</Mono>
-                        </li>
-                      ))}
-                    </ul>
+                    <Refs items={f.writes} />
                   </>
                 ) : (
                   <span className="text-muted-foreground">Writes nothing</span>
                 )}
+                <span className="text-muted-foreground">
+                  Network:{" "}
+                  {f.network && f.network.length > 0 ? (
+                    f.network.map((host, i) => (
+                      <span key={host}>
+                        {i > 0 && ", "}
+                        <Mono>{host}</Mono>
+                      </span>
+                    ))
+                  ) : (
+                    <span>none</span>
+                  )}
+                </span>
               </li>
+            ))}
+          </ul>
+        </Disclosure>
+      )}
+      {reach.length > 0 && (
+        <Disclosure label="Reach" count={reach.length} of={of}>
+          <ul className="flex flex-col gap-1.5">
+            {reach.map((r) => (
+              <ReachLine
+                key={`${r.write ? "w" : "r"}:${r.pattern}`}
+                reach={r}
+              />
             ))}
           </ul>
         </Disclosure>
@@ -445,6 +517,8 @@ export function SetupRow({
   const fix = consolePath(row.blocked?.fix)
   const versions = versionWords(row)
   const code = row.package && codeWords(row.package, webhooks)
+  const network = row.package && networkWords(row.package)
+  const reach = row.package && reachWords(row.package)
   const chain = row.package ? chainLines(row.package, webhooks) : []
   const inPlace = row.action === "none"
   return (
@@ -466,6 +540,8 @@ export function SetupRow({
           </p>
         )}
         {code && <p className="text-xs">{code}</p>}
+        {network && <p className="text-xs">{network}</p>}
+        {reach && <p className="text-xs">{reach}</p>}
         {chain.map((line) => (
           <p key={line} className="text-xs">
             {line}
