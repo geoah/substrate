@@ -1574,3 +1574,5 @@ func sortedRecordIDs(m map[string]*substrate.Record) []string {
 }
 
 var errBoom = errors.New("boom")
+
+func (d *fakeDataset) CompleteAppAddon(context.Context, string, string) error { return nil }
