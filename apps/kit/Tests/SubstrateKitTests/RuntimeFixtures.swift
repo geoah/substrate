@@ -85,7 +85,7 @@ struct Training: Controller {
         case announce(String)
     }
 
-    let store: MemoryJournal<Event, State>
+    let store: any JournalStore<Event, State>
     let shelf: HistoryShelf
 
     var initialState: State { State() }

@@ -17,6 +17,7 @@ let package = Package(
         .library(name: "SubstrateAPI", targets: ["SubstrateAPI"]),
         .library(name: "SubstrateAuth", targets: ["SubstrateAuth"]),
         .library(name: "SubstrateRuntime", targets: ["SubstrateRuntime"]),
+        .library(name: "SubstrateLocal", targets: ["SubstrateLocal"]),
         .library(name: "SubstrateTesting", targets: ["SubstrateTesting"]),
         .library(name: "SubstrateDeviceApple", targets: ["SubstrateDeviceApple"]),
         .library(name: "SubstrateUI", targets: ["SubstrateUI"]),
@@ -42,9 +43,12 @@ let package = Package(
         // The loop every screen runs: command, controller, engine, journal,
         // presenter, effects; keyed children, epochs, coalescing.
         .target(name: "SubstrateRuntime", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateAPI"]),
+        // The repository's folder, the journal file, the outbox, the record
+        // cache, the package a repository holds and the link generation.
+        .target(name: "SubstrateLocal", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateRuntime"]),
         // The scripted server, the fake device services and the harness tests use.
         .target(name: "SubstrateTesting", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime",
+            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal",
         ]),
         // The plain resolver's verdict on a TXT query, which tells a SERVFAIL
         // from a name without the record where DNS-SD cannot.
@@ -59,7 +63,7 @@ let package = Package(
             "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateDeviceApple",
             "SubstrateUI",
         ]),
-        .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateTesting"]),
+        .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateLocal", "SubstrateTesting"]),
     ],
     swiftLanguageModes: [.v6]
 )
