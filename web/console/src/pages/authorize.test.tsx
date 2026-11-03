@@ -14,7 +14,10 @@ import { clearSession, saveSession } from "@/lib/api/session"
 import { scopeSentence } from "@/lib/app-scopes"
 
 vi.mock("@/router", () => ({
-  authorizeRoute: { useParams: () => ({ request: "req-1" }) },
+  authorizeRoute: {
+    useParams: () => ({ request: "req-1" }),
+    useSearch: () => ({ login_hint: undefined }),
+  },
 }))
 
 import { AuthorizePage } from "./authorize"
