@@ -45,6 +45,7 @@ import {
   fetchCatalogItem,
   importBundle,
   installBundle,
+  type BundleInstallResult,
 } from "@/lib/api/catalog"
 import {
   ApiError,
@@ -81,7 +82,7 @@ import { cn } from "@/lib/utils"
 function takeAgain(
   row: BundleRow,
   upgrade = row.upgrade
-): Promise<BundleStatus> {
+): Promise<BundleInstallResult> {
   const door = row.tier === "sample" ? importBundle : installBundle
   return door(row.catalog?.id ?? row.id, confirmationOf(upgrade))
 }
@@ -160,7 +161,17 @@ export function TakeButton({
           throw new NeedsConsent(bundle)
         }
         try {
-          landed = await takeAgain(bundle, fresh.upgrade)
+          const result = await takeAgain(bundle, fresh.upgrade)
+          for (const addon of result.addons ?? []) {
+            toast.add({
+              type: addon.state === "installed" ? "success" : "error",
+              title: addon.package
+                ? `${addon.package}: ${addon.state === "installed" ? "installed" : "still waiting"}`
+                : "Add-ons still waiting",
+              description: addon.problem,
+            })
+          }
+          landed = result
         } catch (error) {
           throw new ChainFailure(bundle.name, error)
         }

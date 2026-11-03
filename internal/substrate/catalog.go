@@ -170,6 +170,14 @@ const (
 	SuggestedMappingBlocked = "blocked"
 )
 
+// AddonInstallResult reports an approved add-on attempted after a provider install.
+type AddonInstallResult struct {
+	Package string `json:"package"`
+	TokenID string `json:"tokenId"`
+	State   string `json:"state"`
+	Problem string `json:"problem,omitempty"`
+}
+
 // CatalogClosure is what installing or importing a bundle lands, by kind: the
 // detail preview the console shows first. EVERY member of it is a record: a
 // kind, a function and an agent are records of the core meta-kinds, and Records

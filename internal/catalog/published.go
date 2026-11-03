@@ -10,6 +10,7 @@ import (
 // authority document of its publisher and the closure that document lists.
 // A bundle the binary ships has none.
 type Origin struct {
+	AddonFor string
 	// Authority is the publisher, and Name the document's own name for it.
 	Authority string
 	Name      string

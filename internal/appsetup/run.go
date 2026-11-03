@@ -44,7 +44,10 @@ type Runner struct {
 }
 
 // NewRunner builds a runner over cat; nil ships nothing.
-func NewRunner(cat *catalog.Catalog) *Runner { return &Runner{catalog: cat} }
+func NewRunner(cat *catalog.Catalog) *Runner {
+	configureAddons(cat)
+	return &Runner{catalog: cat}
+}
 
 // Outcome is how a run ended.
 type Outcome struct {
@@ -70,6 +73,12 @@ func (r *Runner) turn(ctx context.Context, authority string) (func(), error) {
 	}
 }
 
+// RunOptions carries owner choices transiently; values never enter a plan.
+type RunOptions struct {
+	Addons   []string
+	Settings []substrate.AuthorizationSettingValue
+}
+
 // Run sets up details in ds's repository as actor, approved being the rows
 // the approval was checked against, in details' order. It plans again once
 // it holds the repository's turn, since a set up before it may have landed
@@ -80,7 +89,7 @@ func (r *Runner) turn(ctx context.Context, authority string) (func(), error) {
 // the owner installs from the provider page. report records each row's
 // progress, in details' order, and answers false once the request is gone.
 func (r *Runner) Run(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, details []substrate.AuthorizationDetail,
-	approved []substrate.AuthorizationSetup, report func(progress []string) bool,
+	approved []substrate.AuthorizationSetup, report func(progress []string) bool, options ...RunOptions,
 ) Outcome {
 	progress := make([]string, len(approved))
 	for i, row := range Started(approved, approved) {
@@ -102,6 +111,17 @@ func (r *Runner) Run(ctx context.Context, ds substrate.Dataset, actor substrate.
 	if err != nil {
 		return Outcome{Failure: &substrate.AuthorizationFailure{Message: FailureWords("Reading what to set up", err)}}
 	}
+	var opts RunOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	rows, err = SelectAddons(rows, opts.Addons)
+	if err == nil {
+		err = ValidateSettings(rows, opts.Settings)
+	}
+	if err != nil {
+		return Outcome{Failure: &substrate.AuthorizationFailure{Message: "needs-setting: check the settings and add-ons, then approve again"}}
+	}
 	// Nothing is written unless every row still is what the owner approved.
 	if i := FirstBlocked(rows); i >= 0 {
 		return stop(i, rows[i].Blocked.Problem, true)
@@ -122,7 +142,13 @@ func (r *Runner) Run(ctx context.Context, ds substrate.Dataset, actor substrate.
 	rank := map[string]int{substrate.DetailPackage: 0, substrate.DetailAccount: 1, substrate.DetailWebhook: 2}
 	sort.SliceStable(order, func(a, b int) bool { return rank[rows[order[a]].Type] < rank[rows[order[b]].Type] })
 	for _, i := range order {
-		if rows[i].Action == substrate.SetupNone {
+		if rows[i].Type != substrate.DetailPackage && len(opts.Settings) > 0 {
+			if err := WriteSettings(ctx, ds, actor, opts.Settings); err != nil {
+				return Outcome{Failure: &substrate.AuthorizationFailure{Message: err.Error()}}
+			}
+			opts.Settings = nil
+		}
+		if rows[i].Action == substrate.SetupNone || rows[i].Action == substrate.SetupWait {
 			continue
 		}
 		progress[i] = substrate.ProgressRunning
@@ -139,6 +165,9 @@ func (r *Runner) Run(ctx context.Context, ds substrate.Dataset, actor substrate.
 	}
 	if !report(progress) {
 		return Outcome{Gone: true}
+	}
+	if err := WriteSettings(ctx, ds, actor, opts.Settings); err != nil {
+		return Outcome{Failure: &substrate.AuthorizationFailure{Message: err.Error()}}
 	}
 	// The bindings the owner approved, once more before the code exists: a
 	// webhook that changed hands while the rows ran would deliver elsewhere.

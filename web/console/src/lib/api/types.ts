@@ -959,10 +959,11 @@ export type AuthorizationState = "pending" | "setting-up" | "approved"
  * `unknown` answers a check for a row the token cannot see. A row that
  * cannot run keeps its action and carries `blocked`. */
 export type SetupAction =
-  "install" | "upgrade" | "create" | "enable" | "none" | "unknown"
+  "install" | "upgrade" | "create" | "enable" | "none" | "unknown" | "wait"
 
 /** Why a setup row cannot run (`substrate.Block*`). */
 export type SetupBlockReason =
+  | "needs-setting"
   | "server-update"
   | "not-shipped"
   | "sample"
@@ -1154,6 +1155,8 @@ export interface AuthorizationBlock {
  * absent when none; `required` the floor the app asks for. A client names a
  * package from its `id`. */
 export interface AuthorizationPackage {
+  addonFor?: string
+  settings?: AuthorizationSetting[]
   id: string
   description?: string
   tier?: string
@@ -1274,7 +1277,26 @@ export interface AuthorizationCheckScopes {
 /** The approval body: the checked subset of the request's resolved scopes,
  * at least one, one of the offered lifetimes (0 for until revoked), and the
  * request's `planHash` as the page read it when it has setup. */
+export interface AuthorizationSetting {
+  id: string
+  description?: string
+  secret: boolean
+  required: boolean
+}
+export interface AuthorizationSettingValue {
+  id: string
+  secret: boolean
+  value: string
+}
+export interface AddonInstallResult {
+  package: string
+  tokenId: string
+  state: string
+  problem?: string
+}
 export interface AuthorizationApproval {
+  addons?: string[]
+  settings?: AuthorizationSettingValue[]
   scopes: string[]
   lifetimeDays: number
   planHash?: string

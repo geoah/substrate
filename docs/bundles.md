@@ -1040,3 +1040,18 @@ triggers), are the [Bundles catalog](bundles-catalog.md).
 
 Next: [functions](functions.md), the callables a bundle ships, and the
 host SDK.
+
+## Configuration during app approval
+
+An app's approval can fill the empty core `setting` and `secret` records a
+package ships, including its requirements' settings. The record id must
+start with the package id followed by `/`. The page shows the description
+and required flag; secrets use password fields. Only the owner submits
+values, and the setup writes them through the ordinary sealed record path
+after installing the package. Existing values are left alone.
+
+A document listing's `addonFor` makes a package optional at app approval.
+If its provider is absent, the approval waits on the app's token. A later
+provider install replans live approvals, installs what it can as the bundle,
+and reports what remains waiting. Required configuration cannot be saved on
+a waiting token: fill it through the package's settings page.

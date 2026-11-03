@@ -262,6 +262,13 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 	b := p.bundle(d.Package)
 	if b != nil {
 		info.Description, info.Tier, info.Shipped = b.Description, b.Tier, b.Version
+		if origin := b.Origin(); origin != nil {
+			info.AddonFor = origin.AddonFor
+		}
+		var err error
+		if info.Settings, err = p.emptySettings(ctx, b); err != nil {
+			return row, err
+		}
 	}
 	// Installed or not: a package row admits the account and webhook rows of
 	// its package, which would otherwise reach the owner's own packages and
@@ -273,11 +280,22 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 	if row.Blocked = problem.own(); row.Blocked != nil || row.Action == substrate.SetupNone {
 		return row, nil
 	}
+	if info.AddonFor != "" && p.held(info.AddonFor) == 0 {
+		row.Action = substrate.SetupWait
+		return row, nil
+	}
 	steps, unmet, err := p.cat.Requirements(ctx, d.Package, p.ds)
 	if err != nil {
 		return row, err
 	}
 	actionOnly := p.opts.ActionOnly[d.Package]
+	for _, dep := range steps {
+		settings, err := p.emptySettings(ctx, dep)
+		if err != nil {
+			return row, err
+		}
+		info.Settings = append(info.Settings, settings...)
+	}
 	if !actionOnly {
 		info.Kinds, info.Functions, info.Triggers = p.facts(b)
 	}

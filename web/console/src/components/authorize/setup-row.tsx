@@ -73,6 +73,7 @@ const STEP_WORDS: Record<SetupAction, string> = {
   enable: "turns on",
   none: "in place",
   unknown: "unknown",
+  wait: "waits for its provider",
 }
 
 /** How far a set up got with a row. A row in place runs nothing, so a set up

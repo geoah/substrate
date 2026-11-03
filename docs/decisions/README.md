@@ -369,3 +369,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0209](0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md) | An app is verified by its authority's TXT record and document | proposed |
 | [0210](0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md) | A token declares new packages only under its repository's authority | proposed |
 | [0211](0211-the-console-groups-collections-by-package.md) | The console groups collections by package | proposed |
+| [0216](0216-an-add-on-package-waits-for-the-provider-it-extends-under-the-approval-already-given.md) | An add-on package waits for the provider it extends, under the approval already given | proposed |
+| [0218](0218-the-approval-page-writes-a-packages-settings-and-secrets-as-the-owner.md) | The approval page writes a package's settings and secrets as the owner | proposed |

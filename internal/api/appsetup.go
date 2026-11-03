@@ -35,7 +35,7 @@ import (
 // pending again with why it stopped. approved is the rows the approval was
 // checked against.
 func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, req authorize.Request, approved []substrate.AuthorizationSetup,
-	approve func(authorize.Request) (authorize.Approval, error),
+	approve func(authorize.Request) (authorize.Approval, error), options ...appsetup.RunOptions,
 ) {
 	if h.setUpEnded != nil {
 		defer h.setUpEnded(req.ID)
@@ -69,7 +69,7 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 			return false
 		}
 		return true
-	})
+	}, options...)
 	switch {
 	case out.Gone:
 		return
