@@ -4,11 +4,14 @@
 import type { AuthorizationRequest } from "@/lib/api/types"
 
 /** The name the page heads with: the verified publisher's name for the app,
- * else the one the app claims, else where it runs. */
+ * else the one the app claims. An unverified app is headed by its host,
+ * labelled as unverified, so the heading never reads as a verified name:
+ * the host is what its client id proves, and the name it claims is a line
+ * under it. */
 export function appTitle(request: AuthorizationRequest): string {
   const { app } = request
   if (app.verified) return app.publisher.appName || app.name || app.host
-  return app.local ? "An app on this device" : app.host
+  return app.local ? "An app on this device" : `Unverified app at ${app.host}`
 }
 
 /** Where the access goes, as the owner reads it. */
