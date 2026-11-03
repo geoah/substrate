@@ -201,6 +201,7 @@ truth on disk and the unit a backup copies
 
 ```
 $SUBSTRATE_DATA_ROOT/
+  instance                          # this server's instance id, minted at its first boot
   repositories/
     ada.example.com/                # one per repository, named by its authority
       repository.json               # the manifest: format, authority, createdAt, changelogDialect, vocabularyDialect, the wrapped DEK, dekKeyId
@@ -216,6 +217,15 @@ $SUBSTRATE_DATA_ROOT/
       spool/
         <ordinal>-hook-<id>.webhook # a webhook request answered 202 and not yet in the changelog, sealed under the DEK
 ```
+
+`instance` names this server to a domain's `_substrate` record
+([decision 0208](decisions/0208-a-repository-proves-its-name-with-a-txt-record-after-registration.md)):
+`GET /.well-known/substrate/server.json` serves it, unauthenticated, as
+`server.instance`, and without `SUBSTRATE_PUBLIC_URL` Verify domain reads it
+back from the origin a record's `server=` names. It is public by design and
+stable for the data root's life, so anyone can tell that two hostnames reach
+one server; a lost data root mints a new one, and stamps already written
+stay.
 
 The changelog segments are newline-delimited JSON, one entry per line, each
 line carrying its own SHA-256 checksum
