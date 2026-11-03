@@ -97,9 +97,13 @@ struct WrittenTests {
         rig.server.answer("GET", "/api/v1/records", 403, #"{"error":{"code":"forbidden","message":"not in scope"}}"#,
                           headers: ["WWW-Authenticate": #"Bearer error="insufficient_scope""#])
         let harness = try linked(rig)
-        try await harness.until { await $0.presentation.status.actions.contains { $0.action == .review } }
-        let app = try #require(await harness.runtime.state(of: LinkController<TasksApp>.appKey))
-        guard case .stopped = app.linked.phase else { throw Unexpected() }
+        // The network's first report may open the read once more, which the
+        // server refuses the same way: the read ends stopped either way.
+        try await harness.until { harness in
+            guard await harness.presentation.status.actions.contains(where: { $0.action == .review }) else { return false }
+            if case .stopped = await harness.runtime.state(of: LinkController<TasksApp>.appKey)?.linked.phase { return true }
+            return false
+        }
         // The access stands: the token was not refused, the approval falls short.
         #expect(await harness.presentation.snapshot.phase == .signedIn)
     }
