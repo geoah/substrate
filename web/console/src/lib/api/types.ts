@@ -871,6 +871,8 @@ export interface TokenInfo {
   expiresAt?: string
   /** Absent on a full-access token, never empty otherwise. */
   scopes?: string[]
+  /** Retired grants remain revocable but no longer authenticate. */
+  retired?: boolean
   /** The app's client id URL, on a token minted for an app. */
   clientId?: string
   /** The name the app claimed when the owner approved it, or the name its

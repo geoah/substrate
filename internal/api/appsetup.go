@@ -175,7 +175,7 @@ func previousToken(ctx context.Context, ds substrate.Dataset, client authorize.C
 	}
 	var newest *substrate.TokenInfo
 	for i := range tokens {
-		if tokens[i].ClientID == client.ID && (newest == nil || tokens[i].Created.After(newest.Created)) {
+		if !tokens[i].Retired && tokens[i].ClientID == client.ID && (newest == nil || tokens[i].Created.After(newest.Created)) {
 			newest = &tokens[i]
 		}
 	}

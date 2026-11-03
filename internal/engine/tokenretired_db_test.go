@@ -37,7 +37,7 @@ func TestARetiredScopeTokenListsButNeverAuthenticates(t *testing.T) {
 	listed := false
 	for _, tk := range tokens {
 		if tk.ID == old.ID {
-			listed = len(tk.Scopes) == 2 && tk.Scopes[0] == "declare:"+home+"/notes" && tk.ClientName == "Notes"
+			listed = tk.Retired && len(tk.Scopes) == 2 && tk.Scopes[0] == "declare:"+home+"/notes" && tk.ClientName == "Notes"
 		}
 	}
 	if !listed {
@@ -45,5 +45,25 @@ func TestARetiredScopeTokenListsButNeverAuthenticates(t *testing.T) {
 	}
 	if _, _, err := ds.svc.Authenticate(ctx, secret); !errors.Is(err, substrate.ErrAuth) {
 		t.Fatalf("a retired grant authenticated: %v", err)
+	}
+	for _, attempt := range []struct{ secret, client string }{
+		{secret + "00", old.ClientID},
+		{secret, "https://other.example/client.json"},
+	} {
+		if err := ds.svc.RevokeToken(ctx, attempt.secret, attempt.client); err != nil {
+			t.Fatal(err)
+		}
+		if row, err := ds.Get(ctx, kindToken, old.ID); err != nil || row.DeletedAt != nil {
+			t.Fatalf("nonmatching secret or client revoked token: %v", err)
+		}
+	}
+	if err := ds.svc.RevokeToken(ctx, secret, old.ClientID); err != nil {
+		t.Fatal(err)
+	}
+	if row, err := ds.Get(ctx, kindToken, old.ID); err != nil || row.DeletedAt == nil {
+		t.Fatalf("retired token was not tombstoned: %v", err)
+	}
+	if err := ds.svc.RevokeToken(ctx, secret, ""); err != nil {
+		t.Fatalf("repeated revocation: %v", err)
 	}
 }
