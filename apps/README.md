@@ -876,10 +876,17 @@ and includes `<id>/apple/targets.yml` in `xcode/project.yml`, so
 writes passes `lint:apps` and the server's first-party reach test
 unchanged, because the template is a whole app named `template` that both
 hold as they hold every other; `apps.sh` and `.mise/closures.py` skip it by
-name, so it is never released or published. CI's `apps linux` job runs
-`mise run apps:new:check`: `apps:new example` into a scratch copy of
-`apps/` in the swift container, and the result's core built and tested
-there. A change to the template is a change to every app made from then
+name, so it is never released or published. `xcode/project.yml` includes
+the template's own targets, so the project shows its scheme,
+`SubstrateTemplate`, beside every app's, and `mise run apple:test:template` runs TemplateKit's tests
+and draws its views on the Mac. `apps:new` refuses a result that still
+names the template anywhere but a kind's `displayTemplate`.
+`mise run apps:new:check` runs `apps:new example` into a scratch copy of
+`apps/`: the result's core built and tested in the swift container, which
+CI's `apps linux` job runs, and on a Mac the result's project generated, its
+app built and its views drawn, which CI (Linux) cannot, so an author
+changing the template runs it, with `apple:test:template`, before the pull
+request. A change to the template is a change to every app made from then
 on; an app already made keeps what it copied.
 
 ## Android

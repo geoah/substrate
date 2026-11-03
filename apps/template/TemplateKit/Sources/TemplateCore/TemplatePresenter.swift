@@ -10,10 +10,11 @@ public enum TemplatePresenter {
             .map { ItemRow(id: $0.id, title: name($0), delete: "Delete") }
             .sorted { ($0.title.lowercased(), $0.id) < ($1.title.lowercased(), $1.id) }
         return TemplatePresentation(
-            title: "Items", items: KeyedList(rows, revision: state.linked.records.count), add: "Add an item",
+            title: "Items", items: KeyedList(rows, revision: state.revision), add: "Add an item",
             empty: rows.isEmpty ? EmptyPresentation(title: "No items", message: "Add one below.") : nil,
             notices: linked.notice(state.linked).map { [$0] } ?? [],
             problem: state.problem.map { ProblemPresentation(title: "A change was not kept", message: $0) }, settings: [],
+            storage: SettingsPresenter.storage(state.usage ?? [], budget: nil),
             about: AboutPresentation.present(appName: TemplateApp.appName, version: build.version, channel: build.channel, offered: nil))
     }
 
@@ -25,6 +26,6 @@ public enum TemplatePresenter {
 
     /// Settings as one screen: the app's sections, then the kit's.
     public static func settings(_ link: LinkPresentation<TemplatePresentation>, _ app: TemplatePresentation) -> SettingsPresentation {
-        SettingsPresenter.screen(app.settings, link: link, storage: nil, about: app.about)
+        SettingsPresenter.screen(app.settings, link: link, storage: app.storage, about: app.about)
     }
 }

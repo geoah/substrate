@@ -171,6 +171,12 @@ build_tasks() {
 	echo "apple: $DERIVED/Build/Products/Debug-iphonesimulator/SubstrateTasks.app"
 }
 
+# Substrate Template, what `apps:new` copies: built and tested like Tasks, so
+# the views a new app starts from compile and draw. Never released.
+template() {
+	xcodebuild -project "$PROJECT" -scheme SubstrateTemplate -derivedDataPath "$DERIVED" -quiet "$@"
+}
+
 # --- a release's Apple half ------------------------------------------------
 #
 # .mise/apps.sh sources this file and calls what follows for every app its
@@ -523,6 +529,12 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 		project
 		tasks -destination 'platform=macOS' test -only-testing:SubstrateTasksTests
 		;;
+	test:template)
+		# TemplateKit on the Mac, then the app's views over its fixtures.
+		swift test --package-path ../template/TemplateKit
+		project
+		template -destination 'platform=macOS' test -only-testing:SubstrateTemplateTests
+		;;
 	test:kit)
 		# SubstrateKit is a Swift package: its tests run on the Mac with swift
 		# test, no project or simulator.
@@ -557,7 +569,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 			exec "$APPLE_ROOT/.mise/apps.sh" site
 		;;
 	*)
-		echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|build:tasks|sim:chat|test:chat|test:kit|test:workouts|test:tasks|install|sim|release|release:sync|release:chat|release:workouts|site [prerelease|stable]" >&2
+		echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|build:tasks|sim:chat|test:chat|test:kit|test:workouts|test:tasks|test:template|install|sim|release|release:sync|release:chat|release:workouts|site [prerelease|stable]" >&2
 		exit 2
 		;;
 	esac

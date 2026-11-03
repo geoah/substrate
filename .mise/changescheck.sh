@@ -35,7 +35,8 @@
 # build` jobs build? They read only apps/ (the Swift packages, the Gradle
 # build), the console fixture the kit's scope words are held to, and their
 # own definitions (.mise.toml, .mise/android.sh, the scaffold apps:new runs
-# in it, .mise/appsnew.sh, this workflow), so there the
+# in it, .mise/appsnew.sh, and the check that runs it, .mise/appsnewcheck.sh,
+# this workflow), so there the
 # list is the RELEVANT set: a change elsewhere cannot
 # move its result, and a docs or Go change skips its build.
 #
@@ -127,7 +128,7 @@ inert() {
 apps_input() {
   case "$1" in
   apps/* | web/console/src/lib/app-scopes.fixture.json) return 0 ;;
-  .mise.toml | .github/workflows/ci.yml | .mise/android.sh | .mise/appsnew.sh) return 0 ;;
+  .mise.toml | .github/workflows/ci.yml | .mise/android.sh | .mise/appsnew.sh | .mise/appsnewcheck.sh) return 0 ;;
   *) return 1 ;;
   esac
 }
