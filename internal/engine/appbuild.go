@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -72,6 +73,19 @@ func (ds *dataset) RecordAppBuild(ctx context.Context, packages map[string]int64
 		}
 		if row == nil || row.DeletedAt != nil || row.Props["clientId"] == nil {
 			return fmt.Errorf("%w: a live app token is required", substrate.ErrForbidden)
+		}
+		raw, err := json.Marshal(row.Props)
+		if err != nil {
+			return err
+		}
+		var held substrate.TokenInfo
+		if err := readAppBuild(raw, &held); err != nil {
+			return err
+		}
+		// Floors enforce build holds; check-in time only needs daily granularity.
+		if maps.Equal(held.AppPackages, packages) && held.AppSoftwareVersion == version &&
+			held.AppCheckedAt != nil && t.now.Sub(*held.AppCheckedAt) < 24*time.Hour {
+			return nil
 		}
 		_, err = t.put(substrate.PutInput{Kind: kindToken, ID: id, Properties: map[string]any{"appPackages": appPackageValues(packages), "appSoftwareVersion": version, "appCheckedAt": t.now.Format(time.RFC3339Nano)}})
 		return err
