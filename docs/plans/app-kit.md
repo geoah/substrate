@@ -307,15 +307,15 @@ and Android. A library depends only on those above it.
 | Library | Holds | From |
 | --- | --- | --- |
 | `SubstrateCore` | one `JSONValue` (ordered keys, a number kept as its decimal text, so Workouts' `Decimal` holds); the record and its flat wire form; kind references; RFC 3339 times, ISO 8601 durations; `ExternalID`; errors and `explain`; kind names and labels; scope, grant and change words | `SubstrateKit` `Records/`, `Status/` words; WorkoutsCore `Codec/` |
-| `SubstrateRuntime` | command, event, engine, effects, presenter, controller, environment, journal, keyed children, epochs, coalescing (§5.1, §5.2) | Workouts' `SessionController`, `SessionJournal`; Chat's ordering rules |
+| `SubstrateDevice` | the device-service protocols and their request and answer values (§5.4) | new |
 | `SubstrateAPI` | the client over the transport service: record calls with `ifVersion`, lists, filters, blobs, webhook delivery, line streams, the **watch** (cursor, generation, relist on 410 or `compacted`), agent turn streams; discovery, versions, the requirement; the locator over the DNS service | `SubstrateKit` `API/`, `Server/`; Chat `API/Watch.swift`, `AgentEvent.swift` |
 | `SubstrateAuth` | manifest and details, PKCE, `authorizeURL`, the callback check and code exchange, `Session`, the session rules over the secure-store service, pending revocations, the status check | `SubstrateKit` `Auth/`, `Status/` |
-| `SubstrateLocal` | the per-repository folder (format version, atomic writes, unreadable files set aside, sizes, budget, eviction); the **outbox** (Workouts', with a group key in place of `session`; its routine helpers stay in the app); the **record cache** the watch keeps current; reading the version of a package the repository holds | Workouts `Outbox`, `RemoteCatalog`, `TrainingPackage` (read side); Chat `DiskCache` |
+| `SubstrateRuntime` | command, event, engine, effects, presenter, controller, environment, journal, keyed children, epochs, coalescing, keyed lists, the link's snapshot (§5.1, §5.2) | Workouts' `SessionController`, `SessionJournal`; Chat's ordering rules |
+| `SubstrateLocal` | the per-repository folder (format version, atomic writes, unreadable files set aside, sizes, budget, eviction); the journal file; the **outbox** (Workouts', with a group key in place of `session`; its routine helpers stay in the app); the **record cache** the watch keeps current; reading the version of a package the repository holds; the link generation | Workouts `Outbox`, `SessionJournal`, `RemoteCatalog`, `TrainingPackage` (read side); Chat `DiskCache` |
 | `SubstrateScreens` | the shared screens: `LinkController` and each screen's engine, presenter and fixtures (§5.6) | `SubstrateKit` `UI/` (the logic now inside its views); Workouts' `SyncStatus` |
-| `SubstrateDevice` | the device-service protocols and their request and answer values (§5.4) | new |
-| `SubstrateTesting` | a scripted server, a fake of every device service, a fixed clock and id source, fixture presentations | Workouts' and Chat's `ScriptedServer` |
-| `SubstrateUI` (Apple) | SwiftUI views of the shared screens; the design tokens (§7.4); the `@Observable` wrapper that republishes a controller's presentations on the main actor | `SubstrateKit` `UI/`, Chat's `Components.swift` |
+| `SubstrateTesting` | a scripted server, a fake of every device service, the runtime's harness (a fixed clock and id source, a journal in memory) | Workouts' and Chat's `ScriptedServer` |
 | `SubstrateDeviceApple` (Apple) | the device services on Apple frameworks | `WebAuthenticator`, `LoopbackReceiver`, `DNSServiceTXTResolver` and `SubstrateResolv`, the Keychain half of `SessionStore`, Chat's `Notifier` and background code |
+| `SubstrateUI` (Apple) | SwiftUI views of the shared screens; the design tokens (§7.4); the `@Observable` wrapper that republishes a controller's presentations on the main actor | `SubstrateKit` `UI/`, Chat's `Components.swift` |
 | `SubstrateBridge` (Android) | the JNI surface (§5.5) | new |
 
 The Android side is a Gradle build of three modules: `kit-core` (the Swift
@@ -339,10 +339,10 @@ implementation and a fake. Four rules:
   parent-host fallback), or a failure that stops discovery, as
   `ServerLocator` tells them apart today.
 - A long-lived source is a stream with an explicit end, error and cancel
-  (§5.5). The transport's line stream is not in step 3's `HTTPTransport`:
-  its only readers today are Chat's watch and agent turn streams, which
-  read `URLSession.bytes` directly, so the shape lands with them in step 5,
-  where moving them onto it is the change and their tests hold it.
+  (§5.5). The transport's line stream (`HTTPTransport.lines(for:)`) landed
+  in step 4 with the kit's watch; Chat's watch and agent turn streams,
+  which read `URLSession.bytes` directly, move onto it in step 5, where
+  their tests hold the change.
 - A service that is a screen (camera, code scanner, photo picker) is a UI
   **component**: the UI shows it and sends the controller a command with its
   result.
@@ -796,6 +796,41 @@ security, toolchain, release, migration) reviewed it. What changed:
 start binds the main Looper and caches the class, the environment carries
 the locale, time zone and resource bundle, and the JNI thread rules are
 written into §5.5.
+
+**Step 4, as built, 2026-11-03.** Where the code settled other than the
+text above says:
+
+- The library order is §5.3's table as it now stands: `SubstrateRuntime`
+  comes after `SubstrateAuth` (it holds the client in its environment),
+  `SubstrateLocal` after it (the journal file implements the runtime's
+  `JournalStore`), and `SubstrateScreens` and `SubstrateTesting` after
+  both. `SubstrateKit` exports every library but `SubstrateTesting` and
+  `SubstrateLocal`, whose outbox shares its names with WorkoutsSync's until
+  step 6.
+- A screen is one `Controller` protocol with the engine's, the presenter's
+  and the effects' requirements on it, each pure but the enrichment and
+  `perform`. An effect is a value a test compares; `perform` turns it into
+  `Work` (once, a sequence, or cancel). The transient state moves through
+  `noting` and `refusing`, the journal through `journaling` (`skip`,
+  `append`, `restart`, `clear`), and the runtime's trace is what a test
+  holds the order to.
+- The environment carries the clock, ids, locale, time zone, resources,
+  the client (read when an effect runs, never kept) and the device
+  services, and grows by key: SubstrateLocal adds the repository's folder.
+- A parent keeps one type of child, in its state by key; a child reaches
+  it through `event(fromChild:_:)`, and the parent's presenter composes the
+  children's presentations with its own state, so what both need is the
+  parent's without a second input into the child.
+- `LinkSnapshot` lives in `SubstrateRuntime`, since the runtime delivers it
+  down every tree; `LinkController` makes it in `SubstrateScreens`.
+- The watch, its follower and the line stream landed here (§5.4); the
+  record cache keeps the watch's cursor.
+- The Status screen generalises Workouts' `SyncStatus` with `StatusWords`
+  (the app, the device, the package, what waits), so Workouts' own
+  sentences come back through those words in step 6. The Account screen
+  keeps §5.6's name and `AccountSection`'s.
+- The fixtures are `ScreenFixtures`, made by the presenters themselves, and
+  the gallery check is `Gallery.renderers` against them, under `swift test`.
 
 **Confirmation round, 2026-11-03**, on draft three with the spike. Fable:
 the loop's order is now the contract (journal before any suspension, a
