@@ -121,7 +121,10 @@ public struct Reader {
         case let .array(element):
             return again(element).map(BridgedType.array)
         case let .dictionary(key, value):
-            guard case .name("String") = key else { return .failure(Refusal("a dictionary keyed by other than String")) }
+            // A ChildKey encodes as its string, a dictionary keyed by one as an object.
+            guard case let .name(keyName) = key, keyName == "String" || keyName == "ChildKey" else {
+                return .failure(Refusal("a dictionary keyed by other than String or ChildKey"))
+            }
             if case .optional = value { return .failure(Refusal("a dictionary of optionals, whose nil JSON cannot tell from absent")) }
             return again(value).map(BridgedType.dictionary)
         case let .generic("KeyedList", arguments):

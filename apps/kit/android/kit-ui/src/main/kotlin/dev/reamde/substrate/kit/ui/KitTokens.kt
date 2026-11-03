@@ -16,7 +16,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dev.reamde.substrate.kit.bridge.AppMenuSymbol
 import dev.reamde.substrate.kit.bridge.ScreenSymbol
 import dev.reamde.substrate.kit.bridge.ScreenTone
 
@@ -72,26 +71,29 @@ public val ScreenSymbol.icon: ImageVector
         ScreenSymbol.problem -> Icons.Rounded.Error // exclamationmark.circle.fill
     }
 
-public val AppMenuSymbol.icon: ImageVector
-    get() = when (this) {
-        AppMenuSymbol.today -> Icons.Rounded.WbSunny // sun.max
-        AppMenuSymbol.upcoming -> Icons.Rounded.CalendarMonth // calendar
-        AppMenuSymbol.list -> Icons.Rounded.Checklist // checklist
-        AppMenuSymbol.inbox -> Icons.Rounded.Inbox // tray
-        AppMenuSymbol.chat -> Icons.Rounded.Forum // bubble.left.and.bubble.right
-        AppMenuSymbol.search -> Icons.Rounded.Search // magnifyingglass
-        AppMenuSymbol.records -> Icons.Rounded.ViewAgenda // square.stack
-        AppMenuSymbol.activity -> Icons.Rounded.MonitorHeart // waveform.path.ecg
-        AppMenuSymbol.history -> Icons.Rounded.History // clock.arrow.circlepath
-        AppMenuSymbol.person -> Icons.Rounded.AccountCircle // person.crop.circle
-        AppMenuSymbol.settings -> Icons.Rounded.Settings // gearshape
-    }
+/** A mark by the name a presentation gives it (`AppMenuSection.symbol`). */
+public fun menuIcon(name: String): ImageVector = when (name) {
+    "activity" -> Icons.Rounded.MonitorHeart // waveform.path.ecg
+    "chat" -> Icons.Rounded.Forum // bubble.left.and.bubble.right
+    "history" -> Icons.Rounded.History // clock.arrow.circlepath
+    "inbox" -> Icons.Rounded.Inbox // tray
+    "list" -> Icons.AutoMirrored.Rounded.List // list.bullet
+    "lists" -> Icons.Rounded.Checklist // checklist
+    "person" -> Icons.Rounded.AccountCircle // person.crop.circle
+    "records" -> Icons.Rounded.ViewAgenda // square.stack
+    "search" -> Icons.Rounded.Search // magnifyingglass
+    "settings" -> Icons.Rounded.Settings // gearshape
+    "today" -> Icons.Rounded.CalendarToday // calendar
+    "upcoming" -> Icons.Rounded.Upcoming // calendar.badge.clock
+    else -> Icons.Rounded.Circle // circle
+}
 
 /** The marks controls draw beside their words. */
 public enum class KitMark(public val icon: ImageVector) {
     check(Icons.Rounded.Check), // checkmark
     info(Icons.Rounded.Info), // info.circle
     disclosure(Icons.AutoMirrored.Rounded.KeyboardArrowRight), // chevron.right
+    back(Icons.AutoMirrored.Rounded.ArrowBack), // chevron.backward
 }
 
 /** A kind's glyph, by the SF Symbol `KindGlyphSpec` names, as its Material Symbol. */

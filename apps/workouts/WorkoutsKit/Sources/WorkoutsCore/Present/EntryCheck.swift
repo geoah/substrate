@@ -2,7 +2,7 @@ import Foundation
 
 /// The entry check's dialog (§5.7, req 30): a working set far from the recent
 /// ones asks before it is committed.
-public struct EntryWarning: Equatable, Sendable {
+public struct EntryWarning: Codable, Equatable, Sendable {
     /// `500 kg × 8 is far from your recent sets`.
     public var title: String
     /// `Recently about 35 kg × 12.`

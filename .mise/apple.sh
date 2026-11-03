@@ -38,8 +38,17 @@ if [ -n "${SUBSTRATE_APPLE_ASC_KEY_PATH:-}" ]; then
 		-authenticationKeyIssuerID "${SUBSTRATE_APPLE_ASC_ISSUER_ID:?set SUBSTRATE_APPLE_ASC_ISSUER_ID beside the key path}")
 fi
 
+# xcodegen run from where mise installed it, not through `mise x`, which
+# would load this machine's configuration into it, and with it the keys a
+# release reads from the environment (and a dry run has unset).
 project() {
-	mise x "$XCODEGEN" -- xcodegen generate --quiet
+	local bin
+	bin="$(mise bin-paths "$XCODEGEN" 2>/dev/null | head -1)"
+	if [ ! -x "$bin/xcodegen" ]; then
+		mise install --quiet "$XCODEGEN" >/dev/null
+		bin="$(mise bin-paths "$XCODEGEN" | head -1)"
+	fi
+	"$bin/xcodegen" generate --quiet
 }
 
 xcb() {
@@ -146,6 +155,22 @@ build_workouts() {
 	echo "apple: $DERIVED/Build/Products/Debug-iphonesimulator/SubstrateWorkouts.app"
 }
 
+# Substrate Tasks: one target for iPhone, iPad and Mac, built for the Mac
+# and the simulator. Nothing here registers its bundle id: no
+# -allowProvisioningUpdates, so the Mac build is signed with the
+# development certificate the machine holds and no profile, which runs it
+# here and nowhere else.
+tasks() {
+	xcodebuild -project "$PROJECT" -scheme SubstrateTasks -derivedDataPath "$DERIVED" -quiet "$@"
+}
+
+build_tasks() {
+	tasks -destination 'platform=macOS' -configuration Debug build
+	tasks -destination 'generic/platform=iOS Simulator' -configuration Debug build
+	echo "apple: $DERIVED/Build/Products/Debug/SubstrateTasks.app"
+	echo "apple: $DERIVED/Build/Products/Debug-iphonesimulator/SubstrateTasks.app"
+}
+
 # --- a release's Apple half ------------------------------------------------
 #
 # .mise/apps.sh sources this file and calls what follows for every app its
@@ -156,9 +181,16 @@ build_workouts() {
 
 # xcodebuild's leave to register app ids and refresh profiles with the
 # account signed in to Xcode, or the App Store Connect key: a release's
-# alone. A dry run never passes it, so it registers nothing, and an app it
-# cannot sign without it is archived as a placeholder, said so.
+# alone. A dry run never passes it, so it registers nothing.
 PROVISION=()
+
+# A dry run's builds are never signed: every setting that would have Xcode
+# pick an identity or a profile is switched off for the archive, which
+# reads no keychain then, and the export (which signs whatever it exports)
+# is skipped for the app inside the archive. Each build is still stamped and
+# checked as a release's; the one thing it lacks is a signature.
+UNSIGNED=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO "CODE_SIGN_IDENTITY=" DEVELOPMENT_TEAM=
+	"PROVISIONING_PROFILE_SPECIFIER=" CODE_SIGN_STYLE=Manual)
 
 # Whether any app this release builds ships on an Apple system.
 apple_needed() {
@@ -240,7 +272,8 @@ apple_release_build() {
 		apple_archive "$app" "$scheme" macOS "$scratch" "${SUBSTRATE_APPLE_EXPORT_MACOS:-debugging}"
 		local bundle="$scratch/macOS/$scheme.app" mac="releases/$build/$name-macOS.zip" signature="dry-run"
 		apple_check "$app" macOS "$bundle/Contents/Info.plist"
-		[ -f "$scratch/macOS/.placeholder" ] || codesign --verify --deep --strict "$bundle"
+		# A dry run's build was held to carrying no signature (unsigned_export).
+		[ -n "$DRY" ] || codesign --verify --deep --strict "$bundle"
 		ditto -c -k --sequesterRsrc --keepParent "$bundle" "$dir/${mac##*/}"
 		[ -n "$DRY" ] || signature="$("$SPARKLE/sign_update" --account "$SPARKLE_ACCOUNT" -p "$dir/${mac##*/}")"
 		entries="$(jq -c --arg path "$mac" --argjson length "$(stat -f %z "$dir/${mac##*/}")" \
@@ -265,23 +298,65 @@ apple_release_build() {
 	echo "$entries" >"$scratch/apple.json"
 }
 
-# One platform's archive and export, to $4/<platform>. A dry run that cannot
-# archive or export without leave to provision stands a placeholder in.
+# One platform's archive and export, to $4/<platform>. A dry run archives
+# unsigned and takes the app out of the archive in place of an export
+# (UNSIGNED, unsigned_export), and one that cannot archive stands a
+# placeholder in.
 apple_archive() {
 	local app="$1" scheme="$2" platform="$3" scratch="$4" method="$5"
 	if [ -n "${SUBSTRATE_APPS_RELEASE_PLACEHOLDERS:-}" ]; then
 		apple_placeholder "$app" "$scheme" "$platform" "$scratch"
 		return
 	fi
-	if xcodebuild -project "$PROJECT" -scheme "$scheme" -derivedDataPath "$DERIVED" ${PROVISION[@]+"${PROVISION[@]}"} -quiet \
-		-destination "generic/platform=$platform" -configuration Release archive \
-		-archivePath "$scratch/$platform.xcarchive" "${SETTINGS[@]}" &&
-		export_archive "$platform" "$method" "$scratch"; then
-		return 0
+	if [ -n "$DRY" ]; then
+		if xcodebuild -project "$PROJECT" -scheme "$scheme" -derivedDataPath "$DERIVED" -quiet \
+			-destination "generic/platform=$platform" -configuration Release archive \
+			-archivePath "$scratch/$platform.xcarchive" "${SETTINGS[@]}" "${UNSIGNED[@]}" &&
+			unsigned_export "$platform" "$scratch"; then
+			return 0
+		fi
+		say "dry run: $app did not archive unsigned for $platform; a placeholder stands in for it"
+		apple_placeholder "$app" "$scheme" "$platform" "$scratch"
+		return
 	fi
-	[ -n "$DRY" ] || die "$app did not archive and export for $platform"
-	say "dry run: $app could not be archived and exported for $platform without leave to register or refresh a profile, which a dry run never gives; a placeholder stands in for it"
-	apple_placeholder "$app" "$scheme" "$platform" "$scratch"
+	if ! xcodebuild -project "$PROJECT" -scheme "$scheme" -derivedDataPath "$DERIVED" ${PROVISION[@]+"${PROVISION[@]}"} -quiet \
+		-destination "generic/platform=$platform" -configuration Release archive \
+		-archivePath "$scratch/$platform.xcarchive" "${SETTINGS[@]}" ||
+		! export_archive "$platform" "$method" "$scratch"; then
+		die "$app did not archive and export for $platform"
+	fi
+}
+
+# A dry run's export: the app the unsigned archive holds, as the export
+# would have laid it out in $2/<platform> (the Mac app itself, the iOS app
+# zipped into an IPA's Payload/), with no signature added.
+unsigned_export() {
+	local platform="$1" out="$2" archived=() name
+	archived=("$out/$platform.xcarchive/Products/Applications"/*.app)
+	[ "${#archived[@]}" = 1 ] && [ -d "${archived[0]}" ] || return 1
+	name="$(basename "${archived[0]}")"
+	rm -rf "${out:?}/$platform" "$out/$platform-payload"
+	mkdir -p "$out/$platform"
+	if [ "$platform" = macOS ]; then
+		ditto "${archived[0]}" "$out/macOS/$name"
+	else
+		mkdir -p "$out/$platform-payload/Payload"
+		ditto "${archived[0]}" "$out/$platform-payload/Payload/$name"
+		(cd "$out/$platform-payload" && zip -qry "../$platform/${name%.app}.ipa" Payload)
+	fi
+	apple_unsigned "$APPLE_BUNDLE for $platform" "${archived[0]}"
+}
+
+# Holds a dry run's build to what a dry run promises: signed by no identity.
+# The linker's own ad hoc signature on an arm64 executable is no identity,
+# and is all codesign may find.
+apple_unsigned() {
+	local what="$1" bundle="$2" info
+	info="$(codesign -dv "$bundle" 2>&1 || true)"
+	if printf '%s\n' "$info" | grep -q '^Authority='; then
+		die "dry run: $what was signed with $(printf '%s\n' "$info" | sed -n 's/^Authority=//p' | head -1), and a dry run signs nothing"
+	fi
+	say "dry run: $what is unsigned: $(printf '%s\n' "$info" | grep -E '^Signature=|^CodeDirectory|code object is not signed' | head -1)"
 }
 
 # A dry run's stand-in for one platform's export: the app bundle's
@@ -436,12 +511,27 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 		uv run --quiet --with pyyaml ../../.mise/closures.py --check workouts
 		swift test --package-path ../workouts/WorkoutsKit
 		;;
+	build:tasks)
+		project
+		build_tasks
+		;;
+	test:tasks)
+		# TasksKit on the Mac, then the app's views over its fixtures. The
+		# closure the app carries must be the one the site publishes.
+		uv run --quiet --with pyyaml ../../.mise/closures.py --check --json ../tasks/TasksKit/Sources/TasksCore/Resources/Package tasks
+		swift test --package-path ../tasks/TasksKit
+		project
+		tasks -destination 'platform=macOS' test -only-testing:SubstrateTasksTests
+		;;
 	test:kit)
 		# SubstrateKit is a Swift package: its tests run on the Mac with swift
 		# test, no project or simulator.
 		swift test --package-path ../kit
 		;;
 	test:chat)
+		# ChatKit is a Swift package: the chat's rules, on the Mac with swift
+		# test; then what only the Apple app holds, in its test target.
+		swift test --package-path ../chat/ChatKit
 		project
 		chat -destination 'platform=macOS' test
 		;;
@@ -467,7 +557,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 			exec "$APPLE_ROOT/.mise/apps.sh" site
 		;;
 	*)
-		echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|sim:chat|test:chat|test:kit|test:workouts|install|sim|release|release:sync|release:chat|release:workouts|site [prerelease|stable]" >&2
+		echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|build:tasks|sim:chat|test:chat|test:kit|test:workouts|test:tasks|install|sim|release|release:sync|release:chat|release:workouts|site [prerelease|stable]" >&2
 		exit 2
 		;;
 	esac

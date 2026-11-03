@@ -7,7 +7,7 @@ import SubstrateCore
 import SubstrateDevice
 import Testing
 
-@Suite("The device services' Swift halves, and what is recorded of them")
+@Suite("The device services' Swift halves, and what is recorded of them", .timeLimit(.minutes(2)))
 struct ServicesTests {
     @Test func aTransportOrSecureStoreMessageIsRecordedWithoutItsBody() throws {
         let bearer = TransportRequest(url: "https://example.com", method: "GET",
@@ -146,11 +146,15 @@ struct ServicesTests {
             _ = try post(runtime, Envelope(op: .chunk, id: request.id, seq: seq, body: try BridgeCodec.value(path)))
         }
         // The reader fell behind: Kotlin is told to stop, and the reader gets
-        // the oldest it had room for, then the end, never only the newest.
+        // what it had room for from the oldest on, then the end, never a gap.
+        // How many fit depends only on when the pump between the two queues
+        // ran, so the paths are held to that and not to a count: at least
+        // the capacity, and short of all four, since one overflowed.
         _ = try await outlet.next { $0.op == .cancel && $0.id == request.id }
         var read: [NetworkPath] = []
         for await path in paths { read.append(path) }
-        #expect(read == Array(sent.prefix(2)))
+        #expect(read == Array(sent.prefix(read.count)))
+        #expect((2 ..< sent.count).contains(read.count), "\(read.count) paths read")
     }
 
     @Test func aLineStreamArrivesAsKotlinReadsIt() async throws {

@@ -4,7 +4,9 @@
 # test` (SubstrateKitTests' Snapshots, Xcode's toolchain) into
 # build/gallery/apple, Compose's under Robolectric (kit-ui's KitGalleryTest)
 # into build/gallery/android, each fixture as <name>.png in both, and
-# build/gallery/index.html showing each fixture's two next to each other.
+# build/gallery/index.html showing each fixture's two next to each other;
+# beside them, the kit's views as the apps call them (apple/apps) and
+# Substrate Tasks' own screens (apple/tasks).
 # Both sets draw from one source: ScreenFixtures.all, which kit-ui reads as
 # apps/kit/android/fixtures/screens.json. A fixture either side cannot draw
 # fails its test, and so this.
@@ -19,6 +21,12 @@ rm -rf "$out"
 mkdir -p "$out/apple" "$out/android"
 
 SUBSTRATEKIT_SNAPSHOTS="$out/apple" xcrun swift test --package-path apps/kit --filter 'Snapshots|GalleryRenderers'
+# Substrate Tasks' screens, drawn by its own views in its UI framework's
+# tests, which run on the Mac with no host app.
+mkdir -p "$out/apple/tasks"
+.mise/apple.sh project
+(cd apps/xcode && TEST_RUNNER_SUBSTRATE_TASKS_GALLERY="$out/apple/tasks" xcodebuild -project Substrate.xcodeproj \
+  -scheme SubstrateTasks -derivedDataPath build/dd -quiet -destination 'platform=macOS' test -only-testing:SubstrateTasksTests/GalleryTests)
 .mise/android.sh gallery "$out/android"
 
 html() {

@@ -26,7 +26,7 @@
 /// - Undocking while the list moves keeps the bar's height until it is idle:
 ///   the bar is the list's bottom inset, and shrinking it near the end of the
 ///   list would move the content under the finger.
-public struct RowsDock: Equatable, Sendable {
+public struct RowsDock: Codable, Equatable, Sendable {
     /// The open row as the layout last had it.
     public private(set) var open: RowID?
     /// A done set is being fixed: its panel is the editor on screen.

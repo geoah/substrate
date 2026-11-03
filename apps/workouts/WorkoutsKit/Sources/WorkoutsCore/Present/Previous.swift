@@ -2,7 +2,7 @@ import Foundation
 
 /// The PREVIOUS cell (§5.4): the same row last time, wherever the exercise
 /// was done.
-public struct PreviousSet: Equatable, Sendable {
+public struct PreviousSet: Codable, Equatable, Sendable {
     public var session: SessionID
     /// When that session started.
     public var date: Date

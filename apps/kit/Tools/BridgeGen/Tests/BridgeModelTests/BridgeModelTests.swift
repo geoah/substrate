@@ -98,6 +98,9 @@ struct BridgeModelTests {
     }
 
     @Test func instantsAddressesAndIdsCrossAsStrings() throws {
+        let (keyed, keyedErrors) = model("struct A: Bridged { var editors: [ChildKey: String] }")
+        #expect(keyedErrors.isEmpty, "\(keyedErrors)")
+        #expect(keyed?.declaration("A")?.fields.map(\.type) == [.dictionary(.string)])
         let (model, errors) = model("struct A: Bridged { var at: Date; var url: URL?; var id: UUID }")
         #expect(errors.isEmpty, "\(errors)")
         #expect(model?.declaration("A")?.fields.map(\.type) == [.date, .optional(.url), .uuid])

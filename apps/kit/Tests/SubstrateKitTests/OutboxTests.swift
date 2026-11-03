@@ -139,6 +139,25 @@ struct OutboxTests {
         #expect(await outbox.version(of: entryKind, "s") == nil)
     }
 
+    @Test func aRestorableDeleteIsADeleteWithoutPurgeAndAConflictSendsItAgainWithoutAVersion() async throws {
+        let server = ScriptedServer()
+        server.on { $0.method == "PUT" ? (200, answered(3)) : nil }
+        server.on { sent in
+            guard sent.method == "DELETE" else { return nil }
+            return sent.query?.contains("ifVersion") == true
+                ? (409, #"{"error":{"code":"conflict","message":"version conflict"}}"#) : (200, "{}")
+        }
+        let outbox = try openOutbox()
+        try await outbox.enqueue([entry(.put, entryKind, "s", batch: "s")])
+        await outbox.flush(writer(server))
+        try await outbox.purge(batch: "s", with: entry(.delete, entryKind, "s", batch: "s", guarded: true))
+        #expect(await outbox.flush(writer(server)) == .sent)
+        let deletes = server.sent.filter { $0.method == "DELETE" }
+        #expect(deletes.map(\.query) == ["ifVersion=3", nil])
+        #expect(await outbox.version(of: entryKind, "s") == nil)
+        #expect(await outbox.entries.isEmpty)
+    }
+
     @Test func aFileThatCannotBeReadIsSetAsideNotEmptied() async throws {
         let root = temporaryFolder()
         let folder = try RepositoryFolder(root: root)

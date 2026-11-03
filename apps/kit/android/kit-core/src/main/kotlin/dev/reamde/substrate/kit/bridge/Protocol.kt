@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "3fa500b1b344b05f6803b70dcd7d594444d2f7e94d9912050cf43db98d3137c9"
+    public const val VALUE: String = "f9a700eb41ee4a73ceb3cd40fa2ebc6dc6bdb05769257d539625d69287a1b90f"
 }
 
 /**
@@ -176,32 +176,8 @@ public data class ActionButton<Action>(
     val action: Action,
 )
 
-@Serializable(with = AppMenuCommand.Serializer::class)
-public sealed interface AppMenuCommand {
-    @Serializable
-    public data class Select(
-        val item: String,
-    ) : AppMenuCommand
-
-    public object Serializer : KSerializer<AppMenuCommand> by SwiftEnumSerializer(
-        "AppMenuCommand",
-        listOf(
-            SwiftEnumSerializer.Case("select", Select::class, Select.serializer()),
-        ),
-    )
-}
-
-@Serializable
-public data class AppMenuItem(
-    val id: String,
-    val title: String,
-    val symbol: AppMenuSymbol,
-    val badge: String? = null,
-)
-
 @Serializable
 public data class AppMenuPresentation(
-    val title: String,
     val sections: List<AppMenuSection>,
     val selected: String,
 )
@@ -209,24 +185,10 @@ public data class AppMenuPresentation(
 @Serializable
 public data class AppMenuSection(
     val id: String,
-    val title: String? = null,
-    val items: List<AppMenuItem>,
+    val title: String,
+    val symbol: String,
+    val badge: Long? = null,
 )
-
-@Serializable
-public enum class AppMenuSymbol {
-    @SerialName("today") today,
-    @SerialName("upcoming") upcoming,
-    @SerialName("list") list,
-    @SerialName("inbox") inbox,
-    @SerialName("chat") chat,
-    @SerialName("search") search,
-    @SerialName("records") records,
-    @SerialName("activity") activity,
-    @SerialName("history") history,
-    @SerialName("person") person,
-    @SerialName("settings") settings,
-}
 
 @Serializable
 public data class ApprovedAccess(
@@ -1658,11 +1620,8 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "AccessAction.Offer" to AccessAction.Offer.serializer(),
     "AccessBanner" to AccessBanner.serializer(),
     "AccessEndedPresentation" to AccessEndedPresentation.serializer(),
-    "AppMenuCommand" to AppMenuCommand.Serializer,
-    "AppMenuItem" to AppMenuItem.serializer(),
     "AppMenuPresentation" to AppMenuPresentation.serializer(),
     "AppMenuSection" to AppMenuSection.serializer(),
-    "AppMenuSymbol" to AppMenuSymbol.serializer(),
     "ApprovedAccess" to ApprovedAccess.serializer(),
     "ApprovedScope" to ApprovedScope.serializer(),
     "BridgeFailure" to BridgeFailure.serializer(),

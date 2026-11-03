@@ -41,20 +41,26 @@ struct RoutinesView: View {
     /// are: anything Settings would say needs the owner.
     @ViewBuilder
     private var banner: some View {
-        switch link.syncStatus {
-        case .packageBehind, .needsApproval, .signedOut, .serverTooOld, .notKept, .refused, .failed:
+        if let status = link.status, status.symbol == .warning || link.syncProblem != nil {
             VStack(alignment: .leading, spacing: 8) {
-                Label(link.syncStatus.sentence, systemImage: "exclamationmark.triangle.fill")
+                Label(link.syncProblem.map { "The training package could not be checked: \($0)" } ?? status.sentence,
+                      systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
-                if case .needsApproval = link.syncStatus {
+                if let problem = status.problem {
+                    Text(problem.message)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if status.actions.contains(where: { $0.action == .review }) {
                     Button("Review Access") { Task { await link.reauthorize() } }
                         .font(.footnote.weight(.semibold))
-                } else if case .signedOut = link.syncStatus {
+                } else if status.actions.contains(where: { $0.action == .signIn }) {
                     Button("Sign In Again") { signingIn = true }
                         .font(.footnote.weight(.semibold))
-                } else if case .refused = link.syncStatus {
+                } else if status.refused != nil {
                     Button("Review in Settings") { app.tab = .settings }
                         .font(.footnote.weight(.semibold))
                 }
@@ -63,8 +69,6 @@ struct RoutinesView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.orange.opacity(0.15), in: .rect(cornerRadius: 14))
             .padding(.horizontal)
-        default:
-            EmptyView()
         }
     }
 
@@ -180,7 +184,7 @@ struct RoutinesView: View {
                     folderHeader(section)
                 }
             }
-            if link.session == nil {
+            if !link.isSignedIn {
                 Section {
                     Button("Sign In to Your Substrate…") { signingIn = true }
                 } footer: {

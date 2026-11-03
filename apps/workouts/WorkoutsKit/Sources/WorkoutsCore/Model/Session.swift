@@ -212,7 +212,7 @@ public struct SessionRecords: Codable, Hashable, Sendable, Identifiable {
 }
 
 /// The exercises and routines the app can start from.
-public struct Catalog: Sendable {
+public struct Catalog: Codable, Equatable, Sendable {
     public var exercises: [ExerciseID: Exercise]
     public var routines: [RoutineID: Routine]
     /// What exercises are versions of; seeded with the exercise library.

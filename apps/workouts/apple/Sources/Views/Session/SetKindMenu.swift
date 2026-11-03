@@ -69,7 +69,7 @@ struct SetMenuItems: View {
     /// Delete set, with an undo; nil removes as the Table does (a done set asks first).
     var delete: (() -> Void)?
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
 
     var body: some View {

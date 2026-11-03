@@ -22,30 +22,31 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import dev.reamde.substrate.kit.bridge.AppMenuCommand
-import dev.reamde.substrate.kit.bridge.AppMenuItem
 import dev.reamde.substrate.kit.bridge.AppMenuPresentation
+import dev.reamde.substrate.kit.bridge.AppMenuSection
 
 /** How the menu is drawn: by the window's width, or as one of the three. */
 public enum class AppMenuLayout { Automatic, Bar, Rail, Drawer }
 
 /**
- * The app's menu as its presentation words it: a navigation bar of every
- * destination in a compact window, a rail in a medium one, and a drawer
- * of its sections under the app's name in an expanded one, the destination
- * shown beside it. Choosing one is a command; the menu keeps no state.
+ * The app's menu as its presentation words it: a navigation bar of its
+ * sections in a compact window, a rail in a medium one, and a drawer under
+ * the app's name in an expanded one, the section shown beside it. Choosing
+ * one is the app's to send; the menu keeps no state. A section's mark is
+ * its symbol's name in the design tokens (`menuIcon`).
  */
 @Composable
 public fun AppMenu(
     menu: AppMenuPresentation,
-    send: (AppMenuCommand) -> Unit,
+    select: (String) -> Unit,
     modifier: Modifier = Modifier,
+    title: String? = null,
     layout: AppMenuLayout = AppMenuLayout.Automatic,
-    content: @Composable (AppMenuItem) -> Unit,
+    content: @Composable (AppMenuSection) -> Unit,
 ) {
-    val items = menu.sections.flatMap { it.items }
+    val items = menu.sections
     val selected = items.firstOrNull { it.id == menu.selected }
-    val choose = { item: AppMenuItem -> send(AppMenuCommand.Select(item.id)) }
+    val choose = { item: AppMenuSection -> select(item.id) }
     BoxWithConstraints(modifier.fillMaxSize()) {
         val drawn = when {
             layout != AppMenuLayout.Automatic -> layout
@@ -81,21 +82,16 @@ public fun AppMenu(
             }
             AppMenuLayout.Drawer -> PermanentNavigationDrawer(drawerContent = {
                 PermanentDrawerSheet(Modifier.width(300.dp)) {
-                    Text(menu.title, style = KitText.screenTitle.style, modifier = Modifier.padding(KitSpacing.screen))
-                    for (section in menu.sections) {
-                        section.title?.let {
-                            Text(it, style = KitText.heading.style, modifier = Modifier.padding(horizontal = KitSpacing.screen, vertical = KitSpacing.medium))
-                        }
-                        for (item in section.items) {
-                            NavigationDrawerItem(
-                                label = { Text(item.title) },
-                                selected = item.id == menu.selected,
-                                onClick = { choose(item) },
-                                icon = { Icon(item.symbol.icon, contentDescription = null) },
-                                badge = item.badge?.let { { Text(it) } },
-                                modifier = Modifier.padding(horizontal = KitSpacing.row),
-                            )
-                        }
+                    title?.let { Text(it, style = KitText.screenTitle.style, modifier = Modifier.padding(KitSpacing.screen)) }
+                    for (item in items) {
+                        NavigationDrawerItem(
+                            label = { Text(item.title) },
+                            selected = item.id == menu.selected,
+                            onClick = { choose(item) },
+                            icon = { Icon(menuIcon(item.symbol), contentDescription = null) },
+                            badge = item.badge?.let { { Text("$it") } },
+                            modifier = Modifier.padding(horizontal = KitSpacing.row),
+                        )
                     }
                 }
             }) { selected?.let { content(it) } }
@@ -104,8 +100,8 @@ public fun AppMenu(
 }
 
 @Composable
-private fun MenuIcon(item: AppMenuItem) {
-    BadgedBox(badge = { item.badge?.let { Badge { Text(it) } } }) {
-        Icon(item.symbol.icon, contentDescription = null)
+private fun MenuIcon(item: AppMenuSection) {
+    BadgedBox(badge = { item.badge?.let { Badge { Text("$it") } } }) {
+        Icon(menuIcon(item.symbol), contentDescription = null)
     }
 }

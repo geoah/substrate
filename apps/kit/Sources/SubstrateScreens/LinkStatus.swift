@@ -97,12 +97,16 @@ public struct StatusWords: Codable, Hashable, Sendable {
     /// A package's name by its id where the word built from the id is not
     /// the right one.
     public var packageNames: [String: String]
+    /// The signed-out sentence, where the app says more than what it keeps
+    /// (Workouts: the routines it carries, and the sessions).
+    public var local: String?
 
-    public init(app: String, device: String, kept: String, packageNames: [String: String] = [:]) {
+    public init(app: String, device: String, kept: String, packageNames: [String: String] = [:], local: String? = nil) {
         self.app = app
         self.device = device
         self.kept = kept
         self.packageNames = packageNames
+        self.local = local
     }
 
     /// "Training" for `substrate.reamde.dev/training`, unless named.
@@ -118,7 +122,7 @@ public struct StatusWords: Codable, Hashable, Sendable {
         func wait(_ count: Int) -> String { "\(count) \(count == 1 ? "change waits" : "changes wait")" }
         switch status {
         case .local:
-            return "Not signed in. \(kept.capitalizedFirst) stay on \(device)."
+            return local ?? "Not signed in. \(kept.capitalizedFirst) stay on \(device)."
         case let .preparing(names):
             return "Checking the \(joinWords(names)) package\(names.count == 1 ? "" : "s") on your substrate."
         case .signedOut:

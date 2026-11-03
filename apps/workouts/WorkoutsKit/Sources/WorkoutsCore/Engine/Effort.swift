@@ -8,7 +8,7 @@ import Foundation
 // pre-fill. Equality never decides the method: the event says it.
 
 /// What a row's RPE cell shows.
-public enum RowRPE: Equatable, Sendable {
+public enum RowRPE: Codable, Equatable, Sendable {
     /// No value, and nothing to pre-fill.
     case none
     /// The plan's value, pre-filled on a pending row and not yet the owner's.

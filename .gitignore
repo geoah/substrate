@@ -27,7 +27,11 @@ dist/
 /build/gallery/
 /apps/kit/.swiftpm/
 /apps/workouts/WorkoutsKit/.build/
+/apps/chat/ChatKit/.build/
+/apps/chat/ChatKit/.swiftpm/
 /apps/workouts/WorkoutsKit/.swiftpm/
+/apps/tasks/TasksKit/.build/
+/apps/tasks/TasksKit/.swiftpm/
 /apps/kit/Tools/BridgeGen/.build/
 /apps/kit/Tools/BridgeGen/.swiftpm/
 # The Android build: Gradle's caches and every module's output.

@@ -108,7 +108,7 @@ enum Fixtures {
     }
 }
 
-@Suite("The Swift half of the round trip")
+@Suite("The Swift half of the round trip", .timeLimit(.minutes(2)))
 struct RoundTripTests {
     /// The fixture file is what Swift writes; SUBSTRATE_UPDATE_FIXTURES=1
     /// writes it again after a change to a bridged value.

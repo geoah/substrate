@@ -1,6 +1,6 @@
 import CryptoKit
 import Foundation
-import SubstrateKit
+import SubstrateCore
 import WebKit
 
 /// The substrate the app is pointed at, and the ones it was pointed at before.

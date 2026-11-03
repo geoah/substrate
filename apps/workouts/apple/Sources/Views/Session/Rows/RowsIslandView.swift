@@ -240,7 +240,7 @@ struct RowsNextPartView: View {
     let perform: (RowsAction) -> Void
     let showOpenRow: () -> Void
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
     @Environment(RowsScreenModel.self) private var screen
     @Environment(\.dynamicTypeSize) private var typeSize

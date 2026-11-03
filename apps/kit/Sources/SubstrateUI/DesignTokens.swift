@@ -102,21 +102,26 @@ public enum DesignTokens {
         }
     }
 
-    public static func menuSymbol(_ symbol: AppMenuSymbol) -> Glyph {
-        switch symbol {
-        case .today: Glyph("sun.max", "WbSunny")
-        case .upcoming: Glyph("calendar", "CalendarMonth")
-        case .list: Glyph("checklist", "Checklist")
-        case .inbox: Glyph("tray", "Inbox")
-        case .chat: Glyph("bubble.left.and.bubble.right", "Forum")
-        case .search: Glyph("magnifyingglass", "Search")
-        case .records: Glyph("square.stack", "ViewAgenda")
-        case .activity: Glyph("waveform.path.ecg", "MonitorHeart")
-        case .history: Glyph("clock.arrow.circlepath", "History")
-        case .person: Glyph("person.crop.circle", "AccountCircle")
-        case .settings: Glyph("gearshape", "Settings")
-        }
-    }
+    /// The menu's and an app's marks by the names its presentations give
+    /// them (`AppMenuSection.symbol`); a name not here draws `fallback`.
+    public static let menuSymbols: [String: Glyph] = [
+        "today": Glyph("calendar", "CalendarToday"),
+        "upcoming": Glyph("calendar.badge.clock", "Upcoming"),
+        "inbox": Glyph("tray", "Inbox"),
+        "list": Glyph("list.bullet", "AutoMirrored.List"),
+        "lists": Glyph("checklist", "Checklist"),
+        "chat": Glyph("bubble.left.and.bubble.right", "Forum"),
+        "search": Glyph("magnifyingglass", "Search"),
+        "records": Glyph("square.stack", "ViewAgenda"),
+        "activity": Glyph("waveform.path.ecg", "MonitorHeart"),
+        "history": Glyph("clock.arrow.circlepath", "History"),
+        "person": Glyph("person.crop.circle", "AccountCircle"),
+        "settings": Glyph("gearshape", "Settings"),
+    ]
+
+    public static let fallback = Glyph("circle", "Circle")
+
+    public static func menuSymbol(_ name: String) -> Glyph { menuSymbols[name] ?? fallback }
 
     /// The marks controls draw beside their words.
     public enum Control: String, CaseIterable, Sendable {
@@ -126,6 +131,8 @@ public enum DesignTokens {
         case info
         /// A row that opens a screen of its own.
         case disclosure
+        /// Back to the screen before.
+        case back
     }
 
     public static func control(_ control: Control) -> Glyph {
@@ -133,6 +140,7 @@ public enum DesignTokens {
         case .check: Glyph("checkmark", "Check")
         case .info: Glyph("info.circle", "Info")
         case .disclosure: Glyph("chevron.right", "AutoMirrored.KeyboardArrowRight")
+        case .back: Glyph("chevron.backward", "AutoMirrored.ArrowBack")
         }
     }
 
@@ -241,10 +249,6 @@ public extension ScreenTone {
 
 public extension ScreenSymbol {
     var systemName: String { DesignTokens.symbol(self).sfSymbol }
-}
-
-public extension AppMenuSymbol {
-    var systemName: String { DesignTokens.menuSymbol(self).sfSymbol }
 }
 
 public extension DesignTokens.Control {

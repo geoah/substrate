@@ -853,11 +853,11 @@ description = "Build Substrate Chat and run it on a simulator"
 run = ".mise/apple.sh sim:chat"
 
 [tasks."apple:test:chat"]
-description = "Run Substrate Chat's unit tests on the Mac"
+description = "Run Substrate Chat's tests on the Mac: ChatKit's, then the app target's"
 run = ".mise/apple.sh test:chat"
 
 [tasks."apps:gallery"]
-description = "Draw every shared screen's fixtures with SwiftUI and with Compose, to build/gallery/apple and build/gallery/android, and build/gallery/index.html beside each other"
+description = "Draw every shared screen's fixtures with SwiftUI and with Compose, to build/gallery/apple and build/gallery/android, with build/gallery/index.html beside each other, and the kit's views as the apps call them and Substrate Tasks' screens under build/gallery/apple"
 # The gallery is a check as well as a picture (docs/plans/app-kit.md, §7.4):
 # a fixture whose screen has no renderer on either system fails the run,
 # which `mise run apple:test:kit` and `mise run android:test` also hold
@@ -923,8 +923,16 @@ run = ".mise/apple.sh build:workouts"
 description = "Run WorkoutsKit's tests (Substrate Workouts' model, session and suggestion engines, and its sync) on the Mac"
 run = ".mise/apple.sh test:workouts"
 
+[tasks."apple:build:tasks"]
+description = "Build Substrate Tasks for the Mac and the iOS simulator, registering nothing with Apple"
+run = ".mise/apple.sh build:tasks"
+
+[tasks."apple:test:tasks"]
+description = "Run TasksKit's tests (Substrate Tasks' root, editor, presenters and codec) and the app's views over its fixtures on the Mac"
+run = ".mise/apple.sh test:tasks"
+
 [tasks."apps:test:linux"]
-description = "The kit and WorkoutsKit, built and tested on Linux in the swift container"
+description = "The kit, WorkoutsKit, ChatKit and TasksKit, built and tested on Linux in the swift container"
 # Android's Swift runs on the same open-source Foundation as Linux, so a
 # package that imports an Apple framework, or uses a part Foundation leaves
 # out there, fails here first, on a laptop with Docker as in CI. The image is
@@ -935,7 +943,7 @@ description = "The kit and WorkoutsKit, built and tested on Linux in the swift c
 run = """
 docker run --rm -v "$PWD:/src:ro" -w /src/apps \
   swift:6.4@sha256:119ff7d833ea622851b459513333bb4bda5ebb32b7acd05dd05077d5b0383129 \
-  bash -euc 'for p in kit workouts/WorkoutsKit; do
+  bash -euc 'for p in kit workouts/WorkoutsKit chat/ChatKit tasks/TasksKit; do
     swift build --package-path "$p" --scratch-path "/tmp/$p"
     swift test --package-path "$p" --scratch-path "/tmp/$p"
   done'
@@ -1285,7 +1293,7 @@ description = "CI job `console test`: the console's vitest suite"
 depends = ["console:test"]
 
 [tasks."ci:apps"]
-description = "CI job `apps linux`: the kit and WorkoutsKit built and tested on Linux"
+description = "CI job `apps linux`: the kit, WorkoutsKit and ChatKit built and tested on Linux"
 # Gated on `changes`' `apps` answer: only a change to apps/, the console
 # fixture the kit's tests read, or this pipeline's own definition runs it.
 depends = ["apps:test:linux"]

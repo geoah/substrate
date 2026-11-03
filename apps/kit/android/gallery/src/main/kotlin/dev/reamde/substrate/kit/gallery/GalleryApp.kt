@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,6 +26,7 @@ import dev.reamde.substrate.kit.Bridge
 import dev.reamde.substrate.kit.StartResult
 import dev.reamde.substrate.kit.bridge.GalleryPresentation
 import dev.reamde.substrate.kit.ui.KitGallery
+import dev.reamde.substrate.kit.ui.KitMark
 import dev.reamde.substrate.kit.ui.KitSection
 import dev.reamde.substrate.kit.ui.KitNavigationRow
 import dev.reamde.substrate.kit.ui.KitRowDivider
@@ -57,7 +56,7 @@ fun GalleryApp(start: StartResult?, opened: String?, open: (String?) -> Unit) {
         Scaffold(topBar = {
             TopAppBar(
                 title = { Text(fixture.name) },
-                navigationIcon = { IconButton(onClick = { open(null) }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "All screens") } },
+                navigationIcon = { IconButton(onClick = { open(null) }) { Icon(KitMark.back.icon, contentDescription = "All screens") } },
             )
         }) { padding -> Box(Modifier.padding(padding)) { KitGallery.Render(fixture) } }
         return

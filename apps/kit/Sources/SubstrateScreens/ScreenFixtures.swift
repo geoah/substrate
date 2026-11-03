@@ -264,23 +264,18 @@ public enum ScreenFixtures {
 extension ScreenFixtures {
     // MARK: The app menu
 
-    static func menu(selected: String, todayBadge: String? = "3") -> AppMenuPresentation {
-        AppMenuPresentation(title: app, sections: [
-            AppMenuSection(id: "tasks", items: [
-                AppMenuItem(id: "today", title: "Today", symbol: .today, badge: todayBadge),
-                AppMenuItem(id: "upcoming", title: "Upcoming", symbol: .upcoming),
-                AppMenuItem(id: "lists", title: "Lists", symbol: .list),
-            ]),
-            AppMenuSection(id: "app", title: "Substrate Tasks", items: [
-                AppMenuItem(id: "settings", title: "Settings", symbol: .settings),
-            ]),
+    static func menu(selected: String, due: Int? = 3) -> AppMenuPresentation {
+        AppMenuPresentation(sections: [
+            AppMenuSection(id: "today", title: "Today", symbol: "today", badge: due),
+            AppMenuSection(id: "lists", title: "Lists", symbol: "lists"),
+            AppMenuSection(id: "settings", title: "Settings", symbol: "settings"),
         ], selected: selected)
     }
 
     static var menu: [ScreenFixture] {
         [
             ScreenFixture("menu", .menu(menu(selected: "today"))),
-            ScreenFixture("menu-settings", .menu(menu(selected: "settings", todayBadge: nil))),
+            ScreenFixture("menu-settings", .menu(menu(selected: "settings", due: nil))),
         ]
     }
 }

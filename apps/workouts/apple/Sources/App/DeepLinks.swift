@@ -8,11 +8,11 @@ import WorkoutsCore
 enum DeepLinks {
     /// Handles a URL the app was opened with; false for one it does not know.
     @discardableResult
-    static func handle(_ url: URL, app: AppModel = .shared, session: SessionController = .shared) -> Bool {
+    static func handle(_ url: URL) -> Bool {
         guard url.scheme == WorkoutsLinks.session.scheme else { return false }
         switch url.host() {
         case WorkoutsLinks.session.host():
-            openSession(app: app, session: session)
+            openSession()
             return true
         default:
             return false
@@ -21,14 +21,13 @@ enum DeepLinks {
 
     /// Opens the cover on the session in progress and brings Up next into
     /// view; with none open, the app stays where it is.
-    static func openSession(app: AppModel = .shared, session: SessionController = .shared) {
+    static func openSession() {
+        let root = WorkoutsRoot.shared
         Task {
-            await session.prepare()
-            guard session.isActive else { return }
-            app.isSessionPresented = true
-            if let row = session.presentation?.upNext?.row ?? session.presentation?.timedRow {
-                session.scrollTarget = ScrollTarget(row: row)
-            }
+            await root.until { $0.app?.session != nil }
+            guard let presentation = root.session.presentation else { return }
+            root.app.isSessionPresented = true
+            if let row = presentation.upNext?.row ?? presentation.timedRow { root.session.scrollTarget = ScrollTarget(row: row) }
         }
     }
 }

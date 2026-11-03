@@ -12,6 +12,7 @@
 #                   (Swift encodes, Kotlin decodes and encodes, Swift decodes)
 #   smoke           on a booted emulator or device: the release build's
 #                   runtime checks, three cold starts, the instrumented tests
+#                   (the Gallery's: every fixture Swift makes there decodes)
 #   gallery <dir>   kit-ui's gallery test, keeping each fixture's PNG in <dir>
 #   lock            rewrite the Gradle dependency locks
 #   release:build   one app's release APK, signed, for .mise/apps.sh
@@ -71,8 +72,16 @@ need_swift() {
   export SUBSTRATE_SWIFT
 }
 
+# The release key's variables, which reach apksigner alone (through env:,
+# never its command line) and never Gradle: Gradle runs the build scripts,
+# their plugins and a daemon that outlives the build, any of which could
+# read them.
+signing_vars=(SUBSTRATE_ANDROID_KEYSTORE SUBSTRATE_ANDROID_KEYSTORE_PASSWORD SUBSTRATE_ANDROID_KEY_ALIAS SUBSTRATE_ANDROID_KEY_PASSWORD)
+
 gradle() {
-  (cd apps/gradle && ./gradlew --console=plain "-Psubstrate.abis=$abis" "$@")
+  local scrub=() var
+  for var in "${signing_vars[@]}"; do scrub+=(-u "$var"); done
+  (cd apps/gradle && env "${scrub[@]}" ./gradlew --console=plain "-Psubstrate.abis=$abis" "$@")
 }
 
 sdkmanager_bin() {
@@ -188,21 +197,22 @@ cmd_smoke() {
   done
   printf 'release APK: %s bytes\n' "$(wc -c <"$apk" | tr -d ' ')"
   unzip -lv "$apk" | awk '/\.so$/ { printf "  %-48s %10d\n", $8, $1 }' | sort -k2 -n -r
-  gradle :kit-device:connectedDebugAndroidTest :bridge-check:connectedDebugAndroidTest
+  gradle :kit-device:connectedDebugAndroidTest :bridge-check:connectedDebugAndroidTest :gallery:connectedDebugAndroidTest
 }
 
 # One app's release APK, built by its module (`:<app>`, from apps/<app>/android)
 # with the release's stamp as Gradle properties, then aligned and signed here
-# with the key in the environment, which Gradle never sees, and written to
-# SUBSTRATE_RELEASE_APK. .mise/apps.sh calls this and reads everything else
-# back from the APK; its header lists what it hands in.
+# with the key in the environment, which Gradle never sees (gradle scrubs
+# it), and written to SUBSTRATE_RELEASE_APK. .mise/apps.sh calls this
+# directly, with an environment it builds (apps-android.sh), and reads
+# everything else back from the APK; its header lists what it hands in.
 cmd_release_build() {
   local app=${1:-}
   [[ -n $app ]] || die "usage: release:build <app>"
   [[ -n ${SUBSTRATE_RELEASE_APK:-} ]] || die "SUBSTRATE_RELEASE_APK names where the signed APK goes; .mise/apps.sh sets it"
   [[ -d apps/$app/android ]] || die "apps/$app has no android/ module, so there is no APK to build"
   local var
-  for var in SUBSTRATE_ANDROID_KEYSTORE SUBSTRATE_ANDROID_KEYSTORE_PASSWORD SUBSTRATE_ANDROID_KEY_ALIAS SUBSTRATE_ANDROID_KEY_PASSWORD; do
+  for var in "${signing_vars[@]}"; do
     [[ -n ${!var:-} ]] || die "set $var; the release key never enters the tree (apps/README.md)"
   done
   need_sdk

@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateDevice
@@ -30,7 +31,7 @@ struct UpgradeTests {
         let url = try legacyOutbox(in: directory)
         #expect(String(decoding: try Data(contentsOf: url), as: UTF8.self).contains("\"~/training/set\""))
 
-        let outbox = Outbox(directory: directory, writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         #expect(await outbox.unreadable == nil)
         let entries = await outbox.entries
         #expect(entries.count == 22)
@@ -53,7 +54,7 @@ struct UpgradeTests {
         #expect(!String(decoding: rewritten, as: UTF8.self).contains("~/"))
         #expect(file["chains"]?.objectValue?.keys.sorted() == ["\(codec.kinds.routine)/day-1-strength-foundation"])
 
-        let again = Outbox(directory: directory, writingOptions: .atomic)
+        let again = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         #expect(await again.entries == entries)
         #expect(await again.versions == outbox.versions)
         #expect(try Data(contentsOf: url) == rewritten)
@@ -72,7 +73,7 @@ struct UpgradeTests {
             guard sent.method == "PATCH", case let .object(body)? = sent.body, body["ifVersion"] == .number(1) else { return nil }
             return (200, record(2))
         }
-        let outbox = Outbox(directory: directory, writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         #expect(await outbox.flush(api(server)) == .sent)
         #expect(await outbox.entries.isEmpty)
         #expect(await outbox.parked.isEmpty)

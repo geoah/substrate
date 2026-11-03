@@ -85,35 +85,10 @@
       ]
     },
     {
-      "name": "AppMenuCommand",
-      "module": "SubstrateScreens",
-      "kind": "enum",
-      "cases": [
-        {
-          "name": "select",
-          "fields": [
-            {"name": "item", "type": "String"}
-          ]
-        }
-      ]
-    },
-    {
-      "name": "AppMenuItem",
-      "module": "SubstrateScreens",
-      "kind": "struct",
-      "fields": [
-        {"name": "id", "type": "String"},
-        {"name": "title", "type": "String"},
-        {"name": "symbol", "type": "AppMenuSymbol"},
-        {"name": "badge", "type": "String?"}
-      ]
-    },
-    {
       "name": "AppMenuPresentation",
       "module": "SubstrateScreens",
       "kind": "struct",
       "fields": [
-        {"name": "title", "type": "String"},
         {"name": "sections", "type": "[AppMenuSection]"},
         {"name": "selected", "type": "String"}
       ]
@@ -124,26 +99,9 @@
       "kind": "struct",
       "fields": [
         {"name": "id", "type": "String"},
-        {"name": "title", "type": "String?"},
-        {"name": "items", "type": "[AppMenuItem]"}
-      ]
-    },
-    {
-      "name": "AppMenuSymbol",
-      "module": "SubstrateScreens",
-      "kind": "stringEnum",
-      "cases": [
-        {"name": "today", "value": "today"},
-        {"name": "upcoming", "value": "upcoming"},
-        {"name": "list", "value": "list"},
-        {"name": "inbox", "value": "inbox"},
-        {"name": "chat", "value": "chat"},
-        {"name": "search", "value": "search"},
-        {"name": "records", "value": "records"},
-        {"name": "activity", "value": "activity"},
-        {"name": "history", "value": "history"},
-        {"name": "person", "value": "person"},
-        {"name": "settings", "value": "settings"}
+        {"name": "title", "type": "String"},
+        {"name": "symbol", "type": "String"},
+        {"name": "badge", "type": "Int?"}
       ]
     },
     {

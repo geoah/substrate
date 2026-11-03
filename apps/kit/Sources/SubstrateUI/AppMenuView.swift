@@ -10,27 +10,27 @@ public enum AppMenuLayout: Sendable {
     case sidebar
 }
 
-/// The app's menu as its presentation words it: a tab per destination on a
-/// phone, a sidebar of its sections on iPad and the Mac, the destination
-/// shown beside it. Choosing one is a command; the menu keeps no state.
+/// The app's menu as its presentation words it: a tab per section on a
+/// phone, a sidebar of them on iPad and the Mac, the section shown beside
+/// it. Choosing one is the app's to send; the menu keeps no state. A
+/// section's mark is its symbol's name in the design tokens.
 public struct AppMenuView<Content: View>: View {
     let menu: AppMenuPresentation
+    let title: String?
     let layout: AppMenuLayout
-    let send: (AppMenuCommand) -> Void
-    let content: (AppMenuItem) -> Content
+    let select: (String) -> Void
+    let content: (AppMenuSection) -> Content
     @Environment(\.horizontalSizeClass) private var sizeClass
 
-    public init(_ menu: AppMenuPresentation, layout: AppMenuLayout = .automatic, send: @escaping (AppMenuCommand) -> Void,
-                @ViewBuilder content: @escaping (AppMenuItem) -> Content)
+    /// - Parameter title: the app's name, over a sidebar.
+    public init(_ menu: AppMenuPresentation, title: String? = nil, layout: AppMenuLayout = .automatic,
+                select: @escaping (String) -> Void, @ViewBuilder content: @escaping (AppMenuSection) -> Content)
     {
         self.menu = menu
+        self.title = title
         self.layout = layout
-        self.send = send
+        self.select = select
         self.content = content
-    }
-
-    private var selection: Binding<String> {
-        Binding(get: { menu.selected }, set: { send(.select(item: $0)) })
     }
 
     private var usesTabs: Bool {
@@ -43,32 +43,26 @@ public struct AppMenuView<Content: View>: View {
 
     public var body: some View {
         if usesTabs {
-            TabView(selection: selection) {
-                ForEach(menu.items) { item in
-                    Tab(item.title, systemImage: item.symbol.systemName, value: item.id) {
-                        content(item)
+            TabView(selection: Binding(get: { menu.selected }, set: select)) {
+                ForEach(menu.sections) { section in
+                    Tab(section.title, systemImage: DesignTokens.menuSymbol(section.symbol).sfSymbol, value: section.id) {
+                        content(section)
                     }
-                    .badge(item.badge.map { Text($0) })
+                    .badge(section.badge ?? 0)
                 }
             }
         } else {
             NavigationSplitView {
-                List(selection: Binding<String?>(get: { menu.selected }, set: { $0.map { send(.select(item: $0)) } })) {
+                List(selection: Binding<String?>(get: { menu.selected }, set: { $0.map(select) })) {
                     ForEach(menu.sections) { section in
-                        Section {
-                            ForEach(section.items) { item in
-                                Label(item.title, systemImage: item.symbol.systemName)
-                                    .badge(item.badge.map { Text($0) })
-                                    .tag(item.id)
-                            }
-                        } header: {
-                            if let title = section.title { Text(title) }
-                        }
+                        Label(section.title, systemImage: DesignTokens.menuSymbol(section.symbol).sfSymbol)
+                            .badge(section.badge ?? 0)
+                            .tag(section.id)
                     }
                 }
-                .navigationTitle(menu.title)
+                .navigationTitle(title ?? "")
             } detail: {
-                if let item = menu.items.first(where: { $0.id == menu.selected }) { content(item) }
+                if let section = menu.sections.first(where: { $0.id == menu.selected }) { content(section) }
             }
         }
     }

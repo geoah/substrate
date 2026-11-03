@@ -10,7 +10,7 @@ struct StartSessionButton<Label: View>: View {
     @ViewBuilder let label: () -> Label
 
     @Environment(AppModel.self) private var app
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @State private var askConflict = false
     @State private var askDiscard = false
     @State private var starting = false

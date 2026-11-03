@@ -18,7 +18,7 @@ enum ScreenFixturesFile {
     }
 }
 
-@Suite("The screens' fixture file")
+@Suite("The screens' fixture file", .timeLimit(.minutes(2)))
 struct ScreenFixturesFileTests {
     /// SUBSTRATE_UPDATE_FIXTURES=1 writes it again after a presentation or
     /// a fixture changes.

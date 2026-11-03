@@ -64,7 +64,6 @@ struct DesignTokensKotlinTests {
         import androidx.compose.ui.text.font.FontWeight
         import androidx.compose.ui.unit.Dp
         import androidx.compose.ui.unit.dp
-        import dev.reamde.substrate.kit.bridge.AppMenuSymbol
         import dev.reamde.substrate.kit.bridge.ScreenSymbol
         import dev.reamde.substrate.kit.bridge.ScreenTone
 
@@ -86,12 +85,13 @@ struct DesignTokensKotlinTests {
             let glyph = DesignTokens.symbol(symbol)
             out += "        ScreenSymbol.\(symbol.rawValue) -> \(icon(glyph.material)) // \(glyph.sfSymbol)\n"
         }
-        out += "    }\n\npublic val AppMenuSymbol.icon: ImageVector\n    get() = when (this) {\n"
-        for symbol in AppMenuSymbol.allCases {
-            let glyph = DesignTokens.menuSymbol(symbol)
-            out += "        AppMenuSymbol.\(symbol.rawValue) -> \(icon(glyph.material)) // \(glyph.sfSymbol)\n"
+        out += "    }\n\n/** A mark by the name a presentation gives it (`AppMenuSection.symbol`). */\n"
+        out += "public fun menuIcon(name: String): ImageVector = when (name) {\n"
+        for (name, glyph) in DesignTokens.menuSymbols.sorted(by: { $0.key < $1.key }) {
+            out += "    \"\(name)\" -> \(icon(glyph.material)) // \(glyph.sfSymbol)\n"
         }
-        out += "    }\n\n/** The marks controls draw beside their words. */\npublic enum class KitMark(public val icon: ImageVector) {\n"
+        out += "    else -> \(icon(DesignTokens.fallback.material)) // \(DesignTokens.fallback.sfSymbol)\n"
+        out += "}\n\n/** The marks controls draw beside their words. */\npublic enum class KitMark(public val icon: ImageVector) {\n"
         for control in DesignTokens.Control.allCases {
             let glyph = DesignTokens.control(control)
             out += "    \(control.rawValue)(\(icon(glyph.material))), // \(glyph.sfSymbol)\n"

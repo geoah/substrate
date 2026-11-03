@@ -3303,40 +3303,23 @@
         "_0": {
           "sections": [
             {
-              "id": "tasks",
-              "items": [
-                {
-                  "badge": "3",
-                  "id": "today",
-                  "symbol": "today",
-                  "title": "Today"
-                },
-                {
-                  "id": "upcoming",
-                  "symbol": "upcoming",
-                  "title": "Upcoming"
-                },
-                {
-                  "id": "lists",
-                  "symbol": "list",
-                  "title": "Lists"
-                }
-              ]
+              "badge": 3,
+              "id": "today",
+              "symbol": "today",
+              "title": "Today"
             },
             {
-              "id": "app",
-              "items": [
-                {
-                  "id": "settings",
-                  "symbol": "settings",
-                  "title": "Settings"
-                }
-              ],
-              "title": "Substrate Tasks"
+              "id": "lists",
+              "symbol": "lists",
+              "title": "Lists"
+            },
+            {
+              "id": "settings",
+              "symbol": "settings",
+              "title": "Settings"
             }
           ],
-          "selected": "today",
-          "title": "Substrate Tasks"
+          "selected": "today"
         }
       }
     }
@@ -3348,39 +3331,22 @@
         "_0": {
           "sections": [
             {
-              "id": "tasks",
-              "items": [
-                {
-                  "id": "today",
-                  "symbol": "today",
-                  "title": "Today"
-                },
-                {
-                  "id": "upcoming",
-                  "symbol": "upcoming",
-                  "title": "Upcoming"
-                },
-                {
-                  "id": "lists",
-                  "symbol": "list",
-                  "title": "Lists"
-                }
-              ]
+              "id": "today",
+              "symbol": "today",
+              "title": "Today"
             },
             {
-              "id": "app",
-              "items": [
-                {
-                  "id": "settings",
-                  "symbol": "settings",
-                  "title": "Settings"
-                }
-              ],
-              "title": "Substrate Tasks"
+              "id": "lists",
+              "symbol": "lists",
+              "title": "Lists"
+            },
+            {
+              "id": "settings",
+              "symbol": "settings",
+              "title": "Settings"
             }
           ],
-          "selected": "settings",
-          "title": "Substrate Tasks"
+          "selected": "settings"
         }
       }
     }

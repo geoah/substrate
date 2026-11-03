@@ -32,24 +32,29 @@ enum PreviewData {
         return AppModel(catalog: catalog, history: history, settings: settings)
     }
 
-    static func noSession(_ app: AppModel) -> SessionController {
-        SessionController(app: app, previewState: nil)
+    /// A session model drawing `state` as the app would.
+    static func preview(_ app: AppModel, _ state: SessionState?, now: Date) -> SessionModel {
+        SessionModel(preview: state, catalog: app.catalog ?? catalog, history: app.historyIndex, settings: app.settings, now: now)
+    }
+
+    static func noSession(_ app: AppModel) -> SessionModel {
+        preview(app, nil, now: .now)
     }
 
     /// The sample, started 16 minutes ago: the leg press's warm-up and top
     /// set done and its rest counting down.
-    static func session(_ app: AppModel, now: Date = .now) -> SessionController {
-        SessionController(app: app, previewState: sessionState(app, now: now), now: now)
+    static func session(_ app: AppModel, now: Date = .now) -> SessionModel {
+        preview(app, sessionState(app, now: now), now: now)
     }
 
     /// The same session with the plank's timed set running.
-    static func timedSession(_ app: AppModel, now: Date = .now) -> SessionController {
+    static func timedSession(_ app: AppModel, now: Date = .now) -> SessionModel {
         var script = Script(app: app, now: now)
         script.start()
         if let plank = script.row(slot: "plank", index: 0) {
             script.apply(.startTimedSet(row: plank, target: 60), secondsAgo: 20)
         }
-        return SessionController(app: app, previewState: script.state, now: now)
+        return preview(app, script.state, now: now)
     }
 
     static func sessionState(_ app: AppModel, now: Date) -> SessionState? {
@@ -98,13 +103,13 @@ enum PreviewData {
         case empty
     }
 
-    static func rowsSession(_ app: AppModel, _ moment: RowsMoment, now: Date = .now) -> SessionController {
-        SessionController(app: app, previewState: rowsState(app, moment, now: now), now: now)
+    static func rowsSession(_ app: AppModel, _ moment: RowsMoment, now: Date = .now) -> SessionModel {
+        preview(app, rowsState(app, moment, now: now), now: now)
     }
 
     /// The Rows view state a moment opens with: the fix of set 1 with one rep
     /// more, or the keypad on set 2's load with 120 typed.
-    static func rowsScreen(_ session: SessionController, _ moment: RowsMoment) -> RowsScreenModel {
+    static func rowsScreen(_ session: SessionModel, _ moment: RowsMoment) -> RowsScreenModel {
         guard let state = session.state, let layout = session.presentation?.rowsLayout else { return RowsScreenModel() }
         switch moment {
         case .fixing:

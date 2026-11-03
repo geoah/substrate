@@ -120,7 +120,7 @@ final class RowsScreenModel {
 
     /// A stepper, a reset chip, a keypad chip or an RPE cell: on the open
     /// row an edit at once, on a fix a change to the draft.
-    func apply(_ patch: SetValuesPatch, row: RowID, mode: RowsEditor.Mode, session: SessionController) {
+    func apply(_ patch: SetValuesPatch, row: RowID, mode: RowsEditor.Mode, session: SessionModel) {
         Haptics.shared.play(.step)
         switch mode {
         case .log:
@@ -134,7 +134,7 @@ final class RowsScreenModel {
 
     /// An RPE cell: its patch (rate, or clear the rating), and for a moment
     /// the header says what the value means.
-    func pick(_ cell: RowsRPECell, in editor: RowsEditor, session: SessionController) {
+    func pick(_ cell: RowsRPECell, in editor: RowsEditor, session: SessionModel) {
         apply(cell.patch, row: editor.row, mode: editor.mode, session: session)
         if cell.style == .filled {
             flash = nil
@@ -144,7 +144,7 @@ final class RowsScreenModel {
     }
 
     /// The `½`: the value with its half point added or taken off, rated, and its meaning for a moment.
-    func pick(_ half: RowsRPEHalf, in editor: RowsEditor, session: SessionController) {
+    func pick(_ half: RowsRPEHalf, in editor: RowsEditor, session: SessionModel) {
         guard let patch = half.patch else { return }
         apply(patch, row: editor.row, mode: editor.mode, session: session)
         if let meaning = half.meaning { show(Flash(row: editor.row, text: meaning, token: next())) }
@@ -260,7 +260,7 @@ final class RowsScreenModel {
     }
 
     /// A chip or the confirm button: the patch, and the keypad closes.
-    func enter(_ patch: SetValuesPatch, session: SessionController) {
+    func enter(_ patch: SetValuesPatch, session: SessionModel) {
         guard let typing else { return }
         apply(patch, row: typing.row, mode: typing.mode, session: session)
         self.typing = nil
@@ -269,11 +269,11 @@ final class RowsScreenModel {
     // MARK: - Actions
 
     /// Runs a Rows action: Log and Stop and log, a fix's Save, Delete set, the rest.
-    func perform(_ action: RowsAction, session: SessionController, cover: CoverModel, loggedText: String? = nil) {
+    func perform(_ action: RowsAction, session: SessionModel, cover: CoverModel, loggedText: String? = nil) {
         Task { await performNow(action, session: session, cover: cover, loggedText: loggedText) }
     }
 
-    func performNow(_ action: RowsAction, session: SessionController, cover: CoverModel, loggedText: String?) async {
+    func performNow(_ action: RowsAction, session: SessionModel, cover: CoverModel, loggedText: String?) async {
         switch action {
         case let .tick(row), let .stopTimedSet(row):
             typing = nil
@@ -315,7 +315,7 @@ final class RowsScreenModel {
     }
 
     /// The undo toast's Undo, for what it offered.
-    func undoLast(session: SessionController) {
+    func undoLast(session: SessionModel) {
         guard let undo else { return }
         self.undo = nil
         if fresh == undo.row { fresh = nil }
@@ -337,7 +337,7 @@ final class RowsScreenModel {
     /// Untick set, or a tap on a done set's check: back to pending with its
     /// values, open in place, as the Undo after a Log does. The toast offers
     /// to log it again. `name` is the set as its line names it (`Set 2`).
-    func untick(_ row: RowID, name: String, session: SessionController) {
+    func untick(_ row: RowID, name: String, session: SessionModel) {
         Task {
             if fixing?.row == row { cancelFix() }
             await session.send(.untick(row))
@@ -349,7 +349,7 @@ final class RowsScreenModel {
     }
 
     /// Delete set from a set's `…`: gone at once, with a moment to take it back.
-    func delete(_ row: RowID, name: String, session: SessionController) {
+    func delete(_ row: RowID, name: String, session: SessionModel) {
         Task {
             if fixing?.row == row { cancelFix() }
             typing = nil
@@ -359,7 +359,7 @@ final class RowsScreenModel {
     }
 
     /// "Then …": the list goes to that set and marks it for a moment; nothing opens.
-    func showLine(_ row: RowID, session: SessionController) {
+    func showLine(_ row: RowID, session: SessionModel) {
         let mark = Mark(row: row, token: next())
         self.mark = mark
         session.scrollTarget = ScrollTarget(row: row)

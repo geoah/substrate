@@ -18,6 +18,9 @@ public protocol RecordWriter: Sendable {
     /// Deletes and purges the record at once, so a create replayed later
     /// starts afresh.
     func purge(_ kind: String, _ id: String, ifVersion: Int?) async throws
+    /// Deletes the record and keeps it, so it can be restored; one already
+    /// gone is not an error.
+    func delete(_ kind: String, _ id: String, ifVersion: Int?) async throws
 }
 
 extension SubstrateClient: RecordWriter {
@@ -40,5 +43,9 @@ extension SubstrateClient: RecordWriter {
         var query = [("purge", "true")]
         if let ifVersion { query.append(("ifVersion", String(ifVersion))) }
         try await send("DELETE", Self.recordPath(kind, id), query: query, accept: [404])
+    }
+
+    public func delete(_ kind: String, _ id: String, ifVersion: Int?) async throws {
+        try await send("DELETE", Self.recordPath(kind, id), query: ifVersion.map { [("ifVersion", String($0))] } ?? [], accept: [404])
     }
 }

@@ -5,7 +5,7 @@ import SubstrateCore
 import SubstrateRuntime
 import Testing
 
-@Suite("The bridge's runtime, off Android")
+@Suite("The bridge's runtime, off Android", .timeLimit(.minutes(2)))
 struct BridgeTests {
     @Test func aMessageBeforeStartIsRefused() throws {
         let runtime = BridgeRuntime()

@@ -93,7 +93,7 @@ public object KitGallery {
         },
         ScreenKind.menu to { presentation ->
             (presentation as? FixturePresentation.Menu)?.let {
-                AppMenu(it.value, send = {}, layout = AppMenuLayout.Bar) { item -> DestinationStandIn(item.title) }
+                AppMenu(it.value, select = {}, title = APP, layout = AppMenuLayout.Bar) { section -> DestinationStandIn(section.title) }
             }
         },
     )

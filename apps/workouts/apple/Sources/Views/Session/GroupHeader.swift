@@ -34,7 +34,7 @@ struct GroupHeaderView: View {
 struct GroupMenuItems: View {
     let group: GroupHeader
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
 
     var body: some View {

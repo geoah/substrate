@@ -12,7 +12,7 @@ struct SetRowView: View {
     let layout: GridLayout
     var focus: FocusState<CoverModel.Field?>.Binding
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
 
     var body: some View {
@@ -139,7 +139,7 @@ struct SetRowView: View {
 struct PreviousCell: View {
     let row: SetRowPresentation
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
 
     var body: some View {
         if let previous = row.previous {
@@ -257,7 +257,7 @@ struct RPECell: View {
     let row: SetRowPresentation
     let layout: GridLayout
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
 
     var body: some View {
@@ -296,7 +296,7 @@ struct TickButton: View {
     let layout: GridLayout
     var focus: FocusState<CoverModel.Field?>.Binding
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
 
     var body: some View {

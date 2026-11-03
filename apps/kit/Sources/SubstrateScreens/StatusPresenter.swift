@@ -71,7 +71,7 @@ public enum StatusPresenter {
         return switch write.method {
         case .put: "\(what), sent"
         case .patch: "\(what), changed"
-        case .purge: "\(what), deleted"
+        case .purge, .delete: "\(what), deleted"
         }
     }
 }

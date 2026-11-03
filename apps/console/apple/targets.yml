@@ -15,8 +15,21 @@ targets:
     dependencies:
       - package: Sparkle
         destinationFilters: [macOS]
-      # The server picker's address and discovery, nothing more.
+      # The sign-in on the kit's libraries: the manifest, the flow and the
+      # session (SubstrateAuth), the connect screen (SubstrateUI), the
+      # browser and the Keychain (SubstrateDeviceApple). The web view's
+      # controller still takes the rest through SubstrateKit.
       - package: SubstrateKit
+      - package: SubstrateKit
+        product: SubstrateCore
+      - package: SubstrateKit
+        product: SubstrateAPI
+      - package: SubstrateKit
+        product: SubstrateAuth
+      - package: SubstrateKit
+        product: SubstrateDeviceApple
+      - package: SubstrateKit
+        product: SubstrateUI
     settings:
       base:
         PRODUCT_NAME: Substrate

@@ -1,32 +1,37 @@
-import SwiftUI
+import ChatKit
 import SubstrateKit
+import SwiftUI
 
 /// Where you write to the agent: a floating glass bar over the transcript,
 /// in one container with Jump to Latest so the two merge rather than stack.
 /// The trailing button is the microphone while the field is empty, Send once
-/// it is not, and Stop while a turn runs; it morphs between them.
+/// it is not, and Stop while a turn runs; it morphs between them. The text
+/// is the conversation's: each edit goes to it, and the field takes what it
+/// writes back itself (a send clears it, a refusal gives it back).
 struct ComposerBar: View {
-    @Environment(ChatStore.self) private var store
-    @Bindable var conversation: Conversation
+    @Environment(ChatHost.self) private var host
+    let key: ChildKey
+    let screen: ConversationScreen
     let dictation: Dictation
     let atBottom: Bool
     let onJump: () -> Void
-    let onKey: (Provider) -> Void
+    let onKey: (String) -> Void
+    @State private var text = ""
+    @State private var revision = -1
     @FocusState private var focused: Bool
     @State private var selection: TextSelection?
     @Namespace private var glass
     @State private var sent = 0
 
-    private var empty: Bool { conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var composer: ComposerPresentation { screen.composer }
+    private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         VStack(spacing: 8) {
-            if let provider = store.keyless(conversation.agent) {
-                KeylessCallout(provider: provider) { onKey(provider) }
+            if let keyless = composer.keyless {
+                KeylessCalloutView(callout: keyless) { onKey(keyless.provider) }
             }
-            if let reason = conversation.blockedReason, !empty || reason == "Offline",
-               store.keyless(conversation.agent) == nil
-            {
+            if let reason = composer.blocked, !empty || composer.blockedWhenEmpty {
                 Text(reason)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -65,7 +70,7 @@ struct ComposerBar: View {
             }
             .animation(.snappy, value: atBottom)
             .animation(.snappy, value: empty)
-            .animation(.snappy, value: conversation.streaming)
+            .animation(.snappy, value: screen.streaming)
             .animation(.snappy, value: dictation.active)
         }
         .padding(.horizontal, 12)
@@ -73,11 +78,17 @@ struct ComposerBar: View {
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity)
         .sensoryFeedback(.impact(weight: .light), trigger: sent)
+        .onChange(of: composer.draftRevision, initial: true) { _, next in
+            guard next != revision else { return }
+            revision = next
+            text = composer.draft
+        }
+        .onChange(of: text) { _, text in host.send(.draft(text), to: key) }
         .task {
-            if conversation.listenOnOpen {
-                conversation.listenOnOpen = false
-                await dictation.start(localeID: store.prefs.voiceLocale)
-            } else if conversation.threadID == nil {
+            if composer.listenOnOpen {
+                host.send(.listened, to: key)
+                await dictation.start(localeID: host.chats?.settings.voiceLocale)
+            } else if screen.thread == nil {
                 focused = true
             }
         }
@@ -87,13 +98,13 @@ struct ComposerBar: View {
 
     @ViewBuilder private var field: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            if conversation.threadID == nil {
-                AgentChip(conversation: conversation)
+            if composer.picksAgent {
+                AgentChip(key: key, current: screen.agent, label: composer.agentLabel)
             }
             if dictation.active {
                 listening
             } else {
-                TextField(placeholder, text: $conversation.draft, selection: $selection, axis: .vertical)
+                TextField(composer.placeholder, text: $text, selection: $selection, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1 ... 8)
                     .focused($focused)
@@ -121,13 +132,9 @@ struct ComposerBar: View {
                 }
             }
         }
-        .padding(.leading, conversation.threadID == nil ? 7 : 16)
+        .padding(.leading, composer.picksAgent ? 7 : 16)
         .padding(.trailing, 8)
         .frame(minHeight: 46)
-    }
-
-    private var placeholder: String {
-        conversation.agent.map { "Message \($0.name)" } ?? "Message"
     }
 
     /// What is being heard: the finalized words, then the guess, dimmed.
@@ -170,21 +177,21 @@ struct ComposerBar: View {
     // MARK: The trailing button
 
     @ViewBuilder private var trailing: some View {
-        if conversation.streaming {
-            round("stop.fill", tint: .red, label: conversation.stopping ? "Stopping" : "Stop") { conversation.stop() }
-                .disabled(conversation.stopping)
+        if screen.streaming {
+            round("stop.fill", tint: .red, label: screen.stopping ? "Stopping" : "Stop") { host.send(.stop, to: key) }
+                .disabled(screen.stopping)
         } else if dictation.active {
             round("checkmark", tint: .accentColor, label: "Done Listening") {
                 Task { await toggleListening() }
             }
         } else if empty {
             round("mic.fill", tint: nil, label: "Dictate") { Task { await toggleListening() } }
-                .disabled(conversation.agentID == nil)
+                .disabled(screen.agent == nil)
         } else {
             // Return on the Mac and ⌘Return on an iPad keyboard are the
             // field's own key handling.
             round("arrow.up", tint: .accentColor, label: "Send") { send() }
-                .disabled(conversation.blockedReason != nil)
+                .disabled(!composer.canSend)
         }
     }
 
@@ -206,7 +213,7 @@ struct ComposerBar: View {
 
     /// Shift-Return: a new line where the cursor is, over any selection.
     private func insertNewline() {
-        var text = conversation.draft
+        var text = text
         var lower = text.count
         var upper = text.count
         if case let .selection(range)? = selection?.indices,
@@ -218,47 +225,46 @@ struct ComposerBar: View {
         let start = text.index(text.startIndex, offsetBy: lower)
         let end = text.index(text.startIndex, offsetBy: upper)
         text.replaceSubrange(start ..< end, with: "\n")
-        conversation.draft = text
+        self.text = text
         selection = TextSelection(insertionPoint: text.index(text.startIndex, offsetBy: lower + 1))
     }
 
     private func send() {
         Task {
             if dictation.active { await toggleListening() }
-            guard conversation.blockedReason == nil, !empty else { return }
-            conversation.send()
+            guard composer.canSend, !empty else { return }
+            host.send(.draft(text), to: key)
+            host.send(.send, to: key)
             sent += 1
-            if !store.prefs.askedNotifications {
-                store.prefs.askedNotifications = true
-                _ = await Notifier.requestAuthorization()
-            }
         }
     }
 
     private func toggleListening() async {
         if dictation.active {
             let heard = await dictation.stop()
-            conversation.draft = joined(conversation.draft, heard)
+            text = joined(text, heard)
             focused = true
         } else {
             focused = false
-            await dictation.start(localeID: store.prefs.voiceLocale)
+            await dictation.start(localeID: host.chats?.settings.voiceLocale)
         }
     }
 }
 
 /// The agent a new chat goes to, chosen from the offered ones.
 private struct AgentChip: View {
-    @Environment(ChatStore.self) private var store
-    @Bindable var conversation: Conversation
+    @Environment(ChatHost.self) private var host
+    let key: ChildKey
+    let current: String?
+    let label: String
 
     var body: some View {
         Menu {
-            ForEach(store.offered) { agent in
+            ForEach(host.chats?.offered ?? []) { agent in
                 Button {
-                    conversation.agentID = agent.id
+                    host.send(.choose(agent: agent.id), to: key)
                 } label: {
-                    if agent.id == conversation.agentID {
+                    if agent.id == current {
                         Label(agent.name, systemImage: "checkmark")
                     } else {
                         Text(agent.name)
@@ -267,33 +273,33 @@ private struct AgentChip: View {
             }
         } label: {
             // Centred on the field's first line: 32 points in a 46-point row.
-            AgentPill(id: conversation.agentID, picker: true)
+            AgentPill(id: current, name: label, picker: true)
                 .frame(maxWidth: 180, alignment: .leading)
                 .padding(.vertical, 7)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
         .fixedSize()
-        .accessibilityLabel("Assistant: \(conversation.agentID.map(agentName) ?? "none")")
+        .accessibilityLabel("Assistant: \(label)")
     }
 }
 
 /// An agent whose provider has no key cannot answer: said before anybody
 /// types.
-private struct KeylessCallout: View {
-    let provider: Provider
+private struct KeylessCalloutView: View {
+    let callout: KeylessCallout
     let add: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "key.fill").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Add an API key for \(provider.name)").font(.subheadline.weight(.semibold))
-                Text("Agents run on your own key, sealed on the provider's record.")
+                Text(callout.title).font(.subheadline.weight(.semibold))
+                Text(callout.message)
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            Button("Add Key", action: add)
+            Button(callout.action, action: add)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
         }

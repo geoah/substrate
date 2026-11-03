@@ -294,6 +294,18 @@ func TestTheFirstPartyAppsScopesCoverThePackagesTheyAskFor(t *testing.T) {
 					t.Fatalf("%s asks for %s at %d or later, and the version there is %d", name, ask.Package, ask.AtLeast, b.Version)
 				}
 				reach = append(reach, closure(ask.Package)...)
+				// An app writes the owner's kinds of a package it publishes
+				// itself, code or none: Tasks' package is kinds alone. An
+				// internal kind is the app's own machinery, held by the
+				// app's own scopes where it writes one.
+				if slices.Contains(c.Publishes, ask.Package) {
+					for _, k := range b.Kinds() {
+						if k.Purpose == vocabulary.PurposeInternal {
+							continue
+						}
+						reach = append(reach, Reach{Pattern: k.Identity, Write: true})
+					}
+				}
 			}
 			if len(reach) == 0 {
 				t.Fatalf("%s's packages reach nothing", name)

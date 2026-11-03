@@ -32,4 +32,6 @@ dependencies {
     implementation(project(":kit-ui"))
     implementation(project(":kit-device"))
     implementation(libs.activity.compose)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }
