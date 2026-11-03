@@ -92,9 +92,9 @@ final class ManifestTests: XCTestCase {
     /// package it delivers to.
     func testTheRequestReadsAsTheApprovalPageWordsIt() {
         XCTAssertEqual(manifest.plannedChanges().map(\.words), [
-            "See, add, change and delete your Apple contacts, events, reminders, shares and visits, and 5 more kinds, including kinds added later",
-            "See your Apple Health accounts",
-            "See your Apple Health deliveries",
+            "See, add, change and delete your Apple contacts, events, reminders, shares and visits, and 5 more kinds, including kinds added later, and search them by meaning, which spends your embedding budget",
+            "See your Apple Health accounts, and search them by meaning, which spends your embedding budget",
+            "See your Apple Health deliveries, and search them by meaning, which spends your embedding budget",
             "Send data to your repository through the Apple Health webhook, for any Apple Health account, "
                 + "and see every delivery to it that could not be filed, whoever sent it",
             "Install Apple",
@@ -296,7 +296,7 @@ final class ApprovalReachTests: XCTestCase {
         XCTAssertTrue(needsApproval(error))
         XCTAssertFalse(isSignedOut(error))
         XCTAssertEqual(error.localizedDescription, "Substrate Sync can't sync Health: the access you approved leaves out "
-            + "“See your Apple Health deliveries”. Review its access on Home to allow it; nothing this phone sent is sent again.")
+            + "“See your Apple Health deliveries, and search them by meaning, which spends your embedding budget”. Review its access on Home to allow it; nothing this phone sent is sent again.")
     }
 
     /// A deleted account is not one an approval creates: the planner leaves
