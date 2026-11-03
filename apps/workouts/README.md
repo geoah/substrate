@@ -27,7 +27,7 @@ Dynamic Island.
 
 ```bash
 mise run apple:build:workouts     # the app for the simulator
-mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (562 tests, on the Mac)
+mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (577 tests, on the Mac)
 mise run apps:release prerelease workouts   # archived, signed and published under workouts/
 uv run --with pyyaml apps/workouts/scripts/workouts-package.py   # the package's manifests into the app's JSON
 uv run --with pyyaml apps/workouts/scripts/exercise-library.py   # the exercise library into the app's JSON
@@ -55,11 +55,11 @@ react-native-body-highlighter's (MIT), written into `Views/Stats/BodyMapShapes.s
 
 | Path | What |
 | --- | --- |
-| `apple/Sources/` | the app: `App/` (the session controller, the model, `SubstrateLink`), `Platform/` (notifications, the Live Activity, HealthKit, haptics), `Shared/` (compiled into the widget too), `Views/` |
+| `apple/Sources/` | the app: `App/` (`WorkoutsRoot`, the composition root: the kit's link with `WorkoutsApp` under it on one runtime, and the device services; `SessionModel`, `AppModel` and `SubstrateLink`, which republish the runtime's presentations for the views and send their commands), `Platform/` (the notification delegate, the Live Activity's attributes, HealthKit, haptics), `Shared/` (compiled into the widget too), `Views/` |
 | `package/` | the training package's manifests and their long form |
 | `apple/Widgets/` | the Live Activity extension |
-| `WorkoutsKit/Sources/WorkoutsCore` | Foundation and the kit's SubstrateCore (the JSON value, `Timestamp`, `ISODuration`, the flat record): the model and its record codec, the session engine, the rest rules, the suggestion engine, the presenters, the files on the phone, the sample routine and the package's manifests |
-| `WorkoutsKit/Sources/WorkoutsSync` | the app's side of a substrate, over the kit's portable libraries (SubstrateAPI's client, SubstrateAuth's manifest): the package installer, the catalogue, the outbox, the server's history, the manifest |
+| `WorkoutsKit/Sources/WorkoutsCore` | Foundation and the kit's SubstrateCore, SubstrateRuntime and SubstrateLocal: the model and its record codec, the session engine, the session's controller on the kit's runtime (its journal the kit's `JournalFile`), the rest rules, the suggestion engine, the presenters, the files on the phone, the sample routine and the package's manifests |
+| `WorkoutsKit/Sources/WorkoutsSync` | the app's side of a substrate, over the kit's portable libraries: `WorkoutsApp`, the app's root under the kit's `LinkController` (the catalogue, History and the settings, the sync run, the routine edits, the session as its child), the catalogue, the outbox (the kit's, with the routine helpers), the server's history, the manifest |
 
 ## Signing in and sync
 
@@ -111,8 +111,9 @@ may **Take over…** it, after which it stops upgrading and the app keeps
 writing records to it. A local build and a release build ask for the same
 packages, so they share a repository without trouble.
 
-**Where the repository stands.** At sign-in, at launch and on return to the
-foreground, `PackageCheck` reads the training package's row
+**Where the repository stands.** At sign-in and at launch the kit's link
+reads the training package's row, and again after each set up check, which
+carries the build's floor
 (`substrate.reamde.dev/core/package/substrate.reamde.dev%2Ftraining`, whose
 `shippedVersion` is the publisher's number):
 
@@ -163,9 +164,13 @@ kept in `routine-draft.json` on every change, so a killed app resumes it. A
 merged over. Signed out the sample cannot be edited.
 
 **Each sign-in is one account**: its own folder, outbox, catalogue and
-package check. Signing out or signing in elsewhere replaces it, and a sync
-still running for the old one stops at its next step without publishing or
-writing anything.
+package standing. The kit's link (`LinkController`) owns the connection: the
+session and its revocations, the set up check, the packages' versions,
+connectivity and the outbox's flush, which follows every write the app
+queues. Workouts' root under it (`WorkoutsApp`) runs the sync from the
+link's snapshot, each step named for the account it ran for: signing out or
+signing in elsewhere stops the run under its key, and a step for the old
+account that still arrives changes nothing.
 
 **A finished session goes through the outbox** (`outbox.json`), kept on the
 phone until the server takes it, in the package's order, after any exercise it
@@ -293,11 +298,13 @@ observations would ask every user for a new scope.
 
 `mise run apple:test:workouts` checks the generated JSON against its YAML,
 then runs both suites on the Mac (CI runs the check, in the `lint` job, and
-not the suites: no workflow builds the Apple apps): WorkoutsCore's 470 (the codec, the engine,
+not the suites: no workflow builds the Apple apps): WorkoutsCore's 480 (the codec, the engine,
 the suggestions against their vectors, the presenters, the stores, the sample
 routine's methods and a session through it to Finish, and the Hevy import
 against `Tests/WorkoutsCoreTests/Fixtures/hevy`, the API's shape included, and the exercise library, and the files the last release left in the `~/training`
-spelling read back once) and WorkoutsSync's 92:
+spelling read back once, and the session's controller on the kit's runtime: its journal
+order, the Finish that is two events and a crash on either side of its history file,
+the open, the ticks, the entry check and a refusal) and WorkoutsSync's 97:
 the sample written once and never again after a delete, on a second phone or a
 reinstall, a refused sample write that stops nothing, a session logged signed
 out finding its exercises, a routine's delete through the outbox and during a
@@ -310,7 +317,10 @@ failed save and an unreadable file, parked writes, the history exchange, the
 package check (missing, behind and asked through the set up check, current),
 the published manifests, the coach's closure and the scopes held to its reach
 (`CoachTests`), an account folder from the `~/training` spelling read, rewritten and
-sent to the published paths, and the sign-in request and status.
+sent to the published paths, the sign-in request and status, and the app's
+root under the link (`WorkoutsAppTests`: what the link's snapshot starts, a
+sync step for another account, a finished session reaching the account's
+outbox as one batch, a delete's tombstone).
 
 `LiveServerTests` runs the whole path against a real substrate when told
 where (one that reads the publisher's authority document, live or through

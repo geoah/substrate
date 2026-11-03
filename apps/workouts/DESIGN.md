@@ -153,21 +153,23 @@ apps/apple/
 
 ```text
  views, Live Activity intents, notification taps
-        |  SessionCommand
+        |  SessionCommand, by its path under the kit's link (WorkoutsApp.sessionPath)
         v
- SessionController (app, @MainActor, the only writer)
-   1. mint ids and timestamps, build the SessionEvent
-   2. SessionEngine.apply(event, state)  -> new SessionState   (WorkoutsCore, pure)
-   3. SessionJournal.write(events, state)  atomic file write   (WorkoutsCore)
-   4. CountdownCoordinator.sync(state)  -> notification, Live Activity   (app)
-   5. SessionPresenter.present(state, catalog, history, settings, now) -> SessionPresentation (WorkoutsCore, pure)
+ SessionController (WorkoutsCore, a Controller on the kit's runtime, the only writer)
+   1. events(for:in:): mint ids and timestamps, read history, build the SessionEvent
+   2. SessionEngine.apply(event, state)  -> new SessionState   (pure)
+   3. the journal, JournalFile at active-session.json, written before anything suspends
+   4. SessionPresenter.present(state, catalog, history, settings, now) -> SessionPresentation (pure)
+   5. effects(of:on:presented:): the notification and the Live Activity through the kit's
+      device services; a finished session to WorkoutsApp, which queues it in the outbox
         |
         v
- SwiftUI views render the presentation; Live Activity content is built from it
+ the runtime publishes the tree; SessionModel republishes it on the main actor; SwiftUI draws it
 
- Finish:  SessionEngine.records(state) -> TrainingSession + [PerformedSet]
-          RecordCodec.encode -> flat records -> HistoryStore (one file per session)
-          HealthExportQueue.enqueue(session id) -> HealthExporter (never blocks Finish)
+ Finish:  finishRequested (not journaled): SessionEngine.records(state) -> TrainingSession + [PerformedSet]
+          its effect: RecordCodec.encode -> flat records -> HistoryStore (one file per session),
+                      then the Health queue entry (HealthExporter never blocks Finish)
+          finished: the journal cleared; finishFailed: the session stays open
 ```
 
 - The UI never computes rules. It sends commands and renders `SessionPresentation`.
@@ -330,7 +332,10 @@ apps/apple/
       Present/      SessionPresenter.swift SuggestionInputs.swift Previous.swift Ghost.swift Labels.swift Columns.swift
         Rows/       RowsLayout.swift RowsEditor.swift RowsPresenter.swift RowsText.swift      (§7.6a)
       Format/       Formatters.swift
-      Store/        SessionJournal.swift HistoryStore.swift HistoryIndex.swift HealthQueueFile.swift LocalExercises.swift
+      Session/      SessionController.swift SessionEnrichment.swift SessionEffects.swift SessionJournalFile.swift
+                    the command, event, effect, state, transient and presentation types, one per file
+      Settings/     WorkoutsSettings.swift SessionLayout.swift
+      Store/        HistoryStore.swift HistoryIndex.swift HealthQueueFile.swift LocalExercises.swift
       Seams/        CatalogSource.swift SessionSyncSink.swift HistorySource.swift BundledCatalog.swift
       Resources/Bundled/  exercises.json routines.json          (generated)
     Tests/WorkoutsCoreTests/
@@ -341,8 +346,8 @@ apps/apple/
   the app/
     SubstrateWorkoutsApp.swift
     Shared/         WorkoutsActivityAttributes.swift SessionIntents.swift          (app + widget)
-    App/            SessionController.swift AppModel.swift WorkoutsSettings.swift DeepLinks.swift
-    Platform/       CountdownCoordinator.swift Notifications.swift LiveActivityController.swift
+    App/            WorkoutsRoot.swift SessionModel.swift AppModel.swift SubstrateLink.swift DeepLinks.swift
+    Platform/       NotificationDelegate.swift WorkoutsActivityContent.swift WorkoutsPlatform.swift
                     HealthExporter.swift BodyMassReader.swift KeepAwake.swift Haptics.swift
     Views/
       RootView.swift
@@ -1611,54 +1616,62 @@ plausibility test on it: the set's e1RM against the median session-best e1RM of 
 
 ### 6.1 SessionController
 
-`@MainActor @Observable final class SessionController`, one instance (`SessionController.shared`), created at app
-launch or lazily when a Live Activity intent launches the app in the background.
+`SessionController` is WorkoutsCore's, a `Controller` on the kit's runtime (`apps/kit`, `SubstrateRuntime`), kept by
+`WorkoutsApp` under the kit's link as its one child. Its value is what it presents with: the catalogue, the history
+index and the settings, which its parent hands it and replaces when they change; its state is the session
+(`SessionState?`) and a finish waiting on its history file.
 
-- Holds the catalogue, the history index, the settings, the journal, the active `SessionState?` and its
-  `SessionPresentation`.
-- `func send(_ command: SessionCommand) async` is the only way anything changes a session. Views, intents and notification
-  actions call it. A command is the event minus what the controller adds: ids (UUIDv7), the instant (floored to the
-  second, clamped to the last event's), and values that need history (ghost values for a tick or Done, an added
+- A `SessionCommand` is the only way anything changes a session. Views, intents and notification actions send it
+  through `SessionModel` (the app's), which republishes the presentation on the main actor. `events(for:in:)` adds what
+  the engine may not read: ids (UUIDv7, their random bits from the environment's id source), the instant (floored to
+  the second, clamped to the last event's), and values that need history (ghost values for a tick or Done, an added
   exercise's rows from last time).
-- After a successful `apply`, in this order ([04 §2.4](docs/research/04-ios-platform.md#24-keeping-them-consistent-when-rest-is-extended-or-skipped)): bump the effects revision; write the journal (before any
-  `await`); recompute the presentation; `await coordinator.sync(state, presentation, revision)`; `await sync.applied(...)`
-  in a detached task.
-- `start(routine:)` and `startEmpty()` check for an active session first (the conflict dialog, §7.4), read the body
-  mass (§9.5), request notification permission the first time, and start the Live Activity in the foreground.
-- `finish(...)` applies the `finish` its `FinishPresenter.projection` builds for the dialog's choice (the one the sheet
-  showed, §7.7), builds `SessionRecords`, writes the history file, writes the Health queue entry
-  (before the journal goes and before any `await`, so no death in between can lose it), deletes the journal, ends the
-  Live Activity, clears the notification, and starts the Health save without awaiting it. The save waits until the
-  cover and the Finish sheet have closed (about 0.7 s), because the first Finish may show the permission sheet; over a
-  cover that opened again for the next session it saves without asking. Until the cover is gone it keeps drawing the
-  session as it was, never "No session in progress".
-- `discard()` applies `discard`, deletes the journal, ends the Live Activity at once, clears the notification.
+- The runtime's order is the contract ([04 §2.4](docs/research/04-ios-platform.md#24-keeping-them-consistent-when-rest-is-extended-or-skipped)):
+  the engine, then the journal (`journaling(of:)`: Start `.restart`, an edit `.append`, Discard and a finished session
+  `.clear`), written before anything suspends, then the presentation, then the effects, decided from the event, the
+  state and the presentation, on the live path alone.
+- **Start** is `.starting`, whose effect reads the body mass (§9.5) and asks for notification permission the first
+  time, then makes the Start event with its ids; the cover opens with it.
+- **Finish** is two events. `finishRequested` carries the `finish` its `FinishPresenter.projection` builds for the
+  sheet's choice (§7.7) and the records it makes; it is applied and not journaled, and its effect writes the history file
+  and the Health queue entry, in that order. Then `finished` clears the journal, ends the Live Activity with the summary,
+  hands the records to `WorkoutsApp` for the outbox, and starts the Health save once the cover and the sheet have closed
+  (about 0.7 s), because the first Finish may show the permission sheet; or `finishFailed` keeps the session open and
+  says why. A crash between them replays to the session still open; the open's check against History closes one whose
+  file was written.
+- **Discard** applies `discard`, clears the journal, ends the Live Activity at once and clears the notification.
+- The entry check (§5.7), the scroll target, the last refusal, the cover's requests and the haptic cues are transient:
+  read by the presenter, never journaled.
 
-### 6.2 CountdownCoordinator
+### 6.2 The countdown's alert and Live Activity
 
-The only code that touches the notification and the Live Activity ([req 25](docs/research/README.md#session-engine-and-app)). `sync(state, presentation, revision)`:
+The session's effects are the only code that touches the notification and the Live Activity
+([req 25](docs/research/README.md#session-engine-and-app)), through the kit's device services: `Notifications`
+(`SystemNotifications`) and `OngoingActivities` (`LiveActivities<WorkoutsActivityAttributes>`, whose content the app
+reads into the widget's state). After every applied event, under one key, so a newer change stops one under way:
 
-1. Remember `mine = revision`.
-2. Remove the pending and delivered notification `workouts.countdown`; add a new one if a countdown has a future end and
-   notifies (§4.7, §9.2). (V1.1 inserts AlarmKit here: cancel the old alarm before any `await`, schedule the new one
-   after.)
-3. After each `await`, stop if `mine` is no longer the latest revision.
-4. Update the Live Activity with the new content, `staleDate` = the countdown's end, and `timestamp:` = the event's
+1. Remove the pending and delivered notification `workouts.countdown`; add a new one if a countdown has a future end and
+   notifies (§4.7, §9.2). (V1.1 inserts AlarmKit here: cancel the old alarm, then schedule the new one.)
+2. Stop if a newer change started meanwhile.
+3. Update the Live Activity with the new content, its stale date the countdown's end and its timestamp the change's
    instant, so ActivityKit drops a late, older update ([04 §2.4](docs/research/04-ios-platform.md#24-keeping-them-consistent-when-rest-is-extended-or-skipped)).
 
-`restore(state)` runs the same steps at launch and on every return to the foreground, so whatever happened while the
-app was suspended or dead, the alert and the Live Activity match the journal again.
+The open and every return to the foreground restore them, so whatever happened while the app was suspended or dead,
+the alert and the Live Activity match the journal again. The presentation's `nextChange` is a tick: the runtime
+presents again then, and a countdown's end asks for its haptic (§9.3), which the app plays only in the foreground (and,
+for a rest that notifies, only on the session screen).
 
 ### 6.3 Launch, foreground, background
 
-- **Launch**: build the catalogue (bundled plus local exercises), start loading history in the background, load the
-  journal and fold it. If a session is active: show the in-progress accessory, `coordinator.restore`, ensure a Live
-  Activity exists unless the owner dismissed this session's (`activityStateUpdates` reported `.dismissed`), and present
-  the session cover when the launch is in the foreground.
-- **Background launch by an intent**: the same load, no UI; the intent's command is handled once the journal is
-  folded.
-- **`scenePhase == .active`**: `restore`; clear an expired rest without a second haptic (the notification already
-  alerted); re-read notification settings so the session screen can say when alerts are off; process the Health queue.
+- **Launch**: `WorkoutsRoot` makes the runtime: the link loads the session, `WorkoutsApp` reads the catalogue (bundled
+  plus local exercises) and the history, and the session controller folds the journal on the runtime's executor. Its
+  open checks a replayed session against History, restores the alert and the Live Activity (ending any left over),
+  reads the notification permission and lists journals set aside; the cover opens the first time the app is in the
+  foreground with a session open.
+- **Background launch by an intent**: the same, no UI; the intent's command reaches the runtime after its open, so the
+  journal is folded first.
+- **`scenePhase == .active`**: the session's `.foreground` (restore, the permission read again, the Health queue
+  worked); the link's status check and the app's sync.
 - **`.background`**: nothing; the journal is written and the alerts are with the system.
 
 ### 6.4 Settings
@@ -2586,7 +2599,7 @@ struct AdjustRestIntent: LiveActivityIntent {           // −15 s and +15 s
     init(seconds: Int) { self.seconds = seconds }
     @MainActor func perform() async throws -> some IntentResult {
         #if WORKOUTS_APP
-        await SessionController.shared.send(.adjustRest(seconds: seconds))
+        await LiveActivityActions.send(.adjustRest(seconds: seconds))  // to the session, once its journal is folded
         #endif
         return .result()
     }
@@ -2781,7 +2794,7 @@ targets:
     settings:
       base:
         # ... existing keys, minus MARKETING_VERSION and CURRENT_PROJECT_VERSION ...
-        # WORKOUTS_APP gates the LiveActivityIntent bodies that call SessionController;
+        # WORKOUTS_APP gates the LiveActivityIntent bodies that reach the session;
         # the widget compiles the same Shared/ files without it.
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) WORKOUTS_APP"
         # Preview-only data (generated example sessions) stays out of archives.
