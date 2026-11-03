@@ -26,6 +26,7 @@ import (
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/config"
+	"github.com/geoah/substrate/internal/domains"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/kinds"
@@ -262,7 +263,8 @@ func run() error {
 		slog.Warn("SUBSTRATE_INSECURE_AUTHORITY_DOCS is set: apps are verified against a local file for this authority, never its DNS record: local development only",
 			"authority", authority, "path", path)
 	}
-	reader := authority.NewReader(authority.Options{LocalDocuments: authorityDocs})
+	resolver := domains.NewResolver(cfg.DNSResolver)
+	reader := authority.NewReader(authority.Options{LocalDocuments: authorityDocs, Resolver: resolver})
 	cat, err := catalog.LoadWithReader(reader, kinds.SeedPackages, catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
 		return err
@@ -295,16 +297,17 @@ func run() error {
 	// otherwise wait on end first.
 	draining := make(chan struct{})
 	handler := api.New(api.Config{
-		Service:      svc,
-		WebDir:       cfg.WebDir,
-		Catalog:      cat,
-		ConsoleURL:   cfg.ConsoleURL,
-		PublicURL:    cfg.PublicURL,
-		InviteCode:   cfg.InviteCode,
-		TOTPDisabled: cfg.InsecureDisableTOTP,
-		Publishers:   authorize.NewVerifier(authorize.PublisherOptions{Reader: reader}),
-		Metrics:      cfg.Metrics,
-		Draining:     draining,
+		Service:        svc,
+		WebDir:         cfg.WebDir,
+		Catalog:        cat,
+		ConsoleURL:     cfg.ConsoleURL,
+		PublicURL:      cfg.PublicURL,
+		InviteCode:     cfg.InviteCode,
+		TOTPDisabled:   cfg.InsecureDisableTOTP,
+		Publishers:     authorize.NewVerifier(authorize.PublisherOptions{Reader: reader}),
+		DomainResolver: resolver,
+		Metrics:        cfg.Metrics,
+		Draining:       draining,
 	})
 	if cfg.Metrics {
 		// Loud, and at boot, like the other doors: this port answers /metrics

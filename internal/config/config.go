@@ -137,6 +137,14 @@ type Config struct {
 	// records it (appAuthorityFromFile). AuthorityDocs parses it.
 	InsecureAuthorityDocs string `envconfig:"SUBSTRATE_INSECURE_AUTHORITY_DOCS" default:""`
 
+	// DNSResolver is the DNS server (`host:port`) every `_substrate` lookup
+	// asks: Verify domain, an app's publisher and a published package's
+	// document (decisions 0208, 0209 and 0212). Empty asks the system's
+	// resolver. A TXT answer is only as trustworthy as the resolver that
+	// fetched it, so an operator who wants DNSSEC points this at a
+	// validating resolver.
+	DNSResolver string `envconfig:"SUBSTRATE_DNS_RESOLVER" default:""`
+
 	// InsecureAllowForeignPackages lets a token create a package under any
 	// authority, not only its repository's own (decision 0210). It exists
 	// for the provider end-to-end suite and `mise run test:e2e`, which apply
@@ -249,6 +257,11 @@ func (c Config) Validate() error {
 	}
 	if _, err := c.AuthorityDocs(); err != nil {
 		return err
+	}
+	if c.DNSResolver != "" {
+		if host, port, err := net.SplitHostPort(c.DNSResolver); err != nil || host == "" || port == "" {
+			return fmt.Errorf("SUBSTRATE_DNS_RESOLVER %q is not host:port, such as 127.0.0.1:53", c.DNSResolver)
+		}
 	}
 	return ValidateCredentialKey(c.CredentialKey)
 }
