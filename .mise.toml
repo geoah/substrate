@@ -892,7 +892,7 @@ description = "Build, sign and publish Substrate Chat for iPhone, iPad and Mac a
 run = ".mise/apple.sh release:chat"
 
 [tasks."apple:site"]
-description = "Publish the apps' site: the association file, the authority document and every app's client document, and print the _substrate record its DNS needs"
+description = "Publish the apps' site: the association file, the authority document with every published package version, Workouts' package closures and every app's client document, and print the _substrate record its DNS needs; SUBSTRATE_APPLE_SITE_DRY_RUN=1 builds it under build/site and uploads nothing"
 run = ".mise/apple.sh site"
 
 # =============================================================================
