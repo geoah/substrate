@@ -2,7 +2,9 @@ package catalog
 
 import (
 	"context"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -81,5 +83,39 @@ func TestProviderInstallReplansLiveWaitingAddons(t *testing.T) {
 	}
 	if ds.held[addon] != 1 || result.AddonResults[0].State != "installed" || ds.actors[len(ds.actors)-1] != substrate.BundleActor("example.com", "addon") {
 		t.Fatalf("install: %+v %v", result.AddonResults, ds.actors)
+	}
+}
+
+func TestWaitingAddonRechecksConsentAfterPlanning(t *testing.T) {
+	const provider, addon = "example.com/provider", "example.com/addon"
+	for _, expired := range []bool{false, true} {
+		t.Run(fmt.Sprint("expired=", expired), func(t *testing.T) {
+			cat, err := Load(ProviderRoot(fstest.MapFS{
+				"provider/bundle.yaml": {Data: []byte(requiringClosure(provider, 1))},
+				"addon/bundle.yaml":    {Data: []byte(requiringClosure(addon, 1, provider, 1))},
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ds := &addonDataset{heldBundles: heldBundles{held: map[string]int64{}}, tokens: []substrate.TokenInfo{{
+				ID: "approval", AppAddons: []substrate.AppAddon{{Package: addon, Version: 1, AddonFor: provider}},
+			}}}
+			cat.SetAddonPlanner(func(context.Context, substrate.Dataset, substrate.TokenInfo, substrate.AppAddon) *substrate.AuthorizationBlock {
+				if expired {
+					past := time.Now().Add(-time.Hour)
+					ds.tokens[0].ExpiresAt = &past
+				} else {
+					ds.tokens = nil
+				}
+				return nil
+			})
+			result, _, err := cat.Install(context.Background(), substrate.ActorConsole, provider, ds)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ds.held[addon] != 0 || len(result.AddonResults) != 1 || !strings.Contains(result.AddonResults[0].Problem, "approval is no longer live") {
+				t.Fatalf("lost consent: %+v, installed: %v", result.AddonResults, ds.held)
+			}
+		})
 	}
 }
