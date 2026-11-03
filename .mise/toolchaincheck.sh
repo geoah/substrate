@@ -21,6 +21,12 @@
 #   pgvector  every pgvector/pgvector image in the tree against compose.yaml's
 #   mise      every jdx/mise-action `version:` input against each other and
 #             against .mise.toml's min_version
+#   android   every android:* task's `tools` against each other; their swift
+#             against the Gradle catalog's and the Swift SDK for Android
+#             .mise/android.sh installs, the catalog's NDK against the one it
+#             installs, the compile SDK and build tools against its package
+#             list, the JDK against the catalog's jvm; the Gradle wrapper
+#             names its distribution's checksum
 #
 # Every comparison is exact. A FROM line names an exact tag plus a digest
 # (`node:26.11.1-alpine3.24@sha256:...`): the digest is cut off and the
@@ -287,6 +293,48 @@ else
   elif [ -n "$mise_versions" ] && [ "$mise_min" != "$mise_versions" ]; then
     flag ".mise.toml's min_version is ${mise_min}, but the workflows install mise ${mise_versions}"
   fi
+fi
+
+# --- android, pinned across mise, the Gradle catalog and android.sh ------
+#
+# The Swift SDK for Android is built for one exact Swift, and Gradle's
+# ndkVersion must be the NDK the bundle was linked to, so the three are one
+# version written in three files no build reads together. A drift builds on a
+# laptop that still has the old pieces and fails on a fresh one.
+catalog=apps/gradle/gradle/libs.versions.toml
+android_sh=.mise/android.sh
+if [ -f "$catalog" ] && [ -f "$android_sh" ]; then
+  catalog_pin() { sed -n "s/^${1} = \"\([^\"]*\)\".*/\1/p" "$catalog" | head -1; }
+  sh_pin() { sed -n "s/^${1}=\(.*\)$/\1/p" "$android_sh" | head -1; }
+  task_tools="$(awk '/^\[tasks\."android:/ { inside = 1; next } /^\[/ { inside = 0 } inside && /^tools = / { print }' .mise.toml | sort -u)"
+  if [ -z "$task_tools" ]; then
+    flag "no android:* task names its tools; the Android Swift and JDK are unpinned"
+  elif [ "$(printf '%s\n' "$task_tools" | wc -l)" -gt 1 ]; then
+    flag "the android:* tasks pin more than one set of tools: $(printf '%s' "$task_tools" | tr '\n' ' ')"
+  fi
+  task_swift="$(printf '%s' "$task_tools" | sed -n 's/.*swift = "\([^"]*\)".*/\1/p' | head -1)"
+  task_java="$(printf '%s' "$task_tools" | sed -n 's/.*java = "temurin-\([0-9]*\)[^"]*".*/\1/p' | head -1)"
+  catalog_swift="$(catalog_pin swift)"
+  sh_swift="$(sh_pin swift_version)"
+  [ -n "$task_swift" ] && [ "$task_swift" = "$catalog_swift" ] && [ "$task_swift" = "$sh_swift" ] ||
+    flag "Swift for Android: the android:* tasks pin ${task_swift:-none}, ${catalog} ${catalog_swift:-none}, ${android_sh} ${sh_swift:-none}"
+  catalog_ndk="$(catalog_pin android-ndk)"
+  sh_ndk="$(sh_pin ndk_version)"
+  [ -n "$catalog_ndk" ] && [ "$catalog_ndk" = "$sh_ndk" ] ||
+    flag "the NDK: ${catalog} pins ${catalog_ndk:-none} for Gradle, ${android_sh} installs ${sh_ndk:-none}"
+  grep -q "\"ndk;\${ndk_version}\"" "$android_sh" || flag "${android_sh} does not install ndk;\${ndk_version}"
+  compile_sdk="$(catalog_pin android-compileSdk)"
+  grep -qE "\"platforms;android-${compile_sdk}(\\.0)?\"" "$android_sh" ||
+    flag "${catalog} compiles against SDK ${compile_sdk}, which ${android_sh} does not install"
+  build_tools="$(catalog_pin android-buildTools)"
+  grep -q "\"build-tools;${build_tools}\"" "$android_sh" ||
+    flag "${catalog} builds with build tools ${build_tools}, which ${android_sh} does not install"
+  [ "$task_java" = "$(catalog_pin jvm)" ] ||
+    flag "the android:* tasks run JDK ${task_java:-none}, and ${catalog} targets jvm $(catalog_pin jvm)"
+  grep -q "^swift_sdk_checksum=[0-9a-f]\{64\}$" "$android_sh" ||
+    flag "${android_sh} installs the Swift SDK for Android without a sha256 checksum"
+  grep -q '^distributionSha256Sum=[0-9a-f]\{64\}$' apps/gradle/gradle/wrapper/gradle-wrapper.properties ||
+    flag "the Gradle wrapper names no distributionSha256Sum; a changed distribution would run unchecked"
 fi
 
 exit "$fail"
