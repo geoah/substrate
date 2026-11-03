@@ -43,14 +43,16 @@ import (
 )
 
 type options struct {
-	kindsFS   fs.FS
-	kindsDir  string
-	registry  *vocabulary.Registry
-	oauthKey  string
-	oauthURL  string
-	oauthHTTP *http.Client
-	credKey   string
-	dataRoot  string
+	outsideCode           string
+	unconfinedOutsideCode bool
+	kindsFS               fs.FS
+	kindsDir              string
+	registry              *vocabulary.Registry
+	oauthKey              string
+	oauthURL              string
+	oauthHTTP             *http.Client
+	credKey               string
+	dataRoot              string
 	// segmentBytes is the changelog segment size (WithChangelogSegmentBytes).
 	segmentBytes int64
 	// repositoryConns caps the pool every repository shares
@@ -426,7 +428,9 @@ func WithUnitSeed(on bool) Option {
 }
 
 type service struct {
-	dsn string
+	outsideCode           string
+	unconfinedOutsideCode bool
+	dsn                   string
 	// admin is the DSN's own user: the DDL, the role setup, and the index
 	// materialization the bound roles are not allowed to run.
 	admin *sql.DB
@@ -845,17 +849,18 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		laneWorkers:        o.laneWorkers,
 		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
 		totpDisabled:       o.insecureDisableTOTP,
-		now:                o.now,
-		webhookNow:         o.webhookNow,
-		readOnly:           o.dirReadOnly,
-		seedLLMSample:      o.seedLLMSample,
-		seedLLMProviders:   o.seedLLMProviders,
-		seedUnits:          o.seedUnits,
-		bulkSeed:           !o.perRecordSeed,
-		log:                o.log,
-		bg:                 newBackground(),
-		datasets:           map[string]*dataset{},
-		opening:            map[string]chan struct{}{},
+		outsideCode:        o.outsideCode, unconfinedOutsideCode: o.unconfinedOutsideCode,
+		now:              o.now,
+		webhookNow:       o.webhookNow,
+		readOnly:         o.dirReadOnly,
+		seedLLMSample:    o.seedLLMSample,
+		seedLLMProviders: o.seedLLMProviders,
+		seedUnits:        o.seedUnits,
+		bulkSeed:         !o.perRecordSeed,
+		log:              o.log,
+		bg:               newBackground(),
+		datasets:         map[string]*dataset{},
+		opening:          map[string]chan struct{}{},
 
 		testImportFault:   o.importFault,
 		testImportBatch:   o.importBatch,

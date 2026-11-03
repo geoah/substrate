@@ -194,12 +194,9 @@ type FunctionCaps struct {
 	// run (record 0121). An identity sits on at most one of Call and Agents,
 	// so the list that holds it is what says which callable a Call means.
 	Agents []string
-	// Network is the declared egress allowlist: each entry is a bare destination,
-	// a `host`, a `host:port` or a CIDR (networkEntryProblem holds the grammar).
-	// Enforcement is all-or-nothing today: a non-empty list grants the body
-	// AF_INET/AF_INET6 sockets and confines every connect to a public destination
-	// (0035), while the per-entry hosts stay documentation until a per-host gate
-	// exists (#50).
+	// Network declares destinations. Binary-shipped code retains the public
+	// destination policy; outside code admits only exact DNS hosts and wildcard
+	// suffixes and reaches them through a hostname-checking proxy (0220).
 	Network []string
 	// Mutations grants the capability-gated effects: merge, split.
 	Mutations []string
@@ -1051,7 +1048,7 @@ var hostLabel = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?
 // SHAPE and returns a description of the first violation, or "" when the entry
 // is well formed. An entry is a bare destination: a `host`, a `host:port`, or a
 // CIDR, where host is a DNS hostname or an IP literal, and it carries no scheme,
-// path, query or glob, none of which a TCP destination has.
+// path or query. A leading *. also names a DNS suffix (0220).
 //
 // The grammar validates shape, not reachability. Whether a declared destination
 // can be reached is the runtime egress confinement's decision (0035), which
@@ -1061,6 +1058,12 @@ var hostLabel = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?
 // decides at connect whether it answers
 // (0038-a-network-entry-is-a-bare-host-or-cidr-destination).
 func networkEntryProblem(entry string) string {
+	if strings.HasPrefix(entry, "*.") {
+		entry = strings.TrimPrefix(entry, "*.")
+		if !strings.Contains(entry, ".") || strings.ContainsAny(entry, ":/") {
+			return "wildcard must name a DNS suffix"
+		}
+	}
 	switch {
 	case entry == "":
 		return "is empty"

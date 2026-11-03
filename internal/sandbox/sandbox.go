@@ -110,6 +110,10 @@ func ParseMode(s string) (Mode, error) {
 // is skipped rather than failing the launch, because the interpreter and
 // toolchain prefixes differ across images.
 type Policy struct {
+	Outside           bool     `json:"outside,omitempty"`
+	Hosts             []string `json:"hosts,omitempty"`
+	ProxyAddress      string   `json:"proxyAddress,omitempty"`
+	UnconfinedOutside bool     `json:"unconfinedOutside,omitempty"`
 	// ReadExec are the prefixes the child may read and execute: the
 	// interpreter, its standard library, the shared libraries it links and the
 	// certificate store. Read-only: a body cannot rewrite its own interpreter.
@@ -403,6 +407,7 @@ type Gate interface {
 // target could not be read or parsed is not a Refusal: that one says nothing
 // about the allowlist.
 type Refusal struct {
+	ProxyOnly bool
 	// Addr is the destination, IPv4-mapped addresses unmapped, so its address
 	// is the value the allowlist takes.
 	Addr netip.AddrPort
@@ -412,6 +417,9 @@ type Refusal struct {
 // The server's own dials obey SUBSTRATE_EGRESS_ALLOW instead, and an operator
 // who sets the wrong one restarts the server for nothing (issue #886).
 func (r Refusal) String() string {
+	if r.ProxyOnly {
+		return fmt.Sprintf("the sandbox refused direct connection to %s: outside code must use its declared-host proxy", r.Addr)
+	}
 	return fmt.Sprintf("the sandbox's connect gate refused %s; allow it with %s=%s", r.Addr, EgressAllowVar, r.Addr.Addr())
 }
 
@@ -448,6 +456,9 @@ func (c *Confiner) Degraded() bool { return c.report.Degraded(c.mode) }
 // than a broken one, which is why ModeEnforce returns the error instead of
 // relying on the caller to notice.
 func (c *Confiner) Wrap(cmd *exec.Cmd, p Policy) error {
+	if p.Outside && !p.UnconfinedOutside && (c.mode == ModeOff || !c.report.FS() || !c.report.Seccomp || !c.report.ConnectGate) {
+		return fmt.Errorf("sandbox: outside code requires confinement")
+	}
 	if c.mode == ModeOff {
 		return nil
 	}
@@ -490,3 +501,6 @@ func (c *Confiner) connectGateRefusal() error {
 	return fmt.Errorf("sandbox: the connect gate is unavailable on this platform, so a body that declares " +
 		"network is refused rather than run with its destinations unfiltered")
 }
+
+// Cancel releases startup resources when a wrapped command could not start.
+func (c *Confiner) Cancel(cmd *exec.Cmd) { c.cancel(cmd) }

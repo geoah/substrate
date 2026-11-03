@@ -516,7 +516,10 @@ export function importPlan(
  * reader edited (decision record 0070). Either way the click sends the
  * preview's `planHash` and `changelogSeq`, never a bare yes. */
 export function needsConfirmation(upgrade: BundleUpgrade | undefined): boolean {
-  return Boolean(upgrade?.planHash && (upgrade.lossy || upgrade.discardsEdits))
+  return Boolean(
+    upgrade?.codeChanges?.length ||
+    (upgrade?.planHash && (upgrade.lossy || upgrade.discardsEdits))
+  )
 }
 
 /** The confirmation a preview hands out, or undefined when it needs none. */
