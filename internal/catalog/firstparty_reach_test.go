@@ -113,6 +113,70 @@ func workoutsClosure(t *testing.T, name, id string) *Bundle {
 	return b
 }
 
+// folderClosure parses the closure of a package an app publishes straight
+// from its package/ folder, built as .mise/closures.py builds it for the
+// site: the file declaring the package, then the file declaring each entry
+// of its bundle's installs, in that order, as one YAML stream.
+func folderClosure(t *testing.T, app, id string) *Bundle {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join("..", "..", "apps", app, "package", "*.yaml"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("find %s's package files: %v (%d found)", app, err, len(files))
+	}
+	raw := map[string][]byte{}
+	declares := map[string]string{}
+	var header string
+	var version int64
+	var installs []string
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw[file] = body
+		docs, err := vocabulary.ParseStream(body)
+		if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		for _, doc := range docs {
+			switch {
+			case doc.Kind == vocabulary.DocPackage && doc.ID == id:
+				header = file
+				v, ok := doc.Data["version"].(int)
+				if !ok {
+					t.Fatalf("%s: %s's version is not an integer", file, id)
+				}
+				version = int64(v)
+			case doc.Kind == vocabulary.DocBundle && doc.ID == id:
+				list, _ := doc.Data["installs"].([]any)
+				for _, entry := range list {
+					name, _ := entry.(string)
+					installs = append(installs, name)
+				}
+			case doc.Kind != vocabulary.DocPackage && doc.Kind != vocabulary.DocBundle:
+				declares[doc.ID] = file
+			}
+		}
+	}
+	if header == "" {
+		t.Fatalf("no file under apps/%s/package declares %s", app, id)
+	}
+	stream := append([]byte{}, raw[header]...)
+	for _, entry := range installs {
+		file, ok := declares[entry]
+		if !ok {
+			t.Fatalf("%s's bundle installs %s, which no file declares", id, entry)
+		}
+		stream = append(stream, "\n---\n"...)
+		stream = append(stream, raw[file]...)
+	}
+	b, err := ParseClosure(stream, id, version)
+	if err != nil {
+		t.Fatalf("parse the %s closure as the server does: %v", id, err)
+	}
+	return b
+}
+
 // shippedPurposes is the declared purpose of every kind the binary ships,
 // the seeded packages included.
 func shippedPurposes(t *testing.T, cat *Catalog) map[string]string {
@@ -174,6 +238,7 @@ func TestTheFirstPartyAppsScopesCoverThePackagesTheyAskFor(t *testing.T) {
 	published := map[string]*Bundle{
 		"substrate.reamde.dev/training":      workoutsClosure(t, "training", "substrate.reamde.dev/training"),
 		"substrate.reamde.dev/trainingcoach": workoutsClosure(t, "coach", "substrate.reamde.dev/trainingcoach"),
+		"substrate.reamde.dev/tasks":         folderClosure(t, "tasks", "substrate.reamde.dev/tasks"),
 	}
 	purposes := shippedPurposes(t, cat)
 	for _, b := range published {

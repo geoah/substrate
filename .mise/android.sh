@@ -13,6 +13,7 @@
 #   smoke           on a booted emulator or device: the release build's
 #                   runtime checks, three cold starts, the instrumented tests
 #   lock            rewrite the Gradle dependency locks
+#   release:build   one app's release APK, signed, for .mise/apps.sh
 #
 # The tasks run with the open-source Swift and the JDK as task tools
 # (`tools =` on each task), so `swift` here is never Xcode's and the
@@ -184,6 +185,48 @@ cmd_smoke() {
   gradle :kit-device:connectedDebugAndroidTest :bridge-check:connectedDebugAndroidTest
 }
 
+# One app's release APK, built by its module (`:<app>`, from apps/<app>/android)
+# with the release's stamp as Gradle properties, then aligned and signed here
+# with the key in the environment, which Gradle never sees, and written to
+# SUBSTRATE_RELEASE_APK. .mise/apps.sh calls this and reads everything else
+# back from the APK; its header lists what it hands in.
+cmd_release_build() {
+  local app=${1:-}
+  [[ -n $app ]] || die "usage: release:build <app>"
+  [[ -n ${SUBSTRATE_RELEASE_APK:-} ]] || die "SUBSTRATE_RELEASE_APK names where the signed APK goes; .mise/apps.sh sets it"
+  [[ -d apps/$app/android ]] || die "apps/$app has no android/ module, so there is no APK to build"
+  local var
+  for var in SUBSTRATE_ANDROID_KEYSTORE SUBSTRATE_ANDROID_KEYSTORE_PASSWORD SUBSTRATE_ANDROID_KEY_ALIAS SUBSTRATE_ANDROID_KEY_PASSWORD; do
+    [[ -n ${!var:-} ]] || die "set $var; the release key never enters the tree (apps/README.md)"
+  done
+  need_sdk
+  need_swift
+  gradle ":$app:assembleRelease" \
+    "-Psubstrate.release.version=$SUBSTRATE_RELEASE_VERSION" \
+    "-Psubstrate.release.versionCode=$SUBSTRATE_RELEASE_VERSION_CODE" \
+    "-Psubstrate.release.channel=$SUBSTRATE_RELEASE_CHANNEL" \
+    "-Psubstrate.release.commit=$SUBSTRATE_RELEASE_COMMIT" \
+    "-Psubstrate.release.updatesURL=$SUBSTRATE_RELEASE_UPDATES_URL" \
+    "-Psubstrate.release.clientID=$SUBSTRATE_RELEASE_CLIENT_ID" \
+    "-Psubstrate.release.redirect=$SUBSTRATE_RELEASE_REDIRECT" \
+    "-Psubstrate.release.siteHost=$SUBSTRATE_RELEASE_SITE_HOST"
+  local built=(apps/"$app"/android/build/outputs/apk/release/*-unsigned.apk)
+  [[ ${#built[@]} -eq 1 && -f ${built[0]} ]] || die "apps/$app's release build left ${#built[@]} unsigned APKs, and one is signed"
+  local package tools=""
+  for package in "${sdk_packages[@]}"; do
+    [[ $package == "build-tools;"* ]] && tools=$ANDROID_HOME/build-tools/${package#build-tools;}
+  done
+  local aligned
+  aligned=$(mktemp -d)/aligned.apk
+  "$tools/zipalign" -f -p 4 "${built[0]}" "$aligned"
+  mkdir -p "$(dirname "$SUBSTRATE_RELEASE_APK")"
+  "$tools/apksigner" sign --ks "$SUBSTRATE_ANDROID_KEYSTORE" --ks-pass env:SUBSTRATE_ANDROID_KEYSTORE_PASSWORD \
+    --ks-key-alias "$SUBSTRATE_ANDROID_KEY_ALIAS" --key-pass env:SUBSTRATE_ANDROID_KEY_PASSWORD \
+    --out "$SUBSTRATE_RELEASE_APK" "$aligned"
+  rm -rf "$(dirname "$aligned")"
+  printf 'android: %s\n' "$SUBSTRATE_RELEASE_APK"
+}
+
 cmd_lock() {
   need_sdk
   need_swift
@@ -199,5 +242,6 @@ build) cmd_build ;;
 test) cmd_test ;;
 smoke) cmd_smoke ;;
 lock) cmd_lock ;;
+release:build) cmd_release_build "${2:-}" ;;
 *) die "unknown subcommand ${1:-}; see the header of .mise/android.sh" ;;
 esac
