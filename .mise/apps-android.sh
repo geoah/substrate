@@ -5,9 +5,10 @@
 # A release's Android half. .mise/apps.sh sources this file and calls
 # android_release_build for every app its app.json says ships on Android
 # (an apps/<app>/android/ folder and `android.applicationID`). The APK
-# itself comes from one narrow interface, `mise run android:release:build
-# <app>` (.mise/android.sh release:build), which writes the app's signed
-# release APK to SUBSTRATE_RELEASE_APK and is handed, in the environment:
+# itself comes from one narrow interface, the `android:release:build <app>`
+# task's program (.mise/android.sh release:build), which writes the app's
+# signed release APK to SUBSTRATE_RELEASE_APK and is handed, in an
+# environment made for it (android_builder_env) and nothing else:
 #
 #   SUBSTRATE_RELEASE_VERSION       the release's version, the APK's versionName
 #   SUBSTRATE_RELEASE_VERSION_CODE  the versionCode allocated under the lease
@@ -48,6 +49,58 @@ colon_hex() {
 	printf '%s' "$1" | tr '[:lower:]' '[:upper:]' | sed 's/../&:/g; s/:$//'
 }
 
+# The PATH entries of the android:release:build task's tools (its `tools =`
+# in .mise.toml: the open-source Swift and the JDK), as mise resolves them,
+# without running anything under mise's environment.
+android_tools_path() {
+	local tools paths entry
+	tools="$(cd "$ROOT" && mise tasks info android:release:build --json | jq -r '.tools | to_entries[] | "\(.key)@\(.value)"')" ||
+		die "mise could not say which tools android:release:build runs with"
+	# shellcheck disable=SC2086
+	paths="$(cd "$ROOT" && mise bin-paths $tools)" || die "mise could not say where android:release:build's tools are"
+	while read -r entry; do
+		[ -d "$entry" ] || die "$entry is not there; install android:release:build's tools with \`mise install ${tools//$'\n'/ }\`"
+	done <<<"$paths"
+	printf '%s\n' "$paths" | paste -sd: -
+}
+
+# Runs android:release:build's program, or $SUBSTRATE_APPS_RELEASE_ANDROID_BUILD
+# in a dry run, in an environment made from nothing but what it needs: the
+# release's stamp, the signing key's variables (which android.sh hands to
+# apksigner alone), the Android SDK, the task's tools and the system's
+# PATH, minus mise's shims. It is called directly rather than through `mise
+# run`, because mise would load this machine's configuration into it,
+# .mise.local.toml and the env files it names included, and with them the
+# bucket's and App Store Connect's keys, which Gradle, its plugins and its
+# daemon would then hold. The rest of this shell's environment (a dry run
+# has unset the keys, a release has not) is left behind for the same
+# reason. A secret never reaches a command line: the variables are exported
+# into a subshell that clears the rest, never passed to env(1) as
+# arguments.
+android_builder_env() {
+	local tools java keep var
+	tools="$(android_tools_path)"
+	java="$(printf '%s\n' "$tools" | tr ':' '\n' | grep '/java/' | head -1)"
+	keep=" HOME USER LOGNAME TMPDIR LANG LC_ALL TERM ANDROID_HOME ANDROID_SDK_ROOT SUBSTRATE_ABIS
+		SUBSTRATE_ANDROID_KEYSTORE SUBSTRATE_ANDROID_KEYSTORE_PASSWORD SUBSTRATE_ANDROID_KEY_ALIAS SUBSTRATE_ANDROID_KEY_PASSWORD "
+	keep="$(printf '%s' "$keep" | tr '\n\t' '  ')"
+	(
+		local path
+		path="$tools:$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '/mise/shims$' | paste -sd: -)"
+		for var in $(compgen -e); do
+			case "$keep" in *" $var "*) ;; *) unset "$var" 2>/dev/null || true ;; esac
+		done
+		export PATH="$path"
+		[ -z "$java" ] || export JAVA_HOME="${java%/bin}"
+		export SUBSTRATE_RELEASE_APK="$1" SUBSTRATE_RELEASE_VERSION="$version" SUBSTRATE_RELEASE_VERSION_CODE="$2" \
+			SUBSTRATE_RELEASE_CHANNEL="$channel" SUBSTRATE_RELEASE_COMMIT="$commit" SUBSTRATE_RELEASE_UPDATES_URL="$3" \
+			SUBSTRATE_RELEASE_CLIENT_ID="$4" SUBSTRATE_RELEASE_REDIRECT="$5" SUBSTRATE_RELEASE_SITE_HOST="$6"
+		shift 6
+		cd "$ROOT" || exit 1
+		exec "$@"
+	)
+}
+
 # One app's Android build: the APK built and signed by android:release:build,
 # checked, and staged into the release folder $3 (releases/<build>/ under
 # its feed) under the versionCode $4, with its release.json entry written to
@@ -62,17 +115,14 @@ android_release_build() {
 	client="$(client_url "$app")" || exit 1
 	redirect="$(android_callback "$app")"
 	site="$(site_url)"
-	local builder=(mise run android:release:build)
+	local builder=("$ROOT/.mise/android.sh" release:build)
 	if [ -n "${SUBSTRATE_APPS_RELEASE_ANDROID_BUILD:-}" ]; then
 		[ -n "$DRY" ] || die "SUBSTRATE_APPS_RELEASE_ANDROID_BUILD stands another build in for android:release:build, which only a dry run may"
 		builder=("$SUBSTRATE_APPS_RELEASE_ANDROID_BUILD")
 		say "dry run: $SUBSTRATE_APPS_RELEASE_ANDROID_BUILD builds $app's APK in place of android:release:build"
 	fi
-	(cd "$ROOT" && SUBSTRATE_RELEASE_APK="$apk" SUBSTRATE_RELEASE_VERSION="$version" SUBSTRATE_RELEASE_VERSION_CODE="$code" \
-		SUBSTRATE_RELEASE_CHANNEL="$channel" SUBSTRATE_RELEASE_COMMIT="$commit" \
-		SUBSTRATE_RELEASE_UPDATES_URL="$(feed_url "$app")/" SUBSTRATE_RELEASE_CLIENT_ID="$client" \
-		SUBSTRATE_RELEASE_REDIRECT="$redirect" SUBSTRATE_RELEASE_SITE_HOST="${site#https://}" \
-		"${builder[@]}" "$app") || die "$app's Android build failed"
+	android_builder_env "$apk" "$code" "$(feed_url "$app")/" "$client" "$redirect" "${site#https://}" \
+		"${builder[@]}" "$app" || die "$app's Android build failed"
 	[ -f "$apk" ] || die "$app's Android build wrote no APK to $apk"
 	android_check "$app" "$apk" "$code"
 	local file
