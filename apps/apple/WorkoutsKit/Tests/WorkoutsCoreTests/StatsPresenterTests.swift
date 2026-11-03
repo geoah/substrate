@@ -94,7 +94,9 @@ struct StatsPresenterTests {
         let stats = try Stats.present(.all, .week)
         #expect(stats.range == "Sat 24 Oct \u{2013} Fri 30 Oct")
         #expect(stats.comparison == "Compared with Sat 17 Oct \u{2013} Fri 23 Oct")
-        #expect(stats.totals.map(\.label) == ["Sessions", "Volume", "Working sets", "Time trained", "Average session"])
+        #expect(stats.totals.map(\.label) == ["Sessions", "Volume", "Working sets", "Time per session"])
+        // A week's count is its rate: no "a week" under it.
+        #expect(try Stats.total(stats, "Sessions").detail == nil)
         let sessions = try Stats.total(stats, "Sessions")
         #expect(sessions.value == "2")
         #expect(sessions.change == StatsChange(direction: .up, text: "+1", spoken: "Up 1 on the period before"))
@@ -111,10 +113,9 @@ struct StatsPresenterTests {
         #expect(try Stats.total(stats, "Working sets").value == "\(sets)")
 
         // 51:33 less a 4:00 pause, and 46:28.
-        #expect(try Stats.total(stats, "Time trained").value == "1 h 34 min")
-        #expect(try Stats.total(stats, "Average session").value == "47 min")
+        #expect(try Stats.total(stats, "Time per session").value == "47 min")
         // Thursday ran 46:56: the same to the minute.
-        #expect(try Stats.total(stats, "Average session").change?.text == "Same")
+        #expect(try Stats.total(stats, "Time per session").change?.text == "Same")
     }
 
     @Test("A routine's stats count only the sessions started from it")
@@ -145,7 +146,7 @@ struct StatsPresenterTests {
         #expect(month.best == "148.5 kg")
         #expect(month.change == nil)
         #expect(month.trendSummary == "Estimated 1RM, 147.1 kg on Thu 22 Oct to 148.5 kg on Mon 26 Oct, 2 sessions")
-        #expect(month.facts.map(\.label) == ["Best set", "Volume", "Working sets"])
+        #expect(month.facts.map(\.label) == ["Best set", "Working sets"])
         // Monday's first set, its RPE pre-filled and so no rating (shown without one).
         #expect(month.facts.first?.value == "105 kg \u{00D7} 9")
 
@@ -162,8 +163,22 @@ struct StatsPresenterTests {
         // Every exercise of the week has a row, none twice.
         let ids = all.exercises.flatMap(\.exercises).map(\.id)
         #expect(Set(ids).count == ids.count)
-        let done = Set(try [Stats.session(on: "2026-10-26"), Stats.session(on: "2026-10-27")].flatMap { $0.sets.map(\.exercise) })
+        let sets = try [Stats.session(on: "2026-10-26"), Stats.session(on: "2026-10-27")].flatMap(\.sets)
+        let done = Set(sets.filter { $0.role == .working }.map(\.exercise))
         #expect(Set(ids) == done)
+        // An exercise done only as a warm-up has no row.
+        var warmupOnly = try Stats.history()
+        let first = try #require(warmupOnly.first)
+        var records = first.records
+        records.sets = records.sets.map { set in
+            var set = set
+            if set.exercise == "plank" { set.role = .warmup }
+            return set
+        }
+        warmupOnly[0] = HistoryEntry(records: records, local: first.local)
+        let without = StatsPresenter.present(warmupOnly, catalog: try ExampleFixtures.catalog(), scope: .all, period: .week, now: Stats.now,
+                                             settings: Stats.settings)
+        #expect(!without.exercises.flatMap(\.exercises).contains { $0.id == "plank" })
     }
 
     @Test("A record is a best above every earlier session's, in any routine; a first session beats nothing")
@@ -233,8 +248,9 @@ struct StatsPresenterTests {
         #expect(never.scopeTitle == "Day 3")
         #expect(try Stats.total(never, "Sessions").value == "0")
         #expect(try Stats.total(never, "Sessions").change == nil)
-        #expect(try Stats.total(never, "Time trained").value == "0 min")
-        #expect(try Stats.total(never, "Average session").value == "None")
+        #expect(try Stats.total(never, "Time per session").value == "None")
+        #expect(never.balance.isEmpty && never.lastSession == nil)
+        #expect(never.consistency?.value == "0 of \(never.weeks.count)" && never.consistency?.streak == nil)
         #expect(never.exercises.isEmpty && never.records.isEmpty && never.muscles.isEmpty && never.sessions.isEmpty)
 
         // A week after the last session: the routine has sessions, the week none.
@@ -256,6 +272,117 @@ struct StatsPresenterTests {
                                   LabelledValue("Last done", "Mon 26 Oct")])
         let never = StatsPresenter.summary(try #require(catalog.routines["day-3"]), history: try Stats.history(), settings: Stats.settings)
         #expect(never.facts.map(\.label) == ["Exercises", "Working sets"])
+    }
+
+    @Test("Sessions per week, weeks trained and the weeks in a row")
+    func consistency() throws {
+        // Thursday 22 Oct, then Monday and Tuesday of the week of 26 Oct.
+        let week = try Stats.present(.all, .week)
+        #expect(week.consistency == nil)
+        #expect(week.weeks.map(\.label) == ["Week of Mon 19 Oct", "Week of Mon 26 Oct"])
+        #expect(week.weeks.map(\.sessions) == [0, 2])
+
+        let quarter = try Stats.present(.all, .threeMonths)
+        #expect(quarter.weeks.count == 13)
+        #expect(quarter.weeks.map(\.sessions).suffix(2) == [1, 2])
+        #expect(quarter.weeks.last?.text == "2 sessions" && quarter.weeks.first?.text == "No sessions")
+        let consistency = try #require(quarter.consistency)
+        #expect(consistency.weeksTrained == 2 && consistency.weeks == 13 && consistency.value == "2 of 13")
+        // 3 sessions over 89 days.
+        #expect(consistency.perWeek == "0.2")
+        #expect(consistency.streak == "2 weeks")
+        #expect(consistency.sentence == "Trained in 2 of 13 weeks, 0.2 sessions a week. 2 weeks in a row.")
+
+        // A month's count comes with its rate: 3 sessions over 31 days.
+        let month = try Stats.present(.all, .month)
+        #expect(try Stats.total(month, "Sessions").detail == "0.7 a week")
+
+        // A week with no session yet breaks nothing; a week missed does.
+        let history = try Stats.history().map(\.records)
+        let calendar = Stats.settings.calendar
+        #expect(StatsPresenter.streakWeeks(history, now: Stats.now.addingTimeInterval(4 * 86400), calendar: calendar) == 2)
+        #expect(StatsPresenter.streakWeeks(history, now: Stats.now.addingTimeInterval(11 * 86400), calendar: calendar) == 0)
+    }
+
+    @Test("Push against pull over the upper body, and upper body against lower body and core")
+    func balance() throws {
+        var catalog = try ExampleFixtures.catalog()
+        catalog.movements["chest-press"] = Movement(id: "chest-press", name: "Chest Press", force: .push)
+        catalog.movements["leg-press"] = Movement(id: "leg-press", name: "Leg Press", force: .push)
+        catalog.exercises["chest-press-machine"]?.movement = "chest-press"
+        catalog.exercises["leg-press-machine"]?.movement = "leg-press"
+        let stats = try Stats.present(.all, .week, catalog: catalog)
+        #expect(stats.balance.map(\.id) == ["push-pull", "body"])
+        let sets = try [Stats.session(on: "2026-10-26"), Stats.session(on: "2026-10-27")].flatMap(\.sets)
+            .filter { $0.role == .working && $0.continues == nil }
+        let pushPull = try #require(stats.balance.first)
+        #expect(pushPull.parts.map(\.label) == ["Push", "Pull"])
+        // The leg press pushes, but on the legs: left out.
+        let push = sets.count { set in
+            let exercise = catalog.exercises[set.exercise]
+            return exercise.map { StatsPresenter.topGroup($0).map(StatsPresenter.upperBody.contains) == true
+                && StatsPresenter.force(of: $0, catalog: catalog) == .push } ?? false
+        }
+        #expect(pushPull.parts[0].sets == Double(push))
+        #expect(!sets.filter { $0.exercise == "leg-press-machine" }.isEmpty)
+        // The seated row has no movement: its upper back reads as a pull.
+        #expect(StatsPresenter.force(of: try #require(catalog.exercises["seated-row-machine"]), catalog: catalog) == .pull)
+        let percents: [Int] = pushPull.parts.compactMap { Int($0.percent.dropLast()) }
+        #expect(percents.reduce(0, +) == 100)
+        #expect(pushPull.sentence.hasPrefix("Push \(pushPull.parts[0].percent), "))
+
+        let body = try #require(stats.balance.last)
+        #expect(body.parts.map(\.label).prefix(2) == ["Upper body", "Lower body"])
+        let groups = Counting.setsPerMuscle(sets, exercises: catalog.exercises)
+        let lower = groups.filter { StatsPresenter.lowerBody.contains($0.key) }.reduce(0.0) { $0 + $1.value.double }
+        #expect(body.parts[1].sets == lower)
+        #expect(abs(body.parts.reduce(0) { $0 + $1.share } - 1) < 1e-9)
+
+        #expect(StatsPresenter.roundedPercents([1.0 / 3, 1.0 / 3, 1.0 / 3]) == [34, 33, 33])
+        #expect(StatsPresenter.roundedPercents([0.5, 0.5]) == [50, 50])
+        #expect(StatsPresenter.roundedPercents([0, 0]) == [0, 0])
+    }
+
+    @Test("The newest session against the one before it of its routine")
+    func lastSession() throws {
+        let routine = try #require(try Stats.present(.routine(Stats.dayOne), .week).lastSession)
+        let (thursday, monday) = try (Stats.session(on: "2026-10-22"), Stats.session(on: "2026-10-26"))
+        #expect(routine.session == monday.session.id && routine.previous == thursday.session.id)
+        #expect(routine.title == "Mon 26 Oct" && routine.against == "Against Thu 22 Oct")
+        #expect(routine.totals.map(\.label) == ["Time", "Volume", "Working sets"])
+        // Monday's 51:33 less a 4:00 pause against Thursday's 46:56.
+        #expect(routine.totals[0].value == "47 min")
+        #expect(routine.totals[0].change == StatsChange(direction: .up, text: "+1 min", spoken: "Up 1 min on the session before"))
+        #expect(routine.totals[2].change?.spoken.hasSuffix("the session before") ?? true)
+        // Only the exercises with a best on both days count.
+        let (better, shared) = try Self.better(monday, than: thursday)
+        #expect(shared > 0 && shared <= 5)
+        #expect(routine.exercises == "Better on \(better) of \(Format.count(shared, "exercise"))")
+        // Every routine: Tuesday's Fully Body is its routine's first, so nothing to compare.
+        #expect(try Stats.present(.all, .week).lastSession == nil)
+        // Without Tuesday, Monday's Day 1 against Thursday's, named.
+        let earlier = try Stats.history().filter { $0.records.session.routine == Stats.dayOne }
+        let all = StatsPresenter.present(earlier, catalog: try ExampleFixtures.catalog(), scope: .all, period: .week, now: Stats.now,
+                                         settings: Stats.settings)
+        #expect(all.lastSession?.title == "Mon 26 Oct, Day 1 \u{2013} Strength Foundation")
+    }
+
+    /// How many exercises of `today` beat `before`'s best by more than 1%,
+    /// of those with a best on both days.
+    static func better(_ today: SessionRecords, than before: SessionRecords) throws -> (Int, Int) {
+        let catalog = try ExampleFixtures.catalog()
+        let (now, then) = (StatsPresenter.byExercise([today]), StatsPresenter.byExercise([before]))
+        var (better, shared) = (0, 0)
+        for (id, entries) in now {
+            guard let exercise = catalog.exercises[id], let earlier = then[id] else { continue }
+            let config = SuggestionInputs.config(for: exercise, defaultUnit: .kg)
+            guard let a = ExercisePresenter.trend(exercise, sessions: entries, config: config).points.map(\.value).max(),
+                  let b = ExercisePresenter.trend(exercise, sessions: earlier, config: config).points.map(\.value).max(),
+                  b > 0 else { continue }
+            shared += 1
+            if a > b * 1.01 { better += 1 }
+        }
+        return (better, shared)
     }
 
     @Test("A change is signed, said in words, and the same when it rounds to nothing")

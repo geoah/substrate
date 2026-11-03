@@ -91,13 +91,13 @@ public struct StatsPresentation: Equatable, Sendable {
     public var comparison: String
     /// The scope has a finished session, in any period.
     public var hasSessions: Bool
-    /// Sessions, Volume, Working sets, Time trained, Average session.
+    /// Sessions (with its rate over a longer period), Volume, Working sets, Time per session.
     public var totals: [StatsTotal]
     public var volumeUnit: MassUnit
     /// Every bar of the period, oldest first, empty ones included.
     public var volume: [StatsVolumeBar]
-    /// The period's exercises, in the routine's order (else by working
-    /// sets), the equipment versions of one movement together.
+    /// The period's exercises with a working set, in the routine's order
+    /// (else by working sets), the equipment versions of one movement together.
     public var exercises: [StatsExerciseGroup]
     /// Bests set in the period that beat every earlier session, newest first.
     public var records: [StatsRecord]
@@ -105,6 +105,16 @@ public struct StatsPresentation: Equatable, Sendable {
     public var muscles: [StatsMuscleGroup]
     /// Working sets per region of the body map (`BodyMap.sets`).
     public var regions: [BodyRegion: Double] = [:]
+    /// Push against pull, then upper body against lower body and core, by
+    /// the period's working sets; a pair with nothing on either side is left out.
+    public var balance: [StatsBalance] = []
+    /// Sessions in each calendar week the period touches, oldest first.
+    public var weeks: [StatsWeek] = []
+    /// How regularly the period was trained; nil for a week, which says nothing of it.
+    public var consistency: StatsConsistency?
+    /// The scope's newest session against the one before it of the same
+    /// routine, in any period; nil until there are two.
+    public var lastSession: StatsSessionComparison?
     /// The scope's sessions in any period, newest first.
     public var sessions: [HistoryRow]
 
@@ -148,14 +158,129 @@ public struct StatsTotal: Equatable, Sendable, Identifiable {
     /// Nil when there is nothing to compare: no value in either period, or
     /// a percentage of nothing.
     public var change: StatsChange?
+    /// What the value comes to: `1.5 a week`.
+    public var detail: String?
 
-    public init(label: String, value: String, change: StatsChange?) {
+    public init(label: String, value: String, change: StatsChange?, detail: String? = nil) {
         self.label = label
         self.value = value
         self.change = change
+        self.detail = detail
     }
 
     public var id: String { label }
+}
+
+/// One side of a balance, `Push`, and its share of the pair.
+public struct StatsBalancePart: Equatable, Sendable, Identifiable {
+    public var label: String
+    public var sets: Double
+    /// 0 to 1, of the parts together.
+    public var share: Double
+    /// `42%`.
+    public var percent: String
+    /// `12.5 sets`.
+    public var text: String
+
+    public init(label: String, sets: Double, share: Double, percent: String, text: String) {
+        self.label = label
+        self.sets = sets
+        self.share = share
+        self.percent = percent
+        self.text = text
+    }
+
+    public var id: String { label }
+}
+
+/// Two or three sides that should not drift far apart: push and pull,
+/// upper body, lower body and core.
+public struct StatsBalance: Equatable, Sendable, Identifiable {
+    /// `push-pull`, `body`.
+    public var id: String
+    /// `Push and pull`.
+    public var title: String
+    /// What is counted: `Upper-body working sets`.
+    public var note: String
+    public var parts: [StatsBalancePart]
+    /// `Push 42%, 10 sets. Pull 58%, 14 sets.`
+    public var sentence: String
+
+    public init(id: String, title: String, note: String, parts: [StatsBalancePart], sentence: String) {
+        self.id = id
+        self.title = title
+        self.note = note
+        self.parts = parts
+        self.sentence = sentence
+    }
+}
+
+/// A calendar week of the period and its sessions.
+public struct StatsWeek: Equatable, Sendable, Identifiable {
+    public var start: Date
+    public var sessions: Int
+    /// `Week of Mon 26 Oct`.
+    public var label: String
+    /// `2 sessions`, `No sessions`.
+    public var text: String
+
+    public init(start: Date, sessions: Int, label: String, text: String) {
+        self.start = start
+        self.sessions = sessions
+        self.label = label
+        self.text = text
+    }
+
+    public var id: Date { start }
+}
+
+/// How regularly the period was trained.
+public struct StatsConsistency: Equatable, Sendable {
+    public var weeksTrained: Int
+    public var weeks: Int
+    /// `9 of 13`.
+    public var value: String
+    /// `1.8`: sessions per week over the period's days.
+    public var perWeek: String
+    /// `6 weeks`: weeks in a row with a session up to this one (this week
+    /// counts once it has one); nil under two.
+    public var streak: String?
+    /// `Trained in 9 of 13 weeks, 1.8 sessions a week. 6 weeks in a row.`
+    public var sentence: String
+
+    public init(weeksTrained: Int, weeks: Int, value: String, perWeek: String, streak: String?, sentence: String) {
+        self.weeksTrained = weeksTrained
+        self.weeks = weeks
+        self.value = value
+        self.perWeek = perWeek
+        self.streak = streak
+        self.sentence = sentence
+    }
+}
+
+/// The newest session against the one before it.
+public struct StatsSessionComparison: Equatable, Sendable {
+    public var session: SessionID
+    public var previous: SessionID
+    /// `Mon 26 Oct`, and the routine's name on the Stats tab: `Mon 26 Oct, Day 1`.
+    public var title: String
+    /// `Against Thu 22 Oct`.
+    public var against: String
+    /// Time, Volume, Working sets, each against the session before.
+    public var totals: [StatsTotal]
+    /// `Better on 3 of 5 exercises`: each exercise both sessions hold, by its
+    /// best estimated 1RM (or hold, or reps), 1% either way the same; nil
+    /// when they share none.
+    public var exercises: String?
+
+    public init(session: SessionID, previous: SessionID, title: String, against: String, totals: [StatsTotal], exercises: String?) {
+        self.session = session
+        self.previous = previous
+        self.title = title
+        self.against = against
+        self.totals = totals
+        self.exercises = exercises
+    }
 }
 
 public struct StatsChange: Equatable, Sendable {
@@ -231,7 +356,7 @@ public struct StatsExercise: Equatable, Sendable, Identifiable {
     public var points: [TrendPoint]
     /// What the sparkline shows, for VoiceOver.
     public var trendSummary: String?
-    /// Best set, Volume, Working sets.
+    /// Best set, Working sets.
     public var facts: [LabelledValue]
 
     public init(id: ExerciseID, name: String, metric: String?, trendMetric: TrendMetric, unit: MassUnit, best: String?,
@@ -381,7 +506,8 @@ public enum StatsPresenter {
             range: range(window, calendar: calendar),
             comparison: "Compared with \(range(before, calendar: calendar))",
             hasSessions: !scoped.isEmpty,
-            totals: totals(current.map(\.records), previous.map(\.records), exercises: catalog.exercises, settings: settings),
+            totals: totals(current.map(\.records), previous.map(\.records), exercises: catalog.exercises, settings: settings,
+                           days: days(window, calendar: calendar)),
             volumeUnit: unit,
             volume: volume(current.map(\.records), window: window, bar: period.bar, exercises: catalog.exercises, settings: settings),
             exercises: exercises(current.map(\.records), previous.map(\.records), scope: scope, catalog: catalog, settings: settings),
@@ -389,14 +515,22 @@ public enum StatsPresenter {
             muscles: muscles(current.flatMap(\.records.sets), exercises: catalog.exercises),
             sessions: scoped.map { row($0, exercises: catalog.exercises, settings: settings) }
         )
-        presentation.regions = BodyMap.sets(current.flatMap(\.records.sets), exercises: catalog.exercises).mapValues(\.double)
+        let sets = current.flatMap(\.records.sets)
+        presentation.regions = BodyMap.sets(sets, exercises: catalog.exercises).mapValues(\.double)
+        presentation.balance = balance(sets, catalog: catalog)
+        presentation.weeks = weeks(current.map(\.records), window: window, calendar: calendar)
+        if period != .week {
+            presentation.consistency = consistency(presentation.weeks, sessions: current.count, all: scoped.map(\.records),
+                                                   window: window, now: now, calendar: calendar)
+        }
+        presentation.lastSession = lastSession(scoped.map(\.records), scope: scope, catalog: catalog, settings: settings)
         return presentation
     }
 
     // MARK: - Totals
 
     static func totals(_ current: [SessionRecords], _ previous: [SessionRecords], exercises: [ExerciseID: Exercise],
-                       settings: PresenterSettings) -> [StatsTotal]
+                       settings: PresenterSettings, days: Int = 7) -> [StatsTotal]
     {
         let now = Totals(current, exercises: exercises, settings: settings)
         let then = Totals(previous, exercises: exercises, settings: settings)
@@ -405,18 +539,27 @@ public enum StatsPresenter {
         if let average = now.average, let before = then.average {
             averageChange = change(Double(average - before) / 60, text: { "\(Format.number($0, decimals: 0)) min" })
         }
+        // A week's count is its rate already.
+        let rate = days > 7 && now.sessions > 0 ? "\(perWeek(now.sessions, days: days)) a week" : nil
         return [
-            StatsTotal(label: "Sessions", value: "\(now.sessions)",
-                       change: count(now.sessions, then.sessions)),
+            StatsTotal(label: "Sessions", value: "\(now.sessions)", change: count(now.sessions, then.sessions), detail: rate),
             StatsTotal(label: "Volume", value: "\(Format.grouped(Int(now.volume.rounded()))) \(unit)",
                        change: percent(now.volume, then.volume)),
             StatsTotal(label: "Working sets", value: "\(now.sets)",
                        change: count(now.sets, then.sets)),
-            StatsTotal(label: "Time trained", value: now.seconds == 0 ? "0 min" : Format.minutes(now.seconds),
-                       change: percent(Double(now.seconds), Double(then.seconds))),
-            StatsTotal(label: "Average session", value: now.average.map(Format.minutes) ?? "None",
+            StatsTotal(label: "Time per session", value: now.average.map(Format.minutes) ?? "None",
                        change: averageChange),
         ]
+    }
+
+    /// Whole days in `window`.
+    static func days(_ window: DateInterval, calendar: Calendar) -> Int {
+        max(1, calendar.dateComponents([.day], from: window.start, to: window.end).day ?? 7)
+    }
+
+    /// Sessions per seven days, to one decimal: `1.8`.
+    static func perWeek(_ sessions: Int, days: Int) -> String {
+        Format.number(Double(sessions) / (Double(max(1, days)) / 7), decimals: 1)
     }
 
     /// One period's sums. A session's length leaves its pauses out; one
@@ -451,27 +594,29 @@ public enum StatsPresenter {
     // MARK: - Changes
 
     /// A difference of counts: `+1`; nil when both are 0.
-    static func count(_ now: Int, _ then: Int) -> StatsChange? {
+    static func count(_ now: Int, _ then: Int, against: String = periodBefore) -> StatsChange? {
         guard now != 0 || then != 0 else { return nil }
-        return change(Double(now - then), text: { Format.number($0, decimals: 0) })
+        return change(Double(now - then), against: against, text: { Format.number($0, decimals: 0) })
     }
 
     /// A difference as a share of the period before's: `+12%`; nil when
     /// the period before had none, which no percentage measures.
-    static func percent(_ now: Double, _ then: Double) -> StatsChange? {
+    static func percent(_ now: Double, _ then: Double, against: String = periodBefore) -> StatsChange? {
         guard then > 0 else { return nil }
-        return change(((now / then - 1) * 100).rounded(), text: { "\(Format.number($0, decimals: 0))%" })
+        return change(((now / then - 1) * 100).rounded(), against: against, text: { "\(Format.number($0, decimals: 0))%" })
     }
 
+    static let periodBefore = "the period before"
+
     /// `delta` signed, its size written by `text`.
-    static func change(_ delta: Double, text: (Double) -> String) -> StatsChange {
+    static func change(_ delta: Double, against: String = periodBefore, text: (Double) -> String) -> StatsChange {
         let size = text(abs(delta))
         if delta == 0 || size == text(0) {
-            return StatsChange(direction: .same, text: "Same", spoken: "The same as the period before")
+            return StatsChange(direction: .same, text: "Same", spoken: "The same as \(against)")
         }
         return delta > 0
-            ? StatsChange(direction: .up, text: "+\(size)", spoken: "Up \(size) on the period before")
-            : StatsChange(direction: .down, text: "\u{2212}\(size)", spoken: "Down \(size) on the period before")
+            ? StatsChange(direction: .up, text: "+\(size)", spoken: "Up \(size) on \(against)")
+            : StatsChange(direction: .down, text: "\u{2212}\(size)", spoken: "Down \(size) on \(against)")
     }
 
     // MARK: - Volume
@@ -542,7 +687,8 @@ public enum StatsPresenter {
         let then = byExercise(previous)
         let workingSets = now.mapValues { $0.reduce(0) { $0 + Counting.workingSets($1.sets) } }
         let planned: [ExerciseID] = if case let .routine(id) = scope { catalog.routines[id]?.slots.map(\.exercise) ?? [] } else { [] }
-        let order = now.keys.filter { catalog.exercises[$0] != nil }.sorted { a, b in
+        // An exercise done only as a warm-up has no progress to show.
+        let order = now.keys.filter { catalog.exercises[$0] != nil && (workingSets[$0] ?? 0) > 0 }.sorted { a, b in
             let (pa, pb) = (planned.firstIndex(of: a) ?? .max, planned.firstIndex(of: b) ?? .max)
             if pa != pb { return pa < pb }
             let (sa, sb) = (workingSets[a] ?? 0, workingSets[b] ?? 0)
@@ -589,11 +735,6 @@ public enum StatsPresenter {
         if let set = bestSet(now, exercise: exercise, config: config, metric: trend.metric) {
             facts.append(LabelledValue("Best set", HistoryPresenter.text(of: set, measurement: exercise.measurement)))
         }
-        let volume = now.reduce(0.0) { total, entry in
-            total + Counting.volume(entry.sets, exercises: catalog.exercises, bodyMass: entry.session.bodyMass,
-                                    unit: settings.defaultUnit, includeWarmups: settings.countWarmupsInVolume).value.double
-        }
-        if volume > 0 { facts.append(LabelledValue("Volume", "\(Format.grouped(Int(volume.rounded()))) \(settings.defaultUnit.rawValue)")) }
         facts.append(LabelledValue("Working sets", "\(now.reduce(0) { $0 + Counting.workingSets($1.sets) })"))
         return StatsExercise(
             id: exercise.id,
@@ -756,6 +897,185 @@ public enum StatsPresenter {
     static func setsText(_ value: Decimal) -> String {
         let number = Format.number(value, decimals: 1)
         return number == "1" ? "1 set" : "\(number) sets"
+    }
+
+    // MARK: - Balance
+
+    static let upperBody: Set<Muscle> = [.chest, .shoulders, .lats, .upperback, .traps, .biceps, .triceps, .forearms, .neck]
+    static let lowerBody: Set<Muscle> = [.quadriceps, .hamstrings, .glutes, .calves, .adductors, .abductors]
+    static let core: Set<Muscle> = [.abdominals, .lowerback]
+    static let pushGroups: Set<Muscle> = [.chest, .shoulders, .triceps]
+    static let pullGroups: Set<Muscle> = [.lats, .upperback, .traps, .biceps, .forearms]
+
+    /// Push against pull over the upper body's working sets (a leg press
+    /// pushes too, which says nothing of the shoulders), whole sets; then
+    /// upper body, lower body and core by the sets each group is credited
+    /// (`Counting.setsPerMuscle`).
+    static func balance(_ sets: [PerformedSet], catalog: Catalog) -> [StatsBalance] {
+        var push = 0.0
+        var pull = 0.0
+        for set in sets where set.role == .working && set.continues == nil {
+            guard let exercise = catalog.exercises[set.exercise], let top = topGroup(exercise), upperBody.contains(top) else { continue }
+            switch force(of: exercise, catalog: catalog) {
+            case .push: push += 1
+            case .pull: pull += 1
+            case .static, nil: break
+            }
+        }
+        var out: [StatsBalance] = []
+        if push + pull > 0 {
+            out.append(balance("push-pull", "Push and pull", note: "Upper-body working sets", [("Push", push), ("Pull", pull)]))
+        }
+        let groups = Counting.setsPerMuscle(sets, exercises: catalog.exercises)
+        func sum(_ muscles: Set<Muscle>) -> Double {
+            groups.filter { muscles.contains($0.key) }.reduce(0) { $0 + $1.value.double }
+        }
+        let (upper, lower, trunk) = (sum(upperBody), sum(lowerBody), sum(core))
+        if upper + lower > 0 {
+            var parts = [("Upper body", upper), ("Lower body", lower)]
+            if trunk > 0 { parts.append(("Core", trunk)) }
+            out.append(balance("body", "Upper and lower body", note: "Sets each muscle group is credited", parts))
+        }
+        return out
+    }
+
+    /// The group an exercise works most; ties go to the first by name.
+    static func topGroup(_ exercise: Exercise) -> Muscle? {
+        exercise.groupShares.max { a, b in a.value != b.value ? a.value < b.value : a.key.rawValue > b.key.rawValue }?.key
+    }
+
+    /// The movement's force; without one, the push or pull the exercise's
+    /// main group reads as; nil for neither.
+    static func force(of exercise: Exercise, catalog: Catalog) -> Force? {
+        if let force = exercise.movement.flatMap({ catalog.movements[$0] })?.force { return force }
+        guard let top = topGroup(exercise) else { return nil }
+        if pushGroups.contains(top) { return .push }
+        if pullGroups.contains(top) { return .pull }
+        return nil
+    }
+
+    private static func balance(_ id: String, _ title: String, note: String, _ parts: [(String, Double)]) -> StatsBalance {
+        let total = parts.reduce(0) { $0 + $1.1 }
+        let shares = parts.map { total > 0 ? $0.1 / total : 0 }
+        let percents = roundedPercents(shares)
+        let built = parts.indices.map { index in
+            StatsBalancePart(label: parts[index].0, sets: parts[index].1, share: shares[index], percent: "\(percents[index])%",
+                             text: setsText(Format.decimal(parts[index].1)))
+        }
+        let sentence = built.map { "\($0.label) \($0.percent), \($0.text)" }.joined(separator: ". ") + "."
+        return StatsBalance(id: id, title: title, note: note, parts: built, sentence: sentence)
+    }
+
+    /// Whole percentages that add up to 100, the largest remainders rounded up.
+    static func roundedPercents(_ shares: [Double]) -> [Int] {
+        let raw = shares.map { $0 * 100 }
+        var out = raw.map { Int($0.rounded(.down)) }
+        guard shares.reduce(0, +) > 0 else { return out }
+        var left = 100 - out.reduce(0, +)
+        let order = raw.indices.sorted { (raw[$0] - Double(out[$0]), -$0) > (raw[$1] - Double(out[$1]), -$1) }
+        for index in order where left > 0 {
+            out[index] += 1
+            left -= 1
+        }
+        return out
+    }
+
+    // MARK: - Consistency
+
+    /// Every calendar week the period touches, with its sessions.
+    static func weeks(_ sessions: [SessionRecords], window: DateInterval, calendar: Calendar) -> [StatsWeek] {
+        guard let first = calendar.dateInterval(of: .weekOfYear, for: window.start)?.start else { return [] }
+        var starts: [Date] = []
+        var cursor = first
+        while cursor < window.end {
+            starts.append(cursor)
+            guard let next = calendar.date(byAdding: .weekOfYear, value: 1, to: cursor), next > cursor else { break }
+            cursor = next
+        }
+        var counts: [Date: Int] = [:]
+        for records in sessions {
+            guard let start = calendar.dateInterval(of: .weekOfYear, for: records.session.at)?.start else { continue }
+            counts[start, default: 0] += 1
+        }
+        return starts.map { start in
+            let sessions = counts[start] ?? 0
+            return StatsWeek(start: start, sessions: sessions, label: "Week of \(Format.day(start, in: calendar.timeZone))",
+                             text: sessions == 0 ? "No sessions" : Format.count(sessions, "session"))
+        }
+    }
+
+    static func consistency(_ weeks: [StatsWeek], sessions: Int, all: [SessionRecords], window: DateInterval, now: Date,
+                            calendar: Calendar) -> StatsConsistency?
+    {
+        guard !weeks.isEmpty else { return nil }
+        let trained = weeks.count { $0.sessions > 0 }
+        let rate = perWeek(sessions, days: days(window, calendar: calendar))
+        let streak = streakWeeks(all, now: now, calendar: calendar)
+        let streakText = streak >= 2 ? "\(streak) weeks" : nil
+        var sentence = "Trained in \(trained) of \(weeks.count) weeks, \(rate) sessions a week."
+        if let streakText { sentence += " \(streakText) in a row." }
+        return StatsConsistency(weeksTrained: trained, weeks: weeks.count, value: "\(trained) of \(weeks.count)", perWeek: rate,
+                                streak: streakText, sentence: sentence)
+    }
+
+    /// Weeks in a row with a session, back from this week, or from the
+    /// week before while this one has none yet: a new week breaks nothing.
+    static func streakWeeks(_ sessions: [SessionRecords], now: Date, calendar: Calendar) -> Int {
+        let trained = Set(sessions.compactMap { calendar.dateInterval(of: .weekOfYear, for: $0.session.at)?.start })
+        guard var week = calendar.dateInterval(of: .weekOfYear, for: now)?.start else { return 0 }
+        if !trained.contains(week) {
+            guard let before = calendar.date(byAdding: .weekOfYear, value: -1, to: week) else { return 0 }
+            week = before
+        }
+        var count = 0
+        while trained.contains(week) {
+            count += 1
+            guard let before = calendar.date(byAdding: .weekOfYear, value: -1, to: week) else { break }
+            week = before
+        }
+        return count
+    }
+
+    // MARK: - The last session
+
+    /// The newest session against the newest one before it of the same
+    /// routine. A session started empty has no routine to compare within.
+    static func lastSession(_ sessions: [SessionRecords], scope: StatsScope, catalog: Catalog,
+                            settings: PresenterSettings) -> StatsSessionComparison?
+    {
+        guard let latest = sessions.first, let routine = latest.session.routine,
+              let before = sessions.dropFirst().first(where: { $0.session.routine == routine }) else { return nil }
+        func day(_ session: TrainingSession) -> String { Format.day(session.at, in: HistoryPresenter.zone(of: session, settings)) }
+        let against = "the session before"
+        let now = Totals([latest], exercises: catalog.exercises, settings: settings)
+        let then = Totals([before], exercises: catalog.exercises, settings: settings)
+        var totals: [StatsTotal] = []
+        if let seconds = now.average {
+            let change = then.average.map { previous in
+                Self.change(Double(seconds - previous) / 60, against: against, text: { "\(Format.number($0, decimals: 0)) min" })
+            }
+            totals.append(StatsTotal(label: "Time", value: Format.minutes(seconds), change: change))
+        }
+        totals.append(StatsTotal(label: "Volume", value: "\(Format.grouped(Int(now.volume.rounded()))) \(settings.defaultUnit.rawValue)",
+                                 change: percent(now.volume, then.volume, against: against)))
+        totals.append(StatsTotal(label: "Working sets", value: "\(now.sets)", change: count(now.sets, then.sets, against: against)))
+        let today = byExercise([latest])
+        let earlier = byExercise([before])
+        var shared = 0
+        var better = 0
+        for (id, entries) in today {
+            guard let exercise = catalog.exercises[id], let previous = earlier[id] else { continue }
+            let config = SuggestionInputs.config(for: exercise, defaultUnit: settings.defaultUnit)
+            guard let value = ExercisePresenter.trend(exercise, sessions: entries, config: config).points.map(\.value).max(),
+                  let was = ExercisePresenter.trend(exercise, sessions: previous, config: config).points.map(\.value).max(),
+                  was > 0 else { continue }
+            shared += 1
+            if value > was * 1.01 { better += 1 }
+        }
+        let title = scope == .all ? "\(day(latest.session)), \(HistoryPresenter.routineTitle(of: latest.session))" : day(latest.session)
+        return StatsSessionComparison(session: latest.session.id, previous: before.session.id, title: title,
+                                      against: "Against \(day(before.session))", totals: totals,
+                                      exercises: shared == 0 ? nil : "Better on \(better) of \(Format.count(shared, "exercise"))")
     }
 
     // MARK: - Dates and rows

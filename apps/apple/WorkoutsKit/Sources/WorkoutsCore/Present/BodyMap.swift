@@ -34,12 +34,17 @@ public enum BodyRegion: String, CaseIterable, Sendable {
         }
     }
 
-    /// The muscles that colour it.
+    /// The muscles that colour it. Each muscle shades a region of its own
+    /// group's (`groups`), so an exercise shades the same regions whether it
+    /// names its muscles or only their groups; the serratus is the chest's,
+    /// and the hip flexors, which neither figure draws, shade nothing. The
+    /// shin is the one exception: Hevy counts it with the calves, which a
+    /// calf raise works and the shin does not.
     public var muscles: [MuscleDetail] {
         switch self {
-        case .chest: [.pecclavicular, .pecsternal]
+        case .chest: [.pecclavicular, .pecsternal, .serratus]
         case .abs: [.rectusabdominis, .transverseabdominis]
-        case .obliques: [.obliques, .serratus]
+        case .obliques: [.obliques]
         case .frontDelts: [.deltfront, .deltside]
         case .rearDelts: [.deltrear, .deltside, .rotatorcuff]
         case .biceps: [.bicepsbrachii, .brachialis]
@@ -50,7 +55,7 @@ public enum BodyRegion: String, CaseIterable, Sendable {
         case .lats: [.lats]
         case .lowerBack: [.erectors]
         case .glutes: [.glutemax, .glutemed]
-        case .quadriceps: [.rectusfemoris, .vasti, .iliopsoas]
+        case .quadriceps: [.rectusfemoris, .vasti]
         case .hamstrings: [.hamstrings]
         case .adductors: [.adductors]
         case .calves: [.gastrocnemius, .soleus]
@@ -68,8 +73,10 @@ public enum BodyRegion: String, CaseIterable, Sendable {
         case .biceps: [.biceps]
         case .triceps: [.triceps]
         case .forearms: [.forearms]
-        case .upperTraps, .traps: [.traps]
-        case .lats: [.lats, .upperback]
+        case .upperTraps: [.traps]
+        // Rhomboids and the middle and lower traps are the upper back's.
+        case .traps: [.traps, .upperback]
+        case .lats: [.lats]
         case .lowerBack: [.lowerback]
         case .glutes: [.glutes, .abductors]
         case .quadriceps: [.quadriceps]
