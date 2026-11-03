@@ -176,7 +176,7 @@ func (r *Runner) startPython(ctx context.Context, spec Spec) (*proc, error) {
 		// the network and writes uv's shared cache, and neither is something a
 		// body may do. What comes back is the interpreter of the script's
 		// environment, which is what actually runs the body.
-		interpreter, err = r.provisionUV(ctx, hostFile, work, uvCache, spec.timeout())
+		interpreter, err = r.provisionUV(ctx, hostFile, work, uvCache, spec.timeout(), spec.Outside)
 		if err != nil {
 			return nil, err
 		}
@@ -222,7 +222,7 @@ func (r *Runner) startPython(ctx context.Context, spec Spec) (*proc, error) {
 // --script`: `uv run` would be uv, in the invocation path, needing network and
 // write access to its cache on every start. Running the resolved interpreter
 // directly leaves uv entirely on the registration side of the boundary.
-func (r *Runner) provisionUV(ctx context.Context, hostFile, work, uvCache string, timeout time.Duration) (string, error) {
+func (r *Runner) provisionUV(ctx context.Context, hostFile, work, uvCache string, timeout time.Duration, outside bool) (string, error) {
 	if timeout < uvProvisionTimeout {
 		timeout = uvProvisionTimeout
 	}
@@ -278,7 +278,11 @@ func (r *Runner) provisionUV(ctx context.Context, hostFile, work, uvCache string
 
 	// The resolve runs third-party build backends, so it is confined like
 	// anything else that runs code we did not write.
-	sync := exec.CommandContext(pctx, uvBin, "sync", "--quiet", "--python", interpreter, "--script", hostFile)
+	args := []string{"sync", "--quiet", "--python", interpreter, "--script", hostFile}
+	if outside {
+		args = append(args, "--no-build")
+	}
+	sync := exec.CommandContext(pctx, uvBin, args...)
 	sync.Dir, sync.Env = work, env
 	if err := r.sandbox.Wrap(sync, policy); err != nil {
 		return "", err

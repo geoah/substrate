@@ -1,3 +1,4 @@
+import { OAuthHosts } from "@/components/packages/outside-code"
 /** One setup row on the approval page (docs/plans/app-setup.md): what
  * approving installs, updates, creates or turns on, by its name, versions
  * and description, with the code it and what it brings first run, the
@@ -266,6 +267,7 @@ function StepFacts({ step }: { step: AuthorizationPackageStep }) {
       {step.blocked && (
         <p className="text-destructive">{asSentence(step.blocked.problem)}</p>
       )}
+      <OAuthHosts hosts={step.oauthHosts} />
       <OwnFacts facts={step} of={name} />
     </li>
   )
@@ -280,6 +282,7 @@ function PackageFacts({ pkg }: { pkg: AuthorizationPackage }) {
       </Term>
       {pkg.tier && <Term name="Tier">{pkg.tier}</Term>}
       <Term name="The app needs">version {pkg.required} or later</Term>
+      <OAuthHosts hosts={pkg.oauthHosts} />
       <Term name="You hold">{version(pkg.held)}</Term>
       <Term name={pkg.publisher ? "Its publisher lists" : "This server ships"}>
         {version(pkg.shipped)}

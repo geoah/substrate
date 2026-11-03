@@ -194,6 +194,10 @@ func run() error {
 		slog.Warn("SUBSTRATE_INSECURE_DISABLE_TOTP is set: the second factor is NOT verified — local development only")
 		opts = append(opts, engine.WithInsecureDisableTOTP())
 	}
+	opts = append(opts, engine.WithOutsideCode(cfg.OutsideCode, cfg.InsecureUnconfinedOutsideCode))
+	if cfg.InsecureUnconfinedOutsideCode {
+		slog.Warn("SUBSTRATE_INSECURE_UNCONFINED_OUTSIDE_CODE is set: outside code may run without sandbox confinement")
+	}
 	if cfg.InsecureAllowForeignPackages {
 		slog.Warn("SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES is set: a token may declare packages under any authority; local development only")
 		opts = append(opts, engine.WithInsecureForeignPackages(true))

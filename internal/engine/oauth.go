@@ -270,6 +270,9 @@ func (ds *dataset) oauthAccountOf(ctx context.Context, account eref) (*erow, *vo
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: %s belongs to no bundle", substrate.ErrValidation, record)
 	}
+	if err := ds.admitOutsidePackage(ctx, b.Package); err != nil {
+		return nil, nil, err
+	}
 	st, err := ds.bundleStateOf(ctx, b.Package)
 	if err != nil {
 		return nil, nil, err
@@ -296,6 +299,9 @@ func bundleOAuthMeta(b *vocabulary.Bundle) (*vocabulary.BundleOAuth2, error) {
 // sealed-at-rest clientSecret is opened HERE, the one host read that needs
 // the plaintext.
 func (ds *dataset) oauthClientOf(ctx context.Context, b *vocabulary.Bundle) (clientID, clientSecret string, err error) {
+	if err := ds.admitOutsidePackage(ctx, b.Package); err != nil {
+		return "", "", err
+	}
 	if b.OAuth2 == nil {
 		return "", "", fmt.Errorf("%w: bundle %s declares no oauth2 block", substrate.ErrGuard, b.Package)
 	}

@@ -20,7 +20,9 @@ import (
 
 // Config is the full service configuration.
 type Config struct {
-	Port string `envconfig:"PORT" default:"8080"`
+	OutsideCode                   string `envconfig:"SUBSTRATE_OUTSIDE_CODE" default:"allow"`
+	InsecureUnconfinedOutsideCode bool   `envconfig:"SUBSTRATE_INSECURE_UNCONFINED_OUTSIDE_CODE" default:"false"`
+	Port                          string `envconfig:"PORT" default:"8080"`
 	// BindAddress is the interface the server listens on. Loopback by
 	// default, because the server speaks plain HTTP: a password, a TOTP code
 	// and every bearer token cross this socket readable, so the port is for
@@ -219,6 +221,9 @@ const MinDigestBytesPerSecond int64 = 64 << 10
 // console URL without a scheme) or fail only after the boot (a port the
 // listener cannot take) is refused here too, naming the variable.
 func (c Config) Validate() error {
+	if c.OutsideCode != "" && c.OutsideCode != "allow" && c.OutsideCode != "refuse" {
+		return fmt.Errorf("SUBSTRATE_OUTSIDE_CODE must be allow or refuse")
+	}
 	if err := c.Data.Validate(); err != nil {
 		return err
 	}

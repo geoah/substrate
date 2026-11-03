@@ -27,3 +27,5 @@ type confinerOS struct{}
 func (confinerOS) wrap(*exec.Cmd, Policy) error { return nil }
 
 func (confinerOS) serve(*exec.Cmd) (Gate, error) { return noopGate{}, nil }
+
+func (confinerOS) cancel(*exec.Cmd) {}

@@ -312,6 +312,12 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
 		return nil, err
 	}
+	if err := ds.admitOutsideClosure(ctx, docs, dataDocs, opts); err != nil {
+		return nil, err
+	}
+	if opts.PublishedFrom != "" {
+		ctx = context.WithValue(ctx, outsideInstallKey{}, true)
+	}
 	written, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{
 		docs:           docs,
 		published:      opts.Published,
@@ -533,7 +539,7 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 				// `candidate`, so a bundle that changed only its library is a
 				// different key on the two sides and the body prepares.
 				if prev := cur.Functions[fname]; prev != nil &&
-					ds.runnerSpecIn(prev, current).Key() == ds.runnerSpecIn(f, candidate).Key() {
+					ds.outsideSpec(ctx, ds.runnerSpecIn(prev, current), prev.Package).Key() == ds.outsideSpec(ctx, ds.runnerSpecIn(f, candidate), f.Package).Key() {
 					continue // unchanged installation, already prepared
 				}
 			}
@@ -1994,7 +2000,7 @@ const propPackageShippedVersion = "shippedVersion"
 // its bundle document owns. Empty when the batch carries no shipped version or
 // no bundle document, which stamps nothing.
 func shippedPackage(b vocabularyBatch) string {
-	if b.shippedVersion <= 0 {
+	if b.shippedVersion <= 0 && b.publishedFrom == "" {
 		return ""
 	}
 	for _, d := range b.docs {
@@ -2013,7 +2019,7 @@ func shippedPackage(b vocabularyBatch) string {
 // closure from (PlanBundleUpgrade, issue #642). A re-install whose stamp is
 // unchanged writes nothing: the put suppresses the no-op.
 func (t *txn) stampShipped(reg *vocabulary.Registry, projecting map[string]bool, g *vocabulary.Package, opts projectOpts, out map[string]*substrate.Record) error {
-	if opts.shippedPackage == "" || opts.shippedPackage != g.Identity || opts.shippedVersion <= 0 {
+	if opts.shippedPackage == "" || opts.shippedPackage != g.Identity || (opts.shippedVersion <= 0 && opts.publishedFrom == "") {
 		return nil
 	}
 	ty, err := t.projectionKind(reg, projecting, kindPackage)
@@ -2024,10 +2030,13 @@ func (t *txn) stampShipped(reg *vocabulary.Registry, projecting map[string]bool,
 	// `package` kind from before the property: the install lands unstamped
 	// rather than failing, and the preview measures from the stored version
 	// as it did before the stamp existed.
-	if _, declared := ty.Prop(propPackageShippedVersion); !declared {
+	if _, declared := ty.Prop(propPackageShippedVersion); !declared && opts.publishedFrom == "" {
 		return nil
 	}
-	props := map[string]any{propPackageShippedVersion: opts.shippedVersion}
+	props := map[string]any{}
+	if opts.shippedVersion > 0 {
+		props[propPackageShippedVersion] = opts.shippedVersion
+	}
 	if opts.publishedFrom != "" {
 		row, err := t.loadRow(eref{Kind: kindPackage, ID: g.Identity}, false)
 		if err != nil {

@@ -348,6 +348,7 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 			b.Authority = mstr(data, "authority")
 			b.Package = mstr(data, "package")
 			b.Description = mstr(data, "description")
+			b.OAuthHosts = oauthHosts(mmap(data, "oauth2"))
 			b.Inputs = catalogInputs(mmap(data, "inputs"))
 			for _, rv := range mslice(data, "requires") {
 				b.Requires = append(b.Requires, fmt.Sprint(rv))
@@ -883,6 +884,11 @@ func (c *Catalog) planUpgrade(ctx context.Context, b *Bundle, ds substrate.Datas
 	if err != nil {
 		return nil, err
 	}
+	triggers, err := outsideTriggerChanges(ctx, ds, b)
+	if err != nil {
+		return nil, err
+	}
+	plan.CodeChanges = append(plan.CodeChanges, triggers...)
 	return &plan, nil
 }
 

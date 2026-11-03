@@ -79,8 +79,10 @@ type seccompNotifAddfd struct {
 // pendingGate is the parent end of one connect-gate socket, held between Wrap
 // and Serve.
 type pendingGate struct {
-	parent *os.File
-	child  *os.File
+	proxy   *hostProxy
+	address string
+	parent  *os.File
+	child   *os.File
 }
 
 // buildConnectNotifyFilter returns USER_NOTIF for connect(2) on this
@@ -258,9 +260,22 @@ func (c *Confiner) serve(cmd *exec.Cmd) (Gate, error) {
 
 	lfd, err := recvListener(g.parent)
 	if err != nil {
+		if g.proxy != nil {
+			_ = g.proxy.Close()
+		}
 		return nil, fmt.Errorf("sandbox: connect gate: %w", err)
 	}
-	return startConnectGate(lfd, c.resolvers)
+	gate, err := startConnectGate(lfd, c.resolvers, g.address)
+	if err != nil {
+		if g.proxy != nil {
+			_ = g.proxy.Close()
+		}
+		return nil, err
+	}
+	if g.proxy != nil {
+		return &proxyGate{Gate: gate, proxy: g.proxy}, nil
+	}
+	return gate, nil
 }
 
 // recvListener reads the seccomp listener descriptor the stub sent, bounded so a
@@ -315,11 +330,12 @@ func recvOOB(fd int, buf, oob []byte) (int, error) {
 
 // connectGate supervises one body's connect notifications.
 type connectGate struct {
-	lfd       int
-	stop      int // eventfd, to wake the poll loop on Close
-	done      chan struct{}
-	resolvers []netip.Addr
-	once      sync.Once
+	proxyAddress string
+	lfd          int
+	stop         int // eventfd, to wake the poll loop on Close
+	done         chan struct{}
+	resolvers    []netip.Addr
+	once         sync.Once
 
 	// refusalMu guards the record of policy refusals. The gate serves every
 	// invocation of one body process, so each refusal carries a sequence
@@ -345,13 +361,16 @@ const (
 	maxWarned   = 64
 )
 
-func startConnectGate(lfd int, resolvers []netip.Addr) (Gate, error) {
+func startConnectGate(lfd int, resolvers []netip.Addr, proxy ...string) (Gate, error) {
 	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
 	if err != nil {
 		_ = unix.Close(lfd)
 		return nil, fmt.Errorf("sandbox: connect gate eventfd: %w", err)
 	}
 	g := &connectGate{lfd: lfd, stop: efd, done: make(chan struct{}), resolvers: resolvers}
+	if len(proxy) > 0 {
+		g.proxyAddress = proxy[0]
+	}
 	go g.run()
 	return g, nil
 }
@@ -837,6 +856,9 @@ func toErrno(err error, fallback unix.Errno) unix.Errno {
 // resolver on port 53 (so DNS through a loopback stub keeps working), then any
 // address the egress classifier does not mark as the deployment's own.
 func (g *connectGate) allowDest(addr netip.Addr, port uint16) bool {
+	if g.proxyAddress != "" {
+		return netip.AddrPortFrom(addr.Unmap(), port).String() == g.proxyAddress
+	}
 	a := addr.Unmap()
 	for _, p := range egressAllow() {
 		if p.Contains(a) {
@@ -871,7 +893,7 @@ func (g *connectGate) refuse(pid uint32, dest netip.AddrPort) {
 	dest = netip.AddrPortFrom(dest.Addr().Unmap(), dest.Port())
 	g.refusalMu.Lock()
 	g.refusalSeq++
-	g.refusals = append(g.refusals, seqRefusal{seq: g.refusalSeq, Refusal: Refusal{Addr: dest}})
+	g.refusals = append(g.refusals, seqRefusal{seq: g.refusalSeq, Refusal: Refusal{Addr: dest, ProxyOnly: g.proxyAddress != ""}})
 	if len(g.refusals) > maxRefusals {
 		g.refusals = g.refusals[len(g.refusals)-maxRefusals:]
 	}
@@ -885,13 +907,14 @@ func (g *connectGate) refuse(pid uint32, dest netip.AddrPort) {
 	}
 	g.refusalMu.Unlock()
 	if warn {
-		warnRefusal(refusalWarning{pid: pid, dest: dest})
+		warnRefusal(refusalWarning{pid: pid, dest: dest, proxyOnly: g.proxyAddress != ""})
 	}
 }
 
 type refusalWarning struct {
-	pid  uint32
-	dest netip.AddrPort
+	proxyOnly bool
+	pid       uint32
+	dest      netip.AddrPort
 }
 
 // refusalWarnings feeds the one goroutine that writes the gates' WARN lines.
@@ -908,6 +931,10 @@ func warnRefusal(w refusalWarning) {
 	startWarner.Do(func() {
 		go func() {
 			for line := range refusalWarnings {
+				if line.proxyOnly {
+					slog.Warn("outside code attempted a direct connection", "destination", line.dest.String(), "policy", "use the declared-host proxy", "pid", line.pid)
+					continue
+				}
 				slog.Warn("egress blocked by the sandbox's connect gate",
 					"destination", line.dest.String(),
 					"allow", EgressAllowVar+"="+line.dest.Addr().String(),
@@ -993,4 +1020,24 @@ func loadResolvers() []netip.Addr {
 		}
 	}
 	return out
+}
+
+type proxyGate struct {
+	Gate
+	proxy *hostProxy
+}
+
+func (g *proxyGate) Close() error { _ = g.proxy.Close(); return g.Gate.Close() }
+
+func (c *Confiner) cancel(cmd *exec.Cmd) {
+	value, ok := c.pending.LoadAndDelete(cmd)
+	if !ok {
+		return
+	}
+	pending := value.(*pendingGate)
+	_ = pending.parent.Close()
+	_ = pending.child.Close()
+	if pending.proxy != nil {
+		_ = pending.proxy.Close()
+	}
 }

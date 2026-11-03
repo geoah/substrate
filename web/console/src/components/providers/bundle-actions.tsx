@@ -1,3 +1,4 @@
+import { CodeChanges } from "@/components/packages/outside-code"
 /** The verbs a bundle takes, each with the confirmation its consequence
  * earns: ADD (a provider installs under the authority that publishes it, a
  * sample imports as this repository's own, decision record 0048), taking the
@@ -451,7 +452,9 @@ export function LossyUpgradeDialog({
       title={
         upgrade?.discardsEdits
           ? `Update ${called} and replace your edits?`
-          : `Update ${called} and remove values?`
+          : upgrade?.codeChanges?.length
+            ? `Review code changes for ${called}`
+            : `Update ${called} and remove values?`
       }
       consequence={
         (upgrade?.discardsEdits
@@ -468,13 +471,16 @@ export function LossyUpgradeDialog({
       confirm={
         upgrade?.discardsEdits
           ? "Update and replace my edits"
-          : "Update and remove values"
+          : upgrade?.codeChanges?.length
+            ? "Approve code and update"
+            : "Update and remove values"
       }
       pending={upgrading.isPending}
-      disabled={!upgrade?.planHash}
+      disabled={!upgrade?.planHash && !upgrade?.codeChanges?.length}
       onConfirm={() => upgrading.mutate()}
       onClose={close}
     >
+      <CodeChanges changes={upgrade?.codeChanges} />
       {stale && (
         <p role="status" className="text-sm text-warning">
           A record or collection this plan changes was written since it was
