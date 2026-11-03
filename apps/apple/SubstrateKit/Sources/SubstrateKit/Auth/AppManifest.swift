@@ -12,6 +12,13 @@ public struct AppManifest: Sendable {
     public var clientID: String
     public var scopes: [String]
     public var details: [AuthorizationDetail]
+    /// This build's version, sent as `software_version` on the authorization
+    /// request (RFC 7591's name) and as `softwareVersion` in the set up
+    /// check: the server records it on the token beside the floors of the
+    /// `package` details, and holds an upgrade that would break this build
+    /// while it is connected (decision 0213). At most 64 printable
+    /// characters; the default is the bundle's short version and build.
+    public var softwareVersion: String
     /// What the server must be able to do: the requirement the app names,
     /// with every scope verb its scopes use and every detail type its
     /// required details use added, so a server that cannot take the request
@@ -63,18 +70,45 @@ public struct AppManifest: Sendable {
     public init(appName: String, clientID: String, scopes: [String], details: [AuthorizationDetail] = [],
                 requirement: ServerRequirement = ServerRequirement(), loopbackPath: String = "/oauth/callback",
                 claimedRedirect: URL? = nil, passwordFallback: PasswordFallback = .never, names: [String: String] = [:],
-                kindLabels: [String: KindLabel] = [:])
+                kindLabels: [String: KindLabel] = [:], softwareVersion: String = AppManifest.softwareVersion())
     {
         self.appName = appName
         self.clientID = clientID
         self.scopes = scopes
         self.details = details
+        self.softwareVersion = Self.softwareVersion(softwareVersion)
         named = requirement
         self.loopbackPath = loopbackPath
         self.claimedRedirect = claimedRedirect
         self.passwordFallback = passwordFallback
         self.names = names
         self.kindLabels = kindLabels
+    }
+
+    /// The build's version as the server records it: the bundle's
+    /// `CFBundleShortVersionString` and, in parentheses, its `CFBundleVersion`
+    /// where the two differ ("0.113.1 (20261021.153012)"); a bundle stamped
+    /// with neither is "unknown".
+    public static func softwareVersion(bundle: Bundle = .main) -> String {
+        let short = (bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+        let build = (bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+        switch (short.isEmpty, build.isEmpty) {
+        case (false, false): return softwareVersion(short == build ? short : "\(short) (\(build))")
+        case (false, true): return softwareVersion(short)
+        case (true, false): return softwareVersion(build)
+        case (true, true): return "unknown"
+        }
+    }
+
+    /// The most the server stores: 64 characters, each printable and not a
+    /// line break, so a stamped value never refuses the request it rides on.
+    static let softwareVersionLimit = 64
+
+    static func softwareVersion(_ text: String) -> String {
+        let printable = text.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) && !CharacterSet.newlines.contains($0) }
+        let cut = String(String.UnicodeScalarView(printable)).trimmingCharacters(in: .whitespaces)
+        let trimmed = cut.count > softwareVersionLimit ? String(cut.prefix(softwareVersionLimit)) : cut
+        return trimmed.isEmpty ? "unknown" : trimmed
     }
 
     /// The client id a release build is stamped with under `infoKey`, else
@@ -147,20 +181,13 @@ public struct AppManifest: Sendable {
         return scopes.filter { askedThen.contains(resolve($0)) && !holds.contains(resolve($0)) }
     }
 
-    /// The request the check asks about for `session`: every detail, and
-    /// every scope but those the owner left out of the last approval. A scope
-    /// a later build adds is asked about.
-    ///
-    /// An agent detail whose `declare:` scope the owner left out is left out
-    /// too: the owner declined the agent, and asking again at every check
-    /// would bring back a review they already answered.
+    /// The request the check asks about for `session`: every detail, every
+    /// scope but those the owner left out of the last approval, and this
+    /// build's version. A scope a later build adds is asked about.
     public func check(for session: Session, metadata: AuthorizationServerMetadata? = nil) -> AuthorizationCheck {
         let leftOut = Set(leftOut(by: session))
-        let details = details(for: metadata).filter { detail in
-            guard let declare = detail.declareScope else { return true }
-            return !leftOut.contains(declare)
-        }
-        return AuthorizationCheck(scopes: scopes.filter { !leftOut.contains($0) }, details: details)
+        return AuthorizationCheck(scopes: scopes.filter { !leftOut.contains($0) }, details: details(for: metadata),
+                                  softwareVersion: softwareVersion)
     }
 
     /// How the app signs in to a server it probed.
