@@ -53,27 +53,50 @@ changed is listed at the end.
 | Bundle id     | `dev.reamde.substrate.chat` |
 | Display name  | Substrate Chat |
 | Minimum OS    | iOS 26, iPadOS 26, macOS 26 |
-| Dependencies  | SubstrateKit (the sign-in, the session, the status check, the record views); Markdown and speech are in-tree and the system's |
+| Dependencies  | ChatKit (`chat/ChatKit`: the list and its conversations on the kit's runtime, the fold, the words, what the device keeps) over the kit's portable libraries; SubstrateKit for the screens, the sign-in flow and the device services; speech is the system's |
 | Keychain      | service `dev.reamde.substrate.chat`, `AfterFirstUnlockThisDeviceOnly` |
 | macOS sandbox | network client, audio input |
-| Tests         | `SubstrateChatTests`, run on macOS (the rules are platform-free) |
+| Tests         | `ChatKitTests` (`swift test`, on the Mac and on Linux), and `SubstrateChatTests` for what only the Apple app holds |
 | Distribution  | `mise run apple:release:chat` to `<release folder>/chat/`, as Sync; listed on the internal catalogue |
 
 `mise run apple:build:chat` builds both platforms, `apple:sim:chat` runs the
-iOS app on a simulator, `apple:test:chat` runs the tests.
+iOS app on a simulator, `apple:test:chat` runs ChatKit's tests and then the
+app target's, and `apps:test:linux` runs ChatKit's on Linux.
 
 ## Architecture
 
 ```text
+ChatKit/Sources/ChatKit/      no UI framework; builds for Linux and Android
+  ChatApp/       the root under the kit's link: the list, the agents, the cards, the rows, the watch, the device's folder
+  Conversation/  one chat, a child of the list: the run, the overlay, Stop, the delivery check, the poll
+  Model/         the transcript fold and the live overlay, the notices, the agents and threads, the tool words, Markdown blocks
+  API/           the agent streams over the kit's line stream, errors as values
+  Local/         the cache folder (ChatStorage over the kit's RepositoryFolder), the owner's choices
+  Presentation/  every value the app draws: the list, a conversation's screen, its turns and cards, Settings
 apple/Sources/
-  App/       the app, scenes, commands, session lifecycle, notifications, background, App Intents
-  API/       the HTTP client, the ndjson stream reader, the change-feed watch, errors, a JSON value
-  Model/     records, agents, providers, threads, the transcript fold and live overlay, cards, words
-  Store/     ChatStore, Conversation (one chat's run), DiskCache, Preferences
+  App/       ChatHost (the one PresentationModel; the browser sign-in, Change Access, the password door), the device services, App Intents
+  Views/     the split view, the list, the conversation, the composer, cards, settings, sign-in: presentations drawn, commands sent
+  Markdown/  the blocks as SwiftUI, inline spans through `AttributedString`
   Voice/     Dictation: SpeechAnalyzer + SpeechTranscriber over AVAudioEngine
-  Markdown/  a block parser and its SwiftUI renderer, streaming-safe
-  Views/     the split view, the list, the conversation, the composer, cards, settings, sign-in
 ```
+
+**On the kit's runtime** (docs/plans/app-kit.md §5.2, the composition proof).
+The kit's `LinkController<ChatApp>` is the root: the session and its
+revocations, the status check and connectivity are the link's, and it keeps
+`ChatApp` as its one child. `ChatApp` keeps each `Conversation` as a child of
+its own, keyed by the id it minted for it. The views read one
+`PresentationModel`'s tree and send commands down a path of keys; a step that
+changes the list and a conversation publishes one tree.
+
+| What | Where it lives now |
+| ---- | ------------------ |
+| A turn's stream | `Conversation`'s `.sequence` effect under the key `run`: a send, an attach (its read, then the events), the handover read |
+| Streamed text | `Conversation.coalescing(of:)`: a delta or a piece of reasoning presents within 50 ms, structure at once |
+| The watch | the kit's `WatchFollower`, its cursor and the rows still to read again in the kit's `RecordCache` (`records/watch.json`) |
+| The cache | `ChatStorage` over the kit's `RepositoryFolder`, at the path every build used (`Application Support/SubstrateChat/<hash>/`): `state.json` and `drafts.json` adopted at the top, transcripts moved from `messages/` into the cache area, bounded by age and budget |
+| Notifications | the kit's `Notifications` device service: scheduled, cancelled and badged as effects; a tap is a command |
+| Background | the kit's `BackgroundWork` device service: the refresh job's runs, and continued processing for a streaming turn |
+| The owner's choices | `ChatPreferences`, kept in UserDefaults under the keys every build used |
 
 ### The API, as this app uses it
 
@@ -149,10 +172,21 @@ read again, and what it says is shown.
 
 ### The store and its concurrency rules
 
-`ChatStore` is one `@Observable` object on the main actor for the whole
-process; every window reads it. It holds agents, providers, the chat list,
-each thread's rows, the pending questions and suggestions, and the
-`Conversation`s.
+`ChatApp` is the one chat list for the whole process; every window reads its
+tree. It holds agents, providers, the chat list, each thread's rows, the
+pending questions and suggestions, and the conversations as its children.
+Each rule below is now the runtime's behaviour or an engine's step, and has a
+test by its number in `ChatKit/Tests/ChatKitTests/RuleTests.swift`:
+
+| Rule | Where it lives | Its test |
+| ---- | -------------- | -------- |
+| 1 | `ChatApp.Command.show`/`newChat` mint the child's key; the conversation's `named` event reaches the list through `event(fromChild:_:after:)`, which binds the thread and drops any other conversation on it (`ChatAppEngine.reported`) | `rule1_aConversationIsKeyedByItsClientIDAndTheThreadEventBindsIt` |
+| 2 | the stream runs under the key `run`; `Conversation`'s `opened` step starts nothing while a run is active | `rule2_oneStreamPerConversation` |
+| 3 | the conversation's ownership reaches the list with each of its events; `load` refuses an owned thread and `rowsRead` drops one, while a conversation's own reads publish | `rule3_noRowsPublishUnderALiveOverlay` |
+| 4 | `ChatAppState.readEpochs`, carried by every read and prefetch and moved by a send, an attach, a settle and a binding, which also cancel the read under `read:<thread>` | `rule4_aReadIsDroppedWhenItsThreadsEpochMoved` |
+| 5 | the runtime's key epochs: a new run restarts `run` and cancels `retry`, `poll`, `pollTimer`, `stop`, `stopWait` and `check`, so a late result is dropped | `rule5_aNewRunDropsWhatAnOlderRunStillDelivers` |
+| 6 | the runtime's controller generation: `ChatApp.resetting(of:on:)` starts the list over when the link's repository changes or is gone, closing every conversation; the folder is closed (deleted on Sign Out) and the notifications removed | `rule6_aSignOutDropsEverythingStillOnItsWay` |
+| 7 | `ChatAppState.isCurrent` | `rule7_cachedRowsAreCurrentOnlyWhileTheirThreadIsSettledAndUnmoved` |
 
 1. **A conversation is keyed by a client UUID**, never by an agent. A new
    chat has a UUID and no thread; the `thread` event binds it, atomically
@@ -182,7 +216,9 @@ each thread's rows, the pending questions and suggestions, and the
 
 **The handover** (as the console): on `done`, the rows are read under a new
 epoch; when they land, they replace the overlay in the same update, so the
-transcript never blinks. A read that fails or outlasts 15 s keeps the
+transcript never blinks: the conversation's `handedOver` step clears the
+overlay and the list publishes the rows inside the same step of one tree
+(`aSendStreamsThenHandsOverInOneStepWithoutDoubling`). A read that fails or outlasts 15 s keeps the
 overlay, releases the composer and offers Try Again.
 
 **Unknown delivery.** The app waits a second and reads.
@@ -202,8 +238,9 @@ redraw the transcript hundreds of times a second.
 
 ### Caching: why everything is instant
 
-`DiskCache` is an actor writing JSON under Application Support, one
-directory per signed-in identity (server and repository, hashed). On iOS the
+`ChatStorage` writes JSON under Application Support through the kit's
+`RepositoryFolder`, one directory per signed-in identity (server and
+repository, hashed), the directory every build has used. On iOS the
 files are `completeUntilFirstUserAuthentication` (the Keychain item's class),
 and the directory is excluded from backup: all of it is the server's and can
 be read again.
@@ -211,7 +248,8 @@ be read again.
 | File | Holds |
 | ---- | ----- |
 | `state.json` | format version, agents, providers, the chat list, opening lines, pending cards, read marks, the notified set, the feed cursor |
-| `messages/<thread>.json` | one thread's rows, the thread `version` they were read under, and whether the window was full |
+| `cache/<thread>.json` | one thread's rows, the thread `version` they were read under, and whether the window was full (in `messages/` before ChatKit; moved at the first open) |
+| `records/watch.json` | the watch's cursor and the rows it marked to read again (the kit's `RecordCache`); the cursor `state.json` kept before ChatKit is read into it once |
 | `drafts.json` | each chat's unsent draft |
 
 - **Launch** decodes `state.json` (small: rows a list needs) before the
@@ -226,7 +264,9 @@ be read again.
 - **Writes are behind**: atomic, coalesced per file, off the main actor,
   each tagged with the session epoch.
 - **Bounded**: transcripts of chats not opened in 60 days, and the oldest
-  past 100 MB, are dropped. Settings → Storage shows the size and clears it.
+  past 100 MB, are dropped. Settings → Storage shows each area's size, the
+  transcripts against the budget, and clears them (the kit's Storage rows:
+  "Saved copies", "Clear Saved Copies").
 - **The live feed** runs while a scene is active (and while the Mac app
   runs): kinds thread, message, agent, provider, interaction and request. It
   resumes from the list read's `head` and `generation` (taken before the
@@ -569,19 +609,23 @@ may do and for how long; the app never sees the password.
 
 ## Testing
 
-- Unit tests (`mise run apple:test:chat`, on the Mac): the transcript fold
+- Unit tests (`mise run apple:test:chat`, on the Mac; ChatKit's also on
+  Linux, `mise run apps:test:linux`): the transcript fold
   and the live overlay against the console's cases (pairing by id, orphans,
   compaction, reasoning), ndjson and watch lines (heartbeats, garbage,
   terminal frames), replay dropping by set membership, the Markdown parser on
   every prefix of a document, previews, titles and day groups, the tool words
   and path encoding.
-- The store's rules against a scripted server (`ScriptedServer`, a
-  `URLProtocol` the API's sessions take in tests): a send streams and hands
+- The list's rules against a scripted server (`ChatServer`, a transport
+  that holds a stream part way), through the kit's `ControllerHarness`, each
+  of the seven by its number: a send streams and hands
   over without doubling; no read publishes under a live overlay; a refusal
   gives the text back and nothing runs; a gateway's answer is unknown
   delivery, never a refusal, and nothing is sent again; older rows never
   replace newer ones; a closed session publishes nothing; a window leaving
-  keeps a conversation another window shows.
+  keeps a conversation another window shows; the cache folder a build
+  before ChatKit wrote reads after the upgrade (`DiskTests.swift`, over a
+  fixture of that format).
 - A run against the dev substrate (`mise run dev`) with a model stub: sign
   in, the list, Markdown, streaming, a tool call, a question answered and the
   agent resumed, Stop, a new chat, Settings.
