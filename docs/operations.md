@@ -1718,9 +1718,6 @@ who holds the database, the data root and the credential key alike
 ([the checksum](changelog.md#the-checksum-and-the-segment-files)).
 Each of those is a deliberate absence, not an oversight.
 
-Next: [the live tests](testing.md), the one suite that talks to real LLM
-providers.
-
 ## Publisher refresh
 
 A minute after boot and every 24 hours, the server checks the authority
@@ -1734,3 +1731,6 @@ A failed lookup or a removed document leaves the installed package intact.
 The catalog's upgrade offer reports the reason. Local authority documents
 use closure paths relative to the document directory; absolute paths,
 parent-directory escapes and symlinks escaping that directory are refused.
+
+Next: [the live tests](testing.md), the one suite that talks to real LLM
+providers.

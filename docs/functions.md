@@ -416,9 +416,13 @@ metadata block, and the runner provisions a cached virtual environment with
 `uv` at registration:
 
 ```python
+
 # /// script
+
 # dependencies = ["google-api-python-client"]
+
 # requires-python = ">=3.11"
+
 # ///
 ```
 
@@ -761,6 +765,7 @@ override where the kind binds `override`.
 page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"],
                          where={"at": {"gte": "2026-09-24T00:00:00Z",
                                        "lt": "2026-09-25T00:00:00Z"}})
+
 # page["records"]: [{"id": "abc_20260924T130000Z", "computed": True, ...}, ...]
 ```
 
@@ -788,6 +793,7 @@ trip like any other. A larger `budget.maxBuckets` does not help, because it
 is lowered again; a larger `permissions.reads.budgets.rows` does.
 
 ```python
+
 # permissions.reads.kinds grants observations/trace and observations/metric
 res = host.records.aggregate({
     "filter": {"kinds": ["substrate.reamde.dev/observations/trace"]},
@@ -798,6 +804,7 @@ res = host.records.aggregate({
         "reducers": [{"percentile": 0.05}, "min"],
     },
 })
+
 # res["rows"]: [{"start": "2026-09-01T00:00:00+03:00", "values": [...], ...}, ...]
 ```
 
@@ -1685,9 +1692,6 @@ write scopes cover the function's reach ([apps](apps.md#run-functions)).
 The trigger rows are ordinary records, so `get` / `apply` / `delete` edit
 them like anything else.
 
-Next: [agents](agents.md), callables whose body is an LLM loop.
-
-
 ### Code from outside authorities
 
 A package installed from an authority document carries `publishedFrom` on
@@ -1695,9 +1699,10 @@ its package record. Its functions reach only exact DNS hosts and wildcard
 suffixes (`*.example.com`) in `permissions.network`. No declaration means
 no network. Binary-shipped functions retain the destination rules above.
 
-Outside bodies use the supplied `HTTP_PROXY` and `HTTPS_PROXY` settings.
-Their clients must honor those settings or speak HTTP CONNECT. Direct IP
-connections, DNS sockets and datagram sockets are refused. The proxy checks
+Outside bodies reach the network only through the proxy named by the
+supplied `HTTP_PROXY` and `HTTPS_PROXY` settings, so their clients must
+honor those settings; an HTTPS request goes through it as HTTP CONNECT.
+Direct IP connections, DNS sockets and datagram sockets are refused. The proxy checks
 hostnames before resolution and applies the deployment-address deny rules
 to every resolved dial. `SUBSTRATE_SANDBOX_EGRESS_ALLOW` permits a declared
 host to resolve to a private address; it never grants an undeclared host.
@@ -1711,3 +1716,5 @@ provider the package connects to, independently of the publisher's domain.
 
 Upgrade reviews show changed function source and permissions, agent and
 mapping declarations, shared modules, triggers and OAuth metadata.
+
+Next: [agents](agents.md), callables whose body is an LLM loop.
