@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 )
 
@@ -97,6 +98,42 @@ type llmMessage struct {
 	Role    string `json:"role"`
 	Name    string `json:"name"`
 	Content string `json:"content"`
+}
+
+// User turns may carry text and context as separate content parts. Preserve
+// both; the delivery envelope is the first JSON value before the context.
+func (m *llmMessage) UnmarshalJSON(raw []byte) error {
+	var wire struct {
+		Role    string          `json:"role"`
+		Name    string          `json:"name"`
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return err
+	}
+	m.Role, m.Name = wire.Role, wire.Name
+	if len(wire.Content) == 0 || string(wire.Content) == "null" {
+		return nil
+	}
+	if wire.Content[0] == '"' {
+		return json.Unmarshal(wire.Content, &m.Content)
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(wire.Content, &parts); err != nil {
+		return err
+	}
+	var texts []string
+	for _, part := range parts {
+		if part.Type != "text" {
+			return fmt.Errorf("unsupported stub content part %q", part.Type)
+		}
+		texts = append(texts, part.Text)
+	}
+	m.Content = strings.Join(texts, "\n")
+	return nil
 }
 
 type llmTurn struct {
@@ -255,7 +292,7 @@ func (r llmReq) envelope() map[string]any {
 	for _, m := range r.Messages {
 		if m.Role == "user" {
 			var env map[string]any
-			if json.Unmarshal([]byte(m.Content), &env) == nil {
+			if json.NewDecoder(strings.NewReader(m.Content)).Decode(&env) == nil {
 				return env
 			}
 			return nil

@@ -10,6 +10,8 @@ package e2e
 // row; nothing fires it again.
 
 import (
+	"bufio"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -486,7 +488,18 @@ func xeParked(c *C) {
 // request until its body is whole, and a body that never completes would
 // never leave the client.
 func xeWebhookBusy(c *C) {
-	hook := "/webhooks/" + url.PathEscape(c.r.authority) + "/xe-no-such-trigger"
+	const trigger = "xe-busy"
+	key := rand.Text()
+	c.putTrigger(trigger, map[string]any{
+		"enabled":  true,
+		"source":   map[string]any{"webhook": map[string]any{"key": key}},
+		"callable": "substrate.reamde.dev/core/function/" + xeFaulting,
+	})
+	defer func() {
+		status, raw := c.do(http.MethodPatch, triggerCollection+"/"+trigger, map[string]any{"properties": map[string]any{"enabled": false}}, nil)
+		c.requiref(status == http.StatusOK, "disabling webhook answered %d: %s", status, raw)
+	}()
+	hook := "/webhooks/" + url.PathEscape(c.r.authority) + "/" + trigger + "/" + url.PathEscape(key)
 	var held []net.Conn
 	release := func() {
 		for _, conn := range held {
@@ -498,12 +511,17 @@ func xeWebhookBusy(c *C) {
 	for range maxConcurrentWebhooks {
 		conn := xeDial(c)
 		held = append(held, conn)
-		// Declared longer than what is sent, so the handler holds its slot
-		// reading a body that never completes.
-		_, err := fmt.Fprintf(conn, "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\nContent-Length: 1024\r\n\r\n{", hook, xeHost(c))
+		// The 100 response proves admission before the next connection opens;
+		// without it, opening sockets alone does not prove the slots are held.
+		_, err := fmt.Fprintf(conn, "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\nContent-Length: 1024\r\nExpect: 100-continue\r\n\r\n", hook, xeHost(c))
 		c.requiref(err == nil, "writing a held delivery: %v", err)
+		c.requiref(conn.SetReadDeadline(time.Now().Add(10*time.Second)) == nil, "setting held delivery deadline")
+		response, err := http.ReadResponse(bufio.NewReader(conn), nil)
+		c.requiref(err == nil, "waiting for webhook body admission: %v", err)
+		_ = response.Body.Close()
+		c.requiref(response.StatusCode == http.StatusContinue, "held webhook answered %d before its body, want 100", response.StatusCode)
 	}
-	c.stepf("opened %d webhook deliveries whose bodies stop after one byte", maxConcurrentWebhooks)
+	c.stepf("opened %d admitted webhook deliveries whose bodies have not arrived", maxConcurrentWebhooks)
 
 	probe := func() (int, http.Header, []byte) {
 		return xeRaw(c, c.r.hc, "", http.MethodPost, hook, strings.NewReader(`{}`), -1, map[string]string{"Content-Type": "application/json"})
@@ -525,7 +543,7 @@ func xeWebhookBusy(c *C) {
 	for {
 		status, _, raw := probe()
 		if status != http.StatusServiceUnavailable {
-			xeRequireError(c, "a delivery after the door reopened", status, raw, http.StatusNotFound, "not_found")
+			c.requiref(status == http.StatusAccepted, "a delivery after the door reopened answered %d: %s", status, raw)
 			return
 		}
 		c.requiref(time.Now().Before(deadline), "the webhook door stayed busy after the held deliveries were released")

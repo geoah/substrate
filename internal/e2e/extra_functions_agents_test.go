@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"os"
 	"strings"
 	"sync/atomic"
 
@@ -447,6 +448,9 @@ func xfFetch(c *C, name, target string) xfFetched {
 }
 
 func xfCaseFunctionEgress(c *C) {
+	if platform := os.Getenv("SUBSTRATE_E2E_SERVER_OS"); platform != "" && platform != "linux" {
+		c.skipf("the server runs on %s; FN-04 requires Linux seccomp and Landlock confinement", platform)
+	}
 	loop := newXfCountingServer(nil)
 	defer loop.srv.Close()
 	// The grant names the address the counting server really listens on:
