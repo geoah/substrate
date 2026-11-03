@@ -23,6 +23,17 @@ dist/
 /apps/kit/.swiftpm/
 /apps/workouts/WorkoutsKit/.build/
 /apps/workouts/WorkoutsKit/.swiftpm/
+/apps/kit/Tools/BridgeGen/.build/
+/apps/kit/Tools/BridgeGen/.swiftpm/
+# The Android build: Gradle's caches and every module's output.
+/apps/gradle/.gradle/
+/apps/gradle/.kotlin/
+/apps/gradle/build/
+/apps/gradle/build-logic/.gradle/
+/apps/gradle/build-logic/.kotlin/
+/apps/gradle/build-logic/build/
+/apps/gradle/local.properties
+/apps/kit/android/*/build/
 
 # Editors / OS
 .DS_Store
