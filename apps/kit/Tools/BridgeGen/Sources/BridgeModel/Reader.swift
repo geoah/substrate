@@ -16,6 +16,9 @@ public struct Reader {
     static let reservedCaseNames: Set<String> = ["name", "ordinal", "entries", "values", "valueOf", "Companion"]
 
     private var pending: [(declaration: Declaration, location: String, scope: [String], raw: RawDeclaration)] = []
+    /// What extensions write that would change a type's coding, by the type
+    /// they extend: refused once every file is read, for the bridged ones.
+    private var extensionCoding: [(extended: String, location: String, what: String)] = []
     public private(set) var errors: [ModelError] = []
 
     public init() {}
@@ -27,6 +30,7 @@ public struct Reader {
         let visitor = Visitor(module: module, path: path, converter: converter)
         visitor.walk(tree)
         pending += visitor.found
+        extensionCoding += visitor.extensionCoding
         errors += visitor.errors
     }
 
@@ -38,6 +42,14 @@ public struct Reader {
                 errors.append(ModelError(location: item.location, message: "\(item.declaration.name) is declared Bridged twice (also \(other))"))
             }
             names[item.declaration.name] = item.location
+        }
+        // An extension in any file read writes the coding of the type it
+        // names; a module-qualified name is the same type.
+        for item in extensionCoding {
+            let parts = item.extended.split(separator: ".").map(String.init)
+            let candidates = [item.extended] + (parts.count > 1 ? [parts.dropFirst().joined(separator: ".")] : [])
+            guard let name = candidates.first(where: { names[$0] != nil }) else { continue }
+            errors.append(ModelError(location: item.location, message: "\(name) \(item.what) in an extension; a bridged value keeps the synthesized coding"))
         }
         var declarations: [Declaration] = []
         for item in pending {
@@ -141,6 +153,7 @@ private final class Visitor: SyntaxVisitor {
     let converter: SourceLocationConverter
     var scope: [String] = []
     var found: [(declaration: Declaration, location: String, scope: [String], raw: RawDeclaration)] = []
+    var extensionCoding: [(extended: String, location: String, what: String)] = []
     var errors: [ModelError] = []
 
     init(module: String, path: String, converter: SourceLocationConverter) {
@@ -180,11 +193,22 @@ private final class Visitor: SyntaxVisitor {
 
     override func visitPost(_: ActorDeclSyntax) { scope.removeLast() }
 
+    /// Protocols whose extension's coding would reach every bridged value.
+    static let codingProtocols: Set<String> = ["Bridged", "Encodable", "Decodable", "Codable"]
+
     override func visit(_ node: ExtensionDeclSyntax) -> SyntaxVisitorContinueKind {
+        let extended = node.extendedType.trimmedDescription
         if Self.inherits(node.inheritanceClause).contains("Bridged") {
-            refuse(node, "\(node.extendedType.trimmedDescription) conforms to Bridged in an extension; conform where it is declared, where Codable is synthesized")
+            refuse(node, "\(extended) conforms to Bridged in an extension; conform where it is declared, where Codable is synthesized")
         }
-        scope.append(node.extendedType.trimmedDescription)
+        for (member, what) in Self.handwritten(node.memberBlock) {
+            if Self.codingProtocols.contains(extended) {
+                refuse(member, "an extension of \(extended) \(what), which would replace every bridged value's synthesized coding")
+            } else {
+                extensionCoding.append((extended, location(member), what))
+            }
+        }
+        scope.append(extended)
         return .visitChildren
     }
 
@@ -194,13 +218,20 @@ private final class Visitor: SyntaxVisitor {
         if Self.inherits(node.inheritanceClause).contains("Bridged") {
             if node.genericParameterClause != nil { refuse(node, "\(node.name.text) is generic; a bridged value is not") }
             let name = (scope + [node.name.text]).joined(separator: ".")
-            checkHandwritten(node.memberBlock, name)
+            for (member, what) in Self.handwritten(node.memberBlock) { refuse(member, "\(name) \(what)") }
             var fields: [RawField] = []
             for member in node.memberBlock.members {
                 if member.decl.is(IfConfigDeclSyntax.self) { refuse(member, "\(name) has a member under #if; a bridged value is the same everywhere") }
                 guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
                 if variable.modifiers.contains(where: { $0.name.tokenKind == .keyword(.static) || $0.name.tokenKind == .keyword(.class) }) { continue }
                 let isLet = variable.bindingSpecifier.tokenKind == .keyword(.let)
+                // A property wrapper encodes as the wrapper does, not as the
+                // type written; no attribute on a stored property is in the model.
+                if let attribute = variable.attributes.first?.as(AttributeSyntax.self) {
+                    let names = variable.bindings.compactMap { $0.pattern.as(IdentifierPatternSyntax.self)?.identifier.text }
+                    refuse(variable, "\(name).\(names.joined(separator: ", ")) is marked \(attribute.trimmedDescription); a property wrapper changes the synthesized coding")
+                    continue
+                }
                 for binding in variable.bindings {
                     if let accessors = binding.accessorBlock {
                         // A computed property is not encoded; observers do not change that a stored one is.
@@ -238,7 +269,7 @@ private final class Visitor: SyntaxVisitor {
         if inherited.contains("Bridged") {
             let name = (scope + [node.name.text]).joined(separator: ".")
             if node.genericParameterClause != nil { refuse(node, "\(name) is generic; a bridged value is not") }
-            checkHandwritten(node.memberBlock, name)
+            for (member, what) in Self.handwritten(node.memberBlock) { refuse(member, "\(name) \(what)") }
             let rawType = inherited.first
             let stringRaw = rawType == "String"
             if let rawType, !stringRaw, ["Int", "Double", "Character", "UInt8"].contains(rawType) {
@@ -284,22 +315,25 @@ private final class Visitor: SyntaxVisitor {
     override func visitPost(_: EnumDeclSyntax) { scope.removeLast() }
 
     /// Hand-written coding is outside the model: the Kotlin is generated
-    /// from what the synthesized coding writes.
-    private func checkHandwritten(_ members: MemberBlockSyntax, _ name: String) {
-        for member in members.members {
-            if let nested = member.decl.as(EnumDeclSyntax.self), nested.name.text == "CodingKeys" {
-                refuse(member, "\(name) declares CodingKeys; a bridged value keeps the synthesized coding")
-            }
-            if let function = member.decl.as(FunctionDeclSyntax.self), function.name.text == "encode",
+    /// from what the synthesized coding writes. Each member that writes
+    /// some, and what it does, in words that follow the type's name.
+    static func handwritten(_ members: MemberBlockSyntax) -> [(MemberBlockItemSyntax, String)] {
+        members.members.compactMap { member in
+            let decl = member.decl
+            let named = decl.as(EnumDeclSyntax.self)?.name.text ?? decl.as(StructDeclSyntax.self)?.name.text
+                ?? decl.as(TypeAliasDeclSyntax.self)?.name.text ?? decl.as(ClassDeclSyntax.self)?.name.text
+            if named == "CodingKeys" { return (member, "declares CodingKeys") }
+            if let function = decl.as(FunctionDeclSyntax.self), function.name.text == "encode",
                function.signature.parameterClause.parameters.first?.firstName.text == "to"
             {
-                refuse(member, "\(name) writes its own encode(to:)")
+                return (member, "writes its own encode(to:)")
             }
-            if let initializer = member.decl.as(InitializerDeclSyntax.self),
+            if let initializer = decl.as(InitializerDeclSyntax.self),
                initializer.signature.parameterClause.parameters.first?.firstName.text == "from"
             {
-                refuse(member, "\(name) writes its own init(from:)")
+                return (member, "writes its own init(from:)")
             }
+            return nil
         }
     }
 

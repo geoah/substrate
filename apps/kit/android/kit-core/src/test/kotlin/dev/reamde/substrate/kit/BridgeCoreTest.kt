@@ -7,11 +7,13 @@ import dev.reamde.substrate.kit.bridge.BridgeJson
 import dev.reamde.substrate.kit.bridge.DNSAnswer
 import dev.reamde.substrate.kit.bridge.DeviceRequest
 import dev.reamde.substrate.kit.bridge.Envelope
+import dev.reamde.substrate.kit.bridge.EnvironmentUpdate
 import dev.reamde.substrate.kit.bridge.Handle
 import dev.reamde.substrate.kit.bridge.ListMessage
 import dev.reamde.substrate.kit.bridge.ListRow
 import dev.reamde.substrate.kit.bridge.Op
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.concurrent.thread
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -35,10 +37,12 @@ class BridgeCoreTest {
     private class FakeSwift {
         val posted = CopyOnWriteArrayList<Envelope>()
         var refuse: (Envelope) -> Boolean = { false }
+        var onPost: (Envelope) -> Unit = {}
 
         fun post(text: String): String {
             val envelope = BridgeJson.decodeFromString(Envelope.serializer(), text)
             posted += envelope
+            onPost(envelope)
             val reply = when {
                 refuse(envelope) -> Envelope(1, Op.error, body = BridgeJson.encodeToJsonElement(BridgeFailure.serializer(), BridgeFailure(BridgeFailure.Code.unknownCall, "no")))
                 envelope.op == Op.open -> Envelope(1, Op.opened, handle = Handle(1, 1))
@@ -169,5 +173,88 @@ class BridgeCoreTest {
         core.receive("""{"v":1,"op":"presentation","handle":{"id":9,"generation":1},"body":1}""")
         assertEquals(2L, core.failureCount)
         assertNull(null)
+    }
+
+    @Test
+    fun aPresentationSwiftDeliversBeforeOpenReturnsIsKept() = runTest {
+        val swift = FakeSwift()
+        val core = core(swift)
+        var delivering: Thread? = null
+        // Swift's outbox delivers the root's first presentation from its own
+        // thread while `post(open)` has not yet returned, as an idle screen
+        // that presents only at open does.
+        swift.onPost = { envelope ->
+            if (envelope.op == Op.open) {
+                delivering = thread {
+                    deliver(core, Envelope(1, Op.presentation, handle = Handle(1, 1), body = JsonPrimitive("first")))
+                }
+                delivering!!.join(200)
+            }
+        }
+        val handle = core.open("idle").getOrThrow()
+        delivering!!.join(5_000)
+        assertEquals(JsonPrimitive("first"), handle.state.value.presentation)
+        assertEquals(0L, core.failureCount)
+    }
+
+    @Test
+    fun aStreamsOwnFailureCrossesAsItsCodeAndAValueSwiftRefusedIsDiscarded() = runTest {
+        val swift = FakeSwift()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val discarded = CopyOnWriteArrayList<JsonElement>()
+        val core = core(swift) { request ->
+            when (request) {
+                DeviceRequest.ConnectivityWatch -> DeviceAnswer.Stream(dispatcher, flow {
+                    emit(JsonPrimitive(1))
+                    throw BridgeException(BridgeFailure(BridgeFailure.Code.overflow, "too fast"))
+                })
+                else -> DeviceAnswer.Value(dispatcher, discard = { discarded += it }) { JsonPrimitive("a file") }
+            }
+        }
+        deliver(core, Envelope(1, Op.request, id = 1, body = request(DeviceRequest.ConnectivityWatch)))
+        advanceUntilIdle()
+        val error = swift.posted.last { it.id == 1L }
+        assertEquals(Op.error, error.op)
+        assertEquals(BridgeFailure.Code.overflow, BridgeJson.decodeFromJsonElement(BridgeFailure.serializer(), error.body!!).code)
+
+        // Swift refuses the reply (its call was cancelled first): what it owned is this side's.
+        swift.refuse = { it.op == Op.reply }
+        deliver(core, Envelope(1, Op.request, id = 2, body = request(DeviceRequest.ConnectivityCurrent)))
+        advanceUntilIdle()
+        assertEquals(listOf<JsonElement>(JsonPrimitive("a file")), discarded.toList())
+    }
+
+    @Test
+    fun aValueMadeAsItsCallIsCancelledIsDiscarded() = runTest {
+        val swift = FakeSwift()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val discarded = CopyOnWriteArrayList<JsonElement>()
+        val made = CompletableDeferred<Unit>()
+        val core = core(swift) {
+            DeviceAnswer.Value(dispatcher, discard = { discarded += it }) {
+                made.complete(Unit)
+                JsonPrimitive("made")
+            }
+        }
+        deliver(core, Envelope(1, Op.request, id = 5, body = request(DeviceRequest.ConnectivityCurrent)))
+        // Cancelled between the block's return and the reply.
+        testScheduler.runCurrent()
+        deliver(core, Envelope(1, Op.cancel, id = 5))
+        advanceUntilIdle()
+        assertTrue(made.isCompleted)
+        if (swift.posted.none { it.id == 5L && it.op == Op.reply }) {
+            assertEquals(listOf<JsonElement>(JsonPrimitive("made")), discarded.toList())
+        }
+        assertEquals(0, core.runningCalls)
+    }
+
+    @Test
+    fun anEnvironmentUpdateIsPosted() = runTest {
+        val swift = FakeSwift()
+        val core = core(swift)
+        core.environment(EnvironmentUpdate("el-GR", "Europe/Athens")).getOrThrow()
+        val posted = swift.posted.last()
+        assertEquals(Op.environment, posted.op)
+        assertEquals(EnvironmentUpdate("el-GR", "Europe/Athens"), BridgeJson.decodeFromJsonElement(EnvironmentUpdate.serializer(), posted.body!!))
     }
 }

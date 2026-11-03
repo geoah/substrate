@@ -37,6 +37,22 @@ public struct StartConfig: Bridged, Equatable {
     }
 }
 
+/// The device's settings that change while the process runs, posted by
+/// Kotlin (`environment`) when Android broadcasts a new locale or time zone.
+/// The resource folder is not among them: it is copied out once per
+/// install, and an update to the app starts a new process.
+public struct EnvironmentUpdate: Bridged, Equatable {
+    /// A BCP 47 tag, as `StartConfig.locale`.
+    public var locale: String
+    /// A time zone id, as `StartConfig.timeZone`.
+    public var timeZone: String
+
+    public init(locale: String, timeZone: String) {
+        self.locale = locale
+        self.timeZone = timeZone
+    }
+}
+
 /// What `start` came to. A failure is terminal for the process: the app
 /// shows it as a problem, and every later message is refused `notStarted`.
 public enum StartAnswer: Bridged, Equatable {
@@ -45,7 +61,7 @@ public enum StartAnswer: Bridged, Equatable {
 }
 
 /// The device's settings a root's environment carries, from `StartConfig`.
-public struct BridgeEnvironment: Sendable {
+public struct BridgeEnvironment: Sendable, Equatable {
     public let locale: Locale
     public let timeZone: TimeZone
     /// Where the Swift packages' resource bundles are, one
@@ -66,12 +82,27 @@ public struct BridgeEnvironment: Sendable {
 
     init(_ config: StartConfig) {
         locale = Locale(identifier: config.locale)
-        timeZone = TimeZone(identifier: config.timeZone) ?? TimeZone(secondsFromGMT: 0) ?? .current
+        timeZone = Self.timeZone(config.timeZone)
         resources = URL(fileURLWithPath: config.resources, isDirectory: true)
         data = URL(fileURLWithPath: config.data, isDirectory: true)
         cache = URL(fileURLWithPath: config.cache, isDirectory: true)
         sdk = config.sdk
     }
+
+    /// This environment with `update`'s locale and time zone.
+    func updated(_ update: EnvironmentUpdate) -> BridgeEnvironment {
+        BridgeEnvironment(locale: Locale(identifier: update.locale), timeZone: Self.timeZone(update.timeZone), resources: resources,
+                          data: data, cache: cache, sdk: sdk)
+    }
+
+    private static func timeZone(_ id: String) -> TimeZone {
+        TimeZone(identifier: id) ?? TimeZone(secondsFromGMT: 0) ?? .current
+    }
+
+    /// Where the transport writes a body too large for a message, and Kotlin
+    /// a response's: under `noBackupFilesDir`, since a body may hold the
+    /// owner's records, and swept by Kotlin at every start.
+    public var spill: URL { data.appendingPathComponent("bridge", isDirectory: true) }
 
     /// A package's resources: what `Bundle.module` would be anywhere but
     /// Android. `bundle(package: "SubstrateKit", target: "SubstrateBridgeCheck")`.

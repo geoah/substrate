@@ -125,14 +125,14 @@ public actor CheckRoot: BridgeRoot {
             var request = URLRequest(url: url)
             request.timeoutInterval = 20
             let transport: any HTTPTransport = switch via {
-            case .bridge: BridgeTransport(channel: context.device, folder: context.environment.cache.appendingPathComponent("bridge"))
+            case .bridge: BridgeTransport(channel: context.device, folder: context.environment.spill)
             case .urlSession: URLSessionTransport.shared
             }
             let (data, response) = try await transport.data(for: request)
             return ok("\(response.statusCode) \(data.count) bytes")
         case let .lines(url, delay, capacity):
             guard let url = URL(string: url) else { return .failed(name: name, detail: "not a URL") }
-            let transport = BridgeTransport(channel: context.device, folder: context.environment.cache)
+            let transport = BridgeTransport(channel: context.device, folder: context.environment.spill)
             let (head, lines) = try await transport.lines(for: URLRequest(url: url), capacity: capacity)
             var count = 0
             for try await _ in lines {
@@ -159,7 +159,7 @@ public actor CheckRoot: BridgeRoot {
             case let .failed(words): return ok("failed \(words)")
             }
         case .connectivity:
-            let path = try await BridgeConnectivity(channel: context.device).current()
+            let path = await BridgeConnectivity(channel: context.device).current()
             return ok("online \(path.online) expensive \(path.expensive)")
         case .hang:
             for try await _ in context.device.stream(.connectivityWatch, capacity: 1_000_000) {}
@@ -186,6 +186,12 @@ public actor CheckRoot: BridgeRoot {
     }
 }
 
+/// The root behind `idle`: it takes commands and does nothing with them.
+struct IdleRoot: BridgeRoot {
+    func receive(_: JSONValue) async throws {}
+    func close() async {}
+}
+
 /// The roots this library offers the bridge.
 @_cdecl("substrate_bridge_roots")
 public func substrate_bridge_roots(_ registry: UnsafeMutableRawPointer) {
@@ -195,6 +201,13 @@ public func substrate_bridge_roots(_ registry: UnsafeMutableRawPointer) {
 public extension CheckRoot {
     static func register(in registry: RootRegistry) {
         registry.register("check") { _, context in CheckRoot(context: context) }
+        // A screen with nothing to do: it presents once, as it opens, and
+        // never again, so a first presentation lost before Kotlin knew the
+        // handle would leave it blank for good.
+        registry.register("idle") { _, context in
+            context.present(CheckPresentation(step: 1, result: .ok(name: "idle", detail: "presented at open", millis: 0)))
+            return IdleRoot()
+        }
         registry.register("counter") { _, context in (Counter(), context.appEnvironment()) }
     }
 }

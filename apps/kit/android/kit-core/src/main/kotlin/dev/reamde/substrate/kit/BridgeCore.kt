@@ -6,6 +6,7 @@ import dev.reamde.substrate.kit.bridge.BridgeQuery
 import dev.reamde.substrate.kit.bridge.BridgeStats
 import dev.reamde.substrate.kit.bridge.DeviceRequest
 import dev.reamde.substrate.kit.bridge.Envelope
+import dev.reamde.substrate.kit.bridge.EnvironmentUpdate
 import dev.reamde.substrate.kit.bridge.Handle
 import dev.reamde.substrate.kit.bridge.ListMessage
 import dev.reamde.substrate.kit.bridge.Op
@@ -14,6 +15,7 @@ import dev.reamde.substrate.kit.bridge.ResyncRequest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -40,6 +42,14 @@ public class BridgeCore(
     }
 
     private val handles = ConcurrentHashMap<Long, Open>()
+
+    /**
+     * Held from posting `open` until its handle is registered here. Swift may
+     * deliver the handle's first presentation before `post` returns, from
+     * its own thread; a message for a handle not yet known waits on this, so
+     * an idle screen's only presentation is never dropped.
+     */
+    private val opening = Any()
     private val calls = ConcurrentHashMap<Long, Job>()
     private val queries = ConcurrentHashMap<Long, CompletableDeferred<JsonElement>>()
     private val queryIDs = AtomicLong(0)
@@ -50,14 +60,18 @@ public class BridgeCore(
 
     // MARK: Kotlin to Swift
 
-    public fun open(root: String, settings: JsonElement? = null): Result<BridgeHandle> {
+    public fun open(root: String, settings: JsonElement? = null): Result<BridgeHandle> = synchronized(opening) {
         val reply = send(Envelope(v = 1, op = Op.open, body = BridgeJson.encodeToJsonElement(OpenRequest.serializer(), OpenRequest(root, settings))))
             .getOrElse { return Result.failure(it) }
         val handle = reply.handle ?: return Result.failure(BridgeException(BridgeFailure(BridgeFailure.Code.malformed, "opened names no handle")))
         val open = Open(handle, MutableStateFlow(HandleSnapshot()))
         handles[handle.id] = open
-        return Result.success(BridgeHandle(handle, open.flow, this))
+        Result.success(BridgeHandle(handle, open.flow, this))
     }
+
+    /** The device's locale or time zone changed: every open root hears it. */
+    public fun environment(update: EnvironmentUpdate): Result<Unit> =
+        send(Envelope(v = 1, op = Op.environment, body = BridgeJson.encodeToJsonElement(EnvironmentUpdate.serializer(), update))).map { }
 
     internal fun command(handle: Handle, command: JsonElement): Result<Unit> =
         send(Envelope(v = 1, op = Op.command, handle = handle, body = command)).map { }
@@ -76,9 +90,9 @@ public class BridgeCore(
     }
 
     /** Posts one envelope; Swift's answer, or the failure it answered with. */
-    private fun send(envelope: Envelope, sensitive: Boolean = false): Result<Envelope> {
+    private fun send(envelope: Envelope, call: Redaction.Call = Redaction.Call.UNKNOWN): Result<Envelope> {
         val text = BridgeJson.encodeToString(Envelope.serializer(), envelope)
-        log?.invoke("in ${Redaction.redact(text, sensitive)}")
+        log?.invoke("in ${Redaction.redact(text, call)}")
         val reply = post(text) ?: return Result.failure(BridgeException(BridgeFailure(BridgeFailure.Code.jniFailure, "post answered nothing")))
         val answer = try {
             BridgeJson.decodeFromString(Envelope.serializer(), reply)
@@ -100,7 +114,9 @@ public class BridgeCore(
             log?.invoke("unreadable ${Redaction.redact(message)}")
             return
         }
-        log?.invoke("out ${Redaction.redact(message)}")
+        // Swift answers only Kotlin's queries, which carry no secret.
+        val call = if (envelope.id?.let { queries.containsKey(it) } == true) Redaction.Call.PUBLIC else Redaction.Call.UNKNOWN
+        log?.invoke("out ${Redaction.redact(message, call)}")
         when (envelope.op) {
             Op.presentation -> update(envelope.handle) { it.copy(presentation = envelope.body) }
             Op.list -> list(envelope)
@@ -129,7 +145,12 @@ public class BridgeCore(
     }
 
     /** The handle's state, unless it is closed or of another generation. */
-    private fun opened(handle: Handle?): Open? = handle?.let { handles[it.id] }?.takeIf { it.handle == handle }
+    private fun opened(handle: Handle?): Open? {
+        handle ?: return null
+        fun find() = handles[handle.id]?.takeIf { it.handle == handle }
+        // Not known yet: an open may be between Swift's answer and this side's registration.
+        return find() ?: synchronized(opening) { find() }
+    }
 
     private fun update(handle: Handle?, change: (HandleSnapshot) -> HandleSnapshot) {
         val open = opened(handle) ?: run {
@@ -179,35 +200,40 @@ public class BridgeCore(
             return
         }
         val sensitive = Redaction.carriesSecrets(request)
+        val call = if (sensitive) Redaction.Call.SECRET else Redaction.Call.PUBLIC
         val answer = try {
             services.answer(request)
         } catch (failure: Exception) {
             DeviceAnswer.Unsupported("the device services threw ${failure::class.java.simpleName}")
         }
         val answered = AtomicBoolean(false)
-        fun once(message: Envelope) {
-            if (answered.compareAndSet(false, true)) send(message, sensitive)
-        }
+
+        /** True when this was the answer and Swift took it. */
+        fun once(message: Envelope): Boolean = answered.compareAndSet(false, true) && send(message, call).isSuccess
         when (answer) {
             is DeviceAnswer.Unsupported ->
                 once(errorEnvelope(envelope, BridgeFailure(BridgeFailure.Code.unsupported, answer.reason)))
             is DeviceAnswer.Value -> launch(id) {
+                // Kept as soon as it is made: a cancel that lands after the
+                // block returned still leaves it this side's to discard.
+                val made = AtomicReference<JsonElement?>(null)
                 val body = try {
-                    withContext(answer.dispatcher) { answer.block() }
+                    withContext(answer.dispatcher) { answer.block().also { made.set(it) } }
                 } catch (cancelled: CancellationException) {
+                    made.get()?.let(answer.discard)
                     throw cancelled
                 } catch (failure: Exception) {
-                    once(errorEnvelope(envelope, kotlinFailure(failure, sensitive)))
+                    once(errorEnvelope(envelope, failureOf(failure, sensitive)))
                     return@launch
                 }
-                once(Envelope(v = 1, op = Op.reply, handle = envelope.handle, id = id, body = body))
+                if (!once(Envelope(v = 1, op = Op.reply, handle = envelope.handle, id = id, body = body))) answer.discard(body)
             }
             is DeviceAnswer.Stream -> launch(id) {
                 var seq = 0L
                 try {
                     withContext(answer.dispatcher) {
                         answer.values.collect { value ->
-                            val posted = send(Envelope(v = 1, op = Op.chunk, handle = envelope.handle, id = id, seq = seq++, body = value), sensitive)
+                            val posted = send(Envelope(v = 1, op = Op.chunk, handle = envelope.handle, id = id, seq = seq++, body = value), call)
                             // Swift refused it: the stream overflowed, or its reader went away.
                             if (posted.isFailure) throw CancellationException("Swift refused the chunk")
                         }
@@ -215,7 +241,7 @@ public class BridgeCore(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
-                    once(errorEnvelope(envelope, kotlinFailure(failure, sensitive)))
+                    once(errorEnvelope(envelope, failureOf(failure, sensitive)))
                     return@launch
                 }
                 once(Envelope(v = 1, op = Op.end, handle = envelope.handle, id = id))
@@ -237,8 +263,11 @@ public class BridgeCore(
         send(errorEnvelope(request, failure))
     }
 
-    /** A service's throw, by type alone where its message might hold a secret. */
-    private fun kotlinFailure(failure: Exception, sensitive: Boolean) = BridgeFailure(
+    /**
+     * A service's throw: the failure a `BridgeException` names (a stream's
+     * `overflow`), else by type alone where its message might hold a secret.
+     */
+    private fun failureOf(failure: Exception, sensitive: Boolean) = (failure as? BridgeException)?.failure ?: BridgeFailure(
         BridgeFailure.Code.kotlinException,
         if (sensitive) failure::class.java.simpleName else "${failure::class.java.simpleName}: ${failure.message}",
     )

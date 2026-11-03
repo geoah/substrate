@@ -3,9 +3,7 @@ import SubstrateCore
 
 /// JSON in and out of the bridge, one configuration for every message.
 public enum BridgeCodec {
-    /// An envelope whose body is any `Encodable` of the body's shape, so a
-    /// presentation is encoded once, straight into the message, rather than
-    /// into a `JSONValue` first.
+    /// An envelope whose body is any `Encodable` of the body's shape.
     struct Outgoing<Body: Encodable>: Encodable {
         var v = envelopeVersion
         var op: Op
@@ -18,12 +16,11 @@ public enum BridgeCodec {
     private struct NoBody: Encodable {}
 
     public static func encode(op: Op, handle: Handle? = nil, id: Int? = nil, seq: Int? = nil) -> String {
-        text(Outgoing<NoBody>(op: op, handle: handle, id: id, seq: seq, body: nil))
+        (try? text(Outgoing<NoBody>(op: op, handle: handle, id: id, seq: seq, body: nil))) ?? ""
     }
 
     public static func encode(op: Op, handle: Handle? = nil, id: Int? = nil, seq: Int? = nil, body: some Encodable) throws -> String {
-        let data = try encoder().encode(Outgoing(op: op, handle: handle, id: id, seq: seq, body: body))
-        return String(decoding: data, as: UTF8.self)
+        try text(Outgoing(op: op, handle: handle, id: id, seq: seq, body: body))
     }
 
     /// A message whose body is JSON encoded already, spliced in as it is
@@ -39,44 +36,43 @@ public enum BridgeCodec {
             ?? #"{"v":1,"op":"error","body":{"code":"swiftFailure","message":"an error could not be encoded"}}"#
     }
 
+    /// Read with `JSONValue(data:)` and `ValueCoding`, never `JSONDecoder`,
+    /// so a body keeps every digit of every number and its keys' order.
     public static func decodeEnvelope(_ text: String) throws(BridgeFailure) -> Envelope {
+        let envelope: Envelope
         do {
-            let envelope = try JSONDecoder().decode(Envelope.self, from: Data(text.utf8))
-            guard envelope.v == envelopeVersion else {
-                throw BridgeFailure(.malformed, "envelope version \(envelope.v), and this bridge speaks \(envelopeVersion)")
-            }
-            return envelope
-        } catch let failure as BridgeFailure {
-            throw failure
+            envelope = try ValueCoding.decode(Envelope.self, from: JSONValue(data: Data(text.utf8)))
         } catch {
             throw BridgeFailure(.malformed, "not an envelope: \(describe(error))")
         }
+        guard envelope.v == envelopeVersion else {
+            throw BridgeFailure(.malformed, "envelope version \(envelope.v), and this bridge speaks \(envelopeVersion)")
+        }
+        return envelope
     }
 
     /// A message's body as the value its op carries.
     public static func decode<T: Decodable>(_ type: T.Type, from body: JSONValue?) throws(BridgeFailure) -> T {
         do {
-            let data = try JSONEncoder().encode(body ?? .null)
-            return try JSONDecoder().decode(T.self, from: data)
+            return try ValueCoding.decode(T.self, from: body ?? .null)
         } catch {
             throw BridgeFailure(.malformed, "a body that is not a \(T.self): \(describe(error))")
         }
     }
 
     public static func value(_ value: some Encodable) throws -> JSONValue {
-        try JSONDecoder().decode(JSONValue.self, from: encoder().encode(value))
+        try ValueCoding.encode(value)
     }
 
-    static func encoder() -> JSONEncoder {
-        let encoder = JSONEncoder()
-        // Key order is not part of the contract, but a stable one makes the
-        // fixtures and a recorded message comparable byte for byte.
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return encoder
+    /// A value as compact JSON text, as every message is written: keyed
+    /// containers' keys sorted, so a recorded message and a fixture compare
+    /// byte for byte, and every digit of a `JSONValue`'s numbers.
+    public static func data(_ value: some Encodable) throws -> Data {
+        try ValueCoding.encode(value).data(pretty: false)
     }
 
-    private static func text(_ value: some Encodable) -> String {
-        (try? String(decoding: encoder().encode(value), as: UTF8.self)) ?? ""
+    static func text(_ value: some Encodable) throws -> String {
+        String(decoding: try data(value), as: UTF8.self)
     }
 
     /// A decoding error in words that name the field, never the value: a

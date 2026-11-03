@@ -31,8 +31,16 @@ from a thread Swift attached, in a local frame, as UTF-16). Presentations
 are coalesced in Swift, keyed lists cross as `KeyedListDelta`s and are never
 coalesced, a device call is answered exactly once, a stream is ordered and
 bounded and ends once, closing a handle answers what it waits on
-`cancelled`, and a transport or secure store message is never recorded with
-its body. The host tests (`SubstrateBridgeTests`) hold each of those rules.
+`cancelled`, a message Kotlin does not take fails what waited on it, and a
+body is recorded only where what it answers is known to carry no secret.
+Messages are read and written with `JSONValue`'s exact reader and writer,
+so a number crosses with every digit. The host tests
+(`SubstrateBridgeTests`) hold each of those rules.
+
+A body too large for a message is a file under `noBackupFilesDir/bridge`,
+deleted by whichever side holds it last and swept when kit-device's
+`Transport` is made; a credential exchange's never is. A locale or time
+zone change reaches every open root as `environment`.
 
 An app's roots are Swift: its library defines
 `@_cdecl("substrate_bridge_roots") func roots(_ registry: UnsafeMutableRawPointer)`

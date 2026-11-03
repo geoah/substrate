@@ -54,6 +54,8 @@ public enum Op: String, Bridged, Equatable {
     case cancel
     /// Swift: `post` validated the message and queued it.
     case accepted
+    /// Kotlin: the device's locale or time zone changed (`EnvironmentUpdate`).
+    case environment
 }
 
 /// A root opened over the bridge. A slot's id is used again once its root

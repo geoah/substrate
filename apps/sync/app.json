@@ -6,6 +6,7 @@
   ],
   "apple": {
     "bundleID": "dev.reamde.substrate.sync",
+    "scheme": "SubstrateSync",
     "extensions": [
       "dev.reamde.substrate.sync.share"
     ],

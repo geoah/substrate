@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "5684f1e859af50d5f8a2c5d554012812f405cbf670dfc420088c4b967925ed08"
+    public const val VALUE: String = "c03b41d05af3e1af84fc3b9740c7326d741343717674202925e522ba00091bb5"
 }
 
 /**
@@ -374,6 +374,12 @@ public data class Envelope(
 )
 
 @Serializable
+public data class EnvironmentUpdate(
+    val locale: String,
+    val timeZone: String,
+)
+
+@Serializable
 public data class Handle(
     val id: Long,
     val generation: Long,
@@ -438,6 +444,7 @@ public enum class Op {
     @SerialName("error") error,
     @SerialName("cancel") cancel,
     @SerialName("accepted") accepted,
+    @SerialName("environment") environment,
 }
 
 @Serializable
@@ -614,6 +621,7 @@ public data class TransportRequest(
     val body: String? = null,
     val bodyFile: String? = null,
     val timeoutMillis: Long,
+    val credentials: Boolean,
 )
 
 @Serializable
@@ -664,6 +672,7 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "DNSAnswer" to DNSAnswer.Serializer,
     "DeviceRequest" to DeviceRequest.Serializer,
     "Envelope" to Envelope.serializer(),
+    "EnvironmentUpdate" to EnvironmentUpdate.serializer(),
     "Handle" to Handle.serializer(),
     "ListMessage" to ListMessage.Serializer,
     "ListRow" to ListRow.serializer(),

@@ -10,7 +10,8 @@ import SubstrateDevice
 /// itself, as `URLSessionTransport`'s is.
 public struct BridgeTransport: HTTPTransport {
     public let channel: DeviceChannel
-    /// Where a body past the inline limit is written for Kotlin to send.
+    /// Where a body past the inline limit is written for Kotlin to send:
+    /// `BridgeEnvironment.spill`.
     public let folder: URL
 
     public init(channel: DeviceChannel, folder: URL) {
@@ -20,6 +21,9 @@ public struct BridgeTransport: HTTPTransport {
 
     public func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let wire = try wireRequest(request)
+        // Kotlin has sent the body by the time any answer comes, and a
+        // cancelled call needs it no more.
+        defer { Self.remove(wire.bodyFile) }
         let value = try await channel.call(.transportFetch(request: wire))
         return try Self.answer(value, for: request)
     }
@@ -28,8 +32,17 @@ public struct BridgeTransport: HTTPTransport {
     // crashes splitting that coroutine for Android with this inside it.
     @inline(never)
     static func answer(_ value: JSONValue, for request: URLRequest) throws -> (Data, HTTPURLResponse) {
-        switch try BridgeCodec.decode(TransportOutcome.self, from: value) {
+        let outcome: TransportOutcome
+        do {
+            outcome = try BridgeCodec.decode(TransportOutcome.self, from: value)
+        } catch {
+            // Swift took the reply, so its file is Swift's to delete, read or not.
+            remove(value["response"]?["bodyFile"]?.string)
+            throw error
+        }
+        switch outcome {
         case let .response(response):
+            defer { remove(response.bodyFile) }
             return (try body(of: response), try httpResponse(response, for: request))
         case let .failed(kind, message):
             throw urlError(kind, message, url: request.url)
@@ -50,6 +63,8 @@ public struct BridgeTransport: HTTPTransport {
     /// reading them, cancels the call on Kotlin's side.
     public func lines(for request: URLRequest, capacity: Int = 256) async throws -> (HTTPURLResponse, TransportLines) {
         let wire = try wireRequest(request)
+        // The body is sent before the head comes back.
+        defer { Self.remove(wire.bodyFile) }
         var iterator = channel.stream(.transportLines(request: wire), capacity: capacity).makeAsyncIterator()
         guard let first = try await iterator.next() else {
             throw URLError(.badServerResponse)
@@ -68,9 +83,15 @@ public struct BridgeTransport: HTTPTransport {
         let headers = (request.allHTTPHeaderFields ?? [:]).sorted { $0.key < $1.key }
             .map { TransportHeader(name: $0.key, value: $0.value) }
         var wire = TransportRequest(url: url, method: request.httpMethod ?? "GET", headers: headers,
-                                    timeoutMillis: Int(request.timeoutInterval * 1000))
+                                    timeoutMillis: Int(request.timeoutInterval * 1000), credentials: Self.carriesCredentials(request))
         if let body = request.httpBody {
-            if body.count <= TransportRequest.inlineLimit {
+            if wire.credentials {
+                guard body.count <= TransportRequest.credentialLimit else {
+                    throw URLError(.dataLengthExceedsMaximum, userInfo: [NSLocalizedDescriptionKey:
+                            "A request carrying credentials is \(body.count) bytes, more than \(TransportRequest.credentialLimit)."])
+                }
+                wire.body = body.base64EncodedString()
+            } else if body.count <= TransportRequest.inlineLimit {
                 wire.body = body.base64EncodedString()
             } else {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -82,11 +103,30 @@ public struct BridgeTransport: HTTPTransport {
         return wire
     }
 
+    /// Whether a request's body or its answer may hold a credential, which
+    /// then never goes to a file: an OAuth token or revocation exchange
+    /// (a form body, RFC 6749 and 7009, or the endpoint by name), the
+    /// password login and the registration, which answer a token, and a
+    /// request authenticated by anything but the bearer token. A bearer
+    /// header alone is not: it goes out in the message, never in a body,
+    /// and an authenticated read's answer is the owner's records, which may
+    /// be a blob's worth.
+    public static func carriesCredentials(_ request: URLRequest) -> Bool {
+        let type = request.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+        if type.hasPrefix("application/x-www-form-urlencoded") { return true }
+        if let authorization = request.value(forHTTPHeaderField: "Authorization"), !authorization.hasPrefix("Bearer ") { return true }
+        let last = request.url?.lastPathComponent.lowercased() ?? ""
+        return ["token", "revoke", "login", "register"].contains(last)
+    }
+
+    static func remove(_ path: String?) {
+        guard let path else { return }
+        try? FileManager.default.removeItem(atPath: path)
+    }
+
     static func body(of response: TransportResponse) throws -> Data {
         if let file = response.bodyFile {
-            let url = URL(fileURLWithPath: file)
-            defer { try? FileManager.default.removeItem(at: url) }
-            return try Data(contentsOf: url)
+            return try Data(contentsOf: URL(fileURLWithPath: file))
         }
         guard let body = response.body else { return Data() }
         guard let data = Data(base64Encoded: body) else {

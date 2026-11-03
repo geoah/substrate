@@ -312,6 +312,15 @@
       ]
     },
     {
+      "name": "EnvironmentUpdate",
+      "module": "SubstrateBridge",
+      "kind": "struct",
+      "fields": [
+        {"name": "locale", "type": "String"},
+        {"name": "timeZone", "type": "String"}
+      ]
+    },
+    {
       "name": "Handle",
       "module": "SubstrateBridge",
       "kind": "struct",
@@ -385,7 +394,8 @@
         {"name": "end", "value": "end"},
         {"name": "error", "value": "error"},
         {"name": "cancel", "value": "cancel"},
-        {"name": "accepted", "value": "accepted"}
+        {"name": "accepted", "value": "accepted"},
+        {"name": "environment", "value": "environment"}
       ]
     },
     {
@@ -572,7 +582,8 @@
         {"name": "headers", "type": "[TransportHeader]"},
         {"name": "body", "type": "String?"},
         {"name": "bodyFile", "type": "String?"},
-        {"name": "timeoutMillis", "type": "Int"}
+        {"name": "timeoutMillis", "type": "Int"},
+        {"name": "credentials", "type": "Bool"}
       ]
     },
     {

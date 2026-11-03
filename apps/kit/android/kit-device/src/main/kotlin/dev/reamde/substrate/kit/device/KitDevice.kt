@@ -26,7 +26,11 @@ public object KitDevice {
         val connectivity = Connectivity(app)
         return DeviceServices { request ->
             when (request) {
-                is DeviceRequest.TransportFetch -> DeviceAnswer.Value {
+                is DeviceRequest.TransportFetch -> DeviceAnswer.Value(
+                    discard = { answer ->
+                        runCatching { BridgeJson.decodeFromJsonElement(TransportOutcome.Serializer, answer) }.getOrNull()?.let(transport::discard)
+                    },
+                ) {
                     BridgeJson.encodeToJsonElement(TransportOutcome.Serializer, transport.fetch(request.request))
                 }
                 is DeviceRequest.TransportLines -> DeviceAnswer.Stream(

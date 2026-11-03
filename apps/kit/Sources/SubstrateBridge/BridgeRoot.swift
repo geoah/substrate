@@ -13,6 +13,14 @@ public protocol BridgeRoot: Sendable {
     func receive(_ command: JSONValue) async throws
     /// The handle closed: stop. The context refuses everything after it.
     func close() async
+    /// The device's locale or time zone changed. It arrives in order with
+    /// the commands, and `BridgeContext.environment` reads the new one from
+    /// then on.
+    func environmentChanged(_ environment: BridgeEnvironment) async
+}
+
+public extension BridgeRoot {
+    func environmentChanged(_: BridgeEnvironment) async {}
 }
 
 /// Makes a root for `open`. It runs inside `post`, so it does no work beyond
@@ -44,7 +52,7 @@ public final class RootRegistry: @unchecked Sendable {
 /// its handle cancels.
 public final class BridgeContext: Sendable {
     public let handle: Handle
-    public let environment: BridgeEnvironment
+    private let current: EnvironmentCell
     /// Device calls made for this root; closing the handle answers each one
     /// still outstanding `cancelled`.
     public let device: DeviceChannel
@@ -53,10 +61,17 @@ public final class BridgeContext: Sendable {
 
     init(handle: Handle, environment: BridgeEnvironment, device: DeviceChannel, outbox: HandleOutbox) {
         self.handle = handle
-        self.environment = environment
+        current = EnvironmentCell(environment)
         self.device = device
         self.outbox = outbox
         lists = KeyedLists(handle: handle, outbox: outbox)
+    }
+
+    /// The device's settings now: an environment update replaces them.
+    public var environment: BridgeEnvironment { current.value }
+
+    func update(_ environment: BridgeEnvironment) {
+        current.value = environment
     }
 
     /// The newest presentation. It is encoded when its turn comes, and one
@@ -86,4 +101,19 @@ public final class BridgeContext: Sendable {
 
     /// The handle is closed: nothing sent through this context goes out.
     public var isClosed: Bool { outbox.isClosed }
+}
+
+/// One environment, read and replaced from any thread.
+final class EnvironmentCell: @unchecked Sendable {
+    private let lock = NSLock()
+    private var held: BridgeEnvironment
+
+    init(_ environment: BridgeEnvironment) {
+        held = environment
+    }
+
+    var value: BridgeEnvironment {
+        get { lock.withLock { held } }
+        set { lock.withLock { held = newValue } }
+    }
 }

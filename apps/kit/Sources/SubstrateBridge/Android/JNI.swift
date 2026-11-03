@@ -71,7 +71,7 @@ public func Java_dev_reamde_substrate_kit_NativeBridge_start(_ env: UnsafeMutabl
     let answer: StartAnswer
     do {
         let text = try string(env, config)
-        let decoded = try BridgeCodec.decode(StartConfig.self, from: JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)))
+        let decoded = try BridgeCodec.decode(StartConfig.self, from: JSONValue(data: Data(text.utf8)))
         answer = BridgeRuntime.shared.start(decoded, outlet: KotlinOutlet(), log: androidLog) {
             if let failure = MainLooper.bind() { return failure }
             AppRoots.install(into: BridgeRuntime.shared.roots)
@@ -82,7 +82,7 @@ public func Java_dev_reamde_substrate_kit_NativeBridge_start(_ env: UnsafeMutabl
     } catch {
         answer = .failed(failure: BridgeFailure(.malformed, "the start config is not readable: \(BridgeCodec.describe(error))"))
     }
-    let text = (try? String(decoding: BridgeCodec.encoder().encode(answer), as: UTF8.self))
+    let text = (try? BridgeCodec.text(answer))
         ?? #"{"failed":{"failure":{"code":"swiftFailure","message":"the start answer did not encode"}}}"#
     return try? newString(env, text)
 }
@@ -145,8 +145,13 @@ private func attachedEnv(_ vm: VM) throws(BridgeFailure) -> Env {
     guard attach(vm, &env, nil) == JNI_OK, let env else {
         throw BridgeFailure(.jniFailure, "this thread could not attach to the VM")
     }
-    // Any non-null value: the key's destructor runs only for one.
-    pthread_setspecific(detachKey, UnsafeRawPointer(bitPattern: 1))
+    // Any non-null value: the key's destructor runs only for one. Without
+    // it the thread would exit attached, which ART aborts on, so a thread
+    // the key cannot hold is detached now and its message refused.
+    guard pthread_setspecific(detachKey, UnsafeRawPointer(bitPattern: 1)) == 0 else {
+        detachCurrentThread()
+        throw BridgeFailure(.jniFailure, "this thread could not keep its detach on exit")
+    }
     return env
 }
 
