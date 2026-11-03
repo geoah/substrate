@@ -34,6 +34,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 
@@ -496,6 +497,22 @@ type PublishedCandidate struct {
 // InstallReviewed checks the candidate before any requirement or package lands.
 // The same resolved closure is checked and installed; it is never fetched twice.
 func (c *Catalog) InstallReviewed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm, expect *PublishedCandidate) (*Bundle, []substrate.SuggestedMapping, error) {
+	return c.installReviewed(ctx, actor, id, ds, confirm, expect, nil)
+}
+
+// InstallExpectations binds the whole install set. A nil candidate names a
+// binary-shipped package; document-published packages require version and digest.
+type InstallExpectations map[string]*PublishedCandidate
+
+// InstallApproved refuses a changed install set before any package is written.
+func (c *Catalog) InstallApproved(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, expect InstallExpectations) (*Bundle, []substrate.SuggestedMapping, error) {
+	if len(expect) == 0 {
+		return nil, nil, fmt.Errorf("%w: an install requires its approved candidates", substrate.ErrConflict)
+	}
+	return c.installReviewed(ctx, actor, id, ds, nil, nil, expect)
+}
+
+func (c *Catalog) installReviewed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm, expect *PublishedCandidate, closure InstallExpectations) (*Bundle, []substrate.SuggestedMapping, error) {
 	b, err := c.installable(ctx, actor, id, ds)
 	if err != nil {
 		return nil, nil, err
@@ -503,13 +520,30 @@ func (c *Catalog) InstallReviewed(ctx context.Context, actor substrate.Actor, id
 	if expect != nil && (b.origin == nil || expect.Version != b.Version || expect.Digest != b.origin.SHA256) {
 		return nil, nil, fmt.Errorf("%w: the publisher listed another version since you reviewed this one; review it again", substrate.ErrConflict)
 	}
-	// Each requirement commits on its own, before b: a refusal of b leaves
-	// the ones already installed in place, which is what installing them
-	// alone would have left too.
-	requirements, err := c.requirementsToInstall(ctx, b, ds)
+	requirements, unmet, err := c.walkRequirements(ctx, b, ds)
 	if err != nil {
 		return nil, nil, err
 	}
+	if len(unmet) > 0 {
+		return nil, nil, fmt.Errorf("%w: unresolved requirement %s", substrate.ErrValidation, unmet[0].ID)
+	}
+	if closure != nil {
+		candidates := append(slices.Clone(requirements), b)
+		// A retry may skip approved dependencies now installed. Every
+		// candidate still to be written must retain its approved identity.
+		for _, candidate := range candidates {
+			want, named := closure[candidate.ID]
+			matches := named && want == nil && candidate.origin == nil
+			if named && want != nil && candidate.origin != nil {
+				matches = want.Version == candidate.Version && want.Digest == candidate.origin.SHA256
+			}
+			if !matches {
+				return nil, nil, fmt.Errorf("%w: %s changed since approval; review it again", substrate.ErrConflict, candidate.ID)
+			}
+		}
+	}
+	// Requirements commit individually, but only after the entire resolved
+	// install set matches consent. Never resolve a checked candidate again.
 	for _, dep := range requirements {
 		if _, err := c.installed(ctx, dep, ds, nil); err != nil {
 			return nil, nil, fmt.Errorf("install %s, which %s requires: %w", dep.ID, b.ID, err)

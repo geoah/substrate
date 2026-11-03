@@ -40,10 +40,8 @@ type Catalog interface {
 	Requirements(ctx context.Context, id string, ds substrate.Dataset) ([]*catalog.Bundle, []catalog.Unmet, error)
 	Upgrade(ctx context.Context, id string, ds substrate.Dataset, held *substrate.BundleStatus) (*substrate.BundleUpgrade, error)
 	InstallConfirmed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*catalog.Bundle, []substrate.SuggestedMapping, error)
-	// InstallReviewed is InstallConfirmed held to the document-published
-	// closure the owner approved: another version or digest is refused
-	// before anything lands.
-	InstallReviewed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm, expect *catalog.PublishedCandidate) (*catalog.Bundle, []substrate.SuggestedMapping, error)
+	// InstallApproved binds every package written to the approved install set.
+	InstallApproved(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, expect catalog.InstallExpectations) (*catalog.Bundle, []substrate.SuggestedMapping, error)
 }
 
 // accountConfigTrait is the trait an account detail's kind implements.
@@ -525,7 +523,7 @@ func (p *planner) binaryChain(ctx context.Context, b *catalog.Bundle, steps []*c
 	for _, dep := range steps {
 		p.bundles[dep.ID] = dep
 		step := substrate.AuthorizationPackageStep{
-			ID: dep.ID, Description: dep.Description, Action: p.stepAction(dep.ID), Held: p.held(dep.ID), Shipped: dep.Version,
+			ID: dep.ID, Description: dep.Description, Action: p.stepAction(dep.ID), Held: p.held(dep.ID), Shipped: dep.Version, Publisher: publisherOf(dep),
 		}
 		problem, err := p.stepBlock(ctx, dep, floors[dep.ID])
 		if err != nil {
