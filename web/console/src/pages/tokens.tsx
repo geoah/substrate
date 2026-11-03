@@ -18,7 +18,7 @@
 
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useNavigate } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { CopyIcon, XIcon } from "lucide-react"
 
 import { Pill } from "@/components/identity/pill"
@@ -71,6 +71,46 @@ function appHost(t: TokenInfo): string {
   } catch {
     return t.clientId
   }
+}
+
+/** Who publishes an app, as its approval proved it (decision 0209): an
+ * authority whose DNS record and document list the app, the same vouched
+ * for by a file this server reads, a program on the owner's own device, or
+ * nobody, when the client id is all the approval knew. */
+// eslint-disable-next-line react-refresh/only-export-components -- pure words, exported for their test
+export function appPublisher(t: TokenInfo): { who: string; how: string } {
+  if (t.appAuthority && t.appAuthorityFromFile) {
+    return {
+      who: t.appAuthority,
+      how: "Vouched for by a file this server reads, not by its DNS: a development setting.",
+    }
+  }
+  if (t.appAuthority) {
+    return {
+      who: t.appAuthority,
+      how: "Verified: its DNS record and authority document list this app.",
+    }
+  }
+  if (t.appLocal) {
+    return {
+      who: "A program on your own device",
+      how: "Its access went to a loopback address, so no publisher could be checked.",
+    }
+  }
+  return {
+    who: "Not verified",
+    how: "Nothing proved who publishes it: its client id is all it gave.",
+  }
+}
+
+/** The actor an app's writes carry, derived from what its approval proved
+ * (decision 0209): `app:<authority>`, `app:local`, else `app:<host>` of its
+ * client id. */
+// eslint-disable-next-line react-refresh/only-export-components -- pure words, exported for their test
+export function appActor(t: TokenInfo): string {
+  if (t.appAuthority) return `app:${t.appAuthority}`
+  if (t.appLocal) return "app:local"
+  return `app:${appHost(t)}`
 }
 
 /** A token as a person knows it: this browser, the command line, a browser,
@@ -480,6 +520,91 @@ export function AppTokenRows() {
                 <>
                   <dt className="text-faint">Calls itself</dt>
                   <dd className="[overflow-wrap:anywhere]">{t.clientName}</dd>
+                </>
+              )}
+              <dt className="text-faint">Publisher</dt>
+              <dd className="flex flex-col">
+                <span className="[overflow-wrap:anywhere]">
+                  {appPublisher(t).who}
+                </span>
+                <span className="text-muted-foreground">
+                  {appPublisher(t).how}
+                </span>
+              </dd>
+              <dt className="text-faint">Writes as</dt>
+              <dd className="flex flex-col">
+                <span className="font-mono [overflow-wrap:anywhere]">
+                  {appActor(t)}
+                </span>
+                <Link
+                  to="/actors/$actorId"
+                  params={{ actorId: appActor(t) }}
+                  className="text-muted-foreground underline underline-offset-2"
+                >
+                  See what it changed
+                </Link>
+              </dd>
+              {(t.appSoftwareVersion || t.appCheckedAt) && (
+                <>
+                  <dt className="text-faint">Build</dt>
+                  <dd className="flex flex-col">
+                    <span className="font-mono [overflow-wrap:anywhere]">
+                      {t.appSoftwareVersion ?? "not reported"}
+                    </span>
+                    {t.appCheckedAt && (
+                      <span
+                        className="text-muted-foreground"
+                        title={shortDateTime(t.appCheckedAt)}
+                      >
+                        last checked in {relativeTime(t.appCheckedAt)}
+                      </span>
+                    )}
+                  </dd>
+                </>
+              )}
+              {t.appPackages && Object.keys(t.appPackages).length > 0 && (
+                <>
+                  <dt className="text-faint">Packages</dt>
+                  <dd>
+                    <ul
+                      aria-label={`Packages ${host} needs`}
+                      className="flex flex-col gap-0.5"
+                    >
+                      {Object.entries(t.appPackages)
+                        .sort(([a], [b]) => a.localeCompare(b))
+                        .map(([pkg, floor]) => (
+                          <li key={pkg} className="flex flex-col">
+                            <span className="font-mono [overflow-wrap:anywhere]">
+                              {pkg}
+                            </span>
+                            <span className="text-muted-foreground">
+                              version {floor} or later
+                            </span>
+                          </li>
+                        ))}
+                    </ul>
+                  </dd>
+                </>
+              )}
+              {t.appAddons && t.appAddons.length > 0 && (
+                <>
+                  <dt className="text-faint">Waiting add-ons</dt>
+                  <dd>
+                    <ul className="flex flex-col gap-0.5">
+                      {t.appAddons.map((a) => (
+                        <li key={a.package} className="flex flex-col">
+                          <span className="font-mono [overflow-wrap:anywhere]">
+                            {a.package}
+                          </span>
+                          <span className="text-muted-foreground">
+                            version {a.version} or later, installs when{" "}
+                            <span className="font-mono">{a.addonFor}</span> is
+                            installed
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </dd>
                 </>
               )}
               <dt className="text-faint">Access</dt>
