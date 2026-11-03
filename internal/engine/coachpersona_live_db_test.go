@@ -114,12 +114,6 @@ func TestLiveCoachPersonas(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("declare the shipped coach: %v", err)
 	}
-	if _, _, err := ds.MintToken(ctx, substrate.MintTokenInput{
-		Label: "workouts", Scopes: []string{"declare:" + coachPkg}, ClientID: aaClientID,
-		Agents: []substrate.AgentApproval{{Agent: agent, Reads: reads, Writes: writes, SpendCentsPerDay: 100}},
-	}); err != nil {
-		t.Fatal(err)
-	}
 	put := func(kind, id string, props map[string]any) *substrate.Record {
 		t.Helper()
 		rec, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props})

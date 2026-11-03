@@ -686,10 +686,6 @@ type agentLoop struct {
 	// spend is the root run's spend (spend.go), set on the root loop alone:
 	// a settle of this loop that commits the thread row tells it so at once.
 	spend *spendRun
-	// appAgent is set for an agent an app keeps (appagent.go): the loop
-	// re-admits it before every model call after the first.
-	appAgent bool
-
 	// mentions are the final reply's record links, as its row stores them.
 	mentions []substrate.AgentMention
 
@@ -745,21 +741,6 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 // the returned context, which carries the spend admission.
 func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in agentInvocation) (_ context.Context, _ *agentLoop, err error) {
 	root := in.tally == nil
-	// An app's agent runs only while a live approval covers it, on a priced
-	// model, as a root run (appagent.go), on every entry and before its spend
-	// is checked.
-	appOwner, err := ds.appAgentOwner(ctx, ag)
-	if err != nil {
-		return nil, nil, err
-	}
-	if appOwner.App() {
-		if why := appAgentEntry(ag, in); why != "" && root {
-			return nil, nil, fmt.Errorf("%w: %s", errAppAgentStopped, why)
-		}
-		if err := ds.refuseAppAgent(ctx, ag, root); err != nil {
-			return nil, nil, err
-		}
-	}
 	// A root run the dispatcher or a hand's entry did not already check meets
 	// the spend caps here, before a thread opens (spend.go): a sub-agent runs
 	// under its root's cap, which its caller was admitted against.
@@ -813,7 +794,7 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 		in.stopHub = in.hub
 	}
 	l := &agentLoop{
-		ds: ds, ag: ag, provider: provider, model: ag.Model, params: params, in: in, appAgent: appOwner.App(),
+		ds: ds, ag: ag, provider: provider, model: ag.Model, params: params, in: in,
 		client:    client,
 		actor:     substrate.Actor(ag.Actor()),
 		emit:      effectiveEmit(ag.Emit, in.emitCeiling, in.ceilinged),
@@ -915,14 +896,6 @@ loop:
 				maxToolCalls = max(maxToolCalls, l.toolCalls+1)
 				messages = append(messages, llm.Message{Role: llm.RoleUser, Content: finalTurnNudge})
 			} else if l.turns >= ag.Budgets.MaxTurns {
-				break
-			}
-		}
-		if l.turns > 0 {
-			// Revoking the app, turning the agent off or reaching its cap
-			// stops an app's agent at its next model call, not its next run.
-			if why := l.appAgentTurnHold(ctx); why != "" {
-				status, reason = threadStopped, why
 				break
 			}
 		}

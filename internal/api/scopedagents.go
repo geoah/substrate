@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -606,4 +607,92 @@ func (s *scopedDataset) recordVisible(ctx context.Context, kind, id string) (boo
 	s.seen[path] = true
 	s.mu.Unlock()
 	return true, nil
+}
+
+// talksTo is the grant's agents rule for one agent, with the channel rule on
+// top (decision 0214, as 0207 held it for an app's agent, now for every
+// agent): the token reaches the agent (chats with it, reads its row, its
+// threads, messages and interactions) only when its own read scopes cover
+// every kind the agent reads, so the agent is no channel to data the caller
+// could not read itself. An agent the repository does not hold is reached by
+// nothing.
+func (s *scopedDataset) talksTo(ctx context.Context, agent string) (bool, error) {
+	if !s.grant.TalksTo(agent) {
+		return false, nil
+	}
+	s.mu.Lock()
+	known, ok := s.agentCovered[agent]
+	s.mu.Unlock()
+	if ok {
+		return known, nil
+	}
+	covered, err := s.coversAgentReads(ctx, agent)
+	if err != nil {
+		return false, err
+	}
+	s.mu.Lock()
+	if s.agentCovered == nil {
+		s.agentCovered = map[string]bool{}
+	}
+	s.agentCovered[agent] = covered
+	s.mu.Unlock()
+	return covered, nil
+}
+
+// coversAgentReads reports whether the grant reads everything the agent
+// reads: each entry of its `permissions.reads.kinds`, a kind named in full
+// or a glob, is covered by a read or write scope at least as wide
+// (scope.Grant.Covers). A kind the registry lacks, or declares internal, is
+// covered by its exact scope alone, as a glob never reaches one.
+func (s *scopedDataset) coversAgentReads(ctx context.Context, agent string) (bool, error) {
+	rec, err := s.inner.Get(ctx, kindAgent, agent)
+	if errors.Is(err, substrate.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if rec.DeletedAt != nil {
+		return false, nil
+	}
+	reg, err := s.kinds(ctx)
+	if err != nil {
+		return false, err
+	}
+	perms, _ := rec.Properties["permissions"].(map[string]any)
+	readsBlock, _ := perms["reads"].(map[string]any)
+	for _, k := range kindList(readsBlock["kinds"]) {
+		k = strings.TrimPrefix(k, vocabulary.CoreKind(vocabulary.DocKind)+"/")
+		internal := false
+		if !vocabulary.IsTypeGlob(k) {
+			info, held := reg[k]
+			internal = !held || internalKind(info)
+		}
+		if !s.grant.Covers(scope.Scope{Verb: scope.Read, Pattern: k}, internal) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// kindList reads a grant list: each entry a kind reference, as a string or a
+// stored `{ref: …}`.
+func kindList(v any) []string {
+	var out []string
+	list, _ := v.([]any)
+	for _, e := range list {
+		switch t := e.(type) {
+		case string:
+			out = append(out, t)
+		case map[string]any:
+			if ref, ok := t["ref"].(string); ok {
+				out = append(out, ref)
+			} else {
+				out = append(out, fmt.Sprint(t))
+			}
+		default:
+			out = append(out, fmt.Sprint(t))
+		}
+	}
+	return out
 }

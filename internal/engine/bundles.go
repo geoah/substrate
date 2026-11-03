@@ -679,18 +679,6 @@ func (ds *dataset) PurgeBundle(ctx context.Context, id string) (int, error) {
 		return 0, fmt.Errorf("%w: bundle %s is live — disable or uninstall it before purging its data",
 			substrate.ErrGuard, b.Package)
 	}
-	// An app's bundle is the app's to tear down (decision 0205). Disable and
-	// enable stay the owner's runtime switch, but a purge deletes every
-	// record of the app's kinds and its configuration, which the app cannot
-	// put back, so the owner takes the package over first.
-	owner, err := ds.packageOwner(ctx, ds.db, b.Package)
-	if err != nil {
-		return 0, err
-	}
-	if owner.App() {
-		return 0, fmt.Errorf("%w: %s is managed by the app %s: disabling and enabling its bundle are yours, purging its data is not; to purge it, take the package over first (POST /api/v1/vocabulary/takeover)",
-			substrate.ErrForbidden, b.Package, owner)
-	}
 	g, ok := ds.registry().PackageByName(b.Package)
 	if !ok {
 		return 0, fmt.Errorf("%w: bundle authority %s", substrate.ErrNotFound, b.Package)
