@@ -8,6 +8,10 @@ struct SubstrateTasksApp: App {
     @StateObject private var updates = Updater()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        Tasks.start()
+    }
+
     var body: some Scene {
         #if os(macOS)
         window

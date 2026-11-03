@@ -8,6 +8,10 @@ struct SubstrateTemplateApp: App {
     @StateObject private var updates = Updater()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        Template.start()
+    }
+
     var body: some Scene {
         #if os(macOS)
         window

@@ -13,6 +13,11 @@ public typealias TemplateShell = AppShell<TemplateApp>
 public enum Template {
     @MainActor static let shell = TemplateShell(configuration)
 
+    /// Makes the shell, which installs the kit's notification delegate:
+    /// called from the app's initialiser, before the app finishes
+    /// launching, so the tap that launched it is not lost.
+    @MainActor public static func start() { _ = shell }
+
     /// The app came to the front.
     @MainActor public static func cameForward() { shell.cameForward() }
 

@@ -19,17 +19,23 @@ public extension TasksApp {
             next.settings = settings
             next.usage = usage
             next.settingsRead = true
+        // A view telling the state it already holds (a tab bar or a list
+        // drawn again) moves nothing, and forgets no tap waiting for its
+        // task.
         case let .sectionSelected(section):
-            if section != state.section { next.openTask = nil }
+            guard section != state.section else { break }
+            next.openTask = nil
             next.section = section
             next.tapped = nil
             if section == TasksMenu.today { next.selection = .today }
             if section == TasksMenu.lists, next.selection == .today { next.selection = nil }
         case let .shown(selection):
+            guard selection != state.selection || state.openTask != nil else { break }
             next.selection = selection
             next.openTask = nil
             next.tapped = nil
         case let .opened(task):
+            guard task != state.openTask else { break }
             next.openTask = task
             next.tapped = nil
         case let .editorOpened(key, seed):

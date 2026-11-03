@@ -40,6 +40,18 @@ struct TapTests {
         #expect(presented.list?.selection == .list("home"))
     }
 
+    @Test func aViewTellingTheStateItHoldsForgetsNoTap() async throws {
+        let (_, harness) = try rig()
+        await harness.send(.reminderTapped("t3"))
+        // Drawn again at launch: the tab already open, no task open.
+        await harness.send(.select(section: TasksMenu.today))
+        await harness.send(.open(task: nil))
+        await harness.deliver(.records(.loaded([taskRecord("t3", "Pay rent")], cursor: nil, queue: [])))
+        #expect(await harness.state.openTask == "t3")
+        await harness.send(.open(task: "t3"))
+        #expect(await harness.state.openTask == "t3")
+    }
+
     @Test func goingElsewhereBeforeTheRecordComesForgetsTheTap() async throws {
         let (_, harness) = try rig()
         await harness.send(.reminderTapped("t3"))

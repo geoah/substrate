@@ -36,7 +36,12 @@ struct TaskListView: View {
     /// On a phone a row is a button that pushes the task; beside a detail
     /// column, the open task is the list's selection.
     private var selection: Binding<String?> {
-        Binding(get: { sizeClass == .compact ? nil : app.detail?.id }, set: { shell.send(.open(task: $0)) })
+        Binding(get: { sizeClass == .compact ? nil : app.detail?.id }, set: { task in
+            // On a phone a row is a button and the list keeps no selection:
+            // what it writes back is no choice of the owner's.
+            guard sizeClass != .compact else { return }
+            shell.send(.open(task: task))
+        })
     }
 
     @ViewBuilder
