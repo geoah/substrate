@@ -191,6 +191,11 @@
     "unit": false,
     "value": true
   },
+  "AppAddon": {
+    "addonFor": true,
+    "package": true,
+    "version": true
+  },
   "AuthorizationAccount": {
     "id": true,
     "kind": true,
@@ -873,6 +878,7 @@
   },
   "TokenInfo": {
     "agents": false,
+    "appAddons": false,
     "appAuthority": false,
     "appAuthorityFromFile": false,
     "appCheckedAt": false,
