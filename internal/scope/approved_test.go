@@ -84,3 +84,17 @@ func TestTheCoveringScopeIsNamedForTheOwner(t *testing.T) {
 		}
 	}
 }
+
+func TestCodeGlobsCannotUseScopeExclusions(t *testing.T) {
+	approved, err := ApprovalOf([]string{"write:*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pattern := range []string{"*", "substrate.reamde.dev/*", "substrate.reamde.dev/core/*", "substrate.reamde.dev/llm/*"} {
+		for _, write := range []bool{false, true} {
+			if approved.Covers(pattern, write, false) || Covering(pattern, write) != "full" {
+				t.Fatalf("scope covered code glob %s, write %v", pattern, write)
+			}
+		}
+	}
+}
