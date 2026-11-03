@@ -31,10 +31,10 @@ and appear in the install answer and console notification. Already-held
 add-ons at the approved floor are not reinstalled.
 
 The catalog accepts an approval-policy callback to avoid a dependency cycle
-with appsetup. The server wires it before serving requests. Until decision
-0215's complete reach checker is integrated, deferred executable closures
-under scoped tokens are refused conservatively; kinds-only closures and
-full-access approvals can proceed.
+with appsetup. The server wires it before serving requests. Each waiting
+add-on is planned when it installs against the approving token's scopes,
+with decision 0215's reach check; a row reaching past them stays waiting
+and is reported.
 
 ### Consequences
 
@@ -43,6 +43,13 @@ full-access approvals can proceed.
 - A blocked add-on does not roll back the provider installation.
 - An add-on needing settings waits for the owner to fill them on its page;
   secrets are never saved on a token for a later installation.
+- The approval page names a waiting add-on and the provider it waits for,
+  but not its code's reach: that reach is unknown until the provider is
+  held, and it is checked against the token's scopes when the add-on
+  installs.
+- An add-on whose agents take a provider through an input installs with
+  the input unbound; its agents run once the owner binds it on the
+  package's page, or once the input resolves to a sole or `default` row.
 
 ### Confirmation
 

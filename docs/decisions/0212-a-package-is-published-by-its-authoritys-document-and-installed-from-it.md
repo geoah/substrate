@@ -55,6 +55,17 @@ the binary. Neither record is superseded.
 - A missing publisher document leaves installed declarations intact.
 - A development file substitutes the operator's trust for DNS and is
   identified as such to the owner.
+- The binary wins on a refresh too: a package a later binary ships is never
+  upgraded from the document it was installed from.
+- A document install adopts a package the repository holds without a
+  publisher stamp (a copy declared by hand under another authority, which
+  decision 0210 leaves possible only for data from before it): installing
+  from the publisher's document is the owner's own act.
+- A malformed package entry makes the whole document unreadable, which
+  leaves the authority's apps unverified too, so a publisher checks a
+  document with `substratectl publish --check` before serving it.
+- The document's `apps[].packages` and `apple.appIDs` are for its readers;
+  no server path reads them.
 
 ### Confirmation
 
