@@ -5,8 +5,10 @@ import PackageDescription
 // depend only on the ones listed before them (README.md, and
 // `mise run lint:apps`, which holds the order). The portable ones build for
 // iOS, macOS, Linux and Android; SubstrateDeviceApple and SubstrateUI
-// compile to nothing off Apple systems. SubstrateKit is every library under
-// one import, for the apps written against the single module it once was.
+// compile to nothing off Apple systems, and SubstrateBridge's JNI half to
+// nothing off Android. SubstrateKit is every library under one import, for
+// the apps written against the single module it once was. SubstrateAndroid
+// is the one shared library kit-core loads (apps/kit/android).
 let package = Package(
     name: "SubstrateKit",
     platforms: [.iOS("26.0"), .macOS("26.0")],
@@ -19,6 +21,9 @@ let package = Package(
         .library(name: "SubstrateTesting", targets: ["SubstrateTesting"]),
         .library(name: "SubstrateDeviceApple", targets: ["SubstrateDeviceApple"]),
         .library(name: "SubstrateUI", targets: ["SubstrateUI"]),
+        .library(name: "SubstrateBridge", targets: ["SubstrateBridge"]),
+        .library(name: "SubstrateAndroid", type: .dynamic,
+                 targets: ["SubstrateBridge", "SubstrateBridgeCheck", "SubstrateAPI", "SubstrateAuth"]),
     ],
     dependencies: [
         // SHA-256 for PKCE where CryptoKit is not: Linux and Android.
@@ -49,10 +54,22 @@ let package = Package(
         .target(name: "SubstrateUI", dependencies: [
             "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateDeviceApple",
         ]),
+        // jni.h, the Looper and the log from the NDK; empty off Android.
+        .target(name: "SubstrateJNI", linkerSettings: [
+            .linkedLibrary("android", .when(platforms: [.android])),
+            .linkedLibrary("log", .when(platforms: [.android])),
+        ]),
+        // The Android bridge: the envelope, handles, calls and keyed lists,
+        // which run anywhere, and the JNI surface, which is Android's alone.
+        .target(name: "SubstrateBridge", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateJNI"]),
+        // The root the bridge's runtime checks drive (bridge-check).
+        .target(name: "SubstrateBridgeCheck", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateBridge"],
+                resources: [.copy("Resources/check.txt")]),
         .target(name: "SubstrateKit", dependencies: [
             "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateDeviceApple", "SubstrateUI",
         ]),
         .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateTesting"]),
+        .testTarget(name: "SubstrateBridgeTests", dependencies: ["SubstrateBridge", "SubstrateBridgeCheck"]),
     ],
     swiftLanguageModes: [.v6]
 )
