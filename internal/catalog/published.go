@@ -75,6 +75,17 @@ func (c *Catalog) Resolve(ctx context.Context, id string, atLeast int64) (*Bundl
 	return c.resolveSource(ctx, id, atLeast, source)
 }
 
+// ships reports whether this server answers for id itself: a closure it
+// carries, a package it seeds, or an id under the provider or sample
+// authority, which only the binary publishes.
+func (c *Catalog) ships(id string) bool {
+	if _, ok := c.byID[id]; ok {
+		return true
+	}
+	a, _ := vocabulary.SplitPackageRef(id)
+	return a == "providers.substrate.reamde.dev" || a == "samples.substrate.reamde.dev" || c.seeded[id]
+}
+
 func (c *Catalog) resolveSource(ctx context.Context, id string, floor int64, source authority.Source) (*Bundle, error) {
 	_, name := vocabulary.SplitPackageRef(id)
 	var newest authority.AuthorityPackageVersion

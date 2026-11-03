@@ -476,3 +476,23 @@ func TestAnAppReadsTheFeedsHistoryCutToWhatItReads(t *testing.T) {
 		t.Fatalf("the task reader's page = %+v", page)
 	}
 }
+
+// An app reads the row of a package its scopes reach into, which says the
+// version the repository holds, and no other declaration row.
+func TestAnAppReadsTheRowOfAPackageItsScopesName(t *testing.T) {
+	e := newAppEnv(t)
+	ds := e.svc.datasets[fakeRepository]
+	ds.types = append(ds.types, substrate.KindInfo{Identity: kindPackageRow, Name: "package", Authority: "substrate.reamde.dev", Package: "core"})
+	for _, id := range []string{"substrate.reamde.dev/training", "substrate.reamde.dev/clinical"} {
+		ds.records[id] = &substrate.Record{ID: id, Kind: kindPackageRow, Properties: map[string]any{"shippedVersion": float64(5)}}
+	}
+	scope := "write:substrate.reamde.dev/training/*"
+	tok := e.grant(scope, []string{scope})
+	rec := e.do(http.MethodGet, "/api/v1/substrate.reamde.dev/core/package/substrate.reamde.dev%2Ftraining", tok, nil, "")
+	wantStatus(t, rec, http.StatusOK)
+	if got := decodeJSON[substrate.Record](t, rec); got.Properties["shippedVersion"] != float64(5) {
+		t.Fatalf("the package row answered %+v", got.Properties)
+	}
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/substrate.reamde.dev/core/package/substrate.reamde.dev%2Fclinical", tok, nil, ""), http.StatusNotFound)
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/substrate.reamde.dev/core/kind/substrate.reamde.dev%2Ftraining%2Fset", tok, nil, ""), http.StatusNotFound)
+}

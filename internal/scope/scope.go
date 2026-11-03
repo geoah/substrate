@@ -452,6 +452,18 @@ func (g Grant) NamesPackage(pkg string) bool {
 	})
 }
 
+// NamesAnyPackage reports whether one of the grant's scopes is of a verb that
+// names a package (NamesPackage): read, write, agents, decide or call.
+func (g Grant) NamesAnyPackage() bool {
+	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
+		switch s.Verb {
+		case Read, Write, Agents, Decide, Call:
+			return true
+		}
+		return false
+	})
+}
+
 // Covers reports whether the grant already holds what want asks for: a scope
 // of the same verb, or a write for a read, over a pattern at least as wide.
 // internal is whether want names one kind whose declared purpose is
