@@ -326,7 +326,7 @@ read back as the owner.
 
 ```bash
 WORKOUTS_E2E_SERVER=http://localhost:8080 WORKOUTS_E2E_OWNER_TOKEN=… WORKOUTS_E2E_REPOSITORY=<fresh repository> \
-  swift test --package-path apps/workouts/core --filter LiveServer
+  swift test --package-path apps/workouts/WorkoutsKit --filter LiveServer
 ```
 
 `LiveHevyImportTests` seeds the exercise library over an owner's own

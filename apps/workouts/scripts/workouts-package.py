@@ -53,9 +53,9 @@ PACKAGE = APP / "package"
 # routine, a set the rest).
 FILES = ("training", "movement", "exercise", "setup", "routine", "session", "set", "memory", "library", "bodymeasurement")
 KINDS = ("movement", "exercise", "routine", "session", "set", "setup")
-RESOURCE = APP / "core/Sources/WorkoutsCore/Resources/Package/training.json"
+RESOURCE = APP / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/training.json"
 COACH = PACKAGE / "coach"
-COACH_RESOURCE = APP / "core/Sources/WorkoutsCore/Resources/Package/coach.json"
+COACH_RESOURCE = APP / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/coach.json"
 # The rendered agent document, committed beside its sources so a diff shows
 # what a release changes of the coach, and read back into the closure.
 COACH_AGENT_FILE = COACH / "workoutcoach.yaml"
@@ -140,13 +140,13 @@ COACH_AGENT = {
 # The coach's prompt is a cacheable prefix beside the kinds list and its
 # pinned memories; past this it crowds them out.
 COACH_PROMPT_MAX = 20480
-FIXTURE = APP / "core/Tests/WorkoutsCoreTests/Fixtures/kinds.json"
+FIXTURE = APP / "WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/kinds.json"
 EXAMPLES = APP / "docs/examples"
 SAMPLE = "sample"
-BUNDLED = APP / "core/Sources/WorkoutsCore/Resources/Bundled"
+BUNDLED = APP / "WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled"
 # The test vectors: the owner's Hevy history and the methods it leaves out.
 VECTORS = ("exercises", "routines", "sessions", "coverage")
-VECTOR_FIXTURES = APP / "core/Tests/WorkoutsCoreTests/Fixtures/examples"
+VECTOR_FIXTURES = APP / "WorkoutsKit/Tests/WorkoutsCoreTests/Fixtures/examples"
 
 # The keys of a kind's property that kinds.json keeps. Descriptions, labels
 # and bounds are the server's business, not the codec's.

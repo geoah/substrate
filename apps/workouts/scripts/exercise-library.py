@@ -42,7 +42,7 @@ LIBRARY = APP / "library"
 MOVEMENTS = LIBRARY / "movements.yaml"
 FEDB = LIBRARY / "free-exercise-db.json"
 LOCK = LIBRARY / "library.lock.json"
-RESOURCE = APP / "core/Sources/WorkoutsCore/Resources/Bundled/library.json"
+RESOURCE = APP / "WorkoutsKit/Sources/WorkoutsCore/Resources/Bundled/library.json"
 EXERCISE_KIND = APP / "package/exercise.yaml"
 
 FEDB_REPOSITORY = "yuhonas/free-exercise-db"

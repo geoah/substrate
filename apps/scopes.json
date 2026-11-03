@@ -1,5 +1,5 @@
 {
-  "source": "What each first-party app asks a substrate for, as its manifest spells it: apps/sync/apple/Sources/App/Manifest.swift (ReachTests holds it to this file) and apps/workouts/core/Sources/WorkoutsSync/WorkoutsManifest.swift (CoachTests does). internal/catalog's first-party reach test reads it, with the real closures, in place of a hand copy.",
+  "source": "What each first-party app asks a substrate for, as its manifest spells it: apps/sync/apple/Sources/App/Manifest.swift (ReachTests holds it to this file) and apps/workouts/WorkoutsKit/Sources/WorkoutsSync/WorkoutsManifest.swift (CoachTests does). internal/catalog's first-party reach test reads it, with the real closures, in place of a hand copy.",
   "sync": {
     "scopes": [
       "write:providers.substrate.reamde.dev/apple/*",

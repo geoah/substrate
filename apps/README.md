@@ -639,7 +639,7 @@ package, and for `substrate.reamde.dev/trainingcoach` with the workout coach
 in its closure, as `package` details at the versions the build was written
 against, and the server installs them from the authority document. The app
 applies no vocabulary and reads the version a repository holds. Its model
-and engines are a Swift package of their own, `WorkoutsKit` (`workouts/core`)
+and engines are a Swift package of their own, `WorkoutsKit` (`workouts/WorkoutsKit`)
 (Foundation only), and its sign-in is SubstrateKit's. Everything else, the
 outbox, the cached routines and the package's rules, is in
 [its README](workouts/README.md).
@@ -676,5 +676,5 @@ sync/apple/Share/                   its share extension
 sync/apple/Tests/                   its tests: ids, labels, dates, the Health goldens
 workouts/apple/                     Substrate Workouts: Sources/ (App/, Platform/, Shared/, Views/), Widgets/ (its Live Activity)
 workouts/package/                   its published training and trainingcoach packages
-workouts/core/                      its Swift package: WorkoutsCore (model, engines, presenters) and WorkoutsSync (package, catalogue, outbox), with their tests
+workouts/WorkoutsKit/                      its Swift package: WorkoutsCore (model, engines, presenters) and WorkoutsSync (package, catalogue, outbox), with their tests
 ```

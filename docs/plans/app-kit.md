@@ -523,13 +523,13 @@ By app, not by platform: one app is one folder.
 apps/
   README.md            how the apps are built, tested and released
   kit/                 the Swift package of §5.3, README per library, android/ (Gradle) inside
-  xcode/               project.yml (includes each app's apple/targets.yml), shared Support/
+  xcode/               project.yml (includes each app's apple/targets.yml), Shared/, scripts/
   gradle/              settings.gradle.kts (includes each app's android/), build-logic/
   console/             app.yaml, apple/
-  chat/                app.yaml, core/, apple/, docs/
-  workouts/            app.yaml, core/, apple/ (app, widgets), package/, scripts/, docs/
+  chat/                app.yaml, ChatKit/, apple/, docs/
+  workouts/            app.yaml, WorkoutsKit/, apple/ (app, widgets), package/, library/, scripts/, docs/
   sync/                app.yaml, apple/ (app, share target): moved, not converted
-  tasks/               app.yaml, core/, apple/, android/, package/
+  tasks/               app.yaml, TasksKit/, apple/, android/, package/
   template/            what apps:new copies
 ```
 
@@ -541,9 +541,13 @@ apps/
   scopes from it, and the app's Swift manifest is held to it by a test, as
   `ReachTests` and `CoachTests` hold the manifests to `scopes.json` today. The
   Apple project, the Gradle settings, the site and the release read it.
-- **`core/`** is a Swift package of the app's controllers, engines,
-  presenters and model, with no UI framework. `apple/` and `android/` are
-  thin UIs and the app's own device code.
+- **An app's core** is a Swift package of its controllers, engines,
+  presenters and model, with no UI framework, in a folder named for it
+  (`WorkoutsKit/`, `TasksKit/`). SwiftPM names a local package by its
+  folder, and one Xcode project resolves every app's, so two apps' folders
+  named `core/` would collide; `lint:apps` holds package folder names
+  unique. `apple/` and `android/` are thin UIs and the app's own device
+  code, each `apple/` with its own `Support/` (Info.plists, entitlements).
 - **Nothing in `apps/<app>` imports another app**, and each app's scripts,
   docs and locks live under it: Workouts' `package/closures.lock.json` and
   `library/library.lock.json` move with it, and the site reads them there.
@@ -559,7 +563,7 @@ apps/
 module and `app.yaml`, and refuses:
 
 - a dependency that points up §5.3's list, or from one app to another;
-- a `core/` or a kit library outside the Apple and Android rows that imports
+- an app's core or a kit library outside the Apple and Android rows that imports
   anything but Foundation, FoundationNetworking, Observation, swift-crypto
   and the kit;
 - a Kotlin file outside `kit-device` or an app's `android/` that touches an
@@ -569,7 +573,7 @@ module and `app.yaml`, and refuses:
   (today: Sparkle, swift-crypto, swift-syntax for the tool only, OkHttp,
   AndroidX, kotlinx.serialization, Tink).
 
-The kit and every `core/` build and test on Linux in CI and cross-compile for
+The kit and every app's core build and test on Linux in CI and cross-compile for
 Android, which catches what an allow-list misses.
 
 ### 7.2 Formatting, linting, API

@@ -27,7 +27,7 @@ packages:
   # Substrate Workouts' model, session and suggestion engines (WorkoutsCore,
   # Foundation only) and its sync with a substrate (WorkoutsSync).
   WorkoutsKit:
-    path: ../workouts/core
+    path: ../workouts/WorkoutsKit
 settings:
   base:
     DEVELOPMENT_TEAM: KFA5J8GDWJ

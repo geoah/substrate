@@ -21,8 +21,8 @@ dist/
 /apps/xcode/build/
 /apps/kit/.build/
 /apps/kit/.swiftpm/
-/apps/workouts/core/.build/
-/apps/workouts/core/.swiftpm/
+/apps/workouts/WorkoutsKit/.build/
+/apps/workouts/WorkoutsKit/.swiftpm/
 
 # Editors / OS
 .DS_Store

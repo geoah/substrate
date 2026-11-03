@@ -1068,7 +1068,7 @@ test:workouts)
 	# and so must the exercise library and its sources.
 	uv run --quiet --with pyyaml ../workouts/scripts/workouts-package.py --check
 	uv run --quiet --with pyyaml ../workouts/scripts/exercise-library.py --check
-	swift test --package-path ../workouts/core
+	swift test --package-path ../workouts/WorkoutsKit
 	;;
 test:kit)
 	# SubstrateKit is a Swift package: its tests run on the Mac with swift

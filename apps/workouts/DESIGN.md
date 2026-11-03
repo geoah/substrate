@@ -2862,7 +2862,7 @@ research README's "Still to check on a device"):
 
 ## 10. Test plan
 
-All WorkoutsKit tests run on the Mac with `cd apps/workouts/core && swift test` (Swift Testing, `@Test`),
+All WorkoutsKit tests run on the Mac with `cd apps/workouts/WorkoutsKit && swift test` (Swift Testing, `@Test`),
 and from `xcodebuild test` through the scheme's test target.
 
 ### 10.1 Unit tests

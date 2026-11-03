@@ -56,7 +56,7 @@ func firstPartyRequests(t *testing.T) map[string]appRequest {
 // the site publishes them, as one YAML stream.
 func workoutsClosure(t *testing.T, name, id string) *Bundle {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "apps", "workouts", "core", "Sources", "WorkoutsCore", "Resources", "Package", name+".json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "apps", "workouts", "WorkoutsKit", "Sources", "WorkoutsCore", "Resources", "Package", name+".json"))
 	if err != nil {
 		t.Fatalf("read the %s closure: %v", id, err)
 	}
