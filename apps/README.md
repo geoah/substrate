@@ -793,7 +793,11 @@ SDK for Android, which the `android:*` tasks pin as their own tools (the
 toolchain once, `android:build`, `android:test` and `android:smoke` build,
 test and run it on an emulator, and the CI job `android build` builds it on
 Linux. [kit/android/README.md](kit/android/README.md) says how the bridge
-runs, how its Kotlin is generated, and how an app adds its roots.
+runs, how its Kotlin is generated, how an app adds its roots, and how
+kit-ui draws the shared screens. `mise run apps:gallery` draws every shared
+screen's fixtures with SwiftUI and with Compose into `build/gallery/apple`
+and `build/gallery/android`, and `build/gallery/index.html` shows each
+fixture's two side by side.
 
 ## An app's app.json
 
@@ -847,11 +851,13 @@ nothing takes, and holds the layering the rest of this page relies on
 | `swift-syntax` | the bridge's generator (`kit/Tools/BridgeGen`) reads the `Bridged` declarations with it; a tool's dependency only, never linked into an app |
 | `com.squareup.okhttp3` | OkHttp, the transport on Android (`kit-device`): redirects off on every path, a line stream's included, and cancellation that reaches the socket |
 | `com.google.crypto.tink` | Tink, the secure store's AEAD on Android: a keyset wrapped by an Android Keystore key, so what is on disk is ciphertext |
-| `androidx` | AndroidX: DataStore, the secure store's ciphertext file, and the instrumented test runner |
+| `androidx` | AndroidX: DataStore, the secure store's ciphertext file; Compose (Material 3, its icons) and Activity, which kit-ui and the Gallery app draw with; and the test runners |
 | `org.jetbrains.kotlinx` | kotlinx.serialization, which the generated Kotlin reads and writes bridged values with, and kotlinx.coroutines, the bridge's threads and flows |
 | `org.jetbrains.kotlin` | the Kotlin and serialization Gradle plugins `build-logic` applies |
 | `com.android.tools.build` | the Android Gradle Plugin |
 | `junit` | JUnit 4, the Kotlin unit and instrumented tests' runner |
+| `org.robolectric` | Robolectric, which runs kit-ui's composables on the JVM with Android's own graphics, so the gallery check draws every fixture with no emulator; chosen over Paparazzi because it is a test library alone, with no Gradle plugin reaching into AGP's variants |
+| `io.github.takahirom.roborazzi` | Roborazzi, which writes what Robolectric drew as a PNG: kit-ui's half of `mise run apps:gallery` |
 
 ## Layout
 
@@ -862,7 +868,7 @@ xcode/Shared/Updater.swift          the updater every app compiles in
 xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync and Chat
 xcode/scripts/feed.swift            a release's index.json, appcast.xml, install page and manifest, for every platform
 gradle/                             the one Gradle root of the Android build: settings, the version catalog, the wrapper, build-logic's convention plugins, swift-jnilibs.sh
-kit/android/                        the kit on Android: kit-core, kit-device, bridge-check, the bridge's golden and round-trip fixtures ([its README](kit/android/README.md))
+kit/android/                        the kit on Android: kit-core, kit-device, kit-ui, bridge-check, the Gallery app, the bridge's golden and the fixtures both systems draw ([its README](kit/android/README.md))
 kit/Tools/BridgeGen/                the bridge's generator: Bridged declarations to the golden, the Kotlin and the fingerprint
 kit/                                the apps' shared Swift package: SubstrateCore, SubstrateDevice, SubstrateAPI, SubstrateAuth and SubstrateTesting, which build for Linux and Android too, SubstrateDeviceApple and SubstrateUI, and SubstrateKit over all of them ([its README](kit/README.md))
 console/apple/Support/              the console app's Info.plist per platform and its entitlements

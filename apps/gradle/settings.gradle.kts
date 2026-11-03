@@ -27,4 +27,6 @@ fun module(name: String, dir: String) {
 
 module(":kit-core", "../kit/android/kit-core")
 module(":kit-device", "../kit/android/kit-device")
+module(":kit-ui", "../kit/android/kit-ui")
 module(":bridge-check", "../kit/android/bridge-check")
+module(":gallery", "../kit/android/gallery")
