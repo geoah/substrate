@@ -1085,6 +1085,8 @@ const bundleUpgradeHolder: Shape<BundleUpgradeHolder> = {
 }
 
 const bundleUpgrade: Shape<BundleUpgrade> = {
+  candidateVersion: false,
+  candidateDigest: false,
   holders: false,
   reviewRequired: false,
   codeChanges: false,

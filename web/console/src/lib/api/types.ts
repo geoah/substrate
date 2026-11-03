@@ -1674,6 +1674,8 @@ export interface BundleCodeChange {
 }
 
 export interface BundleUpgrade extends ConversionPlan {
+  candidateVersion?: number
+  candidateDigest?: string
   holders?: BundleUpgradeHolder[]
   reviewRequired?: boolean
   codeChanges?: BundleCodeChange[]

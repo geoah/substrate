@@ -201,6 +201,7 @@ func (h *handler) postCatalogImport(w http.ResponseWriter, r *http.Request) {
 // 0067). No body is the same as no confirmation, so a lossless upgrade is the
 // bare POST it always was.
 type catalogTakeRequest struct {
+	Expect  *catalog.PublishedCandidate  `json:"expect,omitempty"`
 	Confirm *substrate.ConversionConfirm `json:"confirm,omitempty"`
 }
 
@@ -229,7 +230,14 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 		}
 	}
 	ctx := r.Context()
-	b, suggested, err := take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx), req.Confirm)
+	var b *catalog.Bundle
+	var suggested []substrate.SuggestedMapping
+	var err error
+	if !rehomed {
+		b, suggested, err = h.catalog.InstallReviewed(ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx), req.Confirm, req.Expect)
+	} else {
+		b, suggested, err = take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx), req.Confirm)
+	}
 	if err != nil {
 		if errors.Is(err, catalog.ErrNotPublished) {
 			writeError(w, http.StatusNotFound, codeNotFound, err.Error())
