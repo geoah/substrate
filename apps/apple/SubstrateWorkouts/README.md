@@ -27,7 +27,7 @@ Dynamic Island.
 
 ```bash
 mise run apple:build:workouts     # the app for the simulator
-mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (562 tests, on the Mac)
+mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (564 tests, on the Mac)
 mise run apple:release:workouts   # archived, signed and published under workouts/
 uv run --with pyyaml apps/apple/scripts/workouts-package.py   # the package's manifests into the app's JSON
 uv run --with pyyaml apps/apple/scripts/exercise-library.py   # the exercise library into the app's JSON
@@ -101,11 +101,20 @@ nothing and respells nothing: the kinds are `substrate.reamde.dev/training/…`
 on the phone and on the wire. A phone updated from a build that spelled them
 `~/training/…` (decision [T3](docs/decisions.md#t3-the-package-is-the-apps-own-training))
 still holds that spelling in its files: each store reads a file from before
-its format moved through `LegacyKinds` once, every kind, reference path and
-version key, and writes it back in the published spelling (`history/*.json`
-at format 3, `outbox.json`, `catalog.json`, `local-exercises.json` and
+its format moved through `LegacyKinds` once, every kind and reference path,
+and writes it back in the published spelling (`history/*.json` at format 3,
+`outbox.json`, `catalog.json`, `local-exercises.json` and
 `routine-draft.json` at format 2), so nothing is parked on a path the
-server never had and nothing is set aside. The owner cannot edit a published package
+server never had and nothing is set aside. What the old build knew about
+`~/training` says nothing about the published package, which may be empty
+or hold the copies the owner made, so the outbox carries none of it over:
+the old package's record versions and edit chains go, a queued write of it
+goes without its `ifVersion`, and a session's queued writes go altogether,
+since the first sync's exchange derives them again from the history and the
+tombstones. A session the published package lacks is uploaded whole, one it
+holds is taken as the server has it and never sent again, and nothing is
+deleted on either side; a routine edit queued before the update lands on
+the copy, or waits parked with the server's words where there is none. The owner cannot edit a published package
 (the tier's ordinary rule), keeps the bundle's **Pause** and **Resume**, and
 may **Take over…** it, after which it stops upgrading and the app keeps
 writing records to it. A local build and a release build ask for the same
@@ -297,7 +306,7 @@ not the suites: no workflow builds the Apple apps): WorkoutsCore's 470 (the code
 the suggestions against their vectors, the presenters, the stores, the sample
 routine's methods and a session through it to Finish, and the Hevy import
 against `Tests/WorkoutsCoreTests/Fixtures/hevy`, the API's shape included, and the exercise library, and the files the last release left in the `~/training`
-spelling read back once) and WorkoutsSync's 92:
+spelling read back once) and WorkoutsSync's 94:
 the sample written once and never again after a delete, on a second phone or a
 reinstall, a refused sample write that stops nothing, a session logged signed
 out finding its exercises, a routine's delete through the outbox and during a
@@ -309,8 +318,9 @@ delete, a discard, a reset and a new write while a write is in flight, a
 failed save and an unreadable file, parked writes, the history exchange, the
 package check (missing, behind and asked through the set up check, current),
 the published manifests, the coach's closure and the scopes held to its reach
-(`CoachTests`), an account folder from the `~/training` spelling read, rewritten and
-sent to the published paths, and the sign-in request and status.
+(`CoachTests`), an account folder from the `~/training` spelling read and rewritten, its
+history exchanged with an empty published package and with one holding the
+owner's copies, and the sign-in request and status.
 
 `LiveServerTests` runs the whole path against a real substrate when told
 where (one that reads the publisher's authority document, live or through
