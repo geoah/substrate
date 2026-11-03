@@ -52,7 +52,9 @@ final class ManifestTests: XCTestCase {
         // The app's Info.plist key is empty outside a release.
         XCTAssertEqual(manifest.clientID, "http://127.0.0.1/substrate-sync")
         XCTAssertEqual(manifest.scope, "write:providers.substrate.reamde.dev/apple/* "
-            + "read:providers.substrate.reamde.dev/applehealth/account read:providers.substrate.reamde.dev/applehealth/export")
+            + "write:providers.substrate.reamde.dev/applehealth/account write:providers.substrate.reamde.dev/applehealth/export "
+            + "write:providers.substrate.reamde.dev/applehealth/* "
+            + "write:substrate.reamde.dev/health/sleep write:substrate.reamde.dev/health/workout write:substrate.reamde.dev/observations/*")
         XCTAssertEqual(try AuthorizationDetail.json(manifest.details), #"[{"package":"providers.substrate.reamde.dev/apple","type":"package","version":3},"#
             + #"{"package":"providers.substrate.reamde.dev/applehealth","type":"package","version":5},"#
             + #"{"id":"substrate-sync-1a2b3c4d","kind":"providers.substrate.reamde.dev/applehealth/account","#
@@ -87,14 +89,20 @@ final class ManifestTests: XCTestCase {
         XCTAssertTrue(manifest.canMoveToAppAccess(probe("v0.114.0", full)))
     }
 
-    /// The first sign-in says what the approval page will: the apple kinds
-    /// by their labels, the supporting ones counted, and the webhook by the
-    /// package it delivers to.
+    /// The first sign-in says what the approval page will: the kinds by
+    /// their labels, the supporting ones counted, the internal ones (the
+    /// account, the deliveries) named one by one since a glob never reaches
+    /// them, and the webhook by the package it delivers to.
     func testTheRequestReadsAsTheApprovalPageWordsIt() {
         XCTAssertEqual(manifest.plannedChanges().map(\.words), [
             "See, add, change and delete your Apple contacts, events, reminders, shares and visits, and 5 more kinds, including kinds added later, and search them by meaning, which spends your embedding budget",
-            "See your Apple Health accounts, and search them by meaning, which spends your embedding budget",
-            "See your Apple Health deliveries, and search them by meaning, which spends your embedding budget",
+            "See, add, change and delete your Apple Health accounts, and search them by meaning, which spends your embedding budget",
+            "See, add, change and delete your Apple Health deliveries, and search them by meaning, which spends your embedding budget",
+            "See, add, change and delete your Apple Health cycle tracking entries, ECGs, heart rate notifications, medications, states of mind and symptoms, "
+                + "and 2 more kinds, including kinds added later, and search them by meaning, which spends your embedding budget",
+            "See, add, change and delete your Health sleep, and search them by meaning, which spends your embedding budget",
+            "See, add, change and delete your Health workouts, and search them by meaning, which spends your embedding budget",
+            "See, add, change and delete your Observations metrics and sources, and 3 more kinds, including kinds added later, and search them by meaning, which spends your embedding budget",
             "Send data to your repository through the Apple Health webhook, for any Apple Health account, "
                 + "and see every delivery to it that could not be filed, whoever sent it",
             "Install Apple",
@@ -285,18 +293,23 @@ final class ApprovalReachTests: XCTestCase {
             XCTAssertEqual(SyncEngine.unapproved(source, session(without: apple)), [apple], "\(source)")
         }
         XCTAssertEqual(SyncEngine.unapproved(.health, session(without: apple)), [])
-        for scope in ["read:providers.substrate.reamde.dev/applehealth/account", "read:providers.substrate.reamde.dev/applehealth/export",
+        for scope in ["write:providers.substrate.reamde.dev/applehealth/account", "write:providers.substrate.reamde.dev/applehealth/export",
                       "webhook:applehealth-webhook"]
         {
             XCTAssertEqual(SyncEngine.unapproved(.health, session(without: scope)), [scope])
             XCTAssertEqual(SyncEngine.unapproved(.contacts, session(without: scope)), [])
         }
+        // The writes the package's code needs are not the app's own reads:
+        // a source stops for none of them.
+        for scope in ["write:providers.substrate.reamde.dev/applehealth/*", "write:substrate.reamde.dev/observations/*"] {
+            XCTAssertEqual(SyncEngine.unapproved(.health, session(without: scope)), [])
+        }
 
-        let error = SyncError.notApproved(source: "Health", scopes: ["read:providers.substrate.reamde.dev/applehealth/export"])
+        let error = SyncError.notApproved(source: "Health", scopes: ["write:providers.substrate.reamde.dev/applehealth/export"])
         XCTAssertTrue(needsApproval(error))
         XCTAssertFalse(isSignedOut(error))
         XCTAssertEqual(error.localizedDescription, "Substrate Sync can't sync Health: the access you approved leaves out "
-            + "“See your Apple Health deliveries, and search them by meaning, which spends your embedding budget”. Review its access on Home to allow it; nothing this phone sent is sent again.")
+            + "“See, add, change and delete your Apple Health deliveries, and search them by meaning, which spends your embedding budget”. Review its access on Home to allow it; nothing this phone sent is sent again.")
     }
 
     /// A deleted account is not one an approval creates: the planner leaves
