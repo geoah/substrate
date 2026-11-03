@@ -1,9 +1,11 @@
+import Foundation
+import SubstrateCore
 import SubstrateLocal
 
 /// A settings screen as data (§5.6): sections of rows, each row a toggle, a
 /// choice, a value, a link, an action or a note, which each system draws as
 /// its own form.
-public struct SettingsPresentation: Codable, Hashable, Sendable {
+public struct SettingsPresentation: Bridged, Hashable, Sendable {
     public var title: String
     public var sections: [SettingsSection]
 
@@ -13,7 +15,7 @@ public struct SettingsPresentation: Codable, Hashable, Sendable {
     }
 }
 
-public struct SettingsSection: Codable, Hashable, Sendable, Identifiable {
+public struct SettingsSection: Bridged, Hashable, Sendable, Identifiable {
     public var id: SettingsSectionID
     public var title: String?
     public var rows: [SettingsRow]
@@ -27,8 +29,8 @@ public struct SettingsSection: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
-public struct SettingsRow: Codable, Hashable, Sendable, Identifiable {
-    public enum Control: Codable, Hashable, Sendable {
+public struct SettingsRow: Bridged, Hashable, Sendable, Identifiable {
+    public enum Control: Bridged, Hashable, Sendable {
         case toggle(Bool)
         /// The option chosen, by id, and every option.
         case choice(selected: String, options: [SettingsOption])
@@ -58,7 +60,7 @@ public struct SettingsRow: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
-public struct SettingsOption: Codable, Hashable, Sendable, Identifiable {
+public struct SettingsOption: Bridged, Hashable, Sendable, Identifiable {
     public var id: String
     public var label: String
 
@@ -69,7 +71,7 @@ public struct SettingsOption: Codable, Hashable, Sendable, Identifiable {
 }
 
 /// What a settings row sends, by the row's id.
-public enum SettingsCommand: Codable, Hashable, Sendable {
+public enum SettingsCommand: Bridged, Hashable, Sendable {
     case toggle(row: SettingsRowID, on: Bool)
     case choose(row: SettingsRowID, option: String)
     case open(row: SettingsRowID)
@@ -78,7 +80,7 @@ public enum SettingsCommand: Codable, Hashable, Sendable {
 
 /// A settings section, by what it holds: the app's own by the id it gave
 /// it, and the ones every app has by name.
-public enum SettingsSectionID: Codable, Hashable, Sendable {
+public enum SettingsSectionID: Bridged, Hashable, Sendable {
     case app(String)
     case status
     /// The writes the server refused, each with Retry and Discard.
@@ -92,7 +94,7 @@ public enum SettingsSectionID: Codable, Hashable, Sendable {
 
 /// A settings row, by what it is, never by its words: an app dispatches a
 /// command on it, and the Android bridge carries it as is.
-public enum SettingsRowID: Codable, Hashable, Sendable {
+public enum SettingsRowID: Bridged, Hashable, Sendable {
     /// One of the app's own rows, by the id it gave it.
     case app(String)
     case status(StatusRow)
@@ -100,7 +102,7 @@ public enum SettingsRowID: Codable, Hashable, Sendable {
     case storage(StorageRow)
     case about(AboutRow)
 
-    public enum StatusRow: Codable, Hashable, Sendable {
+    public enum StatusRow: Bridged, Hashable, Sendable {
         case sentence
         /// Why, in the server's or the system's words: a change not kept, a
         /// write refused.
@@ -109,10 +111,10 @@ public enum SettingsRowID: Codable, Hashable, Sendable {
         case package(String)
         case action(StatusAction)
         /// A refused write, by its id.
-        case refused(ParkedWrite.ID)
+        case refused(UUID)
     }
 
-    public enum RepositoryRow: Codable, Hashable, Sendable {
+    public enum RepositoryRow: Bridged, Hashable, Sendable {
         case server
         case repository
         case serverVersion
@@ -127,12 +129,12 @@ public enum SettingsRowID: Codable, Hashable, Sendable {
         case signOut
     }
 
-    public enum StorageRow: Codable, Hashable, Sendable {
+    public enum StorageRow: Bridged, Hashable, Sendable {
         case area(FolderArea)
         case clear
     }
 
-    public enum AboutRow: Codable, Hashable, Sendable {
+    public enum AboutRow: Bridged, Hashable, Sendable {
         case version
         case channel
         case check

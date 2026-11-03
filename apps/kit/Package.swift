@@ -80,8 +80,10 @@ let package = Package(
         // The Android bridge: the envelope, handles, calls and keyed lists,
         // which run anywhere, and the JNI surface, which is Android's alone.
         .target(name: "SubstrateBridge", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateRuntime", "SubstrateJNI"]),
-        // The root the bridge's runtime checks drive (bridge-check).
-        .target(name: "SubstrateBridgeCheck", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateRuntime", "SubstrateBridge"],
+        // The roots the bridge's runtime checks drive (bridge-check), and the
+        // shared screens' fixtures the Gallery app draws.
+        .target(name: "SubstrateBridgeCheck", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateRuntime", "SubstrateScreens",
+                                                             "SubstrateBridge"],
                 resources: [.copy("Resources/check.txt")]),
         .target(name: "SubstrateKit", dependencies: [
             "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateScreens",
@@ -92,7 +94,7 @@ let package = Package(
         .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateLocal", "SubstrateScreens", "SubstrateTesting"],
                     resources: [.copy("Resources")]),
         .testTarget(name: "SubstrateBridgeTests", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateRuntime", "SubstrateBridge", "SubstrateBridgeCheck",
+            "SubstrateCore", "SubstrateDevice", "SubstrateRuntime", "SubstrateScreens", "SubstrateBridge", "SubstrateBridgeCheck",
         ]),
     ],
     swiftLanguageModes: [.v6]

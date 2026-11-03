@@ -2,6 +2,170 @@
   "version": 1,
   "types": [
     {
+      "name": "AboutPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "version", "type": "LabeledValue"},
+        {"name": "channel", "type": "LabeledValue?"},
+        {"name": "update", "type": "UpdateOffer?"},
+        {"name": "check", "type": "String?"}
+      ]
+    },
+    {
+      "name": "AccessAction",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "review",
+          "fields": []
+        },
+        {
+          "name": "signInAgain",
+          "fields": []
+        },
+        {
+          "name": "moveToAppAccess",
+          "fields": []
+        },
+        {
+          "name": "retry",
+          "fields": []
+        },
+        {
+          "name": "openFix",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AccessAction.Offer",
+      "module": "SubstrateScreens",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "review", "value": "review"},
+        {"name": "signInAgain", "value": "signInAgain"},
+        {"name": "moveToAppAccess", "value": "moveToAppAccess"},
+        {"name": "retry", "value": "retry"},
+        {"name": "openFix", "value": "openFix"}
+      ]
+    },
+    {
+      "name": "AccessBanner",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "tone", "type": "ScreenTone"},
+        {"name": "lines", "type": "[IssueLine]"}
+      ]
+    },
+    {
+      "name": "AccessEndedPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "symbol", "type": "ScreenSymbol"},
+        {"name": "title", "type": "String"},
+        {"name": "message", "type": "String"},
+        {"name": "signInAgain", "type": "String"}
+      ]
+    },
+    {
+      "name": "ActionButton",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "parameters": ["Action"],
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "action", "type": "Action"}
+      ]
+    },
+    {
+      "name": "AppMenuCommand",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "select",
+          "fields": [
+            {"name": "item", "type": "String"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AppMenuItem",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "title", "type": "String"},
+        {"name": "symbol", "type": "AppMenuSymbol"},
+        {"name": "badge", "type": "String?"}
+      ]
+    },
+    {
+      "name": "AppMenuPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "sections", "type": "[AppMenuSection]"},
+        {"name": "selected", "type": "String"}
+      ]
+    },
+    {
+      "name": "AppMenuSection",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "title", "type": "String?"},
+        {"name": "items", "type": "[AppMenuItem]"}
+      ]
+    },
+    {
+      "name": "AppMenuSymbol",
+      "module": "SubstrateScreens",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "today", "value": "today"},
+        {"name": "upcoming", "value": "upcoming"},
+        {"name": "list", "value": "list"},
+        {"name": "inbox", "value": "inbox"},
+        {"name": "chat", "value": "chat"},
+        {"name": "search", "value": "search"},
+        {"name": "records", "value": "records"},
+        {"name": "activity", "value": "activity"},
+        {"name": "history", "value": "history"},
+        {"name": "person", "value": "person"},
+        {"name": "settings", "value": "settings"}
+      ]
+    },
+    {
+      "name": "ApprovedAccess",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "scopes", "type": "[ApprovedScope]"},
+        {"name": "until", "type": "LabeledValue"}
+      ]
+    },
+    {
+      "name": "ApprovedScope",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "scope", "type": "String"},
+        {"name": "words", "type": "String"}
+      ]
+    },
+    {
       "name": "BridgeFailure",
       "module": "SubstrateBridge",
       "kind": "struct",
@@ -55,6 +219,19 @@
         {"name": "cancelled", "type": "Int"},
         {"name": "deliveryFailures", "type": "Int"},
         {"name": "open", "type": "Int"}
+      ]
+    },
+    {
+      "name": "ChangeLine",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "symbol", "type": "ScreenSymbol"},
+        {"name": "tone", "type": "ScreenTone"},
+        {"name": "words", "type": "String"},
+        {"name": "detail", "type": "String?"},
+        {"name": "detailStands", "type": "Bool"}
       ]
     },
     {
@@ -201,6 +378,94 @@
       ]
     },
     {
+      "name": "ConnectController.Command",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "edit",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "proceed",
+          "fields": []
+        },
+        {
+          "name": "cancelSignIn",
+          "fields": []
+        },
+        {
+          "name": "changeServer",
+          "fields": []
+        },
+        {
+          "name": "checkAgain",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "ConnectPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "field", "type": "ConnectPresentation.Field"},
+        {"name": "door", "type": "ConnectPresentation.Door"},
+        {"name": "found", "type": "JSON(ServerProbe.Result)?"},
+        {"name": "tooOld", "type": "ServerTooOldPresentation?"},
+        {"name": "problem", "type": "ProblemPresentation?"},
+        {"name": "button", "type": "ConnectPresentation.Button?"},
+        {"name": "cancel", "type": "String?"},
+        {"name": "footer", "type": "ConnectPresentation.Footer?"},
+        {"name": "unrevoked", "type": "[ProblemPresentation]"}
+      ]
+    },
+    {
+      "name": "ConnectPresentation.Button",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "busy", "type": "Bool"},
+        {"name": "enabled", "type": "Bool"}
+      ]
+    },
+    {
+      "name": "ConnectPresentation.Door",
+      "module": "SubstrateScreens",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "none", "value": "none"},
+        {"name": "browser", "value": "browser"},
+        {"name": "password", "value": "password"},
+        {"name": "tooOld", "value": "tooOld"}
+      ]
+    },
+    {
+      "name": "ConnectPresentation.Field",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "text", "type": "String"},
+        {"name": "placeholder", "type": "String"},
+        {"name": "label", "type": "String"},
+        {"name": "disabled", "type": "Bool"},
+        {"name": "revision", "type": "Int"}
+      ]
+    },
+    {
+      "name": "ConnectPresentation.Footer",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "found", "type": "String?"},
+        {"name": "repository", "type": "String?"},
+        {"name": "note", "type": "String"}
+      ]
+    },
+    {
       "name": "Counter.Command",
       "module": "SubstrateBridgeCheck",
       "kind": "enum",
@@ -321,12 +586,129 @@
       ]
     },
     {
+      "name": "FixturePresentation",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "connect",
+          "fields": [
+            {"name": "_0", "type": "ConnectPresentation"}
+          ]
+        },
+        {
+          "name": "serverTooOld",
+          "fields": [
+            {"name": "_0", "type": "ServerTooOldPresentation"}
+          ]
+        },
+        {
+          "name": "accessBanner",
+          "fields": [
+            {"name": "_0", "type": "AccessBanner"}
+          ]
+        },
+        {
+          "name": "accessEnded",
+          "fields": [
+            {"name": "_0", "type": "AccessEndedPresentation"}
+          ]
+        },
+        {
+          "name": "review",
+          "fields": [
+            {"name": "_0", "type": "ReviewPresentation"}
+          ]
+        },
+        {
+          "name": "repository",
+          "fields": [
+            {"name": "_0", "type": "RepositoryPresentation"}
+          ]
+        },
+        {
+          "name": "status",
+          "fields": [
+            {"name": "_0", "type": "StatusPresentation"}
+          ]
+        },
+        {
+          "name": "settings",
+          "fields": [
+            {"name": "_0", "type": "SettingsPresentation"}
+          ]
+        },
+        {
+          "name": "problem",
+          "fields": [
+            {"name": "_0", "type": "ProblemPresentation"}
+          ]
+        },
+        {
+          "name": "about",
+          "fields": [
+            {"name": "_0", "type": "AboutPresentation"}
+          ]
+        },
+        {
+          "name": "menu",
+          "fields": [
+            {"name": "_0", "type": "AppMenuPresentation"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "GalleryPresentation",
+      "module": "SubstrateBridgeCheck",
+      "kind": "struct",
+      "fields": [
+        {"name": "drawn", "type": "Int"},
+        {"name": "fixtures", "type": "[ScreenFixture]"}
+      ]
+    },
+    {
+      "name": "GalleryRoot.Command",
+      "module": "SubstrateBridgeCheck",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "refresh",
+          "fields": []
+        }
+      ]
+    },
+    {
       "name": "Handle",
       "module": "SubstrateBridge",
       "kind": "struct",
       "fields": [
         {"name": "id", "type": "Int"},
         {"name": "generation", "type": "Int"}
+      ]
+    },
+    {
+      "name": "IssueLine",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "symbol", "type": "ScreenSymbol"},
+        {"name": "tone", "type": "ScreenTone"},
+        {"name": "title", "type": "String"},
+        {"name": "message", "type": "String"},
+        {"name": "changes", "type": "[ChangeLine]"},
+        {"name": "more", "type": "String?"},
+        {"name": "action", "type": "ActionButton<AccessAction>?"}
+      ]
+    },
+    {
+      "name": "LabeledValue",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "label", "type": "String"},
+        {"name": "value", "type": "String"},
+        {"name": "verbatim", "type": "Bool"}
       ]
     },
     {
@@ -380,6 +762,85 @@
       "fields": [
         {"name": "id", "type": "String"},
         {"name": "text", "type": "String"}
+      ]
+    },
+    {
+      "name": "LinkController.Command",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "signedIn",
+          "fields": []
+        },
+        {
+          "name": "refresh",
+          "fields": [
+            {"name": "force", "type": "Bool"}
+          ]
+        },
+        {
+          "name": "sendNow",
+          "fields": []
+        },
+        {
+          "name": "retry",
+          "fields": [
+            {"name": "_0", "type": "UUID"}
+          ]
+        },
+        {
+          "name": "discard",
+          "fields": [
+            {"name": "_0", "type": "UUID"}
+          ]
+        },
+        {
+          "name": "signOut",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "LinkPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "parameters": ["App"],
+      "fields": [
+        {"name": "snapshot", "type": "LinkSnapshot"},
+        {"name": "repository", "type": "RepositoryPresentation?"},
+        {"name": "banner", "type": "AccessBanner?"},
+        {"name": "ended", "type": "AccessEndedPresentation?"},
+        {"name": "status", "type": "StatusPresentation"},
+        {"name": "signOutProblem", "type": "ProblemPresentation?"},
+        {"name": "app", "type": "App?"}
+      ]
+    },
+    {
+      "name": "LinkSnapshot",
+      "module": "SubstrateRuntime",
+      "kind": "struct",
+      "fields": [
+        {"name": "phase", "type": "LinkSnapshot.Phase"},
+        {"name": "server", "type": "URL?"},
+        {"name": "repository", "type": "String?"},
+        {"name": "scopes", "type": "[String]?"},
+        {"name": "accessEnds", "type": "Date?"},
+        {"name": "generation", "type": "Int"},
+        {"name": "online", "type": "Bool?"},
+        {"name": "packages", "type": "[String: Int]"},
+        {"name": "waiting", "type": "Int"},
+        {"name": "refused", "type": "Int"}
+      ]
+    },
+    {
+      "name": "LinkSnapshot.Phase",
+      "module": "SubstrateRuntime",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "signedOut", "value": "signedOut"},
+        {"name": "signedIn", "value": "signedIn"},
+        {"name": "accessEnded", "value": "accessEnded"}
       ]
     },
     {
@@ -461,11 +922,115 @@
       ]
     },
     {
+      "name": "PackageLine",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "row", "type": "LabeledValue"}
+      ]
+    },
+    {
+      "name": "ProblemFix",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "action", "type": "ProblemFix.Action"}
+      ]
+    },
+    {
+      "name": "ProblemFix.Action",
+      "module": "SubstrateScreens",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "signInAgain", "value": "signInAgain"},
+        {"name": "review", "value": "review"},
+        {"name": "tryAgain", "value": "tryAgain"}
+      ]
+    },
+    {
+      "name": "ProblemPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String?"},
+        {"name": "message", "type": "String"},
+        {"name": "tone", "type": "ScreenTone"},
+        {"name": "symbol", "type": "ScreenSymbol"},
+        {"name": "fix", "type": "ProblemFix?"}
+      ]
+    },
+    {
+      "name": "RefusedWrite",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "UUID"},
+        {"name": "title", "type": "String"},
+        {"name": "recordID", "type": "String"},
+        {"name": "words", "type": "String?"},
+        {"name": "retry", "type": "ActionButton<StatusAction>"},
+        {"name": "discard", "type": "ActionButton<StatusAction>"}
+      ]
+    },
+    {
+      "name": "RefusedWrites",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "rows", "type": "[RefusedWrite]"},
+        {"name": "footer", "type": "String"}
+      ]
+    },
+    {
+      "name": "RepositoryPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "server", "type": "LabeledValue"},
+        {"name": "repository", "type": "LabeledValue"},
+        {"name": "serverVersion", "type": "LabeledValue?"},
+        {"name": "approved", "type": "ApprovedAccess?"},
+        {"name": "access", "type": "LabeledValue?"},
+        {"name": "changeAccess", "type": "String?"},
+        {"name": "unrevoked", "type": "[ProblemPresentation]"},
+        {"name": "signOut", "type": "String"},
+        {"name": "footer", "type": "String"}
+      ]
+    },
+    {
       "name": "ResyncRequest",
       "module": "SubstrateBridge",
       "kind": "struct",
       "fields": [
         {"name": "list", "type": "String"}
+      ]
+    },
+    {
+      "name": "ReviewPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "intro", "type": "String"},
+        {"name": "sections", "type": "[ReviewSection]"},
+        {"name": "continueTitle", "type": "String"},
+        {"name": "footer", "type": "String"},
+        {"name": "cancelTitle", "type": "String"}
+      ]
+    },
+    {
+      "name": "ReviewSection",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "title", "type": "String"},
+        {"name": "rows", "type": "[ChangeLine]"},
+        {"name": "footer", "type": "String?"}
       ]
     },
     {
@@ -475,6 +1040,74 @@
       "fields": [
         {"name": "path", "type": "[String]"},
         {"name": "command", "type": "JSON"}
+      ]
+    },
+    {
+      "name": "ScreenFixture",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "name", "type": "String"},
+        {"name": "presentation", "type": "FixturePresentation"}
+      ]
+    },
+    {
+      "name": "ScreenKind",
+      "module": "SubstrateScreens",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "connect", "value": "connect"},
+        {"name": "serverTooOld", "value": "serverTooOld"},
+        {"name": "accessBanner", "value": "accessBanner"},
+        {"name": "accessEnded", "value": "accessEnded"},
+        {"name": "review", "value": "review"},
+        {"name": "repository", "value": "repository"},
+        {"name": "status", "value": "status"},
+        {"name": "settings", "value": "settings"},
+        {"name": "problem", "value": "problem"},
+        {"name": "about", "value": "about"},
+        {"name": "menu", "value": "menu"}
+      ]
+    },
+    {
+      "name": "ScreenSymbol",
+      "module": "SubstrateScreens",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "serverUpdate", "value": "serverUpdate"},
+        {"name": "warning", "value": "warning"},
+        {"name": "approval", "value": "approval"},
+        {"name": "clock", "value": "clock"},
+        {"name": "ended", "value": "ended"},
+        {"name": "offline", "value": "offline"},
+        {"name": "key", "value": "key"},
+        {"name": "server", "value": "server"},
+        {"name": "found", "value": "found"},
+        {"name": "accessEnded", "value": "accessEnded"},
+        {"name": "allowed", "value": "allowed"},
+        {"name": "leftOut", "value": "leftOut"},
+        {"name": "install", "value": "install"},
+        {"name": "upgrade", "value": "upgrade"},
+        {"name": "create", "value": "create"},
+        {"name": "webhook", "value": "webhook"},
+        {"name": "cannot", "value": "cannot"},
+        {"name": "upToDate", "value": "upToDate"},
+        {"name": "sending", "value": "sending"},
+        {"name": "device", "value": "device"},
+        {"name": "problem", "value": "problem"}
+      ]
+    },
+    {
+      "name": "ScreenTone",
+      "module": "SubstrateScreens",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "quiet", "value": "quiet"},
+        {"name": "positive", "value": "positive"},
+        {"name": "informative", "value": "informative"},
+        {"name": "supporting", "value": "supporting"},
+        {"name": "caution", "value": "caution"},
+        {"name": "critical", "value": "critical"}
       ]
     },
     {
@@ -524,6 +1157,338 @@
       ]
     },
     {
+      "name": "ServerTooOldPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "symbol", "type": "ScreenSymbol"},
+        {"name": "title", "type": "String"},
+        {"name": "summary", "type": "String"},
+        {"name": "cannotTitle", "type": "String?"},
+        {"name": "missing", "type": "[ChangeLine]"},
+        {"name": "note", "type": "String"},
+        {"name": "tryAgain", "type": "String?"},
+        {"name": "changeServer", "type": "String?"}
+      ]
+    },
+    {
+      "name": "SettingsCommand",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "toggle",
+          "fields": [
+            {"name": "row", "type": "SettingsRowID"},
+            {"name": "on", "type": "Bool"}
+          ]
+        },
+        {
+          "name": "choose",
+          "fields": [
+            {"name": "row", "type": "SettingsRowID"},
+            {"name": "option", "type": "String"}
+          ]
+        },
+        {
+          "name": "open",
+          "fields": [
+            {"name": "row", "type": "SettingsRowID"}
+          ]
+        },
+        {
+          "name": "perform",
+          "fields": [
+            {"name": "row", "type": "SettingsRowID"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SettingsOption",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "label", "type": "String"}
+      ]
+    },
+    {
+      "name": "SettingsPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "sections", "type": "[SettingsSection]"}
+      ]
+    },
+    {
+      "name": "SettingsRow",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "SettingsRowID"},
+        {"name": "label", "type": "String"},
+        {"name": "detail", "type": "String?"},
+        {"name": "control", "type": "SettingsRow.Control"}
+      ]
+    },
+    {
+      "name": "SettingsRow.Control",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "toggle",
+          "fields": [
+            {"name": "_0", "type": "Bool"}
+          ]
+        },
+        {
+          "name": "choice",
+          "fields": [
+            {"name": "selected", "type": "String"},
+            {"name": "options", "type": "[SettingsOption]"}
+          ]
+        },
+        {
+          "name": "value",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "verbatim", "type": "Bool"}
+          ]
+        },
+        {
+          "name": "link",
+          "fields": []
+        },
+        {
+          "name": "action",
+          "fields": [
+            {"name": "destructive", "type": "Bool"},
+            {"name": "enabled", "type": "Bool"}
+          ]
+        },
+        {
+          "name": "note",
+          "fields": [
+            {"name": "_0", "type": "ScreenTone"}
+          ]
+        },
+        {
+          "name": "problem",
+          "fields": [
+            {"name": "_0", "type": "ProblemPresentation"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SettingsRowID",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "app",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "status",
+          "fields": [
+            {"name": "_0", "type": "SettingsRowID.StatusRow"}
+          ]
+        },
+        {
+          "name": "repository",
+          "fields": [
+            {"name": "_0", "type": "SettingsRowID.RepositoryRow"}
+          ]
+        },
+        {
+          "name": "storage",
+          "fields": [
+            {"name": "_0", "type": "SettingsRowID.StorageRow"}
+          ]
+        },
+        {
+          "name": "about",
+          "fields": [
+            {"name": "_0", "type": "SettingsRowID.AboutRow"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SettingsRowID.AboutRow",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "version",
+          "fields": []
+        },
+        {
+          "name": "channel",
+          "fields": []
+        },
+        {
+          "name": "check",
+          "fields": []
+        },
+        {
+          "name": "update",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "SettingsRowID.RepositoryRow",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "server",
+          "fields": []
+        },
+        {
+          "name": "repository",
+          "fields": []
+        },
+        {
+          "name": "serverVersion",
+          "fields": []
+        },
+        {
+          "name": "scope",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "until",
+          "fields": []
+        },
+        {
+          "name": "access",
+          "fields": []
+        },
+        {
+          "name": "changeAccess",
+          "fields": []
+        },
+        {
+          "name": "unrevoked",
+          "fields": [
+            {"name": "_0", "type": "Int"}
+          ]
+        },
+        {
+          "name": "signOut",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "SettingsRowID.StatusRow",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "sentence",
+          "fields": []
+        },
+        {
+          "name": "problem",
+          "fields": []
+        },
+        {
+          "name": "package",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "action",
+          "fields": [
+            {"name": "_0", "type": "StatusAction"}
+          ]
+        },
+        {
+          "name": "refused",
+          "fields": [
+            {"name": "_0", "type": "UUID"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SettingsRowID.StorageRow",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "area",
+          "fields": [
+            {"name": "_0", "type": "JSON(FolderArea)"}
+          ]
+        },
+        {
+          "name": "clear",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "SettingsSection",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "SettingsSectionID"},
+        {"name": "title", "type": "String?"},
+        {"name": "rows", "type": "[SettingsRow]"},
+        {"name": "footer", "type": "String?"}
+      ]
+    },
+    {
+      "name": "SettingsSectionID",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "app",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "status",
+          "fields": []
+        },
+        {
+          "name": "refused",
+          "fields": []
+        },
+        {
+          "name": "repository",
+          "fields": []
+        },
+        {
+          "name": "approvedAccess",
+          "fields": []
+        },
+        {
+          "name": "storage",
+          "fields": []
+        },
+        {
+          "name": "about",
+          "fields": []
+        }
+      ]
+    },
+    {
       "name": "StartAnswer",
       "module": "SubstrateBridge",
       "kind": "enum",
@@ -555,6 +1520,58 @@
         {"name": "cache", "type": "String"},
         {"name": "sdk", "type": "Int"},
         {"name": "debug", "type": "Bool"}
+      ]
+    },
+    {
+      "name": "StatusAction",
+      "module": "SubstrateScreens",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "sendNow",
+          "fields": []
+        },
+        {
+          "name": "review",
+          "fields": []
+        },
+        {
+          "name": "signIn",
+          "fields": []
+        },
+        {
+          "name": "renew",
+          "fields": []
+        },
+        {
+          "name": "retry",
+          "fields": [
+            {"name": "_0", "type": "UUID"}
+          ]
+        },
+        {
+          "name": "discard",
+          "fields": [
+            {"name": "_0", "type": "UUID"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "StatusPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "symbol", "type": "ScreenSymbol"},
+        {"name": "tone", "type": "ScreenTone"},
+        {"name": "sentence", "type": "String"},
+        {"name": "problem", "type": "ProblemPresentation?"},
+        {"name": "packages", "type": "[PackageLine]"},
+        {"name": "actions", "type": "[ActionButton<StatusAction>]"},
+        {"name": "busy", "type": "Bool"},
+        {"name": "footer", "type": "String?"},
+        {"name": "refused", "type": "RefusedWrites?"}
       ]
     },
     {
@@ -649,6 +1666,17 @@
         {"name": "headers", "type": "[TransportHeader]"},
         {"name": "body", "type": "String?"},
         {"name": "bodyFile", "type": "String?"}
+      ]
+    },
+    {
+      "name": "UpdateOffer",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "message", "type": "String"},
+        {"name": "install", "type": "String"},
+        {"name": "later", "type": "String"}
       ]
     }
   ]

@@ -1,0 +1,3388 @@
+[
+  {
+    "name": "connect-empty",
+    "presentation": {
+      "connect": {
+        "_0": {
+          "button": {
+            "busy": false,
+            "enabled": false,
+            "title": "Continue"
+          },
+          "door": "none",
+          "field": {
+            "disabled": false,
+            "label": "Repository or server",
+            "placeholder": "ada.example.com",
+            "revision": 0,
+            "text": ""
+          },
+          "footer": {
+            "note": "Your repository's name, such as ada.example.com, or your Substrate server's address. A name finds its server on its own."
+          },
+          "unrevoked": []
+        }
+      }
+    }
+  },
+  {
+    "name": "connect-checking",
+    "presentation": {
+      "connect": {
+        "_0": {
+          "button": {
+            "busy": true,
+            "enabled": false,
+            "title": "Checking…"
+          },
+          "door": "none",
+          "field": {
+            "disabled": true,
+            "label": "Repository or server",
+            "placeholder": "ada.example.com",
+            "revision": 0,
+            "text": "ada.example.com"
+          },
+          "footer": {
+            "note": "Your repository's name, such as ada.example.com, or your Substrate server's address. A name finds its server on its own."
+          },
+          "unrevoked": []
+        }
+      }
+    }
+  },
+  {
+    "name": "connect-found",
+    "presentation": {
+      "connect": {
+        "_0": {
+          "button": {
+            "busy": false,
+            "enabled": true,
+            "title": "Sign In with Your Substrate"
+          },
+          "door": "browser",
+          "field": {
+            "disabled": false,
+            "label": "Repository or server",
+            "placeholder": "ada.example.com",
+            "revision": 0,
+            "text": "ada.example.com"
+          },
+          "footer": {
+            "found": "Server found: ada.example.com",
+            "note": "You sign in on ada.example.com itself and choose what Substrate Tasks may do there. Later, Change Access in this app asks again; to revoke, use ada.example.com's Settings, under Apps.",
+            "repository": "Repository: ada.example.com"
+          },
+          "found": {
+            "discovery": {
+              "changelog": {
+                "horizon": 0
+              },
+              "endpoints": {
+                "login": "/login",
+                "password": "/password",
+                "register": "/register",
+                "tokens": "/tokens",
+                "totp": "/totp"
+              },
+              "features": [],
+              "grammar": {
+                "actors": [],
+                "collection": "",
+                "kind": "",
+                "record": "",
+                "recordPath": ""
+              },
+              "registration": {
+                "inviteRequired": true,
+                "totpRequired": true
+              },
+              "server": {
+                "version": "v0.114.0"
+              },
+              "surfaces": {
+                "rest": {
+                  "compatibility": "supported",
+                  "endpoint": "/api/v1"
+                }
+              },
+              "versions": [
+                {
+                  "name": "v1",
+                  "status": "served"
+                }
+              ]
+            },
+            "metadata": {
+              "authorization_details_types_supported": [
+                "package",
+                "account",
+                "webhook"
+              ],
+              "authorization_endpoint": "https://ada.example.com/oauth/authorize",
+              "authorization_response_iss_parameter_supported": true,
+              "client_id_metadata_document_supported": true,
+              "code_challenge_methods_supported": [
+                "S256"
+              ],
+              "grant_types_supported": [
+                "authorization_code"
+              ],
+              "issuer": "https://ada.example.com",
+              "response_modes_supported": [
+                "query"
+              ],
+              "response_types_supported": [
+                "code"
+              ],
+              "revocation_endpoint": "https://ada.example.com/oauth/revoke",
+              "revocation_endpoint_auth_methods_supported": [
+                "none"
+              ],
+              "scopes_supported": [
+                "read:*",
+                "write:*",
+                "agents:*",
+                "decide:*"
+              ],
+              "token_endpoint": "https://ada.example.com/oauth/token",
+              "token_endpoint_auth_methods_supported": [
+                "none"
+              ]
+            },
+            "origin": "https://ada.example.com",
+            "repository": "ada.example.com",
+            "verdict": {
+              "compatible": {}
+            }
+          },
+          "unrevoked": []
+        }
+      }
+    }
+  },
+  {
+    "name": "connect-signing-in",
+    "presentation": {
+      "connect": {
+        "_0": {
+          "button": {
+            "busy": true,
+            "enabled": false,
+            "title": "Waiting for Your Browser…"
+          },
+          "door": "browser",
+          "field": {
+            "disabled": true,
+            "label": "Repository or server",
+            "placeholder": "ada.example.com",
+            "revision": 0,
+            "text": "ada.example.com"
+          },
+          "footer": {
+            "found": "Server found: ada.example.com",
+            "note": "You sign in on ada.example.com itself and choose what Substrate Tasks may do there. Later, Change Access in this app asks again; to revoke, use ada.example.com's Settings, under Apps.",
+            "repository": "Repository: ada.example.com"
+          },
+          "found": {
+            "discovery": {
+              "changelog": {
+                "horizon": 0
+              },
+              "endpoints": {
+                "login": "/login",
+                "password": "/password",
+                "register": "/register",
+                "tokens": "/tokens",
+                "totp": "/totp"
+              },
+              "features": [],
+              "grammar": {
+                "actors": [],
+                "collection": "",
+                "kind": "",
+                "record": "",
+                "recordPath": ""
+              },
+              "registration": {
+                "inviteRequired": true,
+                "totpRequired": true
+              },
+              "server": {
+                "version": "v0.114.0"
+              },
+              "surfaces": {
+                "rest": {
+                  "compatibility": "supported",
+                  "endpoint": "/api/v1"
+                }
+              },
+              "versions": [
+                {
+                  "name": "v1",
+                  "status": "served"
+                }
+              ]
+            },
+            "metadata": {
+              "authorization_details_types_supported": [
+                "package",
+                "account",
+                "webhook"
+              ],
+              "authorization_endpoint": "https://ada.example.com/oauth/authorize",
+              "authorization_response_iss_parameter_supported": true,
+              "client_id_metadata_document_supported": true,
+              "code_challenge_methods_supported": [
+                "S256"
+              ],
+              "grant_types_supported": [
+                "authorization_code"
+              ],
+              "issuer": "https://ada.example.com",
+              "response_modes_supported": [
+                "query"
+              ],
+              "response_types_supported": [
+                "code"
+              ],
+              "revocation_endpoint": "https://ada.example.com/oauth/revoke",
+              "revocation_endpoint_auth_methods_supported": [
+                "none"
+              ],
+              "scopes_supported": [
+                "read:*",
+                "write:*",
+                "agents:*",
+                "decide:*"
+              ],
+              "token_endpoint": "https://ada.example.com/oauth/token",
+              "token_endpoint_auth_methods_supported": [
+                "none"
+              ]
+            },
+            "origin": "https://ada.example.com",
+            "repository": "ada.example.com",
+            "verdict": {
+              "compatible": {}
+            }
+          },
+          "unrevoked": []
+        }
+      }
+    }
+  },
+  {
+    "name": "connect-problem",
+    "presentation": {
+      "connect": {
+        "_0": {
+          "button": {
+            "busy": false,
+            "enabled": true,
+            "title": "Try Again"
+          },
+          "door": "none",
+          "field": {
+            "disabled": false,
+            "label": "Repository or server",
+            "placeholder": "ada.example.com",
+            "revision": 0,
+            "text": "nowhere.example.com"
+          },
+          "footer": {
+            "note": "Your repository's name, such as ada.example.com, or your Substrate server's address. A name finds its server on its own."
+          },
+          "problem": {
+            "message": "nowhere.example.com has no _substrate record, and nothing answers there.",
+            "symbol": "warning",
+            "title": "Couldn't reach that server",
+            "tone": "critical"
+          },
+          "unrevoked": []
+        }
+      }
+    }
+  },
+  {
+    "name": "connect-unrevoked",
+    "presentation": {
+      "connect": {
+        "_0": {
+          "button": {
+            "busy": false,
+            "enabled": true,
+            "title": "Sign In with Your Substrate"
+          },
+          "door": "browser",
+          "field": {
+            "disabled": false,
+            "label": "Repository or server",
+            "placeholder": "ada.example.com",
+            "revision": 0,
+            "text": "ada.example.com"
+          },
+          "footer": {
+            "found": "Server found: ada.example.com",
+            "note": "You sign in on ada.example.com itself and choose what Substrate Tasks may do there. Later, Change Access in this app asks again; to revoke, use ada.example.com's Settings, under Apps.",
+            "repository": "Repository: ada.example.com"
+          },
+          "found": {
+            "discovery": {
+              "changelog": {
+                "horizon": 0
+              },
+              "endpoints": {
+                "login": "/login",
+                "password": "/password",
+                "register": "/register",
+                "tokens": "/tokens",
+                "totp": "/totp"
+              },
+              "features": [],
+              "grammar": {
+                "actors": [],
+                "collection": "",
+                "kind": "",
+                "record": "",
+                "recordPath": ""
+              },
+              "registration": {
+                "inviteRequired": true,
+                "totpRequired": true
+              },
+              "server": {
+                "version": "v0.114.0"
+              },
+              "surfaces": {
+                "rest": {
+                  "compatibility": "supported",
+                  "endpoint": "/api/v1"
+                }
+              },
+              "versions": [
+                {
+                  "name": "v1",
+                  "status": "served"
+                }
+              ]
+            },
+            "metadata": {
+              "authorization_details_types_supported": [
+                "package",
+                "account",
+                "webhook"
+              ],
+              "authorization_endpoint": "https://ada.example.com/oauth/authorize",
+              "authorization_response_iss_parameter_supported": true,
+              "client_id_metadata_document_supported": true,
+              "code_challenge_methods_supported": [
+                "S256"
+              ],
+              "grant_types_supported": [
+                "authorization_code"
+              ],
+              "issuer": "https://ada.example.com",
+              "response_modes_supported": [
+                "query"
+              ],
+              "response_types_supported": [
+                "code"
+              ],
+              "revocation_endpoint": "https://ada.example.com/oauth/revoke",
+              "revocation_endpoint_auth_methods_supported": [
+                "none"
+              ],
+              "scopes_supported": [
+                "read:*",
+                "write:*",
+                "agents:*",
+                "decide:*"
+              ],
+              "token_endpoint": "https://ada.example.com/oauth/token",
+              "token_endpoint_auth_methods_supported": [
+                "none"
+              ]
+            },
+            "origin": "https://ada.example.com",
+            "repository": "ada.example.com",
+            "verdict": {
+              "compatible": {}
+            }
+          },
+          "unrevoked": [
+            {
+              "message": "Substrate Tasks's earlier access to grace.example.org still works on substrate.example.org. It tries again each time it opens; you can also revoke it yourself in substrate.example.org's Settings, under Apps.",
+              "symbol": "warning",
+              "title": "Server access has not been revoked yet",
+              "tone": "caution"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "connect-too-old",
+    "presentation": {
+      "connect": {
+        "_0": {
+          "door": "tooOld",
+          "field": {
+            "disabled": false,
+            "label": "Repository or server",
+            "placeholder": "ada.example.com",
+            "revision": 0,
+            "text": "ada.example.com"
+          },
+          "found": {
+            "discovery": {
+              "changelog": {
+                "horizon": 0
+              },
+              "endpoints": {
+                "login": "/login",
+                "password": "/password",
+                "register": "/register",
+                "tokens": "/tokens",
+                "totp": "/totp"
+              },
+              "features": [],
+              "grammar": {
+                "actors": [],
+                "collection": "",
+                "kind": "",
+                "record": "",
+                "recordPath": ""
+              },
+              "registration": {
+                "inviteRequired": true,
+                "totpRequired": true
+              },
+              "server": {
+                "version": "v0.114.0"
+              },
+              "surfaces": {
+                "rest": {
+                  "compatibility": "supported",
+                  "endpoint": "/api/v1"
+                }
+              },
+              "versions": [
+                {
+                  "name": "v1",
+                  "status": "served"
+                }
+              ]
+            },
+            "metadata": {
+              "authorization_details_types_supported": [
+                "package",
+                "account",
+                "webhook"
+              ],
+              "authorization_endpoint": "https://ada.example.com/oauth/authorize",
+              "authorization_response_iss_parameter_supported": true,
+              "client_id_metadata_document_supported": true,
+              "code_challenge_methods_supported": [
+                "S256"
+              ],
+              "grant_types_supported": [
+                "authorization_code"
+              ],
+              "issuer": "https://ada.example.com",
+              "response_modes_supported": [
+                "query"
+              ],
+              "response_types_supported": [
+                "code"
+              ],
+              "revocation_endpoint": "https://ada.example.com/oauth/revoke",
+              "revocation_endpoint_auth_methods_supported": [
+                "none"
+              ],
+              "scopes_supported": [
+                "read:*",
+                "write:*",
+                "agents:*",
+                "decide:*"
+              ],
+              "token_endpoint": "https://ada.example.com/oauth/token",
+              "token_endpoint_auth_methods_supported": [
+                "none"
+              ]
+            },
+            "origin": "https://ada.example.com",
+            "repository": "ada.example.com",
+            "verdict": {
+              "tooOld": {
+                "missing": [
+                  "say which version it runs"
+                ],
+                "needed": "0.114.0",
+                "running": "v0.113.0"
+              }
+            }
+          },
+          "tooOld": {
+            "cannotTitle": "It can't yet",
+            "changeServer": "Use Another Server",
+            "missing": [
+              {
+                "detailStands": false,
+                "id": "missing|say which version it runs",
+                "symbol": "cannot",
+                "tone": "quiet",
+                "words": "Say which version it runs"
+              }
+            ],
+            "note": "Whoever runs ada.example.com can update it. Once it is, try again.",
+            "summary": "Substrate Tasks needs Substrate 0.114.0 or later. ada.example.com runs 0.113.0.",
+            "symbol": "serverUpdate",
+            "title": "ada.example.com needs an update",
+            "tryAgain": "Try Again"
+          },
+          "unrevoked": []
+        }
+      }
+    }
+  },
+  {
+    "name": "connect-password",
+    "presentation": {
+      "connect": {
+        "_0": {
+          "door": "password",
+          "field": {
+            "disabled": false,
+            "label": "Repository or server",
+            "placeholder": "ada.example.com",
+            "revision": 0,
+            "text": "ada.example.com"
+          },
+          "footer": {
+            "found": "Server found: ada.example.com",
+            "note": "This server can't give Substrate Tasks access of its own yet, so your password goes to it directly.",
+            "repository": "Repository: ada.example.com"
+          },
+          "found": {
+            "discovery": {
+              "changelog": {
+                "horizon": 0
+              },
+              "endpoints": {
+                "login": "/login",
+                "password": "/password",
+                "register": "/register",
+                "tokens": "/tokens",
+                "totp": "/totp"
+              },
+              "features": [],
+              "grammar": {
+                "actors": [],
+                "collection": "",
+                "kind": "",
+                "record": "",
+                "recordPath": ""
+              },
+              "registration": {
+                "inviteRequired": true,
+                "totpRequired": true
+              },
+              "server": {
+                "version": "v0.114.0"
+              },
+              "surfaces": {
+                "rest": {
+                  "compatibility": "supported",
+                  "endpoint": "/api/v1"
+                }
+              },
+              "versions": [
+                {
+                  "name": "v1",
+                  "status": "served"
+                }
+              ]
+            },
+            "origin": "https://ada.example.com",
+            "repository": "ada.example.com",
+            "verdict": {
+              "tooOld": {
+                "missing": [
+                  "give apps access of their own"
+                ],
+                "running": "v0.113.0"
+              }
+            }
+          },
+          "unrevoked": []
+        }
+      }
+    }
+  },
+  {
+    "name": "connect-browser-waiting",
+    "presentation": {
+      "connect": {
+        "_0": {
+          "button": {
+            "busy": true,
+            "enabled": false,
+            "title": "Waiting for Your Browser…"
+          },
+          "cancel": "Cancel",
+          "door": "browser",
+          "field": {
+            "disabled": true,
+            "label": "Repository or server",
+            "placeholder": "ada.example.com",
+            "revision": 0,
+            "text": "ada.example.com"
+          },
+          "footer": {
+            "found": "Server found: ada.example.com",
+            "note": "ada.example.com's sign-in page is open in your browser. Sign in there and choose what Substrate Tasks may do; this window comes back when you're done.",
+            "repository": "Repository: ada.example.com"
+          },
+          "found": {
+            "discovery": {
+              "changelog": {
+                "horizon": 0
+              },
+              "endpoints": {
+                "login": "/login",
+                "password": "/password",
+                "register": "/register",
+                "tokens": "/tokens",
+                "totp": "/totp"
+              },
+              "features": [],
+              "grammar": {
+                "actors": [],
+                "collection": "",
+                "kind": "",
+                "record": "",
+                "recordPath": ""
+              },
+              "registration": {
+                "inviteRequired": true,
+                "totpRequired": true
+              },
+              "server": {
+                "version": "v0.114.0"
+              },
+              "surfaces": {
+                "rest": {
+                  "compatibility": "supported",
+                  "endpoint": "/api/v1"
+                }
+              },
+              "versions": [
+                {
+                  "name": "v1",
+                  "status": "served"
+                }
+              ]
+            },
+            "metadata": {
+              "authorization_details_types_supported": [
+                "package",
+                "account",
+                "webhook"
+              ],
+              "authorization_endpoint": "https://ada.example.com/oauth/authorize",
+              "authorization_response_iss_parameter_supported": true,
+              "client_id_metadata_document_supported": true,
+              "code_challenge_methods_supported": [
+                "S256"
+              ],
+              "grant_types_supported": [
+                "authorization_code"
+              ],
+              "issuer": "https://ada.example.com",
+              "response_modes_supported": [
+                "query"
+              ],
+              "response_types_supported": [
+                "code"
+              ],
+              "revocation_endpoint": "https://ada.example.com/oauth/revoke",
+              "revocation_endpoint_auth_methods_supported": [
+                "none"
+              ],
+              "scopes_supported": [
+                "read:*",
+                "write:*",
+                "agents:*",
+                "decide:*"
+              ],
+              "token_endpoint": "https://ada.example.com/oauth/token",
+              "token_endpoint_auth_methods_supported": [
+                "none"
+              ]
+            },
+            "origin": "https://ada.example.com",
+            "repository": "ada.example.com",
+            "verdict": {
+              "compatible": {}
+            }
+          },
+          "unrevoked": []
+        }
+      }
+    }
+  },
+  {
+    "name": "connect-sign-in-failed",
+    "presentation": {
+      "connect": {
+        "_0": {
+          "button": {
+            "busy": false,
+            "enabled": true,
+            "title": "Sign In with Your Substrate"
+          },
+          "door": "browser",
+          "field": {
+            "disabled": false,
+            "label": "Repository or server",
+            "placeholder": "ada.example.com",
+            "revision": 0,
+            "text": "ada.example.com"
+          },
+          "footer": {
+            "found": "Server found: ada.example.com",
+            "note": "You sign in on ada.example.com itself and choose what Substrate Tasks may do there. Later, Change Access in this app asks again; to revoke, use ada.example.com's Settings, under Apps.",
+            "repository": "Repository: ada.example.com"
+          },
+          "found": {
+            "discovery": {
+              "changelog": {
+                "horizon": 0
+              },
+              "endpoints": {
+                "login": "/login",
+                "password": "/password",
+                "register": "/register",
+                "tokens": "/tokens",
+                "totp": "/totp"
+              },
+              "features": [],
+              "grammar": {
+                "actors": [],
+                "collection": "",
+                "kind": "",
+                "record": "",
+                "recordPath": ""
+              },
+              "registration": {
+                "inviteRequired": true,
+                "totpRequired": true
+              },
+              "server": {
+                "version": "v0.114.0"
+              },
+              "surfaces": {
+                "rest": {
+                  "compatibility": "supported",
+                  "endpoint": "/api/v1"
+                }
+              },
+              "versions": [
+                {
+                  "name": "v1",
+                  "status": "served"
+                }
+              ]
+            },
+            "metadata": {
+              "authorization_details_types_supported": [
+                "package",
+                "account",
+                "webhook"
+              ],
+              "authorization_endpoint": "https://ada.example.com/oauth/authorize",
+              "authorization_response_iss_parameter_supported": true,
+              "client_id_metadata_document_supported": true,
+              "code_challenge_methods_supported": [
+                "S256"
+              ],
+              "grant_types_supported": [
+                "authorization_code"
+              ],
+              "issuer": "https://ada.example.com",
+              "response_modes_supported": [
+                "query"
+              ],
+              "response_types_supported": [
+                "code"
+              ],
+              "revocation_endpoint": "https://ada.example.com/oauth/revoke",
+              "revocation_endpoint_auth_methods_supported": [
+                "none"
+              ],
+              "scopes_supported": [
+                "read:*",
+                "write:*",
+                "agents:*",
+                "decide:*"
+              ],
+              "token_endpoint": "https://ada.example.com/oauth/token",
+              "token_endpoint_auth_methods_supported": [
+                "none"
+              ]
+            },
+            "origin": "https://ada.example.com",
+            "repository": "ada.example.com",
+            "verdict": {
+              "compatible": {}
+            }
+          },
+          "problem": {
+            "message": "ada.example.com refused the sign-in: the code was already used.",
+            "symbol": "warning",
+            "title": "Couldn't sign in",
+            "tone": "critical"
+          },
+          "unrevoked": []
+        }
+      }
+    }
+  },
+  {
+    "name": "server-too-old",
+    "presentation": {
+      "serverTooOld": {
+        "_0": {
+          "cannotTitle": "It can't yet",
+          "changeServer": "Use Another Server",
+          "missing": [
+            {
+              "detailStands": false,
+              "id": "missing|give apps access of their own",
+              "symbol": "cannot",
+              "tone": "quiet",
+              "words": "Give apps access of their own"
+            },
+            {
+              "detailStands": false,
+              "id": "missing|set up an app's account",
+              "symbol": "cannot",
+              "tone": "quiet",
+              "words": "Set up an app's account"
+            }
+          ],
+          "note": "Whoever runs ada.example.com can update it. Once it is, try again.",
+          "summary": "Substrate Tasks needs Substrate 0.114.0 or later. ada.example.com runs 0.113.0.",
+          "symbol": "serverUpdate",
+          "title": "ada.example.com needs an update",
+          "tryAgain": "Try Again"
+        }
+      }
+    }
+  },
+  {
+    "name": "banner-server-update",
+    "presentation": {
+      "accessBanner": {
+        "_0": {
+          "lines": [
+            {
+              "changes": [
+                {
+                  "detail": "This server ships version 1; the app needs version 2. The server needs an update first.",
+                  "detailStands": true,
+                  "id": "upgrade|false|Update Tasks to version 2 or later",
+                  "symbol": "warning",
+                  "tone": "caution",
+                  "words": "Update Tasks to version 2 or later"
+                }
+              ],
+              "message": "ada.example.com runs 0.114.0, which can't yet set up everything Substrate Tasks needs. Whoever runs it can update it.",
+              "symbol": "serverUpdate",
+              "title": "ada.example.com needs an update",
+              "tone": "caution"
+            }
+          ],
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "banner-needs-approval",
+    "presentation": {
+      "accessBanner": {
+        "_0": {
+          "lines": [
+            {
+              "action": {
+                "action": {
+                  "review": {}
+                },
+                "title": "Review"
+              },
+              "changes": [
+                {
+                  "detailStands": false,
+                  "id": "scope|false|See and change your lists",
+                  "symbol": "allowed",
+                  "tone": "positive",
+                  "words": "See and change your lists"
+                },
+                {
+                  "detail": "Version 1 to 2 (needs 2 or later)",
+                  "detailStands": false,
+                  "id": "upgrade|false|Update Tasks",
+                  "symbol": "upgrade",
+                  "tone": "informative",
+                  "words": "Update Tasks"
+                }
+              ],
+              "message": "2 changes, which you approve on ada.example.com:",
+              "symbol": "approval",
+              "title": "Substrate Tasks needs your approval",
+              "tone": "informative"
+            }
+          ],
+          "tone": "informative"
+        }
+      }
+    }
+  },
+  {
+    "name": "banner-blocked",
+    "presentation": {
+      "accessBanner": {
+        "_0": {
+          "lines": [
+            {
+              "action": {
+                "action": {
+                  "openFix": {
+                    "_0": "/catalog/substrate.reamde.dev%2Ftasks"
+                  }
+                },
+                "title": "Fix It on ada.example.com"
+              },
+              "changes": [
+                {
+                  "detail": "Version 3",
+                  "detailStands": false,
+                  "id": "install|false|Install People",
+                  "symbol": "install",
+                  "tone": "informative",
+                  "words": "Install People"
+                },
+                {
+                  "detail": "Your copy of this package is quarantined, so approving cannot set it up. Its provider page says why.",
+                  "detailStands": true,
+                  "id": "upgrade|false|Update Tasks",
+                  "symbol": "warning",
+                  "tone": "caution",
+                  "words": "Update Tasks"
+                }
+              ],
+              "message": "Substrate Tasks needs 2 changes that can't be approved until what is in the way is fixed on ada.example.com:",
+              "symbol": "warning",
+              "title": "Something on ada.example.com is in the way",
+              "tone": "caution"
+            }
+          ],
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "banner-ends-soon",
+    "presentation": {
+      "accessBanner": {
+        "_0": {
+          "lines": [
+            {
+              "action": {
+                "action": {
+                  "review": {}
+                },
+                "title": "Renew"
+              },
+              "changes": [],
+              "message": "Substrate Tasks stops working with ada.example.com then, until you approve it again.",
+              "symbol": "clock",
+              "title": "Access ends November 6",
+              "tone": "caution"
+            }
+          ],
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "banner-legacy",
+    "presentation": {
+      "accessBanner": {
+        "_0": {
+          "lines": [
+            {
+              "action": {
+                "action": {
+                  "moveToAppAccess": {}
+                },
+                "title": "Move to App Access"
+              },
+              "changes": [],
+              "message": "Substrate Tasks signed in with your password, so it can reach everything. ada.example.com can now give it only the access it needs.",
+              "symbol": "key",
+              "title": "Move to app access",
+              "tone": "informative"
+            }
+          ],
+          "tone": "informative"
+        }
+      }
+    }
+  },
+  {
+    "name": "banner-unreachable",
+    "presentation": {
+      "accessBanner": {
+        "_0": {
+          "lines": [
+            {
+              "action": {
+                "action": {
+                  "retry": {}
+                },
+                "title": "Try Again"
+              },
+              "changes": [],
+              "message": "The network connection was lost.",
+              "symbol": "offline",
+              "title": "Couldn't check with ada.example.com",
+              "tone": "quiet"
+            }
+          ],
+          "tone": "informative"
+        }
+      }
+    }
+  },
+  {
+    "name": "banner-several",
+    "presentation": {
+      "accessBanner": {
+        "_0": {
+          "lines": [
+            {
+              "changes": [
+                {
+                  "detail": "This server ships version 1; the app needs version 2. The server needs an update first.",
+                  "detailStands": true,
+                  "id": "upgrade|false|Update Tasks to version 2 or later",
+                  "symbol": "warning",
+                  "tone": "caution",
+                  "words": "Update Tasks to version 2 or later"
+                }
+              ],
+              "message": "ada.example.com runs 0.114.0, which can't yet set up everything Substrate Tasks needs. Whoever runs it can update it.",
+              "symbol": "serverUpdate",
+              "title": "ada.example.com needs an update",
+              "tone": "caution"
+            },
+            {
+              "changes": [
+                {
+                  "detailStands": false,
+                  "id": "scope|false|See and change your lists",
+                  "symbol": "allowed",
+                  "tone": "positive",
+                  "words": "See and change your lists"
+                },
+                {
+                  "detail": "Version 1 to 2 (needs 2 or later)",
+                  "detailStands": false,
+                  "id": "upgrade|false|Update Tasks",
+                  "symbol": "upgrade",
+                  "tone": "informative",
+                  "words": "Update Tasks"
+                }
+              ],
+              "message": "Once ada.example.com is updated, Substrate Tasks will ask you to approve:",
+              "symbol": "approval",
+              "title": "Substrate Tasks needs your approval",
+              "tone": "informative"
+            },
+            {
+              "changes": [],
+              "message": "Substrate Tasks stops working with ada.example.com then, until you approve it again.",
+              "symbol": "clock",
+              "title": "Access ends November 6",
+              "tone": "caution"
+            }
+          ],
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "access-ended",
+    "presentation": {
+      "accessEnded": {
+        "_0": {
+          "message": "ada.example.com no longer accepts Substrate Tasks: the time you approved it for is up, or it was revoked in Settings, under Apps.",
+          "signInAgain": "Sign In Again",
+          "symbol": "accessEnded",
+          "title": "Substrate Tasks's access ended"
+        }
+      }
+    }
+  },
+  {
+    "name": "review-first-sign-in",
+    "presentation": {
+      "review": {
+        "_0": {
+          "cancelTitle": "Not Now",
+          "continueTitle": "Continue in Browser",
+          "footer": "You choose in your browser: you can uncheck any access with a checkbox there. Setting up comes with the request; to refuse it, deny. Later, Change Access in this app asks again; to revoke, use ada.example.com's Settings, under Apps.",
+          "intro": "Substrate Tasks will ask for this access. You see the same list in your browser, and approve it there.",
+          "sections": [
+            {
+              "id": "access",
+              "rows": [
+                {
+                  "detailStands": false,
+                  "id": "scope|false|See your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget",
+                  "symbol": "allowed",
+                  "tone": "positive",
+                  "words": "See your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+                },
+                {
+                  "detailStands": false,
+                  "id": "scope|false|See, add, change and delete your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget",
+                  "symbol": "allowed",
+                  "tone": "positive",
+                  "words": "See, add, change and delete your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+                }
+              ],
+              "title": "It will be able to"
+            },
+            {
+              "footer": "Setting up continues even if you close the browser. What it sets up stays if it stops part way or you later revoke Substrate Tasks.",
+              "id": "setup",
+              "rows": [
+                {
+                  "detailStands": false,
+                  "id": "install|false|Install Tasks",
+                  "symbol": "install",
+                  "tone": "informative",
+                  "words": "Install Tasks"
+                }
+              ],
+              "title": "It will set up on your server"
+            }
+          ],
+          "title": "Connect Substrate Tasks to ada.example.com"
+        }
+      }
+    }
+  },
+  {
+    "name": "review-update",
+    "presentation": {
+      "review": {
+        "_0": {
+          "cancelTitle": "Not Now",
+          "continueTitle": "Continue in Browser",
+          "footer": "You choose in your browser: you can uncheck any access with a checkbox there. Setting up comes with the request; to refuse it, deny. Later, Change Access in this app asks again; to revoke, use ada.example.com's Settings, under Apps.",
+          "intro": "Substrate Tasks has changed since you approved it. What it already has keeps working until you decide.",
+          "sections": [
+            {
+              "id": "access",
+              "rows": [
+                {
+                  "detailStands": false,
+                  "id": "scope|false|See and change your lists",
+                  "symbol": "allowed",
+                  "tone": "positive",
+                  "words": "See and change your lists"
+                }
+              ],
+              "title": "It asks to also"
+            },
+            {
+              "footer": "Setting up continues even if you close the browser. What it sets up stays if it stops part way or you later revoke Substrate Tasks.",
+              "id": "setup",
+              "rows": [
+                {
+                  "detail": "Version 1 to 2 (needs 2 or later)",
+                  "detailStands": false,
+                  "id": "upgrade|false|Update Tasks",
+                  "symbol": "upgrade",
+                  "tone": "informative",
+                  "words": "Update Tasks"
+                }
+              ],
+              "title": "It will set up on your server"
+            }
+          ],
+          "title": "Allow more access and update server setup"
+        }
+      }
+    }
+  },
+  {
+    "name": "review-change-access",
+    "presentation": {
+      "review": {
+        "_0": {
+          "cancelTitle": "Not Now",
+          "continueTitle": "Continue in Browser",
+          "footer": "You choose in your browser: you can uncheck any access with a checkbox there. Setting up comes with the request; to refuse it, deny. Later, Change Access in this app asks again; to revoke, use ada.example.com's Settings, under Apps.",
+          "intro": "You choose on ada.example.com: what Substrate Tasks has now is listed there under Already allowed, where you can uncheck it.",
+          "sections": [
+            {
+              "footer": "The page on ada.example.com asks for them again; uncheck them there to keep them out.",
+              "id": "leftOut",
+              "rows": [
+                {
+                  "detailStands": false,
+                  "id": "scope|true|See and change your lists",
+                  "symbol": "leftOut",
+                  "tone": "quiet",
+                  "words": "See and change your lists"
+                }
+              ],
+              "title": "You left these out last time"
+            },
+            {
+              "footer": "Setting up continues even if you close the browser. What it sets up stays if it stops part way or you later revoke Substrate Tasks.",
+              "id": "setup",
+              "rows": [
+                {
+                  "detailStands": false,
+                  "id": "install|false|Install Tasks",
+                  "symbol": "install",
+                  "tone": "informative",
+                  "words": "Install Tasks"
+                }
+              ],
+              "title": "It will set up on your server"
+            }
+          ],
+          "title": "Change what Substrate Tasks may do"
+        }
+      }
+    }
+  },
+  {
+    "name": "repository",
+    "presentation": {
+      "repository": {
+        "_0": {
+          "approved": {
+            "scopes": [
+              {
+                "scope": "read:substrate.reamde.dev/tasks/*",
+                "words": "See your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+              },
+              {
+                "scope": "write:substrate.reamde.dev/tasks/*",
+                "words": "See, add, change and delete your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+              }
+            ],
+            "title": "Approved access",
+            "until": {
+              "label": "Until",
+              "value": "Dec 3, 2026 at 9:00 AM",
+              "verbatim": false
+            }
+          },
+          "changeAccess": "Change Access…",
+          "footer": "Sign Out: signs out on this device and revokes its access on ada.example.com.",
+          "repository": {
+            "label": "Repository",
+            "value": "ada.example.com",
+            "verbatim": false
+          },
+          "server": {
+            "label": "Server",
+            "value": "ada.example.com",
+            "verbatim": false
+          },
+          "serverVersion": {
+            "label": "Server version",
+            "value": "0.114.0",
+            "verbatim": false
+          },
+          "signOut": "Sign Out",
+          "title": "Repository",
+          "unrevoked": []
+        }
+      }
+    }
+  },
+  {
+    "name": "repository-unrevoked",
+    "presentation": {
+      "repository": {
+        "_0": {
+          "approved": {
+            "scopes": [
+              {
+                "scope": "read:substrate.reamde.dev/tasks/*",
+                "words": "See your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+              },
+              {
+                "scope": "write:substrate.reamde.dev/tasks/*",
+                "words": "See, add, change and delete your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+              }
+            ],
+            "title": "Approved access",
+            "until": {
+              "label": "Until",
+              "value": "Dec 3, 2026 at 9:00 AM",
+              "verbatim": false
+            }
+          },
+          "changeAccess": "Change Access…",
+          "footer": "Sign Out: signs out on this device and revokes its access on ada.example.com.",
+          "repository": {
+            "label": "Repository",
+            "value": "ada.example.com",
+            "verbatim": false
+          },
+          "server": {
+            "label": "Server",
+            "value": "ada.example.com",
+            "verbatim": false
+          },
+          "serverVersion": {
+            "label": "Server version",
+            "value": "A build of 0.114.0",
+            "verbatim": false
+          },
+          "signOut": "Sign Out",
+          "title": "Repository",
+          "unrevoked": [
+            {
+              "message": "Substrate Tasks's earlier access still works on ada.example.com. It tries again each time it opens; you can also revoke it yourself in ada.example.com's Settings, under Signed in.",
+              "symbol": "warning",
+              "title": "Server access has not been revoked yet",
+              "tone": "caution"
+            },
+            {
+              "message": "Substrate Tasks's earlier access to grace.example.org still works on substrate.example.org. It tries again each time it opens; you can also revoke it yourself in substrate.example.org's Settings, under Apps.",
+              "symbol": "warning",
+              "title": "Server access has not been revoked yet",
+              "tone": "caution"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "repository-password",
+    "presentation": {
+      "repository": {
+        "_0": {
+          "access": {
+            "label": "Access",
+            "value": "Everything, with your password",
+            "verbatim": false
+          },
+          "footer": "Sign Out: signs out on this device and revokes its sign-in on ada.example.com.",
+          "repository": {
+            "label": "Repository",
+            "value": "ada.example.com",
+            "verbatim": false
+          },
+          "server": {
+            "label": "Server",
+            "value": "ada.example.com",
+            "verbatim": false
+          },
+          "serverVersion": {
+            "label": "Server version",
+            "value": "0.113.0",
+            "verbatim": false
+          },
+          "signOut": "Sign Out",
+          "title": "Repository",
+          "unrevoked": []
+        }
+      }
+    }
+  },
+  {
+    "name": "status-up-to-date",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [],
+          "busy": false,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Version 2",
+                "verbatim": false
+              }
+            }
+          ],
+          "sentence": "Up to date.",
+          "symbol": "upToDate",
+          "title": "Substrate",
+          "tone": "positive"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-sending",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [
+            {
+              "action": {
+                "sendNow": {}
+              },
+              "title": "Send Now"
+            }
+          ],
+          "busy": true,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Version 2",
+                "verbatim": false
+              }
+            }
+          ],
+          "sentence": "Sending 3 changes.",
+          "symbol": "sending",
+          "title": "Substrate",
+          "tone": "informative"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-offline",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [
+            {
+              "action": {
+                "sendNow": {}
+              },
+              "title": "Send Now"
+            }
+          ],
+          "busy": false,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Version 2",
+                "verbatim": false
+              }
+            }
+          ],
+          "sentence": "Your substrate cannot be reached. 2 changes wait on this iPhone.",
+          "symbol": "offline",
+          "title": "Substrate",
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-refused",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [
+            {
+              "action": {
+                "sendNow": {}
+              },
+              "title": "Send Now"
+            }
+          ],
+          "busy": false,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Version 2",
+                "verbatim": false
+              }
+            }
+          ],
+          "refused": {
+            "footer": "Retry sends the change again. Discard gives up the change and the changes waiting behind it; what this iPhone holds stays.",
+            "rows": [
+              {
+                "discard": {
+                  "action": {
+                    "discard": {
+                      "_0": "00000000-0000-7000-8000-000000000001"
+                    }
+                  },
+                  "title": "Discard"
+                },
+                "id": "00000000-0000-7000-8000-000000000001",
+                "recordID": "0196f7d2-buy-milk",
+                "retry": {
+                  "action": {
+                    "retry": {
+                      "_0": "00000000-0000-7000-8000-000000000001"
+                    }
+                  },
+                  "title": "Retry"
+                },
+                "title": "Task, sent",
+                "words": "props.status: expected one of todo, doing, done"
+              }
+            ],
+            "title": "Refused by Your Substrate"
+          },
+          "sentence": "Your substrate refused a change. 1 change waits; retry or discard it below.",
+          "symbol": "warning",
+          "title": "Substrate",
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-needs-approval",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [
+            {
+              "action": {
+                "sendNow": {}
+              },
+              "title": "Send Now"
+            },
+            {
+              "action": {
+                "review": {}
+              },
+              "title": "Review Access…"
+            }
+          ],
+          "busy": false,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Version 2",
+                "verbatim": false
+              }
+            }
+          ],
+          "sentence": "Substrate Tasks needs your approval for more access. Review it to send what waits.",
+          "symbol": "warning",
+          "title": "Substrate",
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-package-behind",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [],
+          "busy": false,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Version 1, waiting for the update to version 2",
+                "verbatim": false
+              }
+            }
+          ],
+          "sentence": "Your substrate has version 1 of the Tasks package and this app needs version 2 or later. The update waits for your approval on your substrate; tasks wait on this iPhone until then.",
+          "symbol": "warning",
+          "title": "Substrate",
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-packages-behind",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [],
+          "busy": false,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Version 1, waiting for the update to version 2",
+                "verbatim": false
+              }
+            },
+            {
+              "id": "samples.substrate.reamde.dev/people",
+              "row": {
+                "label": "People package",
+                "value": "Version 2, waiting for the update to version 3",
+                "verbatim": false
+              }
+            }
+          ],
+          "sentence": "Your substrate has older versions of the Tasks and People packages than this app needs. The updates wait for your approval on your substrate; tasks wait on this iPhone until then.",
+          "symbol": "warning",
+          "title": "Substrate",
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-signed-out",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [
+            {
+              "action": {
+                "sendNow": {}
+              },
+              "title": "Send Now"
+            },
+            {
+              "action": {
+                "signIn": {}
+              },
+              "title": "Sign In Again…"
+            }
+          ],
+          "busy": false,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Version 2",
+                "verbatim": false
+              }
+            }
+          ],
+          "sentence": "Your access ended. Sign in again to send what waits.",
+          "symbol": "warning",
+          "title": "Substrate",
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-local",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [
+            {
+              "action": {
+                "signIn": {}
+              },
+              "title": "Sign In to Your Substrate…"
+            }
+          ],
+          "busy": false,
+          "packages": [],
+          "sentence": "Not signed in. Tasks stay on this iPhone.",
+          "symbol": "device",
+          "title": "Substrate",
+          "tone": "quiet"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-ends-soon",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [
+            {
+              "action": {
+                "sendNow": {}
+              },
+              "title": "Send Now"
+            },
+            {
+              "action": {
+                "renew": {}
+              },
+              "title": "Renew Access…"
+            }
+          ],
+          "busy": false,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Version 2",
+                "verbatim": false
+              }
+            }
+          ],
+          "sentence": "Access ends Nov 6, 2026. Renew it to keep sending. Sending 2 changes.",
+          "symbol": "warning",
+          "title": "Substrate",
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-not-kept",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [
+            {
+              "action": {
+                "sendNow": {}
+              },
+              "title": "Send Now"
+            }
+          ],
+          "busy": false,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Version 2",
+                "verbatim": false
+              }
+            }
+          ],
+          "problem": {
+            "message": "The disk is full: 0 bytes are free on this iPhone.",
+            "symbol": "warning",
+            "title": "Not kept on this iPhone",
+            "tone": "critical"
+          },
+          "sentence": "A change could not be kept on this iPhone. Tasks already kept stay.",
+          "symbol": "warning",
+          "title": "Substrate",
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-server-too-old",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [
+            {
+              "action": {
+                "sendNow": {}
+              },
+              "title": "Send Now"
+            }
+          ],
+          "busy": false,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Version 2",
+                "verbatim": false
+              }
+            }
+          ],
+          "sentence": "Your substrate needs an update before Substrate Tasks can use it. Tasks wait on this iPhone until then.",
+          "symbol": "warning",
+          "title": "Substrate",
+          "tone": "caution"
+        }
+      }
+    }
+  },
+  {
+    "name": "status-preparing",
+    "presentation": {
+      "status": {
+        "_0": {
+          "actions": [
+            {
+              "action": {
+                "sendNow": {}
+              },
+              "title": "Send Now"
+            }
+          ],
+          "busy": true,
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "packages": [
+            {
+              "id": "substrate.reamde.dev/tasks",
+              "row": {
+                "label": "Tasks package",
+                "value": "Checking",
+                "verbatim": false
+              }
+            }
+          ],
+          "sentence": "Checking the Tasks package on your substrate.",
+          "symbol": "sending",
+          "title": "Substrate",
+          "tone": "informative"
+        }
+      }
+    }
+  },
+  {
+    "name": "settings",
+    "presentation": {
+      "settings": {
+        "_0": {
+          "sections": [
+            {
+              "id": {
+                "app": {
+                  "_0": "tasks"
+                }
+              },
+              "rows": [
+                {
+                  "control": {
+                    "toggle": {
+                      "_0": true
+                    }
+                  },
+                  "id": {
+                    "app": {
+                      "_0": "reminders"
+                    }
+                  },
+                  "label": "Remind me when a task is due"
+                },
+                {
+                  "control": {
+                    "choice": {
+                      "options": [
+                        {
+                          "id": "due",
+                          "label": "Due date"
+                        },
+                        {
+                          "id": "priority",
+                          "label": "Priority"
+                        },
+                        {
+                          "id": "name",
+                          "label": "Name"
+                        }
+                      ],
+                      "selected": "due"
+                    }
+                  },
+                  "id": {
+                    "app": {
+                      "_0": "sort"
+                    }
+                  },
+                  "label": "Sort by"
+                },
+                {
+                  "control": {
+                    "link": {}
+                  },
+                  "id": {
+                    "app": {
+                      "_0": "lists"
+                    }
+                  },
+                  "label": "Lists"
+                }
+              ],
+              "title": "Tasks"
+            },
+            {
+              "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+              "id": {
+                "status": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "note": {
+                      "_0": "positive"
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "sentence": {}
+                      }
+                    }
+                  },
+                  "label": "Up to date."
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "Version 2",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "package": {
+                          "_0": "substrate.reamde.dev/tasks"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Tasks package"
+                }
+              ],
+              "title": "Substrate"
+            },
+            {
+              "footer": "Sign Out: signs out on this device and revokes its access on ada.example.com.",
+              "id": {
+                "repository": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "ada.example.com",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "server": {}
+                      }
+                    }
+                  },
+                  "label": "Server"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "ada.example.com",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "repository": {}
+                      }
+                    }
+                  },
+                  "label": "Repository"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "0.114.0",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "serverVersion": {}
+                      }
+                    }
+                  },
+                  "label": "Server version"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": true,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "signOut": {}
+                      }
+                    }
+                  },
+                  "label": "Sign Out"
+                }
+              ],
+              "title": "Repository"
+            },
+            {
+              "id": {
+                "approvedAccess": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "note": {
+                      "_0": "positive"
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "scope": {
+                          "_0": "read:substrate.reamde.dev/tasks/*"
+                        }
+                      }
+                    }
+                  },
+                  "label": "See your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+                },
+                {
+                  "control": {
+                    "note": {
+                      "_0": "positive"
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "scope": {
+                          "_0": "write:substrate.reamde.dev/tasks/*"
+                        }
+                      }
+                    }
+                  },
+                  "label": "See, add, change and delete your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "Dec 3, 2026 at 9:00 AM",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "until": {}
+                      }
+                    }
+                  },
+                  "label": "Until"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "changeAccess": {}
+                      }
+                    }
+                  },
+                  "label": "Change Access…"
+                }
+              ],
+              "title": "Approved access"
+            },
+            {
+              "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+              "id": {
+                "storage": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "2.4 KB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "outbox"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Waiting to be sent"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "1.8 MB of 100 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "records"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Saved records"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "12.3 MB of 100 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "cache"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Saved copies"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": true,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "clear": {}
+                      }
+                    }
+                  },
+                  "label": "Clear Saved Copies"
+                }
+              ],
+              "title": "Storage"
+            },
+            {
+              "id": {
+                "about": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "0.120.0-pre.20261103.090000+ac85863e",
+                      "verbatim": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "version": {}
+                      }
+                    }
+                  },
+                  "label": "Version"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "Pre-release",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "channel": {}
+                      }
+                    }
+                  },
+                  "label": "Channel"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "check": {}
+                      }
+                    }
+                  },
+                  "label": "Check for Updates"
+                }
+              ],
+              "title": "About"
+            }
+          ],
+          "title": "Settings"
+        }
+      }
+    }
+  },
+  {
+    "name": "settings-journal-problem",
+    "presentation": {
+      "settings": {
+        "_0": {
+          "sections": [
+            {
+              "id": {
+                "app": {
+                  "_0": "tasks"
+                }
+              },
+              "rows": [
+                {
+                  "control": {
+                    "toggle": {
+                      "_0": true
+                    }
+                  },
+                  "id": {
+                    "app": {
+                      "_0": "reminders"
+                    }
+                  },
+                  "label": "Remind me when a task is due"
+                },
+                {
+                  "control": {
+                    "choice": {
+                      "options": [
+                        {
+                          "id": "due",
+                          "label": "Due date"
+                        },
+                        {
+                          "id": "priority",
+                          "label": "Priority"
+                        },
+                        {
+                          "id": "name",
+                          "label": "Name"
+                        }
+                      ],
+                      "selected": "due"
+                    }
+                  },
+                  "id": {
+                    "app": {
+                      "_0": "sort"
+                    }
+                  },
+                  "label": "Sort by"
+                },
+                {
+                  "control": {
+                    "link": {}
+                  },
+                  "id": {
+                    "app": {
+                      "_0": "lists"
+                    }
+                  },
+                  "label": "Lists"
+                }
+              ],
+              "title": "Tasks"
+            },
+            {
+              "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+              "id": {
+                "status": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "note": {
+                      "_0": "caution"
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "sentence": {}
+                      }
+                    }
+                  },
+                  "label": "A change could not be kept on this iPhone. Tasks already kept stay."
+                },
+                {
+                  "control": {
+                    "problem": {
+                      "_0": {
+                        "message": "The journal could not be written: the disk is full.",
+                        "symbol": "warning",
+                        "title": "Not kept on this iPhone",
+                        "tone": "critical"
+                      }
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "problem": {}
+                      }
+                    }
+                  },
+                  "label": "Not kept on this iPhone"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "Version 2",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "package": {
+                          "_0": "substrate.reamde.dev/tasks"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Tasks package"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "action": {
+                          "_0": {
+                            "sendNow": {}
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "label": "Send Now"
+                }
+              ],
+              "title": "Substrate"
+            },
+            {
+              "footer": "Sign Out: signs out on this device and revokes its access on ada.example.com.",
+              "id": {
+                "repository": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "ada.example.com",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "server": {}
+                      }
+                    }
+                  },
+                  "label": "Server"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "ada.example.com",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "repository": {}
+                      }
+                    }
+                  },
+                  "label": "Repository"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "0.114.0",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "serverVersion": {}
+                      }
+                    }
+                  },
+                  "label": "Server version"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": true,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "signOut": {}
+                      }
+                    }
+                  },
+                  "label": "Sign Out"
+                }
+              ],
+              "title": "Repository"
+            },
+            {
+              "id": {
+                "approvedAccess": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "note": {
+                      "_0": "positive"
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "scope": {
+                          "_0": "read:substrate.reamde.dev/tasks/*"
+                        }
+                      }
+                    }
+                  },
+                  "label": "See your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+                },
+                {
+                  "control": {
+                    "note": {
+                      "_0": "positive"
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "scope": {
+                          "_0": "write:substrate.reamde.dev/tasks/*"
+                        }
+                      }
+                    }
+                  },
+                  "label": "See, add, change and delete your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "Dec 3, 2026 at 9:00 AM",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "until": {}
+                      }
+                    }
+                  },
+                  "label": "Until"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "changeAccess": {}
+                      }
+                    }
+                  },
+                  "label": "Change Access…"
+                }
+              ],
+              "title": "Approved access"
+            },
+            {
+              "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+              "id": {
+                "storage": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "2.4 KB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "outbox"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Waiting to be sent"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "1.8 MB of 100 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "records"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Saved records"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "12.3 MB of 100 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "cache"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Saved copies"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": true,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "clear": {}
+                      }
+                    }
+                  },
+                  "label": "Clear Saved Copies"
+                }
+              ],
+              "title": "Storage"
+            },
+            {
+              "id": {
+                "about": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "0.120.0-pre.20261103.090000+ac85863e",
+                      "verbatim": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "version": {}
+                      }
+                    }
+                  },
+                  "label": "Version"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "Pre-release",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "channel": {}
+                      }
+                    }
+                  },
+                  "label": "Channel"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "check": {}
+                      }
+                    }
+                  },
+                  "label": "Check for Updates"
+                }
+              ],
+              "title": "About"
+            }
+          ],
+          "title": "Settings"
+        }
+      }
+    }
+  },
+  {
+    "name": "settings-refused",
+    "presentation": {
+      "settings": {
+        "_0": {
+          "sections": [
+            {
+              "id": {
+                "app": {
+                  "_0": "tasks"
+                }
+              },
+              "rows": [
+                {
+                  "control": {
+                    "toggle": {
+                      "_0": true
+                    }
+                  },
+                  "id": {
+                    "app": {
+                      "_0": "reminders"
+                    }
+                  },
+                  "label": "Remind me when a task is due"
+                },
+                {
+                  "control": {
+                    "choice": {
+                      "options": [
+                        {
+                          "id": "due",
+                          "label": "Due date"
+                        },
+                        {
+                          "id": "priority",
+                          "label": "Priority"
+                        },
+                        {
+                          "id": "name",
+                          "label": "Name"
+                        }
+                      ],
+                      "selected": "due"
+                    }
+                  },
+                  "id": {
+                    "app": {
+                      "_0": "sort"
+                    }
+                  },
+                  "label": "Sort by"
+                },
+                {
+                  "control": {
+                    "link": {}
+                  },
+                  "id": {
+                    "app": {
+                      "_0": "lists"
+                    }
+                  },
+                  "label": "Lists"
+                }
+              ],
+              "title": "Tasks"
+            },
+            {
+              "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+              "id": {
+                "status": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "note": {
+                      "_0": "caution"
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "sentence": {}
+                      }
+                    }
+                  },
+                  "label": "Your substrate refused a change. 1 change waits; retry or discard it below."
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "Version 2",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "package": {
+                          "_0": "substrate.reamde.dev/tasks"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Tasks package"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "action": {
+                          "_0": {
+                            "sendNow": {}
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "label": "Send Now"
+                }
+              ],
+              "title": "Substrate"
+            },
+            {
+              "footer": "Retry sends the change again. Discard gives up the change and the changes waiting behind it; what this iPhone holds stays.",
+              "id": {
+                "refused": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "0196f7d2-buy-milk",
+                      "verbatim": true
+                    }
+                  },
+                  "detail": "props.status: expected one of todo, doing, done",
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "refused": {
+                          "_0": "00000000-0000-7000-8000-000000000001"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Task, sent"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "action": {
+                          "_0": {
+                            "retry": {
+                              "_0": "00000000-0000-7000-8000-000000000001"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "label": "Retry"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": true,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "action": {
+                          "_0": {
+                            "discard": {
+                              "_0": "00000000-0000-7000-8000-000000000001"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "label": "Discard"
+                }
+              ],
+              "title": "Refused by Your Substrate"
+            },
+            {
+              "footer": "Sign Out: signs out on this device and revokes its access on ada.example.com.",
+              "id": {
+                "repository": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "ada.example.com",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "server": {}
+                      }
+                    }
+                  },
+                  "label": "Server"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "ada.example.com",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "repository": {}
+                      }
+                    }
+                  },
+                  "label": "Repository"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "0.114.0",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "serverVersion": {}
+                      }
+                    }
+                  },
+                  "label": "Server version"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": true,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "signOut": {}
+                      }
+                    }
+                  },
+                  "label": "Sign Out"
+                }
+              ],
+              "title": "Repository"
+            },
+            {
+              "id": {
+                "approvedAccess": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "note": {
+                      "_0": "positive"
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "scope": {
+                          "_0": "read:substrate.reamde.dev/tasks/*"
+                        }
+                      }
+                    }
+                  },
+                  "label": "See your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+                },
+                {
+                  "control": {
+                    "note": {
+                      "_0": "positive"
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "scope": {
+                          "_0": "write:substrate.reamde.dev/tasks/*"
+                        }
+                      }
+                    }
+                  },
+                  "label": "See, add, change and delete your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "Dec 3, 2026 at 9:00 AM",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "until": {}
+                      }
+                    }
+                  },
+                  "label": "Until"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "repository": {
+                      "_0": {
+                        "changeAccess": {}
+                      }
+                    }
+                  },
+                  "label": "Change Access…"
+                }
+              ],
+              "title": "Approved access"
+            },
+            {
+              "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+              "id": {
+                "storage": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "2.4 KB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "outbox"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Waiting to be sent"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "1.8 MB of 100 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "records"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Saved records"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "12.3 MB of 100 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "cache"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Saved copies"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": true,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "clear": {}
+                      }
+                    }
+                  },
+                  "label": "Clear Saved Copies"
+                }
+              ],
+              "title": "Storage"
+            },
+            {
+              "id": {
+                "about": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "0.120.0-pre.20261103.090000+ac85863e",
+                      "verbatim": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "version": {}
+                      }
+                    }
+                  },
+                  "label": "Version"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "Pre-release",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "channel": {}
+                      }
+                    }
+                  },
+                  "label": "Channel"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "check": {}
+                      }
+                    }
+                  },
+                  "label": "Check for Updates"
+                }
+              ],
+              "title": "About"
+            }
+          ],
+          "title": "Settings"
+        }
+      }
+    }
+  },
+  {
+    "name": "problem-signed-out",
+    "presentation": {
+      "problem": {
+        "_0": {
+          "fix": {
+            "action": "signInAgain",
+            "title": "Sign In Again"
+          },
+          "message": "Ada.example.com no longer accepts Substrate Tasks's sign-in. Sign in again to carry on.",
+          "symbol": "warning",
+          "title": "Couldn't send your changes",
+          "tone": "critical"
+        }
+      }
+    }
+  },
+  {
+    "name": "problem-offline",
+    "presentation": {
+      "problem": {
+        "_0": {
+          "fix": {
+            "action": "tryAgain",
+            "title": "Try Again"
+          },
+          "message": "This Mac is offline.",
+          "symbol": "warning",
+          "title": "Couldn't reach ada.example.com",
+          "tone": "critical"
+        }
+      }
+    }
+  },
+  {
+    "name": "problem-plain",
+    "presentation": {
+      "problem": {
+        "_0": {
+          "message": "The disk is full.",
+          "symbol": "warning",
+          "title": "Not saved",
+          "tone": "critical"
+        }
+      }
+    }
+  },
+  {
+    "name": "about",
+    "presentation": {
+      "about": {
+        "_0": {
+          "channel": {
+            "label": "Channel",
+            "value": "Release",
+            "verbatim": false
+          },
+          "check": "Check for Updates",
+          "title": "About",
+          "version": {
+            "label": "Version",
+            "value": "0.120.0",
+            "verbatim": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "about-update",
+    "presentation": {
+      "about": {
+        "_0": {
+          "channel": {
+            "label": "Channel",
+            "value": "Pre-release",
+            "verbatim": false
+          },
+          "check": "Check for Updates",
+          "title": "About",
+          "update": {
+            "install": "Install",
+            "later": "Not Now",
+            "message": "Substrate Tasks 0.121.0-pre.20261104.090000+9f1e2d3c is ready to install. You have 0.120.0-pre.20261103.090000+ac85863e.",
+            "title": "Update available"
+          },
+          "version": {
+            "label": "Version",
+            "value": "0.120.0-pre.20261103.090000+ac85863e",
+            "verbatim": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "menu",
+    "presentation": {
+      "menu": {
+        "_0": {
+          "sections": [
+            {
+              "id": "tasks",
+              "items": [
+                {
+                  "badge": "3",
+                  "id": "today",
+                  "symbol": "today",
+                  "title": "Today"
+                },
+                {
+                  "id": "upcoming",
+                  "symbol": "upcoming",
+                  "title": "Upcoming"
+                },
+                {
+                  "id": "lists",
+                  "symbol": "list",
+                  "title": "Lists"
+                }
+              ]
+            },
+            {
+              "id": "app",
+              "items": [
+                {
+                  "id": "settings",
+                  "symbol": "settings",
+                  "title": "Settings"
+                }
+              ],
+              "title": "Substrate Tasks"
+            }
+          ],
+          "selected": "today",
+          "title": "Substrate Tasks"
+        }
+      }
+    }
+  },
+  {
+    "name": "menu-settings",
+    "presentation": {
+      "menu": {
+        "_0": {
+          "sections": [
+            {
+              "id": "tasks",
+              "items": [
+                {
+                  "id": "today",
+                  "symbol": "today",
+                  "title": "Today"
+                },
+                {
+                  "id": "upcoming",
+                  "symbol": "upcoming",
+                  "title": "Upcoming"
+                },
+                {
+                  "id": "lists",
+                  "symbol": "list",
+                  "title": "Lists"
+                }
+              ]
+            },
+            {
+              "id": "app",
+              "items": [
+                {
+                  "id": "settings",
+                  "symbol": "settings",
+                  "title": "Settings"
+                }
+              ],
+              "title": "Substrate Tasks"
+            }
+          ],
+          "selected": "settings",
+          "title": "Substrate Tasks"
+        }
+      }
+    }
+  }
+]

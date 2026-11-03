@@ -57,7 +57,7 @@ public enum ScreenFixtures {
         fix: "/catalog/substrate.reamde.dev%2Ftasks")
 
     public static var all: [ScreenFixture] {
-        connect + access + review + repository + status + settings + problems + about
+        connect + access + review + repository + status + settings + problems + about + menu
     }
 
     // MARK: Connect
@@ -257,6 +257,30 @@ public enum ScreenFixtures {
             ScreenFixture("about", .about(.present(appName: app, version: "0.120.0", channel: "release", offered: nil))),
             ScreenFixture("about-update", .about(.present(appName: app, version: "0.120.0-pre.20261103.090000+ac85863e", channel: "pre",
                                                           offered: "0.121.0-pre.20261104.090000+9f1e2d3c"))),
+        ]
+    }
+}
+
+extension ScreenFixtures {
+    // MARK: The app menu
+
+    static func menu(selected: String, todayBadge: String? = "3") -> AppMenuPresentation {
+        AppMenuPresentation(title: app, sections: [
+            AppMenuSection(id: "tasks", items: [
+                AppMenuItem(id: "today", title: "Today", symbol: .today, badge: todayBadge),
+                AppMenuItem(id: "upcoming", title: "Upcoming", symbol: .upcoming),
+                AppMenuItem(id: "lists", title: "Lists", symbol: .list),
+            ]),
+            AppMenuSection(id: "app", title: "Substrate Tasks", items: [
+                AppMenuItem(id: "settings", title: "Settings", symbol: .settings),
+            ]),
+        ], selected: selected)
+    }
+
+    static var menu: [ScreenFixture] {
+        [
+            ScreenFixture("menu", .menu(menu(selected: "today"))),
+            ScreenFixture("menu-settings", .menu(menu(selected: "settings", todayBadge: nil))),
         ]
     }
 }

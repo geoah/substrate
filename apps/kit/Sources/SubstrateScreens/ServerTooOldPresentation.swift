@@ -4,7 +4,7 @@ import SubstrateCore
 
 /// A server that cannot do what the app needs: which release it runs, which
 /// the app needs, what it cannot do yet, and who can change that.
-public struct ServerTooOldPresentation: Codable, Hashable, Sendable {
+public struct ServerTooOldPresentation: Bridged, Hashable, Sendable {
     public var symbol: ScreenSymbol
     public var title: String
     public var summary: String

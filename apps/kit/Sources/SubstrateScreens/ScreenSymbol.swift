@@ -1,6 +1,8 @@
+import SubstrateCore
+
 /// A mark a screen shows beside its words, by what it means; each system
 /// draws it as its own symbol (an SF Symbol, a Material Symbol).
-public enum ScreenSymbol: String, Codable, Hashable, Sendable {
+public enum ScreenSymbol: String, Bridged, Hashable, Sendable, CaseIterable {
     case serverUpdate
     case warning
     case approval

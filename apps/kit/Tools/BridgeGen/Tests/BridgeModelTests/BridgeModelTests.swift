@@ -162,6 +162,15 @@ struct BridgeModelTests {
         #expect(!Golden.write(model.own).contains("\"name\": \"Kit.Tone\""))
     }
 
+    @Test func aTypeACaseClassWouldShadowIsWrittenWithItsPackage() throws {
+        let (model, errors) = model("struct Banner: Bridged { var lines: [String] }\nenum Shown: Bridged { case banner(Banner); case other(lines: [Banner]) }")
+        #expect(errors.isEmpty, "\(errors)")
+        let kotlin = try Kotlin.write(try #require(model), package: "p", fingerprint: "f", generatedBy: "test")
+        #expect(kotlin.contains("@SerialName(\"_0\") val value: p.Banner,"))
+        #expect(kotlin.contains("val lines: List<p.Banner>,"))
+        #expect(kotlin.contains("public data class Banner(\n    val lines: List<String>,"))
+    }
+
     @Test func theFingerprintIsTheGoldensSHA256() {
         #expect(Golden.fingerprint("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
         #expect(Golden.fingerprint("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
