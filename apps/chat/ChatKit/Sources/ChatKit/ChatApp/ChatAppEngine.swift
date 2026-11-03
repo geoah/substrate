@@ -27,7 +27,6 @@ extension ChatApp {
             if let disk = next.disk, disk.scheduled(run) {
                 if let threads { apply(&next, threads: threads) }
                 if let cards { apply(&next, cards: cards) }
-                save(&next)
             }
             next.asks.append(.finishRun(run, success: threads != nil))
         case let .backgroundExpired(id):
@@ -50,10 +49,8 @@ extension ChatApp {
         case let .agentsRead(agents, providers):
             next.agents = agents
             if let providers { next.providers = Dictionary(providers.map { ($0.id, $0) }) { a, _ in a } }
-            save(&next)
         case let .cardsRead(cards):
             apply(&next, cards: cards)
-            save(&next)
         case .readFailed:
             break
         case let .rowsFailed(thread, epoch, _):
@@ -61,7 +58,6 @@ extension ChatApp {
             if next.readEpochs[thread, default: 0] == epoch { next.reading[thread] = nil }
         case let .openingsRead(openings):
             next.openings.merge(openings) { _, new in new }
-            save(&next)
         case let .rowsRead(thread, epoch, version, rows, full):
             if next.readEpochs[thread, default: 0] == epoch { next.reading[thread] = nil }
             guard next.readEpochs[thread, default: 0] == epoch, !next.owned(thread) else { break }
@@ -112,22 +108,17 @@ extension ChatApp {
             if let restoring, next.scenes[scene]?.current == nil, next.thread(restoring) != nil { show(&next, restoring, in: scene, key: key) }
         case let .sceneActive(scene, active):
             next.scenes[scene, default: State.Scene()].active = active
-            visibilityMoved(&next, from: state)
         case let .sceneGone(scene):
             next.scenes[scene] = nil
-            visibilityMoved(&next, from: state)
             release(&next)
         case let .show(thread, scene, key):
             show(&next, thread, in: scene, key: key)
-            visibilityMoved(&next, from: state)
             release(&next)
         case let .newChat(agent, listen, scene, key):
             newChat(&next, agent: agent, listen: listen, in: scene, key: key)
-            visibilityMoved(&next, from: state)
             release(&next)
         case let .back(scene):
             next.scenes[scene, default: State.Scene()].current = nil
-            visibilityMoved(&next, from: state)
             release(&next)
         case let .searched(scene, query): next.scenes[scene, default: State.Scene()].query = query
         case let .routed(route): next.route = route
@@ -138,16 +129,12 @@ extension ChatApp {
             case let .thread(thread): show(&next, thread, in: scene, key: key)
             case let .newChat(agent, listen): newChat(&next, agent: agent, listen: listen, in: scene, key: key)
             }
-            visibilityMoved(&next, from: state)
             release(&next)
 
         case let .markedRead(thread):
             markSeen(&next, thread)
-            badge(&next)
         case let .markedUnread(thread):
             next.seen[thread] = nil
-            save(&next)
-            badge(&next)
         case let .renameAsked(thread, subject):
             // Optimistic: the list shows it at once, and goes back if the
             // server refuses.
@@ -164,7 +151,7 @@ extension ChatApp {
             next.asks.append(.setKey(provider: provider, key: key))
         case let .keySet(record):
             next.providers[record.id] = record
-            next.keySaved += 1
+            next.keySaved.raise(record.id)
         case let .keyFailed(failure): next.keyProblem = failure.words
 
         case let .cardAsked(reference):
@@ -228,7 +215,14 @@ extension ChatApp {
             for thread in next.visibleThreads { load(&next, thread, force: true) }
         case let .forget(forget): next.forgetOnSignOut = forget
         case let .conversation(key, report): reported(&next, key, report, before: state)
+        case let .notificationOpened(response):
+            // A tap opens its chat, in the window that takes the route.
+            if next.session != nil, response.action == .open, let thread = response.userInfo[ChatNotifications.threadKey] {
+                next.route = .thread(thread)
+            }
         }
+        // What came on screen is read.
+        for thread in next.visibleThreads.subtracting(state.visibleThreads) { markSeen(&next, thread) }
         return next
     }
 
@@ -254,7 +248,7 @@ extension ChatApp {
             state.session = session
             state.online = online
             state.accessEnded = link.phase == .accessEnded
-            state.asks += [.openDisk(session.identity), .followRuns]
+            state.asks += [.openDisk(session.identity), .followRuns, .followResponses]
             return
         }
         state.session = session
@@ -377,7 +371,6 @@ extension ChatApp {
         // settles or asks is news.
         state.baselined = true
         state.loaded = true
-        save(&state)
         if !state.watching { watch(&state, head: refresh.head) }
         afterList(&state)
     }
@@ -432,7 +425,6 @@ extension ChatApp {
         for record in state.chats + state.automated where before[record.id]?.version != record.version {
             threadMoved(&state, record)
         }
-        badge(&state)
     }
 
     /// One thread row, read on its own: a handover, a poll, a rename.
@@ -440,8 +432,6 @@ extension ChatApp {
         if let held = state.thread(record.id)?.record, held.version > record.version { return }
         replaceRow(&state, record)
         threadMoved(&state, record)
-        save(&state)
-        badge(&state)
     }
 
     private func replaceRow(_ state: inout State, _ record: Record) {
@@ -573,7 +563,6 @@ extension ChatApp {
         if let agents = feed.agents { state.agents = agents }
         if let providers = feed.providers { state.providers = Dictionary(providers.map { ($0.id, $0) }) { a, _ in a } }
         if let cards = feed.cards { apply(&state, cards: cards) }
-        save(&state)
         let landed = batch.subtracting(feed.failed).filter { !$0.id.isEmpty }
         if !landed.isEmpty, let disk = state.disk { state.asks.append(.markRefreshed(disk, landed.sorted { "\($0)" < "\($1)" })) }
         state.feedBatch.formUnion(feed.failed)
@@ -617,7 +606,6 @@ extension ChatApp {
                                                                        listen: listen),
                                                agent: agent ?? state.defaultAgent?.id)
         state.scenes[scene, default: State.Scene()].current = key
-        saveDrafts(&state)
     }
 
     /// A conversation stays while a window shows it, it runs, its overlay
@@ -629,21 +617,11 @@ extension ChatApp {
         }
     }
 
-    /// What is on screen is read, and its notifications are no longer news.
-    private func visibilityMoved(_ state: inout State, from before: State) {
-        let now = state.visibleThreads
-        for thread in now.subtracting(before.visibleThreads) {
-            markSeen(&state, thread)
-            state.asks.append(.cancelGroup(thread))
-        }
-    }
-
     private func markSeen(_ state: inout State, _ id: String) {
         guard let thread = state.thread(id), !thread.running, let finished = thread.record["finishedAt"]?.string,
               state.seen[id] != finished
         else { return }
         state.seen[id] = finished
-        save(&state)
     }
 
     /// What a conversation's event tells the list: rule 1's binding, rule
@@ -662,7 +640,6 @@ extension ChatApp {
             if let agent = report.agent ?? entry.agent { state.lastAgent = agent }
             bump(&state, named)
             state.drafts[Self.newDraft + key.rawValue] = nil
-            save(&state)
         }
         // Rule 4's moves: a send or an attach takes the thread's rows, a
         // settle hands them back; either way what was read before is old.
@@ -674,6 +651,8 @@ extension ChatApp {
         entry.streaming = report.streaming
         entry.outcomes = report.outcomes
         entry.name = report.name
+        if report.settles > entry.settles { state.answered.raise(ChatAnswer(thread: entry.thread, words: "\(report.name) answered")) }
+        entry.settles = report.settles
         if !report.active, entry.continuing != nil {
             state.asks.append(.endContinued(key))
             entry.continuing = nil
@@ -686,7 +665,6 @@ extension ChatApp {
         if let draft = report.draft {
             let name = entry.thread ?? Self.newDraft + key.rawValue
             state.drafts[name] = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : draft
-            saveDrafts(&state)
         }
         if let read = report.read {
             // A conversation's own read publishes under its own overlay: the
@@ -699,7 +677,6 @@ extension ChatApp {
         }
         if report.sent, !state.preferences.askedNotifications {
             state.preferences.askedNotifications = true
-            if let disk = state.disk { state.asks.append(.savePreferences(disk, state.preferences)) }
             state.asks.append(.askPermission)
         }
         if !shownOrBusy(state, key) { release(&state) }
@@ -729,23 +706,6 @@ extension ChatApp {
         default:
             return
         }
-        if let disk = state.disk { state.asks.append(.savePreferences(disk, state.preferences)) }
-    }
-
-    // MARK: Saving
-
-    private func save(_ state: inout State) {
-        guard let disk = state.disk else { return }
-        state.asks.append(.saveState(disk, state.cached))
-    }
-
-    private func saveDrafts(_ state: inout State) {
-        guard let disk = state.disk else { return }
-        state.asks.append(.saveDrafts(disk, state.drafts))
-    }
-
-    private func badge(_ state: inout State) {
-        state.asks.append(.badge(state.unreadCount))
     }
 }
 

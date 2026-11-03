@@ -190,8 +190,21 @@ public struct ChatApp: LinkedApp {
 
     // MARK: Effects
 
-    public func effects(of event: Event, on state: State, presented presentation: Presentation) -> [Effect] {
-        state.asks.map(Effect.init)
+    /// What the engine asked for, then what follows from how the state
+    /// moved: the folder's files and the choices written when what they
+    /// keep changed (never at an open, which read them), the badge when the
+    /// unread count moved, and a chat that came on screen takes back its
+    /// notifications.
+    public func effects(of event: Event, on state: State, from previous: State, presented presentation: Presentation) -> [Effect] {
+        var asks = state.asks
+        if let disk = state.disk, disk == previous.disk {
+            if state.cached != previous.cached { asks.append(.saveState(disk, state.cached)) }
+            if state.drafts != previous.drafts { asks.append(.saveDrafts(disk, state.drafts)) }
+            if state.preferences != previous.preferences { asks.append(.savePreferences(disk, state.preferences)) }
+        }
+        if state.unreadCount != previous.unreadCount { asks.append(.badge(state.unreadCount)) }
+        for thread in state.visibleThreads.subtracting(previous.visibleThreads).sorted() { asks.append(.cancelGroup(thread)) }
+        return asks.map(Effect.init)
     }
 
     public func key(of effect: Effect) -> String? {
@@ -216,6 +229,7 @@ public struct ChatApp: LinkedApp {
         case let .readCard(reference, _): "card:\(reference.id)"
         case let .writeCard(id, _, _, _), let .decideUnread(id, _, _): "write:\(id)"
         case .followRuns: "runs"
+        case .followResponses: "responses"
         case .backgroundRefresh: "background"
         case let .continueRun(key, _): "continued:\(key.rawValue)"
         case .readUsage: "usage"

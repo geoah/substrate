@@ -44,7 +44,6 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case writeCard(String, kind: String, properties: [String: JSONValue], ifVersion: Int)
     case decideUnread(String, accept: Bool, shown: [String: JSONValue])
 
-    /// Its instant is stamped when it is sent.
     case notify(NotificationRequest)
     case cancelGroup(String)
     case cancelAllNotifications
@@ -52,6 +51,8 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case askPermission
     case readPermission
     case followRuns
+    /// What the owner does with the app's notifications.
+    case followResponses
     /// A run of the refresh job the lease scheduled; its result lands only
     /// while the lease holds its generation, and within the run's budget.
     case backgroundRefresh(BackgroundRun, Lease, Plan, threads: [String])

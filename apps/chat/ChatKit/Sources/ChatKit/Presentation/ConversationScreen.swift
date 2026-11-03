@@ -30,9 +30,6 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     public var composer: ComposerPresentation
     public var streaming: Bool
     public var stopping: Bool
-    /// Moved when a run settles: a haptic, an announcement.
-    public var settles: Int
-    public var announcement: String
     public var error: String?
     public var expandThinking: Bool
 }

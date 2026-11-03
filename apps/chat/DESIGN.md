@@ -94,7 +94,7 @@ changes the list and a conversation publishes one tree.
 | Streamed text | `Conversation.coalescing(of:)`: a delta or a piece of reasoning presents within 50 ms, structure at once |
 | The watch | the kit's `WatchFollower`, its cursor and the rows still to read again in the kit's `RecordCache` (`records/watch.json`) |
 | The cache | `ChatStorage` over the kit's `RepositoryFolder`, at the path every build used (`Application Support/SubstrateChat/<hash>/`): `state.json` and `drafts.json` adopted at the top, transcripts moved from `messages/` into the cache area, bounded by age and budget; a session reaches it only through the `ChatStorage.Lease` its open answered |
-| Notifications | the kit's `Notifications` device service (`SystemNotifications` on an Apple device): scheduled, cancelled and badged as effects; the app's own delegate turns a tap into a route and keeps a chat on screen quiet |
+| Notifications | the kit's `Notifications` device service (`SystemNotifications` on an Apple device): scheduled (at once), cancelled and badged as effects; the kit's delegate, installed at launch, hands a tap to `responses()`, which the list follows and turns into a route; the engine never notifies a chat on screen |
 | Background | the kit's `BackgroundWork` device service: the refresh job's runs, scheduled with the repository and the link generation and checked against both, stopped when the system takes a run back or its budget runs out; and continued processing for a streaming turn |
 | The owner's choices | `ChatPreferences`, kept in UserDefaults under the keys every build used |
 
@@ -311,9 +311,11 @@ The server has no push channel, so the app promises what it can observe:
   nothing.
 - **On macOS** the stream and the feed run while the app is open, so replies
   and cards notify when they happen (unless the Mac sleeps).
-- **Permission** is asked after the first message is sent. Settings has a
-  switch for replies and one for questions and suggestions; automated runs
-  never notify unless they ask something.
+- **Opening a chat** takes back its notifications, delivered and still
+  pending (each one's id starts with the thread's).
+- **Permission** (alerts, sound and the badge) is asked after the first
+  message is sent. Settings has a switch for replies and one for questions
+  and suggestions; automated runs never notify unless they ask something.
 - **Unread**: a chat whose `finishedAt` is newer than when it was last seen
   settled shows a dot; the iOS badge counts them. At the first sign-in every
   chat is marked seen, so history is not unread.
@@ -551,7 +553,8 @@ may do and for how long; the app never sees the password.
 - Springs for the send/stop morph and the growing field; rows move to the top
   animated.
 - The live turn carries `.updatesFrequently`; a settled reply is announced
-  once; Reduce Motion stills the shimmer and the pulse; code scales with
+  once, and felt, where its chat is on screen (the list's `answered`
+  signal, acted on once per raise by `PresentationModel.onSignal`); Reduce Motion stills the shimmer and the pulse; code scales with
   Dynamic Type; every control has a label; light and dark.
 
 ## Errors, by where they happen

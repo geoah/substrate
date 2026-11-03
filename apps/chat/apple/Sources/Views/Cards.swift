@@ -246,7 +246,8 @@ struct ProviderKeySheet: View {
     let sheet: KeySheet
     @State private var key = ""
     @State private var busy = false
-    @State private var saved: Int?
+    /// Save was pressed once: a problem is the server's answer to it.
+    @State private var tried = false
 
     var body: some View {
         NavigationStack {
@@ -275,7 +276,7 @@ struct ProviderKeySheet: View {
                     } footer: {
                         Text(sheet.footer)
                     }
-                    if let problem = host.chats?.keys[sheet.id]?.problem, busy == false, saved != nil {
+                    if let problem = host.chats?.keys[sheet.id]?.problem, busy == false, tried {
                         Section { ProblemBox(message: problem) }
                     }
                 }
@@ -298,8 +299,8 @@ struct ProviderKeySheet: View {
             }
         }
         .frame(minWidth: 380, minHeight: 260)
-        .onChange(of: host.chats?.keySaved) { _, _ in
-            if busy { dismiss() }
+        .onChange(of: host.savedKey) { _, saved in
+            if busy, saved == sheet.id { dismiss() }
         }
         .onChange(of: host.chats?.keys[sheet.id]?.problem) { _, problem in
             if problem != nil { busy = false }
@@ -308,7 +309,7 @@ struct ProviderKeySheet: View {
 
     private func save() {
         busy = true
-        saved = host.chats?.keySaved ?? 0
-        host.send(.addKey(provider: sheet.id, key: key))
+        tried = true
+        host.addKey(provider: sheet.id, key: key)
     }
 }

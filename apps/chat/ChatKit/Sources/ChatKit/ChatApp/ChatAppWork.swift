@@ -277,10 +277,13 @@ extension ChatApp {
             }
 
         case let .notify(request):
-            let shown = ChatNotifications.now(request, at: clock.now)
-            return Self.device(notifications) { await $0.schedule(shown) }
+            return Self.device(notifications) { await $0.schedule(request) }
         case let .cancelGroup(thread):
-            return Self.device(notifications) { await $0.cancel(thread: thread) }
+            // What it delivered, and what is still pending.
+            return Self.device(notifications) { notifications in
+                await notifications.cancel(thread: thread)
+                for id in await notifications.pending(prefix: ChatNotifications.prefix(thread)) { await notifications.cancel(id) }
+            }
         case .cancelAllNotifications:
             return Self.device(notifications) { await $0.cancelAll() }
         case let .badge(count):
@@ -291,6 +294,13 @@ extension ChatApp {
         case .readPermission:
             guard let notifications else { return .none }
             return .once { Event(.permissionRead(await notifications.permission())) }
+        case .followResponses:
+            guard let notifications else { return .none }
+            return .sequence {
+                Self.relay { yield in
+                    for await response in notifications.responses() { yield(.notificationOpened(response)) }
+                }
+            }
         case .followRuns:
             guard let background else { return .none }
             return .sequence {

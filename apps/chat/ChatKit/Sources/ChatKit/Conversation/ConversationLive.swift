@@ -21,7 +21,6 @@ public struct ConversationLive: Codable, Equatable, Sendable {
     var outcomes: [Outcome]
     var reloadFailed: String?
     var deleted: Bool
-    var settles: Int
     var listenOnOpen: Bool
     var blocked: String?
     var keyless: String?
@@ -40,7 +39,7 @@ extension Conversation {
             liveKey: streaming ? state.overlay.turns.last(where: { $0.role == .assistant })?.id : nil,
             awaitingFirstEvent: streaming && state.overlay.turns.last?.role == .user,
             phase: state.phase, stopping: state.stopping, error: state.error, outcomes: state.outcomes, reloadFailed: state.reloadFailed,
-            deleted: state.deleted, settles: state.settles, listenOnOpen: state.listenOnOpen, blocked: blockedReason(state),
+            deleted: state.deleted, listenOnOpen: state.listenOnOpen, blocked: blockedReason(state),
             keyless: keyless, online: online)
     }
 }

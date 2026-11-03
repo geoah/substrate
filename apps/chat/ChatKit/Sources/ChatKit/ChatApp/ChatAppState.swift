@@ -30,6 +30,8 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         var streaming = false
         var outcomes = 0
         var name = "the assistant"
+        /// The conversation's settles as last reported.
+        var settles = 0
         var pollNudge = 0
         var resumeNudge = 0
         var continuing: String?
@@ -112,7 +114,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var cards: [String: Card] = [:]
     var renameProblem: String?
     var keyProblem: String?
-    var keySaved = 0
+    /// A provider's key was saved: its sheet closes.
+    var keySaved = Signal<String>()
+    /// A conversation's run settled: announced, where its chat is on screen.
+    var answered = Signal<ChatAnswer>()
     var usage: [AreaUsage] = []
     var permission: NotificationPermission?
     /// Whether the next sign-out forgets the saved chats: Sign Out does,

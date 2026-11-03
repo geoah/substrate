@@ -2,6 +2,7 @@ import ChatKit
 import Foundation
 import Observation
 import SubstrateKit
+import SwiftUI
 #if os(iOS)
 import UIKit
 #endif
@@ -29,6 +30,9 @@ final class ChatHost {
     /// The record views' reader, one per signed-in repository.
     private(set) var records = RecordDirectory(reader: nil)
     @ObservationIgnored private var recordsFor: String?
+    /// The provider whose key was saved since the last `addKey`: its sheet
+    /// closes.
+    private(set) var savedKey: String?
 
     private init() {
         let store = SessionStore.chat
@@ -54,6 +58,8 @@ final class ChatHost {
                         words: StatusWords(app: ChatManifest.appName, device: device, kept: "saved chats"),
                         offers: [.review, .signInAgain, .openFix])
         model = PresentationModel(link, environment: environment)
+        model.onSignal(\.app?.answered) { [weak self] answer in self?.answered(answer) }
+        model.onSignal(\.app?.keySaved) { [weak self] provider in self?.savedKey = provider }
         // A session an earlier build kept names no request: it is kept with
         // the one every such build asked for, so the check never asks about
         // a scope the owner left out.
@@ -77,6 +83,23 @@ final class ChatHost {
     }
 
     func route(_ route: ChatRoute) { send(.route(route)) }
+
+    /// A provider's key, sent once; `savedKey` names the provider when the
+    /// server kept it.
+    func addKey(provider: String, key: String) {
+        savedKey = nil
+        send(.addKey(provider: provider, key: key))
+    }
+
+    /// A run settled: said, and felt on a phone, where its chat is on
+    /// screen. Elsewhere its notification says it.
+    private func answered(_ answer: ChatAnswer) {
+        guard let thread = answer.thread, chats?.onScreen.contains(thread) == true else { return }
+        AccessibilityNotification.Announcement(answer.words).post()
+        #if os(iOS)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        #endif
+    }
 
     /// The record views read through the session's own client, refused in
     /// the app's words where its access does not reach.

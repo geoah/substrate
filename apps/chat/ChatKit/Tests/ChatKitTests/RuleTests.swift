@@ -193,6 +193,9 @@ struct ConversationRuns {
         try await rig.send(.send, to: key)
         try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
         #expect(await rig.turns(key) == ["Hi", "Hello"])
+        // Said once, by the list, for the chat it settled in.
+        try await rig.harness.until { await $0.presentation.answered.serial == 1 }
+        #expect(await rig.harness.presentation.answered.value == ChatAnswer(thread: "t1", words: "Helper answered"))
         let live = try #require(await rig.live(key))
         #expect(live.phase == .idle && live.overlay.turns.isEmpty)
         // The rows landed and the overlay cleared in one step: no tree ever
@@ -337,15 +340,36 @@ struct ListRules {
         #expect(note.body == "Hello")
         #expect(note.thread == "t1")
         #expect(note.userInfo == [ChatNotifications.threadKey: "t1"])
-        // Shown as soon as it is sent.
-        #expect(note.fireAt == rig.clock.now.addingTimeInterval(1))
-        // A tap the app's delegate hands over opens the chat in the window
-        // that claims it.
-        await rig.harness.send(.route(.thread("t1")))
-        #expect(await rig.harness.presentation.routePending)
+        // Shown at once, and in front too: a chat on screen never notifies.
+        #expect(note.fireAt == nil && note.showsWhileActive)
+        // A tap opens the chat in the window that claims it, and takes back
+        // what the thread still had pending as well as what it delivered.
+        rig.notifications.respond(NotificationResponse(id: note.id, category: nil, action: .open, userInfo: note.userInfo))
+        try await rig.harness.until { await $0.presentation.routePending }
         await rig.harness.send(.claimRoute(scene: "s"))
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         #expect(await rig.harness.state.conversations[key]?.thread == "t1")
+        try await rig.harness.until { _ in rig.notifications.pending[note.id] == nil }
+        #expect(rig.notifications.calls.contains(.cancelThread("t1")))
+        #expect(rig.notifications.calls.contains(.cancel(note.id)))
+    }
+
+    @Test func theBadgeAndTheSavesFollowWhatChanged() async throws {
+        let threads = #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3))]}"#
+        let rig = ChatRig(baseRoutes(threads: threads))
+        try await rig.signIn()
+        try await rig.harness.until { await $0.state.openings["t1"] != nil }
+        await rig.harness.settle()
+        let asked = { @Sendable (match: (ChatAppAsk) -> Bool) in rig.harness.effects.count { match($0.ask) } }
+        let badges = asked { if case .badge = $0 { true } else { false } }
+        let saves = asked { if case .saveState = $0 { true } else { false } }
+        await rig.harness.send(.markUnread("t1"))
+        #expect(asked { if case .badge(1) = $0 { true } else { false } } == 1)
+        #expect(asked { if case .saveState = $0 { true } else { false } } == saves + 1)
+        // Unread already: nothing moved, so nothing is written or badged.
+        await rig.harness.send(.markUnread("t1"))
+        #expect(asked { if case .badge = $0 { true } else { false } } == badges + 1)
+        #expect(asked { if case .saveState = $0 { true } else { false } } == saves + 1)
     }
 }
 

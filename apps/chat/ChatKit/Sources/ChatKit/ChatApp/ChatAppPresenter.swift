@@ -58,7 +58,7 @@ extension ChatApp {
             host: state.session.map { ServerAddress.display($0.server) } ?? "", list: list, scenes: scenes,
             routePending: state.route != nil, onScreen: state.visibleThreads.sorted(), conversations: conversations, offered: offered.map(Self.choice),
             defaultAgent: state.defaultAgent.map(Self.choice), settings: settings(state), unread: state.unreadCount,
-            renameProblem: state.renameProblem, keys: keys, keySaved: state.keySaved)
+            renameProblem: state.renameProblem, keys: keys, keySaved: state.keySaved, answered: state.answered)
     }
 
     static func choice(_ agent: Agent) -> AgentChoice { AgentChoice(id: agent.id, name: agent.name, description: agent.description) }
@@ -164,7 +164,7 @@ extension ChatApp {
                 },
                 picksAgent: live.thread == nil, agentLabel: live.agent.map(agentName) ?? "No assistant", listenOnOpen: live.listenOnOpen,
                 canSend: blocked == nil),
-            streaming: live.phase == .streaming, stopping: live.stopping, settles: live.settles, announcement: "\(live.name) answered",
+            streaming: live.phase == .streaming, stopping: live.stopping,
             error: live.error, expandThinking: state.preferences.expandThinking)
     }
 

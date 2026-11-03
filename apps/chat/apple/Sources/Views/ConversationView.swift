@@ -91,10 +91,6 @@ struct ConversationView: View {
         .onChange(of: phase) { _, phase in
             if phase != .active, dictation.active { Task { await stopListening(screen) } }
         }
-        .onChange(of: screen.settles) { _, _ in
-            if phase == .active { AccessibilityNotification.Announcement(screen.announcement).post() }
-        }
-        .sensoryFeedback(.success, trigger: screen.settles)
         .sensoryFeedback(.error, trigger: screen.error)
         .sheet(item: $keySheet) { ProviderKeySheet(sheet: $0) }
         .alert("Rename Chat", isPresented: $renaming) {

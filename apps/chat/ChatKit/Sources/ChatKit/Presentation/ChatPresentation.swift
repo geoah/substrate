@@ -23,8 +23,11 @@ public struct ChatPresentation: Codable, Equatable, Sendable {
     public var renameProblem: String?
     /// For each provider without a key.
     public var keys: [String: KeySheet]
-    /// Moved when a key was saved: the sheet closes.
-    public var keySaved: Int
+    /// The provider whose key was just saved: its sheet closes.
+    public var keySaved: Signal<String>
+    /// A run settled: the announcement, and the haptic where its chat is
+    /// on screen.
+    public var answered: Signal<ChatAnswer>
 }
 
 /// An agent as a chat offers it.
@@ -42,4 +45,12 @@ public struct ScenePresentation: Codable, Equatable, Sendable {
     public var found: [DaySection]?
     /// Said when a search finds nothing.
     public var nothingFound: String?
+}
+
+/// A conversation's run settled.
+public struct ChatAnswer: Codable, Equatable, Sendable {
+    /// Nil for a new chat the run never bound.
+    public var thread: String?
+    /// What is announced: "<Agent> answered".
+    public var words: String
 }
