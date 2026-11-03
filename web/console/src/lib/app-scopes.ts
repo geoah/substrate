@@ -25,7 +25,6 @@ const ACTIONS: Record<ScopeVerb, string> = {
   write: "Read and write records of",
   agents: "Talk to, and read the chats of, the agents matching",
   decide: "Apply, edit or dismiss changes suggested by the agents matching",
-  declare: "Install and add to the package",
   webhook: "Send data to, and see the refused deliveries of, the webhook",
   full: "Everything you can do when you sign in",
 }
@@ -208,22 +207,11 @@ export function scopeSentence(scope: SentenceScope): string {
       const one = !scope.glob
       return `Apply or dismiss the changes ${agentsPhrase(scope, shape)} ${one ? "suggests" : "suggest"}${later}, and edit one before applying it, as you`
     }
-    case "declare":
-      return declareSentence(scope.pattern)
     case "webhook":
       return webhookSentence(scope.pattern)
     case "full":
       return FULL_ACCESS_SENTENCE
   }
-}
-
-/** What a `declare` scope lets an app do with one package of the owner's
- * own (decision 0203): install it and add to it as the app's version needs.
- * The server refuses the app a batch that removes anything the package
- * holds, and a bundle that carries code, so both stay the owner's. */
-export function declareSentence(pkg: string): string {
-  const name = packageDisplayName(pkg.split("/")[1] ?? pkg)
-  return `Install your ${name} package and add to it as the app changes; it can’t remove a kind, property or value the package holds, or add code. The app will own these kinds: you can’t edit them unless you take them over, and their records stay yours`
 }
 
 /** What a `webhook` detail lets the app do once it is set up: deliver with

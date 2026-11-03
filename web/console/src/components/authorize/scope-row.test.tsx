@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-/** A declare scope's sentence says the app will own the package's kinds
- * (decision 0205), and a scope the server refuses says why on its row. */
+/** A scope row says what the scope lets the app do, and the technical view
+ * of an agents scope says the app reaches an agent only when the rest of its
+ * access covers what that agent reads (decision 0214). */
 
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
@@ -15,11 +16,7 @@ vi.mock("@tanstack/react-router", () => ({
 
 afterEach(cleanup)
 
-function scope(
-  verb: AuthorizationScope["verb"],
-  pattern: string,
-  refused?: string
-) {
+function scope(verb: AuthorizationScope["verb"], pattern: string) {
   return {
     scope: `${verb}:${pattern}`,
     requested: `${verb}:${pattern}`,
@@ -29,48 +26,37 @@ function scope(
     glob: pattern.endsWith("*"),
     kinds: [],
     agents: [],
-    ...(refused ? { refused } : {}),
   } satisfies AuthorizationScope
 }
 
-function mount(s: AuthorizationScope) {
+function mount(s: AuthorizationScope, technical = false) {
   render(
     <ScopeRow
       scope={s}
       repository="ada.example.com"
-      checked={!s.refused}
-      disabled={Boolean(s.refused)}
-      technical={false}
+      checked
+      disabled={false}
+      technical={technical}
       onChange={() => {}}
     />
   )
 }
 
-it("says in the declare sentence that the app will own the kinds", () => {
-  mount(scope("declare", "ada.example.com/training"))
-  expect(
-    screen.getByText(/The app will own these kinds: you can’t edit them/)
-  ).toBeTruthy()
+it("starts every scope checked and says nothing of ownership", () => {
+  mount(scope("write", "ada.example.com/training/*"))
+  const box = screen.getByRole<HTMLInputElement>("checkbox")
+  expect(box.checked).toBe(true)
+  expect(box.disabled).toBe(false)
+  expect(screen.queryByText(/will own these kinds/)).toBeNull()
   expect(screen.queryByText(/Can’t be approved/)).toBeNull()
 })
 
-it("says nothing of ownership for a write scope", () => {
-  mount(scope("write", "ada.example.com/training/*"))
-  expect(screen.queryByText(/will own these kinds/)).toBeNull()
-})
-
-it("says why a refused declare scope can't be approved, unchecked", () => {
-  mount(
-    scope(
-      "declare",
-      "ada.example.com/training",
-      "ada.example.com/training is managed by another app, https://workouts.example.org/client.json"
-    )
-  )
+it("says in the technical view that an agents scope reaches only agents the rest of its access covers", () => {
+  mount(scope("agents", "*"), true)
   expect(
-    screen.getByText(/Can’t be approved: .*another app, https:\/\/workouts/)
+    screen.getByText(
+      /reaches an agent only when the rest of its access covers everything that agent reads/
+    )
   ).toBeTruthy()
-  const box = screen.getByRole<HTMLInputElement>("checkbox")
-  expect(box.checked).toBe(false)
-  expect(box.disabled).toBe(true)
+  expect(screen.getByText("Covers today")).toBeTruthy()
 })

@@ -221,9 +221,9 @@ export function buildKindNav(kinds: KindInfo[]): KindNav {
   return { authorities: [...schema, ...machinery] }
 }
 
-/** Takes a package an app manages over (decision 0205): `POST
- * /api/v1/vocabulary/takeover`, the package named twice, the second time as
- * the confirmation. Answers the package row, now declared by the console. */
+/** Takes a package over (decision 0212): a document-published package
+ * becomes the owner's to edit, and its publisher's releases stop. The
+ * confirmation repeats the identity, as the server requires. */
 export function takeOverPackage(packageId: string): Promise<SubstrateRecord> {
   return request<SubstrateRecord>("POST", rootPath("vocabulary", "takeover"), {
     package: packageId,

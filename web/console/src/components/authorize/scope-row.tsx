@@ -126,7 +126,8 @@ function ScopeFacts({
           The app reads every chat with these agents, yours included, answers
           their questions, and may rename or stop a chat. A chat reaches
           whatever these agents may do. Its messages are the app’s; the agents
-          work with their own permissions.
+          work with their own permissions. It reaches an agent only when the
+          rest of its access covers everything that agent reads.
         </p>
       )}
       {scope.verb === "decide" && (
@@ -150,20 +151,16 @@ function ScopeFacts({
           .
         </p>
       )}
-      {/* A declare scope names a package, not records: it reaches no
-          kind's records, so a list of them would only say "nothing". */}
-      {scope.verb !== "declare" && (
-        <div className="flex flex-col gap-1">
-          <p className="text-xs font-medium text-muted-foreground">
-            Covers today
-          </p>
-          {agentsScope ? (
-            <AgentList agents={scope.agents} talk={scope.verb === "agents"} />
-          ) : (
-            <KindList kinds={scope.kinds} />
-          )}
-        </div>
-      )}
+      <div className="flex flex-col gap-1">
+        <p className="text-xs font-medium text-muted-foreground">
+          Covers today
+        </p>
+        {agentsScope ? (
+          <AgentList agents={scope.agents} talk={scope.verb === "agents"} />
+        ) : (
+          <KindList kinds={scope.kinds} />
+        )}
+      </div>
     </>
   )
 }
@@ -211,11 +208,6 @@ export function ScopeRow({
         <label htmlFor={id} className="cursor-pointer">
           {scopeSentence(scope)}
         </label>
-        {scope.refused && (
-          <p className="text-xs text-destructive">
-            Can’t be approved: {scope.refused}.
-          </p>
-        )}
         {technical && <ScopeFacts scope={scope} repository={repository} />}
       </div>
     </li>
