@@ -183,8 +183,13 @@ final class SubstrateLink {
     private func adopt(_ session: Session, replacing old: Session?) async throws {
         try await SessionStore.workouts.save(session, replacing: old)
         begin(session)
-        if old != nil { await revokePending() }
-        await sync()
+        // The sign-in ends once the session is kept: the first sync can read a
+        // repository's whole history, and its progress is the app's own sync
+        // status, never a sign-in sheet left waiting on it.
+        Task {
+            if old != nil { await revokePending() }
+            await sync()
+        }
     }
 
     /// Forgets the session on this phone and revokes the token in the
