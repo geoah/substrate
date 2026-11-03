@@ -456,7 +456,8 @@ kind, so code that does needs `full`. Substrate Sync, whose applehealth
 package's functions write that package's kinds, the `health` catalogue's
 sleep and workouts and the seeded observations, asks for
 `write:providers.substrate.reamde.dev/applehealth/*`, the package's two
-internal kinds by name, `write:substrate.reamde.dev/health/*` and
+internal kinds by name, `write:substrate.reamde.dev/health/sleep`,
+`write:substrate.reamde.dev/health/workout` and
 `write:substrate.reamde.dev/observations/*`.
 
 The page plans against the scopes left checked: its read takes them as
@@ -701,9 +702,9 @@ door and that trigger's parked list
   `application/octet-stream` and there is no `Content-Disposition`. An
   app's reads wait for two slots of their own, never the owner's.
 
-Everything else answers `403`: the vocabulary, the catalog, a function its
-`call:` scopes do not name, the agent call API, the export and the token
-endpoints. Writes are attributed to the app's own actor,
+Everything else answers `403`: the vocabulary, the catalog, a function
+call from a token with no `call:` scope, the agent call API, the export and
+the token endpoints. Writes are attributed to the app's own actor,
 `app:` and the host of its client id, whatever `X-Substrate-Actor` says; no
 request can claim that name. Two apps on one host share it, and the
 changelog's principal (the token, which names the exact client id) tells
@@ -788,8 +789,9 @@ A `call:<pattern>` scope names functions by their ids
 (`<authority>/<package>/<name>`), with the kind pattern grammar: `*`, an
 authority's, a package's or one function; `~` is the repository's
 authority. A function of `substrate.reamde.dev/core` or
-`substrate.reamde.dev/llm` is never an app's to call: naming one outright
-is refused, and a glob skips them. Under it,
+`substrate.reamde.dev/llm` is never an app's to call: naming one outright,
+or either package's own glob, is refused, and a wider glob
+(`substrate.reamde.dev/*`, `*`) skips them. Under it,
 `POST /api/v1/substrate.reamde.dev/core/function/{name}/call` (the name
 named in full, its slashes percent-encoded) runs a matching function as
 the owner's call does, when the token's read and write scopes cover the
@@ -798,8 +800,8 @@ function's **reach**: every kind its `permissions.reads.kinds` and
 `permissions.call` may invoke and every agent its `permissions.agents` may
 run, since a call runs whatever runs under it. A write scope covers a
 read; no scope writes `core` or `llm`, so a function writing a kind of
-either, or `*`, is never callable by an app. A function the token does not
-reach is answered `404`, as a kind it cannot read is; one it reaches but
+either, or `*`, is never callable by an app. A function the token's `call:`
+scopes do not match is answered `404`, as a kind it cannot read is; one it reaches but
 whose reach its scopes do not cover answers `403` naming what is missing
 (`read <kind>`, `write <kind>`). The call runs under the function's own
 permissions, as a trigger's does: the app's actor is the caller, and the
