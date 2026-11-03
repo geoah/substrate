@@ -871,8 +871,6 @@ export interface TokenInfo {
   expiresAt?: string
   /** Absent on a full-access token, never empty otherwise. */
   scopes?: string[]
-  /** Retired grants remain revocable but no longer authenticate. */
-  retired?: boolean
   /** The app's client id URL, on a token minted for an app. */
   clientId?: string
   /** The name the app claimed when the owner approved it, or the name its
@@ -896,6 +894,9 @@ export interface TokenInfo {
   /** Add-ons the owner approved that wait for their provider (decision
    * 0216). */
   appAddons?: AppAddon[]
+  /** The grant holds a scope a later decision retired (`declare:`), so the
+   * token no longer authenticates and is only revoked. */
+  retired?: boolean
 }
 
 /** One add-on an approval left waiting for the provider it extends. */

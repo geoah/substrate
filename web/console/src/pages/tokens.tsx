@@ -73,16 +73,27 @@ function appHost(t: TokenInfo): string {
   }
 }
 
+/** The name an Apps row is headed by: the app's own name (the one its
+ * verified publisher gives it, else the one it claimed), so four apps one
+ * publisher ships do not all read as its host; the host where it gave none.
+ * The host and the client id stay on the row as labelled facts. */
+// eslint-disable-next-line react-refresh/only-export-components -- pure words, exported for their test
+export function appName(t: TokenInfo): string {
+  return t.clientName || appHost(t)
+}
+
 /** Who publishes an app, as its approval proved it (decision 0209): an
  * authority whose DNS record and document list the app, the same vouched
- * for by a file this server reads, a program on the owner's own device, or
- * nobody, when the client id is all the approval knew. */
+ * for by a file this server reads (`SUBSTRATE_INSECURE_AUTHORITY_DOCS`,
+ * which the decision leaves to whoever runs the server), a program on the
+ * owner's own device, or nobody, when the client id is all the approval
+ * knew. */
 // eslint-disable-next-line react-refresh/only-export-components -- pure words, exported for their test
 export function appPublisher(t: TokenInfo): { who: string; how: string } {
   if (t.appAuthority && t.appAuthorityFromFile) {
     return {
       who: t.appAuthority,
-      how: "Vouched for by a file this server reads, not by its DNS: a development setting.",
+      how: "Vouched for by a file this server reads in place of its DNS record, so whoever set up the server stands behind it.",
     }
   }
   if (t.appAuthority) {
@@ -169,7 +180,7 @@ function useSignOut() {
       toast.add({
         type: "success",
         title: isAppToken(t)
-          ? `Revoked ${appHost(t)}’s access.`
+          ? `Revoked ${appName(t)}’s access.`
           : `Signed out ${signedInAs(t)}.`,
       })
       void queryClient.invalidateQueries({ queryKey: TOKENS_KEY })
@@ -194,7 +205,7 @@ function useSignOut() {
       />
     ) : isAppToken(pending) ? (
       <ConfirmDialog
-        title={`Revoke ${appHost(pending)}’s access?`}
+        title={`Revoke ${appName(pending)}’s access?`}
         consequence="The app stops reaching your repository straight away. To use it again, approve it again."
         confirm="Revoke"
         destructive
@@ -451,9 +462,12 @@ function MintForm({ onMinted }: { onMinted: (m: MintedToken) => void }) {
   )
 }
 
-/** Settings' Apps rows: every app token, newest first, each with what the
- * app claimed to be, the scopes the owner approved, when and until when, and
- * "Revoke…". */
+/** Settings' Apps rows: every app token, newest first, headed by the app's
+ * name, with where it runs, who publishes it, what it writes as, the scopes
+ * the owner approved, when and until when, and "Revoke…". A retired token
+ * (its grant holds a scope a later decision retired) says first that it
+ * stopped working: its scopes are what the owner once approved, not access
+ * it holds. */
 export function AppTokenRows() {
   const tokens = useTokens()
   const { ask, busy, dialog } = useSignOut()
@@ -487,17 +501,27 @@ export function AppTokenRows() {
   return (
     <>
       {apps.map((t) => {
+        const name = appName(t)
         const host = appHost(t)
         return (
           <SettingRow
             key={t.id}
-            title={host}
+            title={name}
+            description={
+              t.retired ? (
+                <span role="status" className="text-destructive">
+                  Stopped working: its access was approved under a rule this
+                  server no longer honours. Revoke it, and approve the app again
+                  if you still use it.
+                </span>
+              ) : undefined
+            }
             control={
               <Button
                 variant="outline"
                 size="sm"
                 disabled={busy}
-                aria-label={`Revoke ${host}`}
+                aria-label={`Revoke ${name}`}
                 onClick={() => ask(t)}
               >
                 Revoke…
@@ -505,21 +529,32 @@ export function AppTokenRows() {
             }
           >
             <dl
-              aria-label={`What ${host} can do`}
+              aria-label={`What ${name} can do`}
               className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[12.5px]"
             >
+              {t.clientName && (
+                <>
+                  <dt className="text-faint">Name</dt>
+                  <dd className="flex flex-col">
+                    <span className="[overflow-wrap:anywhere]">
+                      {t.clientName}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {t.appAuthority
+                        ? "The name its verified publisher gives it."
+                        : "The name the app gave itself when you approved it."}
+                    </span>
+                  </dd>
+                </>
+              )}
               {t.clientId && (
                 <>
+                  <dt className="text-faint">Runs at</dt>
+                  <dd className="[overflow-wrap:anywhere]">{host}</dd>
                   <dt className="text-faint">Client id</dt>
                   <dd className="font-mono [overflow-wrap:anywhere]">
                     {t.clientId}
                   </dd>
-                </>
-              )}
-              {t.clientName && (
-                <>
-                  <dt className="text-faint">Calls itself</dt>
-                  <dd className="[overflow-wrap:anywhere]">{t.clientName}</dd>
                 </>
               )}
               <dt className="text-faint">Publisher</dt>
@@ -567,7 +602,7 @@ export function AppTokenRows() {
                   <dt className="text-faint">Packages</dt>
                   <dd>
                     <ul
-                      aria-label={`Packages ${host} needs`}
+                      aria-label={`Packages ${name} needs`}
                       className="flex flex-col gap-0.5"
                     >
                       {Object.entries(t.appPackages)
@@ -597,9 +632,9 @@ export function AppTokenRows() {
                             {a.package}
                           </span>
                           <span className="text-muted-foreground">
-                            version {a.version} or later, installs when{" "}
-                            <span className="font-mono">{a.addonFor}</span> is
-                            installed
+                            version {a.version} or later; waits for{" "}
+                            <span className="font-mono">{a.addonFor}</span> to
+                            be installed
                           </span>
                         </li>
                       ))}
@@ -607,7 +642,9 @@ export function AppTokenRows() {
                   </dd>
                 </>
               )}
-              <dt className="text-faint">Access</dt>
+              <dt className="text-faint">
+                {t.retired ? "Was approved for" : "Access"}
+              </dt>
               <dd>
                 {t.scopes === undefined && <p>{FULL_ACCESS_SENTENCE}.</p>}
                 <ul className="flex flex-col gap-0.5">
