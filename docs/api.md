@@ -66,9 +66,9 @@ GET  /api/v1/substrate.reamde.dev/llm/thread/{id}/events  # attach to the runnin
 POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop    # stop it; answers the settled result
 ```
 
-An app's token reaches the chat, these two routes and the change feed's
-live tail only under the scopes
-[app authorization](apps.md#talk-to-agents) describes.
+An app's token reaches the chat, these two routes and the change feed only
+under the scopes [app authorization](apps.md#talk-to-agents) describes, and
+the function call under a `call:` scope ([run functions](apps.md#run-functions)).
 
 **There is no repository segment anywhere.** The bearer token names the
 repository, so an address never has to, and there is nothing to get wrong.
