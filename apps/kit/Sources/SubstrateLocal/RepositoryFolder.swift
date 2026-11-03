@@ -26,7 +26,11 @@ public final class RepositoryFolder: @unchecked Sendable {
     private let lock = NSLock()
     private var closed = false
 
-    public init(root: URL, writingOptions: Data.WritingOptions = [], now: Date = Date()) throws {
+    /// - Parameter adopting: what an app's build from before the folder had a
+    ///   format wrote at its top, in a layout this build still reads (Chat's
+    ///   `state.json`): kept where it is when the folder is marked, so an
+    ///   installed app upgrades in place. Anything else unmarked is set aside.
+    public init(root: URL, writingOptions: Data.WritingOptions = [], now: Date = Date(), adopting: Set<String> = []) throws {
         self.root = root
         self.writingOptions = writingOptions
         let manager = FileManager.default
@@ -35,11 +39,14 @@ public final class RepositoryFolder: @unchecked Sendable {
         var aside: SetAsideFile?
         let stored = (try? Data(contentsOf: marker)).flatMap { try? JSONDecoder().decode(Marker.self, from: $0) }
         let contents = (try? manager.contentsOfDirectory(atPath: root.path)) ?? []
-        if stored?.format != Self.format, contents.contains(where: { $0 != Self.markerName && SetAsideFile.instant(in: $0) == nil }) {
+        let foreign = { (item: String) in
+            item != Self.markerName && SetAsideFile.instant(in: item) == nil && (stored != nil || !adopting.contains(item))
+        }
+        if stored?.format != Self.format, contents.contains(where: foreign) {
             let name = SetAsideFile.name(for: "folder", at: now)
             let target = root.appendingPathComponent(name)
             try manager.createDirectory(at: target, withIntermediateDirectories: true)
-            for item in contents where item != Self.markerName && SetAsideFile.instant(in: item) == nil {
+            for item in contents where foreign(item) {
                 try manager.moveItem(at: root.appendingPathComponent(item), to: target.appendingPathComponent(item))
             }
             aside = SetAsideFile(area: .root, name: name, at: now)

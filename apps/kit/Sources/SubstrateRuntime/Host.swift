@@ -21,8 +21,9 @@ final class Host<C: Controller>: @unchecked Sendable {
     /// dropped, whatever its key.
     private(set) var generation = 0
     private(set) var journalProblem: String?
-    /// A child's applied event, offered to its parent to fold.
-    var offerUp: ((C.Event) -> Void)?
+    /// A child's applied event and its state after it, offered to its
+    /// parent to fold.
+    var offerUp: ((C.Event, C.State) -> Void)?
 
     private var journaled: [C.Event] = []
     private var dirty = true
@@ -135,11 +136,15 @@ final class Host<C: Controller>: @unchecked Sendable {
             state = next
             transient = controller.transient(after: event, applied: next, from: transient)
             dirty = true
+            if controller.resetting(of: event) {
+                generation += 1
+                cancelAll()
+            }
             let generation = generation
             loop.afterPresent { [self] in effects(of: event, on: next, generation: generation) }
             loop.requestPresent(controller.coalescing(of: event))
             follow(next)
-            offerUp?(event)
+            offerUp?(event, next)
         }
     }
 
@@ -381,8 +386,8 @@ final class Host<C: Controller>: @unchecked Sendable {
                     continue
                 }
                 let host = Host<C.Child>(controller: child, path: path + [key], loop: loop, journal: child.journal(in: loop.environment))
-                host.offerUp = { [unowned self] event in
-                    guard let up = controller.event(fromChild: key, event) else { return }
+                host.offerUp = { [unowned self] event, after in
+                    guard let up = controller.event(fromChild: key, event, after: after) else { return }
                     step([up])
                 }
                 children[key] = host
@@ -394,14 +399,17 @@ final class Host<C: Controller>: @unchecked Sendable {
 
     /// The parent handed this child a new value (a catalogue, the settings):
     /// the state stays, and the presenter, the effects from here on and the
-    /// children read the new one.
+    /// children read the new one; then the child's event for the change, if
+    /// it has one.
     private func replace(_ next: C) {
         guard !closed else { return }
+        let previous = controller
         controller = next
         dirty = true
         loop.trace(.replaced(path: path))
         loop.requestPresent(.now)
         reconcile(live: true)
+        if let event = next.event(replacing: previous) { step([event]) }
     }
 
     func child(_ key: ChildKey) -> Host<C.Child>? { children[key] }
