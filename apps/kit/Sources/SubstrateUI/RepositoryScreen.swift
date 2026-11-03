@@ -38,7 +38,7 @@ public struct RepositoryScreen: View {
             }
             if let access = presentation.access { LabeledContent(access.label, value: access.value) }
             UnrevokedNotices(presentation.unrevoked)
-            Button(presentation.signOut, role: .destructive, action: onSignOut)
+            ConfirmingButton(presentation.signOut, role: .destructive, confirmation: presentation.signOutConfirmation, action: onSignOut)
         } header: {
             Text(presentation.title)
         } footer: {

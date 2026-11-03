@@ -1026,6 +1026,7 @@
         {"name": "changeAccess", "type": "String?"},
         {"name": "unrevoked", "type": "[ProblemPresentation]"},
         {"name": "signOut", "type": "String"},
+        {"name": "signOutConfirmation", "type": "ConfirmationPresentation<SettingsRowID>?"},
         {"name": "footer", "type": "String"}
       ]
     },
@@ -1258,7 +1259,8 @@
         {"name": "id", "type": "SettingsRowID"},
         {"name": "label", "type": "String"},
         {"name": "detail", "type": "String?"},
-        {"name": "control", "type": "SettingsRow.Control"}
+        {"name": "control", "type": "SettingsRow.Control"},
+        {"name": "confirmation", "type": "ConfirmationPresentation<SettingsRowID>?"}
       ]
     },
     {
@@ -1467,6 +1469,10 @@
           "fields": [
             {"name": "_0", "type": "JSON(FolderArea)"}
           ]
+        },
+        {
+          "name": "total",
+          "fields": []
         },
         {
           "name": "clear",

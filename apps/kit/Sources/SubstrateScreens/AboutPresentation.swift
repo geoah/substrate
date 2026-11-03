@@ -27,7 +27,7 @@ public struct AboutPresentation: Bridged, Hashable, Sendable {
     ///   - offered: a newer build's version, while one is offered.
     public static func present(appName: String, version: String, channel: String?, offered: String?) -> AboutPresentation {
         AboutPresentation(
-            title: "About", version: LabeledValue("Version", version, verbatim: true),
+            title: "About", version: LabeledValue("Version", version),
             channel: channel.map { LabeledValue("Channel", $0 == "pre" ? "Pre-release" : $0.capitalizedFirst) },
             update: offered.map { UpdateOffer(title: "Update available", message: "\(appName) \($0) is ready to install. You have \(version).",
                                               install: "Install", later: "Not Now") },

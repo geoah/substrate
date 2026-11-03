@@ -46,9 +46,6 @@ extension ChatApp {
         ]
         if state.session != nil { sections.append(SettingsPresenter.storage(state.usage, budget: ChatStorage.budget)) }
         return ChatSettingsPresentation(
-            assistants: assistants, sections: sections, notificationsDenied: denied, voiceLocale: prefs.voiceLocale,
-            signOutMessage: state.session?.grants == nil
-                ? "This device forgets its saved chats and the sign-in. Your chats stay on the server."
-                : "This device forgets its saved chats, and Substrate Chat's access is revoked. Your chats stay on the server.")
+            assistants: assistants, sections: sections, notificationsDenied: denied, voiceLocale: prefs.voiceLocale)
     }
 }

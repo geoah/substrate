@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "231d079f734cc92c3cbab8b08a2c84d9d641f970bc46ab7b181de171d55a9dab"
+    public const val VALUE: String = "bae2b7a683060db3b8fe100b41293c1958575c4a0d9c26ee67950a85e659f60a"
 }
 
 /**
@@ -858,6 +858,7 @@ public data class RepositoryPresentation(
     val changeAccess: String? = null,
     val unrevoked: List<ProblemPresentation>,
     val signOut: String,
+    val signOutConfirmation: ConfirmationPresentation<SettingsRowID>? = null,
     val footer: String,
 )
 
@@ -1061,6 +1062,7 @@ public data class SettingsRow(
     val label: String,
     val detail: String? = null,
     val control: SettingsRow.Control,
+    val confirmation: ConfirmationPresentation<SettingsRowID>? = null,
 ) {
     @Serializable(with = SettingsRow.Control.Serializer::class)
     public sealed interface Control {
@@ -1276,12 +1278,16 @@ public sealed interface SettingsRowID {
         ) : StorageRow
 
         @Serializable
+        public data object Total : StorageRow
+
+        @Serializable
         public data object Clear : StorageRow
 
         public object Serializer : KSerializer<SettingsRowID.StorageRow> by SwiftEnumSerializer(
             "SettingsRowID.StorageRow",
             listOf(
                 SwiftEnumSerializer.Case("area", Area::class, Area.serializer()),
+                SwiftEnumSerializer.Case("total", Total::class, Total.serializer()),
                 SwiftEnumSerializer.Case("clear", Clear::class, Clear.serializer()),
             ),
         )

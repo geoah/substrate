@@ -1,15 +1,25 @@
 package dev.reamde.substrate.kit.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.reamde.substrate.kit.bridge.ConfirmationPresentation
 import dev.reamde.substrate.kit.bridge.RepositoryPresentation
 import dev.reamde.substrate.kit.bridge.ScreenTone
 
@@ -60,18 +70,50 @@ public fun RepositoryScreen(
             UnrevokedNotices(presentation.unrevoked, asRows = true)
         }
         KitRowDivider()
-        KitDestructiveRow(presentation.signOut, onClick = onSignOut)
+        KitDestructiveRow(presentation.signOut, onClick = onSignOut, confirmation = presentation.signOutConfirmation)
     }
 }
 
-/** A row whose action gives something up, in the scheme's error colour. */
+/**
+ * A row whose action gives something up, in the scheme's error colour. With
+ * a `confirmation`, a tap asks it first, in a menu anchored to the row, so
+ * the question stands by what it asks about.
+ */
 @Composable
-public fun KitDestructiveRow(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    androidx.compose.material3.ListItem(
-        headlineContent = {
-            Text(label, color = if (enabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
-        },
-        colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        modifier = modifier.then(if (enabled) Modifier.clickableRow(onClick) else Modifier),
-    )
+public fun KitDestructiveRow(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    confirmation: ConfirmationPresentation<*>? = null,
+) {
+    var asking by remember { mutableStateOf(false) }
+    Box(modifier) {
+        androidx.compose.material3.ListItem(
+            headlineContent = {
+                Text(label, color = if (enabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
+            },
+            colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            modifier = if (enabled) Modifier.clickableRow { if (confirmation == null) onClick() else asking = true } else Modifier,
+        )
+        if (confirmation != null) {
+            DropdownMenu(expanded = asking, onDismissRequest = { asking = false }) {
+                Column(
+                    Modifier.widthIn(max = 280.dp).padding(horizontal = KitSpacing.content, vertical = KitSpacing.small),
+                    verticalArrangement = Arrangement.spacedBy(KitSpacing.small),
+                ) {
+                    Text(confirmation.title, style = KitText.heading.style)
+                    Text(confirmation.message, style = KitText.footnote.style, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                DropdownMenuItem(
+                    text = { Text(confirmation.confirm, color = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        asking = false
+                        onClick()
+                    },
+                )
+                DropdownMenuItem(text = { Text(confirmation.cancel) }, onClick = { asking = false })
+            }
+        }
+    }
 }

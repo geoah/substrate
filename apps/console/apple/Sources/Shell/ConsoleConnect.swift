@@ -81,7 +81,9 @@ struct ConsoleConnect: View {
         }
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity)
-        .background(.bar)
+        // The screen's own background, opaque, so what scrolls under the
+        // footer is hidden without setting it apart as a band.
+        .background(.background)
     }
 }
 

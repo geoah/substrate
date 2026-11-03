@@ -107,10 +107,15 @@ public struct StatusWords: Codable, Hashable, Sendable {
     /// The refused writes' footer, where Discard gives up more than the
     /// change and those behind it (Workouts: the rest of its session's).
     public var refusedFooter: String?
+    /// What signing out gives up on the device beyond the sign-in, where
+    /// the app gives something up (Chat: its saved chats), said in Sign
+    /// Out's question.
+    public var signOut: String?
 
     public init(app: String, device: String, kept: String, packageNames: [String: String] = [:], local: String? = nil,
-                footer: String? = nil, refusedFooter: String? = nil)
+                footer: String? = nil, refusedFooter: String? = nil, signOut: String? = nil)
     {
+        self.signOut = signOut
         self.app = app
         self.device = device
         self.kept = kept

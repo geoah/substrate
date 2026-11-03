@@ -24,7 +24,7 @@ public struct AboutScreen: View {
                     if row.verbatim {
                         Text(row.value).monospaced().textSelection(.enabled)
                     } else {
-                        Text(row.value)
+                        Text(row.value).textSelection(.enabled)
                     }
                 }
             }

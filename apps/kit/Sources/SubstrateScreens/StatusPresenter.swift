@@ -3,8 +3,11 @@ import SubstrateAuth
 import SubstrateCore
 import SubstrateLocal
 
-/// The Status screen, in the words Workouts' Settings → Substrate says it.
+/// The Status screen, in the words Workouts' Settings says it.
 public enum StatusPresenter {
+    /// The section's heading: what the sentence under it is about.
+    public static let title = "Your Substrate"
+
     /// - Parameters:
     ///   - packages: where the repository stands with each package the app
     ///     needs.
@@ -23,7 +26,7 @@ public enum StatusPresenter {
         }
         let sentence = words.sentence(status, locale: locale, timeZone: timeZone)
         if status == .local {
-            return StatusPresentation(title: "Substrate", symbol: symbol, tone: tone, sentence: sentence, packages: [],
+            return StatusPresentation(title: Self.title, symbol: symbol, tone: tone, sentence: sentence, packages: [],
                                       actions: [ActionButton("Sign In to Your Substrate…", .signIn)], busy: false, footer: nil, refused: nil)
         }
         var actions: [ActionButton<StatusAction>] = []
@@ -62,7 +65,7 @@ public enum StatusPresenter {
         }
         let notice = parked.isEmpty ? nil
             : NoticeLine(parked.count == 1 ? "1 change needs you" : "\(parked.count) changes need you", symbol: .warning, tone: .caution)
-        return StatusPresentation(title: "Substrate", symbol: symbol, tone: tone, sentence: sentence, problem: problem, packages: lines,
+        return StatusPresentation(title: Self.title, symbol: symbol, tone: tone, sentence: sentence, problem: problem, packages: lines,
                                   actions: actions, busy: sending,
                                   footer: words.footer(host: host), refused: refused, notice: notice)
     }

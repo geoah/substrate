@@ -9,7 +9,6 @@ public struct ChatSettingsPresentation: Codable, Equatable, Sendable {
     /// Notifications are off for the app: the system's settings turn them on.
     public var notificationsDenied: Bool
     public var voiceLocale: String?
-    public var signOutMessage: String
 }
 
 public struct AssistantsSection: Codable, Equatable, Sendable {

@@ -362,6 +362,40 @@ struct RepositoryStatusTests {
         let waitingOnly = SettingsPresenter.storage([AreaUsage(area: .outbox, bytes: 10, files: 1)], budget: nil)
         #expect(waitingOnly.rows.last?.control == .action(destructive: true, enabled: false))
     }
+
+    @Test func theBudgetIsSaidOnceUnderEachAreasSize() {
+        let section = SettingsPresenter.storage([AreaUsage(area: .cache, bytes: 512, files: 1), AreaUsage(area: .records, bytes: 85, files: 1)],
+                                                budget: 100 * 1024 * 1024)
+        let values = section.rows.compactMap { row -> String? in if case let .value(value, _) = row.control { value } else { nil } }
+        #expect(values == ["512 bytes", "85 bytes", "597 bytes of 105 MB"])
+        #expect(section.rows.map(\.id) == [.storage(.area(.cache)), .storage(.area(.records)), .storage(.total), .storage(.clear)])
+        #expect(section.rows[2].label == "Total")
+        #expect(SettingsPresenter.storage([AreaUsage(area: .cache, bytes: 512, files: 1)], budget: nil).rows[1].control
+            == .value("512 bytes", verbatim: false))
+    }
+
+    @Test func signOutAsksFromItsOwnRowInTheAppsWords() throws {
+        let session = SessionFacts(server: URL(string: "https://ada.example.com")!, repository: "ada.example.com", scopes: ["write:example.com/notes/*"])
+        let repository = RepositoryPresenter.present(session: session, manifest: ScreenFixtures.manifest, serverVersion: nil, unrevoked: [],
+                                                     offersChangeAccess: true, signOutMessage: "This iPhone forgets its saved notes.",
+                                                     locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
+        let confirmation = try #require(repository.signOutConfirmation)
+        #expect(confirmation.question == .repository(.signOut))
+        #expect(confirmation.title == "Sign out of ada.example.com?")
+        #expect(confirmation.message == "\(ScreenFixtures.manifest.appName)'s access on ada.example.com is revoked. This iPhone forgets its saved notes.")
+        let row = try #require(SettingsPresenter.repository(repository)[0].rows.first { $0.id == .repository(.signOut) })
+        #expect(row.confirmation == confirmation)
+    }
+
+    @Test func theStatusIsHeadedByWhatItIsAboutAndTheVersionReadsAsEveryValue() {
+        let status = StatusPresenter.present(.ready(waiting: 0), words: StatusWords(app: "Notes", device: "this iPhone", kept: "notes"), host: "ada.example.com",
+                                             packages: [], sending: false, waiting: 0, parked: [], locale: Locale(identifier: "en_US"),
+                                             timeZone: TimeZone(identifier: "UTC")!)
+        #expect(status.title == "Your Substrate")
+        #expect(status.sentence == "Up to date.")
+        let about = AboutPresentation.present(appName: "Notes", version: "1.2.0-pre.3 (41)", channel: "pre", offered: nil)
+        #expect(SettingsPresenter.about(about).rows[0].control == .value("1.2.0-pre.3 (41)", verbatim: false))
+    }
 }
 
 @Suite("The link")

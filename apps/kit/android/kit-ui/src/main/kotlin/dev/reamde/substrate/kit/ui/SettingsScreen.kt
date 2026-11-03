@@ -73,7 +73,13 @@ public fun SettingsRowView(row: SettingsRow, send: (SettingsCommand) -> Unit, mo
         is SettingsRow.Control.Value -> KitRow(row.label, modifier, supporting = row.detail, trailing = { KitValueText(control.value, control.verbatim) })
         SettingsRow.Control.Link -> KitNavigationRow(row.label, onClick = { send(SettingsCommand.Open(row.id)) }, modifier, supporting = row.detail)
         is SettingsRow.Control.Action -> if (control.destructive) {
-            KitDestructiveRow(row.label, onClick = { send(SettingsCommand.Perform(row.id)) }, modifier, enabled = control.enabled)
+            KitDestructiveRow(
+                row.label,
+                onClick = { send(SettingsCommand.Perform(row.id)) },
+                modifier,
+                enabled = control.enabled,
+                confirmation = row.confirmation,
+            )
         } else {
             KitRow(row.label, modifier, supporting = row.detail, onClick = if (control.enabled) ({ send(SettingsCommand.Perform(row.id)) }) else null)
         }

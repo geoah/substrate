@@ -51,12 +51,18 @@ public struct SettingsRow: Bridged, Hashable, Sendable, Identifiable {
     public var label: String
     public var detail: String?
     public var control: Control
+    /// The question an action asks before it is sent, by its own button
+    /// (Sign Out); nil sends it at once.
+    public var confirmation: ConfirmationPresentation<SettingsRowID>?
 
-    public init(id: SettingsRowID, label: String, detail: String? = nil, control: Control) {
+    public init(id: SettingsRowID, label: String, detail: String? = nil, control: Control,
+                confirmation: ConfirmationPresentation<SettingsRowID>? = nil)
+    {
         self.id = id
         self.label = label
         self.detail = detail
         self.control = control
+        self.confirmation = confirmation
     }
 }
 
@@ -133,6 +139,8 @@ public enum SettingsRowID: Bridged, Hashable, Sendable {
 
     public enum StorageRow: Bridged, Hashable, Sendable {
         case area(FolderArea)
+        /// Every area's size together, against the budget where there is one.
+        case total
         case clear
     }
 
