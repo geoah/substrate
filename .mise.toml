@@ -1264,6 +1264,17 @@ description = "CI job `apps linux`: the kit and WorkoutsKit built and tested on 
 # fixture the kit's tests read, or this pipeline's own definition runs it.
 depends = ["apps:test:linux"]
 
+[tasks."ci:android"]
+description = "CI job `android build`: the Android toolchain installed, the generator checked, the bridge's tests, and the kit cross-compiled for both ABIs"
+# Gated on `changes`' `apps` answer, as `ci:apps` is. Sequential: each step
+# needs the SDK the first installs.
+run = [
+  "mise run android:sdk",
+  "mise run android:generate:check",
+  "mise run android:test",
+  "mise run android:build",
+]
+
 [tasks."ci:image"]
 description = "CI job `image builds and boots` — the image builds from a clean tree and serves under compose.yaml"
 # Build, then boot. The build alone passed for a release image that could not
@@ -1306,6 +1317,7 @@ depends = [
   "ci:console:test",
   "ci:image",
   "ci:apps",
+  "ci:android",
 ]
 
 [tasks."ci:quick"]
