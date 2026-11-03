@@ -23,17 +23,20 @@ import (
 // compile here until somebody decides what an app's token may do with it.
 //
 // What it allows: reading the kinds the grant reads (Get, List, Search,
-// Kinds, KindByRef, TypesImplementing), writing the kinds it writes (Put,
-// Patch, Delete), the unit table and conversions. Under `agents:` and
-// `decide:` (decision 0195) it also reads the rows those reach, chats with
-// and stops the matching agents, makes the few writes those verbs carry and
-// tails the change feed held to the same rows (scopedagents.go). Under
-// `webhook:` it lists that trigger's parked deliveries, and a grant that
-// writes a kind declaring a blob-ref property stores blobs
-// (docs/plans/app-setup.md). A kind the grant cannot read is answered exactly
-// as a kind the repository never declared, so a refusal does not tell an app
-// which kinds exist. Every record handed back, a write's answer included, is
-// cut to what the grant reads, and a trigger never carries its webhook key.
+// Window, Aggregate, Kinds, KindByRef, TypesImplementing), writing the kinds
+// it writes (Put, Patch, Delete), the unit table and conversions. Under
+// `agents:` and `decide:` (decision 0195) it also reads the rows those
+// reach, chats with and stops the matching agents, makes the few writes
+// those verbs carry and reads the change feed, its history included, held
+// to the same rows (scopedagents.go). Under `webhook:` it lists that
+// trigger's parked deliveries; a grant that writes a kind declaring a
+// blob-ref property stores blobs (docs/plans/app-setup.md), one that reads
+// such a kind reads the blobs its records name (scopedreads.go), and under
+// `call:` it runs the functions whose reach its scopes cover (scopedcall.go,
+// decision 0219). A kind the grant cannot read is answered exactly as a kind
+// the repository never declared, so a refusal does not tell an app which
+// kinds exist. Every record handed back, a write's answer included, is cut
+// to what the grant reads, and a trigger never carries its webhook key.
 // Everything else is ErrForbidden.
 type scopedDataset struct {
 	inner substrate.Dataset
@@ -451,35 +454,12 @@ func (s *scopedDataset) List(ctx context.Context, q substrate.Query) (*substrate
 	} else if gated {
 		return s.listRows(ctx, q)
 	}
-	kinds, any, err := s.narrow(ctx, q.Filter.Kinds)
+	q, any, err := s.holdQuery(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	if any {
-		kinds, any, err = s.narrowByRegistry(ctx, kinds, q.Filter.Implements, q.Filter.Purposes)
-		if err != nil {
-			return nil, err
-		}
-	}
 	if !any {
 		return &substrate.Page{Records: []*substrate.Record{}}, nil
-	}
-	q.Filter.Kinds = kinds
-	if err := checkTriggerSource(kinds, q); err != nil {
-		return nil, err
-	}
-	if err := s.checkReferenceFilters(ctx, kinds, q.Filter.Properties); err != nil {
-		return nil, err
-	}
-	if ref := q.Filter.Referencing; ref != nil {
-		for _, target := range append([]string{ref.Ref}, ref.Refs...) {
-			if target == "" {
-				continue
-			}
-			if err := s.requireRead(ctx, kindOfPath(target)); err != nil {
-				return nil, err
-			}
-		}
 	}
 	page, err := s.inner.List(ctx, q)
 	if err != nil {
@@ -798,56 +778,24 @@ func condValues(c substrate.Cond) []any {
 func (s *scopedDataset) cutPage(ctx context.Context, page *substrate.Page) (*substrate.Page, error) {
 	out := *page
 	out.Head, out.Generation = 0, ""
-	out.Records = make([]*substrate.Record, 0, len(page.Records))
-	for _, rec := range page.Records {
-		if ok, err := s.visible(ctx, rec); err != nil {
-			return nil, err
-		} else if !ok {
-			continue
-		}
-		c, err := s.cut(ctx, rec)
-		if err != nil {
-			return nil, err
-		}
-		out.Records = append(out.Records, c)
+	var err error
+	if out.Records, err = s.cutRecords(ctx, page.Records); err != nil {
+		return nil, err
 	}
-	if page.Included != nil {
-		out.Included = make(map[string]*substrate.Record, len(page.Included))
-		for path, rec := range page.Included {
-			if rec == nil {
-				continue
-			}
-			if ok, err := s.visible(ctx, rec); err != nil {
-				return nil, err
-			} else if !ok {
-				continue
-			}
-			c, err := s.cut(ctx, rec)
-			if err != nil {
-				return nil, err
-			}
-			out.Included[path] = c
-		}
+	if out.Included, err = s.cutIncluded(ctx, page.Included); err != nil {
+		return nil, err
 	}
 	return &out, nil
 }
 
+// Search is every mode of the search over the kinds the grant reads, the
+// semantic arm included (decision 0219): it embeds the query with the
+// owner's provider, which the approval page says the scope spends. The embed
+// queue's pending count is a number over the whole repository, so it is left
+// out as the head is.
 func (s *scopedDataset) Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
-	// The semantic arm embeds the query with the owner's provider, which is
-	// the owner's money: an app searches by words alone.
-	switch in.Mode {
-	case "", substrate.SearchHybrid, substrate.SearchLexical:
-		in.Mode = substrate.SearchLexical
-	default:
-		return substrate.SearchResult{}, errScope("semantic search, which spends the owner's embedding budget")
-	}
-	for _, k := range in.Kinds {
-		if gated, err := s.rowGated(ctx, k); err != nil {
-			return substrate.SearchResult{}, err
-		} else if gated {
-			return substrate.SearchResult{}, fmt.Errorf("%w: an app's token reads %s through a list, which its agent scopes narrow record by record",
-				substrate.ErrForbidden, k)
-		}
+	if err := s.refuseRowGated(ctx, in.Kinds); err != nil {
+		return substrate.SearchResult{}, err
 	}
 	kinds, any, err := s.narrow(ctx, in.Kinds)
 	if err != nil {
@@ -888,6 +836,7 @@ func (s *scopedDataset) Search(ctx context.Context, in substrate.SearchInput) (s
 		hits = append(hits, h)
 	}
 	res.Hits = hits
+	res.Pending = 0
 	return res, nil
 }
 
@@ -946,16 +895,8 @@ func (s *scopedDataset) Split(context.Context, substrate.Actor, substrate.SplitI
 	return nil, errScope("split")
 }
 
-func (s *scopedDataset) Window(context.Context, substrate.WindowQuery) (*substrate.WindowPage, error) {
-	return nil, errScope("window reads")
-}
-
-func (s *scopedDataset) Aggregate(context.Context, substrate.AggregateQuery) (*substrate.AggregateResult, error) {
-	return nil, errScope("aggregate reads")
-}
-
 // Changes is the feed held to the grant, every row carrying names alone
-// (heldChanges). The API opens only its live tail to an app (decision 0195).
+// (heldChanges).
 func (s *scopedDataset) Changes(ctx context.Context, after int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, error) {
 	kept, _, _, err := s.heldChanges(ctx, after, f, limit)
 	return kept, err
@@ -989,12 +930,10 @@ func (s *scopedDataset) Reembed(context.Context, bool) (substrate.ReembedReport,
 	return substrate.ReembedReport{}, errScope("re-embedding")
 }
 
-func (s *scopedDataset) ChangesBefore(context.Context, int64, substrate.ChangeFilter, int) ([]substrate.Change, error) {
-	return nil, errScope("the change feed")
-}
-
+// ChangeTriggers is each trigger's stance on a row, which is the owner's
+// automation: an app's rows carry none.
 func (s *scopedDataset) ChangeTriggers(context.Context, []substrate.Change) (map[int64][]substrate.ChangeTrigger, error) {
-	return nil, errScope("the change feed")
+	return map[int64][]substrate.ChangeTrigger{}, nil
 }
 
 // ApplyVocabularyDocuments is refused: no scoped token applies vocabulary
@@ -1059,10 +998,6 @@ func (s *scopedDataset) RetryTriggerFailure(context.Context, string, int64) (int
 
 func (s *scopedDataset) ForgetTriggerFailure(context.Context, string, int64) error {
 	return errScope("triggers")
-}
-
-func (s *scopedDataset) CallFunction(context.Context, substrate.Actor, string, any) (any, int, error) {
-	return nil, 0, errScope("functions")
 }
 
 func (s *scopedDataset) ProcessTriggers(context.Context) (int, error) {
@@ -1216,27 +1151,6 @@ func (s *scopedDataset) admitBlobs(ctx context.Context) error {
 		}
 	}
 	return errScope("blobs")
-}
-
-// declaresBlobRef reports whether a kind declares a blob-ref property. A
-// blob-ref is never a field of an object, so the top level is all of them.
-func declaresBlobRef(k substrate.KindInfo) bool {
-	props, _ := k.Definition["properties"].(map[string]any)
-	for _, raw := range props {
-		p, _ := raw.(map[string]any)
-		if t, _ := p["type"].(string); t == string(vocabulary.DatatypeBlobRef) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *scopedDataset) GetBlob(context.Context, string) (*substrate.BlobInfo, []byte, error) {
-	return nil, nil, errScope("blobs")
-}
-
-func (s *scopedDataset) StatBlob(context.Context, string) (*substrate.BlobInfo, error) {
-	return nil, errScope("blobs")
 }
 
 func (s *scopedDataset) Export(context.Context) (substrate.Export, error) {

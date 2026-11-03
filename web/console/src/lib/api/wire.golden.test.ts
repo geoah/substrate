@@ -93,6 +93,7 @@ import type {
   AuthorizationRedirectTo,
   AuthorizationRequest,
   AuthorizationScope,
+  AuthorizationCallFunction,
   AuthorizationSetup,
   AuthorizationTrigger,
   AuthorizationWebhookPlan,
@@ -683,7 +684,17 @@ const authorizationScope: Shape<AuthorizationScope> = {
   glob: true,
   kinds: true,
   agents: true,
+  functions: true,
   allowed: false,
+}
+
+const authorizationCallFunction: Shape<AuthorizationCallFunction> = {
+  identity: true,
+  description: false,
+  reads: true,
+  writes: true,
+  covered: true,
+  uncovered: false,
 }
 
 const authorizationKind: Shape<AuthorizationKind> = {
@@ -1313,6 +1324,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   } satisfies Shape<AddonInstallResult>,
   AuthorizationRedirectTo: authorizationRedirectTo,
   AuthorizationScope: authorizationScope,
+  AuthorizationCallFunction: authorizationCallFunction,
   AuthorizationKind: authorizationKind,
   AuthorizationDetail: authorizationDetail,
   AuthorizationSetup: authorizationSetup,

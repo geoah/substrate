@@ -548,26 +548,73 @@ func (s *scopedDataset) heldChanges(ctx context.Context, after int64, f substrat
 	last = after
 	for _, c := range batch {
 		last = c.Seq
-		show, err := s.recordVisible(ctx, c.Kind, c.RecordID)
+		row, show, err := s.heldRow(ctx, c)
 		if err != nil {
 			return nil, 0, after, err
 		}
-		if !show {
-			continue
+		if show {
+			kept = append(kept, row)
 		}
-		row := substrate.Change{Seq: c.Seq, TS: c.TS, Actor: c.Actor, Op: c.Op, RecordID: c.RecordID, Kind: c.Kind}
-		for _, a := range c.Affected {
-			show, err := s.recordVisible(ctx, a.Kind, a.ID)
-			if err != nil {
-				return nil, 0, after, err
-			}
-			if show {
-				row.Affected = append(row.Affected, substrate.AffectedRecord{Kind: a.Kind, ID: a.ID, Version: a.Version, Deleted: a.Deleted})
-			}
-		}
-		kept = append(kept, row)
 	}
 	return kept, len(batch), last, nil
+}
+
+// heldRow is one feed row as the grant reads it: whether its record is one
+// the grant reads, and the row carrying names alone, its affected records
+// cut to the ones the grant reads.
+func (s *scopedDataset) heldRow(ctx context.Context, c substrate.Change) (substrate.Change, bool, error) {
+	show, err := s.recordVisible(ctx, c.Kind, c.RecordID)
+	if err != nil || !show {
+		return substrate.Change{}, false, err
+	}
+	row := substrate.Change{Seq: c.Seq, TS: c.TS, Actor: c.Actor, Op: c.Op, RecordID: c.RecordID, Kind: c.Kind}
+	for _, a := range c.Affected {
+		show, err := s.recordVisible(ctx, a.Kind, a.ID)
+		if err != nil {
+			return substrate.Change{}, false, err
+		}
+		if show {
+			row.Affected = append(row.Affected, substrate.AffectedRecord{Kind: a.Kind, ID: a.ID, Version: a.Version, Deleted: a.Deleted})
+		}
+	}
+	return row, true, nil
+}
+
+// ChangesBefore is the feed's history as the grant reads it (decision 0219):
+// the newest limit rows below before of records it reads, each carrying
+// names alone. Rows of a row-gated kind are decided after the engine paged,
+// so the batch is read again below the rows it held back until limit rows
+// are kept or the bottom is reached: a short page then means the bottom,
+// which is what the history route reads it as.
+func (s *scopedDataset) ChangesBefore(ctx context.Context, before int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, error) {
+	f, ok, err := s.changeFilter(ctx, f)
+	if err != nil || !ok {
+		return []substrate.Change{}, err
+	}
+	kept := make([]substrate.Change, 0, min(max(limit, 0), changeBatch))
+	cur := before
+	for {
+		batch, err := s.inner.ChangesBefore(ctx, cur, f, limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range batch {
+			row, show, err := s.heldRow(ctx, c)
+			if err != nil {
+				return nil, err
+			}
+			if show {
+				kept = append(kept, row)
+				if len(kept) == limit {
+					return kept, nil
+				}
+			}
+		}
+		if len(batch) == 0 || len(batch) < limit {
+			return kept, nil
+		}
+		cur = batch[len(batch)-1].Seq
+	}
 }
 
 // recordVisible decides one feed row's record by kind and id: a kind read

@@ -26,6 +26,7 @@ function scope(verb: AuthorizationScope["verb"], pattern: string) {
     glob: pattern.endsWith("*"),
     kinds: [],
     agents: [],
+    functions: [],
   } satisfies AuthorizationScope
 }
 
