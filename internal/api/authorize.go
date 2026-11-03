@@ -776,7 +776,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	if shown, err := h.authz.Claim(id, authority); err == nil && shown.State == substrate.AuthorizationPending {
 		if why := h.publisherMoved(ctx, shown); why != "" {
 			if _, err := h.authz.Deny(id, authority, func(authorize.Request) error { return nil }); err != nil && !errors.Is(err, authorize.ErrNotPending) {
-				slog.Warn("authorize: ending a request whose publisher moved", "request", id, "error", err)
+				slog.Warn("authorize: ending a request whose publisher moved", "request", logLine(id), "error", err)
 			}
 			writeError(w, http.StatusConflict, codeConflict, "who publishes this app changed since the page loaded: "+why+". This request has ended: start again from the app")
 			return
