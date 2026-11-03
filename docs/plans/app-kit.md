@@ -525,15 +525,17 @@ apps/
   kit/                 the Swift package of §5.3, README per library, android/ (Gradle) inside
   xcode/               project.yml (includes each app's apple/targets.yml), Shared/, scripts/
   gradle/              settings.gradle.kts (includes each app's android/), build-logic/
-  console/             app.yaml, apple/
-  chat/                app.yaml, ChatKit/, apple/, docs/
-  workouts/            app.yaml, WorkoutsKit/, apple/ (app, widgets), package/, library/, scripts/, docs/
-  sync/                app.yaml, apple/ (app, share target): moved, not converted
-  tasks/               app.yaml, TasksKit/, apple/, android/, package/
+  console/             app.json, apple/
+  chat/                app.json, ChatKit/, apple/, docs/
+  workouts/            app.json, WorkoutsKit/, apple/ (app, widgets), package/, library/, scripts/, docs/
+  sync/                app.json, apple/ (app, share target): moved, not converted
+  tasks/               app.json, TasksKit/, apple/, android/, package/
   template/            what apps:new copies
 ```
 
-- **`app.yaml` names an app once**: id, display name, bundle id and Android
+- **`app.json` names an app once** (JSON, because every reader parses it
+  with no dependency: the Swift and Go tests, Gradle, `jq` in the release
+  scripts, Python): id, display name, bundle id and Android
   application id, platforms, the Info.plist and manifest keys of its client
   id and redirect, the packages it publishes from `package/`, its scopes and
   package details, its icon, its feed folder. It replaces
@@ -560,7 +562,7 @@ apps/
 ### 7.1 Layering, checked
 
 `mise run lint:apps` reads every `Package.swift`, `targets.yml`, Gradle
-module and `app.yaml`, and refuses:
+module and `app.json`, and refuses:
 
 - a dependency that points up §5.3's list, or from one app to another;
 - an app's core or a kit library outside the Apple and Android rows that imports
@@ -568,7 +570,7 @@ module and `app.yaml`, and refuses:
   and the kit;
 - a Kotlin file outside `kit-device` or an app's `android/` that touches an
   Android service;
-- an `app.yaml` the generators cannot read, or an app without one;
+- an `app.json` the generators cannot read, or an app without one;
 - a third-party package not listed, with its reason, in `apps/README.md`
   (today: Sparkle, swift-crypto, swift-syntax for the tool only, OkHttp,
   AndroidX, kotlinx.serialization, Tink).
@@ -725,7 +727,7 @@ Android.
 | --- | --- | --- |
 | 1 | This plan | Fable and Astra, then a confirmation round by each |
 | 2 | **Relocation, mechanical**: the layout of §6 with `git mv` and path fixes only (`apple.sh`, `.mise.toml`, the scripts, `internal/catalog`'s reach test, `#filePath` goldens, XcodeGen paths, docs links); module names, bundle ids, Keychain groups, `scopes.json`'s readers, serialized fields and on-device paths unchanged | Astra |
-| 3 | **The kit split**: §5.3's libraries behind compatibility exports, Swift 6 mode, the duplicates retired, `app.yaml`, `lint:apps`, the terms, the Linux job | Astra |
+| 3 | **The kit split**: §5.3's libraries behind compatibility exports, Swift 6 mode, the duplicates retired, `app.json`, `lint:apps`, the terms, the Linux job | Astra |
 | 4 | **The runtime and the shared screens**: `SubstrateRuntime` (§5.1, §5.2), `LinkController`, the first cut of §5.6 with their Apple views, `SubstrateLocal` | Fable |
 | 5 | **Chat** onto the runtime: the composition proof; the console shell's sign-in (`ConsoleSignIn`, `ConsoleConnect`, `ServerStore`) onto `SubstrateAuth` | Astra |
 | 6 | **Workouts** onto the link, the outbox, the runtime's journal order and the shared screens | Fable |
@@ -756,7 +758,7 @@ When the plan is accepted:
 - A screen is a controller, engine, effects and presenter; a UI reads
   presentations only, and Android receives them as JSON over a fixed bridge
   whose Kotlin is generated.
-- An app is one folder named once by its `app.yaml`, and the kit's layering
+- An app is one folder named once by its `app.json`, and the kit's layering
   is checked.
 
 ## Review record
