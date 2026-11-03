@@ -5,24 +5,23 @@ import WorkoutsCore
 @testable import WorkoutsSync
 
 /// The codec against what a substrate answers: records read back from a
-/// throwaway server built from this tree (Fixtures/, recorded from the
-/// repository probe.example.com), with their stamps, labels and property
-/// metadata, and references as `{ref}` objects.
+/// throwaway server built from this tree (Fixtures/), with their stamps,
+/// labels and property metadata, and references as `{ref}` objects.
 @Suite("Codec against the server's answers")
 struct ServerAnswerTests {
-    let rehome = Rehome(authority: recordedAuthority)
     let codec = RecordCodec()
 
     func records(_ name: String) throws -> [FlatRecord] {
         let page = try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name))
-        return try page.records.map { try WorkoutsAPI.record($0, rehome: rehome) }
+        return try page.records.map { try WorkoutsAPI.record($0) }
     }
 
-    @Test("a GET of an exercise decodes, in the phone's spelling")
+    @Test("a GET of an exercise decodes, under the published kind name")
     func anExercise() throws {
         let value = try JSONDecoder().decode(WorkoutsCore.JSONValue.self, from: Fixtures.data("get-exercise"))
-        let record = try WorkoutsAPI.record(value, rehome: rehome)
+        let record = try WorkoutsAPI.record(value)
         #expect(record.kind == KindNames.v1.exercise)
+        #expect(record.kind == "substrate.reamde.dev/training/exercise")
         let exercise = try codec.decodeExercise(record)
         #expect(exercise.id.rawValue == "chest-press-machine")
         #expect(exercise.loadStep == Mass(value: 5, unit: .kg))
@@ -51,14 +50,15 @@ struct ServerAnswerTests {
         #expect(members.allSatisfy { ids.contains($0.continues!) })
     }
 
-    @Test("a record re-encoded and sent back names the repository's kinds and nothing of the phone's")
+    @Test("a record re-encoded and sent back names the published kinds, and nothing is respelled")
     func roundTrip() throws {
         for record in try records("list-sets") {
             let set = try codec.decodeSet(record)
-            let outbound = rehome.outbound(codec.encode(set))
+            let outbound = codec.encode(set)
             let text = String(decoding: try JSONEncoder().encode(outbound), as: UTF8.self)
-            #expect(outbound.kind == "\(recordedAuthority)/training/set")
-            #expect(!text.contains("\"~/"))
+            #expect(outbound.kind == "substrate.reamde.dev/training/set")
+            #expect(!text.contains("~"))
+            #expect(outbound.properties["session"] == record.properties["session"])
         }
     }
 
@@ -68,47 +68,32 @@ struct ServerAnswerTests {
         guard case let .object(object) = value, case let .object(properties)? = object["properties"],
               case let .number(version)? = properties["version"]
         else { Issue.record("no version in the package row"); return }
-        // The recorded repository took an additive version 2 by hand, which
-        // this build (version 1) reads as newer.
-        #expect(PackageState.of(held: NSDecimalNumber(decimal: version).intValue, shipped: 1) == .newer(held: 2))
+        // The recorded repository held version 2; a build written against
+        // version 1 reads it as current, one against 3 as behind.
+        #expect(PackageState.of(held: NSDecimalNumber(decimal: version).intValue, needed: 1) == .current(held: 2))
+        #expect(PackageState.of(held: NSDecimalNumber(decimal: version).intValue, needed: 3) == .behind(held: 2))
     }
 }
 
-@Suite("Rehome")
-struct RehomeTests {
-    let rehome = Rehome(authority: "ada.example.com")
-
-    @Test("kinds, references and package ids move; a published kind does not")
-    func moves() {
-        let record = FlatRecord(kind: "~/training/set", id: "s1", properties: [
-            "session": .object(["ref": .string("~/training/session/a")]),
-            "exercise": .string("~/training/exercise/chest-press-machine"),
-            "workout": .object(["ref": .string("substrate.reamde.dev/health/workout/applehealth/x/y")]),
-            "notes": .string("~/training is not a path here"),
-        ])
-        let out = rehome.outbound(record)
-        #expect(out.kind == "ada.example.com/training/set")
-        #expect(out.properties["session"] == .object(["ref": .string("ada.example.com/training/session/a")]))
-        #expect(out.properties["exercise"] == .string("ada.example.com/training/exercise/chest-press-machine"))
-        #expect(out.properties["workout"] == record.properties["workout"])
-        #expect(rehome.inbound(out) == record)
-    }
-
-    @Test("the manifests land under the repository's authority, with no ~ left")
-    func manifests() throws {
+@Suite("The published manifests")
+struct ManifestTests {
+    @Test("training is published under substrate.reamde.dev, its documents in apply order, with no ~ anywhere")
+    func training() throws {
         let manifest = try PackageManifest.bundled()
-        #expect(manifest.package == "~/training")
-        #expect(manifest.version >= 1)
-        let documents = manifest.documents(for: rehome)
-        let text = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.array(documents)), as: UTF8.self)
-        #expect(!text.contains("\"~"))
-        #expect(text.contains(#""authority":"ada.example.com""#))
-        #expect(text.contains(#""id":"ada.example.com\/training\/set""#) || text.contains(#""id":"ada.example.com/training/set""#))
-        // The order an apply admits: the package, its bundle, then the kinds.
-        let kinds = documents.compactMap { doc -> String? in
+        #expect(manifest.package == KindNames.packageID)
+        #expect(manifest.version >= 4)
+        let text = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.array(manifest.documents)), as: UTF8.self)
+        #expect(!text.contains("~"))
+        #expect(text.contains(#""authority":"substrate.reamde.dev""#))
+        let kinds = manifest.documents.compactMap { doc -> String? in
             guard case let .object(o) = doc, case let .string(k)? = o["kind"] else { return nil }
             return k
         }
         #expect(kinds.prefix(2) == ["substrate.reamde.dev/core/package", "substrate.reamde.dev/core/bundle"])
+        let declared = Set(manifest.documents(ofKind: "substrate.reamde.dev/core/kind").map(\.id))
+        let codec = RecordCodec()
+        #expect(declared.isSuperset(of: [codec.kinds.movement, codec.kinds.exercise, codec.kinds.setup, codec.kinds.routine, codec.kinds.session, codec.kinds.set]))
+        let header = try #require(manifest.documents(ofKind: "substrate.reamde.dev/core/package").first)
+        #expect(header.id == manifest.package && header.data["version"] == .number(Decimal(manifest.version)))
     }
 }

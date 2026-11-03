@@ -2,21 +2,26 @@ import Foundation
 import SubstrateKit
 import WorkoutsCore
 
-/// What Substrate Workouts asks a substrate for (decision 0203):
+/// What Substrate Workouts asks a substrate for (decision record 0214):
 ///
-/// - `declare:~/training`, to install and upgrade its own package, the
-///   training kinds, under the repository's own authority;
-/// - `write:~/training/*`, to read and write its exercises, routines,
-///   sessions and sets;
+/// - `package` details on `substrate.reamde.dev/health` (the catalogue
+///   training requires), `substrate.reamde.dev/training` and
+///   `substrate.reamde.dev/trainingcoach`, each at the version this build
+///   was written against or later; the server installs them from the
+///   binary's catalog and the publisher's authority document, and holds a
+///   later upgrade that would break this build while it is connected;
+/// - `write:substrate.reamde.dev/training/*`, to read and write its
+///   exercises, routines, sessions and sets;
 /// - `read:` the Health workout and the Apple Health account, to find the
 ///   row a finished session was saved to Apple Health as;
-/// - and, set up on approval, `substrate.reamde.dev/health`, the catalogue
-///   the package requires;
-/// - the workout coach (decision 0207): `declare:~/trainingcoach` and an
-///   `agent` detail with its reach and daily cap, which the owner approves
-///   on the same page, and `read:` the AI provider rows to pick the model it
-///   runs on. A server without agents is sent the request without the
-///   detail.
+/// - `agents:substrate.reamde.dev/trainingcoach/*`, to talk to the coach;
+/// - and every read the coach's own reach needs (decision record 0215: a
+///   package's code reaches no further than the approved scopes, or the
+///   row is blocked `reaches-past-scopes`), which `ClosureReach` computes
+///   from the closure this build carries and a test holds the list to.
+///
+/// The app applies no vocabulary and respells no kind: the packages are
+/// published, under one name in every repository.
 public enum WorkoutsManifest {
     public static let appName = "Substrate Workouts"
     /// The Info.plist key a release stamps with the URL of its client ID
@@ -30,27 +35,43 @@ public enum WorkoutsManifest {
 
     public static let healthPackage = "substrate.reamde.dev/health"
     public static let healthWorkout = "substrate.reamde.dev/health/workout"
+    public static let healthSleep = "substrate.reamde.dev/health/sleep"
     public static let healthAccount = "providers.substrate.reamde.dev/applehealth/account"
 
-    public static let declareScope = "declare:\(KindNames.packageID(authority: KindNames.home))"
-    public static let writeScope = "write:\(KindNames.packageID(authority: KindNames.home))/*"
+    public static let writeScope = "write:\(KindNames.packageID)/*"
 
-    public static let coachDeclareScope = "declare:\(Coach.package)"
-    public static let providerScope = "read:substrate.reamde.dev/llm/provider"
+    /// The coach's reads outside training, as its closure declares them
+    /// (apps/apple/scripts/workouts-package.py, COACH_READS): the two health
+    /// kinds, every observation kind, and the clinical catalogue where the
+    /// owner holds one.
+    public static let coachReadScopes = [
+        "read:\(healthWorkout)",
+        "read:\(healthSleep)",
+        "read:substrate.reamde.dev/observations/*",
+        "read:substrate.reamde.dev/clinical/*",
+    ]
 
-    public static let scopes = [declareScope, writeScope, "read:\(healthWorkout)", "read:\(healthAccount)", coachDeclareScope, providerScope]
+    public static let scopes = [writeScope, "read:\(healthAccount)"] + coachReadScopes + [Coach.agentsScope]
 
-    /// The release of the health catalogue whose `workout` the package's
-    /// `session.workout` names.
-    /// The coach's detail comes last: it is optional, so a request to a
-    /// server without agents is the others alone, in the same order.
-    public static let details = [AuthorizationDetail.package(healthPackage, atLeast: 1), Coach.detail]
+    /// The versions this build was written against: each package's floor.
+    /// A build whose resources cannot be read asks for version 1, which a
+    /// test refuses before a release.
+    public static let trainingVersion = (try? PackageManifest.bundled())?.version ?? 1
+    public static let coachVersion = (try? PackageManifest.coach())?.version ?? 1
 
-    /// A server that lists `declare` and `package` details can take the
-    /// request, whatever it calls its build; one that cannot is too old.
-    public static let requirement = ServerRequirement(scopeVerbs: ["declare", "write"], detailTypes: [AuthorizationDetail.Types.package])
+    /// The health catalogue first, which training requires; then the two
+    /// published packages, in the order they land.
+    public static let details = [
+        AuthorizationDetail.package(healthPackage, atLeast: 1),
+        AuthorizationDetail.package(KindNames.packageID, atLeast: trainingVersion),
+        AuthorizationDetail.package(Coach.package, atLeast: coachVersion),
+    ]
 
-    public static func manifest(clientID: String, claimedRedirect: URL? = nil) -> AppManifest {
+    /// A server that takes `package` details and the `agents` verb can take
+    /// the request, whatever it calls its build; one that cannot is too old.
+    public static let requirement = ServerRequirement(scopeVerbs: ["write", "agents"], detailTypes: [AuthorizationDetail.Types.package])
+
+    public static func manifest(clientID: String, claimedRedirect: URL? = nil, softwareVersion: String = AppManifest.softwareVersion()) -> AppManifest {
         AppManifest(
             appName: appName,
             clientID: clientID,
@@ -59,11 +80,13 @@ public enum WorkoutsManifest {
             requirement: requirement,
             claimedRedirect: claimedRedirect,
             passwordFallback: .never,
-            names: [healthPackage: "Health"],
+            names: [healthPackage: "Health", KindNames.packageID: "Training", Coach.package: "Workout coach"],
             kindLabels: [
                 healthWorkout: KindLabel(singular: "Workout", plural: "Workouts"),
+                healthSleep: KindLabel(singular: "Sleep", plural: "Sleep"),
                 healthAccount: KindLabel(singular: "Apple Health account", plural: "Apple Health accounts", purpose: "internal"),
-            ])
+            ],
+            softwareVersion: softwareVersion)
     }
 
     /// This build's manifest: a release's stamped client id and claimed
@@ -85,26 +108,17 @@ public enum SyncStatus: Sendable, Hashable {
     case preparing
     /// The token was refused or its access ended: sign in again.
     case signedOut
-    /// The token lacks a scope the app needs, such as `declare:` when the
-    /// owner left it out: the review asks again.
+    /// The token lacks a scope the app needs, or a package it needs waits
+    /// for the owner's approval: the review asks.
     case needsApproval
     /// The server cannot take what the app needs: update it.
     case serverTooOld
     /// The phone could not keep a change, or its queue, on disk.
     case notKept(String)
-    /// The repository holds a newer training package than this build knows.
-    case packageNewer(held: Int, known: Int)
-    /// The package on `server` was changed outside the app (these kinds).
-    /// The app manages it and writes nothing there; sessions stay on the
-    /// phone (O1/O2).
-    case packageEdited(server: String, kinds: [String])
-    /// The server refused the upgrade, which would remove what the package
-    /// holds.
-    case packageRefused(String)
-    /// The package is not the app's (decision 0205): the owner took it over,
-    /// or another app keeps it. The app no longer updates it, and records
-    /// still go, with this many waiting.
-    case packageManagedElsewhere(PackageManager, waiting: Int)
+    /// The repository holds an older training package than this build was
+    /// written against, and the server has not upgraded it yet: an upgrade
+    /// that changes more than kinds waits for the owner on the server.
+    case packageBehind(held: Int, known: Int)
     /// Ready, with this many writes still waiting.
     case ready(waiting: Int)
     /// Ready, and the approved access ends on this date.
@@ -117,7 +131,7 @@ public enum SyncStatus: Sendable, Hashable {
     case failed(String)
 
     public static func derive(signedIn: Bool, package: PackageState?, outbox: OutboxState, waiting: Int, known: Int,
-                              issues: [AppIssue] = [], notKept: String? = nil, server: String = "your substrate") -> SyncStatus
+                              issues: [AppIssue] = [], notKept: String? = nil) -> SyncStatus
     {
         guard signedIn else { return .local }
         if issues.contains(.accessEnded) { return .signedOut }
@@ -130,19 +144,13 @@ public enum SyncStatus: Sendable, Hashable {
         if issues.contains(where: { if case .serverTooOld = $0 { true } else { false } }) { return .serverTooOld }
         if let notKept { return .notKept(notKept) }
         guard let package else { return .preparing }
-        switch package {
-        case let .newer(held): return .packageNewer(held: held, known: known)
-        case let .edited(_, kinds): return .packageEdited(server: server, kinds: kinds)
-        case let .refused(_, reason): return .packageRefused(reason)
-        default: break
-        }
+        if case let .behind(held) = package { return .packageBehind(held: held, known: known) }
         guard package.writable else { return .preparing }
         switch outbox {
         case let .offline(reason): return .offline(waiting: waiting, reason: reason)
         case let .refused(reason): return .refused(waiting: waiting, reason: reason)
         default: break
         }
-        if case let .managedElsewhere(_, manager) = package { return .packageManagedElsewhere(manager, waiting: waiting) }
         for case let .accessEndsSoon(date) in issues {
             return .accessEndsSoon(date, waiting: waiting)
         }
@@ -164,16 +172,10 @@ public enum SyncStatus: Sendable, Hashable {
             "Your substrate needs an update before Substrate Workouts can use it. Sessions wait on this iPhone until then."
         case let .notKept(reason):
             "A change could not be kept on this iPhone: \(reason)"
-        case let .packageEdited(server, _):
-            "The Training package on \(server) was changed outside Substrate Workouts; it is managed by this app. Sessions stay on this iPhone."
-        case let .packageManagedElsewhere(manager, waiting):
-            manager.sentence + " Sessions still sync." + (waiting == 0 ? "" : " Sending \(waiting) \(waiting == 1 ? "change" : "changes").")
-        case let .packageRefused(reason):
-            "Your substrate refused this app's update to the training package: \(reason) Sessions wait on this iPhone until the package is settled on your substrate."
         case let .accessEndsSoon(date, waiting):
             "Access ends \(date.formatted(date: .abbreviated, time: .omitted)). Renew it to keep syncing." + (waiting == 0 ? "" : " Sending \(waiting) \(waiting == 1 ? "change" : "changes").")
-        case let .packageNewer(held, known):
-            "Your substrate has version \(held) of the training package, newer than the version \(known) this app knows. Update the app; sessions wait on this iPhone until then."
+        case let .packageBehind(held, known):
+            "Your substrate has version \(held) of the Training package and this app needs version \(known) or later. The update waits for your approval on your substrate; sessions wait on this iPhone until then."
         case let .ready(waiting):
             waiting == 0 ? "Up to date." : "Sending \(waiting) \(waiting == 1 ? "change" : "changes")."
         case let .offline(waiting, _):

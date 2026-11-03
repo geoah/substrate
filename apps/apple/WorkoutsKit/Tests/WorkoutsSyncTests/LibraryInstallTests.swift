@@ -17,7 +17,7 @@ struct LibraryInstallTests {
         let library: JSONObject = [
             "name": .string("Chest Press (Machine)"),
             "equipment": .string("machine"),
-            "movement": .string("~/training/movement/chest-press"),
+            "movement": .string("substrate.reamde.dev/training/movement/chest-press"),
             "codes": .array([
                 .object(["system": .string(ExerciseLibrary.system), "code": .string("chest-press-machine"), "version": .string("1")]),
                 .object(["system": .string("hevy"), "code": .string("7EB3F7C3")]),
@@ -25,7 +25,7 @@ struct LibraryInstallTests {
         ]
         let patch = LibraryInstall.fill(held, from: library)
         #expect(patch["equipment"] == nil && patch["name"] == nil)
-        #expect(patch["movement"] == .string("~/training/movement/chest-press"))
+        #expect(patch["movement"] == .string("substrate.reamde.dev/training/movement/chest-press"))
         guard case let .array(codes)? = patch["codes"] else { Issue.record("no codes"); return }
         #expect(codes.count == 2)
         var filled = held

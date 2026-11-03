@@ -1,49 +1,51 @@
 # The training package
 
-Substrate Workouts' own package: the exercises the owner trains and the
-machines they are done on, the workout routines the console's agent writes,
-and the training sessions and sets the app logs. The manifests are the YAML
-files beside this one, under the authority `~`; the app carries them
+Substrate Workouts' package: the exercises the owner trains and the
+machines they are done on, the workout routines the coach writes, and the
+training sessions and sets the app logs. The manifests are the YAML files
+beside this one, published under the authority `substrate.reamde.dev`
+(decision record 0214):
+`mise run apple:site` builds each version's closure from them
+(`apps/apple/scripts/workouts-package.py --closures`) and lists it in the
+site's authority document, the app's approval asks for the package as a
+`package` detail at the version the build was written against, and the
+server installs it from the document under this very name, the same in every
+repository. The app carries the documents as JSON
 (`WorkoutsKit/Sources/WorkoutsCore/Resources/Package/training.json`, written
-by `apps/apple/scripts/workouts-package.py`) and declares them in a
-repository through its `declare:~/training` scope, so they land as
-`<authority>/training` (decision record
-[0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)).
-Below, `~/training/…` is that name.
+by the same script) for the version it asks for, and applies nothing. The
+workout coach is the second package, `substrate.reamde.dev/trainingcoach`,
+under [coach/](coach/).
 
 | File | Holds |
 | --- | --- |
 | `training.yaml` | the package document (its version) and the bundle document (`requires`, `installs`) |
-| `movement.yaml` | `~/training/movement`: what you search for and the muscles it works |
-| `exercise.yaml` | `~/training/exercise`, one equipment version of a movement |
-| `setup.yaml` | `~/training/setup`, labelled "Exercise setup" |
-| `routine.yaml` | `~/training/routine`, labelled "Workout routine" |
-| `session.yaml` | `~/training/session`, labelled "Training session" |
-| `set.yaml` | `~/training/set` |
+| `movement.yaml` | `substrate.reamde.dev/training/movement`: what you search for and the muscles it works |
+| `exercise.yaml` | `substrate.reamde.dev/training/exercise`, one equipment version of a movement |
+| `setup.yaml` | `substrate.reamde.dev/training/setup`, labelled "Exercise setup" |
+| `routine.yaml` | `substrate.reamde.dev/training/routine`, labelled "Workout routine" |
+| `session.yaml` | `substrate.reamde.dev/training/session`, labelled "Training session" |
+| `set.yaml` | `substrate.reamde.dev/training/set` |
 
-**It is the app's.** The kinds are Substrate Workouts' authority: the app
-installs and upgrades them, and the owner does not edit them (decisions O1
-and O2, 2026-11-02, in [decisions.md](../docs/decisions.md#open-since-1100)).
-The server enforces it
-([0205](../../../../docs/decisions/0205-an-app-owns-the-package-it-declares.md)):
-the package row names the app by its client id, and every other hand's
-change to its package, bundle or kind documents, the owner's included, is
-refused with `403`. There are no owner edits to override. The records stay
-the owner's, and so does the bundle's Pause and Resume. The owner's one way
-to change the kinds is **Take over…** on the package's page, after which the
-package is theirs for good and the app stops updating it (its apply answers
-`403`, and it keeps sending records). A local build and a release build are
-two apps, so each wants its own repository.
+**It is published.** The kinds are the publisher's: a repository installs
+them as a `published` package, and the owner does not edit them (decisions
+O1 and O2, 2026-11-02, in
+[decisions.md](../docs/decisions.md#open-since-1100)), which is the
+published tier's ordinary rule rather than a lock of the app's. The records
+stay the owner's, and so do the bundle's Pause and Resume. The owner's one
+way to change the kinds is **Take over…** on the package's page, after which
+the package is theirs and stops upgrading; the app keeps writing records to
+it.
 
 **Changing it.** A change ships as the next `version` in `training.yaml`,
 and only additive changes (a new kind, a new optional property, a new enum
-value): the server refuses the app's token an apply that removes anything the
-package holds, or that it would have to confirm as lossy, so a narrowing
-waits for a takeover. A bundle the app sends lists its kinds and nothing more
-(no `modules`, `oauth2` or `inputs`), and a kind declares no `indices` or
-`embed`. Run the generator, then `mise run apple:test:workouts`, whose
-codec drift test reads the kinds' property names from the generated
-`kinds.json`.
+value): the server refuses a narrowing while live records hold the old
+shape, and a published version never changes: `mise run apple:site` refuses
+to publish a listed version whose closure changed, and writes
+`closures.lock.json`, each package's newest published version and its
+closure's sha256, which is committed after a publish so the generator's
+`--check` refuses the same change offline. A kind declares no `indices` or `embed`. Run
+the generator, then `mise run apple:test:workouts`, whose codec drift test
+reads the kinds' property names from the generated `kinds.json`.
 
 The package was designed from a body of research into training methods,
 progression, exchange formats and other apps, and reviewed twice before its
@@ -94,7 +96,7 @@ session ──workout──► substrate.reamde.dev/health/workout
 
 ## Exercise
 
-`~/training/exercise`, purpose `primary`, title `{name}`, no
+`substrate.reamde.dev/training/exercise`, purpose `primary`, title `{name}`, no
 traits.
 
 | Property                                         | Type                                                     | Req       | Why                                                                                                                                                                                                                                         |
@@ -164,7 +166,7 @@ Notes:
 
 ## Setup
 
-`~/training/setup`, purpose `supporting`, label "Exercise
+`substrate.reamde.dev/training/setup`, purpose `supporting`, label "Exercise
 setup", title `{name}`, no traits. One station an exercise is done on: the
 same chest press is a 5 kg stack in one gym and a 10 lb stack in another, so
 its PREVIOUS, its grid and its suggestions differ.
@@ -195,7 +197,7 @@ Notes:
 
 ## Routine
 
-`~/training/routine`, purpose `primary`, label "Workout
+`substrate.reamde.dev/training/routine`, purpose `primary`, label "Workout
 routine", title `{name}`, no traits.
 
 | Property                                                                   | Type                                           | Req                                        | Why                                                                                                                                                                                                                        |
@@ -282,7 +284,7 @@ Notes:
 
 ## Session
 
-`~/training/session`, purpose `primary`, label "Training
+`substrate.reamde.dev/training/session`, purpose `primary`, label "Training
 session", title `{name|routine|id}`, traits
 `substrate.reamde.dev/core/temporal(range)` and
 `substrate.reamde.dev/core/revised`, no declared index.
@@ -363,7 +365,7 @@ Notes:
 
 ## Set
 
-`~/training/set`, purpose `supporting`, title `{exercise}`,
+`substrate.reamde.dev/training/set`, purpose `supporting`, title `{exercise}`,
 traits `substrate.reamde.dev/core/temporal(point)` and
 `substrate.reamde.dev/core/revised`, no declared index.
 
@@ -540,7 +542,7 @@ What a reader does with it:
 
 ## Memory
 
-`~/training/memory`, from version 2: one fact the workout coach keeps
+`substrate.reamde.dev/training/memory`, from version 2: one fact the workout coach keeps
 ([the coach plan](../../../../docs/plans/workouts-coach.md#7-memory)). The
 app itself reads and writes none yet; the coach writes them with
 `source: coach`, and the owner reads, edits, retires and deletes them as the
@@ -550,7 +552,7 @@ Coach memories collection in the console.
 | ----------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `text`      | text, required                     | One fact in the owner's words.                                                                                         |
 | `topic`     | enum, required                     | goal, experience, schedule, equipment, limitation, preference, baseline, lifestyle, response, change, other.          |
-| `exercise`  | reference to `~/training/exercise` | When the fact is about one.                                                                                            |
+| `exercise`  | reference to `substrate.reamde.dev/training/exercise` | When the fact is about one.                                                                                            |
 | `until`     | date                               | The last day a passing fact holds; the coach retires it after.                                                         |
 | `active`    | bool, default true                 | Off retires the fact and keeps its history; the coach pins only active ones.                                           |
 | `source`    | enum, default `owner`              | owner, coach, app.                                                                                                     |
@@ -600,7 +602,7 @@ What objects cost, and why they are where they are:
   declaration (`normalizeReferenceValue`, `internal/engine/references.go`),
   so `slots[].exercise` is checked on the routine and the session. Seen on
   a test server: `props.slots[0].exercise: reference names
-  ~/training/exercise/chest-press-machin, which does not
+  substrate.reamde.dev/training/exercise/chest-press-machin, which does not
   exist`.
 - **`referencing` does reach references inside objects**, so "which routines use the
   chest press" and "which sessions included it" are index-backed reverse
@@ -659,11 +661,11 @@ kind.
 
 | Kind     | Id                                     | Path                                                                   |
 | -------- | -------------------------------------- | ---------------------------------------------------------------------- |
-| exercise | `chest-press-machine`                  | `~/training/exercise/chest-press-machine`                 |
-| setup    | `hotel-gym-chest-press`                | `~/training/setup/hotel-gym-chest-press`                  |
-| routine  | `fully-body-collection-1`              | `~/training/routine/fully-body-collection-1`              |
-| session  | `01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10` | `~/training/session/01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10` |
-| set      | `01a18d18-8d98-7c2b-9d3e-0f1a2b3c4d5e` | `~/training/set/01a18d18-8d98-7c2b-9d3e-0f1a2b3c4d5e`     |
+| exercise | `chest-press-machine`                  | `substrate.reamde.dev/training/exercise/chest-press-machine`                 |
+| setup    | `hotel-gym-chest-press`                | `substrate.reamde.dev/training/setup/hotel-gym-chest-press`                  |
+| routine  | `fully-body-collection-1`              | `substrate.reamde.dev/training/routine/fully-body-collection-1`              |
+| session  | `01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10` | `substrate.reamde.dev/training/session/01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10` |
+| set      | `01a18d18-8d98-7c2b-9d3e-0f1a2b3c4d5e` | `substrate.reamde.dev/training/set/01a18d18-8d98-7c2b-9d3e-0f1a2b3c4d5e`     |
 
 - Writer-chosen ids allow RFC 3986 unreserved characters plus `:`, `@` and
   `/`, up to 128 characters. A UUIDv7 or a slug needs no escaping. The
@@ -730,7 +732,7 @@ console's agent or an importer edits what the app wrote, these rules hold:
   ([Left out](#left-out-and-why)).
 - **The workout coach writes routines only once the owner agrees, and
   never while one is running.** The coach Substrate Workouts installs
-  (`~/trainingcoach/workoutCoach`, [decision 0207](../../../../docs/decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md))
+  (`substrate.reamde.dev/trainingcoach/workoutCoach`, [decision 0207](../../../../docs/decisions/0207-an-app-declares-one-agent-held-to-its-own-reach.md))
   writes routines, exercises, setups and its memories directly, after
   presenting the change in a fixed shape and getting a clear yes in the chat,
   and it checks for a session of the routine whose `status` is `active`
@@ -789,7 +791,7 @@ The reads, as list filters (`GET /api/v1/records`, `substratectl get
 --filter`):
 
 - **PREVIOUS and the suggestion's history**: `filter: {kinds:
-  [~/training/set], properties: {exercise: {eq: <path>},
+  [substrate.reamde.dev/training/set], properties: {exercise: {eq: <path>},
   setup: <eq the setup's path, or exists false>}}`, `orderBy:
   at:desc,order:desc`
   (imported sets share their session's `at`), a page of about 100,
@@ -1188,7 +1190,7 @@ the two session patches after them.
 ### Exercises
 
 ```yaml
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: chest-press-machine
 data:
@@ -1203,7 +1205,7 @@ data:
     restClass: compound
     loadStep: {value: "5", unit: kg}
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: plank
 data:
@@ -1231,7 +1233,7 @@ Dog as a superset with no rest; Chest Press (Machine) with 1 min 30 s, a
 25 kg warm-up and working sets at 35 kg, the second followed by a drop.
 
 ```yaml
-kind: ~/training/routine
+kind: substrate.reamde.dev/training/routine
 metadata:
   id: fully-body-collection-1
 data:
@@ -1245,32 +1247,32 @@ data:
         roundRest: PT0S
     slots:
       - key: plank
-        exercise: ~/training/exercise/plank
+        exercise: substrate.reamde.dev/training/exercise/plank
         setRest: PT15S
         sets:
           - {key: s1, durationMin: PT1M2S, durationMax: PT1M2S}
           - {key: s2, durationMin: PT53S, durationMax: PT53S}
       - key: crunch
-        exercise: ~/training/exercise/crunch
+        exercise: substrate.reamde.dev/training/exercise/crunch
         setRest: PT0S
         sets:
           - {key: s1, repsMin: 15, repsMax: 15}
           - {key: s2, repsMin: 15, repsMax: 15}
       - key: glute-bridge
-        exercise: ~/training/exercise/glute-bridge
+        exercise: substrate.reamde.dev/training/exercise/glute-bridge
         group: a
         transition: PT0S
         sets:
           - {key: s1, repsMin: 15, repsMax: 15}
           - {key: s2, repsMin: 15, repsMax: 15}
       - key: bird-dog
-        exercise: ~/training/exercise/bird-dog
+        exercise: substrate.reamde.dev/training/exercise/bird-dog
         group: a
         sets:
           - {key: s1, repsMin: 15, repsMax: 15}
           - {key: s2, repsMin: 15, repsMax: 15}
       - key: chest-press
-        exercise: ~/training/exercise/chest-press-machine
+        exercise: substrate.reamde.dev/training/exercise/chest-press-machine
         setRest: PT1M30S
         sets:
           - {key: w1, role: warmup, load: {value: "25", unit: kg}, repsMin: 15, repsMax: 15}
@@ -1285,7 +1287,7 @@ below does the same.
 ### A training session: the create, Finish, then the Health link
 
 ```yaml
-kind: ~/training/session
+kind: substrate.reamde.dev/training/session
 metadata:
   id: 01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10
 data:
@@ -1295,23 +1297,23 @@ data:
     utcOffsetStart: 0
     timezone: Europe/London
     sport: strength
-    routine: ~/training/routine/fully-body-collection-1
+    routine: substrate.reamde.dev/training/routine/fully-body-collection-1
     routineVersion: 1
     groups:
       - {key: a, groupKind: superset}
     slots:
-      - {key: plank, exercise: ~/training/exercise/plank, routineSlot: plank}
-      - {key: crunch, exercise: ~/training/exercise/crunch, routineSlot: crunch}
-      - {key: glute-bridge, exercise: ~/training/exercise/glute-bridge, group: a, routineSlot: glute-bridge}
-      - {key: bird-dog, exercise: ~/training/exercise/bird-dog, group: a, routineSlot: bird-dog}
-      - {key: chest-press, exercise: ~/training/exercise/chest-press-machine, routineSlot: chest-press}
+      - {key: plank, exercise: substrate.reamde.dev/training/exercise/plank, routineSlot: plank}
+      - {key: crunch, exercise: substrate.reamde.dev/training/exercise/crunch, routineSlot: crunch}
+      - {key: glute-bridge, exercise: substrate.reamde.dev/training/exercise/glute-bridge, group: a, routineSlot: glute-bridge}
+      - {key: bird-dog, exercise: substrate.reamde.dev/training/exercise/bird-dog, group: a, routineSlot: bird-dog}
+      - {key: chest-press, exercise: substrate.reamde.dev/training/exercise/chest-press-machine, routineSlot: chest-press}
     revision: 1
     adapter: substrate-workouts@0.1.0
 ---
 # Finish, sent as PATCH with ifVersion: the state, the end, the session RPE,
 # and the slots again, each with the planned sets the session started with,
 # done or not. Revision 13 is the Health workout's HKMetadataKeySyncVersion.
-kind: ~/training/session
+kind: substrate.reamde.dev/training/session
 metadata:
   id: 01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10
 data:
@@ -1322,33 +1324,33 @@ data:
     sessionRPE: "7"
     slots:
       - key: plank
-        exercise: ~/training/exercise/plank
+        exercise: substrate.reamde.dev/training/exercise/plank
         routineSlot: plank
         sets:
           - {key: s1, durationMin: PT1M2S, durationMax: PT1M2S}
           - {key: s2, durationMin: PT53S, durationMax: PT53S}
       - key: crunch
-        exercise: ~/training/exercise/crunch
+        exercise: substrate.reamde.dev/training/exercise/crunch
         routineSlot: crunch
         sets:
           - {key: s1, repsMin: 15, repsMax: 15}
           - {key: s2, repsMin: 15, repsMax: 15}
       - key: glute-bridge
-        exercise: ~/training/exercise/glute-bridge
+        exercise: substrate.reamde.dev/training/exercise/glute-bridge
         group: a
         routineSlot: glute-bridge
         sets:
           - {key: s1, repsMin: 15, repsMax: 15}
           - {key: s2, repsMin: 15, repsMax: 15}
       - key: bird-dog
-        exercise: ~/training/exercise/bird-dog
+        exercise: substrate.reamde.dev/training/exercise/bird-dog
         group: a
         routineSlot: bird-dog
         sets:
           - {key: s1, repsMin: 15, repsMax: 15}
           - {key: s2, repsMin: 15, repsMax: 15}
       - key: chest-press
-        exercise: ~/training/exercise/chest-press-machine
+        exercise: substrate.reamde.dev/training/exercise/chest-press-machine
         routineSlot: chest-press
         sets:
           - {key: w1, role: warmup, load: {value: "25", unit: kg}, repsMin: 15, repsMax: 15}
@@ -1358,7 +1360,7 @@ data:
 ---
 # The Health link, sent as PATCH with ifVersion once a GET of the computed
 # health/workout id answered
-kind: ~/training/session
+kind: substrate.reamde.dev/training/session
 metadata:
   id: 01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10
 data:
@@ -1381,13 +1383,13 @@ its numbers meant (`laterality`, and with a load `loadBasis` and
 # Plank, working set 1: 1:01 against 1:02 planned. No load mode: a plank
 # moves no load. The countdown is the timer mode the engine ran, written
 # into the target although the plan left it out.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a18d0d-9cd0-7b1a-8c2d-9e0f1a2b3c4d
 data:
   properties:
-    session: ~/training/session/01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10
-    exercise: ~/training/exercise/plank
+    session: substrate.reamde.dev/training/session/01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10
+    exercise: substrate.reamde.dev/training/exercise/plank
     slot: plank
     order: 1
     ordinal: 1
@@ -1404,13 +1406,13 @@ data:
 # Chest Press (Machine), the warm-up: 25 kg x 15 at RPE 6, which the owner
 # tapped (no plan RPE to pre-fill on a warm-up). Corrected once after the
 # tick, so revision 2.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a18d18-8d98-7c2b-9d3e-0f1a2b3c4d5e
 data:
   properties:
-    session: ~/training/session/01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10
-    exercise: ~/training/exercise/chest-press-machine
+    session: substrate.reamde.dev/training/session/01a18d0c-5c80-7d3e-9a51-3c8e2b7d4f10
+    exercise: substrate.reamde.dev/training/exercise/chest-press-machine
     slot: chest-press
     order: 1
     ordinal: 1
@@ -1437,13 +1439,13 @@ data:
 # must be written first (`session` is mustExist), and the head is written
 # before the drop (`continues` is mustExist). Their targets are that file's
 # routine's, a 10 to 15 range at RPE 9.5 with one drop, run with no pause.
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17daa-4040-7b3c-8d5e-6f7081920314
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/chest-press-machine
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/chest-press-machine
     slot: chest-press
     order: 3
     ordinal: 2
@@ -1468,18 +1470,18 @@ data:
     target: {plannedSet: s2, termination: reprange, repsMin: 10, repsMax: 15, load: {value: "35", unit: kg}, rpeMin: "9.5", rpeMax: "9.5", drops: 1, intraSetPause: PT0S}
     revision: 1
 ---
-kind: ~/training/set
+kind: substrate.reamde.dev/training/set
 metadata:
   id: 01a17daa-f3f0-7c4d-9e6f-708192031425
 data:
   properties:
-    session: ~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
-    exercise: ~/training/exercise/chest-press-machine
+    session: substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203
+    exercise: substrate.reamde.dev/training/exercise/chest-press-machine
     slot: chest-press
     order: 4
     ordinal: 2
     structure: drop
-    continues: ~/training/set/01a17daa-4040-7b3c-8d5e-6f7081920314
+    continues: substrate.reamde.dev/training/set/01a17daa-4040-7b3c-8d5e-6f7081920314
     chainPosition: 2
     at: "2026-10-27T14:01:58Z"
     timeBasis: completion

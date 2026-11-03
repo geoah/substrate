@@ -56,7 +56,7 @@
 # in this repository. The loads are a starting point; the suggestions adjust
 # them from the first session.
 # A distance and a time, no load.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: rowing-machine
 data:
@@ -74,7 +74,7 @@ data:
         code: EXERCISE_SEGMENT_TYPE_ROWING_MACHINE
 ---
 # Reps only, one side then the other: the reps count per side.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: bird-dog
 data:
@@ -89,7 +89,7 @@ data:
     defaultRepsMin: 8
     defaultRepsMax: 12
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: leg-press-machine
 data:
@@ -113,7 +113,7 @@ data:
         code: EXERCISE_SEGMENT_TYPE_LEG_PRESS
 ---
 # Plate-loaded, one arm a side: its load is per side.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: iso-lateral-chest-press-machine
 data:
@@ -126,14 +126,14 @@ data:
     primaryMuscles: [chest]
     secondaryMuscles: [shoulders, triceps]
     restClass: compound
-    variationOf: ~/training/exercise/chest-press-machine
+    variationOf: substrate.reamde.dev/training/exercise/chest-press-machine
     loadStep:
       value: "2.5"
       unit: kg
 ---
 # A pin-loaded assistance stack in 10 lb steps: a pound exercise in a
 # kilogram gym. The assistance counts down from the whole body.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: assisted-pull-up-machine
 data:
@@ -153,7 +153,7 @@ data:
       unit: lb
 ---
 # Bodyweight: the effective load is bodyShare times the session's body mass.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: push-up
 data:
@@ -172,7 +172,7 @@ data:
         code: Pushups
         display: Pushups
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: lateral-raise-dumbbell
 data:
@@ -196,7 +196,7 @@ data:
       - system: healthconnect
         code: EXERCISE_SEGMENT_TYPE_DUMBBELL_LATERAL_RAISE
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: bulgarian-split-squat-dumbbell
 data:
@@ -220,7 +220,7 @@ data:
         display: Split Squat with Dumbbells
 ---
 # Bodyweight plus a load on a dip belt: the load is what is added.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: dip-weighted
 data:
@@ -237,7 +237,7 @@ data:
       value: "2.5"
       unit: kg
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: triceps-pushdown
 data:
@@ -257,7 +257,7 @@ data:
         code: Triceps_Pushdown
         display: Triceps Pushdown
 ---
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: plank
 data:
@@ -276,7 +276,7 @@ data:
         code: EXERCISE_SEGMENT_TYPE_PLANK
 ---
 # A load and a distance: one dumbbell in each hand, logged per dumbbell.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: farmers-carry-dumbbell
 data:
@@ -299,7 +299,7 @@ data:
         code: carry/farmers_walk
 ---
 # A load and a time: a plate on the back.
-kind: ~/training/exercise
+kind: substrate.reamde.dev/training/exercise
 metadata:
   id: plank-weighted
 data:
@@ -310,7 +310,7 @@ data:
     laterality: bilateral
     primaryMuscles: [abdominals]
     restClass: timed
-    variationOf: ~/training/exercise/plank
+    variationOf: substrate.reamde.dev/training/exercise/plank
     loadStep:
       value: "5"
       unit: kg
@@ -319,7 +319,7 @@ data:
 # Thirteen exercises and 25 planned sets: about 55 minutes as a full-body
 # day. The id is fixed, so the app knows its own sample from a routine the
 # agent wrote, on every device.
-kind: ~/training/routine
+kind: substrate.reamde.dev/training/routine
 metadata:
   id: sample-every-feature
 data:
@@ -344,7 +344,7 @@ data:
         roundRest: PT1M
     slots:
       - key: row
-        exercise: ~/training/exercise/rowing-machine
+        exercise: substrate.reamde.dev/training/exercise/rowing-machine
         notes: >-
           A warm-up over a distance: row 500 m at an easy pace. The app keeps
           your time with the distance.
@@ -356,7 +356,7 @@ data:
               value: "500"
               unit: m
       - key: bird-dog
-        exercise: ~/training/exercise/bird-dog
+        exercise: substrate.reamde.dev/training/exercise/bird-dog
         notes: >-
           A warm-up counted in reps only, one side then the other: 8 reps
           a side.
@@ -366,7 +366,7 @@ data:
             repsMin: 8
             repsMax: 8
       - key: leg-press
-        exercise: ~/training/exercise/leg-press-machine
+        exercise: substrate.reamde.dev/training/exercise/leg-press-machine
         setRest: PT2M30S
         warmupRest: PT1M
         notes: >-
@@ -398,7 +398,7 @@ data:
             rpeMin: "7"
             rpeMax: "8"
       - key: chest-press
-        exercise: ~/training/exercise/iso-lateral-chest-press-machine
+        exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
         setRest: PT2M
         notes: >-
           Each arm has its own plates, so the load is per side. Straight sets
@@ -440,7 +440,7 @@ data:
               unit: kg
             dropReps: 6
       - key: pull-up
-        exercise: ~/training/exercise/assisted-pull-up-machine
+        exercise: substrate.reamde.dev/training/exercise/assisted-pull-up-machine
         group: a
         transition: PT0S
         notes: >-
@@ -465,7 +465,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: push-up
-        exercise: ~/training/exercise/push-up
+        exercise: substrate.reamde.dev/training/exercise/push-up
         group: a
         notes: >-
           A2, your body weight: stop round 1 with two to three reps in reserve,
@@ -478,7 +478,7 @@ data:
           - key: s2
             termination: amrap
       - key: lateral-raise
-        exercise: ~/training/exercise/lateral-raise-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
         setRest: PT1M30S
         notes: >-
           Myo-reps: 12 to 15, then mini-sets of 4 with 15 s between them,
@@ -506,7 +506,7 @@ data:
             miniSetReps: 4
             intraSetPause: PT15S
       - key: split-squat
-        exercise: ~/training/exercise/bulgarian-split-squat-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell
         setRest: PT2M
         sideOrder: weakerfirst
         sideSwitch: PT15S
@@ -533,7 +533,7 @@ data:
             rpeMin: "8"
             rpeMax: "8"
       - key: dip
-        exercise: ~/training/exercise/dip-weighted
+        exercise: substrate.reamde.dev/training/exercise/dip-weighted
         setRest: PT2M
         notes: >-
           Your body weight plus 10 kg on a belt: the load is what you add.
@@ -557,7 +557,7 @@ data:
             miniSets: 3
             intraSetPause: PT20S
       - key: pushdown
-        exercise: ~/training/exercise/triceps-pushdown
+        exercise: substrate.reamde.dev/training/exercise/triceps-pushdown
         setRest: PT1M30S
         notes: >-
           A cluster set (4 reps, 15 s, three more clusters, two reps in reserve),
@@ -580,7 +580,7 @@ data:
               unit: kg
             repsMin: 8
       - key: plank
-        exercise: ~/training/exercise/plank
+        exercise: substrate.reamde.dev/training/exercise/plank
         group: b
         transition: PT15S
         notes: >-
@@ -595,7 +595,7 @@ data:
             durationMin: PT45S
             timerMode: stopwatch
       - key: carry
-        exercise: ~/training/exercise/farmers-carry-dumbbell
+        exercise: substrate.reamde.dev/training/exercise/farmers-carry-dumbbell
         group: b
         notes: >-
           B2: a load and a distance, 40 m with a dumbbell in each hand. The
@@ -618,7 +618,7 @@ data:
               value: "40"
               unit: m
       - key: weighted-plank
-        exercise: ~/training/exercise/plank-weighted
+        exercise: substrate.reamde.dev/training/exercise/plank-weighted
         notes: >-
           A load and a time: one hold of 30 to 45 s with a 10 kg plate on
           your back.

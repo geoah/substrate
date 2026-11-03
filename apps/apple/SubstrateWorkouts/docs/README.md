@@ -58,7 +58,7 @@ for this repository; the text is as written.
   relate to the JSON the app bundles.
 - [`exercises.yaml`](examples/exercises.yaml), [`routines.yaml`](examples/routines.yaml),
   [`sessions.yaml`](examples/sessions.yaml), [`coverage.yaml`](examples/coverage.yaml): the
-  records, in `substratectl apply -f` form under `~/training`.
+  records, in `substratectl apply -f` form under `substrate.reamde.dev/training`.
 
 ### Design
 

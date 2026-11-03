@@ -2,12 +2,15 @@ import Foundation
 import SubstrateKit
 import WorkoutsCore
 
-/// The training package's manifests as this build carries them
-/// (`Resources/Package/training.json`, written by
-/// apps/apple/scripts/workouts-package.py from SubstrateWorkouts/Package/):
-/// the package under `~`, its version, and the documents one apply takes.
+/// A package as this build carries it (`Resources/Package/training.json` and
+/// `coach.json`, written by apps/apple/scripts/workouts-package.py from
+/// SubstrateWorkouts/Package/): its id, the version this build was written
+/// against, and the documents of its closure. The app applies none of them:
+/// a repository installs the package from the publisher's authority
+/// document, and the build asks for its version as the floor of a `package`
+/// detail (decision record 0214).
 public struct PackageManifest: Sendable {
-    /// `~/training`.
+    /// `substrate.reamde.dev/training` or `substrate.reamde.dev/trainingcoach`.
     public var package: String
     /// The version this build declares. Each release that changes a
     /// declaration ships the next one, additive only.
@@ -20,10 +23,15 @@ public struct PackageManifest: Sendable {
         self.documents = documents
     }
 
-    /// The manifests in WorkoutsCore's resources.
-    public static func bundled() throws -> PackageManifest {
-        guard let url = BundledCatalog.resourceBundle.url(forResource: "training", withExtension: "json", subdirectory: "Package") else {
-            throw CatalogError.missingResource("Package/training.json")
+    /// The training package.
+    public static func bundled() throws -> PackageManifest { try bundled("training") }
+
+    /// The coach's package: its agent in the closure.
+    public static func coach() throws -> PackageManifest { try bundled("coach") }
+
+    static func bundled(_ name: String) throws -> PackageManifest {
+        guard let url = BundledCatalog.resourceBundle.url(forResource: name, withExtension: "json", subdirectory: "Package") else {
+            throw CatalogError.missingResource("Package/\(name).json")
         }
         return try decode(Data(contentsOf: url))
     }
@@ -33,299 +41,93 @@ public struct PackageManifest: Sendable {
               case let .string(package)? = object["package"],
               case let .number(version)? = object["version"],
               case let .array(documents)? = object["documents"]
-        else { throw CatalogError.missingResource("Package/training.json is not a manifest file") }
+        else { throw CatalogError.missingResource("Package/*.json is not a manifest file") }
         return PackageManifest(package: package, version: NSDecimalNumber(decimal: version).intValue, documents: documents)
     }
 
-    /// The documents in one repository's spelling.
-    public func documents(for rehome: Rehome) -> [WorkoutsCore.JSONValue] { documents.map(rehome.outbound) }
+    /// The `data` of every document of `kind`, with its id.
+    public func documents(ofKind kind: String) -> [(id: String, data: JSONObject)] {
+        documents.compactMap { document in
+            guard case let .object(object) = document, object["kind"] == .string(kind),
+                  case let .object(metadata)? = object["metadata"], case let .string(id)? = metadata["id"],
+                  case let .object(data)? = object["data"] else { return nil }
+            return (id, data)
+        }
+    }
 }
 
-/// Where a repository stands with the app's package.
+/// Where a repository stands with a package this build needs, read off the
+/// package row the server keeps. The server installs and upgrades the
+/// package (decisions 0212 and 0213); the app only reads where it stands.
 public enum PackageState: Sendable, Hashable {
-    /// The repository has no training package: the app installs it.
+    /// The repository has no such package, or the token cannot see its row:
+    /// the approval installs it, so the set up check says what to do.
     case missing
-    /// It holds an older version than this build declares: the app
-    /// upgrades it, additively.
+    /// It holds an older version than this build was written against. The
+    /// app writes nothing until the server has upgraded it: what it writes
+    /// could name a kind or property the held version lacks.
     case behind(held: Int)
-    /// It holds this build's version.
+    /// It holds this build's version or a later one. A later one is
+    /// additive, so this build keeps writing validly and ignores what it
+    /// does not know.
     case current(held: Int)
-    /// It holds a newer version than this build knows, from a newer build or
-    /// an edit on the server. The app writes nothing until it is updated:
-    /// what it writes could miss what the newer version requires.
-    case newer(held: Int)
-    /// Kinds of it were changed outside the app since it last applied it:
-    /// these kinds, by their repository names. The training kinds are the
-    /// app's (O1/O2, owner 2026-11-02), so it writes nothing to the
-    /// repository, neither the package nor records, and sessions stay on
-    /// the phone. There is no applying over the change from the app; the
-    /// server is to refuse an owner's edit to an app's kinds, so this
-    /// becomes rare.
-    case edited(held: Int, kinds: [String])
-    /// The server refused the upgrade, in its words: it would remove what the
-    /// package holds, such as a kind or property the owner added. Only the
-    /// owner can settle it, on the server.
-    case refused(held: Int?, reason: String)
-    /// The package is not this app's any more, or never was (decision 0205):
-    /// the owner took it over, or another app declared it. The server refuses
-    /// the app's apply with a 403, so the app stops applying, and keeps
-    /// sending records, which the server still takes. Read off the package
-    /// row on every check, so it is never re-applied in a loop.
-    case managedElsewhere(held: Int?, by: PackageManager)
 
     public var held: Int? {
         switch self {
         case .missing: nil
-        case let .behind(held), let .current(held), let .newer(held), let .edited(held, _): held
-        case let .refused(held, _), let .managedElsewhere(held, _): held
+        case let .behind(held), let .current(held): held
         }
     }
 
-    /// Whether the app may write records of the package. A package managed
-    /// elsewhere still takes the app's records: only its kinds are closed to
-    /// the app.
+    /// Whether the app may write records of the package.
     public var writable: Bool {
-        switch self {
-        case .current, .managedElsewhere: true
-        default: false
-        }
+        if case .current = self { return true }
+        return false
     }
 
-    static func of(held: Int?, shipped: Int) -> PackageState {
+    static func of(held: Int?, needed: Int) -> PackageState {
         guard let held else { return .missing }
-        if held < shipped { return .behind(held: held) }
-        if held > shipped { return .newer(held: held) }
-        return .current(held: held)
+        return held < needed ? .behind(held: held) : .current(held: held)
     }
 }
 
-/// Who keeps a training package that is not this app's (decision 0205).
-public enum PackageManager: Sendable, Hashable {
-    /// The owner: they took it over (from the app named, by its client id,
-    /// where the row says), or declared it themselves.
-    case owner(takenOverFrom: String?)
-    /// Another app declared it: its client id, or its `app:<host>` actor.
-    case otherApp(String)
-    /// The server refused the app's apply as not its package, in its words,
-    /// and the row does not say who keeps it.
-    case unknown(String)
-
-    /// Who keeps the package, from its row's ownership stamps, or nil when
-    /// the row says it is this app's or says nothing. `clientID` is this
-    /// app's; without it only a takeover or a package the owner declared is
-    /// told apart.
-    ///
-    /// The full client id in `declaredByClient` decides, as the server's own
-    /// rule does (decision 0205): the `app:` actor in `declaredBy` is a
-    /// display name the server may spell as the verified authority
-    /// (`app:substrate.reamde.dev`), as `app:local` or as the client id's
-    /// host, so it never tells two apps apart. Only a row without the client
-    /// id, which an app declared before the server stamped it, falls back to
-    /// the actor of the client id's host: one this app's host declared is
-    /// this app's, and its apply claims it.
-    static func of(_ row: JSONObject, clientID: String?) -> PackageManager? {
-        func string(_ key: String) -> String? {
-            if case let .string(value)? = row[key], !value.isEmpty { return value }
-            return nil
-        }
-        if let from = string("takenOverFrom") { return .owner(takenOverFrom: from) }
-        if let client = string("declaredByClient") {
-            guard let clientID else { return nil }
-            return client == clientID ? nil : .otherApp(client)
-        }
-        guard let by = string("declaredBy") else { return nil }
-        guard by.hasPrefix("app:") else { return .owner(takenOverFrom: nil) }
-        guard let clientID else { return nil }
-        return hostActor(of: clientID) == by ? nil : .otherApp(by)
-    }
-
-    /// The `app:<host[:port]>` actor a server before verified apps derived
-    /// from a client id: the fallback for a row without `declaredByClient`.
-    static func hostActor(of clientID: String) -> String? {
-        guard let url = URL(string: clientID), let host = url.host?.lowercased() else { return nil }
-        return "app:" + host + (url.port.map { ":\($0)" } ?? "")
-    }
-
-    /// Settings' words for it.
-    public var sentence: String {
-        switch self {
-        case .owner(takenOverFrom: .some):
-            "Your Training package is managed by you now (taken over); this app no longer updates it."
-        case .owner(takenOverFrom: nil):
-            "Your Training package is managed by you, not this app; this app doesn\u{2019}t update it."
-        case let .otherApp(app):
-            "Your Training package is managed by another app, \(app); this app doesn\u{2019}t update it."
-        case let .unknown(reason):
-            "Your substrate doesn\u{2019}t let this app update the Training package: \(reason)"
-        }
-    }
-}
-
-/// What the app last applied in one repository: the package version and the
-/// row version of each of the package's kinds right after, so an owner's
-/// later edit is told from the app's own. A kind edit moves the kind and not
-/// the package (decision 0203), so the package version alone cannot say.
-public struct PackageBaseline: Codable, Sendable, Equatable {
-    public var version: Int
-    /// Kind id, as the repository spells it, to its row version.
-    public var kinds: [String: Int]
-
-    public init(version: Int, kinds: [String: Int]) {
-        self.version = version
-        self.kinds = kinds
-    }
-
-    public static let fileName = "package.json"
-
-    public static func load(from directory: URL) -> PackageBaseline? {
-        try? JSONDecoder().decode(PackageBaseline.self, from: Data(contentsOf: directory.appendingPathComponent(fileName)))
-    }
-
-    public func save(to directory: URL, writingOptions: Data.WritingOptions = WorkoutsFiles.protectedWriting) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try encoder.encode(self).write(to: directory.appendingPathComponent(Self.fileName), options: writingOptions)
-    }
-}
-
-/// Installs and upgrades the app's package in one repository, through the
-/// token's `declare:~/training` scope (decision 0203). The approval set up
-/// installs `substrate.reamde.dev/health`, which the package requires; the
-/// app declares its own package after it.
-///
-/// The server refuses an apply that would remove anything the package holds
-/// (a kind, property or value the owner added), so an upgrade only ever adds.
-/// The kinds belong to the app (O1/O2): a package changed outside it since
-/// its last apply, found by comparing each kind row's version with the one
-/// it recorded then (`baselineDirectory`), is `.edited`, and the app writes
-/// nothing, at the same version or behind it. It never applies over such a
-/// change.
-public struct PackageInstaller: Sendable {
+/// Reads where one repository stands with a package, and asks the server
+/// for the upgrade a build behind it needs: the set up check names the
+/// build's floor, the server applies a kinds-only additive upgrade itself
+/// and holds anything else for the owner's review (decision 0213).
+public struct PackageCheck: Sendable {
     public var api: WorkoutsAPI
     public var manifest: PackageManifest
-    /// The folder of this server and repository, where the baseline is kept;
-    /// nil keeps none, and then only the server's guard protects the package.
-    public var baselineDirectory: URL?
-    /// This app's client id, which the server owns the package by (decision
-    /// 0205), so a package another app declared is told apart before an
-    /// apply. Nil leaves that to the server's 403.
-    public var clientID: String?
 
-    public init(api: WorkoutsAPI, manifest: PackageManifest, baselineDirectory: URL? = nil, clientID: String? = nil) {
+    public init(api: WorkoutsAPI, manifest: PackageManifest) {
         self.api = api
         self.manifest = manifest
-        self.baselineDirectory = baselineDirectory
-        self.clientID = clientID
     }
 
-    public var packageID: String { KindNames.packageID(authority: api.rehome.authority) }
+    public var packageID: String { manifest.package }
 
-    static let kindKind = "substrate.reamde.dev/core/kind"
-    static let bundleKind = "substrate.reamde.dev/core/bundle"
-
-    /// The version the repository holds, read from its package row, and
-    /// whether the row says the package is kept by someone else.
+    /// The version the repository holds, read from its package row:
+    /// `shippedVersion`, the publisher's number a published install stamps,
+    /// else the row's own `version`.
     public func state() async throws -> PackageState {
-        let row = try await api.packageRow(packageID)
-        let held: Int? = row.flatMap { properties -> Int? in
-            guard case let .number(version)? = properties["version"] else { return nil }
+        guard let row = try await api.packageRow(packageID) else { return .missing }
+        let held = ["shippedVersion", "version"].lazy.compactMap { key -> Int? in
+            guard case let .number(version)? = row[key] else { return nil }
             return NSDecimalNumber(decimal: version).intValue
-        }
-        if let row, let manager = PackageManager.of(row, clientID: clientID) {
-            return .managedElsewhere(held: held, by: manager)
-        }
-        return .of(held: held, shipped: manifest.version)
+        }.first
+        return .of(held: held, needed: manifest.version)
     }
 
-    /// The kinds this build ships, as the repository spells them.
-    public var shippedKinds: [String] {
-        manifest.documents(for: api.rehome).compactMap { document -> String? in
-            guard case let .object(object) = document, object["kind"] == .string(Self.kindKind),
-                  case let .object(metadata)? = object["metadata"], case let .string(id)? = metadata["id"] else { return nil }
-            return id
-        }
-    }
-
-    /// Each kind of the package the repository holds, with its row version:
-    /// the kinds its bundle lists, else the ones this build ships.
-    public func kindVersions() async throws -> [String: Int] {
-        var ids = shippedKinds
-        if let bundle = try await api.declarationRow(Self.bundleKind, packageID), case let .array(installs)? = bundle.properties["installs"] {
-            ids = installs.compactMap { if case let .string(id) = $0 { id } else { nil } }
-        }
-        var out: [String: Int] = [:]
-        for id in ids {
-            if let row = try await api.declarationRow(Self.kindKind, id) { out[id] = row.version }
-        }
-        return out
-    }
-
-    /// Installs or upgrades as the state asks, and answers the state after.
-    /// A newer version is left alone; a package changed outside the app is
-    /// `.edited` and nothing is written; a refusal of the server's guard
-    /// comes back as `.refused`, in its words; a package the owner took over
-    /// or another app keeps is `.managedElsewhere` and is never applied.
+    /// Where the repository stands, after asking the server for the upgrade
+    /// where it is behind: `check` runs the set up check, which carries the
+    /// build's floor, and the row is read again after it. A package still
+    /// behind then waits for the owner, which the check's own issues say.
+    /// The check is the app's status model, which lives on the main actor.
     @discardableResult
-    public func ensure() async throws -> PackageState {
+    public func ensure(asking check: @MainActor () async -> Void) async throws -> PackageState {
         let before = try await state()
-        let baseline = baselineDirectory.flatMap(PackageBaseline.load(from:))
-        switch before {
-        case .newer, .edited, .refused, .managedElsewhere:
-            return before
-        case let .current(held):
-            guard let baseline else {
-                try? await record(version: held)
-                return before
-            }
-            let edited = try await edits(since: baseline)
-            return edited.isEmpty ? before : .edited(held: held, kinds: edited)
-        case let .behind(held):
-            let edited = try await edits(since: baseline)
-            if !edited.isEmpty { return .edited(held: held, kinds: edited) }
-        case .missing:
-            break
-        }
-        do {
-            try await api.applyVocabulary(manifest.documents(for: api.rehome))
-        } catch let error as ServerError where error.status == 409 {
-            return .refused(held: before.held, reason: error.message)
-        } catch let error as ServerError where Self.notTheAppsPackage(error) {
-            // Not this app's package (decision 0205): taken over, or another
-            // app's, after the row was read. The row says who from the next
-            // check on, so this is one refused apply, not a loop.
-            let after = try? await state()
-            if case .managedElsewhere? = after { return after! }
-            return .managedElsewhere(held: before.held, by: .unknown(error.message))
-        }
-        let after = try await state()
-        if let held = after.held { try? await record(version: held) }
-        return after
-    }
-
-    /// Whether the server refused an apply because the package is not this
-    /// app's (decision 0205), in the words its chokepoint answers: "managed
-    /// by" an app, or "the owner's package". Every other 403, a token
-    /// without the `declare:` scope among them, is the caller's to explain.
-    static func notTheAppsPackage(_ error: ServerError) -> Bool {
-        error.status == 403 && (error.message.contains("is managed by") || error.message.contains("is the owner's package"))
-    }
-
-    /// The kinds the owner changed since the baseline: a row at another
-    /// version, or one the baseline does not hold. Without a baseline (the
-    /// package was installed by a build that kept none), only kinds this
-    /// build does not ship are told apart.
-    func edits(since baseline: PackageBaseline?) async throws -> [String] {
-        let held = try await kindVersions()
-        guard let baseline else {
-            let shipped = Set(shippedKinds)
-            return held.keys.filter { !shipped.contains($0) }.sorted()
-        }
-        return held.filter { baseline.kinds[$0.key] != $0.value }.map(\.key).sorted()
-    }
-
-    private func record(version: Int) async throws {
-        guard let baselineDirectory else { return }
-        try PackageBaseline(version: version, kinds: try await kindVersions()).save(to: baselineDirectory)
+        guard case .behind = before else { return before }
+        await check()
+        return try await state()
     }
 }

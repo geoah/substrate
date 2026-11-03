@@ -42,7 +42,7 @@ final class SyncAccount {
 
     init(session: Session, directory: URL?, localExercises: LocalExercises?, codec: RecordCodec) {
         self.session = session
-        api = WorkoutsAPI(client: SubstrateClient(session), authority: session.repository)
+        api = WorkoutsAPI(client: SubstrateClient(session))
         self.directory = directory
         outbox = directory.map { Outbox(directory: $0) }
         tombstones = directory.map { SessionTombstones(directory: $0) }
@@ -104,7 +104,6 @@ final class SubstrateLink {
 
     let manifest = WorkoutsManifest.current
     @ObservationIgnored let packageManifest: PackageManifest? = try? PackageManifest.bundled()
-    @ObservationIgnored let coachManifest: CoachManifest? = try? CoachManifest.bundled()
     /// Whether an app session is still set up with its server: the kit's
     /// check, at launch and on return to the foreground.
     @ObservationIgnored private(set) lazy var status = AppStatusModel { [weak self] in self?.statusCheck() }
@@ -122,8 +121,7 @@ final class SubstrateLink {
     var syncStatus: SyncStatus {
         if let problem, session != nil, package == nil { return .failed(problem) }
         return SyncStatus.derive(signedIn: session != nil, package: package, outbox: outboxState, waiting: waiting,
-                                 known: packageManifest?.version ?? 0, issues: issues, notKept: notKept,
-                                 server: host ?? "your substrate")
+                                 known: packageManifest?.version ?? 0, issues: issues, notKept: notKept)
     }
 
     /// What the kit's check says that the owner can act on. A password
@@ -150,10 +148,11 @@ final class SubstrateLink {
 
     /// The app authorization flow on a server the sign-in screen probed: the
     /// server's own sign-in and approval page in the system sheet, the code
-    /// exchanged with its PKCE verifier. Approving sets up
-    /// the health catalogue; the app then installs its own package with the
-    /// `declare:` scope the owner approved. A session this replaces (Sign In
-    /// Again after the access ended) is revoked like any replaced one.
+    /// exchanged with its PKCE verifier. Approving installs the health
+    /// catalogue, the training package and the coach, from the server's
+    /// catalog and the publisher's authority document. A session this
+    /// replaces (Sign In Again after the access ended) is revoked like any
+    /// replaced one.
     func signIn(_ probe: ServerProbe.Result) async throws {
         guard let oauth = OAuthClient(manifest: manifest, probe: probe) else { throw URLError(.badServerResponse) }
         try await adopt(try await oauth.signIn(server: probe.origin, repository: probe.repository,
@@ -285,8 +284,9 @@ final class SubstrateLink {
     // MARK: Sync
 
     /// At launch, on return to the foreground and after a sign-in: the
-    /// package checked and installed or upgraded, the routines read, the
-    /// sessions exchanged, and everything waiting sent. One at a time per
+    /// package's version checked (and the server asked for the upgrade a
+    /// build behind it needs), the routines read, the sessions exchanged,
+    /// and everything waiting sent. One at a time per
     /// account; a call while one runs for the same account waits for it.
     func sync() async {
         guard let account else { return }
@@ -315,9 +315,10 @@ final class SubstrateLink {
         syncing = true
         defer { if self.account === account { syncing = false } }
         do {
-            let installer = PackageInstaller(api: account.api, manifest: packageManifest, baselineDirectory: account.directory,
-                                             clientID: manifest.clientID)
-            let state = try await installer.ensure()
+            // A repository behind this build asks the server for the upgrade
+            // through the set up check, which carries the build's floor.
+            let check = PackageCheck(api: account.api, manifest: packageManifest)
+            let state = try await check.ensure { await status.refresh(force: true) }
             guard isCurrent(account) else { return }
             account.package = state
             package = state
@@ -327,8 +328,6 @@ final class SubstrateLink {
                 await refreshOutbox(account)
                 return
             }
-            await ensureCoach(account, training: state)
-            guard isCurrent(account) else { return }
             if let remote = account.remote {
                 let read = try await CatalogSync.read(account.api, remote: remote, outbox: account.outbox, sample: account.sample,
                                                       bundled: { try BundledCatalog().loadNow() })
@@ -347,21 +346,6 @@ final class SubstrateLink {
             await seedLibrary(account)
         } catch {
             if isCurrent(account) { note(error) }
-        }
-    }
-
-    /// Installs or updates the workout coach (decision 0207) when the token
-    /// approves it and training is current. Quiet: whatever it meets is
-    /// logged, never shown, and never stops the sync.
-    private func ensureCoach(_ account: SyncAccount, training: PackageState) async {
-        guard let coachManifest else { return }
-        let approval = CoachInstaller.approval(in: account.session.details, authority: account.api.rehome.authority)
-        let installer = CoachInstaller(api: account.api, manifest: coachManifest, approval: approval, clientID: manifest.clientID)
-        do {
-            let state = try await installer.ensure(training: training)
-            logger.info("workout coach: \(String(describing: state), privacy: .public)")
-        } catch {
-            logger.error("workout coach: \(error.localizedDescription, privacy: .public)")
         }
     }
 

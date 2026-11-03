@@ -78,63 +78,48 @@ asks for:
 
 | Asks | Why |
 | --- | --- |
-| `declare:~/training` | to install and upgrade the app's own package, which the app then owns ([0203](../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md), [0205](../../../docs/decisions/0205-an-app-owns-the-package-it-declares.md)) |
-| `write:~/training/*` | to read and write its exercises, routines, sessions and sets |
+| `package` details `substrate.reamde.dev/health` (1+), `substrate.reamde.dev/training` and `substrate.reamde.dev/trainingcoach` (each at the version this build was written against, or later) | the catalogue the package requires, the training package, and the workout coach's package with the agent in its closure; the server installs the published two from the authority document (decision record 0214) |
+| `write:substrate.reamde.dev/training/*` | to read and write its exercises, routines, sessions and sets |
 | `read:substrate.reamde.dev/health/workout`, `read:…/applehealth/account` | to find the Health workout a session was saved as |
-| `package` detail `substrate.reamde.dev/health` | the catalogue the package requires, installed on approval |
+| `read:substrate.reamde.dev/health/sleep`, `read:…/observations/*`, `read:…/clinical/*` | what the coach's agent reads beyond training: a package's code reaches no further than the approved scopes (decision record 0215), so the app asks for the coach's reach and `CoachTests` holds the list to the closure |
+| `agents:substrate.reamde.dev/trainingcoach/*` | to talk to the coach |
 
-A server whose metadata lists no `declare` verb is too old, and says so. A
-release stamps its client id (`SubstrateWorkoutsClientID`, the
-`workouts/client.json` the release publishes); a local build signs in as
-`http://127.0.0.1/substrate-workouts`. The session is kept in the Keychain
-under `dev.reamde.substrate.workouts`, and Sign Out revokes it as the kit
-does for every app.
+The request carries the build's version (`software_version`), which the
+server records with the floors; an upgrade that would break a connected
+build waits. A server whose metadata lists no `package` detail or no
+`agents` verb is too old, and says so. A release stamps its client id
+(`SubstrateWorkoutsClientID`, the `workouts/client.json` the site
+publishes); a local build signs in as `http://127.0.0.1/substrate-workouts`.
+The session is kept in the Keychain under `dev.reamde.substrate.workouts`,
+and Sign Out revokes it as the kit does for every app.
 
-**A local build is another app.** The server owns the package by the full
-client id, so the local build and a release build are two apps: whichever
-declares `~/training` in a repository first owns it, and the other is
-refused, at the approval page and at its apply. Point a local build at a
-separate repository (a throwaway one on `mise run dev` is the usual), or take
-the package over in the repository you share and let neither build update it.
+**The package is published.** `substrate.reamde.dev/training` and
+`substrate.reamde.dev/trainingcoach` are the same name in every repository,
+served from the site's authority document with each version's closure
+(`mise run apple:site`, [Package/](Package/README.md)). The app applies
+nothing and respells nothing: the kinds are `substrate.reamde.dev/training/…`
+on the phone and on the wire. The owner cannot edit a published package
+(the tier's ordinary rule), keeps the bundle's **Pause** and **Resume**, and
+may **Take over…** it, after which it stops upgrading and the app keeps
+writing records to it. A local build and a release build ask for the same
+packages, so they share a repository without trouble.
 
-**The package is the app's.** At sign-in, at launch and on return to the
-foreground, `PackageInstaller` reads
-`substrate.reamde.dev/core/package/<authority>/training`:
+**Where the repository stands.** At sign-in, at launch and on return to the
+foreground, `PackageCheck` reads the training package's row
+(`substrate.reamde.dev/core/package/substrate.reamde.dev%2Ftraining`, whose
+`shippedVersion` is the publisher's number):
 
 | The repository holds | The app |
 | --- | --- |
-| none | applies its manifests, `~` written as the repository's authority |
-| an older version, kinds as the app left them | applies them again; the server lands the change at the next version |
-| any version it knows, a kind changed outside the app | writes nothing there, keeps sessions on the phone, and says "The Training package on <server> was changed outside Substrate Workouts; it is managed by this app." |
-| this version | does nothing |
-| a newer version | writes nothing more, keeps sessions on the phone, and says to update the app |
-| a package the owner took over, or another app's | never applies to it, keeps sending sessions, and says "Your Training package is managed by you now (taken over); this app no longer updates it", or "…by another app" |
+| none, or a row the token cannot see | reads it as missing; the kit's status check says what the approval installs |
+| an older version than this build was written against | writes nothing, asks the server through the set up check (which carries the build's floor; a kinds-only upgrade is applied at once, one that changes code waits for the owner's review on the server), reads the row again, and says "Your substrate has version 3 of the Training package and this app needs version 4 or later" until it lands |
+| this version, or a later one | writes; a later version is additive, so this build ignores what it does not know |
 
-**The server enforces it** (decision
-[0205](../../../docs/decisions/0205-an-app-owns-the-package-it-declares.md)):
-the package's kinds change only through this app, by its client id. The
-owner can't edit them in the console, through `substratectl` or the API, and
-there is nothing to override. The owner's ways in are the bundle's
-**Pause** and **Resume**, which stay theirs, and **Take over…** on the
-package's page, which makes the package theirs for good (there is no
-handing it back). After a takeover the server answers the app's apply with
-`403`: the app reads the package row (`takenOverFrom`, `declaredBy`,
-`declaredByClient`) before every apply, so it stops applying from the first
-check on, never in a loop, and keeps flushing the outbox, since the server
-still takes the app's record writes. A `403` on an apply it did send, in the
-moment between its read and a takeover, ends the same way.
-
-A change to the package ships as the next version and is additive only. The
-server refuses the app's token an apply that would remove anything the
-package holds, and a lossy change; the app shows that refusal in the
-server's words and writes nothing until it is settled. After each apply the
-app still records every kind row's version (`package.json` in the
-repository's folder) and compares them at every check: with the owner's
-edits refused, a moved kind means a package that predates the app's install,
-and the app writes nothing there and never applies over it. On the phone the
-kinds are spelled
-`~/training/…`; `Rehome` swaps `~` for the repository's authority at the
-server's edge, both ways, and nowhere else.
+A change to the package ships as the next version and is additive only: the
+server refuses a narrowing while live records hold the old shape, and a
+published version never changes (`scripts/workouts-package.py --check`
+refuses a changed closure under an unmoved version, and the site refuses to
+publish one). An older build keeps writing validly against a newer version.
 
 **Routines** come from the server once the package is in place, and are
 cached for the gym (`catalog.json` in the repository's folder under
@@ -312,14 +297,15 @@ recorded from a server built from this tree (`Tests/WorkoutsSyncTests/Fixtures`)
 the outbox's order and its answers to `409`, `422`, `401` and the network, a
 delete, a discard, a reset and a new write while a write is in flight, a
 failed save and an unreadable file, parked writes, the history exchange, the
-package installer and an owner's edit, a package managed elsewhere and the
-`403` that says so (`OwnershipTests`), the rehoming, and the sign-in request
-and status.
+package check (missing, behind and asked through the set up check, current),
+the published manifests, the coach's closure and the scopes held to its reach
+(`CoachTests`), and the sign-in request and status.
 
 `LiveServerTests` runs the whole path against a real substrate when told
-where: the authorization request, approved through the approval API (which
-installs health), the package declared and upgraded, the owner's edit to
-it refused, the package taken over and the app's apply stopped, the sample
+where (one that reads the publisher's authority document, live or through
+`SUBSTRATE_INSECURE_AUTHORITY_DOCS`): the authorization request, approved
+through the approval API (which installs health, training and the coach),
+the package read as current, the sample
 routine written on the first run, deleted through the outbox and not written
 again by this phone, a second one or a reinstall, added back, a session logged
 signed out whose exercises the repository lacks taken by the server's

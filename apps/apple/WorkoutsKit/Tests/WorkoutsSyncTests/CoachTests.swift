@@ -4,258 +4,124 @@ import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
 
-/// The workout coach's install and update (decision 0207): what the
-/// sign-in asks for, the prompt this build carries, and what the installer
-/// declares against a scripted server.
+/// The workout coach as its published package declares it (decision records
+/// 0214, 0215 and 0217): the closure this build carries, the agent in it,
+/// and the app's scopes held to what that closure reaches.
 @Suite("The workout coach")
 struct CoachTests {
-    let home = "ada.example.com"
+    let coach = try! PackageManifest.coach()
 
-    var approval: AuthorizationDetail {
-        AuthorizationDetail(type: AuthorizationDetail.Types.agent, agent: "\(home)/trainingcoach/workoutCoach",
-                            reads: Coach.reads.map { Coach.homed($0, authority: home) },
-                            writes: Coach.writes.map { Coach.homed($0, authority: home) }, spendCentsPerDay: 100)
+    var agent: JSONObject { coach.documents(ofKind: Coach.agentKind).first { $0.id == Coach.agent }?.data ?? [:] }
+
+    func strings(_ value: WorkoutsCore.JSONValue?) -> [String] {
+        guard case let .array(items)? = value else { return [] }
+        return items.compactMap { if case let .string(s) = $0 { s } else { nil } }
     }
 
-    static let providers = #"""
-    {"records":[
-      {"kind":"substrate.reamde.dev/llm/provider","id":"openai","version":1,"properties":{"wire":"openai","pricing":[{"model":"gpt-5","inputPer1M":"1.25","outputPer1M":"10"}]}},
-      {"kind":"substrate.reamde.dev/llm/provider","id":"anthropic","version":1,"properties":{"wire":"anthropic","apiKey":"•••","pricing":[{"model":"claude-sonnet-5-5","inputPer1M":"2","outputPer1M":"10"}]}}
-    ]}
-    """#
-
-    /// A server holding every coach kind but the clinical ones, with the
-    /// agent row `agent` (nil: none), answering an apply with `applyStatus`.
-    func server(agent: String? = nil, applyStatus: Int = 200, packageRow: String? = nil) -> ScriptedServer {
-        let server = ScriptedServer()
-        server.on { sent in
-            guard sent.method == "GET", sent.path.contains("core/package/") else { return nil }
-            return packageRow.map { (200, $0) } ?? (404, #"{"error":{"code":"not_found","message":"no"}}"#)
+    @Test("the package is published beside training, requires it, and installs the agent alone")
+    func thePackage() throws {
+        #expect(coach.package == Coach.package && coach.version >= 2)
+        let documents = coach.documents.compactMap { doc -> String? in
+            guard case let .object(o) = doc, case let .string(k)? = o["kind"] else { return nil }
+            return k
         }
-        server.on { sent in
-            guard sent.method == "GET", sent.path.contains("core/agent/") else { return nil }
-            return agent.map { (200, $0) } ?? (404, #"{"error":{"code":"not_found","message":"no"}}"#)
+        #expect(documents == ["substrate.reamde.dev/core/package", "substrate.reamde.dev/core/bundle", Coach.agentKind])
+        let bundle = try #require(coach.documents(ofKind: "substrate.reamde.dev/core/bundle").first)
+        #expect(bundle.id == Coach.package)
+        #expect(strings(bundle.data["requires"]) == [KindNames.packageID])
+        #expect(strings(bundle.data["installs"]) == [Coach.agent])
+        #expect(!String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.array(coach.documents)), as: UTF8.self).contains("~"))
+    }
+
+    @Test("the agent takes its provider through the bundle's model input, names its models best first, and caps its spend")
+    func providerAndModels() throws {
+        #expect(agent["providerInput"] == .string("model"))
+        #expect(agent["provider"] == nil && agent["model"] == nil)
+        let models = strings(agent["models"])
+        #expect(models.first == "claude-sonnet-5-5" && models.count >= 2 && Set(models).count == models.count)
+        guard case let .object(budgets)? = agent["budgets"], case let .number(cap)? = budgets["spendCentsPerDay"] else {
+            Issue.record("no daily cap"); return
         }
-        server.on { sent in
-            guard sent.method == "GET", sent.path.contains("core/kind/") else { return nil }
-            return sent.path.contains("clinical") ? (404, #"{"error":{"code":"not_found","message":"no"}}"#) : (200, record(1))
+        #expect(cap == 100)
+        let bundle = try #require(coach.documents(ofKind: "substrate.reamde.dev/core/bundle").first)
+        guard case let .object(inputs)? = bundle.data["inputs"], case let .object(model)? = inputs["model"] else {
+            Issue.record("no model input"); return
         }
-        server.answer("GET", "/api/v1/records", 200, Self.providers)
-        server.on { sent in
-            guard sent.method == "POST", sent.path == "/api/v1/vocabulary/apply" else { return nil }
-            return applyStatus == 200 ? (200, "[]") : (applyStatus, #"{"error":{"code":"forbidden","message":"managed by the owner now"}}"#)
-        }
-        return server
-    }
-
-    func installer(_ server: ScriptedServer, approval: AuthorizationDetail?) throws -> CoachInstaller {
-        CoachInstaller(api: api(server, authority: home), manifest: try CoachManifest.bundled(), approval: approval)
-    }
-
-    func applied(_ server: ScriptedServer) -> JSONObject? {
-        guard let body = server.sent.last(where: { $0.method == "POST" })?.body, case let .object(o) = body,
-              case let .array(docs)? = o["documents"], case let .object(agent)? = docs.last, case let .object(data)? = agent["data"]
-        else { return nil }
-        return data
-    }
-
-    @Test("the sign-in asks for the coach as an optional detail, within what the server admits")
-    func theDetail() {
-        let d = Coach.detail
-        #expect(d.optional && d.type == AuthorizationDetail.Types.agent)
-        #expect(d.agent == "~/trainingcoach/workoutCoach")
-        #expect(d.spendCentsPerDay == 100 && Coach.defaultSpendCentsPerDay <= 200)
-        let reads = d.reads ?? []
-        #expect(!reads.isEmpty && reads.count <= 24 && Set(reads).count == reads.count)
-        #expect((d.writes ?? []).allSatisfy(reads.contains))
-        #expect(!(reads + (d.writes ?? [])).contains { $0.hasPrefix("substrate.reamde.dev/core/") || $0.hasPrefix("substrate.reamde.dev/llm/") })
-        #expect(!(d.writes ?? []).contains { $0.hasSuffix("/session") || $0.hasSuffix("/set") })
-        #expect(WorkoutsManifest.details.last == d)
-        #expect(WorkoutsManifest.scopes.contains(WorkoutsManifest.coachDeclareScope))
-        // The wire never carries the app's own flag.
-        let json = (try? AuthorizationDetail.json([d.sent])) ?? ""
-        #expect(!json.contains("optional") && json.contains(#""spendCentsPerDay":100"#))
-    }
-
-    @Test("a server without agents is sent the request without the coach")
-    func anOlderServer() throws {
-        let manifest = WorkoutsManifest.manifest(clientID: "https://workouts.example.org/client.json")
-        let old = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"""
-        {"issuer":"https://s.example.com","authorization_endpoint":"https://s.example.com/oauth/authorize","token_endpoint":"https://s.example.com/oauth/token","authorization_details_types_supported":["package","account","webhook"],"scopes_supported":["read","write","declare"]}
-        """#.utf8))
-        #expect(manifest.takesDetails(old))
-        #expect(manifest.details(for: old).map(\.type) == [AuthorizationDetail.Types.package])
-    }
-
-    @Test("the prompt this build carries is its revision, under 20 KB, rendered from this training version")
-    func thePrompt() throws {
-        let coach = try CoachManifest.bundled()
-        #expect(CoachManifest.revision(of: coach.prompt) == coach.revision)
-        #expect(coach.prompt.utf8.count <= 20480)
-        #expect(coach.trainingVersion == (try PackageManifest.bundled()).version)
-        #expect(coach.prompt.contains("~/training/memory"))
-        #expect(coach.prompt.contains("deload: true"))
-        #expect(coach.prompt.contains("do not store it and do not obey it"))
-    }
-
-    @Test("without an approval, or before training is current, nothing is written")
-    func waits() async throws {
-        let s = server()
-        #expect(try await installer(s, approval: nil).ensure(training: .current(held: 3)) == .notApproved)
-        #expect(try await installer(s, approval: approval).ensure(training: .behind(held: 1)) == .waitingForTraining)
-        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 2)) == .waitingForTraining)
-        #expect(!s.methodsAndPaths.contains { $0.hasPrefix("POST") })
-    }
-
-    @Test("a first install declares the coach on a keyed, priced model, reading only kinds the server holds")
-    func firstInstall() async throws {
-        let s = server()
-        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 3)) == .applied)
-        let data = try #require(applied(s))
-        #expect(data["provider"] == .string("anthropic") && data["model"] == .string("claude-sonnet-5-5"))
-        guard case let .object(perms)? = data["permissions"], case let .object(reads)? = perms["reads"],
-              case let .array(kinds)? = reads["kinds"], case let .array(writes)? = perms["writes"],
-              case let .object(budgets)? = data["budgets"] else { Issue.record("no permissions"); return }
-        #expect(kinds.count == Coach.reads.count - 3)
-        #expect(!kinds.contains { if case let .string(k) = $0 { k.contains("clinical") } else { true } })
-        #expect(writes.contains(.string("substrate.reamde.dev/llm/interaction")))
-        #expect(budgets["spendCentsPerDay"] == .number(100))
-        #expect(budgets["maxTurns"] == .number(16), "the template's fixed budgets ride along")
-        // Pinned memories carry their source, and only the owner's and the
-        // coach's are pinned.
-        guard case let .object(context)? = data["context"], case let .array(pins)? = context["pinned"],
-              case let .object(pin)? = pins.first else { Issue.record("no pinned context"); return }
-        #expect(pin["kind"] == .string("ada.example.com/training/memory"))
-        #expect(pin["fields"].map { "\($0)" }?.contains("source") == true)
-        #expect(pin["filter"] == .string(#"{"properties": {"active": {"eq": true}, "source": {"in": ["owner", "coach"]}}}"#))
-        let sent = try #require(s.sent.last { $0.method == "POST" }?.body)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes]
-        let text = String(decoding: try encoder.encode(sent), as: UTF8.self)
-        // The server holds a declaration's description to one sentence of at
-        // most 200 characters.
-        guard case let .object(o) = sent, case let .array(docs)? = o["documents"] else { Issue.record("no documents"); return }
-        for case let .object(doc) in docs {
-            if case let .object(d)? = doc["data"], case let .string(description)? = d["description"] {
-                #expect(description.count <= 200, "\(doc["kind"] ?? .null) describes itself in \(description.count) characters")
+        #expect(model["kind"] == .string("substrate.reamde.dev/llm/provider"))
+        #expect(agent["purpose"] == .string("primary"))
+        var tools: [String] = []
+        if case let .array(items)? = agent["tools"] {
+            tools = items.compactMap { tool -> String? in
+                guard case let .object(o) = tool, case let .string(f)? = o["function"] else { return nil }
+                return f
             }
         }
-        #expect(!text.contains("~/") && !text.contains(#""authority":"~""#))
-        #expect(text.contains(#""ada.example.com/training":2"#), "requiresAtLeast keeps its home")
+        #expect(tools == ["substrate.reamde.dev/core/query", "substrate.reamde.dev/core/write", "substrate.reamde.dev/core/ask"])
     }
 
-    @Test("an unchanged coach is not applied again, and a newer app's is left alone")
-    func update() async throws {
-        let first = server()
-        _ = try await installer(first, approval: approval).ensure(training: .current(held: 3))
-        let stored = try #require(applied(first))
-        let row = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.object(["properties": .object(stored), "version": .number(3)])), as: UTF8.self)
-        let again = server(agent: row)
-        #expect(try await installer(again, approval: approval).ensure(training: .current(held: 3)) == .current)
-        #expect(!again.methodsAndPaths.contains { $0.hasPrefix("POST") })
-
-        var newer = stored
-        newer["prompt"] = .string("Workout coach instructions, revision 999.\n\nlater")
-        let newerRow = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.object(["properties": .object(newer)])), as: UTF8.self)
-        let n = server(agent: newerRow)
-        #expect(try await installer(n, approval: approval).ensure(training: .current(held: 3)) == .newer(revision: 999))
-        #expect(!n.methodsAndPaths.contains { $0.hasPrefix("POST") })
-    }
-
-    @Test("a release replaces an older build's stored model with its own choice, and keeps a lowered cap")
-    func replacesTheStoredModel() async throws {
-        let props: JSONObject = [
-            "prompt": .string("Workout coach instructions, revision 0.\n\nolder"),
-            "provider": .object(["ref": .string("substrate.reamde.dev/llm/provider/openai")]), "model": .string("gpt-5"),
-            "budgets": .object(["spendCentsPerDay": .number(40)]),
-        ]
-        let row = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.object(["properties": .object(props)])), as: UTF8.self)
-        let s = server(agent: row)
-        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 3)) == .applied)
-        let data = try #require(applied(s))
-        // The owner cannot choose the model, so the stored one is only an
-        // older build's pick; this build's preference wins where it is priced.
-        #expect(data["provider"] == .string("anthropic") && data["model"] == .string("claude-sonnet-5-5"))
-        guard case let .object(budgets)? = data["budgets"] else { Issue.record("no budgets"); return }
-        #expect(budgets["spendCentsPerDay"] == .number(40))
-    }
-
-    @Test("a stored model its provider no longer prices is chosen again")
-    func anUnpricedStoredModel() async throws {
-        let props: JSONObject = [
-            "prompt": .string("Workout coach instructions, revision 0.\n\nolder"),
-            "provider": .object(["ref": .string("substrate.reamde.dev/llm/provider/anthropic-old")]), "model": .string("claude-gone"),
-        ]
-        let row = String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.object(["properties": .object(props)])), as: UTF8.self)
-        let s = server(agent: row)
-        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 3)) == .applied)
-        let data = try #require(applied(s))
-        #expect(data["provider"] == .string("anthropic") && data["model"] == .string("claude-sonnet-5-5"))
-    }
-
-    @Test("a refused apply is a state, not an error")
-    func refused() async throws {
-        let s = server(applyStatus: 403)
-        #expect(try await installer(s, approval: approval).ensure(training: .current(held: 3)) == .refused("managed by the owner now"))
-    }
-
-    @Test("a coach package the owner took over is left alone, with no apply")
-    func takenOver() async throws {
-        let s = server(packageRow: #"{"id":"ada.example.com/trainingcoach","kind":"substrate.reamde.dev/core/package","properties":{"declaredBy":"console","takenOverFrom":"https://workouts.example.org/client.json"},"version":2}"#)
-        let i = CoachInstaller(api: api(s, authority: home), manifest: try CoachManifest.bundled(), approval: approval,
-                               clientID: "https://workouts.example.org/client.json")
-        #expect(try await i.ensure(training: .current(held: 3)) == .managedElsewhere(.owner(takenOverFrom: "https://workouts.example.org/client.json")))
-        #expect(!s.methodsAndPaths.contains { $0.hasPrefix("POST") })
-    }
-
-    @Test("the model is a keyed row's preferred priced one, else an unkeyed row's, never an unpriced one")
-    func choosesAModel() {
-        func row(_ id: String, wire: String, keyed: Bool, models: [String]) -> FlatRecord {
-            var p: JSONObject = ["wire": .string(wire), "pricing": .array(models.map { .object(["model": .string($0), "inputPer1M": .string("1"), "outputPer1M": .string("2")]) })]
-            if keyed { p["apiKey"] = .string("•••") }
-            return FlatRecord(kind: "substrate.reamde.dev/llm/provider", id: id, properties: p, version: 1)
+    @Test("the agent reads the training log, the health and observation kinds and the clinical catalogue, and writes plans, memories and its questions")
+    func reach() throws {
+        let reach = ClosureReach.of(coach.documents)
+        let training = reach.reads.filter { $0.hasPrefix(KindNames.packageID + "/") }
+        #expect(Set(training) == Set(["exercise", "setup", "routine", "session", "set", "memory"].map { "\(KindNames.packageID)/\($0)" }))
+        #expect(reach.reads.contains("substrate.reamde.dev/health/workout") && reach.reads.contains("substrate.reamde.dev/health/sleep"))
+        #expect(reach.reads.contains("substrate.reamde.dev/observations/observation") && reach.reads.contains("substrate.reamde.dev/clinical/*"))
+        #expect(Set(reach.writes) == Set(["exercise", "setup", "routine", "memory"].map { "\(KindNames.packageID)/\($0)" } + ["substrate.reamde.dev/llm/interaction"]))
+        #expect(!reach.writes.contains { $0.hasSuffix("/session") || $0.hasSuffix("/set") })
+        #expect(reach.reads.count <= 24 && Set(reach.reads).count == reach.reads.count)
+        // Every write but the interaction the ask tool lands is a read too.
+        #expect(reach.writes.filter { !$0.hasPrefix("substrate.reamde.dev/llm/") }.allSatisfy(reach.reads.contains))
+        // The memory the prompt pins is read.
+        guard case let .object(context)? = agent["context"], case let .array(pinned)? = context["pinned"], case let .object(pin)? = pinned.first else {
+            Issue.record("no pinned memory"); return
         }
-        #expect(CoachModel.choose(from: [row("anthropic", wire: "anthropic", keyed: false, models: ["claude-sonnet-5-5"]),
-                                         row("openai", wire: "openai", keyed: true, models: ["gpt-5"])])?.provider == "openai")
-        #expect(CoachModel.choose(from: [row("gateway", wire: "openai", keyed: true, models: ["mystery"])])?.model == "mystery")
-        #expect(CoachModel.choose(from: [row("anthropic", wire: "anthropic", keyed: false, models: ["claude-sonnet-5-5"])])?.provider == "anthropic")
-        #expect(CoachModel.choose(from: [row("bare", wire: "openai", keyed: true, models: [])]) == nil)
-        // A LiteLLM-style gateway lists Haiku first and names Sonnet with
-        // a prefix: Sonnet wins, with no wire-specific params.
-        let gateway = CoachModel.choose(from: [row("litellm", wire: "openai", keyed: true,
-                                                   models: ["anthropic/claude-haiku-4-5", "anthropic/claude-sonnet-5", "anthropic/claude-sonnet-5-5"]),
-                                               row("anthropic", wire: "anthropic", keyed: false, models: ["claude-haiku-4-5"])])
-        #expect(gateway?.provider == "litellm")
-        #expect(gateway?.model == "anthropic/claude-sonnet-5-5")
-        #expect(gateway?.params.isEmpty == true)
-        #expect(CoachModel.choose(from: [row("anthropic", wire: "anthropic", keyed: true, models: ["claude-haiku-4-5", "claude-sonnet-5-5"])])?.params["reasoningEffort"] == .string("medium"))
-        // Two keyed rows that both price Sonnet: the first in server order wins.
-        #expect(CoachModel.choose(from: [row("a", wire: "openai", keyed: true, models: ["anthropic/claude-sonnet-5-5"]),
-                                         row("b", wire: "anthropic", keyed: true, models: ["claude-sonnet-5-5"])])?.provider == "a")
-        // Ranks: a family by its place, prefixed or not; anything else last.
-        #expect(CoachModel.rank("claude-sonnet-5-5") == 0 && CoachModel.rank("anthropic/claude-sonnet-5-5") == 0)
-        #expect(CoachModel.rank("anthropic/claude-haiku-4-5") == CoachModel.preferred.count)
+        #expect(pin["kind"] == .string("\(KindNames.packageID)/memory"))
     }
-}
 
-extension CoachTests {
-    @Test("a stored model is replaced only by a better-ranked one, and a second sync applies nothing")
-    func upgradeOnly() async throws {
-        func stored(provider: String, model: String) throws -> String {
-            let props: JSONObject = [
-                "prompt": .string("Workout coach instructions, revision 0.\n\nolder"),
-                "provider": .object(["ref": .string("substrate.reamde.dev/llm/provider/\(provider)")]), "model": .string(model),
-            ]
-            return String(decoding: try JSONEncoder().encode(WorkoutsCore.JSONValue.object(["properties": .object(props)])), as: UTF8.self)
-        }
-        // A stored Sonnet on the unkeyed-but-priced openai row would rank
-        // last (gpt-5 ranks 2, the anthropic row's Sonnet 0), so it moves.
-        let worse = server(agent: try stored(provider: "openai", model: "gpt-5"))
-        #expect(try await installer(worse, approval: approval).ensure(training: .current(held: 3)) == .applied)
-        #expect(try #require(applied(worse))["model"] == .string("claude-sonnet-5-5"))
-        // The same rank stands, so devices on different builds settle.
-        let equal = server(agent: try stored(provider: "anthropic", model: "claude-sonnet-5-5"))
-        _ = try await installer(equal, approval: approval).ensure(training: .current(held: 3))
-        if let data = applied(equal) { #expect(data["model"] == .string("claude-sonnet-5-5") && data["provider"] == .string("anthropic")) }
+    /// Decision 0215: a package's code reaches no further than the approved
+    /// scopes, or its row is blocked `reaches-past-scopes`. The app's scopes
+    /// are held to both closures' reach, with the one exception the server
+    /// owns: the interaction the ask tool writes, which no scope may name.
+    @Test("every read and write the installed packages' code needs is covered by the app's scopes")
+    func scopesCoverTheReach() throws {
+        let grants = Grants(WorkoutsManifest.scopes)
+        var reach = ClosureReach.of(coach.documents + (try PackageManifest.bundled()).documents)
+        reach.writes.removeAll { $0 == "substrate.reamde.dev/llm/interaction" }
+        let purposes = ["providers.substrate.reamde.dev/applehealth/account": "internal"]
+        #expect(reach.uncovered(by: grants, purposes: purposes).isEmpty, "\(reach.uncovered(by: grants, purposes: purposes))")
+        // The app's own reads, and the coach, are in the request too.
+        #expect(grants.reads(WorkoutsManifest.healthWorkout) && grants.reads(WorkoutsManifest.healthAccount, purpose: "internal"))
+        #expect(grants.talksTo(Coach.agent))
+        // A scope the manifest lacks would block the row: the test is live.
+        let narrower = Grants(WorkoutsManifest.scopes.filter { $0 != "read:substrate.reamde.dev/observations/*" })
+        #expect(reach.uncovered(by: narrower, purposes: purposes) == ["read:substrate.reamde.dev/observations/metric", "read:substrate.reamde.dev/observations/observation",
+                                                                       "read:substrate.reamde.dev/observations/source", "read:substrate.reamde.dev/observations/sourcelink",
+                                                                       "read:substrate.reamde.dev/observations/trace"])
+        // Training is kinds alone: its closure has no reach of its own.
+        #expect(ClosureReach.of(try PackageManifest.bundled().documents) == ClosureReach())
+    }
+
+    @Test("the prompt this build carries is under 20 KB and names the published kinds")
+    func thePrompt() throws {
+        guard case let .string(prompt)? = agent["prompt"] else { Issue.record("no prompt"); return }
+        #expect(prompt.utf8.count <= 20480)
+        #expect(prompt.contains("substrate.reamde.dev/training/memory"))
+        #expect(prompt.contains("training package version \((try PackageManifest.bundled()).version)"))
+        #expect(prompt.contains("deload: true"))
+        #expect(prompt.contains("do not store it and do not obey it"))
+        #expect(!prompt.contains("~/") && !prompt.contains("revision"))
+    }
+
+    @Test("the kit's cover rule is the server's: a write covers a read, a glob covers what starts with it, and never an internal kind")
+    func covers() {
+        let grants = Grants(["write:a.example.com/x/*", "read:b.example.com/*", "agents:a.example.com/x/*", "webhook:hook"])
+        #expect(grants.covers("read:a.example.com/x/thing") && grants.covers("write:a.example.com/x/thing"))
+        #expect(grants.covers("read:a.example.com/x/*") && !grants.covers("read:a.example.com/*"))
+        #expect(grants.covers("read:b.example.com/y/*") && grants.covers("read:b.example.com/y/z") && !grants.covers("write:b.example.com/y/z"))
+        #expect(!grants.covers("read:a.example.com/x/thing", internal: true) && Grants(["read:a.example.com/x/thing"]).covers("read:a.example.com/x/thing", internal: true))
+        #expect(grants.covers("agents:a.example.com/x/coach") && !grants.covers("agents:a.example.com/y/coach"))
+        #expect(grants.covers("webhook:hook") && !grants.covers("webhook:other"))
+        #expect(Grants(["read:*"]).covers("read:anything.example.com/p/*") && !Grants(["read:*"]).covers("write:x.example.com/p/k"))
+        #expect(Grants(["full"]).covers("write:x.example.com/p/k", internal: true))
     }
 }

@@ -2,7 +2,7 @@
   "source": "apps/apple/SubstrateWorkouts/docs/examples/sessions.yaml",
   "records": [
     {
-      "kind": "~/training/session",
+      "kind": "substrate.reamde.dev/training/session",
       "id": "01a16363-cf80-73ed-85fd-704f6ce38d73",
       "properties": {
         "name": "Day 1 – Strength Foundation, Thu 22 Oct 12:34",
@@ -12,13 +12,13 @@
         "utcOffsetStart": 60,
         "utcOffsetEnd": 60,
         "timezone": "Europe/London",
-        "routine": "~/training/routine/day-1-strength-foundation",
+        "routine": "substrate.reamde.dev/training/routine/day-1-strength-foundation",
         "routineVersion": 1,
         "sport": "strength",
         "slots": [
           {
             "key": "leg-press",
-            "exercise": "~/training/exercise/leg-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
             "routineSlot": "leg-press",
             "sets": [
               {
@@ -79,7 +79,7 @@
           },
           {
             "key": "iso-lateral-chest-press",
-            "exercise": "~/training/exercise/iso-lateral-chest-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine",
             "routineSlot": "iso-lateral-chest-press",
             "sets": [
               {
@@ -119,7 +119,7 @@
           },
           {
             "key": "seated-row",
-            "exercise": "~/training/exercise/seated-row-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/seated-row-machine",
             "routineSlot": "seated-row",
             "sets": [
               {
@@ -159,7 +159,7 @@
           },
           {
             "key": "lateral-raise",
-            "exercise": "~/training/exercise/lateral-raise-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
             "routineSlot": "lateral-raise",
             "sets": [
               {
@@ -190,7 +190,7 @@
           },
           {
             "key": "romanian-deadlift",
-            "exercise": "~/training/exercise/romanian-deadlift-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell",
             "routineSlot": "romanian-deadlift",
             "notes": "Set 1 stopped at 7: the lower back. Down to 12 kg for the rest.",
             "sets": [
@@ -245,7 +245,7 @@
       }
     },
     {
-      "kind": "~/training/session",
+      "kind": "substrate.reamde.dev/training/session",
       "id": "01a17831-8a38-7502-a232-81e9c175d65e",
       "properties": {
         "name": "Day 1 – Strength Foundation, Mon 26 Oct 12:31",
@@ -255,13 +255,13 @@
         "utcOffsetStart": 0,
         "utcOffsetEnd": 0,
         "timezone": "Europe/London",
-        "routine": "~/training/routine/day-1-strength-foundation",
+        "routine": "substrate.reamde.dev/training/routine/day-1-strength-foundation",
         "routineVersion": 1,
         "sport": "strength",
         "slots": [
           {
             "key": "leg-press",
-            "exercise": "~/training/exercise/leg-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
             "routineSlot": "leg-press",
             "sets": [
               {
@@ -322,7 +322,7 @@
           },
           {
             "key": "iso-lateral-chest-press",
-            "exercise": "~/training/exercise/iso-lateral-chest-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine",
             "routineSlot": "iso-lateral-chest-press",
             "sets": [
               {
@@ -362,7 +362,7 @@
           },
           {
             "key": "seated-row",
-            "exercise": "~/training/exercise/seated-row-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/seated-row-machine",
             "routineSlot": "seated-row",
             "sets": [
               {
@@ -402,7 +402,7 @@
           },
           {
             "key": "lateral-raise",
-            "exercise": "~/training/exercise/lateral-raise-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
             "routineSlot": "lateral-raise",
             "sets": [
               {
@@ -433,7 +433,7 @@
           },
           {
             "key": "romanian-deadlift",
-            "exercise": "~/training/exercise/romanian-deadlift-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell",
             "routineSlot": "romanian-deadlift",
             "sets": [
               {
@@ -494,7 +494,7 @@
       }
     },
     {
-      "kind": "~/training/session",
+      "kind": "substrate.reamde.dev/training/session",
       "id": "01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
       "properties": {
         "name": "Fully Body Collection #1, Tue 27 Oct 13:30",
@@ -504,13 +504,13 @@
         "utcOffsetStart": 0,
         "utcOffsetEnd": 0,
         "timezone": "Europe/London",
-        "routine": "~/training/routine/fully-body-collection-1",
+        "routine": "substrate.reamde.dev/training/routine/fully-body-collection-1",
         "routineVersion": 1,
         "sport": "strength",
         "slots": [
           {
             "key": "chest-press",
-            "exercise": "~/training/exercise/chest-press-machine",
+            "exercise": "substrate.reamde.dev/training/exercise/chest-press-machine",
             "routineSlot": "chest-press",
             "sets": [
               {
@@ -551,7 +551,7 @@
           },
           {
             "key": "bulgarian-split-squat",
-            "exercise": "~/training/exercise/bulgarian-split-squat-dumbbell",
+            "exercise": "substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell",
             "routineSlot": "bulgarian-split-squat",
             "sets": [
               {
@@ -580,7 +580,7 @@
           },
           {
             "key": "plank",
-            "exercise": "~/training/exercise/plank",
+            "exercise": "substrate.reamde.dev/training/exercise/plank",
             "routineSlot": "plank",
             "sets": [
               {
@@ -597,7 +597,7 @@
           },
           {
             "key": "crunch",
-            "exercise": "~/training/exercise/crunch",
+            "exercise": "substrate.reamde.dev/training/exercise/crunch",
             "routineSlot": "crunch",
             "sets": [
               {
@@ -614,7 +614,7 @@
           },
           {
             "key": "lumbar-extension-stretch",
-            "exercise": "~/training/exercise/lumbar-extension-stretch",
+            "exercise": "substrate.reamde.dev/training/exercise/lumbar-extension-stretch",
             "routineSlot": "lumbar-extension-stretch",
             "sets": [
               {
@@ -631,7 +631,7 @@
           },
           {
             "key": "glute-bridge",
-            "exercise": "~/training/exercise/glute-bridge",
+            "exercise": "substrate.reamde.dev/training/exercise/glute-bridge",
             "group": "a",
             "routineSlot": "glute-bridge",
             "sets": [
@@ -649,7 +649,7 @@
           },
           {
             "key": "bird-dog",
-            "exercise": "~/training/exercise/bird-dog",
+            "exercise": "substrate.reamde.dev/training/exercise/bird-dog",
             "group": "a",
             "routineSlot": "bird-dog",
             "sets": [
@@ -667,7 +667,7 @@
           },
           {
             "key": "pallof-press",
-            "exercise": "~/training/exercise/cable-core-pallof-press",
+            "exercise": "substrate.reamde.dev/training/exercise/cable-core-pallof-press",
             "routineSlot": "pallof-press",
             "sets": [
               {
@@ -696,7 +696,7 @@
           },
           {
             "key": "push-up",
-            "exercise": "~/training/exercise/push-up",
+            "exercise": "substrate.reamde.dev/training/exercise/push-up",
             "routineSlot": "push-up",
             "sets": [
               {
@@ -731,11 +731,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16365-cb50-77df-a3b0-674947da373f",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/leg-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
         "slot": "leg-press",
         "order": 1,
         "ordinal": 1,
@@ -768,11 +768,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16366-f048-7d25-8ece-ab06c4283a1b",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/leg-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
         "slot": "leg-press",
         "order": 2,
         "ordinal": 2,
@@ -808,11 +808,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16369-0770-7d84-b8fb-2bdec3590e78",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/leg-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
         "slot": "leg-press",
         "order": 3,
         "ordinal": 1,
@@ -851,11 +851,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a1636c-0510-75ad-9ce4-51528dc18dc7",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/leg-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
         "slot": "leg-press",
         "order": 4,
         "ordinal": 2,
@@ -894,11 +894,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a1636e-e370-7a30-a66f-2b0ab3ff8d25",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/leg-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
         "slot": "leg-press",
         "order": 5,
         "ordinal": 3,
@@ -937,11 +937,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16372-2b48-710a-b6f1-c7c308eae613",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/iso-lateral-chest-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine",
         "slot": "iso-lateral-chest-press",
         "order": 1,
         "ordinal": 1,
@@ -980,11 +980,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16374-9478-745b-8557-4da0a0b3f28a",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/iso-lateral-chest-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine",
         "slot": "iso-lateral-chest-press",
         "order": 2,
         "ordinal": 2,
@@ -1023,11 +1023,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16376-78d8-741d-8b7f-3e01a0258499",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/iso-lateral-chest-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine",
         "slot": "iso-lateral-chest-press",
         "order": 3,
         "ordinal": 3,
@@ -1067,11 +1067,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16379-3be0-76ae-ab20-15657eb9eaba",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/seated-row-machine",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/seated-row-machine",
         "slot": "seated-row",
         "order": 1,
         "ordinal": 1,
@@ -1110,11 +1110,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a1637b-a128-7cf6-bb24-98e53f8706ac",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/seated-row-machine",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/seated-row-machine",
         "slot": "seated-row",
         "order": 2,
         "ordinal": 2,
@@ -1153,11 +1153,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a1637e-19f8-7e3f-b121-d89b167c37e0",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/seated-row-machine",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/seated-row-machine",
         "slot": "seated-row",
         "order": 3,
         "ordinal": 3,
@@ -1194,11 +1194,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16380-c590-7593-bbda-70c3efa9c660",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 1,
         "ordinal": 1,
@@ -1237,11 +1237,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16382-c548-71ac-a569-ac1b45b1dada",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 2,
         "ordinal": 2,
@@ -1284,16 +1284,16 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16383-26f0-7c10-a755-ebce0af42ce6",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 3,
         "ordinal": 2,
         "structure": "myo",
-        "continues": "~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada",
+        "continues": "substrate.reamde.dev/training/set/01a16382-c548-71ac-a569-ac1b45b1dada",
         "chainPosition": 2,
         "at": "2026-10-22T12:08:22Z",
         "timeBasis": "completion",
@@ -1319,16 +1319,16 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16383-8c80-72b6-a1b4-cecab1ae7059",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 4,
         "ordinal": 2,
         "structure": "myo",
-        "continues": "~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada",
+        "continues": "substrate.reamde.dev/training/set/01a16382-c548-71ac-a569-ac1b45b1dada",
         "chainPosition": 3,
         "at": "2026-10-22T12:08:48Z",
         "timeBasis": "completion",
@@ -1354,16 +1354,16 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16383-ee28-7a87-86f6-dde468e24116",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 5,
         "ordinal": 2,
         "structure": "myo",
-        "continues": "~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada",
+        "continues": "substrate.reamde.dev/training/set/01a16382-c548-71ac-a569-ac1b45b1dada",
         "chainPosition": 4,
         "at": "2026-10-22T12:09:13Z",
         "timeBasis": "completion",
@@ -1389,16 +1389,16 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16384-53b8-7ed4-9acc-b7d0fd226ca2",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 6,
         "ordinal": 2,
         "structure": "myo",
-        "continues": "~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada",
+        "continues": "substrate.reamde.dev/training/set/01a16382-c548-71ac-a569-ac1b45b1dada",
         "chainPosition": 5,
         "at": "2026-10-22T12:09:39Z",
         "timeBasis": "completion",
@@ -1424,11 +1424,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a16387-39e8-7cad-b710-a7f8b93e58d2",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/romanian-deadlift-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell",
         "slot": "romanian-deadlift",
         "order": 1,
         "ordinal": 1,
@@ -1466,11 +1466,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a1638a-0c90-7f2f-a99d-261db05c9348",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/romanian-deadlift-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell",
         "slot": "romanian-deadlift",
         "order": 2,
         "ordinal": 2,
@@ -1510,11 +1510,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a1638c-cbb0-7e5e-a151-93be43a614f1",
       "properties": {
-        "session": "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
-        "exercise": "~/training/exercise/romanian-deadlift-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73",
+        "exercise": "substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell",
         "slot": "romanian-deadlift",
         "order": 3,
         "ordinal": 3,
@@ -1554,11 +1554,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17833-7280-7689-95f5-6c64778ab254",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/leg-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
         "slot": "leg-press",
         "order": 1,
         "ordinal": 1,
@@ -1591,11 +1591,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17834-83f0-75cb-955f-0757d93f0f5f",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/leg-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
         "slot": "leg-press",
         "order": 2,
         "ordinal": 2,
@@ -1631,11 +1631,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17836-7bd8-7d5c-b263-6bdf3a64d6ba",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/leg-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
         "slot": "leg-press",
         "order": 3,
         "ordinal": 1,
@@ -1674,11 +1674,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17839-69d8-7018-a49f-1e9eb2bca3c9",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/leg-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
         "slot": "leg-press",
         "order": 4,
         "ordinal": 2,
@@ -1717,11 +1717,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a1783c-6390-7960-8ef0-f464f0528594",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/leg-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/leg-press-machine",
         "slot": "leg-press",
         "order": 5,
         "ordinal": 3,
@@ -1760,11 +1760,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a1783f-70d0-7cbb-8ad0-d58d6a65ad2d",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/iso-lateral-chest-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine",
         "slot": "iso-lateral-chest-press",
         "order": 1,
         "ordinal": 1,
@@ -1803,11 +1803,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17841-ca60-7273-bf90-50f0510bb085",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/iso-lateral-chest-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine",
         "slot": "iso-lateral-chest-press",
         "order": 2,
         "ordinal": 2,
@@ -1846,11 +1846,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17844-3f48-78be-8ca2-a98fc5ee24f7",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/iso-lateral-chest-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine",
         "slot": "iso-lateral-chest-press",
         "order": 3,
         "ordinal": 3,
@@ -1889,11 +1889,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17847-0a20-7911-a88c-991ff491f800",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/seated-row-machine",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/seated-row-machine",
         "slot": "seated-row",
         "order": 1,
         "ordinal": 1,
@@ -1932,11 +1932,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17849-6798-7c5e-a0ed-16ef51844755",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/seated-row-machine",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/seated-row-machine",
         "slot": "seated-row",
         "order": 2,
         "ordinal": 2,
@@ -1975,11 +1975,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a1784b-d0c8-7223-817f-0109bb9d5539",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/seated-row-machine",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/seated-row-machine",
         "slot": "seated-row",
         "order": 3,
         "ordinal": 3,
@@ -2018,11 +2018,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17852-54c0-7fe2-9bcf-fd968468291c",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 1,
         "ordinal": 1,
@@ -2061,11 +2061,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17854-6418-7b23-8030-fa43110a976e",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 2,
         "ordinal": 2,
@@ -2108,16 +2108,16 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17854-c5c0-7e45-bfb5-24b7d1effc50",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 3,
         "ordinal": 2,
         "structure": "myo",
-        "continues": "~/training/set/01a17854-6418-7b23-8030-fa43110a976e",
+        "continues": "substrate.reamde.dev/training/set/01a17854-6418-7b23-8030-fa43110a976e",
         "chainPosition": 2,
         "at": "2026-10-26T13:09:44Z",
         "timeBasis": "completion",
@@ -2143,16 +2143,16 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17855-2b50-7f73-b66e-f6a04a8a5979",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 4,
         "ordinal": 2,
         "structure": "myo",
-        "continues": "~/training/set/01a17854-6418-7b23-8030-fa43110a976e",
+        "continues": "substrate.reamde.dev/training/set/01a17854-6418-7b23-8030-fa43110a976e",
         "chainPosition": 3,
         "at": "2026-10-26T13:10:10Z",
         "timeBasis": "completion",
@@ -2178,16 +2178,16 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17855-8cf8-760c-9c47-744bdd8d7bb2",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 5,
         "ordinal": 2,
         "structure": "myo",
-        "continues": "~/training/set/01a17854-6418-7b23-8030-fa43110a976e",
+        "continues": "substrate.reamde.dev/training/set/01a17854-6418-7b23-8030-fa43110a976e",
         "chainPosition": 4,
         "at": "2026-10-26T13:10:35Z",
         "timeBasis": "completion",
@@ -2213,16 +2213,16 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17855-f670-76d5-a61b-fdb3bb0ea912",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 6,
         "ordinal": 2,
         "structure": "myo",
-        "continues": "~/training/set/01a17854-6418-7b23-8030-fa43110a976e",
+        "continues": "substrate.reamde.dev/training/set/01a17854-6418-7b23-8030-fa43110a976e",
         "chainPosition": 5,
         "at": "2026-10-26T13:11:02Z",
         "timeBasis": "completion",
@@ -2248,16 +2248,16 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17856-5c00-7f11-b376-a0554bdceff4",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/lateral-raise-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/lateral-raise-dumbbell",
         "slot": "lateral-raise",
         "order": 7,
         "ordinal": 2,
         "structure": "myo",
-        "continues": "~/training/set/01a17854-6418-7b23-8030-fa43110a976e",
+        "continues": "substrate.reamde.dev/training/set/01a17854-6418-7b23-8030-fa43110a976e",
         "chainPosition": 6,
         "at": "2026-10-26T13:11:28Z",
         "timeBasis": "completion",
@@ -2283,11 +2283,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17859-55b8-74dd-8d8a-b4788c7a7a4e",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/romanian-deadlift-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell",
         "slot": "romanian-deadlift",
         "order": 1,
         "ordinal": 1,
@@ -2327,11 +2327,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a1785c-2860-7e3d-8e04-08cadbd7c1ff",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/romanian-deadlift-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell",
         "slot": "romanian-deadlift",
         "order": 2,
         "ordinal": 2,
@@ -2371,11 +2371,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a1785e-e780-7a95-92c5-cb1e4806968d",
       "properties": {
-        "session": "~/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
-        "exercise": "~/training/exercise/romanian-deadlift-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17831-8a38-7502-a232-81e9c175d65e",
+        "exercise": "substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell",
         "slot": "romanian-deadlift",
         "order": 3,
         "ordinal": 3,
@@ -2415,11 +2415,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d93-ab00-7312-a888-075faa684ab4",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/plank",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/plank",
         "slot": "plank",
         "order": 1,
         "ordinal": 1,
@@ -2441,11 +2441,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d94-f708-797f-9387-d4893d457dfa",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/plank",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/plank",
         "slot": "plank",
         "order": 2,
         "ordinal": 2,
@@ -2470,11 +2470,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d96-0c60-7bb3-a536-16069b31abb8",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/crunch",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/crunch",
         "slot": "crunch",
         "order": 1,
         "ordinal": 1,
@@ -2498,11 +2498,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d96-b070-74a4-8e0e-f4fa201fe018",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/crunch",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/crunch",
         "slot": "crunch",
         "order": 2,
         "ordinal": 2,
@@ -2526,11 +2526,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d97-ae58-7d82-a0f9-e99515636a7e",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/lumbar-extension-stretch",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/lumbar-extension-stretch",
         "slot": "lumbar-extension-stretch",
         "order": 1,
         "ordinal": 1,
@@ -2554,11 +2554,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d98-71a8-7309-8435-5b5e847b187c",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/lumbar-extension-stretch",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/lumbar-extension-stretch",
         "slot": "lumbar-extension-stretch",
         "order": 2,
         "ordinal": 2,
@@ -2582,11 +2582,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d99-5c08-77aa-a9ee-2eacefb8fd7b",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/glute-bridge",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/glute-bridge",
         "slot": "glute-bridge",
         "order": 1,
         "ordinal": 1,
@@ -2610,11 +2610,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d9a-a428-764e-ac70-c6e1d40de631",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/bird-dog",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/bird-dog",
         "slot": "bird-dog",
         "order": 1,
         "ordinal": 1,
@@ -2638,11 +2638,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d9c-3a68-7d92-b30f-89c5c2b0437d",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/glute-bridge",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/glute-bridge",
         "slot": "glute-bridge",
         "order": 2,
         "ordinal": 2,
@@ -2666,11 +2666,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d9d-7ea0-7e9c-bf22-f010eea505ef",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/bird-dog",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/bird-dog",
         "slot": "bird-dog",
         "order": 2,
         "ordinal": 2,
@@ -2694,11 +2694,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d9f-2c50-74dd-89aa-1c8eef1b8492",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/cable-core-pallof-press",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/cable-core-pallof-press",
         "slot": "pallof-press",
         "order": 1,
         "ordinal": 1,
@@ -2739,15 +2739,15 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17d9f-e3e8-7ba0-bfae-d46d6a4d1451",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/cable-core-pallof-press",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/cable-core-pallof-press",
         "slot": "pallof-press",
         "order": 2,
         "ordinal": 1,
-        "continues": "~/training/set/01a17d9f-2c50-74dd-89aa-1c8eef1b8492",
+        "continues": "substrate.reamde.dev/training/set/01a17d9f-2c50-74dd-89aa-1c8eef1b8492",
         "chainPosition": 2,
         "side": "right",
         "at": "2026-10-27T13:49:53Z",
@@ -2776,11 +2776,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17da1-6a88-75c5-a6cc-08343c707cde",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/cable-core-pallof-press",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/cable-core-pallof-press",
         "slot": "pallof-press",
         "order": 3,
         "ordinal": 2,
@@ -2821,15 +2821,15 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17da2-1e38-7e69-8a08-5758af4062c0",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/cable-core-pallof-press",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/cable-core-pallof-press",
         "slot": "pallof-press",
         "order": 4,
         "ordinal": 2,
-        "continues": "~/training/set/01a17da1-6a88-75c5-a6cc-08343c707cde",
+        "continues": "substrate.reamde.dev/training/set/01a17da1-6a88-75c5-a6cc-08343c707cde",
         "chainPosition": 2,
         "side": "right",
         "at": "2026-10-27T13:52:19Z",
@@ -2858,11 +2858,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17da6-8720-72d0-a1c5-dc879426875a",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/chest-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/chest-press-machine",
         "slot": "chest-press",
         "order": 1,
         "ordinal": 1,
@@ -2898,11 +2898,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17da8-2918-7803-beb8-3cf24a5598ee",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/chest-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/chest-press-machine",
         "slot": "chest-press",
         "order": 2,
         "ordinal": 1,
@@ -2939,11 +2939,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17daa-4040-7b3c-8d5e-6f7081920314",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/chest-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/chest-press-machine",
         "slot": "chest-press",
         "order": 3,
         "ordinal": 2,
@@ -2986,16 +2986,16 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17daa-f3f0-7c4d-9e6f-708192031425",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/chest-press-machine",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/chest-press-machine",
         "slot": "chest-press",
         "order": 4,
         "ordinal": 2,
         "structure": "drop",
-        "continues": "~/training/set/01a17daa-4040-7b3c-8d5e-6f7081920314",
+        "continues": "substrate.reamde.dev/training/set/01a17daa-4040-7b3c-8d5e-6f7081920314",
         "chainPosition": 2,
         "at": "2026-10-27T14:01:58Z",
         "timeBasis": "completion",
@@ -3023,11 +3023,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17dad-b310-75fd-9ef1-3eca26f5abe6",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/bulgarian-split-squat-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell",
         "slot": "bulgarian-split-squat",
         "order": 1,
         "ordinal": 1,
@@ -3068,15 +3068,15 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17dae-91b8-7ca7-a45b-5300978bb517",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/bulgarian-split-squat-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell",
         "slot": "bulgarian-split-squat",
         "order": 2,
         "ordinal": 1,
-        "continues": "~/training/set/01a17dad-b310-75fd-9ef1-3eca26f5abe6",
+        "continues": "substrate.reamde.dev/training/set/01a17dad-b310-75fd-9ef1-3eca26f5abe6",
         "chainPosition": 2,
         "side": "right",
         "at": "2026-10-27T14:05:55Z",
@@ -3105,11 +3105,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17db1-1640-74a9-813b-40b4b5398571",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/bulgarian-split-squat-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell",
         "slot": "bulgarian-split-squat",
         "order": 3,
         "ordinal": 2,
@@ -3150,15 +3150,15 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17db1-f8d0-7deb-896c-c3d649029cc0",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/bulgarian-split-squat-dumbbell",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell",
         "slot": "bulgarian-split-squat",
         "order": 4,
         "ordinal": 2,
-        "continues": "~/training/set/01a17db1-1640-74a9-813b-40b4b5398571",
+        "continues": "substrate.reamde.dev/training/set/01a17db1-1640-74a9-813b-40b4b5398571",
         "chainPosition": 2,
         "side": "right",
         "at": "2026-10-27T14:09:38Z",
@@ -3187,11 +3187,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17db4-1bb0-72fb-9acc-6fb2f2d09ad5",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/push-up",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/push-up",
         "slot": "push-up",
         "order": 1,
         "ordinal": 1,
@@ -3221,11 +3221,11 @@
       }
     },
     {
-      "kind": "~/training/set",
+      "kind": "substrate.reamde.dev/training/set",
       "id": "01a17db5-f070-7100-b756-6d9878913863",
       "properties": {
-        "session": "~/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        "exercise": "~/training/exercise/push-up",
+        "session": "substrate.reamde.dev/training/session/01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+        "exercise": "substrate.reamde.dev/training/exercise/push-up",
         "slot": "push-up",
         "order": 2,
         "ordinal": 2,

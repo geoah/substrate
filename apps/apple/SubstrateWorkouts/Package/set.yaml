@@ -73,9 +73,9 @@
 # importer keeps its source's count (`total` for 21 lunges in all).
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: ~/training/set
+  id: substrate.reamde.dev/training/set
 data:
-  authority: "~"
+  authority: substrate.reamde.dev
   package: training
   description: >-
     One set the owner performed in a training session: the exercise, the load
@@ -108,7 +108,7 @@ data:
     # The session owns its sets: deleting it (a discard) collects them.
     session:
       type: reference
-      kind: ~/training/session
+      kind: substrate.reamde.dev/training/session
       required: true
       mustExist: true
       onDelete: cascade
@@ -119,7 +119,7 @@ data:
     # merged-away exercise still counts as existing.
     exercise:
       type: reference
-      kind: ~/training/exercise
+      kind: substrate.reamde.dev/training/exercise
       required: true
       mustExist: true
       description: the exercise the set was done on
@@ -147,7 +147,7 @@ data:
     # deleting a setup never touches a set.
     setup:
       type: reference
-      kind: ~/training/setup
+      kind: substrate.reamde.dev/training/setup
       mustExist: true
       description: the station it was done on, such as the hotel gym's chest
         press; sets with different setups keep separate history
@@ -195,7 +195,7 @@ data:
     # that is not there is refused rather than stored dangling.
     continues:
       type: reference
-      kind: ~/training/set
+      kind: substrate.reamde.dev/training/set
       mustExist: true
       onDelete: cascade
       description: the first set of the chain this one continues, such as

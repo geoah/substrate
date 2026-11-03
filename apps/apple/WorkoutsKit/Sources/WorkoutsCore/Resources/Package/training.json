@@ -1,48 +1,48 @@
 {
-  "package": "~/training",
-  "version": 3,
+  "package": "substrate.reamde.dev/training",
+  "version": 4,
   "documents": [
     {
       "kind": "substrate.reamde.dev/core/package",
       "metadata": {
-        "id": "~/training"
+        "id": "substrate.reamde.dev/training"
       },
       "data": {
-        "authority": "~",
+        "authority": "substrate.reamde.dev",
         "package": "training",
-        "version": 3
+        "version": 4
       }
     },
     {
       "kind": "substrate.reamde.dev/core/bundle",
       "metadata": {
-        "id": "~/training"
+        "id": "substrate.reamde.dev/training"
       },
       "data": {
-        "authority": "~",
+        "authority": "substrate.reamde.dev",
         "package": "training",
         "description": "Strength training: the exercises you do and the machines you do them on, your workout routines, and the training sessions and sets Substrate Workouts logs. Needs the health catalogue.",
         "requires": [
           "substrate.reamde.dev/health"
         ],
         "installs": [
-          "~/training/movement",
-          "~/training/exercise",
-          "~/training/setup",
-          "~/training/routine",
-          "~/training/session",
-          "~/training/set",
-          "~/training/memory"
+          "substrate.reamde.dev/training/movement",
+          "substrate.reamde.dev/training/exercise",
+          "substrate.reamde.dev/training/setup",
+          "substrate.reamde.dev/training/routine",
+          "substrate.reamde.dev/training/session",
+          "substrate.reamde.dev/training/set",
+          "substrate.reamde.dev/training/memory"
         ]
       }
     },
     {
       "kind": "substrate.reamde.dev/core/kind",
       "metadata": {
-        "id": "~/training/movement"
+        "id": "substrate.reamde.dev/training/movement"
       },
       "data": {
-        "authority": "~",
+        "authority": "substrate.reamde.dev",
         "package": "training",
         "description": "A movement such as Chest Press: what you search for, the muscles it works and how much. Its exercises are the equipment versions, each with its own history.",
         "purpose": "supporting",
@@ -459,10 +459,10 @@
     {
       "kind": "substrate.reamde.dev/core/kind",
       "metadata": {
-        "id": "~/training/exercise"
+        "id": "substrate.reamde.dev/training/exercise"
       },
       "data": {
-        "authority": "~",
+        "authority": "substrate.reamde.dev",
         "package": "training",
         "description": "One movement the owner trains, such as Chest Press (Machine): which numbers a set of it records, its equipment and muscles, its codes in other systems, and the settings Substrate Workouts's next-set suggestion reads.",
         "purpose": "primary",
@@ -982,12 +982,12 @@
           },
           "variationOf": {
             "type": "reference",
-            "kind": "~/training/exercise",
+            "kind": "substrate.reamde.dev/training/exercise",
             "description": "the exercise this one is a variation of, such as the flat press for an incline press"
           },
           "movement": {
             "type": "reference",
-            "kind": "~/training/movement",
+            "kind": "substrate.reamde.dev/training/movement",
             "description": "the movement it is a version of, such as Chest Press for Chest Press (Machine)"
           },
           "codes": {
@@ -1116,10 +1116,10 @@
     {
       "kind": "substrate.reamde.dev/core/kind",
       "metadata": {
-        "id": "~/training/setup"
+        "id": "substrate.reamde.dev/training/setup"
       },
       "data": {
-        "authority": "~",
+        "authority": "substrate.reamde.dev",
         "package": "training",
         "description": "One station an exercise is done on, such as the hotel gym's chest press machine: the exercise, where it is, and its own load grid. Sets done on it keep a history of their own.",
         "purpose": "supporting",
@@ -1139,7 +1139,7 @@
           },
           "exercise": {
             "type": "reference",
-            "kind": "~/training/exercise",
+            "kind": "substrate.reamde.dev/training/exercise",
             "required": true,
             "mustExist": true,
             "description": "the exercise done on it"
@@ -1197,10 +1197,10 @@
     {
       "kind": "substrate.reamde.dev/core/kind",
       "metadata": {
-        "id": "~/training/routine"
+        "id": "substrate.reamde.dev/training/routine"
       },
       "data": {
-        "authority": "~",
+        "authority": "substrate.reamde.dev",
         "package": "training",
         "description": "A workout routine: the plan for one gym session, written in the console or by its agent. Ordered slots, one exercise each, hold planned sets with their targets and rests; groups bind slots into supersets and circuits. The Substrate Workouts app starts training sessions from it.",
         "purpose": "primary",
@@ -1347,7 +1347,7 @@
               },
               "exercise": {
                 "type": "reference",
-                "kind": "~/training/exercise",
+                "kind": "substrate.reamde.dev/training/exercise",
                 "required": true,
                 "mustExist": true,
                 "description": "the exercise done in this slot"
@@ -1704,10 +1704,10 @@
     {
       "kind": "substrate.reamde.dev/core/kind",
       "metadata": {
-        "id": "~/training/session"
+        "id": "substrate.reamde.dev/training/session"
       },
       "data": {
-        "authority": "~",
+        "authority": "substrate.reamde.dev",
         "package": "training",
         "description": "A training session: one visit to the gym as Substrate Workouts ran it, from a workout routine or from nothing. When it started and finished, the exercises in order and their supersets, and the Apple Health workout it was saved as. Its sets are records of their own.",
         "purpose": "primary",
@@ -1745,7 +1745,7 @@
           },
           "routine": {
             "type": "reference",
-            "kind": "~/training/routine",
+            "kind": "substrate.reamde.dev/training/routine",
             "description": "the workout routine it was started from; absent for a session started empty"
           },
           "routineVersion": {
@@ -1877,7 +1877,7 @@
               },
               "exercise": {
                 "type": "reference",
-                "kind": "~/training/exercise",
+                "kind": "substrate.reamde.dev/training/exercise",
                 "required": true,
                 "mustExist": true,
                 "description": "the exercise done in this slot"
@@ -2383,10 +2383,10 @@
     {
       "kind": "substrate.reamde.dev/core/kind",
       "metadata": {
-        "id": "~/training/set"
+        "id": "substrate.reamde.dev/training/set"
       },
       "data": {
-        "authority": "~",
+        "authority": "substrate.reamde.dev",
         "package": "training",
         "description": "One set the owner performed in a training session: the exercise, the load in the unit used and what it counts, the reps or time, the effort and how it was given, the rest before it, and the targets it was done against. A drop, a myo mini-set or one side is a record of its own, chained to the set it continues.",
         "purpose": "supporting",
@@ -2401,7 +2401,7 @@
         "properties": {
           "session": {
             "type": "reference",
-            "kind": "~/training/session",
+            "kind": "substrate.reamde.dev/training/session",
             "required": true,
             "mustExist": true,
             "onDelete": "cascade",
@@ -2409,7 +2409,7 @@
           },
           "exercise": {
             "type": "reference",
-            "kind": "~/training/exercise",
+            "kind": "substrate.reamde.dev/training/exercise",
             "required": true,
             "mustExist": true,
             "description": "the exercise the set was done on"
@@ -2432,7 +2432,7 @@
           },
           "setup": {
             "type": "reference",
-            "kind": "~/training/setup",
+            "kind": "substrate.reamde.dev/training/setup",
             "mustExist": true,
             "description": "the station it was done on, such as the hotel gym's chest press; sets with different setups keep separate history"
           },
@@ -2498,7 +2498,7 @@
           },
           "continues": {
             "type": "reference",
-            "kind": "~/training/set",
+            "kind": "substrate.reamde.dev/training/set",
             "mustExist": true,
             "onDelete": "cascade",
             "description": "the first set of the chain this one continues, such as the working set before a drop; absent on a chain's head"
@@ -3081,10 +3081,10 @@
     {
       "kind": "substrate.reamde.dev/core/kind",
       "metadata": {
-        "id": "~/training/memory"
+        "id": "substrate.reamde.dev/training/memory"
       },
       "data": {
-        "authority": "~",
+        "authority": "substrate.reamde.dev",
         "package": "training",
         "description": "One fact about your training that your workout coach keeps: a goal, an injury, your schedule, the equipment you have, how you respond to training, or why a routine changed. The coach reads the active ones at the start of every chat.",
         "purpose": "primary",
@@ -3155,7 +3155,7 @@
           },
           "exercise": {
             "type": "reference",
-            "kind": "~/training/exercise",
+            "kind": "substrate.reamde.dev/training/exercise",
             "description": "the exercise the fact is about, when it is about one"
           },
           "until": {

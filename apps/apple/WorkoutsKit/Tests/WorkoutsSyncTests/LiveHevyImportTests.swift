@@ -7,9 +7,9 @@ import WorkoutsCore
 /// A Hevy export imported and sent as the app sends it, against a real
 /// substrate: skipped unless `WORKOUTS_E2E_SERVER` names one,
 /// `WORKOUTS_E2E_OWNER_TOKEN` holds a full-access token of a repository
-/// (`WORKOUTS_E2E_REPOSITORY`) with the health catalogue installed, and
-/// `WORKOUTS_HEVY_CSV` names the export. The token declares the training
-/// package itself when the repository lacks it. The import's sessions go
+/// (`WORKOUTS_E2E_REPOSITORY`) holding the training package (installed
+/// through the app's approval or `substratectl install`), and
+/// `WORKOUTS_HEVY_CSV` names the export. The import's sessions go
 /// through the history exchange and the outbox, every write lands, and a
 /// second phone reading the repository back finds exactly them.
 ///
@@ -25,10 +25,9 @@ struct LiveHevyImportTests {
         let server = try #require(environment["WORKOUTS_E2E_SERVER"].flatMap(URL.init(string:)))
         let repository = try #require(environment["WORKOUTS_E2E_REPOSITORY"])
         let client = SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? "")
-        let api = WorkoutsAPI(client: client, authority: repository)
+        let api = WorkoutsAPI(client: client)
         let codec = RecordCodec()
-        let installer = PackageInstaller(api: api, manifest: try PackageManifest.bundled(), baselineDirectory: temporaryDirectory())
-        #expect(try await installer.ensure().writable)
+        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(KindNames.packageID) in \(repository) first")
 
         // The exercise library, seeded as the sync seeds it, and read back as
         // the catalogue; a second run writes nothing.
@@ -111,9 +110,9 @@ struct LiveHevyImportTests {
     func importFromAPI() async throws {
         let server = try #require(environment["WORKOUTS_E2E_SERVER"].flatMap(URL.init(string:)))
         let repository = try #require(environment["WORKOUTS_E2E_REPOSITORY"])
-        let api = WorkoutsAPI(client: SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""), authority: repository)
+        let api = WorkoutsAPI(client: SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""))
         let codec = RecordCodec()
-        #expect(try await PackageInstaller(api: api, manifest: try PackageManifest.bundled(), baselineDirectory: temporaryDirectory()).ensure().writable)
+        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(KindNames.packageID) in \(repository) first")
         let library = try ExerciseLibrary.bundled()
         try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic).ensure(api, library: library)
         let catalog = try await RemoteCatalog(directory: temporaryDirectory(), writingOptions: .atomic).refresh(api)
