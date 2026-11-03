@@ -716,8 +716,12 @@ func (c *Catalog) walkRequirements(ctx context.Context, b *Bundle, ds substrate.
 			if v, has := held[req]; has && v >= b.RequiresAtLeast[req] {
 				continue
 			}
+			// A document resolves at the floor or not at all. The binary
+			// answers what it ships whatever the floor, and a version under
+			// it is placed all the same: the planner reads it as a server
+			// update, and the admission refuses it.
 			dep, err := c.ResolveFor(ctx, req, b.RequiresAtLeast[req], ds)
-			if err != nil || dep.Tier != substrate.TierProvider || dep.Version < b.RequiresAtLeast[req] {
+			if err != nil || dep.Tier != substrate.TierProvider {
 				// Placed too, so a second bundle requiring it reports it
 				// no second time.
 				placed[req] = true
