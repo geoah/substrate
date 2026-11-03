@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import WorkoutsCore
 
 /// Hevy's public API, read with an account's API key (Hevy Pro: hevy.com →

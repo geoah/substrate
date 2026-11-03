@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Glibc)
+import Glibc
+#endif
 import Testing
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -26,10 +29,16 @@ final class LocalServer: @unchecked Sendable {
     var requests: [String] { lock.withLock { received } }
 
     init(answer: String) throws {
+        #if canImport(Darwin)
         let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        #else
+        let fd = Glibc.socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+        #endif
         guard fd >= 0 else { throw POSIXError(.EIO) }
         var address = sockaddr_in()
+        #if canImport(Darwin)
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        #endif
         address.sin_family = sa_family_t(AF_INET)
         address.sin_addr.s_addr = inet_addr("127.0.0.1")
         let bound = withUnsafePointer(to: &address) {
@@ -51,7 +60,11 @@ final class LocalServer: @unchecked Sendable {
 
     /// Closing the socket ends the accept loop.
     func stop() {
+        #if canImport(Darwin)
         shutdown(socket, SHUT_RDWR)
+        #else
+        shutdown(socket, Int32(SHUT_RDWR))
+        #endif
         close(socket)
     }
 
@@ -124,6 +137,8 @@ final class LocalServer: @unchecked Sendable {
     }
 
     /// A stream an app reads from a session the kit made refuses it too.
+    /// The open-source URLSession has no byte stream to read one from.
+    #if canImport(Darwin)
     @Test func aStreamFromTheKitsSessionRefusesIt() async throws {
         let (chosen, elsewhere) = try origins()
         defer {
@@ -136,6 +151,8 @@ final class LocalServer: @unchecked Sendable {
         #expect((response as? HTTPURLResponse)?.statusCode == 307)
         #expect(elsewhere.requests.isEmpty)
     }
+
+    #endif
 
     @Test func theExchangeRefusesARedirect() async throws {
         let (chosen, elsewhere) = try origins()

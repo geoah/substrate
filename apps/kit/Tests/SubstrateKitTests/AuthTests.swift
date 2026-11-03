@@ -124,7 +124,9 @@ import SubstrateTesting
         // An issuer that is not the server chosen is refused before the
         // browser opens.
         let honest = try client()
-        await #expect(throws: ServerMismatch.self) { try await honest.signIn(server: origin) }
+        let browser = await ScriptedBrowser()
+        await #expect(throws: ServerMismatch.self) { try await honest.signIn(server: origin, browser: browser) }
+        #expect(await browser.opened.isEmpty)
         #expect(honest.metadata.mismatch(server: try #require(URL(string: "https://ada.example.com:443"))) == nil)
     }
 
@@ -226,6 +228,63 @@ import SubstrateTesting
         #expect(session.issuedAt == Date(timeIntervalSince1970: 1_800_000_900))
         #expect(session.expiresAt == Date(timeIntervalSince1970: 1_800_004_500))
         #expect(session.requestedScopes == syncManifest().scopes)
+    }
+}
+
+/// The sign-in reaches the browser through the device service: the route
+/// made ready, the page opened on its redirect, and the route let go of once
+/// the callback is in, whatever it came to.
+@MainActor @Suite struct BrowserSignIns {
+    let server = URL(string: "https://ada.example.com")!
+
+    func oauth(_ stub: StubTransport, _ manifest: AppManifest = syncManifest()) throws -> OAuthClient {
+        let meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(metadataJSON().utf8))
+        return OAuthClient(manifest: manifest, metadata: meta, transport: stub)
+    }
+
+    /// The browser hands back what the server would: the code, the state the
+    /// page was opened with, and the issuer.
+    func approving() -> ScriptedBrowser {
+        ScriptedBrowser { page, _ in
+            .callback(["code": "c", "state": ScriptedBrowser.parameter("state", of: page) ?? "", "iss": "https://ada.example.com"])
+        }
+    }
+
+    func tokens() -> StubTransport {
+        let stub = StubTransport()
+        stub.on("POST", "/oauth/token", json: #"{"access_token":"sub_app","scope":"read:*","repository":"ada.example.com"}"#)
+        return stub
+    }
+
+    @Test func aLocalBuildSignsInThroughTheLoopbackRedirect() async throws {
+        let stub = tokens()
+        let browser = approving()
+        let session = try await oauth(stub).signIn(server: server, browser: browser)
+        #expect(session.secret == "sub_app")
+        let redirect = try #require(browser.prepared.first)
+        #expect(redirect.route == .loopback(appName: "Substrate Sync", path: syncManifest().loopbackPath))
+        #expect(browser.finished == [redirect])
+        #expect(ScriptedBrowser.parameter("redirect_uri", of: try #require(browser.opened.first)) == redirect.uri)
+        let body = String(decoding: stub.sent("POST", "/oauth/token").first?.httpBody ?? Data(), as: UTF8.self)
+        #expect(body.contains("redirect_uri=\(segment(redirect.uri))"))
+    }
+
+    @Test func aReleaseSignsInThroughItsClaimedRedirect() async throws {
+        let claimed = try #require(URL(string: "https://substrate.example.org/apps/sync/callback"))
+        let manifest = AppManifest(appName: "Substrate Sync", clientID: "https://substrate.example.org/apps/sync/client.json",
+                                   scopes: ["read:*"], claimedRedirect: claimed)
+        let browser = approving()
+        _ = try await oauth(tokens(), manifest).signIn(server: server, browser: browser)
+        #expect(browser.prepared == [SignInRedirect(route: .claimed(claimed), uri: claimed.absoluteString)])
+        #expect(browser.finished == browser.prepared)
+    }
+
+    @Test func aClosedPageIsACancelledSignInThatSpendsNothing() async throws {
+        let stub = StubTransport()
+        let browser = ScriptedBrowser()
+        await #expect(throws: SignInCancelled.self) { try await oauth(stub).signIn(server: server, browser: browser) }
+        #expect(browser.finished.count == 1)
+        #expect(stub.requests.isEmpty)
     }
 }
 

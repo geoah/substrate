@@ -132,14 +132,6 @@ public struct RecordPill: View {
     }
 }
 
-/// What a record is called before it is read: a slug id names it, a minted
-/// one says only what kind of thing it is.
-public func fallbackName(_ reference: RecordReference) -> String {
-    let id = reference.recordID
-    let minted = id.count == 12 && id.allSatisfy { ("a" ... "z").contains($0) || ("2" ... "7").contains($0) }
-    return minted ? kindDisplayName(reference.kind) : id
-}
-
 /// One property's value, drawn by its shape: a linked record as a pill,
 /// several as wrapping pills, a date in the reader's calendar, a link, prose.
 public struct RecordValueView: View {

@@ -489,6 +489,8 @@ final class TransportBox: @unchecked Sendable {
     }
 }
 
+// The sentences live in a SwiftUI view, which only Apple systems have.
+#if canImport(SwiftUI)
 /// What a device says of the tokens it stopped using: each server and
 /// repository in its own words, never the session in use's.
 @Suite struct Unrevoked {
@@ -511,7 +513,9 @@ final class TransportBox: @unchecked Sendable {
         #expect(UnrevokedNotices.sentences(appName: "Substrate Sync", unrevoked: []).isEmpty)
     }
 }
+#endif
 
+#if canImport(SwiftUI)
 /// Change Access names only the controls the approval page will show.
 @MainActor @Suite struct ChangeAccess {
     let server = URL(string: "https://ada.example.com")!
@@ -552,3 +556,4 @@ final class TransportBox: @unchecked Sendable {
             == "You choose on ada.example.com: what Substrate Sync has now is listed there under Already allowed, where you can uncheck it.")
     }
 }
+#endif

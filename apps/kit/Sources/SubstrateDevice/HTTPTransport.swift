@@ -16,9 +16,20 @@ public protocol HTTPTransport: Sendable {
 /// and goes to the server the owner chose and nowhere else.
 public struct URLSessionTransport: HTTPTransport {
     public let session: URLSession
+    #if !canImport(Darwin)
+    /// The open-source URLSession asks only the session's own delegate about
+    /// a redirect, never a task's, so a caller's session is run as one made
+    /// from its configuration with a delegate that refuses.
+    private let refusing: URLSession
+    #endif
 
     public init(session: URLSession) {
         self.session = session
+        #if !canImport(Darwin)
+        refusing = session.delegate is RefusingRedirects
+            ? session
+            : URLSession(configuration: session.configuration, delegate: RefusingRedirects.shared, delegateQueue: nil)
+        #endif
     }
 
     /// One session for every client that names none: no cache, since every
@@ -47,7 +58,11 @@ public struct URLSessionTransport: HTTPTransport {
     /// The task's own delegate refuses a redirect whatever session it runs
     /// on, the caller's included.
     public func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        #if canImport(Darwin)
         let (data, response) = try await session.data(for: request, delegate: RefusingRedirects.shared)
+        #else
+        let (data, response) = try await refusing.data(for: request)
+        #endif
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         return (data, http)
     }

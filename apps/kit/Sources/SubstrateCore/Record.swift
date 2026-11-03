@@ -106,3 +106,11 @@ public struct RecordReference: Hashable, Sendable, Codable, Identifiable {
     public var path: String { "\(kind)/\(recordID)" }
     public var id: String { path }
 }
+
+/// What a record is called before it is read: a slug id names it, a minted
+/// one says only what kind of thing it is.
+public func fallbackName(_ reference: RecordReference) -> String {
+    let id = reference.recordID
+    let minted = id.count == 12 && id.allSatisfy { ("a" ... "z").contains($0) || ("2" ... "7").contains($0) }
+    return minted ? kindDisplayName(reference.kind) : id
+}
