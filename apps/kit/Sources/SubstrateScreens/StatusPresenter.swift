@@ -46,10 +46,11 @@ public enum StatusPresenter {
         let refused = parked.isEmpty ? nil : RefusedWrites(
             title: "Refused by Your Substrate",
             rows: parked.map { write in
-                RefusedWrite(id: write.id, title: title(of: write, labels: kindLabels), recordID: write.recordID, words: write.words,
+                RefusedWrite(id: write.id, label: kindLabels[write.kind] ?? kindDisplayName(write.kind), status: refusal(of: write),
+                             recordID: write.recordID, words: write.words,
                              retry: ActionButton("Retry", .retry(write.id)), discard: ActionButton("Discard", .discard(write.id)))
             },
-            footer: "Retry sends the change again. Discard gives up the change and the changes waiting behind it; "
+            footer: words.refusedFooter ?? "Retry sends the change again. Discard gives up the change and the changes waiting behind it; "
                 + "what \(words.device) holds stays.")
         // The reason is a fact of its own: a refused write's words are on
         // its row, and said here only where no row carries them.
@@ -61,17 +62,16 @@ public enum StatusPresenter {
         }
         return StatusPresentation(title: "Substrate", symbol: symbol, tone: tone, sentence: sentence, problem: problem, packages: lines,
                                   actions: actions, busy: sending,
-                                  footer: "Changes are written to \(host ?? "your substrate") as you make them, and wait on \(words.device) while it cannot be reached.",
-                                  refused: refused)
+                                  footer: words.footer(host: host), refused: refused)
     }
 
-    /// "Task, sent", "Note, changed", "List, deleted".
-    static func title(of write: ParkedWrite, labels: [String: String]) -> String {
-        let what = labels[write.kind] ?? kindDisplayName(write.kind)
-        return switch write.method {
-        case .put: "\(what), sent"
-        case .patch: "\(what), changed"
-        case .purge: "\(what), deleted"
+    /// What the server refused of the write, a fact apart from what the
+    /// write was of.
+    static func refusal(of write: ParkedWrite) -> String {
+        switch write.method {
+        case .put: "Write refused"
+        case .patch: "Change refused"
+        case .purge: "Delete refused"
         }
     }
 }

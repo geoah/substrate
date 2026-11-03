@@ -55,20 +55,25 @@ public struct RefusedWrites: Codable, Hashable, Sendable {
     }
 }
 
-/// One refused write: what it was, its record, the server's words.
+/// One refused write: what it was of, what was refused, its record, the
+/// server's words.
 public struct RefusedWrite: Codable, Hashable, Sendable, Identifiable {
     public var id: ParkedWrite.ID
-    public var title: String
+    /// The kind of record, in the app's words: "Training session", "Task".
+    public var label: String
+    /// What was refused: "Write refused", "Change refused", "Delete refused".
+    public var status: String
     public var recordID: String
     public var words: String?
     public var retry: ActionButton<StatusAction>
     public var discard: ActionButton<StatusAction>
 
-    public init(id: ParkedWrite.ID, title: String, recordID: String, words: String?, retry: ActionButton<StatusAction>,
+    public init(id: ParkedWrite.ID, label: String, status: String, recordID: String, words: String?, retry: ActionButton<StatusAction>,
                 discard: ActionButton<StatusAction>)
     {
         self.id = id
-        self.title = title
+        self.label = label
+        self.status = status
         self.recordID = recordID
         self.words = words
         self.retry = retry
