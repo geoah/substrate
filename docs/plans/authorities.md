@@ -1,6 +1,7 @@
 # Domains: where a repository lives, and what a publisher's apps may install
 
-Status: proposed, 2026-11-02, third draft. Nothing here is implemented.
+Status: implemented in pull requests #1163 to #1167, not merged; see
+[the status page](authorities/status.md).
 Each binding choice gets its own decision record before it lands; the
 records it amends or supersedes are listed under
 [decisions this needs](#decisions-this-needs).
@@ -593,9 +594,9 @@ change of actor breaks no client.
    through inputs, settings and secrets on the page, the wider scoped
    surface, and #1144's egress and review work.
 
-Phase 1 is implemented in pull requests #1146, #1147, #1148, #1149 and
-#1151. Their state, merge order, review record and what is still unverified
-are in [phase 1 status](authorities/phase-1.md).
+All three phases are implemented in pull requests #1163 to #1167. Their
+merge order, review record, where they run and what is left are on
+[the status page](authorities/status.md).
 
 ## Decisions this needs
 
