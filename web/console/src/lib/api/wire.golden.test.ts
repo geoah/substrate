@@ -74,6 +74,8 @@ import type {
   AuthorizationDetail,
   AuthorizationFailure,
   AuthorizationFunction,
+  AuthorizationReach,
+  AuthorizationReachBy,
   AuthorizationKind,
   AuthorizationProviderInput,
   AuthorizationProviderAgent,
@@ -728,6 +730,7 @@ const authorizationPackage: Shape<AuthorizationPackage> = {
   kinds: false,
   functions: false,
   triggers: false,
+  reach: false,
   publisher: false,
 }
 
@@ -750,11 +753,27 @@ const authorizationPackageStep: Shape<AuthorizationPackageStep> = {
   functions: false,
   triggers: false,
   publisher: false,
+  reach: false,
 }
 
 const authorizationFunction: Shape<AuthorizationFunction> = {
   id: true,
+  reads: false,
   writes: false,
+  network: false,
+}
+
+const authorizationReach: Shape<AuthorizationReach> = {
+  pattern: true,
+  write: false,
+  by: true,
+  covered: false,
+  scope: true,
+}
+
+const authorizationReachBy: Shape<AuthorizationReachBy> = {
+  type: true,
+  id: true,
 }
 
 const authorizationTrigger: Shape<AuthorizationTrigger> = {
@@ -1299,6 +1318,8 @@ const mirrors: Record<string, Record<string, boolean>> = {
   AuthorizationPackage: authorizationPackage,
   AuthorizationPackageStep: authorizationPackageStep,
   AuthorizationFunction: authorizationFunction,
+  AuthorizationReach: authorizationReach,
+  AuthorizationReachBy: authorizationReachBy,
   AuthorizationTrigger: authorizationTrigger,
   AuthorizationAccount: authorizationAccount,
   AuthorizationWebhookPlan: authorizationWebhookPlan,

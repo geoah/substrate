@@ -962,6 +962,7 @@ export type SetupBlockReason =
   | "not-requested"
   | "account-deleted"
   | "not-published"
+  | "reaches-past-scopes"
   | "unsupported"
 
 /** One setup row's state while a set up runs, and after one stopped. */
@@ -1124,6 +1125,9 @@ export interface AuthorizationPackage {
   kinds?: AuthorizationKind[]
   functions?: AuthorizationFunction[]
   triggers?: AuthorizationTrigger[]
+  /** Every kind this package's own code reads or writes, held to the scopes
+   * left checked (decision 0215). */
+  reach?: AuthorizationReach[]
   /** Present for a package an authority document publishes rather than
    * this server's catalog ships (decision 0212). */
   publisher?: AuthorizationPackagePublisher
@@ -1155,12 +1159,34 @@ export interface AuthorizationPackageStep {
   functions?: AuthorizationFunction[]
   triggers?: AuthorizationTrigger[]
   publisher?: AuthorizationPackagePublisher
+  reach?: AuthorizationReach[]
 }
 
-/** Code a package ships, and the kinds it may write. */
+/** Code a package ships: the kinds it may read and write, and the hosts its
+ * `permissions.network` declares, none for a body denied every socket. */
 export interface AuthorizationFunction {
   id: string
+  reads?: string[]
   writes?: string[]
+  network?: string[]
+}
+
+/** One kind, or one glob over kinds, a package's code reads or writes once
+ * installed (decision 0215): what reaches it, whether a scope left checked
+ * covers it, and the scope that would (`full` where no scope can). */
+export interface AuthorizationReach {
+  pattern: string
+  write?: boolean
+  by: AuthorizationReachBy[]
+  covered?: boolean
+  scope: string
+}
+
+/** One piece of code that reaches a kind: a `function`, `agent`, `trigger`
+ * or `recordmapping` of the package, by its id. */
+export interface AuthorizationReachBy {
+  type: "function" | "agent" | "trigger" | "recordmapping"
+  id: string
 }
 
 /** A trigger a package ships; an enabled record or schedule trigger runs on

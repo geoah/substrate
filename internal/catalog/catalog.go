@@ -68,6 +68,10 @@ type Bundle struct {
 	kinds     []KindFact
 	functions []FunctionFact
 	triggers  []TriggerFact
+	agents    []AgentFact
+	mappings  []MappingFact
+	// reach is what all of that code reaches, folded (reach.go).
+	reach []Reach
 	// origin is where a document-published bundle came from, nil for one
 	// the binary ships (published.go).
 	origin *Origin

@@ -453,7 +453,12 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 	// another repository's read of the request learns nothing of it.
 	rows, hash := req.Setup, req.PlanHash
 	if rows == nil {
-		if rows, hash, err = appsetup.Plan(ctx, ds, h.packages, req.Details, appsetup.Options{}); err != nil {
+		approved, err := pageApproval(req, authority, r.URL.Query())
+		if err != nil {
+			writeError(w, http.StatusBadRequest, codeValidation, err.Error())
+			return
+		}
+		if rows, hash, err = appsetup.Plan(ctx, ds, h.packages, req.Details, appsetup.Options{Approved: approved}); err != nil {
 			writeSubstrateError(w, r, err)
 			return
 		}
@@ -766,7 +771,21 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	conflict := func() {
 		writeError(w, http.StatusConflict, codeConflict, "what approving sets up changed since the page read it: read the request again")
 	}
-	rows, hash, err := appsetup.Plan(ctx, ds, h.packages, req.Details, appsetup.Options{})
+	// The plan is held to the scopes the approval names, as the page's was
+	// to the ones left checked: unchecking one the code needs blocks the
+	// row here as it did there, and the hash the page read is this plan's.
+	checked, err := approvedScopes(req, authority, in.Scopes)
+	if err != nil {
+		refuse(false, func() { writeSubstrateError(w, r, err) })
+		return
+	}
+	approval, err := scope.ApprovalOf(checked)
+	if err != nil {
+		refuse(false, func() { writeError(w, http.StatusUnprocessableEntity, codeValidation, err.Error()) })
+		return
+	}
+	opts := appsetup.Options{Approved: approval}
+	rows, hash, err := appsetup.Plan(ctx, ds, h.packages, req.Details, opts)
 	if err != nil {
 		refuse(false, func() { writeSubstrateError(w, r, err) })
 		return
@@ -823,7 +842,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	}
 	// Detached: a closed tab does not stop a set up that may be part way
 	// through an install, and the page that comes back reads where it is.
-	go h.runSetup(context.WithoutCancel(ctx), ds, actor, req, approved, approve)
+	go h.runSetup(context.WithoutCancel(ctx), ds, actor, req, approved, opts, approve)
 	writeJSON(w, http.StatusAccepted, substrate.AuthorizationAnswer{State: substrate.AuthorizationSettingUp, Setup: started})
 }
 
@@ -876,6 +895,30 @@ func writeAuthorizationAnswerError(w http.ResponseWriter, r *http.Request, err e
 // approvedScopes holds an approval to the request: a non-empty subset of
 // the request's scopes, resolved against the approving repository, each
 // once, in the request's order.
+// pageApproval is what the approval page's read holds the plan to
+// (decision 0215): the request's scopes, resolved, that the page's `scope`
+// query parameters name, as the owner left them checked, and every one
+// when the parameter is absent. One the app did not ask for is refused.
+func pageApproval(req authorize.Request, authority string, q url.Values) (scope.Approved, error) {
+	checked, present := q["scope"]
+	if !present {
+		checked = nil
+		for _, s := range req.Scopes {
+			if resolved := s.Resolve(authority).String(); !slices.Contains(checked, resolved) {
+				checked = append(checked, resolved)
+			}
+		}
+	}
+	checked = slices.DeleteFunc(slices.Clone(checked), func(s string) bool { return s == "" })
+	if present && len(checked) > 0 {
+		var err error
+		if checked, err = approvedScopes(req, authority, checked); err != nil {
+			return scope.Approved{}, err
+		}
+	}
+	return scope.ApprovalOf(checked)
+}
+
 func approvedScopes(req authorize.Request, authority string, approved []string) ([]string, error) {
 	if len(approved) == 0 {
 		return nil, validation("an approval names at least one scope: to grant nothing, deny")
