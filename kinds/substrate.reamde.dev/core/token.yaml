@@ -72,11 +72,8 @@ data:
       managed: true
       description: true when the approval sent the access to a program on
         the owner's device, through a loopback redirect
-    # The agents the owner approved the app to declare (decision record
-    # 0207), each from an `agent` authorization detail: the agent's id, the
-    # exact kinds it reads and writes, and its daily cap. Never a scope: the
-    # app's own scopes stay what the app itself uses, and the engine runs the
-    # agent only while a live token of its app approves its reach.
+    # Deprecated and no longer read: retained so old token records remain
+    # valid after the agent authorization detail was retired (decision 0214).
     agents:
       deprecated: true
       type: object
