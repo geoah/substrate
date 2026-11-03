@@ -57,10 +57,18 @@ public struct TransportHeader: Bridged, Equatable {
 }
 
 /// A request for OkHttp. A body travels in the message in base64 up to
-/// `TransportRequest.inlineLimit` bytes, and as a file in the app's cache
-/// folder past it; Kotlin deletes the file once sent.
+/// `TransportRequest.inlineLimit` bytes, and as a file in the spill folder
+/// (`BridgeEnvironment.spill`) past it, which Kotlin sends and Swift deletes
+/// once the call is over.
+///
+/// A request that `credentials` marks never spills, either way: its body and
+/// its answer stay in the messages, which are never recorded with their
+/// bodies, up to `credentialLimit`, and past it the call fails.
 public struct TransportRequest: Bridged, Equatable {
     public static let inlineLimit = 256 * 1024
+    /// The most a credential exchange's body or answer may be. A token
+    /// response is a few kilobytes; this bounds the message, not the token.
+    public static let credentialLimit = 1024 * 1024
 
     public var url: String
     public var method: String
@@ -68,9 +76,11 @@ public struct TransportRequest: Bridged, Equatable {
     public var body: String?
     public var bodyFile: String?
     public var timeoutMillis: Int
+    /// The body or the answer may hold a credential (`BridgeTransport.carriesCredentials`).
+    public var credentials: Bool
 
     public init(url: String, method: String, headers: [TransportHeader], body: String? = nil, bodyFile: String? = nil,
-                timeoutMillis: Int)
+                timeoutMillis: Int, credentials: Bool = false)
     {
         self.url = url
         self.method = method
@@ -78,11 +88,13 @@ public struct TransportRequest: Bridged, Equatable {
         self.body = body
         self.bodyFile = bodyFile
         self.timeoutMillis = timeoutMillis
+        self.credentials = credentials
     }
 }
 
 /// A response's head and its body: inline in base64 up to the request's
-/// inline limit, else a file in the cache folder Swift reads and deletes.
+/// inline limit, else a file in the spill folder, which Swift deletes once it
+/// has read it, and Kotlin when Swift refused it or the call was cancelled.
 /// A redirect is this response itself: OkHttp never follows one.
 public struct TransportResponse: Bridged, Equatable {
     public var status: Int
