@@ -264,7 +264,7 @@ public actor Outbox {
         try change { file in
             if let index = file.entries.lastIndex(where: { $0.batch == nil && $0.key == entry.key }),
                file.entries[index].id != inFlight?.id, !file.entries[index].parked,
-               file.entries[index].baseVersion != nil, file.entries[index].method != .purge
+               file.entries[index].baseVersion != nil, file.entries[index].method != .purge, file.entries[index].method != .delete
             {
                 var merged = file.entries[index].properties ?? JSONObject()
                 for (key, value) in patch {
@@ -285,7 +285,7 @@ public actor Outbox {
         var out: [String: WaitingWrite] = [:]
         for entry in file.entries where entry.batch == nil && entry.kind == kind && !entry.parked {
             switch entry.method {
-            case .purge:
+            case .purge, .delete:
                 out[entry.recordID] = nil
             case .put, .patch:
                 var current = out[entry.recordID] ?? WaitingWrite(creates: entry.method == .put, properties: JSONObject())
@@ -382,7 +382,7 @@ public actor Outbox {
             switch outcome {
             case let .success(version):
                 commit(replayable: entry.method == .put && entry.baseVersion == nil) { file in
-                    if entry.method == .purge {
+                    if entry.method == .purge || entry.method == .delete {
                         file.versions[entry.key] = nil
                         file.chains[entry.key] = nil
                     } else if let version {
@@ -480,6 +480,13 @@ public actor Outbox {
                 try await writer.purge(entry.kind, entry.recordID, ifVersion: entry.guarded ? file.versions[entry.key] : nil)
             } catch let error as ServerError where error.status == 409 {
                 try await writer.purge(entry.kind, entry.recordID, ifVersion: nil)
+            }
+            return nil
+        case .delete:
+            do {
+                try await writer.delete(entry.kind, entry.recordID, ifVersion: entry.guarded ? file.versions[entry.key] : nil)
+            } catch let error as ServerError where error.status == 409 {
+                try await writer.delete(entry.kind, entry.recordID, ifVersion: nil)
             }
             return nil
         }
