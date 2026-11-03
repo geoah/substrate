@@ -3,12 +3,21 @@ import Foundation
 import SubstrateDevice
 import UserNotifications
 
-/// Notifications through `UNUserNotificationCenter`. The delegate, which
-/// decides what a notification does while the app is in front and what a
-/// tap opens, is the app's: it sets it on the same center before the app
-/// finishes launching.
+/// Notifications through `UNUserNotificationCenter`, whose delegate is the
+/// kit's: it keeps a request quiet in front where the request asks
+/// (`showsWhileActive`), and hands every tap and action to `responses()`.
+/// An app calls `installDelegate()` before it finishes launching, so the tap
+/// that launched it is kept for the first reader rather than dropped.
 public struct SystemNotifications: Notifications {
     public init() {}
+
+    /// Makes the kit's delegate the notification center's. Idempotent; an
+    /// app that sets a delegate of its own after this takes the responses
+    /// and the in-front rule back.
+    @MainActor
+    public static func installDelegate() {
+        UNUserNotificationCenter.current().delegate = SystemNotificationDelegate.shared
+    }
 
     public func permission() async -> NotificationPermission {
         Self.permission(of: await UNUserNotificationCenter.current().notificationSettings())
@@ -24,9 +33,17 @@ public struct SystemNotifications: Notifications {
         return await permission()
     }
 
+    public func register(_ categories: [NotificationCategory]) async {
+        UNUserNotificationCenter.current().setNotificationCategories(Set(categories.map(Self.category)))
+    }
+
     public func schedule(_ request: NotificationRequest) async {
-        let interval = request.fireAt.timeIntervalSinceNow
-        guard interval > 0 else { return }
+        var trigger: UNNotificationTrigger?
+        if let fireAt = request.fireAt {
+            let interval = fireAt.timeIntervalSinceNow
+            guard interval > 0 else { return }
+            trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, interval), repeats: false)
+        }
         let content = UNMutableNotificationContent()
         content.title = request.title
         if let subtitle = request.subtitle { content.subtitle = subtitle }
@@ -36,11 +53,77 @@ public struct SystemNotifications: Notifications {
         // Without the entitlement the system delivers it as active, with no
         // code change.
         if request.timeSensitive { content.interruptionLevel = .timeSensitive }
-        #endif
+        /// The one delegate every app's notification center has: what a
+/// notification does in front, and every response kept for
+/// `SystemNotifications.responses()`. Responses that come before anything
+/// reads them wait for the first reader.
+final class SystemNotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
+    static let shared = SystemNotificationDelegate()
+    /// The `userInfo` key a request quiet in front carries; never in a
+    /// response.
+    static let quietInFront = "substrate.quietInFront"
+
+    private let lock = NSLock()
+    private var held: [NotificationResponse] = []
+    private var readers: [UUID: AsyncStream<NotificationResponse>.Continuation] = [:]
+
+    func responses() -> AsyncStream<NotificationResponse> {
+        let (stream, continuation) = AsyncStream<NotificationResponse>.makeStream()
+        let id = UUID()
+        lock.withLock {
+            for response in held { continuation.yield(response) }
+            held = []
+            readers[id] = continuation
+        }
+        continuation.onTermination = { [weak self] _ in
+            self?.lock.withLock { self?.readers[id] = nil }
+        }
+        return stream
+    }
+
+    func deliver(_ response: NotificationResponse) {
+        lock.withLock {
+            if readers.isEmpty {
+                held.append(response)
+            } else {
+                for reader in readers.values { reader.yield(response) }
+            }
+        }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions
+    {
+        notification.request.content.userInfo[Self.quietInFront] == nil ? [.banner, .list, .sound] : []
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        deliver(Self.response(response))
+    }
+
+    static func response(_ response: UNNotificationResponse) -> NotificationResponse {
+        let request = response.notification.request
+        var userInfo: [String: String] = [:]
+        for (key, value) in request.content.userInfo {
+            guard let key = key as? String, key != quietInFront, let value = value as? String else { continue }
+            userInfo[key] = value
+        }
+        let action: NotificationResponse.Action = switch response.actionIdentifier {
+        case UNNotificationDefaultActionIdentifier: .open
+        case UNNotificationDismissActionIdentifier: .dismiss
+        default: .named(response.actionIdentifier)
+        }
+        let category = request.content.categoryIdentifier
+        return NotificationResponse(id: request.identifier, category: category.isEmpty ? nil : category, action: action,
+                                    userInfo: userInfo, text: (response as? UNTextInputNotificationResponse)?.userText)
+    }
+}
+#endif
         if let thread = request.thread { content.threadIdentifier = thread }
         if let category = request.category { content.categoryIdentifier = category }
-        content.userInfo = request.userInfo
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, interval), repeats: false)
+        var userInfo: [String: String] = request.userInfo
+        if !request.showsWhileActive { userInfo[SystemNotificationDelegate.quietInFront] = "true" }
+        content.userInfo = userInfo
         try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: request.id, content: content, trigger: trigger))
     }
 
@@ -67,6 +150,25 @@ public struct SystemNotifications: Notifications {
         try? await UNUserNotificationCenter.current().setBadgeCount(count)
     }
 
+    public func responses() -> AsyncStream<NotificationResponse> {
+        SystemNotificationDelegate.shared.responses()
+    }
+
+    static func category(_ category: NotificationCategory) -> UNNotificationCategory {
+        let actions = category.actions.map { action -> UNNotificationAction in
+            var options: UNNotificationActionOptions = []
+            if action.opensApp { options.insert(.foreground) }
+            if action.destructive { options.insert(.destructive) }
+            guard let input = action.input else {
+                return UNNotificationAction(identifier: action.id, title: action.title, options: options)
+            }
+            return UNTextInputNotificationAction(identifier: action.id, title: action.title, options: options,
+                                                 textInputButtonTitle: input.button, textInputPlaceholder: input.placeholder)
+        }
+        return UNNotificationCategory(identifier: category.id, actions: actions, intentIdentifiers: [],
+                                      options: category.reportsDismissal ? [.customDismissAction] : [])
+    }
+
     static func permission(of settings: UNNotificationSettings) -> NotificationPermission {
         switch settings.authorizationStatus {
         case .notDetermined:
@@ -81,8 +183,138 @@ public struct SystemNotifications: Notifications {
             return settings.timeSensitiveSetting == .enabled ? .on : .notTimeSensitive
             #else
             return .on
-            #endif
+            /// The one delegate every app's notification center has: what a
+/// notification does in front, and every response kept for
+/// `SystemNotifications.responses()`. Responses that come before anything
+/// reads them wait for the first reader.
+final class SystemNotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
+    static let shared = SystemNotificationDelegate()
+    /// The `userInfo` key a request quiet in front carries; never in a
+    /// response.
+    static let quietInFront = "substrate.quietInFront"
+
+    private let lock = NSLock()
+    private var held: [NotificationResponse] = []
+    private var readers: [UUID: AsyncStream<NotificationResponse>.Continuation] = [:]
+
+    func responses() -> AsyncStream<NotificationResponse> {
+        let (stream, continuation) = AsyncStream<NotificationResponse>.makeStream()
+        let id = UUID()
+        lock.withLock {
+            for response in held { continuation.yield(response) }
+            held = []
+            readers[id] = continuation
         }
+        continuation.onTermination = { [weak self] _ in
+            self?.lock.withLock { self?.readers[id] = nil }
+        }
+        return stream
+    }
+
+    func deliver(_ response: NotificationResponse) {
+        lock.withLock {
+            if readers.isEmpty {
+                held.append(response)
+            } else {
+                for reader in readers.values { reader.yield(response) }
+            }
+        }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions
+    {
+        notification.request.content.userInfo[Self.quietInFront] == nil ? [.banner, .list, .sound] : []
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        deliver(Self.response(response))
+    }
+
+    static func response(_ response: UNNotificationResponse) -> NotificationResponse {
+        let request = response.notification.request
+        var userInfo: [String: String] = [:]
+        for (key, value) in request.content.userInfo {
+            guard let key = key as? String, key != quietInFront, let value = value as? String else { continue }
+            userInfo[key] = value
+        }
+        let action: NotificationResponse.Action = switch response.actionIdentifier {
+        case UNNotificationDefaultActionIdentifier: .open
+        case UNNotificationDismissActionIdentifier: .dismiss
+        default: .named(response.actionIdentifier)
+        }
+        let category = request.content.categoryIdentifier
+        return NotificationResponse(id: request.identifier, category: category.isEmpty ? nil : category, action: action,
+                                    userInfo: userInfo, text: (response as? UNTextInputNotificationResponse)?.userText)
+    }
+}
+#endif
+        }
+    }
+}
+/// The one delegate every app's notification center has: what a
+/// notification does in front, and every response kept for
+/// `SystemNotifications.responses()`. Responses that come before anything
+/// reads them wait for the first reader.
+final class SystemNotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
+    static let shared = SystemNotificationDelegate()
+    /// The `userInfo` key a request quiet in front carries; never in a
+    /// response.
+    static let quietInFront = "substrate.quietInFront"
+
+    private let lock = NSLock()
+    private var held: [NotificationResponse] = []
+    private var readers: [UUID: AsyncStream<NotificationResponse>.Continuation] = [:]
+
+    func responses() -> AsyncStream<NotificationResponse> {
+        let (stream, continuation) = AsyncStream<NotificationResponse>.makeStream()
+        let id = UUID()
+        lock.withLock {
+            for response in held { continuation.yield(response) }
+            held = []
+            readers[id] = continuation
+        }
+        continuation.onTermination = { [weak self] _ in
+            self?.lock.withLock { self?.readers[id] = nil }
+        }
+        return stream
+    }
+
+    func deliver(_ response: NotificationResponse) {
+        lock.withLock {
+            if readers.isEmpty {
+                held.append(response)
+            } else {
+                for reader in readers.values { reader.yield(response) }
+            }
+        }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions
+    {
+        notification.request.content.userInfo[Self.quietInFront] == nil ? [.banner, .list, .sound] : []
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        deliver(Self.response(response))
+    }
+
+    static func response(_ response: UNNotificationResponse) -> NotificationResponse {
+        let request = response.notification.request
+        var userInfo: [String: String] = [:]
+        for (key, value) in request.content.userInfo {
+            guard let key = key as? String, key != quietInFront, let value = value as? String else { continue }
+            userInfo[key] = value
+        }
+        let action: NotificationResponse.Action = switch response.actionIdentifier {
+        case UNNotificationDefaultActionIdentifier: .open
+        case UNNotificationDismissActionIdentifier: .dismiss
+        default: .named(response.actionIdentifier)
+        }
+        let category = request.content.categoryIdentifier
+        return NotificationResponse(id: request.identifier, category: category.isEmpty ? nil : category, action: action,
+                                    userInfo: userInfo, text: (response as? UNTextInputNotificationResponse)?.userText)
     }
 }
 #endif

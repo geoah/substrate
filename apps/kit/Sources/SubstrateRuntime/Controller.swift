@@ -18,15 +18,16 @@ import Foundation
 /// `effects`, `key`, `nextChange`, `children`, `link`, `journal`), and its
 /// argument label says what it answers about: `of` an event, an effect or a
 /// presentation; `for` a command or the link; `at` the open or a tick;
-/// `from` a child; `replacing` the value before; `in` a state or an
-/// environment.
+/// `from` a child or the state before an event; `replacing` the value
+/// before; `in` a state or an environment.
 ///
 /// **The defaults**, in the extension below, so a controller writes only
 /// what it uses: no journal, so nothing is journaled; the transient state
 /// unchanged by an applied or a refused event; every event presented at
-/// once; no effects, no keys, no work; no next change and no tick event; no
-/// event at open, for the link, from a child or for a new value; no event
-/// resets; no children; no link.
+/// once; no effects, and the effects seen from the state before an event
+/// those of the state after alone; no keys, no work; no next change and no
+/// tick event; no event at open, for the link, from a child or for a new
+/// value; no event resets; no children; no link.
 public protocol Controller: Sendable {
     associatedtype Command: Codable & Equatable & Sendable
     associatedtype Event: Codable & Equatable & Sendable
@@ -112,6 +113,12 @@ public protocol Controller: Sendable {
     /// Decided after the event is journaled and presented, on the live path
     /// only: a replay runs none.
     func effects(of event: Event, on state: State, presented presentation: Presentation) -> [Effect]
+    /// The same, with the state before the event, for effects that turn on
+    /// what the event changed (an account that moved, a package that became
+    /// writable), so the engine keeps no flag saying what the last event did.
+    /// The default is `effects(of:on:presented:)`, which sees the state after
+    /// alone.
+    func effects(of event: Event, on state: State, from previous: State, presented presentation: Presentation) -> [Effect]
     /// The key an effect runs under: starting one cancels the effect running
     /// under the same key, whose result is then dropped.
     func key(of effect: Effect) -> String?
@@ -147,6 +154,9 @@ public extension Controller {
     func transient(afterRefusing event: Event, because error: any Error, from transient: Transient) -> Transient { transient }
     func coalescing(of event: Event) -> Coalescing { .now }
     func effects(of event: Event, on state: State, presented presentation: Presentation) -> [Effect] { [] }
+    func effects(of event: Event, on state: State, from previous: State, presented presentation: Presentation) -> [Effect] {
+        effects(of: event, on: state, presented: presentation)
+    }
     func key(of effect: Effect) -> String? { nil }
     func nextChange(of presentation: Presentation) -> Date? { nil }
     func children(in state: State) -> [ChildKey: Child] { [:] }

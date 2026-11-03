@@ -133,6 +133,7 @@ final class Host<C: Controller>: @unchecked Sendable {
                 return
             }
             record(event, state: next)
+            let previous = state
             state = next
             transient = controller.transient(after: event, applied: next, from: transient)
             dirty = true
@@ -141,7 +142,7 @@ final class Host<C: Controller>: @unchecked Sendable {
                 cancelAll()
             }
             let generation = generation
-            loop.afterPresent { [self] in effects(of: event, on: next, generation: generation) }
+            loop.afterPresent { [self] in effects(of: event, on: next, from: previous, generation: generation) }
             loop.requestPresent(controller.coalescing(of: event))
             follow(next)
             offerUp?(event, next)
@@ -190,9 +191,9 @@ final class Host<C: Controller>: @unchecked Sendable {
         }
     }
 
-    private func effects(of event: C.Event, on state: C.State, generation: Int) {
+    private func effects(of event: C.Event, on state: C.State, from previous: C.State, generation: Int) {
         guard !closed, generation == self.generation, let presentation else { return }
-        for effect in controller.effects(of: event, on: state, presented: presentation) {
+        for effect in controller.effects(of: event, on: state, from: previous, presented: presentation) {
             loop.trace(.effect(path: path, effect: effect))
             if loop.performsEffects { start(effect) }
         }

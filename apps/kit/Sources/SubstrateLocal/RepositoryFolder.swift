@@ -2,7 +2,8 @@ import Foundation
 
 /// Everything an app keeps on the device for one repository, in one folder:
 /// its format, then an area each for the journals, the outbox, the record
-/// cache and what else it can read again (§5.3). Every write is atomic, so a
+/// cache and what else it can read again (§5.3); or, made with `app:`, what
+/// the app keeps outside any repository, by the same rules. Every write is atomic, so a
 /// crash leaves the old file and never half a new one; a file that cannot be
 /// read is set aside beside where it was and listed, never written over; a
 /// write after `close` is refused, so a late one never recreates a
@@ -50,11 +51,23 @@ public final class RepositoryFolder: @unchecked Sendable {
         setAsideAtOpen = aside
     }
 
-    /// A folder an app laid out before it kept a format (Workouts' account
-    /// folders, its own folder for a session's journal): its files stay
-    /// where they are, nothing is set aside, and no marker is written, so
-    /// a build before the kit still reads every file.
-    public init(adopting root: URL, writingOptions: Data.WritingOptions = []) throws {
+    /// A repository's folder an app laid out before it kept a format
+    /// (Workouts' account folders, Chat's): its files stay where they are,
+    /// nothing is set aside, and no marker is written, so a build before the
+    /// kit still reads every file.
+    public convenience init(adopting root: URL, writingOptions: Data.WritingOptions = []) throws {
+        try self.init(unmarked: root, writingOptions: writingOptions)
+    }
+
+    /// The app's own folder, which no repository owns: what it keeps
+    /// whoever is signed in, or no one (Workouts' session journal, its
+    /// history files). Laid out as the app always has, as `adopting:` is:
+    /// no marker, nothing set aside.
+    public convenience init(app root: URL, writingOptions: Data.WritingOptions = []) throws {
+        try self.init(unmarked: root, writingOptions: writingOptions)
+    }
+
+    private init(unmarked root: URL, writingOptions: Data.WritingOptions) throws {
         self.root = root
         self.writingOptions = writingOptions
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
