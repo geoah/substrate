@@ -9,6 +9,7 @@ import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputDirectory
@@ -18,9 +19,11 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
 
 /**
- * One SwiftPM product, built by swift-jnilibs.sh once per ABI. The package's
- * sources are inputs, so an unchanged tree skips the build; the toolchain is
- * not, and the script refuses one that is not exactly [swiftVersion].
+ * One SwiftPM product, built by swift-jnilibs.sh once per ABI. The sources of
+ * the package and of every local package it depends on are inputs, and so is
+ * the script, so an unchanged tree skips the build and any change to what
+ * goes into the library runs it; the toolchain is not, and the script
+ * refuses one that is not exactly [swiftVersion].
  */
 @CacheableTask
 abstract class SwiftJniLibs : DefaultTask() {
@@ -45,7 +48,9 @@ abstract class SwiftJniLibs : DefaultTask() {
 
     @get:Input abstract val ndkDir: Property<String>
 
-    @get:Internal abstract val script: RegularFileProperty
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val script: RegularFileProperty
 
     @get:Internal abstract val scratch: DirectoryProperty
 
