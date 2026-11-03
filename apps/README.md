@@ -1,7 +1,7 @@
 # The Apple apps
 
-Four apps: the console in a native shell, Substrate Chat, Substrate Sync and
-Substrate Workouts (each below).
+Five apps: the console in a native shell, Substrate Chat, Substrate Sync,
+Substrate Workouts and Substrate Tasks (each below).
 
 The console, bundled, in a native shell for macOS, iPadOS and iOS: one
 SwiftUI target (`Substrate`, bundle id `dev.reamde.substrate.console`) that
@@ -834,6 +834,22 @@ feeds and install page as Sync's, and its client ID metadata document as
 notifications on the development profile, which `-allowProvisioningUpdates`
 adds to the app id.
 
+## Substrate Tasks
+
+A fifth app, built on the kit from its first line: `SubstrateTasks` (bundle id
+`dev.reamde.substrate.tasks`) on iPhone, iPad and Mac from one target, its
+screens in the `SubstrateTasksUI` framework, its core the portable
+`TasksKit` (`tasks/TasksKit`) under the kit's link. Its approval asks for
+`substrate.reamde.dev/tasks`, which it publishes, and the server installs
+it from the authority document. Tasks and task lists, due dates and
+reminders, offline writes through the outbox and live updates through the
+watch are in [its README](tasks/README.md).
+
+```bash
+mise run apple:build:tasks   # the Mac app and the simulator app, registering nothing with Apple
+mise run apple:test:tasks    # TasksKit's tests and the views over its fixtures, on the Mac
+```
+
 ## Android
 
 The kit runs on Android under a Kotlin UI through one fixed bridge, built by
@@ -909,7 +925,7 @@ nothing takes, and holds the layering the rest of this page relies on
 <app>/app.json                      what names the app once: its ids, platforms, Info.plist keys, the packages it publishes and asks for, scopes, icon and feed (above)
 xcode/project.yml                   the xcodegen spec, the only project source; it includes each app's apple/targets.yml
 xcode/Shared/Updater.swift          the updater every app compiles in
-xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync and Chat
+xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync, Chat and Tasks
 xcode/scripts/feed.swift            a release's index.json, appcast.xml, install page and manifest, for every platform
 gradle/                             the one Gradle root of the Android build: settings, the version catalog, the wrapper, build-logic's convention plugins, swift-jnilibs.sh
 kit/android/                        the kit on Android: kit-core, kit-device, bridge-check, the bridge's golden and round-trip fixtures ([its README](kit/android/README.md))
@@ -927,4 +943,7 @@ sync/apple/Tests/                   its tests: ids, labels, dates, the Health go
 workouts/apple/                     Substrate Workouts: Sources/ (App/, Platform/, Shared/, Views/), Widgets/ (its Live Activity)
 workouts/package/                   its published training and trainingcoach packages
 workouts/WorkoutsKit/               its Swift package: WorkoutsCore (model, engines, presenters) and WorkoutsSync (package, catalogue, outbox), with their tests; portable, over the kit's portable libraries
+tasks/apple/                        Substrate Tasks: Sources/ (the app), UI/ (SubstrateTasksUI: the shell and the views), Tests/ (the views over the fixtures)
+tasks/package/                      its published tasks package
+tasks/TasksKit/                     its Swift package: TasksCore (model, codec, the root under the link, the editor, presenters, reminders), with its tests; portable
 ```

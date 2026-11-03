@@ -53,6 +53,7 @@ appearance.
 | Substrate | three stacked layers | blue | `#f5f9ff`, `#d9e7ff` | `#86bbff`, `#2d5fe6` |
 | Substrate Sync | two arrows round a core | green | `#f2fcf8`, `#d3f2e5` | `#72e2bb`, `#0f936d` |
 | Substrate Chat | a speech bubble with a spark | purple | `#f8f5ff`, `#e4dcfd` | `#bba2ff`, `#6a3fe0` |
+| Substrate Tasks | a ticked checklist card | rose | `#fff5f7`, `#ffdbe4` | `#ff9bb2`, `#d92c58` |
 | Spotter (geoah/rxtx.dev) | a dumbbell | orange | `#fff8f2`, `#ffdfcc` | `#ffab72`, `#e3471f` |
 
 A new app takes a hue no other app uses, with a background pale enough that
