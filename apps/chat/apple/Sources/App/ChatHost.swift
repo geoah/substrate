@@ -55,7 +55,8 @@ final class ChatHost {
         let app = ChatApp(storage: ChatStorage(base: try? folders.data(), writingOptions: folders.writingOptions),
                           preferences: DefaultsPreferenceStore(defaults: .standard), platform: platform)
         let link = Link(app: app, manifest: ChatManifest.manifest, sessions: store,
-                        words: StatusWords(app: ChatManifest.appName, device: device, kept: "saved chats"),
+                        words: StatusWords(app: ChatManifest.appName, device: device, kept: "saved chats",
+                                           signOut: "\(device.capitalizedFirst) forgets its saved chats. Your chats stay on the server."),
                         offers: [.review, .signInAgain, .openFix])
         model = PresentationModel(link, environment: environment)
         model.onSignal(\.app?.answered) { [weak self] answer in self?.answered(answer) }

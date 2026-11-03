@@ -13,7 +13,7 @@ public enum TemplateFixtures {
         public var id: String { name }
     }
 
-    static let app = TemplateApp(cache: nil, outbox: nil, device: "this iPhone", build: BuildFacts(version: "0.1.0 (1)"))
+    static let app = TemplateApp(cache: nil, outbox: nil, words: TemplateApp.words(device: "this iPhone"), build: BuildFacts(version: "0.1.0 (1)"))
 
     static func present(_ records: [Record]) -> TemplatePresentation {
         var state = TemplateApp.State()

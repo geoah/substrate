@@ -77,8 +77,10 @@ struct SettingsRowView: View {
                 }
             }
         case let .action(destructive, enabled):
-            Button(row.label, role: destructive ? .destructive : nil) { send(.perform(row: row.id)) }
-                .disabled(!enabled)
+            ConfirmingButton(row.label, role: destructive ? .destructive : nil, confirmation: row.confirmation) {
+                send(.perform(row: row.id))
+            }
+            .disabled(!enabled)
         case let .note(tone):
             Label {
                 VStack(alignment: .leading, spacing: 4) {

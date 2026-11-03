@@ -14,6 +14,8 @@ public struct TemplatePresentation: Codable, Equatable, Sendable {
     public var problem: ProblemPresentation?
     /// The app's own settings sections, before the kit's.
     public var settings: [SettingsSection]
+    /// Each area of the repository's folder, with Clear Saved Copies.
+    public var storage: SettingsSection
     public var about: AboutPresentation
 }
 

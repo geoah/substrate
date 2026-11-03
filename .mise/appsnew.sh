@@ -81,6 +81,16 @@ rename() {
 	esac
 done
 
+# Every name the template spells is renamed: a line of the new app that
+# still says it, a kind's `displayTemplate` aside, is a rename this script
+# missed, and the app is not left half named.
+left="$(grep -rIi template "$apps/$id" | sed 's/displayTemplate//g' | grep -i template || true)"
+if [ -n "$left" ]; then
+	rm -rf "${apps:?}/$id"
+	die "the rename left the template named; apps/$id is removed:
+$left"
+fi
+
 include="  - ../$id/apple/targets.yml"
 if ! grep -qxF -- "$include" "$project"; then
 	# The include list is the file's last block; a file that ends otherwise

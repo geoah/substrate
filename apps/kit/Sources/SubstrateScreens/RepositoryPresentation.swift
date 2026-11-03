@@ -18,11 +18,15 @@ public struct RepositoryPresentation: Bridged, Hashable, Sendable {
     public var changeAccess: String?
     public var unrevoked: [ProblemPresentation]
     public var signOut: String
+    /// What Sign Out asks, by its button, before the app signs out.
+    public var signOutConfirmation: ConfirmationPresentation<SettingsRowID>?
     public var footer: String
 
     public init(title: String, server: LabeledValue, repository: LabeledValue, serverVersion: LabeledValue?, approved: ApprovedAccess?,
-                access: LabeledValue?, changeAccess: String?, unrevoked: [ProblemPresentation], signOut: String, footer: String)
+                access: LabeledValue?, changeAccess: String?, unrevoked: [ProblemPresentation], signOut: String,
+                signOutConfirmation: ConfirmationPresentation<SettingsRowID>? = nil, footer: String)
     {
+        self.signOutConfirmation = signOutConfirmation
         self.title = title
         self.server = server
         self.repository = repository

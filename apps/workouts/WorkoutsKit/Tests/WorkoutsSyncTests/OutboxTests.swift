@@ -3,6 +3,7 @@ import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateDevice
+import SubstrateScreens
 import Testing
 import WorkoutsCore
 @testable import WorkoutsSync
@@ -281,6 +282,17 @@ struct SignInTests {
         #expect(manifest.isLocal)
         #expect(!manifest.softwareVersion.isEmpty)
         #expect(WorkoutsManifest.manifest(clientID: WorkoutsManifest.localClientID, softwareVersion: "0.120.0 (1)").softwareVersion == "0.120.0 (1)")
+    }
+
+    @Test("Approved access names the Health account as the approval page does, Apple Health in its own capitals")
+    func approvedAccessWords() throws {
+        let manifest = WorkoutsManifest.manifest(clientID: WorkoutsManifest.localClientID)
+        let session = SessionFacts(server: URL(string: "http://localhost:8080")!, repository: "ada", scopes: manifest.scopes)
+        let repository = RepositoryPresenter.present(session: session, manifest: manifest, serverVersion: nil, unrevoked: [],
+                                                     offersChangeAccess: true, locale: Locale(identifier: "en_GB"), timeZone: .gmt)
+        let words = try #require(repository.approved).scopes.map(\.words)
+        #expect(words.contains("See your Apple Health accounts, and search them by meaning, which spends your embedding budget"))
+        #expect(!words.contains { $0.contains("apple Health") })
     }
 
     @Test("a server without agents, or without package details, is too old, never a browser away")

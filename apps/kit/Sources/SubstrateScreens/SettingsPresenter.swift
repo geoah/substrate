@@ -24,7 +24,8 @@ public enum SettingsPresenter {
         for (index, notice) in repository.unrevoked.enumerated() {
             rows.append(SettingsRow(id: .repository(.unrevoked(index)), label: notice.title ?? "", control: .problem(notice)))
         }
-        rows.append(SettingsRow(id: .repository(.signOut), label: repository.signOut, control: .action(destructive: true, enabled: true)))
+        rows.append(SettingsRow(id: .repository(.signOut), label: repository.signOut, control: .action(destructive: true, enabled: true),
+                                confirmation: repository.signOutConfirmation))
         var sections = [SettingsSection(id: .repository, title: repository.title, rows: rows, footer: repository.footer)]
         if let approved = repository.approved {
             var access = approved.scopes.map { SettingsRow(id: .repository(.scope($0.scope)), label: $0.words, control: .note(.positive)) }
@@ -69,15 +70,17 @@ public enum SettingsPresenter {
         return sections
     }
 
-    /// Each area's size and its share of the budget, and a clear that never
+    /// Each area's size, then their total once, against the budget the
+    /// saved copies share where the app keeps one, and a clear that never
     /// drops unsent writes: only the areas that can be read again clear.
     public static func storage(_ usage: [AreaUsage], budget: Int?) -> SettingsSection {
         var rows = usage.map { area in
-            var value = byteWords(area.bytes)
-            if area.area == .cache || area.area == .records, let budget, budget > 0 {
-                value += " of \(byteWords(budget))"
-            }
-            return SettingsRow(id: .storage(.area(area.area)), label: areaWords(area.area), control: .value(value, verbatim: false))
+            SettingsRow(id: .storage(.area(area.area)), label: areaWords(area.area), control: .value(byteWords(area.bytes), verbatim: false))
+        }
+        if !usage.isEmpty {
+            var total = byteWords(usage.reduce(0) { $0 + $1.bytes })
+            if let budget, budget > 0 { total += " of \(byteWords(budget))" }
+            rows.append(SettingsRow(id: .storage(.total), label: "Total", control: .value(total, verbatim: false)))
         }
         let clearable = usage.contains { ($0.area == .cache || $0.area == .records) && $0.bytes > 0 }
         rows.append(SettingsRow(id: .storage(.clear), label: "Clear Saved Copies", control: .action(destructive: true, enabled: clearable)))
@@ -100,7 +103,7 @@ public enum SettingsPresenter {
     }
 
     public static func about(_ about: AboutPresentation) -> SettingsSection {
-        var rows = [SettingsRow(id: .about(.version), label: about.version.label, control: .value(about.version.value, verbatim: about.version.verbatim))]
+        var rows = [SettingsRow(id: .about(.version), label: about.version.label, control: .value(about.version.value, verbatim: false))]
         if let channel = about.channel {
             rows.append(SettingsRow(id: .about(.channel), label: channel.label, control: .value(channel.value, verbatim: false)))
         }

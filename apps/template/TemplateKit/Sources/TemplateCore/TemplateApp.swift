@@ -7,10 +7,12 @@ import SubstrateScreens
 
 /// Substrate Template's root, kept by the link (`LinkController<TemplateApp>`):
 /// its items are the kit's `LinkedRecords` over its kinds, read once,
-/// followed through the watch, every change written through the outbox. Its
+/// followed through the watch, every change written through the outbox. As
+/// a `LinkedRecordsApp` it writes none of their stages: its engine, its
+/// effects and their work are its own alone (here, Storage's sizes). Its
 /// presentation is every screen of the app; the link's is the connection's,
 /// beside it.
-public struct TemplateApp: LinkedApp {
+public struct TemplateApp: LinkedRecordsApp {
     public enum Command: Codable, Equatable, Sendable {
         case add(String)
         case delete(String)
@@ -22,19 +24,25 @@ public struct TemplateApp: LinkedApp {
         case dismissProblem
     }
 
-    public enum Event: Codable, Equatable, Sendable {
+    public enum Event: Codable, Equatable, Sendable, LinkedRecordsEvent {
         case records(LinkedRecords.Event)
-        case opening
+        case usage([AreaUsage])
         case problemDismissed
     }
 
-    public enum Effect: Equatable, Sendable {
+    public enum Effect: Equatable, Sendable, LinkedRecordsEffect {
         case records(LinkedRecords.Effect)
+        case readUsage
     }
 
-    public struct State: Codable, Equatable, Sendable {
+    public struct State: Codable, Equatable, Sendable, LinkedRecordsHolding {
         public var linked = LinkedRecordsState()
+        /// Each area of the repository's folder and its size, nil until read.
+        public var usage: [AreaUsage]?
         public var problem: String?
+        /// Moved each time the items may be drawn otherwise: the items'
+        /// keyed list's revision, so the Android bridge sends a delta.
+        public var revision = 0
 
         public init() {}
     }
@@ -44,8 +52,10 @@ public struct TemplateApp: LinkedApp {
     public let linked: LinkedRecords
     public let build: BuildFacts
 
-    public init(cache: RecordCache?, outbox: Outbox?, device: String, build: BuildFacts) {
-        linked = LinkedRecords(kinds: TemplateKinds.all, cache: cache, outbox: outbox, words: Self.words(device: device))
+    /// - Parameter words: the Status screen's words, as the shell made them
+    ///   (`AppShell.Parts.words`, from `words(device:)`).
+    public init(cache: RecordCache?, outbox: Outbox?, words: StatusWords, build: BuildFacts) {
+        linked = LinkedRecords(kinds: TemplateKinds.all, cache: cache, outbox: outbox, words: words)
         self.build = build
     }
 
@@ -55,20 +65,6 @@ public struct TemplateApp: LinkedApp {
     }
 
     public var initialState: State { State() }
-
-    public func event(atOpen replayed: Bool) -> Event? { .opening }
-
-    public func event(forLink link: LinkSnapshot) -> Event? { .records(.linked(link)) }
-
-    public func report(of event: Event) -> LinkReport? {
-        guard case let .records(event) = event else { return nil }
-        return linked.report(of: event)
-    }
-
-    public func coalescing(of event: Event) -> Coalescing {
-        guard case let .records(event) = event else { return .now }
-        return linked.coalescing(of: event)
-    }
 
     // MARK: Events
 
@@ -91,39 +87,48 @@ public struct TemplateApp: LinkedApp {
 
     // MARK: The engine
 
-    public func apply(_ event: Event, to state: State) throws -> State {
+    /// After the records' own: `state.linked` has moved already.
+    public func apply(_ event: Event, to state: State, from previous: State) throws -> State {
         var next = state
         switch event {
-        case let .records(event):
-            next.linked = linked.apply(event, to: state.linked)
-            if case let .notQueued(_, words) = event { next.problem = words }
-        case .opening:
+        case let .records(.notQueued(_, words)):
+            next.problem = words
+        case .records:
             break
+        case let .usage(usage):
+            next.usage = usage
         case .problemDismissed:
             next.problem = nil
         }
+        if next.linked.records != previous.linked.records { next.revision += 1 }
         return next
     }
 
     // MARK: The effects
 
-    public func effects(of event: Event, on state: State, from previous: State, presented presentation: TemplatePresentation) -> [Effect] {
+    /// Storage's sizes, read at open, when the app comes forward and after
+    /// a clear.
+    public func ownEffects(of event: Event, on state: State, from previous: State, presented presentation: TemplatePresentation) -> [Effect] {
         switch event {
-        case .opening: linked.openEffects.map(Effect.records)
-        case let .records(event): linked.effects(of: event, on: state.linked, from: previous.linked).map(Effect.records)
-        case .problemDismissed: []
+        case .records(.opened), .records(.foregrounded), .records(.cleared): [.readUsage]
+        default: []
         }
     }
 
-    public func key(of effect: Effect) -> String? {
+    public func ownKey(of effect: Effect) -> String? {
         switch effect {
-        case let .records(effect): linked.key(of: effect)
+        case .records: nil
+        case .readUsage: "usage"
         }
     }
 
-    public func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
+    public func performOwn(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
         switch effect {
-        case let .records(effect): linked.perform(effect, in: environment).map(Event.records)
+        case .records:
+            return .none
+        case .readUsage:
+            guard let folder = environment.folder else { return .none }
+            return .once { .usage(folder.usage()) }
         }
     }
 

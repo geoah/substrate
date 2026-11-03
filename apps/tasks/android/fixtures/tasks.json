@@ -6,7 +6,7 @@
         "version": {
           "label": "Version",
           "value": "0.1.0 (1)",
-          "verbatim": true
+          "verbatim": false
         }
       },
       "editors": {},
@@ -416,6 +416,22 @@
               }
             },
             "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
           },
           {
             "control": {
@@ -447,7 +463,7 @@
         "version": {
           "label": "Version",
           "value": "0.1.0 (1)",
-          "verbatim": true
+          "verbatim": false
         }
       },
       "editors": {},
@@ -860,6 +876,22 @@
           },
           {
             "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
               "action": {
                 "destructive": true,
                 "enabled": true
@@ -888,7 +920,7 @@
         "version": {
           "label": "Version",
           "value": "0.1.0 (1)",
-          "verbatim": true
+          "verbatim": false
         }
       },
       "editors": {},
@@ -1307,6 +1339,22 @@
           },
           {
             "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
               "action": {
                 "destructive": true,
                 "enabled": true
@@ -1335,7 +1383,7 @@
         "version": {
           "label": "Version",
           "value": "0.1.0 (1)",
-          "verbatim": true
+          "verbatim": false
         }
       },
       "editors": {},
@@ -1622,6 +1670,22 @@
           },
           {
             "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
               "action": {
                 "destructive": true,
                 "enabled": true
@@ -1650,7 +1714,7 @@
         "version": {
           "label": "Version",
           "value": "0.1.0 (1)",
-          "verbatim": true
+          "verbatim": false
         }
       },
       "detail": {
@@ -2179,6 +2243,22 @@
           },
           {
             "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
               "action": {
                 "destructive": true,
                 "enabled": true
@@ -2207,7 +2287,7 @@
         "version": {
           "label": "Version",
           "value": "0.1.0 (1)",
-          "verbatim": true
+          "verbatim": false
         }
       },
       "detail": {
@@ -2822,6 +2902,22 @@
           },
           {
             "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
               "action": {
                 "destructive": true,
                 "enabled": true
@@ -2851,7 +2947,7 @@
         "version": {
           "label": "Version",
           "value": "0.1.0 (1)",
-          "verbatim": true
+          "verbatim": false
         }
       },
       "editors": {
@@ -3348,6 +3444,22 @@
           },
           {
             "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
               "action": {
                 "destructive": true,
                 "enabled": true
@@ -3377,7 +3489,7 @@
         "version": {
           "label": "Version",
           "value": "0.1.0 (1)",
-          "verbatim": true
+          "verbatim": false
         }
       },
       "confirmation": {
@@ -3813,6 +3925,22 @@
           },
           {
             "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
               "action": {
                 "destructive": true,
                 "enabled": true
@@ -3841,7 +3969,7 @@
         "version": {
           "label": "Version",
           "value": "0.1.0 (1)",
-          "verbatim": true
+          "verbatim": false
         }
       },
       "editors": {},
@@ -4254,6 +4382,22 @@
           },
           {
             "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
               "action": {
                 "destructive": true,
                 "enabled": true
@@ -4437,7 +4581,7 @@
               "label": "Tasks package"
             }
           ],
-          "title": "Substrate"
+          "title": "Your Substrate"
         },
         {
           "footer": "Sign Out: signs out on this device and revokes its access on ada.example.com.",
@@ -4494,6 +4638,19 @@
               "label": "Server version"
             },
             {
+              "confirmation": {
+                "cancel": "Cancel",
+                "confirm": "Sign Out",
+                "message": "Substrate Tasks's access on ada.example.com is revoked.",
+                "question": {
+                  "repository": {
+                    "_0": {
+                      "signOut": {}
+                    }
+                  }
+                },
+                "title": "Sign out of ada.example.com?"
+              },
               "control": {
                 "action": {
                   "destructive": true,
@@ -4630,6 +4787,22 @@
             },
             {
               "control": {
+                "value": {
+                  "_0": "18.8 KB",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "storage": {
+                  "_0": {
+                    "total": {}
+                  }
+                }
+              },
+              "label": "Total"
+            },
+            {
+              "control": {
                 "action": {
                   "destructive": true,
                   "enabled": true
@@ -4656,7 +4829,7 @@
               "control": {
                 "value": {
                   "_0": "0.1.0 (1)",
-                  "verbatim": true
+                  "verbatim": false
                 }
               },
               "id": {

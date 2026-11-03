@@ -11,7 +11,7 @@ import Testing
 struct TemplateAppTests {
     func harness() throws -> ControllerHarness<TemplateApp> {
         let folder = try RepositoryFolder(root: temporaryFolder("template"))
-        let app = TemplateApp(cache: RecordCache(folder: folder), outbox: Outbox(folder: folder), device: "this iPhone",
+        let app = TemplateApp(cache: RecordCache(folder: folder), outbox: Outbox(folder: folder), words: TemplateApp.words(device: "this iPhone"),
                               build: BuildFacts(version: "0.1.0 (1)"))
         return ControllerHarness(app, performsEffects: false)
     }
@@ -54,5 +54,40 @@ struct TemplateAppTests {
 
     @Test func everyFixtureEncodesForTheBridge() throws {
         for fixture in TemplateFixtures.all { _ = try JSONEncoder().encode(fixture.app) }
+    }
+}
+
+@Suite("Substrate Template's root")
+struct TemplateRootTests {
+    @Test func storageIsReadAtOpenAndShownInSettings() async throws {
+        let folder = try RepositoryFolder(root: temporaryFolder("template"))
+        let app = TemplateApp(cache: RecordCache(folder: folder), outbox: Outbox(folder: folder), words: TemplateApp.words(device: "this iPhone"),
+                              build: BuildFacts(version: "0.1.0 (1)"))
+        var environment = AppEnvironment.testing()
+        environment.folder = folder
+        let harness = ControllerHarness(app, environment: environment, performsEffects: false)
+        _ = await harness.state
+        #expect(harness.effects.contains(.readUsage))
+        await harness.deliver(.usage([AreaUsage(area: .cache, bytes: 512, files: 1)]))
+        let storage = await harness.presentation.storage
+        #expect(storage.rows.map(\.id) == [.storage(.area(.cache)), .storage(.total), .storage(.clear)])
+        #expect(storage.rows.last?.control == .action(destructive: true, enabled: true))
+    }
+
+    @Test func theItemsRevisionMovesWithTheItemsAlone() async throws {
+        let harness = ControllerHarness(TemplateApp(cache: nil, outbox: nil, words: TemplateApp.words(device: "this iPhone"),
+                                                    build: BuildFacts(version: "0.1.0 (1)")), performsEffects: false)
+        await harness.deliver(.records(.loaded([], cursor: nil, queue: [])))
+        let before = await harness.presentation.items.revision
+        await harness.send(.add("Milk"))
+        let added = await harness.presentation.items.revision
+        #expect(added > before)
+        await harness.deliver(.usage([]))
+        #expect(await harness.presentation.items.revision == added)
+        // A delete is a write too: one row fewer, and the revision moves on.
+        let id = try #require(await harness.presentation.items.rows.first?.id)
+        await harness.send(.delete(id))
+        #expect(await harness.presentation.items.rows.isEmpty)
+        #expect(await harness.presentation.items.revision > added)
     }
 }

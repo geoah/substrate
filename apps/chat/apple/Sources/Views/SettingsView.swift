@@ -12,7 +12,6 @@ struct SettingsView: View {
     @EnvironmentObject private var updates: Updater
     @State private var keySheet: KeySheet?
     @State private var locales: [Locale] = []
-    @State private var confirmSignOut = false
     @State private var changingAccess = false
 
     var body: some View {
@@ -49,14 +48,6 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
             #endif
-            .confirmationDialog("Sign out of \(link.snapshot.repository ?? "")?", isPresented: $confirmSignOut) {
-                Button("Sign Out", role: .destructive) {
-                    dismiss()
-                    host.signOut()
-                }
-            } message: {
-                Text(settings?.signOutMessage ?? "")
-            }
             .sheet(item: $keySheet) { ProviderKeySheet(sheet: $0).environment(host) }
             .sheet(isPresented: $changingAccess) { ReviewSheet(isPresented: $changingAccess, changingAccess: true).environment(host) }
             .task {
@@ -77,7 +68,10 @@ struct SettingsView: View {
 
     private func send(_ command: SettingsCommand) {
         switch command {
-        case .perform(.repository(.signOut)): confirmSignOut = true
+        // The row asked first, by its own button (the kit's Sign Out).
+        case .perform(.repository(.signOut)):
+            dismiss()
+            host.signOut()
         case .perform(.repository(.changeAccess)): changingAccess = true
         case .perform(.about(.check)): updates.checkNow()
         case let .perform(.status(.action(action))): perform(action)

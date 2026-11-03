@@ -404,7 +404,8 @@ public struct LinkController<App: LinkedApp>: Controller {
                                                          locale: input.locale, timeZone: input.timeZone)
         let repository = state.session.map {
             RepositoryPresenter.present(session: $0, manifest: manifest, serverVersion: state.status?.serverVersion, unrevoked: state.unrevoked,
-                                        offersChangeAccess: offers.contains(.review), locale: input.locale, timeZone: input.timeZone)
+                                        offersChangeAccess: offers.contains(.review), signOutMessage: words.signOut, locale: input.locale,
+                                        timeZone: input.timeZone)
         }
         return LinkPresentation(
             snapshot: snapshot(of: state), repository: repository,

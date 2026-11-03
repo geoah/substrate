@@ -239,6 +239,10 @@ public enum ScreenFixtures {
                     + "the disk is full."), waiting: 1))),
             ScreenFixture("settings-refused", settings(status(.refused(waiting: 1, reason: refusedWrite.words ?? ""), waiting: 1,
                                                               parked: [refusedWrite]))),
+            // The end of the screen, which the others leave below a phone's
+            // height: each area's size, the budget once, and About.
+            ScreenFixture("settings-storage", .settings(SettingsPresentation(sections: [SettingsPresenter.storage(usage, budget: 100_000_000),
+                                                                                         SettingsPresenter.about(about)]))),
         ]
     }
 

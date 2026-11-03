@@ -5,23 +5,19 @@ import SubstrateRuntime
 import SubstrateScreens
 
 /// What the root's events ask the device and the server for, and the work
-/// each is. The records' own are the kit's `LinkedRecords`: writes go to
-/// the outbox alone, and the link sees the outbox move and sends them.
+/// each is, beyond the records' own, which are the kit's `LinkedRecords`
+/// (`LinkedRecordsApp`): writes go to the outbox alone, and the link sees the
+/// outbox move and sends them.
 public extension TasksApp {
-    func effects(of event: Event, on state: TasksState, from previous: TasksState, presented presentation: TasksPresentation) -> [Effect] {
+    func ownEffects(of event: Event, on state: TasksState, from previous: TasksState, presented presentation: TasksPresentation) -> [Effect] {
         var out: [Effect] = []
         switch event {
-        case .opening:
-            out += linked.openEffects.map(Effect.records) + [.readSettings, .readPermission]
-        case let .records(records):
-            out += linked.effects(of: records, on: state.linked, from: previous.linked).map(Effect.records)
-            switch records {
-            case .foregrounded: out += [.readUsage, .readPermission]
-            case .cleared: out.append(.readUsage)
-            default: break
-            }
-        case let .editorSaved(_, write, _):
-            out += linked.effects(of: .wrote(write), on: state.linked, from: previous.linked).map(Effect.records)
+        case .records(.opened):
+            out += [.readSettings, .readPermission]
+        case .records(.foregrounded):
+            out += [.readUsage, .readPermission]
+        case .records(.cleared):
+            out.append(.readUsage)
         case let .settingsChanged(settings):
             out.append(.saveSettings(settings))
             if TasksSettings.reminds(settings), state.permission == .notAsked { out.append(.askPermission) }
@@ -47,9 +43,9 @@ public extension TasksApp {
         state.records.values.contains { $0.kind == TasksKinds.task && $0.properties["dueDay"] != nil }
     }
 
-    func key(of effect: Effect) -> String? {
+    func ownKey(of effect: Effect) -> String? {
         switch effect {
-        case let .records(effect): linked.key(of: effect)
+        case .records: nil
         case .readSettings: "settings.read"
         case .readPermission, .askPermission: "permission"
         case .saveSettings: "settings"
@@ -58,12 +54,12 @@ public extension TasksApp {
         }
     }
 
-    func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
+    func performOwn(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
         let folder = environment.folder
         let notifications = environment.devices.notifications
         switch effect {
-        case let .records(effect):
-            return linked.perform(effect, in: environment).map(Event.records)
+        case .records:
+            return .none
         case .readSettings:
             return .once {
                 guard let folder else { return .settingsRead(SettingsValues(), usage: []) }

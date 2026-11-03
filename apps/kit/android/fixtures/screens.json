@@ -1321,6 +1321,19 @@
             "verbatim": false
           },
           "signOut": "Sign Out",
+          "signOutConfirmation": {
+            "cancel": "Cancel",
+            "confirm": "Sign Out",
+            "message": "Substrate Tasks's access on ada.example.com is revoked.",
+            "question": {
+              "repository": {
+                "_0": {
+                  "signOut": {}
+                }
+              }
+            },
+            "title": "Sign out of ada.example.com?"
+          },
           "title": "Repository",
           "unrevoked": []
         }
@@ -1368,6 +1381,19 @@
             "verbatim": false
           },
           "signOut": "Sign Out",
+          "signOutConfirmation": {
+            "cancel": "Cancel",
+            "confirm": "Sign Out",
+            "message": "Substrate Tasks's access on ada.example.com is revoked.",
+            "question": {
+              "repository": {
+                "_0": {
+                  "signOut": {}
+                }
+              }
+            },
+            "title": "Sign out of ada.example.com?"
+          },
           "title": "Repository",
           "unrevoked": [
             {
@@ -1414,6 +1440,19 @@
             "verbatim": false
           },
           "signOut": "Sign Out",
+          "signOutConfirmation": {
+            "cancel": "Cancel",
+            "confirm": "Sign Out",
+            "message": "Its sign-in on ada.example.com is revoked.",
+            "question": {
+              "repository": {
+                "_0": {
+                  "signOut": {}
+                }
+              }
+            },
+            "title": "Sign out of ada.example.com?"
+          },
           "title": "Repository",
           "unrevoked": []
         }
@@ -1440,7 +1479,7 @@
           ],
           "sentence": "Up to date.",
           "symbol": "upToDate",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "positive"
         }
       }
@@ -1473,7 +1512,7 @@
           ],
           "sentence": "Sending 3 changes.",
           "symbol": "sending",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "informative"
         }
       }
@@ -1506,7 +1545,7 @@
           ],
           "sentence": "Your substrate cannot be reached. 2 changes wait on this iPhone.",
           "symbol": "offline",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "caution"
         }
       }
@@ -1573,7 +1612,7 @@
           },
           "sentence": "Your substrate refused a change. 1 change waits; retry or discard it below.",
           "symbol": "warning",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "caution"
         }
       }
@@ -1612,7 +1651,7 @@
           ],
           "sentence": "Substrate Tasks needs your approval for more access. Review it to send what waits.",
           "symbol": "warning",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "caution"
         }
       }
@@ -1638,7 +1677,7 @@
           ],
           "sentence": "Your substrate has version 1 of the Tasks package and this app needs version 2 or later. The update waits for your approval on your substrate; tasks wait on this iPhone until then.",
           "symbol": "warning",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "caution"
         }
       }
@@ -1672,7 +1711,7 @@
           ],
           "sentence": "Your substrate has older versions of the Tasks and People packages than this app needs. The updates wait for your approval on your substrate; tasks wait on this iPhone until then.",
           "symbol": "warning",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "caution"
         }
       }
@@ -1711,7 +1750,7 @@
           ],
           "sentence": "Your access ended. Sign in again to send what waits.",
           "symbol": "warning",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "caution"
         }
       }
@@ -1734,7 +1773,7 @@
           "packages": [],
           "sentence": "Not signed in. Tasks stay on this iPhone.",
           "symbol": "device",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "quiet"
         }
       }
@@ -1773,7 +1812,7 @@
           ],
           "sentence": "Access ends Nov 6, 2026. Renew it to keep sending. Sending 2 changes.",
           "symbol": "warning",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "caution"
         }
       }
@@ -1812,7 +1851,7 @@
           },
           "sentence": "A change could not be kept on this iPhone. Tasks already kept stay.",
           "symbol": "warning",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "caution"
         }
       }
@@ -1845,7 +1884,7 @@
           ],
           "sentence": "Your substrate needs an update before Substrate Tasks can use it. Tasks wait on this iPhone until then.",
           "symbol": "warning",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "caution"
         }
       }
@@ -1878,7 +1917,7 @@
           ],
           "sentence": "Checking the Tasks package on your substrate.",
           "symbol": "sending",
-          "title": "Substrate",
+          "title": "Your Substrate",
           "tone": "informative"
         }
       }
@@ -1992,7 +2031,7 @@
                   "label": "Tasks package"
                 }
               ],
-              "title": "Substrate"
+              "title": "Your Substrate"
             },
             {
               "footer": "Sign Out: signs out on this device and revokes its access on ada.example.com.",
@@ -2049,6 +2088,19 @@
                   "label": "Server version"
                 },
                 {
+                  "confirmation": {
+                    "cancel": "Cancel",
+                    "confirm": "Sign Out",
+                    "message": "Substrate Tasks's access on ada.example.com is revoked.",
+                    "question": {
+                      "repository": {
+                        "_0": {
+                          "signOut": {}
+                        }
+                      }
+                    },
+                    "title": "Sign out of ada.example.com?"
+                  },
                   "control": {
                     "action": {
                       "destructive": true,
@@ -2168,7 +2220,7 @@
                 {
                   "control": {
                     "value": {
-                      "_0": "1.8 MB of 100 MB",
+                      "_0": "1.8 MB",
                       "verbatim": false
                     }
                   },
@@ -2186,7 +2238,7 @@
                 {
                   "control": {
                     "value": {
-                      "_0": "12.3 MB of 100 MB",
+                      "_0": "12.3 MB",
                       "verbatim": false
                     }
                   },
@@ -2200,6 +2252,22 @@
                     }
                   },
                   "label": "Saved copies"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "14.1 MB of 100 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "total": {}
+                      }
+                    }
+                  },
+                  "label": "Total"
                 },
                 {
                   "control": {
@@ -2229,7 +2297,7 @@
                   "control": {
                     "value": {
                       "_0": "0.120.0-pre.20261103.090000+ac85863e",
-                      "verbatim": true
+                      "verbatim": false
                     }
                   },
                   "id": {
@@ -2430,7 +2498,7 @@
                   "label": "Send Now"
                 }
               ],
-              "title": "Substrate"
+              "title": "Your Substrate"
             },
             {
               "footer": "Sign Out: signs out on this device and revokes its access on ada.example.com.",
@@ -2487,6 +2555,19 @@
                   "label": "Server version"
                 },
                 {
+                  "confirmation": {
+                    "cancel": "Cancel",
+                    "confirm": "Sign Out",
+                    "message": "Substrate Tasks's access on ada.example.com is revoked.",
+                    "question": {
+                      "repository": {
+                        "_0": {
+                          "signOut": {}
+                        }
+                      }
+                    },
+                    "title": "Sign out of ada.example.com?"
+                  },
                   "control": {
                     "action": {
                       "destructive": true,
@@ -2606,7 +2687,7 @@
                 {
                   "control": {
                     "value": {
-                      "_0": "1.8 MB of 100 MB",
+                      "_0": "1.8 MB",
                       "verbatim": false
                     }
                   },
@@ -2624,7 +2705,7 @@
                 {
                   "control": {
                     "value": {
-                      "_0": "12.3 MB of 100 MB",
+                      "_0": "12.3 MB",
                       "verbatim": false
                     }
                   },
@@ -2638,6 +2719,22 @@
                     }
                   },
                   "label": "Saved copies"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "14.1 MB of 100 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "total": {}
+                      }
+                    }
+                  },
+                  "label": "Total"
                 },
                 {
                   "control": {
@@ -2667,7 +2764,7 @@
                   "control": {
                     "value": {
                       "_0": "0.120.0-pre.20261103.090000+ac85863e",
-                      "verbatim": true
+                      "verbatim": false
                     }
                   },
                   "id": {
@@ -2848,7 +2945,7 @@
                   "label": "Send Now"
                 }
               ],
-              "title": "Substrate"
+              "title": "Your Substrate"
             },
             {
               "footer": "Retry sends the change again. Discard gives up the change and the changes waiting behind it; what this iPhone holds stays.",
@@ -2994,6 +3091,19 @@
                   "label": "Server version"
                 },
                 {
+                  "confirmation": {
+                    "cancel": "Cancel",
+                    "confirm": "Sign Out",
+                    "message": "Substrate Tasks's access on ada.example.com is revoked.",
+                    "question": {
+                      "repository": {
+                        "_0": {
+                          "signOut": {}
+                        }
+                      }
+                    },
+                    "title": "Sign out of ada.example.com?"
+                  },
                   "control": {
                     "action": {
                       "destructive": true,
@@ -3113,7 +3223,7 @@
                 {
                   "control": {
                     "value": {
-                      "_0": "1.8 MB of 100 MB",
+                      "_0": "1.8 MB",
                       "verbatim": false
                     }
                   },
@@ -3131,7 +3241,7 @@
                 {
                   "control": {
                     "value": {
-                      "_0": "12.3 MB of 100 MB",
+                      "_0": "12.3 MB",
                       "verbatim": false
                     }
                   },
@@ -3145,6 +3255,22 @@
                     }
                   },
                   "label": "Saved copies"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "14.1 MB of 100 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "total": {}
+                      }
+                    }
+                  },
+                  "label": "Total"
                 },
                 {
                   "control": {
@@ -3174,7 +3300,170 @@
                   "control": {
                     "value": {
                       "_0": "0.120.0-pre.20261103.090000+ac85863e",
-                      "verbatim": true
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "version": {}
+                      }
+                    }
+                  },
+                  "label": "Version"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "Pre-release",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "channel": {}
+                      }
+                    }
+                  },
+                  "label": "Channel"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "check": {}
+                      }
+                    }
+                  },
+                  "label": "Check for Updates"
+                }
+              ],
+              "title": "About"
+            }
+          ],
+          "title": "Settings"
+        }
+      }
+    }
+  },
+  {
+    "name": "settings-storage",
+    "presentation": {
+      "settings": {
+        "_0": {
+          "sections": [
+            {
+              "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+              "id": {
+                "storage": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "2.4 KB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "outbox"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Waiting to be sent"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "1.8 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "records"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Saved records"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "12.3 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "cache"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Saved copies"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "14.1 MB of 100 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "total": {}
+                      }
+                    }
+                  },
+                  "label": "Total"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": true,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "clear": {}
+                      }
+                    }
+                  },
+                  "label": "Clear Saved Copies"
+                }
+              ],
+              "title": "Storage"
+            },
+            {
+              "id": {
+                "about": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "0.120.0-pre.20261103.090000+ac85863e",
+                      "verbatim": false
                     }
                   },
                   "id": {
@@ -3289,7 +3578,7 @@
           "version": {
             "label": "Version",
             "value": "0.120.0",
-            "verbatim": true
+            "verbatim": false
           }
         }
       }
@@ -3316,7 +3605,7 @@
           "version": {
             "label": "Version",
             "value": "0.120.0-pre.20261103.090000+ac85863e",
-            "verbatim": true
+            "verbatim": false
           }
         }
       }

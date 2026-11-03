@@ -82,6 +82,9 @@ describe("kind display names", () => {
     expect(lowerFirst("Gmail threads")).toBe("Gmail threads")
     expect(lowerFirst("WHOOP cycles")).toBe("WHOOP cycles")
     expect(lowerFirst("OAuth client")).toBe("OAuth client")
+    expect(lowerFirst("Apple Health accounts")).toBe("Apple Health accounts")
+    expect(lowerFirst("Apple watches")).toBe("apple watches")
+    expect(lowerFirst("Tasks")).toBe("tasks")
   })
 
   it("reads the name off a full kind reference", () => {

@@ -7,9 +7,9 @@ import SubstrateRuntime
 /// test can name, a scripted server, English in UTC. It keeps the runtime's
 /// trace, so a test reads what was journaled, presented, published and
 /// asked for, in order, and waits on what it expects rather than on time:
-/// `until` fails only once the runtime has made no move at all for its
-/// bound, so a host too loaded to run the test promptly slows it and never
-/// fails it.
+/// `until` fails once the runtime has made no move at all for its bound, so
+/// a host too loaded to run the test promptly slows it and never fails it,
+/// or once a runtime that keeps moving has had ten times that bound.
 public final class ControllerHarness<C: Controller>: @unchecked Sendable {
     public let clock: TestClock
     public let ids: SequentialIDs
@@ -95,27 +95,38 @@ public final class ControllerHarness<C: Controller>: @unchecked Sendable {
 
     /// Waits until `condition` holds, checking it each time the runtime
     /// moves (a step traced, a presentation published, an effect asked for)
-    /// and between. It fails only after `idle` with no move in the runtime
-    /// at all, however long the whole wait takes.
+    /// and between. It fails after `idle` with no move in the runtime at
+    /// all, however long the whole wait takes, or once the whole wait passes
+    /// ten times `idle`: a runtime that keeps moving without ever reaching
+    /// the condition (a watch reopened on a real pause, again and again) is
+    /// a livelock, not a slow host.
     public func until(idle: Duration = ControllerHarness.idleBound, _ condition: @Sendable (ControllerHarness<C>) async -> Bool) async throws {
+        try await wait(idle: idle, cap: idle * 10, condition)
+    }
+
+    /// The same, bounded by `timeout` in all: it fails once `timeout` has
+    /// passed, moving or not, and after `idleBound` with no move where that
+    /// is shorter.
+    public func until(timeout: Duration, _ condition: @Sendable (ControllerHarness<C>) async -> Bool) async throws {
+        try await wait(idle: min(timeout, Self.idleBound), cap: timeout, condition)
+    }
+
+    private func wait(idle: Duration, cap: Duration, _ condition: @Sendable (ControllerHarness<C>) async -> Bool) async throws {
         var seen = recorder.count
-        var quietSince = ContinuousClock.now
+        let started = ContinuousClock.now
+        var quietSince = started
         while await !condition(self) {
+            let now = ContinuousClock.now
             let count = recorder.count
+            if now - started > cap { throw HarnessTimedOut() }
             if count != seen {
                 seen = count
-                quietSince = ContinuousClock.now
-            } else if ContinuousClock.now - quietSince > idle {
+                quietSince = now
+            } else if now - quietSince > idle {
                 throw HarnessTimedOut()
             }
             await recorder.changed(since: count, orAfter: .milliseconds(20))
         }
-    }
-
-    /// The same: `timeout` is the bound on a runtime that does nothing, and
-    /// never shorter than `idleBound`, which a loaded host never shortens.
-    public func until(timeout: Duration, _ condition: @Sendable (ControllerHarness<C>) async -> Bool) async throws {
-        try await until(idle: max(timeout, Self.idleBound), condition)
     }
 }
 

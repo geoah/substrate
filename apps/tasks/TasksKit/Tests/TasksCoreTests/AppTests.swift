@@ -374,7 +374,7 @@ struct AppTests {
         let app = await harness.presentation
         #expect(app.settings.map(\.title) == ["Reminders", "Lists"])
         #expect(app.settings[0].rows.map(\.label) == ["Remind Me When Tasks Are Due", "Tasks Due on a Day", "Reminders Set on This iPhone"])
-        #expect(app.about.version == LabeledValue("Version", "0.1.0 (1)", verbatim: true))
+        #expect(app.about.version == LabeledValue("Version", "0.1.0 (1)"))
         #expect(TasksSettings.route(.toggle(row: .app(TasksSettings.remind), on: false))
             == .app(.settings(.toggle(row: .app(TasksSettings.remind), on: false))))
         #expect(TasksSettings.route(.perform(row: .repository(.signOut))) == .link(.signOut))

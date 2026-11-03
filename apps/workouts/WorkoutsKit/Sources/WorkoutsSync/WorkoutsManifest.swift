@@ -106,7 +106,7 @@ public enum WorkoutsManifest {
             kindLabels: trainingLabels.merging([
                 healthWorkout: KindLabel(singular: "Workout", plural: "Workouts"),
                 healthSleep: KindLabel(singular: "Sleep", plural: "Sleep"),
-                healthAccount: KindLabel(singular: "Apple Health account", plural: "Apple Health accounts", purpose: "internal"),
+                healthAccount: KindLabel(singular: "Account", plural: "Accounts", purpose: "internal"),
             ]) { training, _ in training },
             softwareVersion: softwareVersion)
     }

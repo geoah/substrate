@@ -27,14 +27,68 @@ public final class AppShell<App: LinkedApp> {
     public typealias Link = LinkController<App>
 
     /// What the app's root is made over: one repository's folder and what
-    /// the kit keeps in it, all nil while no repository is signed in.
+    /// the kit keeps in it, all nil while no repository is signed in, and
+    /// the device's facts, which the shell fills.
     public struct Parts {
         public var folder: RepositoryFolder?
         public var cache: RecordCache?
         public var outbox: Outbox?
+        /// The outbox of the repository a session is signed in to, for an
+        /// app that keeps one per repository (Workouts' account folders):
+        /// the link sends from it, and `outbox` is not read.
+        public var outboxes: (@Sendable (SessionFacts) -> Outbox?)?
         /// "this iPhone", "this iPad", "this Mac".
-        public var device: String
-        public var build: BuildFacts
+        public internal(set) var device: String
+        public internal(set) var build: BuildFacts
+        /// The Status screen's words, made by `Configuration.words` in the
+        /// device's: the link's, and the app's own linked records'.
+        public internal(set) var words: StatusWords
+
+        public init(folder: RepositoryFolder? = nil, cache: RecordCache? = nil, outbox: Outbox? = nil,
+                    outboxes: (@Sendable (SessionFacts) -> Outbox?)? = nil)
+        {
+            self.folder = folder
+            self.cache = cache
+            self.outbox = outbox
+            self.outboxes = outboxes
+            device = ""
+            build = BuildFacts(version: "")
+            words = StatusWords(app: "", device: "", kept: "")
+        }
+
+        /// Each repository's folder in `Application Support/<folder>`, named
+        /// for its server and repository (`RepositoryFolder.name`), with the
+        /// kit's outbox and record cache in it: what an app made after the
+        /// kit lays out. An app that kept its files elsewhere before the kit
+        /// hands the shell its own `parts`, since a path on the device never
+        /// moves.
+        public static func repositoryFolders(in folder: String) -> (Session?) -> Parts {
+            { session in
+                guard let session else { return Parts() }
+                let name = RepositoryFolder.name(server: session.server, repository: session.repository)
+                let made = try? RepositoryFolder(root: applicationSupport(folder).appendingPathComponent(name, isDirectory: true),
+                                                 writingOptions: protection)
+                return Parts(folder: made, cache: made.map { RecordCache(folder: $0) }, outbox: made.map { Outbox(folder: $0) })
+            }
+        }
+
+        /// A folder in Application Support, which the system does not clear.
+        public static func applicationSupport(_ folder: String) -> URL {
+            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? FileManager.default.temporaryDirectory
+            return base.appendingPathComponent(folder, isDirectory: true)
+        }
+
+        /// How a repository's files are written on this system.
+        public static var protection: Data.WritingOptions {
+            #if os(iOS)
+            // Readable after the first unlock, so a notification's tap that
+            // opens the app on a locked phone still reads its records.
+            .completeFileProtectionUntilFirstUserAuthentication
+            #else
+            []
+            #endif
+        }
     }
 
     /// Everything an app's shell needs that is the app's own.
@@ -42,9 +96,10 @@ public final class AppShell<App: LinkedApp> {
         public var manifest: AppManifest
         /// The Keychain service the session is kept under.
         public var keychainService: String
-        /// The folder in Application Support each repository's folder is
-        /// made in.
-        public var folder: String
+        /// What the app's root is made over for a session, nil while none
+        /// is signed in: where its folder is, and the outbox and record cache
+        /// in it. A sign-in to another repository asks again.
+        public var parts: (Session?) -> Parts
         /// The app's packages, each with the version this build needs.
         public var packages: [String: Int]
         /// The Status screen's words, in the device's.
@@ -64,7 +119,7 @@ public final class AppShell<App: LinkedApp> {
         /// The Settings screen from the link's presentation and the app's.
         public var settingsScreen: (LinkPresentation<App.Presentation>, App.Presentation) -> SettingsPresentation
 
-        public init(manifest: AppManifest, keychainService: String, folder: String, packages: [String: Int],
+        public init(manifest: AppManifest, keychainService: String, parts: @escaping (Session?) -> Parts, packages: [String: Int],
                     words: @escaping (_ device: String) -> StatusWords, app: @escaping (Parts) -> App, refresh: App.Command? = nil,
                     respond: ((NotificationResponse) -> App.Command?)? = nil, settings: @escaping (SettingsCommand) -> App.Command? = { _ in nil },
                     clearSaved: App.Command? = nil,
@@ -72,7 +127,7 @@ public final class AppShell<App: LinkedApp> {
         {
             self.manifest = manifest
             self.keychainService = keychainService
-            self.folder = folder
+            self.parts = parts
             self.packages = packages
             self.words = words
             self.app = app
@@ -81,6 +136,19 @@ public final class AppShell<App: LinkedApp> {
             self.settings = settings
             self.clearSaved = clearSaved
             self.settingsScreen = settingsScreen
+        }
+
+        /// Each repository's folder in `Application Support/<folder>`
+        /// (`Parts.repositoryFolders(in:)`).
+        public init(manifest: AppManifest, keychainService: String, folder: String, packages: [String: Int],
+                    words: @escaping (_ device: String) -> StatusWords, app: @escaping (Parts) -> App, refresh: App.Command? = nil,
+                    respond: ((NotificationResponse) -> App.Command?)? = nil, settings: @escaping (SettingsCommand) -> App.Command? = { _ in nil },
+                    clearSaved: App.Command? = nil,
+                    settingsScreen: @escaping (LinkPresentation<App.Presentation>, App.Presentation) -> SettingsPresentation)
+        {
+            self.init(manifest: manifest, keychainService: keychainService, parts: Parts.repositoryFolders(in: folder), packages: packages,
+                      words: words, app: app, refresh: refresh, respond: respond, settings: settings, clearSaved: clearSaved,
+                      settingsScreen: settingsScreen)
         }
     }
 
@@ -123,38 +191,31 @@ public final class AppShell<App: LinkedApp> {
         var environment = AppEnvironment.apple()
         environment.client = ClientSource { sessions.load().map { SubstrateClient($0) } }
         environment.devices.notifications = notifications
-        var folder: RepositoryFolder?
-        var name: String?
-        if let session {
-            name = RepositoryFolder.name(server: session.server, repository: session.repository)
-            folder = try? RepositoryFolder(root: root(configuration.folder).appendingPathComponent(name ?? "", isDirectory: true),
-                                           writingOptions: protection)
+        let parts = parts(configuration, session: session, device: DeviceWords.current, build: .bundle())
+        environment.folder = parts.folder
+        let name = session.map { RepositoryFolder.name(server: $0.server, repository: $0.repository) }
+        return (PresentationModel(link(configuration, parts: parts, sessions: sessions), environment: environment), name)
+    }
+
+    /// The app's parts for a session, with the device's facts filled.
+    static func parts(_ configuration: Configuration, session: Session?, device: String, build: BuildFacts) -> Parts {
+        var parts = configuration.parts(session)
+        parts.device = device
+        parts.build = build
+        parts.words = configuration.words(device)
+        return parts
+    }
+
+    /// The link over the app's root, sending from the parts' outbox, or
+    /// from the signed-in repository's where the app keeps one for each.
+    static func link(_ configuration: Configuration, parts: Parts, sessions: SessionStore) -> Link {
+        let app = configuration.app(parts)
+        if let outboxes = parts.outboxes {
+            return Link(app: app, manifest: configuration.manifest, sessions: sessions, outboxes: outboxes, packages: configuration.packages,
+                        words: parts.words)
         }
-        environment.folder = folder
-        let outbox = folder.map { Outbox(folder: $0) }
-        let parts = Parts(folder: folder, cache: folder.map { RecordCache(folder: $0) }, outbox: outbox, device: DeviceWords.current,
-                          build: .bundle())
-        let link = Link(app: configuration.app(parts), manifest: configuration.manifest, sessions: sessions, outbox: outbox,
-                        packages: configuration.packages, words: configuration.words(DeviceWords.current))
-        return (PresentationModel(link, environment: environment), name)
-    }
-
-    /// Where each repository's folder is: Application Support, which the
-    /// system does not clear.
-    private static func root(_ folder: String) -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return base.appendingPathComponent(folder, isDirectory: true)
-    }
-
-    private static var protection: Data.WritingOptions {
-        #if os(iOS)
-        // Readable after the first unlock, so a notification's tap that
-        // opens the app on a locked phone still reads its records.
-        .completeFileProtectionUntilFirstUserAuthentication
-        #else
-        []
-        #endif
+        return Link(app: app, manifest: configuration.manifest, sessions: sessions, outbox: parts.outbox, packages: configuration.packages,
+                    words: parts.words)
     }
 
     /// The owner's answers to notifications, the one that launched the app

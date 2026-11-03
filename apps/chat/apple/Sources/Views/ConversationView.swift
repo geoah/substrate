@@ -26,7 +26,8 @@ struct ConversationView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
                 if let hero = screen.hero {
-                    NewChatHeroView(hero: hero) { host.send(.draft($0), to: key) }
+                    NewChatHeroView(hero: hero, pick: { host.send(.draft($0), to: key) },
+                                    addKey: { keySheet = host.chats?.keys[$0] })
                 }
                 if let older = screen.olderHidden {
                     Label(older, systemImage: "clock.arrow.circlepath")
@@ -154,10 +155,12 @@ func joined(_ draft: String, _ heard: String) -> String {
     return head.isEmpty ? words : (head.hasSuffix("\n") ? head + words : head + " " + words)
 }
 
-/// A new chat before its first message: who it is with, and a few openers.
+/// A new chat before its first message: who it is with, a provider's
+/// missing key, and a few openers below it.
 private struct NewChatHeroView: View {
     let hero: NewChatHero
     let pick: (String) -> Void
+    let addKey: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -174,6 +177,10 @@ private struct NewChatHeroView: View {
                     Text(description)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if let keyless = hero.keyless {
+                    KeylessCalloutView(callout: keyless) { addKey(keyless.provider) }
+                        .padding(.top, 6)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(hero.prompts, id: \.self) { prompt in
@@ -219,7 +226,24 @@ private struct ConversationStatus: View {
                         .foregroundStyle(.secondary)
                 }
             case .failed:
-                ProblemBox(title: note.title, message: note.message).card(tint: .red)
+                VStack(alignment: .leading, spacing: 10) {
+                    ProblemBox(title: note.title, message: note.message)
+                    if let detail = note.detail {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("The server said")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text(detail)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        // Under the message, past the box's symbol.
+                        .padding(.leading, 26)
+                    }
+                }
+                .card(tint: .red)
             case .reloadFailed:
                 VStack(alignment: .leading, spacing: 10) {
                     ProblemBox(message: note.message, tint: .orange)

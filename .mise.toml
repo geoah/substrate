@@ -931,6 +931,10 @@ run = ".mise/apple.sh build:tasks"
 description = "Run TasksKit's tests (Substrate Tasks' root, editor, presenters and codec) and the app's views over its fixtures on the Mac"
 run = ".mise/apple.sh test:tasks"
 
+[tasks."apple:test:template"]
+description = "Run TemplateKit's tests and the template's views over its fixtures on the Mac: what apps:new copies, held as an app is"
+run = ".mise/apple.sh test:template"
+
 [tasks."apps:test:linux"]
 description = "The kit, WorkoutsKit, ChatKit and TasksKit, built and tested on Linux in the swift container"
 # Android's Swift runs on the same open-source Foundation as Linux, so a
@@ -954,21 +958,12 @@ description = "Scaffold apps/<id>/ from apps/template: app.json, <Id>Kit (its co
 run = ".mise/appsnew.sh"
 
 [tasks."apps:new:check"]
-description = "apps:new into a scratch copy of apps/ in the swift container, and the new app's core built and tested on Linux"
+description = "apps:new into a scratch copy of apps/: the new app's core built and tested on Linux in the swift container, and on a Mac its SwiftUI side built and its views drawn"
 # The template cannot rot: what it makes is built as an app's core is, on the
-# same pinned image as apps:test:linux. The scratch copy takes the kit's
-# sources and the project file alone, never a Mac's build output.
-run = """
-docker run --rm -v "$PWD:/src:ro" -w /src \
-  swift:6.4@sha256:119ff7d833ea622851b459513333bb4bda5ebb32b7acd05dd05077d5b0383129 \
-  bash -euc 'mkdir -p /tmp/apps/xcode
-    tar -C apps --exclude=.build --exclude=build --exclude=.gradle --exclude=.swiftpm -cf - kit | tar -C /tmp/apps -xf -
-    cp apps/xcode/project.yml /tmp/apps/xcode/project.yml
-    .mise/appsnew.sh --apps /tmp/apps example
-    grep -qxF "  - ../example/apple/targets.yml" /tmp/apps/xcode/project.yml
-    swift build --package-path /tmp/apps/example/ExampleKit --scratch-path /tmp/build/example
-    swift test --package-path /tmp/apps/example/ExampleKit --scratch-path /tmp/build/example'
-"""
+# same pinned image as apps:test:linux, and on a Mac as an app is. CI is
+# Linux, so the SwiftUI half is an author's: `apple:test:template` holds the
+# template's own views on a Mac.
+run = ".mise/appsnewcheck.sh"
 
 [tasks."apple:release:workouts"]
 description = "Alias of `apps:release [channel] workouts`, for one release"

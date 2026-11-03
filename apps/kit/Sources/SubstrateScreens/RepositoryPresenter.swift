@@ -9,10 +9,13 @@ public enum RepositoryPresenter {
     /// stopped using that its server has not revoked yet is said, with where
     /// to revoke it by hand.
     ///
-    /// - Parameter title: the section's heading; an app that called it
-    ///   Account before the kit (`AccountSection`) keeps its word.
+    /// - Parameters:
+    ///   - title: the section's heading; an app that called it Account
+    ///     before the kit (`AccountSection`) keeps its word.
+    ///   - signOutMessage: what else signing out gives up on the device, in
+    ///     the app's words (`StatusWords.signOut`), after the kit's own.
     public static func present(session: SessionFacts, manifest: AppManifest?, serverVersion: String?, unrevoked: [SessionFacts],
-                               offersChangeAccess: Bool, title: String = "Repository", locale: Locale,
+                               offersChangeAccess: Bool, title: String = "Repository", signOutMessage: String? = nil, locale: Locale,
                                timeZone: TimeZone) -> RepositoryPresentation
     {
         let host = ServerAddress.display(session.server)
@@ -29,6 +32,11 @@ public enum RepositoryPresenter {
             changeAccess: app && offersChangeAccess ? "Change Access…" : nil,
             unrevoked: UnrevokedPresenter.present(appName: manifest?.appName ?? "The app", unrevoked: unrevoked),
             signOut: "Sign Out",
+            signOutConfirmation: ConfirmationPresentation(
+                question: .repository(.signOut), title: "Sign out of \(session.repository)?",
+                message: (app ? "\(manifest?.appName ?? "The app")'s access on \(host) is revoked." : "Its sign-in on \(host) is revoked.")
+                    + (signOutMessage.map { " " + $0 } ?? ""),
+                confirm: "Sign Out"),
             footer: "Sign Out: signs out on this device and revokes \(app ? "its access" : "its sign-in") on \(host).")
     }
 }

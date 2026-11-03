@@ -286,7 +286,8 @@ private struct AgentChip: View {
 
 /// An agent whose provider has no key cannot answer: said before anybody
 /// types.
-private struct KeylessCalloutView: View {
+/// A provider with no key, and the button that adds one.
+struct KeylessCalloutView: View {
     let callout: KeylessCallout
     let add: () -> Void
 

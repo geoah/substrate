@@ -432,6 +432,7 @@ struct RowsIslandWordsTests {
         try session.log("leg-press", 0, at: 60)
         let accessory = try session.present(at: 70).accessory
         #expect(accessory.set == "Leg Press (Machine), warm-up 2" && accessory.values == "70 kg × 6")
+        #expect(accessory.exercise == "Leg Press (Machine)" && accessory.setLabel == "warm-up 2")
         #expect(accessory.detail == "Leg Press (Machine), warm-up 2, 70 kg × 6")
         #expect(accessory.isResting && accessory.timerStartedAt == nil)
     }

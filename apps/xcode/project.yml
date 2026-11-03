@@ -89,3 +89,4 @@ include:
   - ../sync/apple/targets.yml
   - ../workouts/apple/targets.yml
   - ../tasks/apple/targets.yml
+  - ../template/apple/targets.yml

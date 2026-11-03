@@ -709,6 +709,21 @@ struct RowsStructureTests {
         #expect(block.summary?.change == RowsChange(text: "first time", isGain: false))
         #expect(block.lines.first?.changes == [RowsChange(text: "first time", isGain: false)] && block.lines.first?.verdict == nil)
     }
+
+    @Test("an exercise done as warm-ups alone says them, never an empty list after done")
+    func warmupsAlone() throws {
+        let warmup = PlannedSet(key: "w1", role: .warmup, repsMin: 10, repsMax: 10, load: .kg(30))
+        let routine = EngineCatalog.routine([EngineCatalog.slot("press", EngineCatalog.press, [warmup])])
+        var one = EngineScript(at: engineEpoch)
+        try one.start(routine, exercises: [EngineCatalog.press])
+        try one.tick(try one.row("press", 0), kgReps(30, 10))
+        let done = SessionPresenter.present(try one.current, history: HistoryIndex([]),
+                                            settings: PresenterSettings(prefillsRPE: true), now: engineEpoch.addingTimeInterval(5))
+        let summary = try #require(done.rowsLayout.blocks.first?.summary)
+        #expect(summary.text == "Warm-up 30 kg × 10")
+        #expect(summary.sentence == "Press, done: warm-up, 30 kilograms, 10 reps. First time.")
+        #expect(summary.change == RowsChange(text: "first time", isGain: false))
+    }
 }
 
 @Suite("Rows layout: a rirstop set's open editor")
