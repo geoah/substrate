@@ -63,8 +63,9 @@ final class HealthExporter {
     /// Told about every history entry whose Health state changed, so the
     /// history in memory can replace it.
     @ObservationIgnored var onEntryChanged: (@MainActor (HistoryEntry) -> Void)?
-    /// The outbox PATCHes the session with the workout's UUID.
-    @ObservationIgnored var sink: any SessionSyncSink<EventEnvelope, SessionState> = LinkSink()
+    /// Told the workout a session was saved as: the outbox PATCHes the
+    /// session with its UUID.
+    @ObservationIgnored var onLinked: (@MainActor (SessionID, _ workout: String, _ revision: Int) -> Void)?
 
     @ObservationIgnored private let store: HKHealthStore
     @ObservationIgnored private let directory: () throws -> URL
@@ -290,9 +291,7 @@ final class HealthExporter {
             try queue().remove(session)
             onEntryChanged?(updated)
             logger.info("Saved session \(session.rawValue, privacy: .public) as workout \(workout, privacy: .public)")
-            let sink = sink
-            let revision = updated.records.session.revision ?? 1
-            Task.detached { await sink.healthLinked(session, healthKitWorkout: workout, revision: revision) }
+            onLinked?(session, workout, updated.records.session.revision ?? 1)
         } catch let error as HKError where error.code == .errorAuthorizationDenied || error.code == .errorAuthorizationNotDetermined {
             access = readAccess()
             settle(session, .notSaved, error: error.localizedDescription)

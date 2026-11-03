@@ -23,7 +23,7 @@ nonisolated enum LiveActivityAction: Hashable, Sendable {
 }
 
 /// The seam between the intents and the session. In the app, an action goes
-/// to `SessionController.shared.handle(_:)`, which is created on first use,
+/// to `WorkoutsRoot.shared.session.handle(_:)`, which is created on first use,
 /// so a tap that launched the app in the background reaches it too; the
 /// controller folds the journal before it applies the action (DESIGN.md
 /// §6.3). `handler`, when set, replaces that path.
@@ -42,7 +42,7 @@ enum LiveActivityActions {
             return
         }
         #if WORKOUTS_APP
-        await SessionController.shared.handle(action)
+        await WorkoutsRoot.shared.session.handle(action)
         #else
         // The widget never performs an intent: the system runs it in the app.
         logger.fault("Live Activity action performed outside the app: \(String(describing: action), privacy: .public)")

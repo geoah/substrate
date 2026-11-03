@@ -8,7 +8,7 @@ import SwiftUI
 /// of that bar.
 struct RootView: View {
     @Environment(AppModel.self) private var app
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Namespace private var zoom
 
     var body: some View {
@@ -45,11 +45,6 @@ struct RootView: View {
         .fullScreenCover(isPresented: $app.isSessionPresented) {
             SessionCover()
                 .navigationTransition(.zoom(sourceID: session.presentation?.sessionID.rawValue ?? "", in: zoom))
-        }
-        // Rows pre-fills the plan's RPE and the Table does not (§4.14): a
-        // session in progress is presented again when Settings switches.
-        .onChange(of: app.settings.sessionLayout) { _, _ in
-            session.present()
         }
     }
 }

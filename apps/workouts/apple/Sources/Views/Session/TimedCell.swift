@@ -11,7 +11,7 @@ struct TimedCell: View {
     let layout: GridLayout
     var focus: FocusState<CoverModel.Field?>.Binding
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
 
     var body: some View {
         HStack(spacing: 4) {
@@ -44,7 +44,7 @@ struct TimerButton: View {
     let exercise: String
     let running: Bool
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(CoverModel.self) private var cover
 
     var body: some View {

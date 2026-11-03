@@ -62,7 +62,7 @@ public struct PackageManifest: Sendable {
 /// Where a repository stands with a package this build needs, read off the
 /// package row the server keeps. The server installs and upgrades the
 /// package (decisions 0212 and 0213); the app only reads where it stands.
-public enum PackageState: Sendable, Hashable {
+public enum PackageState: Codable, Sendable, Hashable {
     /// The repository has no such package, or the token cannot see its row:
     /// the approval installs it, so the set up check says what to do.
     case missing

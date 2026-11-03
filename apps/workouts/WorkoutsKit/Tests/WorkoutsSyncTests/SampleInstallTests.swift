@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateDevice
@@ -121,7 +122,7 @@ struct SampleInstallTests {
         let directory = temporaryDirectory()
         var remote: RemoteCatalog { RemoteCatalog(directory: directory, writingOptions: .atomic) }
         var sample: SampleInstall { SampleInstall(directory: directory, writingOptions: .atomic) }
-        var outbox: Outbox { Outbox(directory: directory, writingOptions: .atomic) }
+        var outbox: Outbox { (try! Outbox.workouts(directory: directory, writingOptions: .atomic)) }
     }
 
     func bundled() throws -> Catalog { try BundledCatalog().loadNow() }
@@ -346,7 +347,7 @@ struct SampleInstallTests {
     @Test("a delete replaces any waiting write of the routine, and the sample added back takes a waiting delete back")
     func withdraw() async throws {
         let directory = temporaryDirectory()
-        let outbox = Outbox(directory: directory, writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         let routine = FlatRecord(kind: codec.kinds.routine, id: "push-day", properties: [:])
         try await outbox.enqueue([OutboxEntry(method: .put, kind: routine.kind, recordID: routine.id, properties: [:])])
         try await outbox.delete(routine: "push-day", codec: codec)
@@ -354,7 +355,7 @@ struct SampleInstallTests {
         try await outbox.delete(routine: SampleRoutine.id, codec: codec)
         try await outbox.withdrawDelete(routine: SampleRoutine.id, codec: codec)
         #expect(await outbox.entries.map(\.recordID) == ["push-day"])
-        #expect(await Outbox(directory: directory, writingOptions: .atomic).entries.map(\.recordID) == ["push-day"])
+        #expect(await (try! Outbox.workouts(directory: directory, writingOptions: .atomic)).entries.map(\.recordID) == ["push-day"])
     }
 
     // MARK: Sessions logged signed out

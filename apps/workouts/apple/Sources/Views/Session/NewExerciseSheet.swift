@@ -62,10 +62,12 @@ struct NewExerciseSheet: View {
         let id = ExerciseID.slug(for: trimmed, taken: Set(app.exercises.keys))
         let exercise = Exercise(id: id, name: trimmed, measurement: measurement, equipment: equipment, laterality: laterality,
                                 restClass: restClass, isLocal: true)
-        do {
-            created(try app.addLocalExercise(exercise))
-        } catch {
-            failure = error.localizedDescription
+        Task {
+            do {
+                created(try await app.addLocalExercise(exercise))
+            } catch {
+                failure = error.localizedDescription
+            }
         }
     }
 }

@@ -4,7 +4,7 @@ import Foundation
 /// PREVIOUS, the suggestion inputs, the exercise history and the e1RM trend
 /// read (§5.2, §5.4, §7.9). Built off the main thread at launch from the
 /// history store, then kept current with `insert` and `remove`.
-public struct HistoryIndex: Sendable {
+public struct HistoryIndex: Codable, Equatable, Sendable {
     /// Every session, newest first.
     public private(set) var sessions: [SessionRecords] = []
     private var byExercise: [ExerciseID: [ExerciseHistory]] = [:]
@@ -84,7 +84,7 @@ public struct HistoryIndex: Sendable {
 }
 
 /// One session's sets of one exercise.
-public struct ExerciseHistory: Hashable, Sendable {
+public struct ExerciseHistory: Codable, Hashable, Sendable {
     public var session: TrainingSession
     /// In display order: by the session's slot order, then `order`.
     public var sets: [PerformedSet]

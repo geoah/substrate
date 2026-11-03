@@ -1,13 +1,15 @@
-import WorkoutsCore
+import SubstrateKit
 import SwiftUI
 import UIKit
+import WorkoutsCore
+import WorkoutsSync
 
 /// Settings (DESIGN.md §7.10): units, rest defaults, the session switches,
 /// alerts, Apple Health, imports, where the data comes from, and the build's
 /// update check. A session snapshots the rest and counting settings at Start.
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @EnvironmentObject private var updates: Updater
     @Environment(\.openURL) private var openURL
     @State private var healthBodyMass: Mass?
@@ -79,7 +81,9 @@ struct SettingsView: View {
                 importSection
                 dataSection
 
-                Section("About") { BuildFooter() }
+                AboutScreen(AboutPresentation.present(appName: WorkoutsManifest.appName, version: updates.build.version,
+                                                      channel: updates.enabled ? updates.build.channel : nil, offered: nil),
+                            onCheck: { updates.checkNow() })
             }
             .navigationTitle("Settings")
             .sheet(isPresented: $warmupWheel) {

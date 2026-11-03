@@ -62,6 +62,6 @@ func sendIfLocal(_ exercise: Exercise, link: SubstrateLink) {
     RoutineEditorView(model: RoutineEditorModel(RoutineEditor.duplicate(routine, taken: [routine.id])) { _ in })
         .environment(app)
         .environment(PreviewData.noSession(app))
-        .environment(SubstrateLink.shared)
+        .environment(WorkoutsRoot.shared.link)
 }
 #endif

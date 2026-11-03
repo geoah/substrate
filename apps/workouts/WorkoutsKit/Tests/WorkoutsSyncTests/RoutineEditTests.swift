@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateDevice
@@ -202,7 +203,7 @@ struct RoutineEditTests {
     func guardedPatch() async throws {
         let server = ScriptedServer()
         server.answer("PATCH", Self.path, 200, record(5))
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.edit(routine: "day-1", patch: ["name": .string("Renamed"), "folder": .null], baseVersion: 4, codec: codec)
         #expect(await outbox.flush(api(server)) == .sent)
         let sent = try #require(server.sent.first)
@@ -216,7 +217,7 @@ struct RoutineEditTests {
     func conflict() async throws {
         let server = ScriptedServer()
         server.answer("PATCH", Self.path, 409, #"{"error":{"code":"conflict","message":"version conflict: ifVersion 4, stored 6"}}"#)
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.edit(routine: "day-1", patch: ["name": .string("Renamed")], baseVersion: 4, codec: codec)
         let state = await outbox.flush(api(server))
         guard case .refused = state else { Issue.record("not refused: \(state)"); return }
@@ -241,7 +242,7 @@ struct RoutineEditTests {
     func useTheirs() async throws {
         let server = ScriptedServer()
         server.answer("PATCH", Self.path, 409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.edit(routine: "day-1", patch: ["name": .string("Renamed")], baseVersion: 4, codec: codec)
         _ = await outbox.flush(api(server))
         let parked = try #require(await outbox.parked.first)
@@ -254,14 +255,14 @@ struct RoutineEditTests {
         let directory = temporaryDirectory()
         let offline = ScriptedServer()
         offline.on { _ in (-1, "") }
-        var outbox = Outbox(directory: directory, writingOptions: .atomic)
+        var outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         try await outbox.edit(routine: "day-1", patch: ["name": .string("First"), "notes": .string("a")], baseVersion: 4, codec: codec)
         guard case .offline = await outbox.flush(api(offline)) else { Issue.record("not offline"); return }
         try await outbox.edit(routine: "day-1", patch: ["name": .string("Second"), "folder": .null], baseVersion: 4, codec: codec)
         #expect(await outbox.entries.count == 1)
 
         // The app is killed and launched again: the queue is on disk.
-        outbox = Outbox(directory: directory, writingOptions: .atomic)
+        outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         let waiting = await outbox.waitingRoutines(codec: codec)
         #expect(waiting["day-1"]?.properties["name"] == .string("Second"))
 
@@ -281,7 +282,7 @@ struct RoutineEditTests {
             guard sent.method == "PATCH", case let .object(body)? = sent.body else { return nil }
             return body["ifVersion"] == .number(4) ? (200, record(5)) : body["ifVersion"] == .number(5) ? (200, record(6)) : (409, "{}")
         }
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.edit(routine: "day-1", patch: ["name": .string("One")], baseVersion: 4, codec: codec)
         #expect(await outbox.flush(api(server)) == .sent)
         // The cache still says version 4.
@@ -302,7 +303,7 @@ struct RoutineEditTests {
             default: return (409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
             }
         }
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.edit(routine: "day-1", patch: ["slots": .array([])], baseVersion: 4, codec: codec)
         _ = await outbox.flush(api(server))
         let parked = try #require(await outbox.parked.first)
@@ -323,7 +324,7 @@ struct RoutineEditTests {
     func notIntoParked() async throws {
         let server = ScriptedServer()
         server.answer("PATCH", Self.path, 409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.edit(routine: "day-1", patch: ["name": .string("One")], baseVersion: 4, codec: codec)
         _ = await outbox.flush(api(server))
         try await outbox.edit(routine: "day-1", patch: ["name": .string("Two")], baseVersion: 4, codec: codec)
@@ -340,7 +341,7 @@ struct RoutineEditTests {
     func createOnly() async throws {
         let server = ScriptedServer()
         server.answer("PUT", "/api/v1/substrate.reamde.dev/training/routine/day-1-copy", 409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         let copy = RoutineEditor.duplicate(RoutineEditorFixture.routine, taken: ["day-1"])
         try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
         guard case .refused = await outbox.flush(api(server)) else { Issue.record("not refused"); return }
@@ -356,7 +357,7 @@ struct RoutineEditTests {
             if sent.method == "PUT" { return (200, record(1)) }
             return body["ifVersion"] == .number(1) ? (200, record(2)) : (409, "{}")
         }
-        let other = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let other = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await other.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
         #expect(await other.flush(api(fresh)) == .sent)
         try await other.edit(routine: copy.routine.id, patch: ["name": .string("Mine")], baseVersion: nil, codec: codec)
@@ -367,7 +368,7 @@ struct RoutineEditTests {
     func duplicate() async throws {
         let (_, routine) = try read(try #require(Self.serverRecords().first).json)
         let copy = RoutineEditor.duplicate(routine, taken: [routine.id])
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
         try await outbox.edit(routine: copy.routine.id, patch: ["name": .string("Mine"), "notes": .null], baseVersion: nil, codec: codec)
         let entries = await outbox.entries

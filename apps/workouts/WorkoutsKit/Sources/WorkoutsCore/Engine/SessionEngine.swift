@@ -1,8 +1,6 @@
 import Foundation
 
 /// The active session's journal: the engine's events and the state they fold to.
-public typealias ActiveSessionJournal = SessionJournal<EventEnvelope, SessionState>
-
 /// The session engine (§4): a pure reducer. It reads no clock, no files and
 /// no history; everything it needs is in the state or the event, so folding
 /// the journal's events always gives the same state.
