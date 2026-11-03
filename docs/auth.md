@@ -198,11 +198,14 @@ Five things follow from a token being a record:
   ([0143](decisions/0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md)).
   Every session, script and device token is one of these. A token an app got
   through the authorization flow carries the `scopes` the owner approved and
-  reaches only those kinds, on the records route, the record path and the
-  unit reads (`/api/v1/units`, `/api/v1/units/convert`), which no scope
-  limits
-  ([apps](apps.md),
-  [0194](decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md)).
+  reaches only those kinds, on the records route (lists, window and
+  aggregate reads, every search mode), the record path, the change feed and
+  the blobs its records name, plus the functions a `call:` scope names
+  where its scopes cover their reach, and the unit reads (`/api/v1/units`,
+  `/api/v1/units/convert`), which no scope limits
+  ([apps](apps.md#use-the-token),
+  [0194](decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
+  [0219](decisions/0219-an-apps-token-reads-windows-aggregates-semantic-search-blobs-and-the-feeds-history-over-the-kinds-it-reads-and-calls-the-functions-its-call-scope-names.md)).
 - **Revoking is deleting the record.** No row means no access. The same write
   reaches from `DELETE /tokens/{id}`, from the generic record delete at
   `DELETE /api/v1/substrate.reamde.dev/core/token/{id}`, from the console, or from
