@@ -11,7 +11,9 @@
     "clientIDKey": "SubstrateTasksClientID",
     "redirectKey": "SubstrateTasksRedirect"
   },
-  "publishes": [],
+  "publishes": [
+    "substrate.reamde.dev/tasks"
+  ],
   "asks": [],
   "scopes": [
     "write:substrate.reamde.dev/tasks/*"

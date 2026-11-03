@@ -422,7 +422,7 @@ description = "shellcheck over every tracked shell script"
 run = "git ls-files -z '*.sh' | xargs -0 sh -c 'test \"$#\" -eq 0 || shellcheck -x \"$@\"' sh"
 
 [tasks."lint:python"]
-description = "ruff over the runner's Python host, every function body under kinds/ and samples/, the provider suites and .mise; Substrate Workouts' JSON against its YAML"
+description = "ruff over the runner's Python host, every function body under kinds/ and samples/, the provider suites and .mise; Substrate Workouts' JSON against its YAML, and every app's published closures against its lock"
 # internal/runner/host.py is the long-lived child every `runtime: python`
 # function body is exec'd into: a syntax slip there takes out every Python
 # function at once, and no Go test compiles it. The bodies are YAML literal
@@ -433,11 +433,14 @@ description = "ruff over the runner's Python host, every function body under kin
 # The second and third lines are Substrate Workouts' generated JSON held to
 # its YAML (apps/workouts/scripts/workouts-package.py and exercise-library.py,
 # --check): Python, so they run in the Linux `lint` job, where nothing builds
-# the Apple apps.
+# the Apple apps. The fourth holds every app's published closures to its
+# closures.lock.json (.mise/closures.py), so a closure changed under a
+# published version fails here, offline, before a release refuses it.
 run = [
   "python3 .mise/pybodies.py lint internal/runner/host.py .mise internal/providere2e internal/providertest/py",
   "uv run --quiet --with pyyaml apps/workouts/scripts/workouts-package.py --check",
   "uv run --quiet --with pyyaml apps/workouts/scripts/exercise-library.py --check",
+  "uv run --quiet --with pyyaml .mise/closures.py --check",
 ]
 
 [tasks."lint:migrations"]

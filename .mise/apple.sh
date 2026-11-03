@@ -530,7 +530,7 @@ publish_site() {
 
 	# The closures this tree ships, as `path sha256` lines, then as JSON.
 	local built lines
-	lines="$(uv run --quiet --with pyyaml ../workouts/scripts/workouts-package.py --closures "$out/packages")" || return 1
+	lines="$(uv run --quiet --with pyyaml ../../.mise/closures.py --out "$out/packages")" || return 1
 	built="$(jq -Rn --arg site "$site" --arg authority "$authority" '[inputs | select(length > 0) | split(" ") |
 		(.[0] | split("/") | last) as $file |
 		($file | sub("\\.yaml$"; "") | capture("^(?<name>.+)-(?<version>[0-9]+)$")) as $m |
@@ -1065,6 +1065,7 @@ test:workouts)
 	# and so must the exercise library and its sources.
 	uv run --quiet --with pyyaml ../workouts/scripts/workouts-package.py --check
 	uv run --quiet --with pyyaml ../workouts/scripts/exercise-library.py --check
+	uv run --quiet --with pyyaml ../../.mise/closures.py --check workouts
 	swift test --package-path ../workouts/WorkoutsKit
 	;;
 test:kit)

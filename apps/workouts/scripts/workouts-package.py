@@ -19,19 +19,15 @@ Two sources, both YAML in `substratectl apply -f` form under the authority
 
 It renders the workout coach's agent document (package/coach/workoutcoach.yaml)
 from the instructions, the mechanics and a field guide generated from the
-routine and exercise manifests, so the prompt and the kinds cannot drift, and
-it builds each package's closure, the multi-document YAML a bundle directory
-ships, for `mise run apple:site` (`--closures DIR` writes
-`DIR/<package>-<version>.yaml`). A published version is immutable, so
-closures.lock.json keeps each package's version and the closure's sha256: a
-closure that changed under an unmoved version is refused here, before the
-site could refuse it.
+routine and exercise manifests, so the prompt and the kinds cannot drift.
+The closures the site publishes, and closures.lock.json beside the package,
+are every app's alike: .mise/closures.py builds them from the committed
+files, after running this script with --check.
 
 This script writes all of them:
 
     uv run --with pyyaml apps/workouts/scripts/workouts-package.py           # rewrite
     uv run --with pyyaml apps/workouts/scripts/workouts-package.py --check   # exit 1 and name each stale file
-    uv run --with pyyaml apps/workouts/scripts/workouts-package.py --closures build/site/packages
 
 The output has no timestamps, so a run over unchanged YAML changes nothing.
 """
@@ -39,7 +35,6 @@ The output has no timestamps, so a run over unchanged YAML changes nothing.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -59,15 +54,6 @@ COACH_RESOURCE = APP / "WorkoutsKit/Sources/WorkoutsCore/Resources/Package/coach
 # The rendered agent document, committed beside its sources so a diff shows
 # what a release changes of the coach, and read back into the closure.
 COACH_AGENT_FILE = COACH / "workoutcoach.yaml"
-# The order the trainingcoach closure ships: the package and its bundle, then
-# the agent.
-COACH_FILES = (COACH / "trainingcoach.yaml", COACH_AGENT_FILE)
-# A published version is immutable (decision record 0212): the lock holds,
-# per package, the newest version `mise run apple:site` published and that
-# closure's sha256, written by the publish and committed after it. A closure
-# that changed under the version the lock holds is refused here, offline,
-# before the site refuses it against the live document.
-CLOSURES_LOCK = PACKAGE / "closures.lock.json"
 AUTHORITY = "substrate.reamde.dev"
 TRAINING = f"{AUTHORITY}/training"
 COACH_PACKAGE = f"{AUTHORITY}/trainingcoach"
@@ -405,43 +391,6 @@ def coach() -> dict:
     return out
 
 
-def closure_text(files: tuple[Path, ...], rendered: dict[Path, str]) -> str:
-    """The closure as the site publishes it: the source files, in apply order,
-    one YAML document stream. `rendered` stands in for a file this run writes."""
-    parts = []
-    for path in files:
-        text = rendered[path] if path in rendered else path.read_text(encoding="utf-8")
-        parts.append(text if text.endswith("\n") else text + "\n")
-    return "---\n".join(parts)
-
-
-def closures(rendered: dict[Path, str]) -> dict[str, tuple[int, str]]:
-    """Each package's version and closure text, by package id."""
-    return {
-        TRAINING: (package()["version"], closure_text(tuple(PACKAGE / f"{name}.yaml" for name in FILES), rendered)),
-        COACH_PACKAGE: (coach()["version"], closure_text(COACH_FILES, rendered)),
-    }
-
-
-def sha256(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def check_lock(built: dict[str, tuple[int, str]]) -> None:
-    """Refuses a closure that changed under the version the lock says is
-    published, or a version below it."""
-    held = json.loads(CLOSURES_LOCK.read_text(encoding="utf-8")) if CLOSURES_LOCK.exists() else {}
-    for package_id in sorted(built):
-        version, text = built[package_id]
-        before = held.get(package_id)
-        if not before:
-            continue
-        if version < before["version"]:
-            raise GenerateError(f"{package_id}: version {version} is below the published {before['version']}")
-        if version == before["version"] and sha256(text) != before["sha256"]:
-            raise GenerateError(f"{package_id}: the closure changed under the published version {version}; bump data.version, a published version never changes")
-
-
 def render(value: dict) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
 
@@ -449,24 +398,10 @@ def render(value: dict) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="exit 1 if a generated file is stale")
-    parser.add_argument("--closures", metavar="DIR", help="write each package's closure as DIR/<package>-<version>.yaml and exit")
     args = parser.parse_args()
     try:
         agent = coach_agent()
         rendered = {COACH_AGENT_FILE: coach_agent_yaml(agent)}
-        built = closures(rendered)
-        # The lock first on every path: a closure the site is about to
-        # publish is held to it before the site reads the live document.
-        check_lock(built)
-        if args.closures:
-            out = Path(args.closures)
-            out.mkdir(parents=True, exist_ok=True)
-            for package_id, (version, text) in built.items():
-                path = out / f"{package_id.rsplit('/', 1)[1]}-{version}.yaml"
-                path.write_text(text, encoding="utf-8")
-                print(f"{path} {sha256(text)}")
-            return 0
-        check_lock(built)
         files = {RESOURCE: render(package()), FIXTURE: render(kinds()), COACH_RESOURCE: render(coach())}
         files.update(rendered)
         files.update({path: render(value) for path, value in examples().items()})
