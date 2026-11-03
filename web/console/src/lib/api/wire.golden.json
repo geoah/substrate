@@ -265,6 +265,7 @@
     "held": false,
     "id": true,
     "kinds": false,
+    "oauthHosts": false,
     "publisher": false,
     "required": true,
     "requires": false,
@@ -286,6 +287,7 @@
     "held": false,
     "id": true,
     "kinds": false,
+    "oauthHosts": false,
     "publisher": false,
     "shipped": false,
     "triggers": false
@@ -382,6 +384,11 @@
     "triggerCallables": false,
     "triggers": true
   },
+  "BundleCodeChange": {
+    "diff": true,
+    "id": true,
+    "kind": true
+  },
   "BundlePurged": {
     "purged": true
   },
@@ -414,6 +421,7 @@
     "blockers": false,
     "changelogSeq": false,
     "changes": false,
+    "codeChanges": false,
     "discardsEdits": false,
     "from": false,
     "holders": false,
@@ -445,6 +453,7 @@
     "inputs": false,
     "modified": false,
     "name": true,
+    "oauthHosts": false,
     "origin": false,
     "originVersion": false,
     "package": true,
@@ -469,6 +478,7 @@
     "installed": true,
     "modified": false,
     "name": true,
+    "oauthHosts": false,
     "origin": false,
     "originVersion": false,
     "package": true,

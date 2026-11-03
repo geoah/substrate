@@ -148,6 +148,20 @@ func applySeccomp(p Policy, parent substrateProc) error {
 		}
 		return nil
 	}
+	if p.Outside {
+		stream := []sockFilter{
+			{Code: bpfLdAbsW, K: sdNR},
+			{Code: bpfJeqK, K: uint32(sysSocket), JF: 4},
+			{Code: bpfLdAbsW, K: sdArg1},
+			{Code: 0x54, K: 0xf},
+			{Code: bpfJeqK, K: unix.SOCK_STREAM, JT: 1},
+			{Code: bpfRetK, K: seccompRetErrno | uint32(unix.EACCES)},
+			{Code: bpfRetK, K: seccompRetAllow},
+		}
+		if err := installFilter(&sockFprog{Len: uint16(len(stream)), Fil: &stream[0]}, 0); err != nil {
+			return err
+		}
+	}
 	prog, err := buildFilter(p, parent)
 	if err != nil {
 		return err

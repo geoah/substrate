@@ -26,6 +26,8 @@ const (
 // documents are not on the wire: Closure is the preview of what they land.
 type CatalogBundle struct {
 	Publisher *AuthorizationPackagePublisher `json:"publisher,omitempty"`
+
+	OAuthHosts []string `json:"oauthHosts,omitempty"`
 	// ID is the bundle's record id, the PACKAGE it is named for
 	// ("providers.substrate.reamde.dev/google"), matching BundleStatus.ID once
 	// installed. A SAMPLE lands under the repository's own authority, so its

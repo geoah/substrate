@@ -79,6 +79,13 @@ type BundleStatus struct {
 	Modified bool `json:"modified,omitempty"`
 }
 
+// BundleCodeChange is the review evidence for one changed outside declaration.
+type BundleCodeChange struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	Diff string `json:"diff"`
+}
+
 // BundleUpgrade is what re-installing a bundle's SHIPPED closure over this
 // repository's stored declarations would do, computed on read and stored
 // nowhere. The install verb is already the upgrade (a bundle document
@@ -88,6 +95,8 @@ type BundleStatus struct {
 type BundleUpgrade struct {
 	Holders        []BundleUpgradeHolder `json:"holders,omitempty"`
 	ReviewRequired bool                  `json:"reviewRequired,omitempty"`
+
+	CodeChanges []BundleCodeChange `json:"codeChanges,omitempty"`
 	// Available reports the shipped closure moves at least one stored
 	// declaration: a declaration this repository lacks, one whose shipped
 	// version is newer, or one the closure stopped shipping (which a
@@ -346,7 +355,14 @@ type BundleInstall struct {
 	// apply may have run past the shipped line (issue #642). Zero stamps
 	// nothing: the import door carries OriginVersion instead, and a
 	// verbatim sample install and a hand apply neither.
-	ShippedVersion           int64
+	ShippedVersion int64
+	// PublishedFrom and PublishedDigest identify a document-published
+	// closure (decision 0212): the document it was listed in and the
+	// closure's sha256, stamped on its package row as `publishedFrom` and
+	// `publishedDigest`. ExpectedPublishedVersion is the shippedVersion the
+	// caller planned the upgrade from, refused when the row moved since, and
+	// PublishedNarrows holds a narrowing upgrade to the connected builds'
+	// floors (decision 0213).
 	PublishedFrom            string
 	PublishedDigest          string
 	ExpectedPublishedVersion int64

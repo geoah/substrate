@@ -129,8 +129,8 @@ allowlist for agents: every target must be a registered agent, and an identity
 may sit on only one of the two lists ([running an agent](#running-an-agent)).
 `permissions.network` is enforced as a
 **binary** gate: a function declaring none is denied IPv4 and IPv6 sockets by the
-sandbox, while the host patterns themselves are still only documentation (see
-[the sandbox](#the-sandbox)). `permissions.mutations` gates the `merge` and
+sandbox. Outside code is additionally held to its declared hosts (see
+[code from outside authorities](#code-from-outside-authorities)). `permissions.mutations` gates the `merge` and
 `split` effects, which are refused without it. Every entry in `writes`,
 `reads.kinds`, `call` and `agents` is a full reference, `<authority>/<package>/<name>`.
 The two KIND lists also take a glob — `*`, `<authority>/*` or
@@ -465,9 +465,8 @@ unprivileged, none requiring a container runtime:
   `the sandbox's connect gate refused 10.0.0.7:5432; allow it with SUBSTRATE_SANDBOX_EGRESS_ALLOW=10.0.0.7`.
   The server's own dials (an `llm/provider` row's `baseURL`) obey
   `SUBSTRATE_EGRESS_ALLOW` instead, and fail with
-  `egress blocked by the server's dial gate`. Holding a body to the *specific
-  hosts* it declared is not done yet; what is enforced is "the internet, not the
-  deployment's own network". The supervisor half of that fine layer is the one
+  `egress blocked by the server's dial gate`. Binary-shipped code keeps the public-destination policy. Outside code is
+  additionally held to its declared hosts through a per-body proxy. The supervisor half of that fine layer is the one
   piece of the sandbox that needs something from the deployment: it reads the
   destination with `process_vm_readv(2)` and duplicates the body's socket with
   `pidfd_getfd(2)`, which a container's default seccomp profile permits only
@@ -1680,3 +1679,28 @@ function's actor as a fresh causal root. The trigger rows are ordinary
 records, so `get` / `apply` / `delete` edit them like anything else.
 
 Next: [agents](agents.md), callables whose body is an LLM loop.
+
+
+### Code from outside authorities
+
+A package installed from an authority document carries `publishedFrom` on
+its package record. Its functions reach only exact DNS hosts and wildcard
+suffixes (`*.example.com`) in `permissions.network`. No declaration means
+no network. Binary-shipped functions retain the destination rules above.
+
+Outside bodies use the supplied `HTTP_PROXY` and `HTTPS_PROXY` settings.
+Their clients must honor those settings or speak HTTP CONNECT. Direct IP
+connections, DNS sockets and datagram sockets are refused. The proxy checks
+hostnames before resolution and applies the deployment-address deny rules
+to every resolved dial. `SUBSTRATE_SANDBOX_EGRESS_ALLOW` permits a declared
+host to resolve to a private address; it never grants an undeclared host.
+
+`SUBSTRATE_OUTSIDE_CODE=refuse` refuses installation and execution. Otherwise
+outside code requires filesystem and syscall confinement and a working
+connect gate. An operator can explicitly accept unconfined execution with
+`SUBSTRATE_INSECURE_UNCONFINED_OUTSIDE_CODE=true`. This includes non-Linux
+hosts. Outside OAuth endpoints must use HTTPS; they can belong to the
+provider the package connects to, independently of the publisher's domain.
+
+Upgrade reviews show changed function source and permissions, agent and
+mapping declarations, shared modules, triggers and OAuth metadata.

@@ -105,6 +105,9 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 		return plan, nil
 	}
 	plan.From = packageRow.version
+	if plan.CodeChanges, err = ds.outsideCodeChanges(ctx, bundlePackage, docs); err != nil {
+		return plan, err
+	}
 
 	// The copy's stamp (decision record 0070): a package row an import
 	// stamped says which shipped version the copy was taken at and what it

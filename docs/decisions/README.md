@@ -372,3 +372,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0212](0212-a-package-is-published-by-its-authoritys-document-and-installed-from-it.md) | A package is published by its authority's document and installed from it | proposed |
 | [0213](0213-a-published-package-keeps-its-publishers-versions-and-an-upgrade-waits-for-every-connected-build.md) | A published package keeps its publisher's versions, and an upgrade waits for every connected build | proposed |
 | [0214](0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md) | An app's approval installs published packages, and `declare:` and the `agent` detail are retired | proposed |
+| [0220](0220-outside-code-is-confined-and-reviewed.md) | Code from an outside authority reaches only the hosts it declares, waits for review when it changes, and needs a sandbox that confines it | proposed |
