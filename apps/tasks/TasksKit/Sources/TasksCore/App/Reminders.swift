@@ -34,6 +34,8 @@ public enum Reminders {
                                            body: list.map { "\(when), in \($0)" } ?? when, fireAt: at, thread: "tasks",
                                            category: category, userInfo: ["task": task.id]))
         }
-        return Array(out.sorted { ($0.fireAt, $0.id) < ($1.fireAt, $1.id) }.prefix(limit))
+        // A reminder is planned only for a time to come, so every request here
+        // carries one; nil (shown at once) would sort first.
+        return Array(out.sorted { ($0.fireAt ?? .distantPast, $0.id) < ($1.fireAt ?? .distantPast, $1.id) }.prefix(limit))
     }
 }
