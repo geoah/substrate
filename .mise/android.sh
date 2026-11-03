@@ -12,6 +12,8 @@
 #                   (Swift encodes, Kotlin decodes and encodes, Swift decodes)
 #   smoke           on a booted emulator or device: the release build's
 #                   runtime checks, three cold starts, the instrumented tests
+#                   (the Gallery's: every fixture Swift makes there decodes)
+#   gallery <dir>   kit-ui's gallery test, keeping each fixture's PNG in <dir>
 #   lock            rewrite the Gradle dependency locks
 #   release:build   one app's release APK, signed, for .mise/apps.sh
 #
@@ -147,7 +149,8 @@ cmd_build() {
   need_sdk
   need_swift
   gradle :kit-core:assembleDebug :kit-core:assembleRelease :kit-device:assembleDebug :kit-device:assembleRelease \
-    :bridge-check:assembleDebug :bridge-check:assembleRelease
+    :kit-ui:assembleDebug :kit-ui:assembleRelease :bridge-check:assembleDebug :bridge-check:assembleRelease \
+    :gallery:assembleDebug :gallery:assembleRelease
 }
 
 cmd_test() {
@@ -159,10 +162,14 @@ cmd_test() {
   # Swift half of the round trip, on this host.
   host_swift test --package-path apps/kit --filter SubstrateBridgeTests
   local kotlin_out=$root/apps/kit/android/kit-core/build/roundtrip/testDebugUnitTest/kotlin.json
-  # kit-core's RoundTripTest writes Kotlin's encoding of the fixtures there.
-  gradle :kit-core:testDebugUnitTest :kit-device:testDebugUnitTest
+  local screens_out=$root/apps/kit/android/kit-core/build/roundtrip/testDebugUnitTest/screens.json
+  # kit-core's RoundTripTest and ScreenFixturesTest write Kotlin's encoding
+  # of the fixtures there.
+  gradle :kit-core:testDebugUnitTest :kit-device:testDebugUnitTest :kit-ui:testDebugUnitTest
   [[ -f $kotlin_out ]] || die "the Kotlin round trip wrote nothing to $kotlin_out"
-  SUBSTRATE_ROUNDTRIP_KOTLIN=$kotlin_out host_swift test --package-path apps/kit --filter KotlinRoundTrip
+  [[ -f $screens_out ]] || die "the screens' round trip wrote nothing to $screens_out"
+  SUBSTRATE_ROUNDTRIP_KOTLIN=$kotlin_out SUBSTRATE_ROUNDTRIP_KOTLIN_SCREENS=$screens_out \
+    host_swift test --package-path apps/kit --filter 'KotlinRoundTrip|ScreenFixturesFileTests'
 }
 
 cmd_smoke() {
@@ -190,7 +197,7 @@ cmd_smoke() {
   done
   printf 'release APK: %s bytes\n' "$(wc -c <"$apk" | tr -d ' ')"
   unzip -lv "$apk" | awk '/\.so$/ { printf "  %-48s %10d\n", $8, $1 }' | sort -k2 -n -r
-  gradle :kit-device:connectedDebugAndroidTest :bridge-check:connectedDebugAndroidTest
+  gradle :kit-device:connectedDebugAndroidTest :bridge-check:connectedDebugAndroidTest :gallery:connectedDebugAndroidTest
 }
 
 # One app's release APK, built by its module (`:<app>`, from apps/<app>/android)
@@ -236,10 +243,23 @@ cmd_release_build() {
   printf 'android: %s\n' "$SUBSTRATE_RELEASE_APK"
 }
 
+# Every fixture of apps/kit/android/fixtures/screens.json drawn by kit-ui's
+# composables under Robolectric, each kept as <fixture>.png in the folder
+# named (apps:gallery's Android half).
+cmd_gallery() {
+  local folder=${1:-}
+  [[ -n $folder ]] || die "usage: gallery <folder>"
+  need_sdk
+  need_swift
+  mkdir -p "$folder"
+  gradle :kit-ui:testDebugUnitTest --tests '*KitGalleryTest' "-Psubstrate.gallery=$folder"
+}
+
 cmd_lock() {
   need_sdk
   need_swift
-  gradle :kit-core:dependencies :kit-device:dependencies :bridge-check:dependencies --write-locks >/dev/null
+  gradle :kit-core:dependencies :kit-device:dependencies :kit-ui:dependencies :bridge-check:dependencies :gallery:dependencies \
+    --write-locks >/dev/null
   (cd apps/gradle && ./gradlew --console=plain -p build-logic dependencies --write-locks >/dev/null)
 }
 
@@ -250,6 +270,7 @@ generate:check) bridgegen --check ;;
 build) cmd_build ;;
 test) cmd_test ;;
 smoke) cmd_smoke ;;
+gallery) cmd_gallery "${2:-}" ;;
 lock) cmd_lock ;;
 release:build) cmd_release_build "${2:-}" ;;
 *) die "unknown subcommand ${1:-}; see the header of .mise/android.sh" ;;

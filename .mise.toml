@@ -857,22 +857,14 @@ description = "Run Substrate Chat's tests on the Mac: ChatKit's, then the app ta
 run = ".mise/apple.sh test:chat"
 
 [tasks."apps:gallery"]
-description = "Draw every shared screen's fixtures, the kit's views as the apps call them, and Substrate Tasks' screens, to PNG files in build/gallery/apple"
+description = "Draw every shared screen's fixtures with SwiftUI and with Compose, to build/gallery/apple and build/gallery/android, with build/gallery/index.html beside each other, and the kit's views as the apps call them and Substrate Tasks' screens under build/gallery/apple"
 # The gallery is a check as well as a picture (docs/plans/app-kit.md, §7.4):
-# a fixture whose screen has no renderer fails the run, which
-# `mise run apple:test:kit` also holds without drawing anything.
-run = """
-rm -rf build/gallery/apple
-mkdir -p build/gallery/apple
-SUBSTRATEKIT_SNAPSHOTS="$PWD/build/gallery/apple" swift test --package-path apps/kit --filter 'Snapshots|GalleryRenderers'
-# Substrate Tasks' screens, drawn by its own views in its UI framework's
-# tests, which run on the Mac with no host app.
-mkdir -p build/gallery/apple/tasks
-.mise/apple.sh project
-(cd apps/xcode && TEST_RUNNER_SUBSTRATE_TASKS_GALLERY="$PWD/../../build/gallery/apple/tasks" xcodebuild -project Substrate.xcodeproj \
-  -scheme SubstrateTasks -derivedDataPath build/dd -quiet -destination 'platform=macOS' test -only-testing:SubstrateTasksTests/GalleryTests)
-echo "apps:gallery: $(find build/gallery/apple -name '*.png' | wc -l | tr -d ' ') screens in build/gallery/apple"
-"""
+# a fixture whose screen has no renderer on either system fails the run,
+# which `mise run apple:test:kit` and `mise run android:test` also hold
+# without keeping the pictures. The open-source Swift and the JDK are for
+# the Android half; the Apple half runs Xcode's swift through xcrun.
+tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
+run = ".mise/gallery.sh"
 
 [tasks."apple:test:kit"]
 description = "Run SubstrateKit's tests (what the apps share: the server and its version, the requests, signing in, the session, the status check, their words and screens, and the record views) on the Mac"
@@ -996,7 +988,7 @@ tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
 run = ".mise/android.sh generate:check"
 
 [tasks."android:build"]
-description = "Cross-compile the kit for Android and build kit-core, kit-device and bridge-check, debug and release (SUBSTRATE_ABIS, default arm64-v8a,x86_64)"
+description = "Cross-compile the kit for Android and build kit-core, kit-device, kit-ui, bridge-check and the Gallery app, debug and release (SUBSTRATE_ABIS, default arm64-v8a,x86_64)"
 tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
 run = ".mise/android.sh build"
 

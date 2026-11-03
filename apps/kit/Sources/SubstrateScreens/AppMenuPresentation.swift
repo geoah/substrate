@@ -1,7 +1,9 @@
+import SubstrateCore
+
 /// An app's top level as data (§5.6): its sections, drawn as a tab bar on a
 /// phone and as a sidebar on a tablet, a computer and a wide Android
 /// screen, and which one is open.
-public struct AppMenuPresentation: Codable, Hashable, Sendable {
+public struct AppMenuPresentation: Bridged, Hashable, Sendable {
     public var sections: [AppMenuSection]
     public var selected: String
 
@@ -11,7 +13,7 @@ public struct AppMenuPresentation: Codable, Hashable, Sendable {
     }
 }
 
-public struct AppMenuSection: Codable, Hashable, Sendable, Identifiable {
+public struct AppMenuSection: Bridged, Hashable, Sendable, Identifiable {
     public var id: String
     public var title: String
     /// The app's name for the section's mark, which each system's renderer

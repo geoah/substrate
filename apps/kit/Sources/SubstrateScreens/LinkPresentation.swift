@@ -1,10 +1,11 @@
+import SubstrateCore
 import SubstrateRuntime
 
 /// The link's screens and the app's, as one tree: the snapshot every
 /// controller under the link is told, the Repository section, the Access
 /// banner or the access ended, the Status section, and the app's own
 /// presentation, nil only before the app's first.
-public struct LinkPresentation<App: Codable & Equatable & Sendable>: Codable, Equatable, Sendable {
+public struct LinkPresentation<App: Codable & Equatable & Sendable>: Bridged, Equatable, Sendable {
     public var snapshot: LinkSnapshot
     public var repository: RepositoryPresentation?
     public var banner: AccessBanner?

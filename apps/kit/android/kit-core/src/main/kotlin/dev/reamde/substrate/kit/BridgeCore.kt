@@ -118,7 +118,7 @@ public class BridgeCore(
         val call = if (envelope.id?.let { queries.containsKey(it) } == true) Redaction.Call.PUBLIC else Redaction.Call.UNKNOWN
         log?.invoke("out ${Redaction.redact(message, call)}")
         when (envelope.op) {
-            Op.presentation -> update(envelope.handle) { it.copy(presentation = envelope.body) }
+            Op.presentation -> update(envelope.handle) { it.copy(presentation = envelope.body).rebuilt() }
             Op.list -> list(envelope)
             Op.closed -> {
                 val open = opened(envelope.handle)
@@ -182,7 +182,9 @@ public class BridgeCore(
             val state = open.lists.getOrPut(name) { KeyedListState(name) }
             val applied = state.apply(message)
             if (applied == KeyedListState.Applied.APPLIED) {
-                open.flow.value = open.flow.value.copy(lists = open.flow.value.lists + (name to state.snapshot))
+                val snapshot = open.flow.value
+                open.flow.value = snapshot.copy(lists = snapshot.lists + (name to state.snapshot),
+                    revisions = snapshot.revisions + (name to state.revision)).rebuilt()
             }
             applied == KeyedListState.Applied.NEEDS_WHOLE
         }

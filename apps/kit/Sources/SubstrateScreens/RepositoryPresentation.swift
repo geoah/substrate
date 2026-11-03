@@ -1,8 +1,10 @@
+import SubstrateCore
+
 /// The repository the app is signed in to, as a settings form shows it
 /// (§5.6): which server and repository, the server's version, what the app
 /// was approved to do and until when, and the two ways out of it. Each fact
 /// is a field of its own, so a form gives each its row and its id.
-public struct RepositoryPresentation: Codable, Hashable, Sendable {
+public struct RepositoryPresentation: Bridged, Hashable, Sendable {
     public var title: String
     public var server: LabeledValue
     public var repository: LabeledValue
@@ -39,7 +41,7 @@ public struct RepositoryPresentation: Codable, Hashable, Sendable {
 
 /// What an app session was approved to do: "Approved access" over one line
 /// per scope, and until when.
-public struct ApprovedAccess: Codable, Hashable, Sendable {
+public struct ApprovedAccess: Bridged, Hashable, Sendable {
     public var title: String
     public var scopes: [ApprovedScope]
     /// When the approved access ends, or that the owner revokes it.
@@ -53,7 +55,7 @@ public struct ApprovedAccess: Codable, Hashable, Sendable {
 }
 
 /// One approved scope, in words.
-public struct ApprovedScope: Codable, Hashable, Sendable, Identifiable {
+public struct ApprovedScope: Bridged, Hashable, Sendable, Identifiable {
     public var scope: String
     public var words: String
 

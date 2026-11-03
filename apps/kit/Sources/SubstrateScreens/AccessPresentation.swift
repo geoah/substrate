@@ -1,5 +1,7 @@
+import SubstrateCore
+
 /// The app's status issues as a banner: one line each, with its action.
-public struct AccessBanner: Codable, Hashable, Sendable {
+public struct AccessBanner: Bridged, Hashable, Sendable {
     /// Orange when any issue stops the app, or will, or blocks an approval;
     /// blue otherwise.
     public var tone: ScreenTone
@@ -12,7 +14,7 @@ public struct AccessBanner: Codable, Hashable, Sendable {
 }
 
 /// One issue: what needs the owner, in words, and the one thing to press.
-public struct IssueLine: Codable, Hashable, Sendable {
+public struct IssueLine: Bridged, Hashable, Sendable {
     public var symbol: ScreenSymbol
     public var tone: ScreenTone
     public var title: String
@@ -37,7 +39,7 @@ public struct IssueLine: Codable, Hashable, Sendable {
 }
 
 /// The access ended or was revoked: what happened, and the one way out.
-public struct AccessEndedPresentation: Codable, Hashable, Sendable {
+public struct AccessEndedPresentation: Bridged, Hashable, Sendable {
     public var symbol: ScreenSymbol
     public var title: String
     public var message: String

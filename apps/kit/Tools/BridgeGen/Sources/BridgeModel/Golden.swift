@@ -14,6 +14,9 @@ public enum Golden {
             out += "      \"name\": \(quote(declaration.name)),\n"
             out += "      \"module\": \(quote(declaration.module)),\n"
             out += "      \"kind\": \(quote(declaration.kind.rawValue))"
+            if !declaration.parameters.isEmpty {
+                out += ",\n      \"parameters\": [\(declaration.parameters.map(quote).joined(separator: ", "))]"
+            }
             switch declaration.kind {
             case .struct:
                 out += ",\n      \"fields\": \(fields(declaration.fields, indent: 6))\n"

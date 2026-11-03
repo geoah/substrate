@@ -1,6 +1,8 @@
+import SubstrateCore
+
 /// What the owner can do about an issue with the app's access, as the
 /// command a button sends.
-public enum AccessAction: Codable, Hashable, Sendable {
+public enum AccessAction: Bridged, Hashable, Sendable {
     /// The review of what changed, then the approval page.
     case review
     case signInAgain
@@ -22,13 +24,13 @@ public enum AccessAction: Codable, Hashable, Sendable {
         }
     }
 
-    public enum Offer: String, Codable, Hashable, Sendable, CaseIterable {
+    public enum Offer: String, Bridged, Hashable, Sendable, CaseIterable {
         case review, signInAgain, moveToAppAccess, retry, openFix
     }
 }
 
 /// A button: its title and what it sends.
-public struct ActionButton<Action: Codable & Hashable & Sendable>: Codable, Hashable, Sendable {
+public struct ActionButton<Action: Codable & Hashable & Sendable>: Bridged, Hashable, Sendable {
     public var title: String
     public var action: Action
 

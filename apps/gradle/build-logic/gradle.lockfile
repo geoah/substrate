@@ -79,6 +79,7 @@ org.checkerframework:checker-qual:3.43.0=runtimeClasspath,testRuntimeClasspath
 org.glassfish.jaxb:jaxb-runtime:2.3.2=runtimeClasspath,testRuntimeClasspath
 org.glassfish.jaxb:txw2:2.3.2=runtimeClasspath,testRuntimeClasspath
 org.jdom:jdom2:2.0.6=runtimeClasspath,testRuntimeClasspath
+org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.4.21=runtimeClasspath,testRuntimeClasspath
 org.jetbrains.kotlin:fus-statistics-gradle-plugin:2.4.21=compileClasspath,runtimeClasspath,testRuntimeClasspath
 org.jetbrains.kotlin:kotlin-assignment-compiler-plugin-embeddable:2.4.10=kotlinCompilerPluginClasspathMain,kotlinCompilerPluginClasspathTest
 org.jetbrains.kotlin:kotlin-build-statistics:2.4.21=runtimeClasspath,testRuntimeClasspath

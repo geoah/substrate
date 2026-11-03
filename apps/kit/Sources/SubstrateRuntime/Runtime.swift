@@ -15,7 +15,7 @@ import SubstrateCore
 ///
 /// The UI reads `presentations()`; SubstrateUI's `PresentationModel`
 /// republishes them on the main actor for SwiftUI, and the Android bridge
-/// reads `encodedPresentations()` and sends `send(encoded:)`.
+/// reads `encodedFrames()` and sends `send(encoded:)`.
 public actor Runtime<Root: Controller> {
     private let loop: Loop<Root>
     private var opened = false
@@ -77,21 +77,46 @@ public actor Runtime<Root: Controller> {
         return loop.subscribe()
     }
 
-    /// The presentations as JSON, for the Android bridge. One that does not
-    /// encode arrives as its failure, which the bridge delivers as an error,
-    /// and the next one still comes.
+    /// The presentations as JSON, every keyed list in them whole. One that
+    /// does not encode arrives as its failure, and the next one still comes.
+    /// Written by `ValueCoding`, as everything that crosses to Android is.
     public func encodedPresentations() -> AsyncStream<Result<Data, PresentationNotEncoded>> {
         open()
         let presentations = loop.subscribe()
         let (stream, continuation) = AsyncStream<Result<Data, PresentationNotEncoded>>.makeStream(bufferingPolicy: .bufferingNewest(1))
         let task = Task {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
             for await presentation in presentations {
                 do {
-                    continuation.yield(.success(try encoder.encode(presentation)))
+                    continuation.yield(.success(try ValueCoding.encode(presentation).data(pretty: false)))
                 } catch {
                     continuation.yield(.failure(PresentationNotEncoded(reason: String(describing: error))))
+                }
+            }
+            continuation.finish()
+        }
+        continuation.onTermination = { _ in task.cancel() }
+        return stream
+    }
+
+    /// The presentations as the Android bridge sends them (§5.5): each tree
+    /// as JSON with every keyed list in it written as a `KeyedListReference`,
+    /// beside the lists whose rows moved since the frame before, which go
+    /// first and as deltas. Unlike a presentation, a frame is never skipped:
+    /// a list's deltas apply in order, so the stream buffers every frame,
+    /// each encoded as the runtime publishes it.
+    public func encodedFrames() -> AsyncStream<PresentationFrame> {
+        open()
+        let presentations = loop.subscribe()
+        let (stream, continuation) = AsyncStream<PresentationFrame>.makeStream(bufferingPolicy: .unbounded)
+        let task = Task {
+            let crossing = KeyedListCrossing()
+            for await presentation in presentations {
+                do {
+                    let (json, moved) = try crossing.encode(presentation)
+                    continuation.yield(PresentationFrame(presentation: .success(json), lists: moved))
+                } catch {
+                    continuation.yield(PresentationFrame(presentation: .failure(PresentationNotEncoded(reason: String(describing: error))),
+                                                         lists: []))
                 }
             }
             continuation.finish()
@@ -117,13 +142,15 @@ public actor Runtime<Root: Controller> {
         try loop.root.route(path[...], command: .value(command))
     }
 
-    /// A `RoutedCommand` as JSON, from the Android bridge.
+    /// A `RoutedCommand` as JSON, from the Android bridge. Read with
+    /// `JSONValue`'s own reader and decoded by `ValueCoding`, never
+    /// Foundation's coders, so a `JSONValue` inside a command (a record's
+    /// properties) keeps every digit of its numbers.
     public func send(encoded data: Data) throws {
         open()
         defer { loop.settle() }
-        let routed = try JSONDecoder().decode(RoutedCommand.self, from: data)
-        let command = try JSONEncoder().encode(routed.command)
-        try loop.root.route(routed.path[...], command: .encoded(command))
+        let routed = try ValueCoding.decode(RoutedCommand.self, from: JSONValue(data: data))
+        try loop.root.route(routed.path[...], command: .encoded(routed.command))
     }
 
     /// An event from outside the loop, applied as an effect's result is: a
@@ -146,6 +173,18 @@ public actor Runtime<Root: Controller> {
         loop.settle()
     }
 
+    /// The device's locale or time zone changed: every presenter, enrichment
+    /// and effect reads the new one from here on, and the whole tree is
+    /// presented again in it, inside this step.
+    public func environmentChanged(locale: Locale, timeZone: TimeZone) {
+        open()
+        guard locale != loop.environment.locale || timeZone != loop.environment.timeZone else { return }
+        loop.environment.locale = locale
+        loop.environment.timeZone = timeZone
+        loop.root.environmentChanged()
+        loop.settle()
+    }
+
     /// The root back to its initial state with no journal; its controller
     /// generation moves, so every result still on its way is dropped.
     public func reset() {
@@ -159,6 +198,19 @@ public actor Runtime<Root: Controller> {
     public func close() {
         opened = true
         loop.close()
+    }
+}
+
+/// One presentation as it crosses to Android: the tree with its keyed
+/// lists written as references, and the lists whose rows moved, which the
+/// bridge sends before the tree so Kotlin holds every row the tree names.
+public struct PresentationFrame: Sendable {
+    public var presentation: Result<Data, PresentationNotEncoded>
+    public var lists: [CarriedList]
+
+    public init(presentation: Result<Data, PresentationNotEncoded>, lists: [CarriedList]) {
+        self.presentation = presentation
+        self.lists = lists
     }
 }
 

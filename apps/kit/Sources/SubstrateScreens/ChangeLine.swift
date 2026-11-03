@@ -1,10 +1,11 @@
 import SubstrateAuth
+import SubstrateCore
 
 /// One change an approval would make, as a row draws it: its mark, its
 /// words, and the fact beside it. A change the server cannot make yet wears
 /// the warning mark and says why in full contrast, since that sentence is
 /// what the owner acts on.
-public struct ChangeLine: Codable, Hashable, Sendable, Identifiable {
+public struct ChangeLine: Bridged, Hashable, Sendable, Identifiable {
     public var id: String
     public var symbol: ScreenSymbol
     public var tone: ScreenTone

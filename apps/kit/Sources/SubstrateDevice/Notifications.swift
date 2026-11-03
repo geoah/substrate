@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// The device's local notifications (§5.4): whether the owner lets the app
 /// alert, the categories its notifications answer with, one request
@@ -64,7 +65,7 @@ public extension Notifications {
 }
 
 /// What the owner allows.
-public enum NotificationPermission: String, Codable, Equatable, Sendable {
+public enum NotificationPermission: String, Bridged, Equatable {
     /// Never asked: the app asks when it first needs to.
     case notAsked
     /// Refused, or allowed with nowhere to show one.
@@ -76,7 +77,7 @@ public enum NotificationPermission: String, Codable, Equatable, Sendable {
 }
 
 /// One notification, shown at an instant or at once.
-public struct NotificationRequest: Codable, Equatable, Sendable {
+public struct NotificationRequest: Bridged, Equatable {
     public var id: String
     public var title: String
     /// A line under the title: what the notification is about.
@@ -111,25 +112,6 @@ public struct NotificationRequest: Codable, Equatable, Sendable {
         self.timeSensitive = timeSensitive
         self.showsWhileActive = showsWhileActive
         self.userInfo = userInfo
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id, title, subtitle, body, fireAt, thread, category, timeSensitive, showsWhileActive, userInfo
-    }
-
-    /// A request encoded before `showsWhileActive` reads as one that shows.
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        title = try container.decode(String.self, forKey: .title)
-        subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
-        body = try container.decodeIfPresent(String.self, forKey: .body)
-        fireAt = try container.decodeIfPresent(Date.self, forKey: .fireAt)
-        thread = try container.decodeIfPresent(String.self, forKey: .thread)
-        category = try container.decodeIfPresent(String.self, forKey: .category)
-        timeSensitive = try container.decodeIfPresent(Bool.self, forKey: .timeSensitive) ?? false
-        showsWhileActive = try container.decodeIfPresent(Bool.self, forKey: .showsWhileActive) ?? true
-        userInfo = try container.decodeIfPresent([String: String].self, forKey: .userInfo) ?? [:]
     }
 }
 

@@ -1,5 +1,7 @@
+import SubstrateCore
+
 /// A label and its value, read the same in a read view and an edit view.
-public struct LabeledValue: Codable, Hashable, Sendable {
+public struct LabeledValue: Bridged, Hashable, Sendable {
     public var label: String
     public var value: String
     /// The value is an identifier a person may copy (a version, an id).

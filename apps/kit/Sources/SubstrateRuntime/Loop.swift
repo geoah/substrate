@@ -4,7 +4,8 @@ import Foundation
 /// wait for it, and the window coalesced events share. Read and written only
 /// on its runtime's executor, as its hosts are.
 final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
-    let environment: AppEnvironment
+    /// Moved only by the device's locale and time zone (`Runtime.environmentChanged`).
+    var environment: AppEnvironment
     let performsEffects: Bool
     let hop: @Sendable (@escaping @Sendable () -> Void) async -> Void
     private let traceSink: (@Sendable (RuntimeTrace) -> Void)?
