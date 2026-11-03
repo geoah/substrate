@@ -93,9 +93,9 @@ changes the list and a conversation publishes one tree.
 | A turn's stream | `Conversation`'s `.sequence` effect under the key `run`: a send, an attach (its read, then the events), the handover read |
 | Streamed text | `Conversation.coalescing(of:)`: a delta or a piece of reasoning presents within 50 ms, structure at once |
 | The watch | the kit's `WatchFollower`, its cursor and the rows still to read again in the kit's `RecordCache` (`records/watch.json`) |
-| The cache | `ChatStorage` over the kit's `RepositoryFolder`, at the path every build used (`Application Support/SubstrateChat/<hash>/`): `state.json` and `drafts.json` adopted at the top, transcripts moved from `messages/` into the cache area, bounded by age and budget |
+| The cache | `ChatStorage` over the kit's `RepositoryFolder`, at the path every build used (`Application Support/SubstrateChat/<hash>/`): `state.json` and `drafts.json` adopted at the top, transcripts moved from `messages/` into the cache area, bounded by age and budget; a session reaches it only through the `ChatStorage.Lease` its open answered |
 | Notifications | the kit's `Notifications` device service (`SystemNotifications` on an Apple device): scheduled, cancelled and badged as effects; the app's own delegate turns a tap into a route and keeps a chat on screen quiet |
-| Background | the kit's `BackgroundWork` device service: the refresh job's runs, and continued processing for a streaming turn |
+| Background | the kit's `BackgroundWork` device service: the refresh job's runs, scheduled with the repository and the link generation and checked against both, stopped when the system takes a run back or its budget runs out; and continued processing for a streaming turn |
 | The owner's choices | `ChatPreferences`, kept in UserDefaults under the keys every build used |
 
 ### The API, as this app uses it
@@ -182,10 +182,10 @@ test by its number in `ChatKit/Tests/ChatKitTests/RuleTests.swift`:
 | ---- | -------------- | -------- |
 | 1 | `ChatApp.Command.show`/`newChat` mint the child's key; the conversation's `named` event reaches the list through `event(fromChild:_:after:)`, which binds the thread and drops any other conversation on it (`ChatAppEngine.reported`) | `rule1_aConversationIsKeyedByItsClientIDAndTheThreadEventBindsIt` |
 | 2 | the stream runs under the key `run`; `Conversation`'s `opened` step starts nothing while a run is active | `rule2_oneStreamPerConversation` |
-| 3 | the conversation's ownership reaches the list with each of its events; `load` refuses an owned thread and `rowsRead` drops one, while a conversation's own reads publish | `rule3_noRowsPublishUnderALiveOverlay` |
-| 4 | `ChatAppState.readEpochs`, carried by every read and prefetch and moved by a send, an attach, a settle and a binding, which also cancel the read under `read:<thread>` | `rule4_aReadIsDroppedWhenItsThreadsEpochMoved` |
+| 3 | the conversation's ownership reaches the list with each of its events; `load` refuses an owned thread, and `rowsRead`, `prefetched` and `cachedLoaded` drop one, while a conversation's own reads publish | `rule3_noRowsPublishUnderALiveOverlay`, `rule3_aCachedReadThatLandsUnderALiveOverlayIsDropped` |
+| 4 | `ChatAppState.readEpochs`, carried by every read, cached read and prefetch, and moved in `ChatAppEngine.reported` by a binding, a send or an attach (the conversation takes the thread) and a settle (it hands it back), each of which also cancels the read under `read:<thread>`; a read that fails clears what is outstanding, so the next asks again | `rule4_aReadIsDroppedWhenItsThreadsEpochMoved`, `rule4_aCachedReadIsDroppedWhenItsThreadsEpochMoved` |
 | 5 | the runtime's key epochs: a new run restarts `run` and cancels `retry`, `poll`, `pollTimer`, `stop`, `stopWait` and `check`, so a late result is dropped | `rule5_aNewRunDropsWhatAnOlderRunStillDelivers` |
-| 6 | the runtime's controller generation: `ChatApp.resetting(of:on:)` starts the list over when the link's repository changes or is gone, closing every conversation; the folder is closed (deleted on Sign Out) and the notifications removed | `rule6_aSignOutDropsEverythingStillOnItsWay` |
+| 6 | the runtime's controller generation: `ChatApp.resetting(of:on:)` starts the list over when the link's repository changes or is gone, closing every conversation; the folder's lease is retired, so nothing still on its way reaches the folder, the link generation in it moves, the rest of it is deleted on Sign Out, and the notifications are removed; the next sign-in's open runs after all of it | `rule6_aSignOutDropsEverythingStillOnItsWay`, `aSaveStillOnItsWayAcrossASignOutWritesNothing` |
 | 7 | `ChatAppState.isCurrent` | `rule7_cachedRowsAreCurrentOnlyWhileTheirThreadIsSettledAndUnmoved` |
 
 1. **A conversation is keyed by a client UUID**, never by an agent. A new
@@ -248,9 +248,10 @@ be read again.
 | File | Holds |
 | ---- | ----- |
 | `state.json` | format version, agents, providers, the chat list, opening lines, pending cards, read marks, the notified set, the feed cursor |
-| `cache/<thread>.json` | one thread's rows, the thread `version` they were read under, and whether the window was full (in `messages/` before ChatKit; moved at the first open) |
+| `cache/<thread>.json` | one thread's rows, the thread `version` they were read under, and whether the window was full (in `messages/` before ChatKit; moved at the first open, the newer copy kept where both areas hold one, and `messages/` removed only once every file in it is moved) |
 | `records/watch.json` | the watch's cursor and the rows it marked to read again (the kit's `RecordCache`); the cursor `state.json` kept before ChatKit is read into it once |
 | `drafts.json` | each chat's unsent draft |
+| `link.json` | the link generation (the kit's `LinkGeneration`): moved by every sign-out, and the one file Sign Out keeps, so a refresh job scheduled before it does nothing after the next sign-in |
 
 - **Launch** decodes `state.json` (small: rows a list needs) before the
   first frame; transcripts are decoded when a chat opens or is prefetched.
@@ -262,7 +263,8 @@ be read again.
   differs are read one at a time, 100 rows each; a read that fills the window
   is marked partial and re-read whole when opened.
 - **Writes are behind**: atomic, coalesced per file, off the main actor,
-  each tagged with the session epoch.
+  each through the session's lease, which reaches nothing once a sign-out
+  retired it.
 - **Bounded**: transcripts of chats not opened in 60 days, and the oldest
   past 100 MB, are dropped. Settings → Storage shows each area's size, the
   transcripts against the budget, and clears them (the kit's Storage rows:
@@ -303,7 +305,10 @@ The server has no push channel, so the app promises what it can observe:
   task completes. Where iOS will not run one, a background task gives about
   30 s. A `BGAppRefreshTask` is the backstop: it reads the chats the app saw
   running and the pending cards, and notifies what settled or appeared. It
-  runs when iOS decides; Settings says so.
+  runs when iOS decides; Settings says so. Its job names the repository and
+  the link generation it was scheduled under, and a run for another, or one
+  that outlives its budget or that iOS takes back, writes and notifies
+  nothing.
 - **On macOS** the stream and the feed run while the app is open, so replies
   and cards notify when they happen (unless the Mac sleeps).
 - **Permission** is asked after the first message is sent. Settings has a
@@ -623,9 +628,14 @@ may do and for how long; the app never sees the password.
   gives the text back and nothing runs; a gateway's answer is unknown
   delivery, never a refusal, and nothing is sent again; older rows never
   replace newer ones; a closed session publishes nothing; a window leaving
-  keeps a conversation another window shows; the cache folder a build
-  before ChatKit wrote reads after the upgrade (`DiskTests.swift`, over a
-  fixture of that format).
+  keeps a conversation another window shows; a transcript read that failed
+  is asked for again; the cache folder a build before ChatKit wrote reads
+  after the upgrade (`DiskTests.swift`, over a fixture of that format), and
+  its transcripts move only as a whole, the newer copy kept; a save still on
+  its way across a sign-out writes nothing, and a sign-in right after one
+  keeps its own folder; a refresh job from before a sign-out does nothing,
+  and one the system takes back or that outlives its budget lands nothing
+  (`BackgroundTests.swift`, over the kit's `ScriptedBackground`).
 - A run against the dev substrate (`mise run dev`) with a model stub: sign
   in, the list, Markdown, streaming, a tool call, a question answered and the
   agent resumed, Stop, a new chat, Settings.

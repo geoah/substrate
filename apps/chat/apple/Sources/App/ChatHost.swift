@@ -34,6 +34,9 @@ final class ChatHost {
         let store = SessionStore.chat
         let transport = URLSessionTransport.shared
         let folders = ApplicationFolders(name: "SubstrateChat")
+        // No `environment.folder`: the link has one, and Chat's folder is the
+        // signed-in repository's, so `ChatStorage` keeps the link generation
+        // in each and moves it as a sign-out retires the folder.
         var environment = AppEnvironment.apple(transport: transport, folders: folders)
         environment.client = ClientSource { store.load().map { SubstrateClient(server: $0.server, token: $0.secret, transport: transport) } }
         environment.devices.notifications = ChatServices.notifications

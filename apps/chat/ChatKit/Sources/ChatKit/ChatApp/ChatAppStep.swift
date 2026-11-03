@@ -15,6 +15,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case transcriptsCleared
     case backgroundRun(BackgroundRun)
     case backgroundRefreshed(BackgroundRun, threads: Threads?, cards: Cards?)
+    /// The system took the run back, or its budget ran out.
+    case backgroundExpired(String)
     case continued(ChildKey, ContinuedProcessing.Update)
     case phase(AppPhase)
 
@@ -28,7 +30,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case readFailed(Failure)
     case openingsRead([String: String])
     case rowsRead(thread: String, epoch: Int, version: Int, rows: [Record], full: Bool)
-    case cachedLoaded(thread: String, CachedTranscript?)
+    case rowsFailed(thread: String, epoch: Int, Failure)
+    case cachedLoaded(thread: String, epoch: Int, CachedTranscript?)
     case prefetched(thread: String, epoch: Int, version: Int, rows: [Record])
     case threadFetched(Record)
 
@@ -78,6 +81,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
 
     /// What the device held for a repository when it was opened.
     struct Disk: Codable, Equatable, Sendable {
+        var lease: ChatStorage.Lease
         var state: CachedState?
         var drafts: [String: String]
         var preferences: ChatPreferences

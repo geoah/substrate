@@ -169,7 +169,8 @@ public struct ChatApp: LinkedApp {
     public func report(of event: Event) -> LinkReport? {
         switch event.step {
         case let .conversation(_, report): report.failure?.report
-        case let .refreshFailed(failure), let .readFailed(failure), let .keyFailed(failure), let .cardFailed(_, failure),
+        case let .refreshFailed(failure), let .readFailed(failure), let .rowsFailed(_, _, failure), let .keyFailed(failure),
+             let .cardFailed(_, failure),
              let .cardWriteFailed(_, failure, _), let .renameFailed(_, _, failure):
             failure.report
         case let .watchEnded(_, failure?): failure.report
@@ -200,7 +201,7 @@ public struct ChatApp: LinkedApp {
         case .cards: "cards"
         case .openings: "openings"
         case let .read(thread, _, _, _): "read:\(thread)"
-        case let .loadCached(_, thread): "cached:\(thread)"
+        case let .loadCached(_, thread, _): "cached:\(thread)"
         case let .saveTranscript(_, thread, _): "save:\(thread)"
         case .saveState: "state"
         case .saveDrafts: "drafts"

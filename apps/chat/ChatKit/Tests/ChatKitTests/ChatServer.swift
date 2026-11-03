@@ -36,10 +36,14 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
         lock.withLock { routes.insert(Route(method: method, path: path, query: query, answer: answer), at: 0) }
     }
 
+    /// Takes back the route `route(_:_:query:_:)` put first.
+    func unroute() { lock.withLock { _ = routes.removeFirst() } }
+
     /// Every stream held part way goes on.
     func release() { lock.withLock { released = true } }
 
-    /// The next requests ending with `path` wait until `let(go:)`.
+    /// The next requests ending with `path` wait until `letGo(_:)`, or
+    /// until the request is cancelled.
     func hold(_ path: String) { lock.withLock { heldPaths[path] = false } }
     func letGo(_ path: String) { lock.withLock { heldPaths[path] = true } }
 
@@ -59,7 +63,7 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
             kept.append("\(method) \(path)?\(query)")
             return routes.first { $0.method == method && path.hasSuffix($0.path) && ($0.query.map(query.contains) ?? true) }
         }
-        while let held = lock.withLock({ heldPaths.first { path.hasSuffix($0.key) }?.value }), !held {
+        while let held = lock.withLock({ heldPaths.first { path.hasSuffix($0.key) }?.value }), !held, !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
         return (route?.answer ?? .json(404, #"{"error":{"code":"not_found","message":"no route"}}"#), url)

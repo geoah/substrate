@@ -80,6 +80,39 @@ struct SevenRules {
         #expect(current.transcripts["t1"]?.records == rows)
     }
 
+    @Test func rule3_aCachedReadThatLandsUnderALiveOverlayIsDropped() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = signedInState()
+        // The chat was opened, its disk read asked for; then a send took it.
+        state.conversations[ChildKey("k")] = .init(seed: .init(thread: "t1", agent: helper, draft: "", listen: false), thread: "t1",
+                                                   agent: helper, owns: true)
+        let late = try app.apply(.init(.cachedLoaded(thread: "t1", epoch: 0, cachedRows)), to: state)
+        #expect(late.transcripts["t1"] == nil)
+        #expect(!late.asks.contains { if case .read = $0 { true } else { false } })
+    }
+
+    @Test func rule4_aCachedReadIsDroppedWhenItsThreadsEpochMoved() throws {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = signedInState()
+        let key = ChildKey("k")
+        state.conversations[key] = .init(seed: .init(thread: "t1", agent: helper, draft: "", listen: false), thread: "t1", agent: helper)
+        // An attach takes the thread and a settle hands it back: each moves
+        // the epoch.
+        let report = ChatAppStep.Report(thread: "t1", agent: helper, owns: true, active: true, streaming: true, outcomes: 0, name: "Helper",
+                                        settles: 0, named: nil, read: nil, draft: nil, sent: false, failure: nil)
+        state = try app.apply(.init(.conversation(key, report)), to: state)
+        #expect(state.readEpochs["t1"] == 1)
+        var settled = report
+        (settled.owns, settled.active, settled.streaming, settled.settles) = (false, false, false, 1)
+        state = try app.apply(.init(.conversation(key, settled)), to: state)
+        #expect(state.readEpochs["t1"] == 2)
+        // The disk's rows, asked for before the attach, arrive after the settle.
+        let late = try app.apply(.init(.cachedLoaded(thread: "t1", epoch: 0, cachedRows)), to: state)
+        #expect(late.transcripts["t1"] == nil)
+        let current = try app.apply(.init(.cachedLoaded(thread: "t1", epoch: 2, cachedRows)), to: state)
+        #expect(current.transcripts["t1"]?.records == cachedRows?.records)
+    }
+
     @Test func rule5_aNewRunDropsWhatAnOlderRunStillDelivers() async throws {
         let rig = ChatRig(baseRoutes(threads: #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3, status: "running"))]}"#,
                                      status: "running")
@@ -115,8 +148,10 @@ struct SevenRules {
         #expect(state.session == nil)
         #expect(state.agents.isEmpty)
         #expect(state.conversations.isEmpty)
-        // Sign Out forgets the saved chats, and every notification.
-        try await rig.harness.until { _ in !FileManager.default.fileExists(atPath: rig.base.appendingPathComponent(ChatStorage.hash(identity)).path) }
+        // Sign Out forgets the saved chats, and every notification; the
+        // folder keeps only the link generation, moved.
+        try await rig.harness.until { _ in (try? FileManager.default.contentsOfDirectory(atPath: rig.root.path)) == ["link.json"] }
+        #expect(try rig.generation == 1)
         #expect(rig.notifications.calls.contains(.cancelAll))
     }
 
@@ -242,6 +277,26 @@ struct ListRules {
         #expect(rig.server.count("/api/v1/records", query: "recordpatchrequest") == 0)
     }
 
+    @Test func aTranscriptReadThatFailedIsAskedForAgain() async throws {
+        let threads = #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3))]}"#
+        let rig = ChatRig(baseRoutes(threads: threads))
+        try await rig.signIn()
+        // The list's read of the opening lines lists messages too.
+        try await rig.harness.until { await $0.state.openings["t1"] != nil }
+        let before = rig.server.count("/api/v1/records", query: "llm/message")
+        // A 500: a 503 the client waits out and tries again itself.
+        rig.server.route("GET", "/api/v1/records", query: "llm/message", .json(500, #"{"error":{"code":"internal","message":"later"}}"#))
+        await rig.harness.send(.show(thread: "t1", scene: "a"))
+        try await rig.harness.until { _ in rig.server.count("/api/v1/records", query: "llm/message") == before + 1 }
+        try await rig.harness.until { await $0.state.reading["t1"] == nil }
+        // The server is back; opening the chat again reads it.
+        rig.server.unroute()
+        await rig.harness.send(.show(thread: "t1", scene: "b"))
+        let key = try #require(await rig.harness.state.scenes["b"]?.current)
+        try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
+        #expect(rig.server.count("/api/v1/records", query: "llm/message") == before + 2)
+    }
+
     @Test func aChatTheDeviceHoldsNothingOfIsReadWhenOpened() async throws {
         let threads = #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3))]}"#
         let rig = ChatRig(baseRoutes(threads: threads))
@@ -293,6 +348,17 @@ struct ListRules {
         #expect(await rig.harness.state.conversations[key]?.thread == "t1")
     }
 }
+
+/// A list signed in with its folder read, for an engine test.
+func signedInState() -> ChatAppState {
+    var state = ChatAppState()
+    state.session = ChatSession(LinkSnapshot(phase: .signedIn, server: origin, repository: repository))
+    state.disk = ChatStorage.Lease(identity: identity, number: 1, generation: 0)
+    return state
+}
+
+let cachedRows: CachedTranscript? = CachedTranscript(
+    threadVersion: 3, full: false, records: [Record(id: "m", kind: Kinds.message, properties: ["role": "user", "content": "x"])], openedAt: nil)
 
 /// What a test watched go by.
 final class Seen: @unchecked Sendable {

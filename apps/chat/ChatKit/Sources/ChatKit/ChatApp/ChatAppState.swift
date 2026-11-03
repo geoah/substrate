@@ -61,8 +61,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var session: ChatSession?
     var accessEnded = false
     var online = true
+    /// The session's lease on the device's folder, once it was read.
+    var disk: ChatStorage.Lease?
     /// The device's folder was read: what it held is drawn.
-    var opened = false
+    var opened: Bool { disk != nil }
     /// Something to draw: the cache, or a first read.
     var loaded = false
     var refreshing = false
@@ -93,6 +95,12 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var readEpochs: [String: Int] = [:]
     /// The thread version each read in flight started under.
     var reading: [String: Int] = [:]
+
+    /// The background run whose refresh is under way.
+    var backgroundRun: BackgroundRun?
+    /// A run granted before the folder was read, which names the
+    /// generation the run is checked against.
+    var waitingRun: BackgroundRun?
 
     var conversations: [ChildKey: Entry] = [:]
     var scenes: [String: Scene] = [:]

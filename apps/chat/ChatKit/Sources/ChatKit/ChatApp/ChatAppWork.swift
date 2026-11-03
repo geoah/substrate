@@ -31,64 +31,69 @@ extension ChatApp {
         }
         switch effect.ask {
         case let .openDisk(identity):
+            // Queued now, in the order the effects were asked, behind the
+            // retirement of the session before.
+            let opening = storage.open(identity)
             return .once {
-                let state = storage.state(identity)
+                let lease = await opening.value
+                let state = storage.state(lease)
                 var stale: [ChatAppState.WatchKey] = []
-                if let cache = try? storage.records(identity) {
+                if let cache = storage.records(lease) {
                     // The cursor an earlier build kept beside the list.
                     if await cache.cursor == nil, let seq = state?.feedSeq, let generation = state?.feedGeneration {
                         await cache.bookmark(WatchCursor(seq: seq, generation: generation))
                     }
                     stale = await cache.stale.compactMap(Self.watchKey)
                 }
-                return Event(.diskOpened(.init(state: state, drafts: storage.drafts(identity), preferences: preferences.load(identity),
-                                               stale: stale)))
+                return Event(.diskOpened(.init(lease: lease, state: state, drafts: storage.drafts(lease),
+                                               preferences: preferences.load(identity), stale: stale)))
             }
         case let .closeDisk(identity, deleting):
+            // Fenced now, before any later effect starts.
+            let retiring = storage.retire(identity, deleting: deleting) { if deleting { preferences.clear(identity) } }
             return .once {
-                storage.close(identity, deleting: deleting)
-                if deleting { preferences.clear(identity) }
+                await retiring.value
                 return nil
             }
-        case let .prune(identity):
+        case let .prune(lease):
             return .once {
-                storage.prune(identity, at: clock.now)
+                storage.prune(lease, at: clock.now)
                 return nil
             }
-        case let .readUsage(identity):
-            return .once { Event(.usageRead(storage.usage(identity))) }
-        case let .clearTranscripts(identity):
+        case let .readUsage(lease):
+            return .once { Event(.usageRead(storage.usage(lease))) }
+        case let .clearTranscripts(lease):
             return .once {
-                storage.clearTranscripts(identity)
+                storage.clearTranscripts(lease)
                 return Event(.transcriptsCleared)
             }
-        case let .saveState(identity, cached):
+        case let .saveState(lease, cached):
             // Coalesced: a later save cancels this one while it waits.
             return .once {
                 guard await pause(0.4) else { return nil }
-                storage.save(cached, identity)
+                storage.save(cached, lease)
                 return nil
             }
-        case let .saveDrafts(identity, drafts):
+        case let .saveDrafts(lease, drafts):
             return .once {
                 guard await pause(0.6) else { return nil }
-                storage.save(drafts: drafts, identity)
+                storage.save(drafts: drafts, lease)
                 return nil
             }
-        case let .savePreferences(identity, chosen):
+        case let .savePreferences(lease, chosen):
             return .once {
-                preferences.save(chosen, identity)
+                storage.whileOpen(lease) { preferences.save(chosen, lease.identity) }
                 return nil
             }
-        case let .saveTranscript(identity, thread, transcript):
+        case let .saveTranscript(lease, thread, transcript):
             return .once {
                 var stamped = transcript
                 stamped.openedAt = clock.now
-                storage.save(stamped, thread: thread, identity)
+                storage.save(stamped, thread: thread, lease)
                 return nil
             }
-        case let .loadCached(identity, thread):
-            return .once { Event(.cachedLoaded(thread: thread, storage.transcript(identity, thread: thread, at: clock.now))) }
+        case let .loadCached(lease, thread, epoch):
+            return .once { Event(.cachedLoaded(thread: thread, epoch: epoch, storage.transcript(lease, thread: thread, at: clock.now))) }
 
         case let .refresh(plan):
             return .once {
@@ -128,16 +133,16 @@ extension ChatApp {
                     return Event(.rowsRead(thread: thread, epoch: epoch, version: version, rows: page.records.reversed(),
                                            full: page.records.count >= first))
                 } catch {
-                    return Task.isCancelled ? nil : Event(.readFailed(failed(error, client)))
+                    return Task.isCancelled ? nil : Event(.rowsFailed(thread: thread, epoch: epoch, failed(error, client)))
                 }
             }
-        case let .prefetch(identity, items):
+        case let .prefetch(lease, items):
             return .sequence {
                 Self.relay { yield in
                     guard await pause(1), let client = await source.current() else { return }
                     for item in items {
-                        if !item.held, let cached = storage.transcript(identity, thread: item.thread, at: clock.now) {
-                            yield(.cachedLoaded(thread: item.thread, cached))
+                        if !item.held, let cached = storage.transcript(lease, thread: item.thread, at: clock.now) {
+                            yield(.cachedLoaded(thread: item.thread, epoch: item.epoch, cached))
                             if cached.threadVersion == item.version { continue }
                         }
                         guard let page = try? await client.list(ChatAPI.transcriptQuery(item.thread, first: 100)) else { return }
@@ -154,10 +159,10 @@ extension ChatApp {
                     return Task.isCancelled ? nil : Event(.readFailed(failed(error, client)))
                 }
             }
-        case let .watch(identity, head):
+        case let .watch(lease, head):
             return .sequence {
                 Self.relay { yield in
-                    guard let client = await source.current(), let cache = try? storage.records(identity) else { return }
+                    guard let client = await source.current(), let cache = storage.records(lease) else { return }
                     if let head { await cache.listed(RecordPage(records: [], head: head.seq, generation: head.generation), kinds: []) }
                     var fresh = await cache.cursor == nil
                     let follower = WatchFollower(client: client, kinds: Self.watched, app: ChatManifest.appName) { wait in
@@ -195,9 +200,9 @@ extension ChatApp {
                 guard let client = await source.current() else { return nil }
                 return Event(.feedApplied(await Self.feed(client, plan, batch, threads: threads)))
             }
-        case let .markRefreshed(identity, keys):
+        case let .markRefreshed(lease, keys):
             return .once {
-                guard let cache = try? storage.records(identity) else { return nil }
+                guard let cache = storage.records(lease) else { return nil }
                 for key in keys { await cache.refreshed(key.kind, key.id, as: nil) }
                 return nil
             }
@@ -290,21 +295,35 @@ extension ChatApp {
             guard let background else { return .none }
             return .sequence {
                 Self.relay { yield in
-                    for await run in background.runs() { yield(.backgroundRun(run)) }
+                    await withTaskGroup(of: Void.self) { group in
+                        group.addTask { for await run in background.runs() { yield(.backgroundRun(run)) } }
+                        group.addTask { for await id in background.expirations() { yield(.backgroundExpired(id)) } }
+                    }
                 }
             }
-        case let .backgroundRefresh(run, plan, threads):
+        case let .backgroundRefresh(run, lease, plan, threads):
             return .once {
-                guard let client = await source.current() else { return Event(.backgroundRefreshed(run, threads: nil, cards: nil)) }
-                let read = try? await Self.threads(client, plan)
-                let cards = try? await Self.cards(client, plan, threads: read.map { ($0.chats + $0.automated).map(\.id) } ?? threads)
-                return Event(.backgroundRefreshed(run, threads: read, cards: cards))
+                // Checked before it reads and again before its result can
+                // write: a sign-out between lands nothing.
+                guard storage.holds(lease), let client = await source.current() else {
+                    return Event(.backgroundRefreshed(run, threads: nil, cards: nil))
+                }
+                let reading = { @Sendable () async -> ChatAppStep in
+                    let read = try? await Self.threads(client, plan)
+                    let cards = try? await Self.cards(client, plan, threads: read.map { ($0.chats + $0.automated).map(\.id) } ?? threads)
+                    return .backgroundRefreshed(run, threads: read, cards: cards)
+                }
+                // Short of the budget, so the run is answered before the
+                // system takes the time back.
+                let step = await Self.within(run.budget.map { $0 * 0.8 }, clock: clock, reading) ?? .backgroundExpired(run.id)
+                if case .backgroundRefreshed = step, !storage.holds(lease) { return Event(.backgroundRefreshed(run, threads: nil, cards: nil)) }
+                return Event(step)
             }
-        case let .finishRun(run):
-            return Self.device(background) { await $0.finish(run, success: true) }
-        case .scheduleRefresh:
-            let at = clock.now.addingTimeInterval(15 * 60)
-            return Self.device(background) { await $0.schedule(BackgroundJob(name: Self.refreshJob, earliest: at)) }
+        case let .finishRun(run, success):
+            return Self.device(background) { await $0.finish(run, success: success) }
+        case let .scheduleRefresh(lease):
+            let job = BackgroundJob(name: Self.refreshJob, earliest: clock.now.addingTimeInterval(15 * 60), payload: lease.payload)
+            return Self.device(background) { await $0.schedule(job) }
         case let .continueRun(key, request):
             guard let background else { return .none }
             return .sequence {
@@ -432,6 +451,24 @@ extension ChatApp {
     }
 
     // MARK: Helpers
+
+    /// The body's answer, or nil once `seconds` passed first; without a
+    /// limit, the body's.
+    static func within<Value: Sendable>(_ seconds: TimeInterval?, clock: any RuntimeClock,
+                                        _ body: @escaping @Sendable () async -> Value) async -> Value?
+    {
+        guard let seconds else { return await body() }
+        return await withTaskGroup(of: Value?.self) { group in
+            group.addTask { await body() }
+            group.addTask {
+                try? await clock.sleep(until: clock.now.addingTimeInterval(seconds))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
 
     static func conflictWords(_ kind: String) -> String {
         kind == Kinds.interaction ? "The questions changed since you read them. Check them again." : "It changed since you read it. Check it again."

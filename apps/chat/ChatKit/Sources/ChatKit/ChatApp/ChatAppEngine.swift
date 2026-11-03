@@ -17,18 +17,24 @@ extension ChatApp {
         case let .permissionRead(permission): next.permission = permission
         case let .usageRead(usage): next.usage = usage
         case .transcriptsCleared:
-            if let identity = next.session?.identity { next.asks.append(.readUsage(identity)) }
-        case let .backgroundRun(run):
-            guard next.session != nil else {
-                next.asks.append(.finishRun(run))
-                break
-            }
-            next.asks += [.scheduleRefresh, .backgroundRefresh(run, next.plan, threads: next.threadIDs)]
+            if let disk = next.disk { next.asks.append(.readUsage(disk)) }
+        case let .backgroundRun(run): backgroundRun(&next, run)
         case let .backgroundRefreshed(run, threads, cards):
-            if let threads { apply(&next, threads: threads) }
-            if let cards { apply(&next, cards: cards) }
-            save(&next)
-            next.asks.append(.finishRun(run))
+            // Only the run under way: one taken back, replaced, or asked
+            // for by another session lands nothing.
+            guard next.backgroundRun?.id == run.id else { break }
+            next.backgroundRun = nil
+            if let disk = next.disk, disk.scheduled(run) {
+                if let threads { apply(&next, threads: threads) }
+                if let cards { apply(&next, cards: cards) }
+                save(&next)
+            }
+            next.asks.append(.finishRun(run, success: threads != nil))
+        case let .backgroundExpired(id):
+            if next.waitingRun?.id == id { next.waitingRun = nil }
+            guard let run = next.backgroundRun, run.id == id else { break }
+            next.backgroundRun = nil
+            next.asks += [.cancel("background"), .finishRun(run, success: false)]
         case let .continued(key, update):
             if update == .ended { next.conversations[key]?.continuing = nil }
         case let .phase(phase): self.phase(&next, phase)
@@ -50,6 +56,9 @@ extension ChatApp {
             save(&next)
         case .readFailed:
             break
+        case let .rowsFailed(thread, epoch, _):
+            // The read is no longer outstanding: the next asks again.
+            if next.readEpochs[thread, default: 0] == epoch { next.reading[thread] = nil }
         case let .openingsRead(openings):
             next.openings.merge(openings) { _, new in new }
             save(&next)
@@ -57,7 +66,11 @@ extension ChatApp {
             if next.readEpochs[thread, default: 0] == epoch { next.reading[thread] = nil }
             guard next.readEpochs[thread, default: 0] == epoch, !next.owned(thread) else { break }
             publish(&next, thread, rows, version: version, full: full)
-        case let .cachedLoaded(thread, cached):
+        case let .cachedLoaded(thread, epoch, cached):
+            // Rules 3 and 4, as for a read: what the disk held is older than
+            // a send, an attach, a settle or a binding since, and never
+            // lands under a live overlay.
+            guard next.readEpochs[thread, default: 0] == epoch, !next.owned(thread) else { break }
             if let cached, next.transcripts[thread] == nil {
                 next.transcripts[thread] = State.Held(records: cached.records, turns: transcript(of: cached.records),
                                                       version: cached.threadVersion, full: cached.full)
@@ -204,13 +217,13 @@ extension ChatApp {
         case let .setting(row, toggle, choice): setting(&next, row, toggle, choice)
         case .settingsOpened:
             next.asks.append(.readPermission)
-            if let identity = next.session?.identity { next.asks.append(.readUsage(identity)) }
+            if let disk = next.disk { next.asks.append(.readUsage(disk)) }
         case .clearAsked:
-            guard let identity = next.session?.identity else { break }
+            guard let disk = next.disk else { break }
             for thread in Array(next.transcripts.keys) where !next.owned(thread) {
                 next.transcripts[thread] = nil
             }
-            next.asks.append(.clearTranscripts(identity))
+            next.asks.append(.clearTranscripts(disk))
             // What is on screen is read again rather than left empty.
             for thread in next.visibleThreads { load(&next, thread, force: true) }
         case let .forget(forget): next.forgetOnSignOut = forget
@@ -241,7 +254,7 @@ extension ChatApp {
             state.session = session
             state.online = online
             state.accessEnded = link.phase == .accessEnded
-            state.asks += [.openDisk(session.identity), .followRuns, .prune(session.identity)]
+            state.asks += [.openDisk(session.identity), .followRuns]
             return
         }
         state.session = session
@@ -261,7 +274,9 @@ extension ChatApp {
     }
 
     private func opened(_ state: inout State, _ disk: ChatAppStep.Disk) {
-        state.opened = true
+        guard disk.lease.identity == state.session?.identity else { return }
+        state.disk = disk.lease
+        state.asks.append(.prune(disk.lease))
         state.preferences = disk.preferences
         state.drafts = disk.drafts
         if let cached = disk.state {
@@ -281,9 +296,40 @@ extension ChatApp {
         state.feedBatch.formUnion(disk.stale)
         refresh(&state)
         // The windows that drew before the folder was read take their chats now.
-        for thread in state.visibleThreads {
-            if state.transcripts[thread] == nil, let identity = state.session?.identity { state.asks.append(.loadCached(identity, thread: thread)) }
+        for thread in state.visibleThreads where state.transcripts[thread] == nil {
+            state.asks.append(.loadCached(disk.lease, thread: thread, epoch: state.readEpochs[thread, default: 0]))
         }
+        if let run = state.waitingRun {
+            state.waitingRun = nil
+            backgroundRun(&state, run)
+        }
+    }
+
+    // MARK: Background work
+
+    /// A run of the refresh job: it reads the list and the cards and
+    /// notifies what settled or appeared, if the job was scheduled for
+    /// this repository under the generation its folder holds. A job from
+    /// before a sign-out does nothing.
+    private func backgroundRun(_ state: inout State, _ run: BackgroundRun) {
+        guard state.session != nil else {
+            state.asks.append(.finishRun(run, success: true))
+            return
+        }
+        guard let disk = state.disk else {
+            if let earlier = state.waitingRun { state.asks.append(.finishRun(earlier, success: false)) }
+            state.waitingRun = run
+            return
+        }
+        state.asks.append(.scheduleRefresh(disk))
+        guard disk.scheduled(run) else {
+            state.asks.append(.finishRun(run, success: true))
+            return
+        }
+        // The refresh under way is cancelled by this one's key.
+        if let earlier = state.backgroundRun { state.asks.append(.finishRun(earlier, success: false)) }
+        state.backgroundRun = run
+        state.asks.append(.backgroundRefresh(run, disk, state.plan, threads: state.threadIDs))
     }
 
     private func phase(_ state: inout State, _ phase: AppPhase) {
@@ -303,7 +349,8 @@ extension ChatApp {
             }
         case .background:
             state.appActive = false
-            state.asks += [.scheduleRefresh, .badge(state.unreadCount)]
+            if let disk = state.disk { state.asks.append(.scheduleRefresh(disk)) }
+            state.asks.append(.badge(state.unreadCount))
             if pausesWhenAway {
                 state.watching = false
                 state.asks.append(.cancel("watch"))
@@ -336,9 +383,9 @@ extension ChatApp {
     }
 
     private func watch(_ state: inout State, head: WatchCursor? = nil) {
-        guard let identity = state.session?.identity, state.online, state.appActive || !pausesWhenAway else { return }
+        guard let disk = state.disk, state.online, state.appActive || !pausesWhenAway else { return }
         state.watching = true
-        state.asks.append(.watch(identity, head: head))
+        state.asks.append(.watch(disk, head: head))
     }
 
     /// After a list: the opening lines it lacks, then the chats to read
@@ -352,7 +399,7 @@ extension ChatApp {
     /// The most recent settled chats whose rows are not current, read one
     /// at a time while nothing streams, so opening any of them is instant.
     private func prefetch(_ state: inout State) {
-        guard let identity = state.session?.identity, state.online, state.appActive,
+        guard let disk = state.disk, state.online, state.appActive,
               !state.conversations.values.contains(where: \.streaming)
         else { return }
         var items: [ChatAppAsk.Prefetch] = []
@@ -361,7 +408,7 @@ extension ChatApp {
             items.append(.init(thread: thread.id, version: thread.record.version, epoch: state.readEpochs[thread.id, default: 0],
                                held: state.transcripts[thread.id] != nil))
         }
-        if !items.isEmpty { state.asks.append(.prefetch(identity, items)) }
+        if !items.isEmpty { state.asks.append(.prefetch(disk, items)) }
     }
 
     /// A new list: an older row never replaces a newer one, what settled
@@ -463,8 +510,10 @@ extension ChatApp {
 
     // MARK: Transcripts
 
-    /// Rule 4: a read is dropped when the thread's epoch moved since it
-    /// started; send, attach and settle move it, and cancel reads in flight.
+    /// Rule 4: a read, a cached read or a prefetch is dropped when the
+    /// thread's epoch moved since it started. A binding, a send or an
+    /// attach, and a settle move it (`reported`), and cancel the read in
+    /// flight.
     private func bump(_ state: inout State, _ thread: String) {
         state.readEpochs[thread, default: 0] += 1
         state.reading[thread] = nil
@@ -492,9 +541,8 @@ extension ChatApp {
     private func publish(_ state: inout State, _ thread: String, _ rows: [Record], version: Int, full: Bool) {
         if let held = state.transcripts[thread], held.version > version { return }
         state.transcripts[thread] = State.Held(records: rows, turns: transcript(of: rows), version: version, full: full)
-        if let identity = state.session?.identity {
-            state.asks.append(.saveTranscript(identity, thread: thread,
-                                              CachedTranscript(threadVersion: version, full: full, records: rows, openedAt: nil)))
+        if let disk = state.disk {
+            state.asks.append(.saveTranscript(disk, thread: thread, CachedTranscript(threadVersion: version, full: full, records: rows, openedAt: nil)))
         }
     }
 
@@ -527,7 +575,7 @@ extension ChatApp {
         if let cards = feed.cards { apply(&state, cards: cards) }
         save(&state)
         let landed = batch.subtracting(feed.failed).filter { !$0.id.isEmpty }
-        if !landed.isEmpty, let identity = state.session?.identity { state.asks.append(.markRefreshed(identity, landed.sorted { "\($0)" < "\($1)" })) }
+        if !landed.isEmpty, let disk = state.disk { state.asks.append(.markRefreshed(disk, landed.sorted { "\($0)" < "\($1)" })) }
         state.feedBatch.formUnion(feed.failed)
         // Again shortly: what failed waits out a moment, and what arrived
         // meanwhile goes with it.
@@ -544,8 +592,11 @@ extension ChatApp {
                 thread: thread, agent: row?.agentID)
         }
         state.scenes[scene, default: State.Scene()].current = key
-        guard let identity = state.session?.identity else { return }
-        if state.transcripts[thread] == nil { state.asks.append(.loadCached(identity, thread: thread)) }
+        guard state.session != nil else { return }
+        // Before the folder is read, its open asks for what the windows show.
+        if state.transcripts[thread] == nil, let disk = state.disk {
+            state.asks.append(.loadCached(disk, thread: thread, epoch: state.readEpochs[thread, default: 0]))
+        }
         // A chat the list does not hold (a notification, a shortcut, an old
         // chat): its row names the agent, so it is read.
         if state.thread(thread) == nil { state.asks.append(.fetchThread(thread)) }
@@ -613,7 +664,10 @@ extension ChatApp {
             state.drafts[Self.newDraft + key.rawValue] = nil
             save(&state)
         }
+        // Rule 4's moves: a send or an attach takes the thread's rows, a
+        // settle hands them back; either way what was read before is old.
         let started = report.owns && !entry.owns
+        let settled = !report.owns && entry.owns
         entry.agent = report.agent ?? entry.agent
         entry.owns = report.owns
         entry.active = report.active
@@ -625,9 +679,9 @@ extension ChatApp {
             entry.continuing = nil
         }
         state.conversations[key] = entry
-        if started, let thread = entry.thread {
+        if let thread = entry.thread, started || settled {
             bump(&state, thread)
-            state.asks.append(.cancel("prefetch"))
+            if started { state.asks.append(.cancel("prefetch")) }
         }
         if let draft = report.draft {
             let name = entry.thread ?? Self.newDraft + key.rawValue
@@ -645,7 +699,7 @@ extension ChatApp {
         }
         if report.sent, !state.preferences.askedNotifications {
             state.preferences.askedNotifications = true
-            if let identity = state.session?.identity { state.asks.append(.savePreferences(identity, state.preferences)) }
+            if let disk = state.disk { state.asks.append(.savePreferences(disk, state.preferences)) }
             state.asks.append(.askPermission)
         }
         if !shownOrBusy(state, key) { release(&state) }
@@ -675,19 +729,19 @@ extension ChatApp {
         default:
             return
         }
-        if let identity = state.session?.identity { state.asks.append(.savePreferences(identity, state.preferences)) }
+        if let disk = state.disk { state.asks.append(.savePreferences(disk, state.preferences)) }
     }
 
     // MARK: Saving
 
     private func save(_ state: inout State) {
-        guard let identity = state.session?.identity, state.opened else { return }
-        state.asks.append(.saveState(identity, state.cached))
+        guard let disk = state.disk else { return }
+        state.asks.append(.saveState(disk, state.cached))
     }
 
     private func saveDrafts(_ state: inout State) {
-        guard let identity = state.session?.identity, state.opened else { return }
-        state.asks.append(.saveDrafts(identity, state.drafts))
+        guard let disk = state.disk else { return }
+        state.asks.append(.saveDrafts(disk, state.drafts))
     }
 
     private func badge(_ state: inout State) {

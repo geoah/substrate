@@ -3,6 +3,7 @@ import Foundation
 import SubstrateAPI
 import SubstrateCore
 import SubstrateDevice
+import SubstrateLocal
 import SubstrateRuntime
 import SubstrateTesting
 import Testing
@@ -44,11 +45,13 @@ func baseRoutes(threads: String = emptyPage, threadVersion: Int = 3, status: Str
 }
 
 /// Chat's list on a runtime of its own, as the link runs it, against a
-/// scripted server, a folder of its own, and fake notifications.
+/// scripted server, a folder of its own, fake notifications and fake
+/// background work.
 struct ChatRig {
     let server: ChatServer
     let clock = TestClock()
     let notifications = RecordedNotifications()
+    let background = ScriptedBackground()
     let base = temporaryFolder("chat")
     let storage: ChatStorage
     let preferences = MemoryPreferenceStore()
@@ -62,7 +65,7 @@ struct ChatRig {
         let client = SubstrateClient(server: origin, token: "secret", transport: server)
         let environment = AppEnvironment(clock: clock, ids: SequentialIDs(), locale: Locale(identifier: "en_US"),
                                          timeZone: TimeZone(identifier: "UTC")!, client: .fixed(client),
-                                         devices: DeviceServices(transport: server, notifications: notifications))
+                                         devices: DeviceServices(transport: server, notifications: notifications, background: background))
         harness = ControllerHarness(ChatApp(storage: storage, preferences: preferences, platform: platform), clock: clock,
                                     environment: environment)
     }
@@ -80,6 +83,17 @@ struct ChatRig {
     func signOut() async {
         await runtime.linkChanged(LinkSnapshot(phase: .signedOut, generation: 1, online: true))
     }
+
+    /// The repository's folder, where every build kept it.
+    var root: URL { base.appendingPathComponent(ChatStorage.hash(identity), isDirectory: true) }
+
+    /// The link generation the repository's folder holds.
+    var generation: Int {
+        get throws { LinkGeneration(folder: try RepositoryFolder(adopting: root)).current }
+    }
+
+    /// The session's lease on the folder, once it was read.
+    func lease() async throws -> ChatStorage.Lease { try #require(await harness.state.disk) }
 
     /// A new chat with the helper in scene `s`, and its key.
     func newChat(_ scene: String = "s") async throws -> ChildKey {
