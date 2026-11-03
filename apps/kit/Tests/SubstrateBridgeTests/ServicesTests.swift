@@ -37,6 +37,39 @@ struct ServicesTests {
         #expect(runtime.record.messages.contains { $0.contains("<redacted: secureStore>") })
     }
 
+    @Test func aLineStreamArrivesAsKotlinReadsIt() async throws {
+        let (runtime, outlet, _) = started()
+        let transport = BridgeTransport(channel: try #require(runtime.device), folder: FileManager.default.temporaryDirectory)
+        let reading = Task { () -> (Int, [String]) in
+            let stream = try await transport.lines(for: URLRequest(url: URL(string: "https://example.com/watch")!))
+            var lines: [String] = []
+            for try await line in stream.lines { lines.append(line) }
+            return (stream.head.statusCode, lines)
+        }
+        let request = try await outlet.next { $0.op == .request }
+        let chunks: [TransportChunk] = [.head(response: TransportResponse(status: 200, url: "https://example.com/watch", headers: [])),
+                                        .line(text: #"{"n":1}"#), .line(text: #"{"n":2}"#)]
+        for (seq, chunk) in chunks.enumerated() {
+            _ = try post(runtime, Envelope(op: .chunk, id: request.id, seq: seq, body: try BridgeCodec.value(chunk)))
+        }
+        _ = try post(runtime, Envelope(op: .end, id: request.id))
+        let (status, lines) = try await reading.value
+        #expect(status == 200)
+        #expect(lines == [#"{"n":1}"#, #"{"n":2}"#])
+    }
+
+    @Test func droppingALineStreamCancelsItOnKotlinsSide() async throws {
+        let (runtime, outlet, _) = started()
+        let transport = BridgeTransport(channel: try #require(runtime.device), folder: FileManager.default.temporaryDirectory)
+        let opening = Task { try await transport.lines(for: URLRequest(url: URL(string: "https://example.com/watch")!)).head.statusCode }
+        let request = try await outlet.next { $0.op == .request }
+        _ = try post(runtime, Envelope(op: .chunk, id: request.id, seq: 0, body: try BridgeCodec.value(
+            TransportChunk.head(response: TransportResponse(status: 200, url: "https://example.com/watch", headers: [])))))
+        #expect(try await opening.value == 200)
+        let cancel = try await outlet.next { $0.op == .cancel && $0.id == request.id }
+        #expect(cancel.id == request.id)
+    }
+
     @Test func aTXTAnswerKeepsEachOutcomeApart() {
         let name = "_substrate.example.com"
         #expect(BridgeTXTResolver.classify(.answered(rcode: 0, records: [["v=substrate1 ", "server=x"]]), name: name)

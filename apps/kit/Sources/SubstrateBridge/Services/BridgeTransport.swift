@@ -36,6 +36,15 @@ public struct BridgeTransport: HTTPTransport {
         }
     }
 
+    /// `HTTPTransport`'s line stream, read from OkHttp as it arrives rather
+    /// than whole: dropping the lines or cancelling their reader cancels the
+    /// call on Kotlin's side.
+    public func lines(for request: URLRequest) async throws -> LineStream {
+        let (head, lines) = try await lines(for: request, capacity: 256)
+        let reader = LineReader(lines.makeAsyncIterator())
+        return LineStream(head: head, lines: AsyncThrowingStream { try await reader.next() })
+    }
+
     /// A response read a line at a time (an ndjson stream): its head, then
     /// each line as it arrives. Dropping the lines, or cancelling the task
     /// reading them, cancels the call on Kotlin's side.
@@ -133,5 +142,19 @@ public struct TransportLines: AsyncSequence {
 
     public func makeAsyncIterator() -> AsyncIterator {
         AsyncIterator(iterator: iterator)
+    }
+}
+
+/// The one reader of a line stream's iterator; released with the stream,
+/// which cancels the call.
+private final class LineReader: @unchecked Sendable {
+    private var iterator: TransportLines.AsyncIterator
+
+    init(_ iterator: TransportLines.AsyncIterator) {
+        self.iterator = iterator
+    }
+
+    func next() async throws -> String? {
+        try await iterator.next()
     }
 }
