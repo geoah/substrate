@@ -1161,6 +1161,8 @@ export interface AuthorizationPackagePublisher {
   name?: string
   documentUrl: string
   fromFile?: boolean
+  /** The SHA-256 of the closure the row would install. */
+  digest?: string
 }
 
 /** One package a requested one requires, with what it brings of its own.
