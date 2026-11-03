@@ -14,9 +14,10 @@ import (
 
 type addonDataset struct {
 	heldBundles
-	tokens    []substrate.TokenInfo
-	actors    []substrate.Actor
-	approvals []string
+	tokens      []substrate.TokenInfo
+	actors      []substrate.Actor
+	approvals   []string
+	completeErr error
 }
 
 func (d *addonDataset) Tokens(context.Context) ([]substrate.TokenInfo, error) { return d.tokens, nil }
@@ -82,6 +83,9 @@ func TestProviderInstallReplansLiveWaitingAddons(t *testing.T) {
 	result, _, err = cat.Install(context.Background(), substrate.ActorConsole, provider, ds)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(ds.tokens[0].AppAddons) != 0 {
+		t.Fatal("installed add-on still waits on its approving token")
 	}
 	if ds.held[addon] != 1 || result.AddonResults[0].State != "installed" || ds.actors[len(ds.actors)-1] != substrate.BundleActor("example.com", "addon") {
 		t.Fatalf("install: %+v %v", result.AddonResults, ds.actors)
@@ -163,5 +167,51 @@ func TestWaitingAddonBindsTheCheckedRootAndDependencies(t *testing.T) {
 				t.Fatalf("unchanged candidates did not install: %+v, %v", result.AddonResults, ds.held)
 			}
 		})
+	}
+}
+
+func (d *addonDataset) CompleteAppAddon(_ context.Context, tokenID, packageID string) error {
+	if d.completeErr != nil {
+		return d.completeErr
+	}
+	for i := range d.tokens {
+		if d.tokens[i].ID == tokenID {
+			d.tokens[i].AppAddons = slices.DeleteFunc(d.tokens[i].AppAddons, func(a substrate.AppAddon) bool { return a.Package == packageID })
+		}
+	}
+	return nil
+}
+
+func TestInstalledAddonRetriesClearingWaitingApproval(t *testing.T) {
+	const provider, addon = "example.com/provider", "example.com/addon"
+	cat, err := Load(ProviderRoot(fstest.MapFS{
+		"provider/bundle.yaml": {Data: []byte(requiringClosure(provider, 1))},
+		"addon/bundle.yaml":    {Data: []byte(requiringClosure(addon, 1, provider, 1))},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := &addonDataset{heldBundles: heldBundles{held: map[string]int64{}}, tokens: []substrate.TokenInfo{{
+		ID: "approval", AppAddons: []substrate.AppAddon{{Package: addon, Version: 1, AddonFor: provider}},
+	}}, completeErr: substrate.ErrUnavailable}
+	plans := 0
+	cat.SetAddonPlanner(func(context.Context, substrate.Dataset, substrate.TokenInfo, substrate.AppAddon) (InstallExpectations, *substrate.AuthorizationBlock) {
+		plans++
+		return InstallExpectations{addon: nil}, nil
+	})
+	result, _, err := cat.Install(context.Background(), substrate.ActorConsole, provider, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ds.held[addon] != 1 || len(ds.tokens[0].AppAddons) != 1 || result.AddonResults[0].Problem == "" {
+		t.Fatalf("completion failure: %+v", result.AddonResults)
+	}
+	ds.completeErr = nil
+	result, _, err = cat.Install(context.Background(), substrate.ActorConsole, provider, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plans != 1 || len(ds.tokens[0].AppAddons) != 0 || result.AddonResults[0].Problem != "" {
+		t.Fatalf("completion retry: %+v, plans=%d", result.AddonResults, plans)
 	}
 }

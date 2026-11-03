@@ -46,3 +46,59 @@ func TestAddonInstallRequiresLiveConsentInTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCompletedAddonClearsOnlyItsApprovingTokensWaitingEntry(t *testing.T) {
+	ds := openInternalDataset(t)
+	ctx := context.Background()
+	waiting := []substrate.AppAddon{
+		{Package: "app.example/first", Version: 1, AddonFor: "provider.example/data"},
+		{Package: "app.example/second", Version: 1, AddonFor: "provider.example/data"},
+	}
+	mint := func() substrate.TokenInfo {
+		t.Helper()
+		token, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "App", ClientID: "https://app.example/client.json", AppAddons: waiting})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return token
+	}
+	token, other := mint(), mint()
+	if err := ds.CompleteAppAddon(ctx, token.ID, waiting[0].Package); err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := ds.Tokens(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range tokens {
+		if got.ID == token.ID && (len(got.AppAddons) != 1 || got.AppAddons[0] != waiting[1]) {
+			t.Fatalf("completed token: %+v", got)
+		}
+		if got.ID == other.ID && len(got.AppAddons) != 2 {
+			t.Fatalf("another approval changed: %+v", got)
+		}
+	}
+	before, err := ds.Get(ctx, kindToken, token.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ds.CompleteAppAddon(ctx, token.ID, waiting[0].Package); err != nil {
+		t.Fatal(err)
+	}
+	after, err := ds.Get(ctx, kindToken, token.ID)
+	if err != nil || after.Version != before.Version {
+		t.Fatalf("repeated completion wrote: %+v %v", after, err)
+	}
+	if err := ds.CompleteAppAddon(ctx, token.ID, waiting[1].Package); err != nil {
+		t.Fatal(err)
+	}
+	tokens, err = ds.Tokens(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range tokens {
+		if got.ID == token.ID && len(got.AppAddons) != 0 {
+			t.Fatalf("last waiting entry remains: %+v", got)
+		}
+	}
+}
