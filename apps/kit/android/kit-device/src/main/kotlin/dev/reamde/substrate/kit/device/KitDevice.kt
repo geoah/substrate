@@ -4,26 +4,38 @@ import android.content.Context
 import dev.reamde.substrate.kit.DeviceAnswer
 import dev.reamde.substrate.kit.DeviceServices
 import dev.reamde.substrate.kit.bridge.BridgeJson
+import dev.reamde.substrate.kit.bridge.BrowserAnswer
+import dev.reamde.substrate.kit.bridge.BrowserPrepared
 import dev.reamde.substrate.kit.bridge.DNSAnswer
 import dev.reamde.substrate.kit.bridge.DeviceRequest
 import dev.reamde.substrate.kit.bridge.NetworkPath
+import dev.reamde.substrate.kit.bridge.NotificationPermission
+import dev.reamde.substrate.kit.bridge.NotificationResponse
 import dev.reamde.substrate.kit.bridge.SecureItem
 import dev.reamde.substrate.kit.bridge.SecureOutcome
 import dev.reamde.substrate.kit.bridge.TransportChunk
 import dev.reamde.substrate.kit.bridge.TransportOutcome
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.JsonNull
 
 /**
  * The device services SubstrateBridge calls, on Android: hand
- * `KitDevice.services(context)` to `Bridge.start`.
+ * `KitDevice.services(context)` to `Bridge.start`. [notificationChannel] is
+ * the name the system's Settings give the app's notifications.
  */
 public object KitDevice {
-    public fun services(context: Context): DeviceServices {
+    public fun services(context: Context, notificationChannel: String = "Notifications"): DeviceServices {
         val app = context.applicationContext
         val transport = Transport(app)
         val secure = SecureStore(app)
         val dns = Dns()
         val connectivity = Connectivity(app)
+        val browser = BrowserSignIn(app)
+        val notifications = Notifications.get(app, notificationChannel)
+        val done = { JsonNull }
         return DeviceServices { request ->
             when (request) {
                 is DeviceRequest.TransportFetch -> DeviceAnswer.Value(
@@ -53,6 +65,52 @@ public object KitDevice {
                 }
                 DeviceRequest.ConnectivityWatch -> DeviceAnswer.Stream(
                     values = connectivity.paths().map { BridgeJson.encodeToJsonElement(NetworkPath.serializer(), it) },
+                )
+                is DeviceRequest.BrowserPrepare -> DeviceAnswer.Value {
+                    BridgeJson.encodeToJsonElement(BrowserPrepared.Serializer, browser.prepare(request.route))
+                }
+                is DeviceRequest.BrowserOpen -> DeviceAnswer.Value {
+                    BridgeJson.encodeToJsonElement(BrowserAnswer.Serializer, browser.open(request.page, request.redirect))
+                }
+                is DeviceRequest.BrowserFinish -> DeviceAnswer.Value {
+                    browser.finish(request.redirect)
+                    done()
+                }
+                DeviceRequest.NotificationsPermission -> DeviceAnswer.Value {
+                    BridgeJson.encodeToJsonElement(NotificationPermission.serializer(), notifications.permission())
+                }
+                // The system's question is asked from the activity in front.
+                DeviceRequest.NotificationsRequestPermission -> DeviceAnswer.Value(dispatcher = Dispatchers.Main) {
+                    BridgeJson.encodeToJsonElement(NotificationPermission.serializer(), notifications.requestPermission())
+                }
+                is DeviceRequest.NotificationsRegister -> DeviceAnswer.Value {
+                    notifications.register(request.categories)
+                    done()
+                }
+                is DeviceRequest.NotificationsSchedule -> DeviceAnswer.Value {
+                    notifications.schedule(request.request)
+                    done()
+                }
+                is DeviceRequest.NotificationsCancel -> DeviceAnswer.Value {
+                    notifications.cancel(request.id)
+                    done()
+                }
+                is DeviceRequest.NotificationsCancelThread -> DeviceAnswer.Value {
+                    notifications.cancelThread(request.thread)
+                    done()
+                }
+                DeviceRequest.NotificationsCancelAll -> DeviceAnswer.Value {
+                    notifications.cancelAll()
+                    done()
+                }
+                // Android draws no number on an app's icon: a launcher shows a
+                // dot for the notifications themselves.
+                is DeviceRequest.NotificationsBadge -> DeviceAnswer.Value { done() }
+                is DeviceRequest.NotificationsPending -> DeviceAnswer.Value {
+                    BridgeJson.encodeToJsonElement(ListSerializer(String.serializer()), notifications.pending(request.prefix))
+                }
+                DeviceRequest.NotificationsResponses -> DeviceAnswer.Stream(
+                    values = notifications.responses().map { BridgeJson.encodeToJsonElement(NotificationResponse.serializer(), it) },
                 )
             }
         }

@@ -67,13 +67,13 @@ public extension BridgeEnvironment {
 
 public extension BridgeContext {
     /// Android's device services for this handle, as a controller's
-    /// environment carries them. The secure store is named by the app; a
-    /// browser sign-in comes with the step that brings the Auth Tab.
+    /// environment carries them. The secure store is named by the app.
     func devices(secureStore: String? = nil) -> DeviceServices {
         DeviceServices(transport: BridgeTransport(channel: device, folder: environment.spill),
                        secureStore: secureStore.map { BridgeSecureStore(channel: device, store: $0) },
-                       resolver: BridgeTXTResolver(channel: device), connectivity: BridgeConnectivity(channel: device),
-                       folders: environment.folders)
+                       browser: BridgeBrowserSignIn(channel: device), resolver: BridgeTXTResolver(channel: device),
+                       connectivity: BridgeConnectivity(channel: device), folders: environment.folders,
+                       notifications: BridgeNotifications(channel: device))
     }
 
     /// An environment for a controller tree on this handle: the device's

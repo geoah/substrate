@@ -3,6 +3,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Notifications: shown (asked for on Android 13 and later), and their
+         alarms set again after a reboot. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- The secure store and the repository's folder live under
          noBackupFilesDir, which no backup reads; the rules exclude it by
@@ -11,5 +15,21 @@
          app with rules of its own keeps these exclusions in them. -->
     <application
         android:dataExtractionRules="@xml/substrate_data_extraction_rules"
-        android:fullBackupContent="@xml/substrate_backup_rules" />
+        android:fullBackupContent="@xml/substrate_backup_rules">
+
+        <activity
+            android:name="dev.reamde.substrate.kit.device.PermissionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <receiver
+            android:name="dev.reamde.substrate.kit.device.NotificationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
 </manifest>

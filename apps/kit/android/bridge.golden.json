@@ -180,6 +180,68 @@
       ]
     },
     {
+      "name": "BrowserAnswer",
+      "module": "SubstrateBridge",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "callback",
+          "fields": [
+            {"name": "query", "type": "[String: String]"}
+          ]
+        },
+        {
+          "name": "cancelled",
+          "fields": []
+        },
+        {
+          "name": "failed",
+          "fields": [
+            {"name": "reason", "type": "String"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "BrowserPrepared",
+      "module": "SubstrateBridge",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "ready",
+          "fields": [
+            {"name": "redirect", "type": "String"}
+          ]
+        },
+        {
+          "name": "failed",
+          "fields": [
+            {"name": "reason", "type": "String"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "BrowserRoute",
+      "module": "SubstrateBridge",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "claimed",
+          "fields": [
+            {"name": "url", "type": "String"}
+          ]
+        },
+        {
+          "name": "loopback",
+          "fields": [
+            {"name": "appName", "type": "String"},
+            {"name": "path", "type": "String"}
+          ]
+        }
+      ]
+    },
+    {
       "name": "BuildFacts",
       "module": "SubstrateScreens",
       "kind": "struct",
@@ -540,7 +602,88 @@
         {
           "name": "connectivityWatch",
           "fields": []
+        },
+        {
+          "name": "browserPrepare",
+          "fields": [
+            {"name": "route", "type": "BrowserRoute"}
+          ]
+        },
+        {
+          "name": "browserOpen",
+          "fields": [
+            {"name": "page", "type": "String"},
+            {"name": "redirect", "type": "String"}
+          ]
+        },
+        {
+          "name": "browserFinish",
+          "fields": [
+            {"name": "redirect", "type": "String"}
+          ]
+        },
+        {
+          "name": "notificationsPermission",
+          "fields": []
+        },
+        {
+          "name": "notificationsRequestPermission",
+          "fields": []
+        },
+        {
+          "name": "notificationsRegister",
+          "fields": [
+            {"name": "categories", "type": "[NotificationCategory]"}
+          ]
+        },
+        {
+          "name": "notificationsSchedule",
+          "fields": [
+            {"name": "request", "type": "NotificationRequest"}
+          ]
+        },
+        {
+          "name": "notificationsCancel",
+          "fields": [
+            {"name": "id", "type": "String"}
+          ]
+        },
+        {
+          "name": "notificationsCancelThread",
+          "fields": [
+            {"name": "thread", "type": "String"}
+          ]
+        },
+        {
+          "name": "notificationsCancelAll",
+          "fields": []
+        },
+        {
+          "name": "notificationsBadge",
+          "fields": [
+            {"name": "count", "type": "Int"}
+          ]
+        },
+        {
+          "name": "notificationsPending",
+          "fields": [
+            {"name": "prefix", "type": "String"}
+          ]
+        },
+        {
+          "name": "notificationsResponses",
+          "fields": []
         }
+      ]
+    },
+    {
+      "name": "DueWords.Tone",
+      "module": "SubstrateCore",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "quiet", "value": "quiet"},
+        {"name": "soon", "value": "soon"},
+        {"name": "overdue", "value": "overdue"}
       ]
     },
     {
@@ -889,6 +1032,28 @@
       ]
     },
     {
+      "name": "NotificationAction",
+      "module": "SubstrateDevice",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "title", "type": "String"},
+        {"name": "opensApp", "type": "Bool"},
+        {"name": "destructive", "type": "Bool"},
+        {"name": "input", "type": "NotificationTextInput?"}
+      ]
+    },
+    {
+      "name": "NotificationCategory",
+      "module": "SubstrateDevice",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "actions", "type": "[NotificationAction]"},
+        {"name": "reportsDismissal", "type": "Bool"}
+      ]
+    },
+    {
       "name": "NotificationPermission",
       "module": "SubstrateDevice",
       "kind": "stringEnum",
@@ -914,6 +1079,48 @@
         {"name": "timeSensitive", "type": "Bool"},
         {"name": "showsWhileActive", "type": "Bool"},
         {"name": "userInfo", "type": "[String: String]"}
+      ]
+    },
+    {
+      "name": "NotificationResponse",
+      "module": "SubstrateDevice",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "category", "type": "String?"},
+        {"name": "action", "type": "NotificationResponse.Action"},
+        {"name": "userInfo", "type": "[String: String]"},
+        {"name": "text", "type": "String?"}
+      ]
+    },
+    {
+      "name": "NotificationResponse.Action",
+      "module": "SubstrateDevice",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "open",
+          "fields": []
+        },
+        {
+          "name": "dismiss",
+          "fields": []
+        },
+        {
+          "name": "named",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "NotificationTextInput",
+      "module": "SubstrateDevice",
+      "kind": "struct",
+      "fields": [
+        {"name": "button", "type": "String"},
+        {"name": "placeholder", "type": "String"}
       ]
     },
     {
@@ -1520,6 +1727,15 @@
           "name": "about",
           "fields": []
         }
+      ]
+    },
+    {
+      "name": "SignInPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "connect", "type": "ConnectPresentation"},
+        {"name": "signedIn", "type": "Int"}
       ]
     },
     {

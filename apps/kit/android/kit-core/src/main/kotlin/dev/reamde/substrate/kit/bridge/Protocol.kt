@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "231d079f734cc92c3cbab8b08a2c84d9d641f970bc46ab7b181de171d55a9dab"
+    public const val VALUE: String = "7c74b579c8b7cb55ea02aac5bb1ce51737523a19362faaeba74bf351cd896a26"
 }
 
 /**
@@ -251,6 +251,74 @@ public data class BridgeStats(
     val deliveryFailures: Long,
     val open: Long,
 )
+
+@Serializable(with = BrowserAnswer.Serializer::class)
+public sealed interface BrowserAnswer {
+    @Serializable
+    public data class Callback(
+        val query: Map<String, String>,
+    ) : BrowserAnswer
+
+    @Serializable
+    public data object Cancelled : BrowserAnswer
+
+    @Serializable
+    public data class Failed(
+        val reason: String,
+    ) : BrowserAnswer
+
+    public object Serializer : KSerializer<BrowserAnswer> by SwiftEnumSerializer(
+        "BrowserAnswer",
+        listOf(
+            SwiftEnumSerializer.Case("callback", Callback::class, Callback.serializer()),
+            SwiftEnumSerializer.Case("cancelled", Cancelled::class, Cancelled.serializer()),
+            SwiftEnumSerializer.Case("failed", Failed::class, Failed.serializer()),
+        ),
+    )
+}
+
+@Serializable(with = BrowserPrepared.Serializer::class)
+public sealed interface BrowserPrepared {
+    @Serializable
+    public data class Ready(
+        val redirect: String,
+    ) : BrowserPrepared
+
+    @Serializable
+    public data class Failed(
+        val reason: String,
+    ) : BrowserPrepared
+
+    public object Serializer : KSerializer<BrowserPrepared> by SwiftEnumSerializer(
+        "BrowserPrepared",
+        listOf(
+            SwiftEnumSerializer.Case("ready", Ready::class, Ready.serializer()),
+            SwiftEnumSerializer.Case("failed", Failed::class, Failed.serializer()),
+        ),
+    )
+}
+
+@Serializable(with = BrowserRoute.Serializer::class)
+public sealed interface BrowserRoute {
+    @Serializable
+    public data class Claimed(
+        val url: String,
+    ) : BrowserRoute
+
+    @Serializable
+    public data class Loopback(
+        val appName: String,
+        val path: String,
+    ) : BrowserRoute
+
+    public object Serializer : KSerializer<BrowserRoute> by SwiftEnumSerializer(
+        "BrowserRoute",
+        listOf(
+            SwiftEnumSerializer.Case("claimed", Claimed::class, Claimed.serializer()),
+            SwiftEnumSerializer.Case("loopback", Loopback::class, Loopback.serializer()),
+        ),
+    )
+}
 
 @Serializable
 public data class BuildFacts(
@@ -524,6 +592,64 @@ public sealed interface DeviceRequest {
     @Serializable
     public data object ConnectivityWatch : DeviceRequest
 
+    @Serializable
+    public data class BrowserPrepare(
+        val route: BrowserRoute,
+    ) : DeviceRequest
+
+    @Serializable
+    public data class BrowserOpen(
+        val page: String,
+        val redirect: String,
+    ) : DeviceRequest
+
+    @Serializable
+    public data class BrowserFinish(
+        val redirect: String,
+    ) : DeviceRequest
+
+    @Serializable
+    public data object NotificationsPermission : DeviceRequest
+
+    @Serializable
+    public data object NotificationsRequestPermission : DeviceRequest
+
+    @Serializable
+    public data class NotificationsRegister(
+        val categories: List<NotificationCategory>,
+    ) : DeviceRequest
+
+    @Serializable
+    public data class NotificationsSchedule(
+        val request: NotificationRequest,
+    ) : DeviceRequest
+
+    @Serializable
+    public data class NotificationsCancel(
+        val id: String,
+    ) : DeviceRequest
+
+    @Serializable
+    public data class NotificationsCancelThread(
+        val thread: String,
+    ) : DeviceRequest
+
+    @Serializable
+    public data object NotificationsCancelAll : DeviceRequest
+
+    @Serializable
+    public data class NotificationsBadge(
+        val count: Long,
+    ) : DeviceRequest
+
+    @Serializable
+    public data class NotificationsPending(
+        val prefix: String,
+    ) : DeviceRequest
+
+    @Serializable
+    public data object NotificationsResponses : DeviceRequest
+
     public object Serializer : KSerializer<DeviceRequest> by SwiftEnumSerializer(
         "DeviceRequest",
         listOf(
@@ -535,6 +661,19 @@ public sealed interface DeviceRequest {
             SwiftEnumSerializer.Case("dnsTXT", DnsTXT::class, DnsTXT.serializer()),
             SwiftEnumSerializer.Case("connectivityCurrent", ConnectivityCurrent::class, ConnectivityCurrent.serializer()),
             SwiftEnumSerializer.Case("connectivityWatch", ConnectivityWatch::class, ConnectivityWatch.serializer()),
+            SwiftEnumSerializer.Case("browserPrepare", BrowserPrepare::class, BrowserPrepare.serializer()),
+            SwiftEnumSerializer.Case("browserOpen", BrowserOpen::class, BrowserOpen.serializer()),
+            SwiftEnumSerializer.Case("browserFinish", BrowserFinish::class, BrowserFinish.serializer()),
+            SwiftEnumSerializer.Case("notificationsPermission", NotificationsPermission::class, NotificationsPermission.serializer()),
+            SwiftEnumSerializer.Case("notificationsRequestPermission", NotificationsRequestPermission::class, NotificationsRequestPermission.serializer()),
+            SwiftEnumSerializer.Case("notificationsRegister", NotificationsRegister::class, NotificationsRegister.serializer()),
+            SwiftEnumSerializer.Case("notificationsSchedule", NotificationsSchedule::class, NotificationsSchedule.serializer()),
+            SwiftEnumSerializer.Case("notificationsCancel", NotificationsCancel::class, NotificationsCancel.serializer()),
+            SwiftEnumSerializer.Case("notificationsCancelThread", NotificationsCancelThread::class, NotificationsCancelThread.serializer()),
+            SwiftEnumSerializer.Case("notificationsCancelAll", NotificationsCancelAll::class, NotificationsCancelAll.serializer()),
+            SwiftEnumSerializer.Case("notificationsBadge", NotificationsBadge::class, NotificationsBadge.serializer()),
+            SwiftEnumSerializer.Case("notificationsPending", NotificationsPending::class, NotificationsPending.serializer()),
+            SwiftEnumSerializer.Case("notificationsResponses", NotificationsResponses::class, NotificationsResponses.serializer()),
         ),
     )
 }
@@ -754,6 +893,22 @@ public data class NoticeLine(
 )
 
 @Serializable
+public data class NotificationAction(
+    val id: String,
+    val title: String,
+    val opensApp: Boolean,
+    val destructive: Boolean,
+    val input: NotificationTextInput? = null,
+)
+
+@Serializable
+public data class NotificationCategory(
+    val id: String,
+    val actions: List<NotificationAction>,
+    val reportsDismissal: Boolean,
+)
+
+@Serializable
 public enum class NotificationPermission {
     @SerialName("notAsked") notAsked,
     @SerialName("off") off,
@@ -773,6 +928,44 @@ public data class NotificationRequest(
     val timeSensitive: Boolean,
     val showsWhileActive: Boolean,
     val userInfo: Map<String, String>,
+)
+
+@Serializable
+public data class NotificationResponse(
+    val id: String,
+    val category: String? = null,
+    val action: NotificationResponse.Action,
+    val userInfo: Map<String, String>,
+    val text: String? = null,
+) {
+    @Serializable(with = NotificationResponse.Action.Serializer::class)
+    public sealed interface Action {
+        @Serializable
+        public data object Open : Action
+
+        @Serializable
+        public data object Dismiss : Action
+
+        @Serializable
+        public data class Named(
+            @SerialName("_0") val value: String,
+        ) : Action
+
+        public object Serializer : KSerializer<NotificationResponse.Action> by SwiftEnumSerializer(
+            "NotificationResponse.Action",
+            listOf(
+                SwiftEnumSerializer.Case("open", Open::class, Open.serializer()),
+                SwiftEnumSerializer.Case("dismiss", Dismiss::class, Dismiss.serializer()),
+                SwiftEnumSerializer.Case("named", Named::class, Named.serializer()),
+            ),
+        )
+    }
+}
+
+@Serializable
+public data class NotificationTextInput(
+    val button: String,
+    val placeholder: String,
 )
 
 @Serializable
@@ -1335,6 +1528,12 @@ public sealed interface SettingsSectionID {
     )
 }
 
+@Serializable
+public data class SignInPresentation(
+    val connect: ConnectPresentation,
+    val signedIn: Long,
+)
+
 @Serializable(with = StartAnswer.Serializer::class)
 public sealed interface StartAnswer {
     @Serializable
@@ -1570,6 +1769,15 @@ public object Counter {
     )
 }
 
+public object DueWords {
+    @Serializable
+    public enum class Tone {
+        @SerialName("quiet") quiet,
+        @SerialName("soon") soon,
+        @SerialName("overdue") overdue,
+    }
+}
+
 public object GalleryRoot {
     @Serializable(with = GalleryRoot.Command.Serializer::class)
     public sealed interface Command {
@@ -1686,6 +1894,9 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "BridgeFailure.Code" to BridgeFailure.Code.serializer(),
     "BridgeQuery" to BridgeQuery.Serializer,
     "BridgeStats" to BridgeStats.serializer(),
+    "BrowserAnswer" to BrowserAnswer.Serializer,
+    "BrowserPrepared" to BrowserPrepared.Serializer,
+    "BrowserRoute" to BrowserRoute.Serializer,
     "BuildFacts" to BuildFacts.serializer(),
     "ChangeLine" to ChangeLine.serializer(),
     "CheckCommand" to CheckCommand.Serializer,
@@ -1703,6 +1914,7 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "Counter.Presentation" to Counter.Presentation.serializer(),
     "DNSAnswer" to DNSAnswer.Serializer,
     "DeviceRequest" to DeviceRequest.Serializer,
+    "DueWords.Tone" to DueWords.Tone.serializer(),
     "EmptyPresentation" to EmptyPresentation.serializer(),
     "Envelope" to Envelope.serializer(),
     "EnvironmentUpdate" to EnvironmentUpdate.serializer(),
@@ -1722,8 +1934,13 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "ListRow" to ListRow.serializer(),
     "NetworkPath" to NetworkPath.serializer(),
     "NoticeLine" to NoticeLine.serializer(),
+    "NotificationAction" to NotificationAction.serializer(),
+    "NotificationCategory" to NotificationCategory.serializer(),
     "NotificationPermission" to NotificationPermission.serializer(),
     "NotificationRequest" to NotificationRequest.serializer(),
+    "NotificationResponse" to NotificationResponse.serializer(),
+    "NotificationResponse.Action" to NotificationResponse.Action.Serializer,
+    "NotificationTextInput" to NotificationTextInput.serializer(),
     "Op" to Op.serializer(),
     "OpenRequest" to OpenRequest.serializer(),
     "PackageLine" to PackageLine.serializer(),
@@ -1756,6 +1973,7 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "SettingsRowID.StorageRow" to SettingsRowID.StorageRow.Serializer,
     "SettingsSection" to SettingsSection.serializer(),
     "SettingsSectionID" to SettingsSectionID.Serializer,
+    "SignInPresentation" to SignInPresentation.serializer(),
     "StartAnswer" to StartAnswer.Serializer,
     "StartConfig" to StartConfig.serializer(),
     "StatusAction" to StatusAction.Serializer,

@@ -59,7 +59,14 @@ public object Redaction {
     public fun carriesSecrets(request: DeviceRequest): Boolean = when (request) {
         is DeviceRequest.TransportFetch, is DeviceRequest.TransportLines,
         is DeviceRequest.SecureRead, is DeviceRequest.SecureWrite, is DeviceRequest.SecureDelete,
+        // A sign-in's callback carries the code a token is exchanged for.
+        is DeviceRequest.BrowserPrepare, is DeviceRequest.BrowserOpen, is DeviceRequest.BrowserFinish,
         -> true
-        is DeviceRequest.DnsTXT, DeviceRequest.ConnectivityCurrent, DeviceRequest.ConnectivityWatch -> false
+        is DeviceRequest.DnsTXT, DeviceRequest.ConnectivityCurrent, DeviceRequest.ConnectivityWatch,
+        DeviceRequest.NotificationsPermission, DeviceRequest.NotificationsRequestPermission, is DeviceRequest.NotificationsRegister,
+        is DeviceRequest.NotificationsSchedule, is DeviceRequest.NotificationsCancel, is DeviceRequest.NotificationsCancelThread,
+        DeviceRequest.NotificationsCancelAll, is DeviceRequest.NotificationsBadge, is DeviceRequest.NotificationsPending,
+        DeviceRequest.NotificationsResponses,
+        -> false
     }
 }

@@ -117,7 +117,7 @@ public struct NotificationRequest: Bridged, Equatable {
 
 /// A kind of notification the app shows, and the actions it answers with
 /// beside a tap.
-public struct NotificationCategory: Codable, Equatable, Sendable {
+public struct NotificationCategory: Bridged, Equatable {
     public var id: String
     public var actions: [NotificationAction]
     /// A dismissal is a response too (`.dismiss`).
@@ -131,7 +131,7 @@ public struct NotificationCategory: Codable, Equatable, Sendable {
 }
 
 /// A button on a notification.
-public struct NotificationAction: Codable, Equatable, Sendable {
+public struct NotificationAction: Bridged, Equatable {
     public var id: String
     public var title: String
     /// Brings the app to the front, as a tap does; otherwise it answers in
@@ -152,7 +152,7 @@ public struct NotificationAction: Codable, Equatable, Sendable {
 }
 
 /// The field an action asks for its text in.
-public struct NotificationTextInput: Codable, Equatable, Sendable {
+public struct NotificationTextInput: Bridged, Equatable {
     /// The button that sends it.
     public var button: String
     public var placeholder: String
@@ -165,8 +165,8 @@ public struct NotificationTextInput: Codable, Equatable, Sendable {
 
 /// What the owner did with a notification: the request's id, category and
 /// `userInfo`, and what was chosen, for the app to turn into a command.
-public struct NotificationResponse: Codable, Equatable, Sendable {
-    public enum Action: Codable, Equatable, Sendable {
+public struct NotificationResponse: Bridged, Equatable {
+    public enum Action: Bridged, Equatable {
         /// The notification itself was tapped.
         case open
         /// It was dismissed, where its category reports that.

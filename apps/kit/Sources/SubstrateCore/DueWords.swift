@@ -4,7 +4,7 @@ import Foundation
 /// "Tomorrow, 2:00 PM", "Fri, Nov 6", "Overdue since Mon, Nov 2". Every
 /// word comes from the locale and the time zone the presenter is given.
 public enum DueWords {
-    public enum Tone: String, Codable, Hashable, Sendable {
+    public enum Tone: String, Bridged, Hashable, Sendable {
         /// Due later.
         case quiet
         /// Due today.

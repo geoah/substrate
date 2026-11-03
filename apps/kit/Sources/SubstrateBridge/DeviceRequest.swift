@@ -21,6 +21,35 @@ public enum DeviceRequest: Bridged, Equatable {
     case connectivityCurrent
     /// A stream of `NetworkPath`s, the current one first.
     case connectivityWatch
+    /// Answered by a `BrowserPrepared`.
+    case browserPrepare(route: BrowserRoute)
+    /// The owner's browser on `page`, waiting for the callback on `redirect`
+    /// that `browserPrepare` answered. Answered by a `BrowserAnswer`.
+    case browserOpen(page: String, redirect: String)
+    /// What `browserPrepare` took is let go of. Answered by `null`.
+    case browserFinish(redirect: String)
+    /// Answered by a `NotificationPermission`.
+    case notificationsPermission
+    /// Asks the owner where they were never asked. Answered by a
+    /// `NotificationPermission`.
+    case notificationsRequestPermission
+    /// Answered by `null`.
+    case notificationsRegister(categories: [NotificationCategory])
+    /// Answered by `null`.
+    case notificationsSchedule(request: NotificationRequest)
+    /// Answered by `null`.
+    case notificationsCancel(id: String)
+    /// Answered by `null`.
+    case notificationsCancelThread(thread: String)
+    /// Answered by `null`.
+    case notificationsCancelAll
+    /// Answered by `null`.
+    case notificationsBadge(count: Int)
+    /// Answered by the ids, a `[String]`.
+    case notificationsPending(prefix: String)
+    /// A stream of `NotificationResponse`s, each once, the ones that came
+    /// before anything read first.
+    case notificationsResponses
 
     public var service: DeviceService {
         switch self {
@@ -28,6 +57,10 @@ public enum DeviceRequest: Bridged, Equatable {
         case .secureRead, .secureWrite, .secureDelete: .secureStore
         case .dnsTXT: .dns
         case .connectivityCurrent, .connectivityWatch: .connectivity
+        case .browserPrepare, .browserOpen, .browserFinish: .browser
+        case .notificationsPermission, .notificationsRequestPermission, .notificationsRegister, .notificationsSchedule,
+             .notificationsCancel, .notificationsCancelThread, .notificationsCancelAll, .notificationsBadge, .notificationsPending,
+             .notificationsResponses: .notifications
         }
     }
 }
@@ -38,11 +71,14 @@ public enum DeviceService: String, Sendable {
     case secureStore
     case dns
     case connectivity
+    case browser
+    case notifications
 
-    /// The two whose messages may carry a token (docs/plans/app-kit.md
-    /// §5.4): a bearer header out and a token endpoint's answer back, and a
-    /// stored session. Wherever a message of theirs is recorded, its body is not.
-    public var carriesSecrets: Bool { self == .transport || self == .secureStore }
+    /// The ones whose messages may carry a credential (docs/plans/app-kit.md
+    /// §5.4): a bearer header out and a token endpoint's answer back, a
+    /// stored session, and a sign-in's callback, whose code a token is
+    /// exchanged for. Wherever a message of theirs is recorded, its body is not.
+    public var carriesSecrets: Bool { self == .transport || self == .secureStore || self == .browser }
 }
 
 /// One HTTP header, kept as a list: a name may repeat.
@@ -185,4 +221,30 @@ public struct BridgeStats: Bridged, Equatable {
     public var open: Int = 0
 
     public init() {}
+}
+
+/// Where a sign-in's callback comes back, as `SignInRoute` says it.
+public enum BrowserRoute: Bridged, Equatable {
+    /// A release's https callback, which the system hands this app alone
+    /// once the site's association file names it.
+    case claimed(url: String)
+    /// A loopback redirect (RFC 8252) at `path` on `127.0.0.1`, on a port
+    /// Kotlin picks when it listens. `appName` is what the page the browser
+    /// lands on tells the person to go back to.
+    case loopback(appName: String, path: String)
+}
+
+/// A route made ready: the redirect the authorization request names, or why
+/// there is none.
+public enum BrowserPrepared: Bridged, Equatable {
+    case ready(redirect: String)
+    case failed(reason: String)
+}
+
+/// What a browser sign-in came back with: the callback's query, unchecked
+/// (Swift holds it to its request), or why it did not.
+public enum BrowserAnswer: Bridged, Equatable {
+    case callback(query: [String: String])
+    case cancelled
+    case failed(reason: String)
 }
