@@ -145,10 +145,13 @@ Decision 0214, superseding 0203, 0205 and 0207 and amending 0202.
   reads the live document first and refuses to change a published
   version's digest.
 - Workouts asks for `package` details on `substrate.reamde.dev/health`,
-  `…/training` and, where the server runs agents, `…/trainingcoach`, with
-  `write:substrate.reamde.dev/training/*`, its health reads and
-  `agents:substrate.reamde.dev/trainingcoach/*`, and sends
-  `software_version`. It applies no vocabulary and rehomes no training kind.
+  `…/training` and `…/trainingcoach`, with
+  `write:substrate.reamde.dev/training/*`, its health reads, the coach's
+  reads and `agents:substrate.reamde.dev/trainingcoach/*`, and sends
+  `software_version`. The coach is not optional: a server whose metadata
+  lists no `agents` verb or no `package` detail is too old for the request
+  (`WorkoutsManifest.requirement`), and the app says so. It applies no
+  vocabulary and rehomes no training kind.
 
 ## Phase 3: full apps
 
