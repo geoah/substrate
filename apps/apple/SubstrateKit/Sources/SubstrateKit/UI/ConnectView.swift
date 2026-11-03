@@ -237,7 +237,7 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                 }
             }
         } else {
-            Text("Your repository's name, or your Substrate server's address. A name alone is read as https://.")
+            Text("Your repository's name, such as ada.example.com, or your Substrate server's address. A name finds its server on its own.")
         }
     }
 

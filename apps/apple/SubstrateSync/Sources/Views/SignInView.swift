@@ -50,7 +50,7 @@ struct SignInView: View {
                 } else if probe != nil {
                     Label("Server found.", systemImage: "checkmark.circle")
                 } else {
-                    Text("Your repository's name, or your Substrate server's address. A name alone is read as https://.")
+                    Text("Your repository's name, such as ada.example.com, or your Substrate server's address. A name finds its server on its own.")
                 }
             }
 
