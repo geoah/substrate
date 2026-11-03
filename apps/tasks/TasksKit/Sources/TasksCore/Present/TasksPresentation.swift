@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 import SubstrateDevice
 import SubstrateRuntime
 import SubstrateScreens
@@ -13,26 +14,20 @@ public struct TasksPresentation: Codable, Equatable, Sendable {
     public var list: ListPresentation?
     public var detail: TaskDetailPresentation?
     public var editors: [ChildKey: TaskEditorPresentation]
-    public var confirmation: ConfirmationPresentation?
+    public var confirmation: ConfirmationPresentation<Confirmation>?
     /// The app's own settings sections; `TasksSettings.screen` adds the
     /// link's and these two.
     public var settings: [SettingsSection]
     public var storage: SettingsSection
     public var about: AboutPresentation
-    /// Reading the repository: nil when nothing is worth saying.
-    public var sync: SyncLine?
+    /// What stands in the way above the columns: the tasks not being read.
+    public var notices: [NoticeLine]
     public var problem: ProblemPresentation?
     /// What this device should remind of now; the effects schedule it.
     public var reminders: [NotificationRequest]
     /// When the words drawn stop being true (midnight moves "Tomorrow" to
     /// "Today"), so the runtime presents again then.
     public var nextChange: Date?
-}
-
-/// One line about reading the repository.
-public struct SyncLine: Codable, Hashable, Sendable {
-    public var text: String
-    public var tone: ScreenTone
 }
 
 /// The lists column: what is due, the tasks in no list, then each list in
@@ -88,11 +83,23 @@ public struct ListPresentation: Codable, Equatable, Sendable {
     public var orderNote: String?
     public var empty: EmptyPresentation?
     public var actions: [ActionButton<ListAction>]
+    /// What a row's swipes and context menu say.
+    public var rowMenu: TaskMenuWords
 }
 
-public struct EmptyPresentation: Codable, Hashable, Sendable {
-    public var title: String
-    public var message: String
+/// The words of what a task offers from its row: its state, its priority,
+/// its list, edit and delete.
+public struct TaskMenuWords: Codable, Hashable, Sendable {
+    public var complete: String
+    public var abandon: String
+    public var reopen: String
+    public var edit: String
+    public var priority: String
+    public var priorities: [EditorOption]
+    public var move: String
+    public var delete: String
+    /// The swipe's shorter Delete.
+    public var swipeDelete: String
 }
 
 /// A task as a row: its name, whether it is done, and each fact beside it
@@ -122,22 +129,20 @@ public struct PriorityBadge: Codable, Hashable, Sendable {
     public var priority: TaskPriority
 }
 
-/// The open task, read: its name, a fact per row under the label the
-/// editor uses too, and what can be done to it.
+/// The open task: its name, then each fact under the label the editor gives
+/// it too, the list and the priority as the choices that change them in
+/// place, and what can be done to it. Edit is the toolbar's.
 public struct TaskDetailPresentation: Codable, Equatable, Sendable {
     public var id: String
     public var title: String
     public var status: TaskStatus
     public var fields: [DetailField]
     public var actions: [ActionButton<TaskAction>]
-    /// Where Move can send it: no list, then each list, the current one
-    /// marked.
-    public var moveTitle: String
-    public var destinations: [Destination]
-    public var priorityTitle: String
-    public var priorities: [PriorityOption]
+    /// The toolbar's button that opens the editor.
+    public var edit: String
 }
 
+/// One fact of the open task: read only, or a choice that changes it.
 public struct DetailField: Codable, Hashable, Sendable, Identifiable {
     public var field: TaskField
     public var label: String
@@ -145,25 +150,11 @@ public struct DetailField: Codable, Hashable, Sendable, Identifiable {
     /// A link the owner can open.
     public var url: String?
     public var tone: DueWords.Tone?
+    /// The choices the fact is changed with where it stands, nil for one
+    /// the editor alone changes.
+    public var choice: EditorChoice?
 
     public var id: TaskField { field }
-}
-
-public struct Destination: Codable, Hashable, Sendable, Identifiable {
-    /// The list's id, nil for no list.
-    public var list: String?
-    public var title: String
-    public var current: Bool
-
-    public var id: String { list ?? "" }
-}
-
-public struct PriorityOption: Codable, Hashable, Sendable, Identifiable {
-    public var priority: TaskPriority
-    public var title: String
-    public var current: Bool
-
-    public var id: TaskPriority { priority }
 }
 
 /// What the owner can do to a task.
@@ -171,15 +162,5 @@ public enum TaskAction: Codable, Hashable, Sendable {
     case complete
     case reopen
     case abandon
-    case edit
     case delete
-}
-
-/// A question before something is given up, in its words.
-public struct ConfirmationPresentation: Codable, Hashable, Sendable {
-    public var confirmation: Confirmation
-    public var title: String
-    public var message: String
-    public var confirm: String
-    public var cancel: String
 }

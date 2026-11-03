@@ -12,14 +12,11 @@ import Testing
 /// app draws them with: each fixture must have its view, and with
 /// SUBSTRATE_TASKS_GALLERY naming a folder (`mise run apps:gallery`), each
 /// is written there as a PNG at an iPhone's size, and the split layout
-/// at a Mac window's, in light mode. A system
+/// in a Mac window, in light mode (the kit's `OffscreenDrawing`). A system
 /// dialog (the delete-list question) has no offscreen drawing; its words are
 /// held by TasksKit's tests.
 @MainActor
 @Suite struct GalleryTests {
-    static let size = CGSize(width: 393, height: 852)
-    static let wide = CGSize(width: 1180, height: 760)
-
     var link: LinkPresentation<TasksPresentation>? {
         for fixture in ScreenFixtures.all where fixture.name == "status-up-to-date" {
             if case let .status(status) = fixture.presentation {
@@ -61,40 +58,17 @@ import Testing
         let directory = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SUBSTRATE_TASKS_GALLERY"] ?? NSTemporaryDirectory())
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let link = try #require(link)
-        let shell = TasksShell(drawing: ())
+        let shell = TasksShell(drawing: Tasks.configuration)
         for fixture in TasksFixtures.all {
             guard let view = view(fixture, link: link) else { continue }
-            try await draw(view.environment(shell), to: directory.appendingPathComponent("\(fixture.name).png"))
+            try await OffscreenDrawing.png(view.environment(shell)).write(to: directory.appendingPathComponent("\(fixture.name).png"))
         }
         // The Mac's and the iPad's layout: the sidebar, a list and the open
-        // task side by side, at a Mac window's size.
+        // task side by side, in a Mac window with its toolbar.
         for fixture in TasksFixtures.all where fixture.name == "tasks-detail" || fixture.name == "tasks-today" {
-            try await draw(SplitRoot(link: link, app: fixture.app).environment(shell),
-                           to: directory.appendingPathComponent("\(fixture.name)-wide.png"), size: Self.wide)
+            try await OffscreenDrawing.png(SplitRoot(link: link, app: fixture.app).environment(shell), size: OffscreenDrawing.mac, frame: .window)
+                .write(to: directory.appendingPathComponent("\(fixture.name)-wide.png"))
         }
-    }
-
-    /// Hosts the view in an offscreen window, lets it settle, and writes
-    /// what it drew, as the kit's gallery does.
-    func draw(_ view: some View, to file: URL, size: CGSize = GalleryTests.size) async throws {
-        _ = NSApplication.shared
-        let hosting = NSHostingView(rootView: view
-            .frame(width: size.width, height: size.height)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .environment(\.colorScheme, .light)
-            .environment(\.controlActiveState, .key))
-        hosting.frame = CGRect(origin: .zero, size: size)
-        let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.appearance = NSAppearance(named: .aqua)
-        window.contentView = hosting
-        hosting.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(300))
-        hosting.layoutSubtreeIfNeeded()
-        let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
-        hosting.cacheDisplay(in: hosting.bounds, to: rep)
-        let png = try #require(rep.representation(using: .png, properties: [:]))
-        try png.write(to: file)
-        window.contentView = nil
     }
 }
 #endif

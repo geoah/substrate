@@ -8,7 +8,7 @@ import SubstrateScreens
 /// editors' presentations, the instant, the locale and the time zone. It
 /// writes every word the screens show.
 public enum TasksPresenter {
-    public static func present(_ input: PresenterInput<TasksApp>, device: String, build: BuildFacts) -> TasksPresentation {
+    public static func present(_ input: PresenterInput<TasksApp>, linked: LinkedRecords, device: String, build: BuildFacts) -> TasksPresentation {
         let state = input.state
         let calendar = input.calendar
         let model = TasksModel(state.records, in: calendar)
@@ -36,7 +36,7 @@ public enum TasksPresenter {
             storage: SettingsPresenter.storage(state.usage ?? [], budget: nil),
             about: AboutPresentation.present(appName: TasksApp.appName, version: build.version, channel: build.channel,
                                              offered: state.offered),
-            sync: sync(state, model: model),
+            notices: linked.notice(state.linked).map { [$0] } ?? [],
             problem: state.problem.map { ProblemPresentation(title: "A change was not kept", message: $0) },
             reminders: plan,
             nextChange: [midnight, nextDue].compactMap { $0 }.min())
@@ -90,6 +90,8 @@ public enum TasksPresenter {
             }
         }
         let named = selection == .today ? "for today" : selection == .inbox ? "" : "to \(title)"
+        let menu = TaskMenuWords(complete: "Mark as Done", abandon: "Won't Do", reopen: "Reopen", edit: "Edit", priority: TaskField.priority.label,
+                                 priorities: priorities, move: "Move to List", delete: "Delete Task", swipeDelete: "Delete")
         return ListPresentation(
             selection: selection, title: title,
             open: KeyedList(open.map { row($0, words: words, mixed: selection == .today) }, revision: revision),
@@ -98,7 +100,8 @@ public enum TasksPresenter {
             showsClosed: showsClosed, toggleClosed: showsClosed ? "Hide Completed" : "Show Completed",
             quickAdd: named.isEmpty ? "Add a task" : "Add a task \(named)", newTask: "New Task",
             reorders: selection != .today && order == .manual,
-            orderNote: selection != .today && order == .due ? "Sorted by due date" : nil, empty: empty, actions: actions)
+            orderNote: selection != .today && order == .due ? "Sorted by due date" : nil, empty: empty, actions: actions,
+            rowMenu: menu)
     }
 
     static func row(_ task: TaskItem, words: Words, mixed: Bool) -> TaskRow {
@@ -120,7 +123,9 @@ public enum TasksPresenter {
     static func detail(_ task: TaskItem, model: TasksModel, words: Words) -> TaskDetailPresentation {
         var fields = [DetailField(field: .status, label: TaskField.status.label, value: task.status.words)]
         let listName = task.list.flatMap { model.lists[$0]?.name } ?? InboxWords.title
-        fields.append(DetailField(field: .list, label: TaskField.list.label, value: listName))
+        let lists = [EditorOption(id: "", title: InboxWords.title)] + model.arrangedLists.map { EditorOption(id: $0.id, title: $0.name) }
+        fields.append(DetailField(field: .list, label: TaskField.list.label, value: listName,
+                                  choice: EditorChoice(label: TaskField.list.label, selected: task.list ?? "", options: lists)))
         if let due = task.due {
             let badge = words.due(due)
             fields.append(DetailField(field: .due, label: TaskField.due.label, value: DueWords.full(due, calendar: words.calendar, locale: words.locale),
@@ -128,7 +133,8 @@ public enum TasksPresenter {
         } else {
             fields.append(DetailField(field: .due, label: TaskField.due.label, value: "No due date"))
         }
-        fields.append(DetailField(field: .priority, label: TaskField.priority.label, value: task.priority.words))
+        fields.append(DetailField(field: .priority, label: TaskField.priority.label, value: task.priority.words,
+                                  choice: EditorChoice(label: TaskField.priority.label, selected: task.priority.rawValue, options: priorities)))
         if let notes = task.notes { fields.append(DetailField(field: .notes, label: TaskField.notes.label, value: notes)) }
         if let url = task.url { fields.append(DetailField(field: .link, label: TaskField.link.label, value: url, url: url)) }
         if task.status == .done, let completed = task.completedAt {
@@ -139,18 +145,19 @@ public enum TasksPresenter {
         case .open: [ActionButton("Mark as Done", .complete), ActionButton("Won't Do", .abandon)]
         case .done, .abandoned: [ActionButton("Reopen", .reopen)]
         }
-        actions += [ActionButton("Edit", .edit), ActionButton("Delete Task", .delete)]
-        let destinations = [Destination(list: nil, title: InboxWords.title, current: task.list == nil)]
-            + model.arrangedLists.map { Destination(list: $0.id, title: $0.name, current: task.list == $0.id) }
-        return TaskDetailPresentation(
-            id: task.id, title: task.name.isEmpty ? "Untitled task" : task.name, status: task.status, fields: fields, actions: actions,
-            moveTitle: "Move to List", destinations: destinations, priorityTitle: TaskField.priority.label,
-            priorities: TaskPriority.allCases.map { PriorityOption(priority: $0, title: $0.words, current: task.priority == $0) })
+        actions.append(ActionButton("Delete Task", .delete))
+        return TaskDetailPresentation(id: task.id, title: task.name.isEmpty ? "Untitled task" : task.name, status: task.status, fields: fields,
+                                      actions: actions, edit: "Edit")
     }
 
-    // MARK: Questions and lines
+    /// Every priority, as the detail and the editor choose among them.
+    static var priorities: [EditorOption] {
+        TaskPriority.allCases.map { EditorOption(id: $0.rawValue, title: $0.words) }
+    }
 
-    static func confirmation(_ confirmation: Confirmation, model: TasksModel) -> ConfirmationPresentation? {
+    // MARK: Questions
+
+    static func confirmation(_ confirmation: Confirmation, model: TasksModel) -> ConfirmationPresentation<Confirmation>? {
         switch confirmation {
         case let .deleteList(id):
             guard let list = model.lists[id] else { return nil }
@@ -161,19 +168,9 @@ public enum TasksPresenter {
             case 1: "Its 1 task is deleted with it. You can restore both from your substrate's console."
             default: "Its \(count) tasks are deleted with it. You can restore them from your substrate's console."
             }
-            return ConfirmationPresentation(confirmation: confirmation, title: "Delete \(name)?", message: message,
+            return ConfirmationPresentation(question: confirmation, title: "Delete \(name)?", message: message,
                                             confirm: count == 0 ? "Delete List" : count == 1 ? "Delete List and 1 Task" : "Delete List and \(count) Tasks",
                                             cancel: "Cancel")
-        }
-    }
-
-    static func sync(_ state: TasksState, model: TasksModel) -> SyncLine? {
-        guard state.link?.signedIn == true else { return nil }
-        switch state.sync {
-        case .reading where model.tasks.isEmpty && model.lists.isEmpty: return SyncLine(text: "Reading your tasks…", tone: .quiet)
-        case let .interrupted(words): return SyncLine(text: words, tone: .caution)
-        case let .stopped(words): return SyncLine(text: "Your tasks are not being updated: \(words)", tone: .critical)
-        default: return nil
         }
     }
 

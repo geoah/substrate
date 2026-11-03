@@ -15,6 +15,12 @@ public struct TaskEditorPresentation: Codable, Equatable, Sendable {
     public var cancel: String
     /// Why Save is off, once the owner has typed.
     public var problem: String?
+
+    /// Each field's label, by the fact it edits: what the read view's
+    /// labels are held to.
+    public var labels: [TaskField: String] {
+        [.name: name.label, .notes: notes.label, .link: link.label, .list: list.label, .due: due.label, .priority: priority.label]
+    }
 }
 
 public struct EditorText: Codable, Hashable, Sendable {

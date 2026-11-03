@@ -70,12 +70,12 @@ struct TaskListView: View {
                 .tint(.green)
         }
         .swipeActions(edge: .trailing) {
-            Button("Delete", role: .destructive) { shell.send(.deleteTask(row.id)) }
+            Button(list.rowMenu.swipeDelete, role: .destructive) { shell.send(.deleteTask(row.id)) }
             if row.status == .open {
-                Button("Won't Do") { shell.send(.abandon(row.id)) }
+                Button(list.rowMenu.abandon) { shell.send(.abandon(row.id)) }
             }
         }
-        .contextMenu { TaskMenu(task: row.id, status: row.status, priority: row.priority?.priority ?? .none, sidebar: app.sidebar) }
+        .contextMenu { TaskMenu(task: row.id, status: row.status, priority: row.priority?.priority ?? .none, sidebar: app.sidebar, words: list.rowMenu) }
     }
 
     /// Dragging, only where the order is the owner's.
@@ -135,34 +135,36 @@ struct TaskListView: View {
     }
 }
 
-/// What a task offers from its context menu and the detail's menus alike:
-/// its state, its priority, its list, edit and delete.
+/// What a task offers from its row's context menu: its state, its priority,
+/// its list, edit and delete, in the presentation's words.
 struct TaskMenu: View {
     @Environment(TasksShell.self) private var shell
     let task: String
     let status: TaskStatus
     let priority: TaskPriority
     let sidebar: SidebarPresentation
+    let words: TaskMenuWords
 
     var body: some View {
         if status == .open {
-            Button("Mark as Done", systemImage: "checkmark.circle") { shell.send(.complete(task)) }
-            Button("Won't Do", systemImage: "xmark.circle") { shell.send(.abandon(task)) }
+            Button(words.complete, systemImage: "checkmark.circle") { shell.send(.complete(task)) }
+            Button(words.abandon, systemImage: "xmark.circle") { shell.send(.abandon(task)) }
         } else {
-            Button("Reopen", systemImage: "circle") { shell.send(.reopen(task)) }
+            Button(words.reopen, systemImage: "circle") { shell.send(.reopen(task)) }
         }
-        Button("Edit", systemImage: "pencil") { shell.send(.edit(task)) }
-        Menu(TaskField.priority.label) {
-            ForEach(TaskPriority.allCases, id: \.self) { level in
-                Toggle(level.words, isOn: Binding(get: { priority == level }, set: { _ in shell.send(.setPriority(task, level)) }))
+        Button(words.edit, systemImage: "pencil") { shell.send(.edit(task)) }
+        Menu(words.priority) {
+            ForEach(words.priorities) { level in
+                Toggle(level.title, isOn: Binding(get: { priority.rawValue == level.id },
+                                                  set: { _ in shell.send(.setPriority(task, TaskPriority(rawValue: level.id) ?? .none)) }))
             }
         }
-        Menu("Move to List") {
+        Menu(words.move) {
             ForEach(sidebar.fixed.filter { $0.selection != .today } + sidebar.lists.rows) { row in
                 Button(row.title) { shell.send(.move(task, toList: row.selection.listID)) }
             }
         }
         Divider()
-        Button("Delete Task", systemImage: "trash", role: .destructive) { shell.send(.deleteTask(task)) }
+        Button(words.delete, systemImage: "trash", role: .destructive) { shell.send(.deleteTask(task)) }
     }
 }

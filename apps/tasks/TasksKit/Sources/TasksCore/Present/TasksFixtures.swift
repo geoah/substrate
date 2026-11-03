@@ -63,11 +63,13 @@ public enum TasksFixtures {
                       editors: [ChildKey: EditorSeed] = [:]) -> TasksState
     {
         var state = TasksState()
-        state.server = records
-        state.records = records
-        state.loaded = true
-        state.link = LinkSnapshot(phase: .signedIn, repository: "ada.example.com", online: true)
-        state.sync = .following
+        state.linked.server = records
+        state.linked.records = records
+        state.linked.loaded = true
+        state.linked.link = LinkSnapshot(phase: .signedIn, repository: "ada.example.com", online: true)
+        state.linked.phase = .following
+        state.settingsRead = true
+        state.section = selection == .today ? TasksMenu.today : TasksMenu.lists
         state.selection = selection
         state.openTask = open
         state.confirmation = confirmation
@@ -79,33 +81,35 @@ public enum TasksFixtures {
 
     static func present(_ state: TasksState, children: [ChildKey: TaskEditorPresentation] = [:]) -> TasksPresentation {
         TasksPresenter.present(PresenterInput(state: state, transient: NoTransient(), children: children, now: now, locale: locale,
-                                              timeZone: timeZone, link: state.link), device: "this iPhone", build: build)
+                                              timeZone: timeZone, link: state.linked.link), linked: app.linked, device: "this iPhone",
+                                build: build)
     }
 
+    static let app = TasksApp(cache: nil, outbox: nil, device: "this iPhone", build: build)
+
     static func editor(_ seed: EditorSeed, in state: TasksState) -> TaskEditorPresentation? {
-        let app = TasksApp(cache: nil, outbox: nil, device: "this iPhone", build: build)
         let key = ChildKey("editor")
         var withEditor = state
         withEditor.editors = [key: seed]
-        guard let editor = app.children(in: withEditor)[key] else { return nil }
+        let environment = AppEnvironment(locale: locale, timeZone: timeZone, devices: DeviceServices(transport: URLSessionTransport.shared))
+        guard let editor = app.children(in: withEditor, environment: environment)[key] else { return nil }
         return editor.present(PresenterInput(state: editor.initialState, transient: NoTransient(), now: now, locale: locale, timeZone: timeZone))
     }
 
     /// The Settings screen: the app's sections, then the kit's, as the
     /// link presents them in the kit's own fixtures.
     static func settings(_ app: TasksPresentation) -> SettingsPresentation {
-        var sections = app.settings
+        var status: StatusPresentation?
+        var repository: RepositoryPresentation?
         for fixture in ScreenFixtures.all {
-            if fixture.name == "status-up-to-date", case let .status(status) = fixture.presentation {
-                sections += SettingsPresenter.status(status)
-            }
-            if fixture.name == "repository", case let .repository(repository) = fixture.presentation {
-                sections += SettingsPresenter.repository(repository)
-            }
+            if fixture.name == "status-up-to-date", case let .status(presented) = fixture.presentation { status = presented }
+            if fixture.name == "repository", case let .repository(presented) = fixture.presentation { repository = presented }
         }
-        sections.append(app.storage)
-        sections.append(SettingsPresenter.about(app.about))
-        return SettingsPresentation(sections: sections)
+        guard let status else { return SettingsPresentation(sections: app.settings) }
+        let link = LinkPresentation<TasksPresentation>(snapshot: LinkSnapshot(phase: .signedIn, repository: "ada.example.com", online: true),
+                                                       repository: repository, banner: nil, ended: nil, status: status, signOutProblem: nil,
+                                                       app: app)
+        return TasksSettings.screen(link, app)
     }
 
     public static var all: [Fixture] {
@@ -119,7 +123,7 @@ public enum TasksFixtures {
         let new = present(newState, children: editor(.new(list: "groceries", day: nil), in: newState).map { [key: $0] } ?? [:])
         let confirm = present(state(.list("home"), confirmation: .deleteList(id: "home")))
         var empty = state(.inbox)
-        empty.records = [:]
+        empty.linked.records = [:]
         let nothing = present(empty)
         return [
             Fixture(name: "tasks-sidebar", app: lists, screen: .sidebar),

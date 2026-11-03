@@ -53,14 +53,4 @@ enum TasksSymbols {
         case .abandoned: "xmark.circle"
         }
     }
-
-    static func color(_ tone: ScreenTone) -> Color {
-        switch tone {
-        case .quiet, .supporting: .secondary
-        case .positive: .green
-        case .informative: .blue
-        case .caution: .orange
-        case .critical: .red
-        }
-    }
 }

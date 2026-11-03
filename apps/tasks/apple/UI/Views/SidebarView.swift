@@ -53,7 +53,7 @@ struct SidebarView: View {
         }
         .navigationTitle(sidebar.title)
         .safeAreaInset(edge: .top) {
-            LinkNotices(link: link, app: app)
+            Notices(link: link, app: app)
                 .padding(.horizontal)
         }
         .safeAreaInset(edge: .bottom) {

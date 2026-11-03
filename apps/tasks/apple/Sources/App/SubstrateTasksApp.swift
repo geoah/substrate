@@ -7,22 +7,20 @@ struct SubstrateTasksApp: App {
     /// local build has no update address and never checks.
     @StateObject private var updates = Updater()
     @Environment(\.scenePhase) private var scenePhase
-    private let shell = TasksShell.shared
 
     var body: some Scene {
         #if os(macOS)
         window
             .commands {
                 CommandGroup(after: .newItem) {
-                    Button("New Task") { shell.newTask() }
+                    Button("New Task") { Tasks.newTask() }
                         .keyboardShortcut("n")
                 }
                 UpdateCommands(updates: updates)
             }
         Settings {
             SettingsView()
-                .environment(shell)
-                .environment(\.checkForUpdates) { updates.checkNow() }
+                .checkingForUpdates { updates.checkNow() }
                 .frame(width: 520, height: 620)
         }
         #else
@@ -33,17 +31,16 @@ struct SubstrateTasksApp: App {
     private var window: some Scene {
         WindowGroup {
             RootView()
-                .environment(shell)
-                .environment(\.checkForUpdates) { updates.checkNow() }
+                .checkingForUpdates { updates.checkNow() }
                 .updateOffer(updates)
-                .onChange(of: updates.offer?.version, initial: true) { _, version in shell.updateOffered(version) }
+                .onChange(of: updates.offer?.version, initial: true) { _, version in Tasks.updateOffered(version) }
                 #if os(macOS)
                 .frame(minWidth: 760, minHeight: 480)
                 #endif
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             guard phase == .active else { return }
-            shell.cameForward()
+            Tasks.cameForward()
         }
     }
 }

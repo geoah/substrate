@@ -1,9 +1,9 @@
 import Foundation
+import SubstrateCore
 import SubstrateDevice
 import SubstrateScreens
 
-/// The app's own settings rows, by id, with their defaults, and how every
-/// settings command finds the controller that answers it.
+/// The app's own settings rows, by id, with their defaults.
 public enum TasksSettings {
     public static let remind = "remind"
     public static let remindHour = "remindHour"
@@ -70,43 +70,14 @@ public enum TasksSettings {
         return formatter.string(from: date)
     }
 
-    /// Settings as one screen: the app's sections, then the link's status
-    /// and repository, then storage and about.
-    public static func screen(_ app: TasksPresentation, link: LinkPresentation<TasksPresentation>) -> SettingsPresentation {
-        var sections = app.settings
-        sections += SettingsPresenter.status(link.status)
-        if let repository = link.repository { sections += SettingsPresenter.repository(repository) }
-        sections.append(app.storage)
-        sections.append(SettingsPresenter.about(app.about))
-        return SettingsPresentation(sections: sections)
+    /// Settings as one screen: the app's sections, then the kit's.
+    public static func screen(_ link: LinkPresentation<TasksPresentation>, _ app: TasksPresentation) -> SettingsPresentation {
+        SettingsPresenter.screen(app.settings, link: link, storage: app.storage, about: app.about)
     }
 
-    /// Where a settings command goes.
-    public enum Route: Equatable, Sendable {
-        case app(TasksApp.Command)
-        case link(LinkController<TasksApp>.Command)
-        /// The review of the app's access, which the UI opens.
-        case changeAccess
-        /// The updater's own check, which the UI runs.
-        case checkForUpdates
-        /// The connect screen, which the UI shows.
-        case signIn
-        case none
-    }
-
-    public static func route(_ command: SettingsCommand) -> Route {
-        switch command {
-        case .toggle(.app, _), .choose(.app, _): .app(.settings(command))
-        case .perform(.storage(.clear)): .app(.clearSaved)
-        case .perform(.status(.action(.sendNow))): .link(.sendNow)
-        case let .perform(.status(.action(.retry(id)))): .link(.retry(id))
-        case let .perform(.status(.action(.discard(id)))): .link(.discard(id))
-        case .perform(.status(.action(.review))), .perform(.status(.action(.renew))), .perform(.repository(.changeAccess)): .changeAccess
-        case .perform(.repository(.signOut)): .link(.signOut)
-        case .perform(.status(.action(.signIn))): .signIn
-        case .perform(.about(.check)): .checkForUpdates
-        default: .none
-        }
+    /// Where a settings command goes: the app's own rows to the root.
+    public static func route(_ command: SettingsCommand) -> SettingsRoute<TasksApp> {
+        SettingsRoute.route(command, settings: { .settings($0) }, clearSaved: .clearSaved)
     }
 }
 

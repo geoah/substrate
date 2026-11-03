@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 import SubstrateDevice
 import SubstrateScreens
 
@@ -15,9 +16,16 @@ public enum Reminders {
 
     public static func id(_ task: String) -> String { prefix + task }
 
-    /// The category a reminder is scheduled under, which the app's delegate
-    /// reads on a tap; the task's id is in its `userInfo` under `task`.
+    /// The category a reminder is scheduled under, which a tap's response
+    /// carries; the task's id is in its `userInfo` under `task`.
     public static let category = "tasks.reminder"
+
+    /// The app's command for a notification the owner answered: a tap on a
+    /// reminder opens its task; nothing else of another category or action.
+    public static func command(for response: NotificationResponse) -> TasksApp.Command? {
+        guard response.category == category, response.action == .open, let task = response.userInfo["task"] else { return nil }
+        return .reminderTapped(task)
+    }
 
     public static func plan(_ model: TasksModel, settings: SettingsValues, permission: NotificationPermission?, now: Date,
                             calendar: Calendar, locale: Locale) -> [NotificationRequest]

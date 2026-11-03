@@ -1,5 +1,4 @@
 import Foundation
-import SubstrateAPI
 import SubstrateCore
 import SubstrateDevice
 import SubstrateLocal
@@ -7,15 +6,16 @@ import SubstrateRuntime
 import SubstrateScreens
 
 /// Substrate Tasks' root, kept by the link (`LinkController<TasksApp>`).
-/// It holds the repository's tasks and lists as the server last answered
-/// them with the outbox's writes laid over, reads them once and follows the
-/// watch, writes every change through the outbox, keeps the reminders this
-/// device shows in step with the tasks, and keeps the task editors as its
-/// children. Its presentation is every screen of the app; the link's is the
-/// connection's, beside it.
+/// Its tasks and lists are the kit's `LinkedRecords` over the two kinds: read
+/// once, followed through the watch, every change written through the
+/// outbox. Beside them it keeps the reminders this device shows in step
+/// with the tasks, the settings, where the owner is, and the task editors as
+/// its children. Its presentation is every screen of the app; the link's is
+/// the connection's, beside it.
 public struct TasksApp: LinkedApp {
     public enum Command: Codable, Equatable, Sendable {
         case select(section: String)
+        /// A list shown, or none: on a phone, back to the lists.
         case show(ListSelection?)
         case open(task: String?)
         case quickAdd(String)
@@ -38,11 +38,10 @@ public struct TasksApp: LinkedApp {
         case settings(SettingsCommand)
         case clearSaved
         case refresh
-        /// The app came to the front: what the system may have changed
-        /// meanwhile is read again.
+        /// What the system may have changed is read again: the app came to
+        /// the front, or the time zone moved.
         case foreground
-        /// The owner tapped a reminder: the app's notification delegate
-        /// sends the task's id it was scheduled with.
+        /// The owner tapped a reminder: the task's id it was scheduled with.
         case reminderTapped(String)
         /// The updater found a newer build, or none.
         case offered(String?)
@@ -50,20 +49,9 @@ public struct TasksApp: LinkedApp {
     }
 
     public enum Event: Codable, Equatable, Sendable {
-        case linked(LinkSnapshot)
+        case records(LinkedRecords.Event)
         case opening
-        case loaded(LocalCopy)
-        case listed([Record], cursor: WatchCursor?)
-        case readFailed(String, LinkReport?)
-        case changed(String, Record?)
-        case watchOpened(WatchCursor)
-        case watchInterrupted(String)
-        case watchEnded(WatchStop, String)
-        case relistNeeded
-        case queueReported([OutboxEntry])
-        case enqueued(Set<UUID>, queue: [OutboxEntry])
-        case notQueued(Set<UUID>, String)
-        case wrote(LocalWrite)
+        case settingsRead(SettingsValues, usage: [AreaUsage])
         case sectionSelected(String)
         case shown(ListSelection?)
         case opened(String?)
@@ -77,28 +65,18 @@ public struct TasksApp: LinkedApp {
         case scheduled([NotificationRequest])
         case tapped(String)
         case usage([AreaUsage])
-        case clearAsked
-        case cleared
-        case refreshAsked
-        case foregrounded
         case offered(String?)
         case problemDismissed
     }
 
     public enum Effect: Equatable, Sendable {
-        case load
-        case followOutbox
+        case records(LinkedRecords.Effect)
+        case readSettings
         case readPermission
         case askPermission
-        case read
-        case follow(WatchCursor?)
-        case stopFollowing
-        case reread([String])
-        case enqueue(LocalWrite)
         case saveSettings(SettingsValues)
         case schedule([NotificationRequest])
         case readUsage
-        case clearSaved
     }
 
     public typealias State = TasksState
@@ -107,33 +85,29 @@ public struct TasksApp: LinkedApp {
 
     public static let appName = "Substrate Tasks"
     /// Where the app's settings are kept in the repository's folder.
-    public static let settingsFile = "settings.json"
+    public static let settingsFile = SettingsFile<SettingsValues>()
 
-    /// Nil while no repository is signed in: nothing is read or written.
-    public let cache: RecordCache?
-    public let outbox: Outbox?
+    public let linked: LinkedRecords
     /// "this iPhone", "this iPad", "this Mac".
     public let device: String
     public let build: BuildFacts
-    public let line: WriteLine
 
     public init(cache: RecordCache?, outbox: Outbox?, device: String, build: BuildFacts, line: WriteLine = WriteLine()) {
-        self.cache = cache
-        self.outbox = outbox
+        linked = LinkedRecords(kinds: TasksKinds.all, cache: cache, outbox: outbox, words: Self.words(device: device), line: line)
         self.device = device
         self.build = build
-        self.line = line
     }
 
-    public static func == (lhs: TasksApp, rhs: TasksApp) -> Bool {
-        lhs.cache === rhs.cache && lhs.outbox === rhs.outbox && lhs.device == rhs.device && lhs.build == rhs.build && lhs.line === rhs.line
+    /// The Status screen's words, and the linked records'.
+    public static func words(device: String) -> StatusWords {
+        StatusWords(app: appName, device: device, kept: "tasks", packageNames: [TasksKinds.packageID: "Tasks"])
     }
 
     public var initialState: TasksState { TasksState() }
 
     public func event(atOpen replayed: Bool) -> Event? { .opening }
 
-    public func event(forLink link: LinkSnapshot) -> Event? { .linked(link) }
+    public func event(forLink link: LinkSnapshot) -> Event? { .records(.linked(link)) }
 
     public func event(fromChild key: ChildKey, _ event: TaskEditor.Event) -> Event? {
         switch event {
@@ -143,32 +117,26 @@ public struct TasksApp: LinkedApp {
         }
     }
 
-    /// A 401 or a 403 `insufficient_scope` from the read or the watch.
     public func report(of event: Event) -> LinkReport? {
-        switch event {
-        case let .readFailed(_, report): report
-        case .watchEnded(.signedOut, _): .accessEnded
-        case .watchEnded(.needsApproval, _): .needsApproval
-        default: nil
-        }
+        guard case let .records(event) = event else { return nil }
+        return linked.report(of: event)
     }
 
-    /// A burst of watch rows or outbox reports is drawn once per window.
     public func coalescing(of event: Event) -> Coalescing {
-        switch event {
-        case .changed, .queueReported: .within(.milliseconds(100))
-        default: .now
-        }
+        guard case let .records(event) = event else { return .now }
+        return linked.coalescing(of: event)
     }
 
     public func nextChange(of presentation: TasksPresentation) -> Date? { presentation.nextChange }
 
     // MARK: Composition
 
-    public func children(in state: TasksState) -> [ChildKey: TaskEditor] {
+    /// The editors, each made from the task as it stands, read in the
+    /// device's time zone (a moment's day is the device's).
+    public func children(in state: TasksState, environment: AppEnvironment) -> [ChildKey: TaskEditor] {
         guard !state.editors.isEmpty else { return [:] }
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.timeZone = environment.timeZone
         let model = TasksModel(state.records, in: calendar)
         let lists = model.arrangedLists.map { EditorOption(id: $0.id, title: $0.name) }
         var last: [String: Decimal] = [:]
@@ -193,6 +161,6 @@ public struct TasksApp: LinkedApp {
     // MARK: The presenter
 
     public func present(_ input: PresenterInput<TasksApp>) -> TasksPresentation {
-        TasksPresenter.present(input, device: device, build: build)
+        TasksPresenter.present(input, linked: linked, device: device, build: build)
     }
 }

@@ -59,6 +59,15 @@ struct CodecTests {
         #expect(Set(TasksCodec.taskProperties).isSubset(of: Set(task)), "the codec names \(TasksCodec.taskProperties), the kind declares \(task)")
         #expect(Set(task).isSubset(of: Set(TasksCodec.taskProperties + ["url"])))
         #expect(package.properties[TasksKinds.list].map(Set.init) == Set(TasksCodec.listProperties))
+        // `dueAt` is no declared property: the temporal trait binds it as
+        // its point, and the codec reads and writes it under that name alone.
+        #expect(!task.contains("dueAt"))
+        #expect(package.bindings[TasksKinds.task]?["temporal"]?["point"] == "dueAt")
+        let timed = TaskItem(id: "t1", name: "Call", due: .time(now, day: today))
+        let bound = Set(package.bindings[TasksKinds.task]?.values.flatMap(\.values) ?? [])
+        let written = Set(TasksCodec.create(timed).keys).union(TasksCodec.patch(from: TaskItem(id: "t1", name: ""), to: timed).keys)
+        #expect(written.isSubset(of: Set(task).union(bound)), "the codec writes \(written.subtracting(Set(task).union(bound)))")
+        #expect(written.contains("dueAt"))
     }
 
     @Test func aCivilDayIsItsTextAndRefusesADayNoMonthHas() {
@@ -66,51 +75,5 @@ struct CodecTests {
         #expect(CivilDay("2028-02-29")?.description == "2028-02-29")
         #expect(CivilDay("2026-11-6") == nil)
         #expect(today.adding(days: 1, in: calendar).description == "2026-11-04")
-    }
-}
-
-@Suite("Positions")
-struct PositionTests {
-    @Test func aPositionIsBetweenItsNeighbours() {
-        #expect(Position.between(1, 2) == Decimal(string: "1.5"))
-        #expect(Position.between(nil, 1) == 0)
-        #expect(Position.between(3, nil) == 4)
-        #expect(Position.between(nil, nil) == 1)
-        // Halving into the same gap stays exact.
-        var high: Decimal = 2
-        for _ in 0 ..< 60 { high = Position.between(1, high) }
-        #expect(high > 1)
-    }
-
-    @Test func aMoveWritesTheOneRecordMoved() {
-        let positions: [String: Decimal] = ["a": 1, "b": 2, "c": 3]
-        #expect(Position.moves("c", to: 0, in: ["a", "b", "c"], positions: positions) == ["c": 0])
-        #expect(Position.moves("a", to: 1, in: ["a", "b", "c"], positions: positions) == ["a": Decimal(string: "2.5")!])
-        #expect(Position.moves("a", to: 2, in: ["a", "b", "c"], positions: positions) == ["a": 4])
-    }
-
-    @Test func aMoveAmongRecordsWithoutPositionsNumbersTheOnesBeforeIt() {
-        let moves = Position.moves("a", to: 2, in: ["a", "x", "y", "z"], positions: ["a": 1])
-        #expect(moves == ["x": 1, "y": 2, "a": 3])
-    }
-}
-
-@Suite("The fold")
-struct FoldTests {
-    @Test func waitingWritesLieOverTheServersCopyAndARefusedOneDoesNot() {
-        let key = RecordFold.key(TasksKinds.task, "t1")
-        let server = [key: taskRecord("t1", "Milk")]
-        let rename = OutboxEntry(method: .patch, kind: TasksKinds.task, recordID: "t1", properties: ["name": "Oat milk"])
-        var refused = OutboxEntry(method: .patch, kind: TasksKinds.task, recordID: "t1", properties: ["priority": "high"])
-        refused.parked = true
-        let create = OutboxEntry(method: .put, kind: TasksKinds.task, recordID: "t2", properties: ["name": "Bread"])
-        let folded = RecordFold.fold(server, [rename, refused, create])
-        #expect(folded[key]?.properties["name"] == "Oat milk")
-        #expect(folded[key]?.properties["priority"] == "none")
-        #expect(folded[RecordFold.key(TasksKinds.task, "t2")]?.version == 0)
-        let gone = OutboxEntry(method: .delete, kind: TasksKinds.task, recordID: "t1")
-        #expect(RecordFold.fold(server, [gone])[key] == nil)
-        // A patch of a record already gone makes no record.
-        #expect(RecordFold.fold([:], [rename])[key] == nil)
     }
 }

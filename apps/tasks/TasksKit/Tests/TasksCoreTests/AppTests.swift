@@ -38,7 +38,7 @@ struct LiveAppTests {
         serve(rig)
         let harness = rig.harness()
         await harness.runtime.linkChanged(signedIn)
-        try await harness.until { await $0.state.cursor == WatchCursor(seq: 7, generation: "g1") }
+        try await harness.until { await $0.state.linked.cursor == WatchCursor(seq: 7, generation: "g1") }
         await harness.send(.show(.list("groceries")))
         let presented = await harness.presentation
         #expect(titles(presented) == ["Eggs"])
@@ -56,13 +56,13 @@ struct LiveAppTests {
         rig.server.on { $0.method == "PUT" ? (200, json(taskRecord("x", "Milk"))) : nil }
         let harness = rig.harness()
         await harness.runtime.linkChanged(signedIn)
-        try await harness.until { await $0.state.sync == .following }
+        try await harness.until { await $0.state.linked.phase == .following }
         await harness.send(.show(.list("groceries")))
 
         network.online = false
         await harness.send(.quickAdd("Milk"))
         #expect(titles(await harness.presentation) == ["Eggs", "Milk"])
-        try await harness.until { await $0.state.unconfirmed.isEmpty }
+        try await harness.until { await $0.state.linked.unconfirmed.isEmpty }
         let waiting = await rig.outbox.entries
         #expect(waiting.count == 1)
         let entry = try #require(waiting.first)
@@ -81,7 +81,7 @@ struct LiveAppTests {
         #expect(await rig.outbox.flush(rig.client) == .sent)
         try await harness.until { harness in
             let state = await harness.state
-            return state.queue.isEmpty && state.server["\(TasksKinds.task)/\(entry.recordID)"]?.version == 1
+            return state.linked.queue.isEmpty && state.linked.server["\(TasksKinds.task)/\(entry.recordID)"]?.version == 1
         }
         #expect(titles(await harness.presentation) == ["Eggs", "Milk"])
         #expect(rig.server.sent.contains { $0.method == "PUT" && $0.path == path(TasksKinds.task, entry.recordID) })
@@ -103,7 +103,7 @@ struct LiveAppTests {
         }
         let harness = rig.harness()
         await harness.runtime.linkChanged(signedIn)
-        try await harness.until { await $0.state.sync == .following }
+        try await harness.until { await $0.state.linked.phase == .following }
         await harness.send(.show(.list("groceries")))
         try await harness.until(timeout: .seconds(10)) { titles(await $0.presentation) == ["Bread"] }
     }
@@ -144,7 +144,7 @@ struct LiveAppTests {
         serve(rig)
         let harness = rig.harness()
         await harness.runtime.linkChanged(signedIn)
-        try await harness.until { await $0.state.sync == .following }
+        try await harness.until { await $0.state.linked.phase == .following }
         #expect(!rig.notifications.calls.contains(.requestPermission))
         await harness.send(.show(.today))
         await harness.send(.quickAdd("Water plants"))
@@ -159,9 +159,9 @@ struct LiveAppTests {
         serve(rig)
         let harness = rig.harness()
         await harness.send(.settings(.choose(row: .app(TasksSettings.order), option: TaskOrder.due.rawValue)))
-        try await harness.until { _ in (try? rig.folder.read(TasksApp.settingsFile, in: .root)) != nil }
+        try await harness.until { _ in (try? rig.folder.read(TasksApp.settingsFile.name, in: .root)) != nil }
         let again = ControllerHarness(rig.app, clock: rig.clock, environment: rig.environment)
-        try await again.until { await $0.state.loaded }
+        try await again.until { await $0.state.settingsRead }
         #expect(TasksSettings.order(await again.state.settings) == .due)
     }
 }
@@ -171,7 +171,8 @@ struct AppTests {
     func loaded(_ records: [Record], selection: ListSelection? = .inbox) async throws -> (Rig, ControllerHarness<TasksApp>) {
         let rig = try Rig()
         let harness = rig.harness(performsEffects: false)
-        await harness.deliver(.loaded(LocalCopy(records: records)))
+        await harness.deliver(.records(.loaded(records, cursor: nil, queue: [])))
+        await harness.deliver(.settingsRead(SettingsValues(), usage: []))
         await harness.deliver(.permission(.on))
         await harness.deliver(.shown(selection))
         harness.clearTrace()
@@ -180,7 +181,7 @@ struct AppTests {
 
     func enqueued(_ harness: ControllerHarness<TasksApp>) -> [OutboxEntry] {
         harness.effects.flatMap { effect -> [OutboxEntry] in
-            if case let .enqueue(write) = effect { return write.entries }
+            if case let .records(.enqueue(write)) = effect { return write.entries }
             return []
         }
     }
@@ -233,7 +234,7 @@ struct AppTests {
 
         await harness.send(.confirm)
         let write = try #require(harness.effects.compactMap { effect -> LocalWrite? in
-            if case let .enqueue(write) = effect { return write }
+            if case let .records(.enqueue(write)) = effect { return write }
             return nil
         }.first)
         #expect(write.entries.map(\.method) == [.delete])
@@ -287,18 +288,28 @@ struct AppTests {
     }
 
     @Test func theDetailAndTheEditorUseTheSameLabels() async throws {
-        let (_, harness) = try await loaded([listRecord("home", "Home"),
-                                             taskRecord("a", "Pay rent", list: "home", dueDay: "2026-11-06", priority: "high")],
-                                            selection: .list("home"))
+        var rent = taskRecord("a", "Pay rent", list: "home", dueDay: "2026-11-06", priority: "high")
+        rent.properties["description"] = "Before the 6th."
+        rent.properties["url"] = "https://example.com/rent"
+        let (_, harness) = try await loaded([listRecord("home", "Home"), rent], selection: .list("home"))
         await harness.send(.open(task: "a"))
         let detail = try #require(await harness.presentation.detail)
-        #expect(detail.fields.map(\.label) == ["Status", "List", "Due", "Priority"])
-        #expect(detail.fields.map(\.value) == ["Open", "Home", "Friday, November 6, 2026", "High"])
-        #expect(detail.actions.map(\.title) == ["Mark as Done", "Won't Do", "Edit", "Delete Task"])
+        // Each fact once: the list and the priority are the choices that
+        // change them, under their own labels, and Edit is the toolbar's.
+        #expect(detail.fields.map(\.label) == ["Status", "List", "Due", "Priority", "Notes", "Link"])
+        #expect(detail.fields.map(\.value) == ["Open", "Home", "Friday, November 6, 2026", "High", "Before the 6th.", "https://example.com/rent"])
+        #expect(detail.fields.compactMap { $0.choice?.label } == ["List", "Priority"])
+        #expect(detail.fields.first { $0.field == .list }?.choice?.selected == "home")
+        #expect(detail.fields.first { $0.field == .priority }?.choice?.selected == "high")
+        #expect(detail.actions.map(\.title) == ["Mark as Done", "Won't Do", "Delete Task"])
+        #expect(detail.edit == "Edit")
         await harness.send(.edit("a"))
         let (key, editor) = try #require(await harness.presentation.editors.first)
-        #expect([editor.name.label, editor.list.label, editor.due.label, editor.priority.label]
-            == [TaskField.name.label, "List", "Due", "Priority"])
+        // Every fact the two views share has one label in both.
+        let shared = detail.fields.filter { editor.labels[$0.field] != nil }
+        #expect(shared.map(\.field) == [.list, .due, .priority, .notes, .link])
+        for field in shared { #expect(field.label == editor.labels[field.field], "\(field.field)") }
+        for field in detail.fields { if let choice = field.choice { #expect(choice.label == editor.labels[field.field]) } }
         #expect(editor.list.selected == "home")
         #expect(editor.due.kind == .day)
 
@@ -338,7 +349,7 @@ struct AppTests {
         let (_, harness) = try await loaded([])
         await harness.send(.quickAdd("Milk"))
         let entry = try #require(enqueued(harness).first)
-        await harness.deliver(.notQueued([entry.id], "This iPhone could not keep the change: the disk is full."))
+        await harness.deliver(.records(.notQueued([entry.id], "This iPhone could not keep the change: the disk is full.")))
         let presented = await harness.presentation
         #expect(titles(presented).isEmpty)
         #expect(presented.problem?.message == "This iPhone could not keep the change: the disk is full.")
@@ -348,13 +359,13 @@ struct AppTests {
         let (_, harness) = try await loaded([taskRecord("a", "Eggs", version: 1)])
         await harness.send(.complete("a"))
         let entry = try #require(enqueued(harness).first)
-        await harness.deliver(.enqueued([entry.id], queue: [entry]))
+        await harness.deliver(.records(.enqueued([entry.id], queue: [entry], landed: [])))
         harness.clearTrace()
         // The flush landed it: the queue reports it gone.
-        await harness.deliver(.queueReported([]))
+        await harness.deliver(.records(.queueReported([], landed: [entry.id])))
         // Reports are drawn within a window, and effects follow the drawing.
         await harness.advance(by: 0.2)
-        #expect(harness.effects.contains(.reread(["\(TasksKinds.task)/a"])))
+        #expect(harness.effects.contains(.records(.reread(["\(TasksKinds.task)/a"]))))
         #expect(await harness.presentation.list?.open.rows.isEmpty == true)
     }
 
@@ -391,7 +402,7 @@ struct LinkedTests {
         let presented = await harness.presentation
         #expect(presented.ended?.title == "Substrate Tasks's access ended")
         let app = try #require(await harness.runtime.state(of: LinkController<TasksApp>.appKey))
-        guard case .stopped = app.sync else { throw Unexpected() }
+        guard case .stopped = app.linked.phase else { throw Unexpected() }
     }
 
     @Test func theManifestIsTheRequestAppJSONRecords() throws {

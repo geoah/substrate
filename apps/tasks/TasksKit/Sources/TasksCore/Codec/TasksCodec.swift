@@ -11,9 +11,6 @@ public enum TasksCodec {
     /// The property names each kind declares that the app reads or writes,
     /// in declaration order; a test holds them to the closure the app carries.
     public static let taskProperties = ["name", "description", "url", "list", "position", "dueDay", "priority", "status", "completedAt"]
-    /// The temporal trait's point, a property the trait binds rather than
-    /// the kind declares.
-    public static let taskTraitProperties = ["dueAt"]
     public static let listProperties = ["name", "position"]
 
     // MARK: Reading

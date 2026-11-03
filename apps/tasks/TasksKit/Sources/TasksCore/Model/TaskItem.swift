@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 /// One `substrate.reamde.dev/tasks/task` record. Named apart from Swift's
 /// `Task`, which every file here also reaches for.

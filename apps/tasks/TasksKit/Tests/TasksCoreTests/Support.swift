@@ -4,6 +4,7 @@ import SubstrateCore
 import SubstrateDevice
 import SubstrateLocal
 import SubstrateRuntime
+import SubstrateScreens
 import SubstrateTesting
 @testable import TasksCore
 

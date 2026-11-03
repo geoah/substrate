@@ -99,32 +99,24 @@ public struct TaskEditor: Controller, Equatable {
             return [.cancelled]
         case .save:
             guard !draft.trimmedName.isEmpty else { return [] }
-            return [save(draft, entry: context.mint(), newTask: context.mint())]
+            return [save(draft, writes: TaskWrites(mint: { context.mint() }))]
         }
     }
 
     /// The write a save makes: a create of a new task in the list chosen,
     /// after its last task; or a patch of what changed, on the version the
-    /// owner saw, with a moved task put after the last of its new list.
-    func save(_ draft: TaskDraft, entry: UUID, newTask: UUID) -> Event {
+    /// owner saw, never merged over, with a moved task put after the last of
+    /// its new list. A task not sent yet has no version, and its create goes
+    /// first in the same batch.
+    func save(_ draft: TaskDraft, writes: TaskWrites) -> Event {
         guard let original else {
-            let id = newTask.uuidString.lowercased()
-            var task = draft.applied(to: TaskItem(id: id, name: ""))
+            var task = draft.applied(to: TaskItem(id: writes.newID(), name: ""))
             task.position = Position.between(lastPositions[draft.list ?? ""], nil)
-            let write = OutboxEntry(id: entry, method: .put, kind: TasksKinds.task, recordID: id, properties: TasksCodec.create(task),
-                                    batch: LocalWrite.batch(TasksKinds.task, id))
-            return .saved(LocalWrite(entries: [write]), task: id)
+            return .saved(writes.create(task), task: task.id)
         }
         var task = draft.applied(to: original)
         if task.list != original.list { task.position = Position.between(lastPositions[task.list ?? ""], nil) }
-        let patch = TasksCodec.patch(from: original, to: task)
-        // On the version the owner saw, never merged over; a task not sent
-        // yet has none, and its create goes first in the same batch.
-        guard !patch.isEmpty else { return .saved(LocalWrite(entries: []), task: original.id) }
-        let write = OutboxEntry(id: entry, method: .patch, kind: TasksKinds.task, recordID: original.id, properties: patch,
-                                batch: LocalWrite.batch(TasksKinds.task, original.id),
-                                baseVersion: original.version)
-        return .saved(LocalWrite(entries: [write]), task: original.id)
+        return .saved(writes.edit(original, to: task), task: original.id)
     }
 
     // MARK: The engine
@@ -166,7 +158,7 @@ public struct TaskEditor: Controller, Equatable {
                            kinds: DueKind.allCases.map { EditorOption(id: $0.rawValue, title: $0.words) }, date: date,
                            dateLabel: draft.dueKind == .none ? nil : draft.dueKind == .day ? "Day" : "Day and Time"),
             priority: EditorChoice(label: TaskField.priority.label, selected: draft.priority.rawValue,
-                                   options: TaskPriority.allCases.map { EditorOption(id: $0.rawValue, title: $0.words) }),
+                                   options: TasksPresenter.priorities),
             save: original == nil ? "Add" : "Save", canSave: named, cancel: "Cancel",
             problem: input.state.touched && !named ? "A task needs a name." : nil)
     }

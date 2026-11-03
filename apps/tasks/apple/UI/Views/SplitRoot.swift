@@ -1,5 +1,3 @@
-import SubstrateCore
-import SubstrateRuntime
 import SubstrateScreens
 import SubstrateUI
 import SwiftUI
@@ -13,15 +11,13 @@ struct SplitRoot: View {
     let app: TasksPresentation
 
     var body: some View {
-        NavigationSplitView {
+        AppMenuSplit {
             SidebarView(sidebar: app.sidebar, link: link, app: app, menu: app.menu, select: { shell.send(.show($0)) })
-                .navigationSplitViewColumnWidth(min: 220, ideal: 250)
         } content: {
             if app.menu.selected == TasksMenu.settings {
-                SettingsView()
+                AppSettingsView<TasksApp>()
             } else if let list = app.list {
                 TaskListView(list: list, app: app, link: link)
-                    .navigationSplitViewColumnWidth(min: 320, ideal: 400)
             } else {
                 ContentUnavailableView("Choose a list", systemImage: "checklist")
             }
