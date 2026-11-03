@@ -75,11 +75,13 @@ public struct DeviceServices: Sendable {
     public var connectivity: (any Connectivity)?
     public var folders: (any AppFolders)?
     public var notifications: (any Notifications)?
+    public var activities: (any OngoingActivities)?
     public var background: (any BackgroundWork)?
 
     public init(transport: any HTTPTransport, secureStore: (any SessionStorage)? = nil, browser: (any BrowserSignIn)? = nil,
                 resolver: (any TXTResolver)? = nil, connectivity: (any Connectivity)? = nil, folders: (any AppFolders)? = nil,
-                notifications: (any Notifications)? = nil, background: (any BackgroundWork)? = nil)
+                notifications: (any Notifications)? = nil, activities: (any OngoingActivities)? = nil,
+                background: (any BackgroundWork)? = nil)
     {
         self.transport = transport
         self.secureStore = secureStore
@@ -88,6 +90,7 @@ public struct DeviceServices: Sendable {
         self.connectivity = connectivity
         self.folders = folders
         self.notifications = notifications
+        self.activities = activities
         self.background = background
     }
 }

@@ -10,8 +10,8 @@ import SubstrateCore
 //   again with `RowsFix.editor(draft:)`; Save sends `RowsFix.save(draft)`.
 
 /// The open editor of one row.
-public struct RowsEditor: Equatable, Sendable {
-    public enum Mode: String, Equatable, Sendable {
+public struct RowsEditor: Codable, Equatable, Sendable {
+    public enum Mode: String, Codable, Equatable, Sendable {
         /// The set to do now: patches go to the engine at once, Log ticks.
         case log
         /// A done set: patches go to a draft the view holds, Save sends them.
@@ -19,7 +19,7 @@ public struct RowsEditor: Equatable, Sendable {
     }
 
     /// The panel's colour.
-    public enum Tint: String, Equatable, Sendable {
+    public enum Tint: String, Codable, Equatable, Sendable {
         /// The app's tint: a working set to do now.
         case accent
         /// Orange: a warm-up or a drop.
@@ -92,8 +92,8 @@ public struct RowsEditor: Equatable, Sendable {
 }
 
 /// The editor's header note.
-public struct RowsNote: Equatable, Sendable {
-    public enum Kind: String, Equatable, Sendable {
+public struct RowsNote: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Equatable, Sendable {
         /// Why today's numbers: a sparkle before it.
         case reason
         /// Plain grey: `after the rest`, `of 2`, `to failure`, `at 6 kg`, `logged at 09:28`.
@@ -113,7 +113,7 @@ public struct RowsNote: Equatable, Sendable {
 
 /// One value of the editor: the big number, its unit, last time beside it,
 /// the reset chip, and the steppers under the thumb.
-public struct RowsField: Equatable, Sendable, Identifiable {
+public struct RowsField: Codable, Equatable, Sendable, Identifiable {
     public var field: ValueField
     public var id: ValueField { field }
     /// `110`, `8`, `1:07`; nil when empty (then `placeholder`).
@@ -161,7 +161,7 @@ public struct RowsField: Equatable, Sendable, Identifiable {
 }
 
 /// A stepper half.
-public struct RowsStep: Equatable, Sendable {
+public struct RowsStep: Codable, Equatable, Sendable {
     /// `−5`, `+1`, `+0:05`.
     public var title: String
     /// `5 kilograms less`, `1 rep more`.
@@ -181,7 +181,7 @@ public struct RowsStep: Equatable, Sendable {
 }
 
 /// The reset chip: `↺ 8` back to the suggestion, `↺ was 8` back to what was logged.
-public struct RowsReset: Equatable, Sendable {
+public struct RowsReset: Codable, Equatable, Sendable {
     /// `8`, `was 8`; the view draws the ↺ before it.
     public var text: String
     /// `Back to 8`, `Back to 8, as logged`.
@@ -197,7 +197,7 @@ public struct RowsReset: Equatable, Sendable {
 
 /// The keypad for one field (glass, floating): digits, and for a load the
 /// nearby steps of its grid as chips that apply at once.
-public struct RowsKeypad: Equatable, Sendable {
+public struct RowsKeypad: Codable, Equatable, Sendable {
     public var field: ValueField
     /// `Load in kg`, `Reps`, `Time, minutes and seconds`, `Distance in m`.
     public var title: String
@@ -257,7 +257,7 @@ public struct RowsKeypad: Equatable, Sendable {
 }
 
 /// A keypad chip: one step of the grid.
-public struct RowsKeypadChip: Equatable, Sendable, Identifiable {
+public struct RowsKeypadChip: Codable, Equatable, Sendable, Identifiable {
     /// `120`.
     public var text: String
     /// It is the value the field holds now: filled.
@@ -278,7 +278,7 @@ public struct RowsKeypadChip: Equatable, Sendable, Identifiable {
 /// A value that is no rating yet (the plan's pre-fill, or a logged pre-filled
 /// or copied value) is outlined, hollow; a tap on it rates it. A rating is
 /// filled solid; a tap on it clears it.
-public struct RowsRPEStrip: Equatable, Sendable {
+public struct RowsRPEStrip: Codable, Equatable, Sendable {
     /// 6, 7, 8, 9 and 10.
     public var cells: [RowsRPECell]
     /// The `½` toggle.
@@ -314,7 +314,7 @@ public struct RowsRPEStrip: Equatable, Sendable {
 }
 
 /// The `½` beside the RPE stops: on when the value has a half point.
-public struct RowsRPEHalf: Equatable, Sendable {
+public struct RowsRPEHalf: Codable, Equatable, Sendable {
     /// `½`.
     public var text: String
     public var isOn: Bool
@@ -336,8 +336,8 @@ public struct RowsRPEHalf: Equatable, Sendable {
 }
 
 /// One stop of the RPE control (at least 44 pt wide).
-public struct RowsRPECell: Equatable, Sendable, Identifiable {
-    public enum Style: String, Equatable, Sendable {
+public struct RowsRPECell: Codable, Equatable, Sendable, Identifiable {
+    public enum Style: String, Codable, Equatable, Sendable {
         case plain
         /// Shown but no rating: the plan's pre-fill, or a pre-filled or copied
         /// value. An outline, hollow, at the cell's full size.
@@ -372,8 +372,8 @@ public struct RowsRPECell: Equatable, Sendable, Identifiable {
 
 /// A timed row's clock and its track: 0:00 on the left, last time below the
 /// track and the goal above it, so the labels never collide.
-public struct RowsTimer: Equatable, Sendable {
-    public enum Phase: Equatable, Sendable {
+public struct RowsTimer: Codable, Equatable, Sendable {
+    public enum Phase: Codable, Equatable, Sendable {
         /// Start counts down to `goal` (a hold), or runs a stopwatch.
         case ready
         /// The big clock counts up from `startedAt` (`Text(timerInterval:)`).
@@ -429,7 +429,7 @@ public struct RowsTimer: Equatable, Sendable {
 
 /// A done row's fix: the editor opens on its logged values; each change goes
 /// to a draft the view holds; Save sends one edit; the rest keeps running.
-public struct RowsFix: Equatable, Sendable {
+public struct RowsFix: Codable, Equatable, Sendable {
     public var row: RowID
     /// What was logged: the draft starts here.
     public var logged: SetValues
@@ -486,7 +486,7 @@ public struct RowsFix: Equatable, Sendable {
 
 /// Everything an editor needs that does not change while it is open: the row,
 /// its words, the suggestion or what was logged, last time, the steps and the grid.
-struct RowsEditorSource: Equatable, Sendable {
+struct RowsEditorSource: Codable, Equatable, Sendable {
     var row: RowID
     var mode: RowsEditor.Mode
     var tint: RowsEditor.Tint
@@ -744,7 +744,7 @@ struct RowsEditorSource: Equatable, Sendable {
 }
 
 /// A load grid for the keypad's chips, in the exercise's unit.
-struct RowsGrid: Equatable, Sendable {
+struct RowsGrid: Codable, Equatable, Sendable {
     var unit: MassUnit
     var base: Double
     var step: Double

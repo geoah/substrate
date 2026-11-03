@@ -14,6 +14,9 @@ import PackageDescription
 let portableKit: [Target.Dependency] = ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth"].map {
     .product(name: $0, package: "kit")
 }
+// The loop the session and the app's root run on, the journal file and the
+// outbox, the link and its shared screens.
+let runtimeKit: [Target.Dependency] = ["SubstrateRuntime", "SubstrateLocal"].map { .product(name: $0, package: "kit") }
 
 let package = Package(
     name: "WorkoutsKit",
@@ -28,24 +31,26 @@ let package = Package(
     targets: [
         .target(
             name: "WorkoutsCore",
-            dependencies: [.product(name: "SubstrateCore", package: "kit")],
+            dependencies: [.product(name: "SubstrateCore", package: "kit"), .product(name: "SubstrateDevice", package: "kit")] + runtimeKit,
             // The starter exercises and routines, and the training package's
             // manifests (apps/workouts/scripts/workouts-package.py).
             resources: [.copy("Resources/Bundled"), .copy("Resources/Package")]
         ),
         .target(
             name: "WorkoutsSync",
-            dependencies: ["WorkoutsCore"] + portableKit
+            dependencies: ["WorkoutsCore"] + portableKit + runtimeKit + [.product(name: "SubstrateScreens", package: "kit")]
         ),
         .testTarget(
             name: "WorkoutsCoreTests",
-            dependencies: ["WorkoutsCore", .product(name: "SubstrateCore", package: "kit")],
+            dependencies: ["WorkoutsCore", .product(name: "SubstrateCore", package: "kit"), .product(name: "SubstrateTesting", package: "kit")]
+                + runtimeKit,
             // Every example record, and kinds.json from the package's manifests.
             resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "WorkoutsSyncTests",
-            dependencies: ["WorkoutsSync", "WorkoutsCore"] + portableKit,
+            dependencies: ["WorkoutsSync", "WorkoutsCore"] + portableKit + runtimeKit
+                + [.product(name: "SubstrateScreens", package: "kit"), .product(name: "SubstrateTesting", package: "kit")],
             // Answers a substrate gave, recorded from a local server.
             resources: [.copy("Fixtures")]
         ),

@@ -214,14 +214,13 @@ public struct ChatApp: LinkedApp {
         case .setKey: "key"
         case let .readCard(reference, _): "card:\(reference.id)"
         case let .writeCard(id, _, _, _), let .decideUnread(id, _, _): "write:\(id)"
-        case .followTaps: "taps"
         case .followRuns: "runs"
         case .backgroundRefresh: "background"
         case let .continueRun(key, _): "continued:\(key.rawValue)"
         case .readUsage: "usage"
         case .readPermission: "permission"
         case let .cancel(key): key
-        case .closeDisk, .prune, .clearTranscripts, .markRefreshed, .notify, .cancelGroup, .cancelAllNotifications, .badge, .quiet,
+        case .closeDisk, .prune, .clearTranscripts, .markRefreshed, .notify, .cancelGroup, .cancelAllNotifications, .badge,
              .askPermission, .finishRun, .scheduleRefresh, .endContinued:
             nil
         }

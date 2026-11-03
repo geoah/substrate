@@ -11,7 +11,7 @@ struct FinishSheet: View {
     /// Back to the session, to the first set missing a value; the sheet closes first.
     let fillMissing: () -> Void
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
     /// What Save does with unticked rows: the dialog's choice, changeable here.
     @State private var policy: PendingSetPolicy

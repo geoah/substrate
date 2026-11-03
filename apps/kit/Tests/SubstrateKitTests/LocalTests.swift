@@ -177,22 +177,3 @@ struct HeldPackageTests {
         #expect(!HeldPackage.behind(held: 1).writable && HeldPackage.current(held: 1).writable)
     }
 }
-
-@Suite("A folder an earlier build wrote")
-struct AdoptedFolderTests {
-    @Test func whatTheAppAdoptsStaysAndTheRestIsSetAside() throws {
-        let root = temporaryFolder("adopt")
-        try Data("{}".utf8).write(to: root.appendingPathComponent("state.json"))
-        try FileManager.default.createDirectory(at: root.appendingPathComponent("messages"), withIntermediateDirectories: true)
-        try Data("x".utf8).write(to: root.appendingPathComponent("stray.bin"))
-        let folder = try RepositoryFolder(root: root, adopting: ["state.json", "messages"])
-        #expect(try folder.read("state.json", in: .root) == Data("{}".utf8))
-        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("messages").path))
-        #expect(folder.setAsideAtOpen != nil)
-        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("stray.bin").path))
-        // Marked now: a second open adopts nothing more and sets nothing aside.
-        let again = try RepositoryFolder(root: root, adopting: ["state.json"])
-        #expect(again.setAsideAtOpen == nil)
-        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("messages").path))
-    }
-}

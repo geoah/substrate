@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateDevice
@@ -25,7 +26,7 @@ struct OutboxInFlightTests {
         server.answer("PUT", "/api/v1/substrate.reamde.dev/training/session/b", 422, #"{"error":{"code":"validation","message":"props.sport: no"}}"#)
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
         server.on { $0.method == "DELETE" ? (200, "{}") : nil }
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         // B's writes wait at the head of the queue, parked by a refusal.
         try await outbox.enqueue([entry(.put, codec.kinds.session, "b", session: "b"), entry(.put, codec.kinds.set, "b-1", session: "b")])
         await outbox.flush(api(server))
@@ -49,7 +50,7 @@ struct OutboxInFlightTests {
         let gate = server.hold("PUT", "/api/v1/substrate.reamde.dev/training/session/a")
         server.on { $0.method == "PUT" ? (200, record(4)) : nil }
         server.on { $0.method == "DELETE" ? (200, "{}") : nil }
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([entry(.put, codec.kinds.session, "a", session: "a"), entry(.put, codec.kinds.set, "a-1", session: "a")])
         let flush = Task { await outbox.flush(api(server)) }
         await gate.arrived()
@@ -72,7 +73,7 @@ struct OutboxInFlightTests {
         let gate = server.hold("PUT", "/api/v1/substrate.reamde.dev/training/session/a")
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
         let directory = temporaryDirectory()
-        let outbox = Outbox(directory: directory, writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         try await outbox.enqueue([entry(.put, codec.kinds.session, "a", session: "a"), entry(.put, codec.kinds.set, "a-1", session: "a")])
         let flush = Task { await outbox.flush(api(server)) }
         await gate.arrived()
@@ -82,7 +83,7 @@ struct OutboxInFlightTests {
         #expect(await outbox.entries.isEmpty)
         #expect(await outbox.versions.isEmpty, "the landed create came back after the reset")
         #expect(server.methodsAndPaths == ["PUT /api/v1/substrate.reamde.dev/training/session/a"])
-        #expect(await Outbox(directory: directory, writingOptions: .atomic).entries.isEmpty)
+        #expect(await (try! Outbox.workouts(directory: directory, writingOptions: .atomic)).entries.isEmpty)
     }
 
     @Test("a write queued while a flush runs goes in the same run")
@@ -90,7 +91,7 @@ struct OutboxInFlightTests {
         let server = ScriptedServer()
         let gate = server.hold("PUT", "/api/v1/substrate.reamde.dev/training/session/a")
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([entry(.put, codec.kinds.session, "a", session: "a")])
         let flush = Task { await outbox.flush(api(server)) }
         await gate.arrived()
@@ -112,7 +113,7 @@ struct OutboxDiskTests {
     @Test("a change that cannot be saved is refused and leaves the queue as it was")
     func saveFails() async throws {
         let directory = temporaryDirectory()
-        let outbox = Outbox(directory: directory, writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         try await outbox.enqueue([entry(.put, codec.kinds.session, "a", session: "a")])
         // The file's place is taken by a folder: every write fails.
         try FileManager.default.removeItem(at: directory.appendingPathComponent(Outbox.fileName))
@@ -132,9 +133,9 @@ struct OutboxDiskTests {
         let directory = temporaryDirectory()
         let url = directory.appendingPathComponent(Outbox.fileName)
         try Data(#"{"format":1,"entries":[{"id":"#.utf8).write(to: url)
-        let outbox = Outbox(directory: directory, writingOptions: .atomic, now: Date(timeIntervalSince1970: 1_800_000_000))
+        let outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic, now: Date(timeIntervalSince1970: 1_800_000_000))
         #expect(await outbox.entries.isEmpty)
-        let unreadable = try #require(await outbox.unreadable)
+        let unreadable = try #require(await outbox.unreadableRecord)
         #expect(unreadable.source == "outbox.unreadable-1800000000.json")
         #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent(unreadable.source).path))
     }
@@ -148,7 +149,7 @@ struct OutboxDiskTests {
         json["lastError"] = "props.sport: no"
         let file: [String: Any] = ["format": 1, "entries": [json], "versions": [String: Int]()]
         try JSONSerialization.data(withJSONObject: file).write(to: directory.appendingPathComponent(Outbox.fileName))
-        #expect(await Outbox(directory: directory, writingOptions: .atomic).parked.map(\.recordID) == ["a"])
+        #expect(await (try! Outbox.workouts(directory: directory, writingOptions: .atomic)).parked.map(\.recordID) == ["a"])
     }
 }
 
@@ -161,7 +162,7 @@ struct ParkedTests {
         let server = ScriptedServer()
         server.answer("GET", "/api/v1/substrate.reamde.dev/training/session/a", 404, notFound)
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([
             entry(.patch, codec.kinds.session, "a", session: "a", guarded: true),
             entry(.put, codec.kinds.set, "a-late", session: "a"),

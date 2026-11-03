@@ -13,6 +13,8 @@ public struct ChatPresentation: Codable, Equatable, Sendable {
     public var scenes: [String: ScenePresentation]
     /// A notification, a shortcut or a menu asked for a chat a window takes.
     public var routePending: Bool
+    /// The threads a window in front shows: their notifications stay quiet.
+    public var onScreen: [String]
     public var conversations: [ChildKey: ConversationScreen]
     public var offered: [AgentChoice]
     public var defaultAgent: AgentChoice?

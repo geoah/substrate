@@ -40,18 +40,16 @@ public final class ChatStorage: @unchecked Sendable {
         SHA256.hash(data: Data(text.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// What the build before ChatKit wrote, at the top of the folder.
-    static let legacy: Set<String> = ["state.json", "drafts.json", "messages"]
-
-    /// The repository's folder, opened once. A folder an earlier build
-    /// wrote is adopted where it is, its transcripts moved into the cache
-    /// area.
+    /// The repository's folder, opened once. It is adopted where every
+    /// build kept it, with no marker, so a build before ChatKit still reads
+    /// `state.json` and `drafts.json`; the transcripts it kept in
+    /// `messages/` move into the cache area, which it reads again.
     func folder(_ identity: String) throws -> RepositoryFolder? {
         try lock.withLock {
             if let held = open[identity], !held.isClosed { return held }
             guard let base else { return nil }
             let root = base.appendingPathComponent(Self.hash(identity), isDirectory: true)
-            let folder = try RepositoryFolder(root: root, writingOptions: writingOptions, adopting: Self.legacy)
+            let folder = try RepositoryFolder(adopting: root, writingOptions: writingOptions)
             Self.adoptTranscripts(in: folder)
             open[identity] = folder
             caches[identity] = nil

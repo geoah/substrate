@@ -271,32 +271,21 @@ extension ChatApp {
                 }
             }
 
-        case let .notify(notification):
-            return Self.device(notifications) { await $0.schedule(notification) }
-        case let .cancelGroup(group):
-            return Self.device(notifications) { await $0.cancel(group: group) }
+        case let .notify(request):
+            let shown = ChatNotifications.now(request, at: clock.now)
+            return Self.device(notifications) { await $0.schedule(shown) }
+        case let .cancelGroup(thread):
+            return Self.device(notifications) { await $0.cancel(thread: thread) }
         case .cancelAllNotifications:
             return Self.device(notifications) { await $0.cancelAll() }
         case let .badge(count):
             return Self.device(notifications) { await $0.setBadge(count) }
-        case let .quiet(groups):
-            return Self.device(notifications) { await $0.quiet(groups: groups) }
         case .askPermission:
             guard let notifications else { return .none }
-            return .once {
-                _ = await notifications.requestPermission()
-                return Event(.permissionRead(await notifications.permission()))
-            }
+            return .once { Event(.permissionRead(await notifications.requestPermission())) }
         case .readPermission:
             guard let notifications else { return .none }
             return .once { Event(.permissionRead(await notifications.permission())) }
-        case .followTaps:
-            guard let notifications else { return .none }
-            return .sequence {
-                Self.relay { yield in
-                    for await payload in notifications.taps() { yield(.tapped(payload[ChatNotifications.threadKey])) }
-                }
-            }
         case .followRuns:
             guard let background else { return .none }
             return .sequence {

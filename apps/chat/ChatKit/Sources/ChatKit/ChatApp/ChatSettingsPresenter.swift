@@ -30,7 +30,7 @@ extension ChatApp {
         let reach = platform == .ios
             ? "iPhone and iPad have no push from your server: a reply notifies when the app sees it settle, while it is open, while it keeps an answer running after you leave, or when iOS lets it check in the background."
             : "Your server has no push: replies and questions notify while the app is open."
-        let denied = state.permission == .denied
+        let denied = state.permission == .off
         var sections = [
             SettingsSection(id: .app("chats"), title: "Chats", rows: [
                 SettingsRow(id: .app("showAutomated"), label: "Show automated runs", control: .toggle(prefs.showAutomated)),

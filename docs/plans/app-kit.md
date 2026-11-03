@@ -696,16 +696,23 @@ and keeps every guarantee `apple.sh` gives today.
    conditional write (`If-None-Match: *`), holding an expiry and a fencing
    token; it renews while it works, re-reads the published state after
    taking the lease, and checks the token before each write. A lease past
-   its expiry may be taken over, and the taker re-reads everything. A
-   bucket that cannot write conditionally is refused, not raced.
+   its expiry may be taken over, and the taker re-reads everything; an
+   expired lease is never renewed. A bucket compares no token, so every
+   write is itself conditional, on the version of the key read under the
+   lease (`If-Match`) or on its absence (`If-None-Match: *`), and bounded
+   to end before the lease expires: a publisher that stalls past its
+   lease cannot land a write over the next one's. A bucket that cannot
+   write conditionally is refused, not raced.
 
 `SUBSTRATE_APPS_RELEASE_DRY_RUN=1` runs every step against `build/`, the site
 included, and changes no lock file.
 
 **Android specifics.** `versionCode` is allocated under the lease: the
 larger of the minutes since 2026-01-01 at the build's UTC time and the
-highest published code plus one, written into the staged `release.json`; a
-rerun of the same staged build reuses it, and nothing else does. The signing
+highest published or reserved code plus one, reserved for the build in
+the release folder before it builds and written into the staged
+`release.json`; a rerun of the same staged build reuses it, and nothing
+else does. The signing
 key is made once, kept by the owner
 as a secret outside the tree, and its fingerprint is what `assetlinks.json`
 names; losing it means every install is replaced by hand, as losing

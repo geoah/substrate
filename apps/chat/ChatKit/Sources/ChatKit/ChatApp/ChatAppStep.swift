@@ -13,7 +13,6 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case permissionRead(NotificationPermission)
     case usageRead([AreaUsage])
     case transcriptsCleared
-    case tapped(String?)
     case backgroundRun(BackgroundRun)
     case backgroundRefreshed(BackgroundRun, threads: Threads?, cards: Cards?)
     case continued(ChildKey, ContinuedProcessing.Update)

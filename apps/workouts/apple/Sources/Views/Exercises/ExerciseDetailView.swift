@@ -8,7 +8,7 @@ struct ExerciseDetailView: View {
     let exerciseID: ExerciseID
 
     @Environment(AppModel.self) private var app
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @State private var months = ExerciseTrend.ranges[1]
     @State private var chartSession: SessionID?
 

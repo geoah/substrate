@@ -32,9 +32,10 @@ struct LegacyCache {
         #expect(rig.server.count("/api/v1/records", query: "llm/message") == 0)
         #expect(await rig.conversation(key)?.composer.draft == "half a thought")
 
-        // Adopted where it is: marked, its transcripts in the cache area.
+        // Adopted where it is, unmarked, so a build before ChatKit still reads
+        // its list; its transcripts in the cache area.
         let root = rig.base.appendingPathComponent(name)
-        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("folder.json").path))
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("folder.json").path))
         #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("state.json").path))
         #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("cache/\(ChatStorage.hash("t1")).json").path))
         #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("messages").path))

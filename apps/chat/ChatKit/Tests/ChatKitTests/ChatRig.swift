@@ -48,7 +48,7 @@ func baseRoutes(threads: String = emptyPage, threadVersion: Int = 3, status: Str
 struct ChatRig {
     let server: ChatServer
     let clock = TestClock()
-    let notifications = ScriptedNotifications()
+    let notifications = RecordedNotifications()
     let base = temporaryFolder("chat")
     let storage: ChatStorage
     let preferences = MemoryPreferenceStore()

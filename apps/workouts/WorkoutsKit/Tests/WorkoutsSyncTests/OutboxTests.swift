@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateDevice
@@ -60,7 +61,7 @@ struct OutboxTests {
             guard case let .object(body)? = sent.body, body["ifVersion"] == .number(1) else { return (409, #"{"error":{"code":"conflict","message":"version conflict"}}"#) }
             return (200, record(2))
         }
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         let records = try finished()
         try await outbox.enqueue(OutboxPlan.finished(records, codec: codec))
         let state = await outbox.flush(api(server))
@@ -88,7 +89,7 @@ struct OutboxTests {
             return (409, #"{"error":{"code":"conflict","message":"version conflict: ifVersion 1, stored 5"}}"#)
         }
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([
             OutboxEntry(method: .put, kind: codec.kinds.session, recordID: "s1", properties: [:], session: "s1"),
             OutboxEntry(method: .patch, kind: codec.kinds.session, recordID: "s1", properties: ["notes": .string("x")], guarded: true, session: "s1"),
@@ -109,7 +110,7 @@ struct OutboxTests {
         let server = ScriptedServer()
         server.answer("PUT", "/api/v1/substrate.reamde.dev/training/set/a", 422,
                       #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.revision: 1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"]}}"#)
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([OutboxEntry(method: .put, kind: codec.kinds.set, recordID: "a", properties: [:], session: "s")])
         #expect(await outbox.flush(api(server)) == .sent)
         #expect(await outbox.entries.isEmpty)
@@ -120,13 +121,13 @@ struct OutboxTests {
         let server = ScriptedServer()
         server.on { _ in (-1, "") }
         let directory = temporaryDirectory()
-        let outbox = Outbox(directory: directory, writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         try await outbox.enqueue(OutboxPlan.finished(try finished(), codec: codec))
         let state = await outbox.flush(api(server))
         guard case .offline = state else { Issue.record("state \(state)"); return }
         let count = await outbox.entries.count
         #expect(count == 22)
-        #expect(await Outbox(directory: directory, writingOptions: .atomic).entries.count == count)
+        #expect(await (try! Outbox.workouts(directory: directory, writingOptions: .atomic)).entries.count == count)
     }
 
     @Test("a refusal parks the write, holds the rest of its session and lets another session go")
@@ -135,7 +136,7 @@ struct OutboxTests {
         server.answer("PUT", "/api/v1/substrate.reamde.dev/training/session/bad", 422,
                       #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.sport: expected one of strength"]}}"#)
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([
             OutboxEntry(method: .put, kind: codec.kinds.session, recordID: "bad", properties: [:], session: "bad"),
             OutboxEntry(method: .put, kind: codec.kinds.set, recordID: "bad-1", properties: [:], session: "bad"),
@@ -158,7 +159,7 @@ struct OutboxTests {
     func signedOut() async throws {
         let server = ScriptedServer()
         server.on { _ in (401, #"{"error":{"code":"auth","message":"invalid token"}}"#) }
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([OutboxEntry(method: .put, kind: codec.kinds.set, recordID: "a", properties: [:])])
         #expect(await outbox.flush(api(server)) == .signedOut)
         #expect(await outbox.entries.count == 1)
@@ -166,7 +167,7 @@ struct OutboxTests {
 
     @Test("a discard drops the session's queued writes; a session the server holds is purged")
     func discard() async throws {
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         let sink = OutboxSink<Int, Int>(outbox: outbox, onQueued: {})
         try await outbox.enqueue(OutboxPlan.finished(try finished(), codec: codec))
         let id = try finished().session.id
@@ -188,7 +189,7 @@ struct OutboxTests {
 
     @Test("an exercise added on the phone goes before anything names it")
     func exerciseFirst() async throws {
-        let outbox = Outbox(directory: temporaryDirectory(), writingOptions: .atomic)
+        let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         let sink = OutboxSink<Int, Int>(outbox: outbox, onQueued: {})
         let exercise = Exercise(id: ExerciseID(rawValue: "landmine-press"), name: "Landmine Press", measurement: .weightreps, equipment: .barbell)
         await sink.exerciseAdded(exercise)

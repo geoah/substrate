@@ -1,6 +1,7 @@
 import Foundation
 @testable import ChatKit
 import SubstrateCore
+import SubstrateDevice
 import SubstrateRuntime
 import SubstrateTesting
 import Testing
@@ -116,7 +117,7 @@ struct SevenRules {
         #expect(state.conversations.isEmpty)
         // Sign Out forgets the saved chats, and every notification.
         try await rig.harness.until { _ in !FileManager.default.fileExists(atPath: rig.base.appendingPathComponent(ChatStorage.hash(identity)).path) }
-        #expect(rig.notifications.cancellations.contains("all"))
+        #expect(rig.notifications.calls.contains(.cancelAll))
     }
 
     @Test func rule7_cachedRowsAreCurrentOnlyWhileTheirThreadIsSettledAndUnmoved() {
@@ -272,15 +273,21 @@ struct ListRules {
         ], version: 4)
         await rig.harness.deliver(.init(.threadsRead(.init(chats: [settled], automated: []))))
         await rig.harness.deliver(.init(.threadsRead(.init(chats: [settled], automated: []))))
-        try await rig.harness.until { _ in rig.notifications.scheduled.count == 1 }
+        let scheduled: @Sendable () -> [NotificationRequest] = { rig.notifications.calls.compactMap { if case let .schedule(request) = $0 { request } else { nil } } }
+        try await rig.harness.until { _ in scheduled().count == 1 }
         await rig.harness.settle()
-        let note = try #require(rig.notifications.scheduled.first)
+        #expect(scheduled().count == 1)
+        let note = try #require(scheduled().first)
         #expect(note.title == "Helper")
         #expect(note.body == "Hello")
-        #expect(note.payload == ["thread": "t1"])
-        // A tap opens the chat in the window that claims it.
-        rig.notifications.tap(note.payload)
-        try await rig.harness.until { await $0.presentation.routePending }
+        #expect(note.thread == "t1")
+        #expect(note.userInfo == [ChatNotifications.threadKey: "t1"])
+        // Shown as soon as it is sent.
+        #expect(note.fireAt == rig.clock.now.addingTimeInterval(1))
+        // A tap the app's delegate hands over opens the chat in the window
+        // that claims it.
+        await rig.harness.send(.route(.thread("t1")))
+        #expect(await rig.harness.presentation.routePending)
         await rig.harness.send(.claimRoute(scene: "s"))
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         #expect(await rig.harness.state.conversations[key]?.thread == "t1")

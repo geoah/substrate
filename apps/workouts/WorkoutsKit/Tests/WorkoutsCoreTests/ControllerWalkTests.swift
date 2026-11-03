@@ -1,6 +1,7 @@
 import Foundation
 @testable import WorkoutsCore
 import Testing
+import SubstrateLocal
 
 // One session end to end, driven the way the app's SessionController drives
 // it (SubstrateWorkouts/Sources/App/SessionController.swift), since the app target's own tests
@@ -16,7 +17,7 @@ struct ControllerWalk {
     let catalog: Catalog
     var history: HistoryIndex
     let directory: URL
-    let journal: ActiveSessionJournal
+    let journal: JournalFile<EventEnvelope, SessionState>
     let settings = Progression.settings
     private(set) var presentation: SessionPresentation?
 
@@ -26,7 +27,7 @@ struct ControllerWalk {
         self.catalog = try catalog ?? ExampleFixtures.catalog()
         self.history = history
         self.directory = directory
-        journal = ActiveSessionJournal(directory: directory, writingOptions: .atomic)
+        journal = SessionJournalFile(folder: try RepositoryFolder(adopting: directory, writingOptions: .atomic)).file
     }
 
     var state: SessionState { get throws { try script.current } }
@@ -300,9 +301,9 @@ struct ControllerWalkTests {
         #expect(try !walk.liveActivityDone(rdl1.rawValue))
 
         // The journal folds back to what the controller holds (a relaunch).
-        let loaded = try #require(try walk.journal.load(fold: { try SessionEngine.fold($0) }))
-        #expect(loaded.state == (try walk.state))
-        #expect(loaded.cacheMatched)
+        let loaded = try #require(try walk.journal.read())
+        #expect(try SessionEngine.fold(loaded.events) == (try walk.state))
+        #expect(loaded.cachedState == (try walk.state))
 
         // Finish: unticked rows dropped, a session RPE, notes.
         walk.wait(120)

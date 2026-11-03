@@ -18,8 +18,6 @@ extension ChatApp {
         case let .usageRead(usage): next.usage = usage
         case .transcriptsCleared:
             if let identity = next.session?.identity { next.asks.append(.readUsage(identity)) }
-        case let .tapped(thread):
-            if let thread { next.route = .thread(thread) }
         case let .backgroundRun(run):
             guard next.session != nil else {
                 next.asks.append(.finishRun(run))
@@ -243,7 +241,7 @@ extension ChatApp {
             state.session = session
             state.online = online
             state.accessEnded = link.phase == .accessEnded
-            state.asks += [.openDisk(session.identity), .followTaps, .followRuns, .prune(session.identity)]
+            state.asks += [.openDisk(session.identity), .followRuns, .prune(session.identity)]
             return
         }
         state.session = session
@@ -311,7 +309,6 @@ extension ChatApp {
                 state.asks.append(.cancel("watch"))
             }
         }
-        quiet(&state)
     }
 
     // MARK: Reading the list
@@ -581,19 +578,13 @@ extension ChatApp {
         }
     }
 
-    /// What is on screen is read, its notifications are no longer news, and
-    /// new ones for it stay quiet while it shows.
+    /// What is on screen is read, and its notifications are no longer news.
     private func visibilityMoved(_ state: inout State, from before: State) {
         let now = state.visibleThreads
         for thread in now.subtracting(before.visibleThreads) {
             markSeen(&state, thread)
             state.asks.append(.cancelGroup(thread))
         }
-        quiet(&state)
-    }
-
-    private func quiet(_ state: inout State) {
-        state.asks.append(.quiet(state.visibleThreads))
     }
 
     private func markSeen(_ state: inout State, _ id: String) {

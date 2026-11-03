@@ -56,7 +56,7 @@ extension ChatApp {
         return ChatPresentation(
             signedIn: state.session != nil, canChat: state.session?.canChat ?? true,
             host: state.session.map { ServerAddress.display($0.server) } ?? "", list: list, scenes: scenes,
-            routePending: state.route != nil, conversations: conversations, offered: offered.map(Self.choice),
+            routePending: state.route != nil, onScreen: state.visibleThreads.sorted(), conversations: conversations, offered: offered.map(Self.choice),
             defaultAgent: state.defaultAgent.map(Self.choice), settings: settings(state), unread: state.unreadCount,
             renameProblem: state.renameProblem, keys: keys, keySaved: state.keySaved)
     }

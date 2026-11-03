@@ -10,7 +10,7 @@ import SwiftUI
 struct RPESheet: View {
     let rowID: RowID
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var value: Decimal?
@@ -187,7 +187,7 @@ struct RPESheet: View {
 private struct RPESheetRest: View {
     let rest: RestCountdownPresentation
 
-    @Environment(SessionController.self) private var session
+    @Environment(SessionModel.self) private var session
     @Environment(\.dynamicTypeSize) private var typeSize
 
     /// The 320 pt sheet (RPESheet's detents): one row, always.

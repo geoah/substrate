@@ -36,14 +36,13 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case writeCard(String, kind: String, properties: [String: JSONValue], ifVersion: Int)
     case decideUnread(String, accept: Bool, shown: [String: JSONValue])
 
-    case notify(LocalNotification)
+    /// Its instant is stamped when it is sent.
+    case notify(NotificationRequest)
     case cancelGroup(String)
     case cancelAllNotifications
     case badge(Int)
-    case quiet(Set<String>)
     case askPermission
     case readPermission
-    case followTaps
     case followRuns
     case backgroundRefresh(BackgroundRun, Plan, threads: [String])
     case finishRun(BackgroundRun)
