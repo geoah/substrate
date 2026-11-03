@@ -15,7 +15,10 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
     private(set) var published: Root.Presentation?
 
     private var presentNow = false
-    private var window: TimeInterval?
+    /// The earliest instant a coalesced event since the last presentation
+    /// must be drawn by, and the one the wake-up waiting now is set for.
+    private var deadline: Date?
+    private var scheduled: Date?
     private var flushTask: Task<Void, Never>?
     private var pending: [() -> Void] = []
     private var subscribers: [Int: AsyncStream<Root.Presentation>.Continuation] = [:]
@@ -35,7 +38,10 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
         case .now:
             presentNow = true
         case let .within(duration):
-            window = min(window ?? duration.seconds, duration.seconds)
+            // Each event is drawn within its own window: a shorter one asked
+            // later moves the deadline earlier, never a longer one later.
+            let due = environment.clock.now.addingTimeInterval(duration.seconds)
+            deadline = min(deadline ?? due, due)
         }
     }
 
@@ -56,17 +62,20 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
         }
     }
 
-    /// Ends a step: presents now when an event asked to, and otherwise opens
-    /// the window the coalesced events share, once.
+    /// Ends a step: presents now when an event asked to, and otherwise wakes
+    /// at the deadline the coalesced events share, moved earlier when an
+    /// event since asked for less.
     func settle() {
         if presentNow {
             presentNow = false
-            window = nil
+            deadline = nil
+            scheduled = nil
             flushTask?.cancel()
             flushTask = nil
             flush()
-        } else if let window, flushTask == nil {
-            let deadline = environment.clock.now.addingTimeInterval(window)
+        } else if let deadline, scheduled.map({ deadline < $0 }) ?? true {
+            flushTask?.cancel()
+            scheduled = deadline
             let clock = environment.clock
             let hop = hop
             let loop = Weak(self)
@@ -79,7 +88,8 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
 
     private func windowEnded() {
         flushTask = nil
-        window = nil
+        deadline = nil
+        scheduled = nil
         presentNow = true
     }
 
@@ -88,6 +98,10 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
     private func flush() {
         root.present()
         publish()
+        runPending()
+    }
+
+    private func runPending() {
         while !pending.isEmpty {
             let batch = pending
             pending = []
@@ -95,11 +109,15 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
         }
     }
 
-    /// The first presentation, from the replayed state: no effect runs.
+    /// The first presentation, from the replayed state and the events at
+    /// open, then the effects those events asked for: a replayed event asks
+    /// for none.
     func presentFirst() {
+        presentNow = false
+        deadline = nil
         root.present()
-        pending = []
         published = root.presentation
+        runPending()
     }
 
     private func publish() {
@@ -127,6 +145,8 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
         root.close()
         flushTask?.cancel()
         flushTask = nil
+        scheduled = nil
+        deadline = nil
         pending = []
         for continuation in subscribers.values { continuation.finish() }
         subscribers = [:]

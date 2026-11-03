@@ -42,11 +42,16 @@ struct SettingsRowView: View {
                 ForEach(options) { Text($0.label).tag($0.id) }
             }
         case let .value(value, verbatim):
-            LabeledContent(row.label) {
+            LabeledContent {
                 if verbatim {
                     Text(value).monospaced().textSelection(.enabled)
                 } else {
                     Text(value)
+                }
+            } label: {
+                Text(row.label)
+                if let detail = row.detail {
+                    Text(detail)
                 }
             }
         case .link:
@@ -61,14 +66,32 @@ struct SettingsRowView: View {
             Button(row.label, role: destructive ? .destructive : nil) { send(.perform(row: row.id)) }
                 .disabled(!enabled)
         case let .note(tone):
-            VStack(alignment: .leading, spacing: 4) {
-                Text(row.label).foregroundStyle(tone == .quiet ? Color.secondary : Color.primary)
-                if let detail = row.detail {
-                    Text(detail).font(.footnote).foregroundStyle(.secondary)
+            Label {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(row.label).foregroundStyle(tone == .quiet ? Color.secondary : Color.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let detail = row.detail {
+                        Text(detail).font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+            } icon: {
+                if let mark = Self.mark(tone) {
+                    Image(systemName: mark).foregroundStyle(tone.color)
                 }
             }
         case let .problem(problem):
             ProblemBox(problem)
+        }
+    }
+
+    /// A note's mark by its tone: allowed or done, something to know,
+    /// something to act on, something that stopped; none for quiet words.
+    static func mark(_ tone: ScreenTone) -> String? {
+        switch tone {
+        case .positive: "checkmark"
+        case .informative: "info.circle"
+        case .caution, .critical: ScreenSymbol.warning.systemName
+        case .quiet, .supporting: nil
         }
     }
 }

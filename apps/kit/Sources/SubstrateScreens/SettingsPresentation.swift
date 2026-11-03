@@ -1,3 +1,5 @@
+import SubstrateLocal
+
 /// A settings screen as data (§5.6): sections of rows, each row a toggle, a
 /// choice, a value, a link, an action or a note, which each system draws as
 /// its own form.
@@ -12,12 +14,12 @@ public struct SettingsPresentation: Codable, Hashable, Sendable {
 }
 
 public struct SettingsSection: Codable, Hashable, Sendable, Identifiable {
-    public var id: String
+    public var id: SettingsSectionID
     public var title: String?
     public var rows: [SettingsRow]
     public var footer: String?
 
-    public init(id: String, title: String? = nil, rows: [SettingsRow], footer: String? = nil) {
+    public init(id: SettingsSectionID, title: String? = nil, rows: [SettingsRow], footer: String? = nil) {
         self.id = id
         self.title = title
         self.rows = rows
@@ -36,18 +38,19 @@ public struct SettingsRow: Codable, Hashable, Sendable, Identifiable {
         case link
         /// A button; `destructive` for one that gives something up.
         case action(destructive: Bool, enabled: Bool)
-        /// Words of their own, a status or a warning.
+        /// Words of their own, a status or a warning; a positive one is
+        /// marked as allowed or done.
         case note(ScreenTone)
         /// A problem in words, and what fixes it.
         case problem(ProblemPresentation)
     }
 
-    public var id: String
+    public var id: SettingsRowID
     public var label: String
     public var detail: String?
     public var control: Control
 
-    public init(id: String, label: String, detail: String? = nil, control: Control) {
+    public init(id: SettingsRowID, label: String, detail: String? = nil, control: Control) {
         self.id = id
         self.label = label
         self.detail = detail
@@ -65,10 +68,74 @@ public struct SettingsOption: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
-/// What a settings row sends.
+/// What a settings row sends, by the row's id.
 public enum SettingsCommand: Codable, Hashable, Sendable {
-    case toggle(row: String, on: Bool)
-    case choose(row: String, option: String)
-    case open(row: String)
-    case perform(row: String)
+    case toggle(row: SettingsRowID, on: Bool)
+    case choose(row: SettingsRowID, option: String)
+    case open(row: SettingsRowID)
+    case perform(row: SettingsRowID)
+}
+
+/// A settings section, by what it holds: the app's own by the id it gave
+/// it, and the ones every app has by name.
+public enum SettingsSectionID: Codable, Hashable, Sendable {
+    case app(String)
+    case status
+    /// The writes the server refused, each with Retry and Discard.
+    case refused
+    case repository
+    /// One row per approved scope, until when, and Change Access.
+    case approvedAccess
+    case storage
+    case about
+}
+
+/// A settings row, by what it is, never by its words: an app dispatches a
+/// command on it, and the Android bridge carries it as is.
+public enum SettingsRowID: Codable, Hashable, Sendable {
+    /// One of the app's own rows, by the id it gave it.
+    case app(String)
+    case status(StatusRow)
+    case repository(RepositoryRow)
+    case storage(StorageRow)
+    case about(AboutRow)
+
+    public enum StatusRow: Codable, Hashable, Sendable {
+        case sentence
+        /// Why, in the server's or the system's words: a change not kept, a
+        /// write refused.
+        case problem
+        /// A package the app needs, by its id.
+        case package(String)
+        case action(StatusAction)
+        /// A refused write, by its id.
+        case refused(ParkedWrite.ID)
+    }
+
+    public enum RepositoryRow: Codable, Hashable, Sendable {
+        case server
+        case repository
+        case serverVersion
+        /// An approved scope, as the token carries it.
+        case scope(String)
+        case until
+        case access
+        case changeAccess
+        /// A token this device stopped using that its server has not
+        /// revoked yet, by its place in the list.
+        case unrevoked(Int)
+        case signOut
+    }
+
+    public enum StorageRow: Codable, Hashable, Sendable {
+        case area(FolderArea)
+        case clear
+    }
+
+    public enum AboutRow: Codable, Hashable, Sendable {
+        case version
+        case channel
+        case check
+        case update
+    }
 }

@@ -1,6 +1,8 @@
 import Foundation
+import SubstrateAuth
 import SubstrateCore
 import SubstrateRuntime
+import SubstrateScreens
 import SubstrateTesting
 import Testing
 
@@ -13,6 +15,7 @@ func steps(_ trace: [RuntimeTrace]) -> [String] {
         case let .journaled(_, journaling, event): "journaled \(journaling) \(event)"
         case let .refused(_, event, _): "refused \(event)"
         case let .presented(path): path.isEmpty ? "presented" : "presented child"
+        case let .replaced(path): "replaced \(path.map(\.rawValue))"
         case .published: "published"
         case let .effect(_, effect): "effect \(effect)"
         case let .dropped(_, drop): "dropped \(drop.rawValue)"
@@ -96,8 +99,8 @@ struct RuntimeLoopTests {
     @Test func aJournalTheEngineRefusesIsSetAside() async throws {
         let stored = MemoryJournal<Training.Event, Training.State>(events: [.logged("a")])
         let harness = ControllerHarness(Training(store: stored, shelf: shelf))
-        #expect(stored.setAsideCount == 1)
         #expect(await harness.state == Training.State())
+        #expect(stored.setAsideCount == 1)
         #expect(steps(harness.trace) == ["set aside []", "presented"])
     }
 
@@ -151,6 +154,32 @@ struct RuntimeLoopTests {
         await harness.advance(by: 60)
         try await harness.until { await $0.presentation.rest == nil }
         #expect(journal.events?.last == .restEnded)
+    }
+
+    @Test func theEventAtOpenRunsItsEffectsLiveAfterTheReplay() async throws {
+        let id = UUID()
+        let stored = MemoryJournal<Training.Event, Training.State>(events: [.started(id: id, at: Date(timeIntervalSince1970: 0)), .logged("a")])
+        let harness = ControllerHarness(Training(store: stored, shelf: shelf, resumes: true))
+        #expect(await harness.state.sets == ["a"])
+        // Replayed with no effect, then the event at open on the live path,
+        // presented first, its effect after.
+        #expect(steps(harness.trace) == ["replayed [] 2", "presented", "effect restoreActivity(sets: 1)"])
+        // Nothing was replayed: the event at open says so, and asks for none.
+        let fresh = ControllerHarness(Training(store: MemoryJournal(), shelf: shelf, resumes: true))
+        _ = await fresh.state
+        #expect(fresh.effects.isEmpty)
+    }
+
+    @Test func makingARuntimeReadsNothingUntilItIsFirstUsed() async throws {
+        let stored = MemoryJournal<Training.Event, Training.State>(events: [.started(id: UUID(), at: Date(timeIntervalSince1970: 0))])
+        let runtime = Runtime(Training(store: stored, shelf: shelf), environment: .testing())
+        // The journal is folded on the runtime's own executor, at the first
+        // call, never in the initialiser a view's main actor runs.
+        #expect(stored.reads == 0)
+        #expect(await runtime.presentation.open)
+        #expect(stored.reads == 1)
+        _ = await runtime.state
+        #expect(stored.reads == 1)
     }
 
     @Test func theEnvironmentsLocaleAndTimeZoneReachThePresenter() async throws {
@@ -225,6 +254,26 @@ struct RuntimeEffectTests {
         #expect(harness.published == 1)
     }
 
+    @Test func aShorterWindowAskedLaterMovesTheDeadlineEarlier() async throws {
+        let clock = TestClock()
+        let harness = ControllerHarness(feed, clock: clock)
+        await harness.send(.follow)
+        try await harness.until { _ in source.isOpen }
+        harness.clearTrace()
+        await harness.send(.delta("a"))
+        await harness.advance(by: 0.005)
+        #expect(harness.published == 0)
+        // A value heard is drawn within 10 ms of it, not at the end of the
+        // delta's 50.
+        source.send(7)
+        try await harness.until { await $0.state.heard == [7] }
+        await harness.advance(by: 0.010)
+        try await harness.until { await $0.presentation.heard == [7] }
+        #expect(await harness.presentation.text == "a")
+        #expect(harness.published == 1)
+        #expect(clock.now == TestClock().now.addingTimeInterval(0.015))
+    }
+
     @Test func anEventThatPresentsNowEndsTheWindowEarly() async throws {
         let harness = ControllerHarness(feed)
         harness.clearTrace()
@@ -245,7 +294,7 @@ struct RuntimeChildTests {
         let key = ChildKey(SequentialIDs.id(1).uuidString.lowercased())
         #expect(await harness.presentation.rooms[key]?.name == "Kitchen")
         harness.clearTrace()
-        await harness.runtime.send(.say("hello"), to: key)
+        try await harness.runtime.send(Room.Command.say("hello"), to: [key])
         // The child's step and the parent's fold go out together.
         #expect(steps(harness.trace) == ["presented child", "presented", "published"])
         let presented = await harness.presentation
@@ -266,13 +315,68 @@ struct RuntimeChildTests {
         let harness = ControllerHarness(Lobby(gates: gates))
         await harness.send(.open("Kitchen"))
         let key = ChildKey(SequentialIDs.id(1).uuidString.lowercased())
-        await harness.runtime.send(.wait("bell"), to: key)
+        try await harness.runtime.send(Room.Command.wait("bell"), to: [key])
         try await harness.until { _ in await gates.isWaiting("bell") }
         await harness.send(.close(key))
         #expect(await harness.runtime.state(of: key) == nil)
         await gates.release("bell")
         try await harness.until { await $0.runtime.counters.droppedByGeneration == 1 }
         #expect(await harness.presentation.rooms.isEmpty)
+    }
+
+    @Test func aParentHandsItsChildrenANewValueAndTheirStateStays() async throws {
+        let harness = ControllerHarness(Lobby(gates: gates))
+        await harness.send(.open("Kitchen"))
+        let key = ChildKey(SequentialIDs.id(1).uuidString.lowercased())
+        try await harness.runtime.send(Room.Command.say("hello"), to: [key])
+        harness.clearTrace()
+        await harness.send(.topic("Dinner"))
+        let room = try #require(await harness.presentation.rooms[key])
+        #expect(room.topic == "Dinner")
+        #expect(room.spoken == ["hello"])
+        #expect(steps(harness.trace).contains("replaced [\"\(key.rawValue)\"]"))
+        #expect(harness.published == 1)
+        // The same value again replaces nothing.
+        harness.clearTrace()
+        await harness.send(.topic("Dinner"))
+        #expect(!steps(harness.trace).contains { $0.hasPrefix("replaced") })
+    }
+
+    @Test func aChildClosedByItsParentsFoldMidStepIsGoneInTheSameTree() async throws {
+        let harness = ControllerHarness(Lobby(gates: gates))
+        await harness.send(.open("Kitchen"))
+        await harness.send(.open("Hall"))
+        let kitchen = ChildKey(SequentialIDs.id(1).uuidString.lowercased())
+        let hall = ChildKey(SequentialIDs.id(2).uuidString.lowercased())
+        try await harness.runtime.send(Room.Command.bind("thread-1"), to: [hall])
+        try await harness.runtime.send(Room.Command.wait("bell"), to: [hall])
+        try await harness.until { _ in await gates.isWaiting("bell") }
+        harness.clearTrace()
+        // The kitchen binds the hall's thread: the parent's fold of the
+        // kitchen's event closes the hall inside the kitchen's step.
+        try await harness.runtime.send(Room.Command.bind("thread-1"), to: [kitchen])
+        #expect(await harness.runtime.state(of: hall) == nil)
+        #expect(await harness.presentation.rooms.keys.sorted() == [kitchen])
+        #expect(harness.published == 1)
+        await gates.release("bell")
+        try await harness.until { await $0.runtime.counters.droppedByGeneration == 1 }
+        // The kitchen itself goes on.
+        try await harness.runtime.send(Room.Command.say("still here"), to: [kitchen])
+        #expect(await harness.presentation.transcript == ["Kitchen: still here"])
+    }
+
+    @Test func aCommandReachesAControllerTwoKeysDown() async throws {
+        let link = LinkController(app: Lobby(gates: gates), manifest: ScreenFixtures.manifest,
+                                  sessions: SessionStore(storage: MemoryStorage()),
+                                  words: StatusWords(app: "Lobby", device: "this iPhone", kept: "rooms"))
+        let harness = ControllerHarness(link, performsEffects: false)
+        try await harness.runtime.send(Lobby.Command.open("Kitchen"), to: LinkController<Lobby>.appPath)
+        let key = ChildKey(SequentialIDs.id(1).uuidString.lowercased())
+        try await harness.runtime.send(Room.Command.say("hi"), to: LinkController<Lobby>.appPath + [key])
+        let app = try #require(await harness.presentation.app)
+        #expect(app.transcript == ["Kitchen: hi"])
+        // A room made under the link is told the link's snapshot as it opens.
+        #expect(app.rooms[key]?.link == 0)
     }
 
     @Test func aRoutedCommandReachesTheChildItNames() async throws {
@@ -292,12 +396,28 @@ struct RuntimeChildTests {
         let harness = ControllerHarness(Lobby(gates: gates))
         let stream = await harness.runtime.encodedPresentations()
         var iterator = stream.makeAsyncIterator()
-        let first = try #require(await iterator.next())
+        let first = try #require(await iterator.next()).get()
         #expect(String(decoding: first, as: UTF8.self) == #"{"rooms":{},"transcript":[]}"#)
         await harness.send(.open("Kitchen"))
-        let second = try #require(await iterator.next())
+        let second = try #require(await iterator.next()).get()
         let decoded = try JSONDecoder().decode(Lobby.Presentation.self, from: second)
         #expect(decoded.rooms.values.map(\.name) == ["Kitchen"])
+    }
+}
+
+@Suite("The bridge's presentations")
+struct EncodedPresentationTests {
+    @Test func aPresentationThatDoesNotEncodeArrivesAsItsFailureAndTheNextStillComes() async throws {
+        let harness = ControllerHarness(Fragile())
+        let stream = await harness.runtime.encodedPresentations()
+        var iterator = stream.makeAsyncIterator()
+        #expect(try #require(await iterator.next()).get() == Data("false".utf8))
+        await harness.send(.set(true))
+        let failed = try #require(await iterator.next())
+        guard case let .failure(failure) = failed else { throw Refused(description: "it encoded") }
+        #expect(failure.reason.contains("broken on purpose"))
+        await harness.send(.set(false))
+        #expect(try #require(await iterator.next()).get() == Data("false".utf8))
     }
 }
 

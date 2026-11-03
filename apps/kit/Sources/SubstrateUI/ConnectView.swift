@@ -168,13 +168,16 @@ public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
 /// server's discovery document and the app's requirement when the person
 /// presses Continue, then the door the server takes: the browser sign-in,
 /// the app's own password door, or what a server too old lacks. The logic
-/// is `ConnectController`'s, run on a runtime of its own; this view draws
+/// is `ConnectController`'s, run on a runtime of its own, made once for the
+/// view's life however often SwiftUI makes the view again; this view draws
 /// its presentation and keeps the app's address binding in step with it.
 public struct ConnectView<Header: View, PasswordDoor: View>: View {
     @Binding var address: String
     let header: Header
     let passwordDoor: (ServerProbe.Result) -> PasswordDoor
-    @State private var model: PresentationModel<ConnectController>
+    let makeController: @MainActor () -> ConnectController
+    let probe: ServerProbe
+    @State private var holder = ModelHolder<ConnectController>()
 
     public init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
                 @ViewBuilder header: () -> Header,
@@ -192,22 +195,43 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
         _address = address
         self.header = header
         self.passwordDoor = passwordDoor
-        // The app's sign-in runs on the main actor, where it was written to.
-        let signIn = MainActorSignIn(onSignIn)
-        let controller = ConnectController(manifest: manifest, address: address.wrappedValue,
-                                           locator: ServerLocator(probe: probe, resolver: DNSServiceTXTResolver()),
-                                           hasPasswordDoor: hasPasswordDoor, opensBrowser: WebAuthenticator.opensBrowser,
-                                           unrevoked: unrevoked.map(SessionFacts.init), signIn: { try await signIn.run($0) })
-        _model = State(initialValue: PresentationModel(controller, environment: .apple(transport: probe.transport)))
+        self.probe = probe
+        let initial = address.wrappedValue
+        let facts = unrevoked.map(SessionFacts.init)
+        // Made only the first time the view draws; an initialiser SwiftUI
+        // calls again makes nothing.
+        makeController = {
+            // The app's sign-in runs on the main actor, where it was written to.
+            let signIn = MainActorSignIn(onSignIn)
+            return ConnectController(manifest: manifest, address: initial,
+                                     locator: ServerLocator(probe: probe, resolver: DNSServiceTXTResolver()),
+                                     hasPasswordDoor: hasPasswordDoor, opensBrowser: WebAuthenticator.opensBrowser,
+                                     unrevoked: facts, signIn: { try await signIn.run($0) })
+        }
     }
 
     public var body: some View {
+        let model = holder.model { PresentationModel(makeController(), environment: .apple(transport: probe.transport)) }
         ConnectScreen(model.presentation, text: $address, send: model.send, header: { header }, passwordDoor: passwordDoor)
             .onChange(of: model.presentation.field.revision) {
                 // What the controller wrote itself (the checked name, or an
                 // empty field for another server) is the app's address too.
                 address = model.presentation.field.text
             }
+    }
+}
+
+/// A view's one presentation model, made the first time the view draws and
+/// kept in its state from then on. It is not observed itself: the model is.
+@MainActor
+final class ModelHolder<Root: Controller> {
+    private var made: PresentationModel<Root>?
+
+    func model(_ make: () -> PresentationModel<Root>) -> PresentationModel<Root> {
+        if let made { return made }
+        let model = make()
+        made = model
+        return model
     }
 }
 

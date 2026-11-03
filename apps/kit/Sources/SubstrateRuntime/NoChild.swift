@@ -1,6 +1,6 @@
 /// The child of a controller that keeps none: it has no value, so nothing
 /// makes one.
-public enum NoChild: Controller {
+public enum NoChild: Controller, Equatable {
     public typealias Command = Never
     public typealias Event = Never
     public typealias Presentation = Never

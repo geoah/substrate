@@ -6,13 +6,13 @@ import SubstrateLocal
 /// The Status screen, in the words Workouts' Settings → Substrate says it.
 public enum StatusPresenter {
     /// - Parameters:
-    ///   - package: where the repository stands with the app's package, nil
-    ///     while not checked; `known` the version this build needs.
+    ///   - packages: where the repository stands with each package the app
+    ///     needs.
     ///   - kindLabels: the singular words for the kinds a refused write may
     ///     be of, by reference.
-    public static func present(_ status: LinkStatus, words: StatusWords, host: String?, package: HeldPackage?, known: Int,
-                               sending: Bool, waiting: Int, parked: [ParkedWrite], kindLabels: [String: String] = [:],
-                               locale: Locale, timeZone: TimeZone) -> StatusPresentation
+    public static func present(_ status: LinkStatus, words: StatusWords, host: String?, packages: [PackageStanding], sending: Bool,
+                               waiting: Int, parked: [ParkedWrite], kindLabels: [String: String] = [:], locale: Locale,
+                               timeZone: TimeZone) -> StatusPresentation
     {
         let (symbol, tone): (ScreenSymbol, ScreenTone) = switch status {
         case .ready(0): (.upToDate, .positive)
@@ -21,12 +21,12 @@ public enum StatusPresenter {
         case .local: (.device, .quiet)
         default: (.warning, .caution)
         }
-        var actions: [ActionButton<StatusAction>] = []
+        let sentence = words.sentence(status, locale: locale, timeZone: timeZone)
         if status == .local {
-            return StatusPresentation(title: "Substrate", symbol: symbol, tone: tone,
-                                      sentence: words.sentence(status, locale: locale, timeZone: timeZone), rows: [],
+            return StatusPresentation(title: "Substrate", symbol: symbol, tone: tone, sentence: sentence, packages: [],
                                       actions: [ActionButton("Sign In to Your Substrate…", .signIn)], busy: false, footer: nil, refused: nil)
         }
+        var actions: [ActionButton<StatusAction>] = []
         if waiting > 0 || sending { actions.append(ActionButton("Send Now", .sendNow)) }
         switch status {
         case .needsApproval: actions.append(ActionButton("Review Access…", .review))
@@ -34,11 +34,14 @@ public enum StatusPresenter {
         case .accessEndsSoon: actions.append(ActionButton("Renew Access…", .renew))
         default: break
         }
-        let packageText: String = switch package {
-        case nil: sending ? "Checking" : "Not checked yet"
-        case .missing?: "Not installed"
-        case let .behind(held)?: "Version \(held), waiting for the update to version \(known)"
-        case let .current(held)?: "Version \(held)"
+        let lines = packages.map { package in
+            let text: String = switch package.held {
+            case nil: sending ? "Checking" : "Not checked yet"
+            case .missing?: "Not installed"
+            case let .behind(held)?: "Version \(held), waiting for the update to version \(package.needs)"
+            case let .current(held)?: "Version \(held)"
+            }
+            return PackageLine(id: package.id, row: LabeledValue("\(package.name) package", text))
         }
         let refused = parked.isEmpty ? nil : RefusedWrites(
             title: "Refused by Your Substrate",
@@ -48,9 +51,16 @@ public enum StatusPresenter {
             },
             footer: "Retry sends the change again. Discard gives up the change and the changes waiting behind it; "
                 + "what \(words.device) holds stays.")
-        return StatusPresentation(title: "Substrate", symbol: symbol, tone: tone,
-                                  sentence: words.sentence(status, locale: locale, timeZone: timeZone),
-                                  rows: [LabeledValue("\(words.package) package", packageText)], actions: actions, busy: sending,
+        // The reason is a fact of its own: a refused write's words are on
+        // its row, and said here only where no row carries them.
+        let problem: ProblemPresentation? = switch status {
+        case let .notKept(reason): ProblemPresentation(title: "Not kept on \(words.device)", message: reason)
+        case let .refused(_, reason) where parked.isEmpty && !reason.isEmpty:
+            ProblemPresentation(title: "Refused by your substrate", message: reason, tone: .caution)
+        default: nil
+        }
+        return StatusPresentation(title: "Substrate", symbol: symbol, tone: tone, sentence: sentence, problem: problem, packages: lines,
+                                  actions: actions, busy: sending,
                                   footer: "Changes are written to \(host ?? "your substrate") as you make them, and wait on \(words.device) while it cannot be reached.",
                                   refused: refused)
     }

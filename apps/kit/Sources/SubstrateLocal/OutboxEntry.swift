@@ -18,15 +18,16 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
     /// Sent with `ifVersion`: the version the outbox last saw the record at,
     /// read from the server when it has none.
     public var guarded: Bool
-    /// The writes that stand or fall together (a session and its sets): a
-    /// discard drops the group, and a refusal holds the rest of it back.
-    public var group: String?
+    /// The writes that stand or fall together (Workouts' session and its
+    /// sets): a discard drops the batch, and a refusal holds the rest of it
+    /// back.
+    public var batch: String?
     public var attempts = 0
     /// The server's words for the last refusal, kept while the entry waits.
     public var lastError: String?
     /// Refused by the server for itself: the same write would be refused
     /// again, so it is not sent until the owner retries it, and the rest of
-    /// its group waits behind it. The owner may discard it instead.
+    /// its batch waits behind it. The owner may discard it instead.
     public var parked = false
     /// An edit the owner made on what they saw at this version: sent with it
     /// as `ifVersion`, or with the version the app's own last write of the
@@ -37,7 +38,7 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
     public var conflict = false
 
     public init(id: UUID = UUID(), method: Method, kind: String, recordID: String, properties: JSONObject? = nil,
-                guarded: Bool = false, group: String? = nil, baseVersion: Int? = nil)
+                guarded: Bool = false, batch: String? = nil, baseVersion: Int? = nil)
     {
         self.id = id
         self.method = method
@@ -45,7 +46,7 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
         self.recordID = recordID
         self.properties = properties
         self.guarded = guarded
-        self.group = group
+        self.batch = batch
         self.baseVersion = baseVersion
     }
 
@@ -53,9 +54,12 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
     public var key: String { "\(kind)/\(recordID)" }
 
     enum CodingKeys: String, CodingKey {
-        case id, method, kind, recordID, properties, guarded, group, attempts, lastError, parked, baseVersion, conflict
-        /// What Workouts' outbox called the group.
+        case id, method, kind, recordID, properties, guarded, batch, attempts, lastError, parked, baseVersion, conflict
+        /// What Workouts' outbox calls the batch, read and written so a
+        /// build of it from before the kit's outbox reads the file back.
         case session
+        /// What the kit's outbox called it before `batch`, read only.
+        case group
     }
 
     public init(from decoder: any Decoder) throws {
@@ -66,7 +70,8 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
         recordID = try c.decode(String.self, forKey: .recordID)
         properties = try c.decodeIfPresent(JSONObject.self, forKey: .properties)
         guarded = try c.decodeIfPresent(Bool.self, forKey: .guarded) ?? false
-        group = try c.decodeIfPresent(String.self, forKey: .group) ?? c.decodeIfPresent(String.self, forKey: .session)
+        batch = try c.decodeIfPresent(String.self, forKey: .batch) ?? c.decodeIfPresent(String.self, forKey: .group)
+            ?? c.decodeIfPresent(String.self, forKey: .session)
         attempts = try c.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
         lastError = try c.decodeIfPresent(String.self, forKey: .lastError)
         // A file from before parking held every refusal and retried it.
@@ -83,7 +88,8 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
         try c.encode(recordID, forKey: .recordID)
         try c.encodeIfPresent(properties, forKey: .properties)
         try c.encode(guarded, forKey: .guarded)
-        try c.encodeIfPresent(group, forKey: .group)
+        try c.encodeIfPresent(batch, forKey: .batch)
+        try c.encodeIfPresent(batch, forKey: .session)
         try c.encode(attempts, forKey: .attempts)
         try c.encodeIfPresent(lastError, forKey: .lastError)
         try c.encode(parked, forKey: .parked)

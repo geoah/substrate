@@ -3,7 +3,9 @@
 /// result to its journal write without a suspension.
 protocol LoopServices: AnyObject {
     var environment: AppEnvironment { get }
-    var link: LinkSnapshot? { get }
+    /// The link's snapshot as the link last made it: what every controller
+    /// reads, and what a controller made later is told.
+    var link: LinkSnapshot? { get set }
     var performsEffects: Bool { get }
     /// Runs `body` on the runtime's executor, then settles what it asked.
     var hop: @Sendable (@escaping @Sendable () -> Void) async -> Void { get }

@@ -5,7 +5,7 @@ public enum ScreenKind: String, Codable, CaseIterable, Hashable, Sendable {
     case accessBanner
     case accessEnded
     case review
-    case account
+    case repository
     case status
     case settings
     case problem
@@ -19,7 +19,7 @@ public enum FixturePresentation: Codable, Equatable, Sendable {
     case accessBanner(AccessBanner)
     case accessEnded(AccessEndedPresentation)
     case review(ReviewPresentation)
-    case account(AccountPresentation)
+    case repository(RepositoryPresentation)
     case status(StatusPresentation)
     case settings(SettingsPresentation)
     case problem(ProblemPresentation)
@@ -32,7 +32,7 @@ public enum FixturePresentation: Codable, Equatable, Sendable {
         case .accessBanner: .accessBanner
         case .accessEnded: .accessEnded
         case .review: .review
-        case .account: .account
+        case .repository: .repository
         case .status: .status
         case .settings: .settings
         case .problem: .problem

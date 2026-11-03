@@ -207,53 +207,120 @@ struct ConnectScreenTests {
     }
 }
 
-@Suite("The Account and Status screens")
-struct AccountStatusTests {
-    @Test func anAppSessionListsItsAccessAndWhenItEnds() {
+@Suite("The Repository and Status screens")
+struct RepositoryStatusTests {
+    let words = StatusWords(app: "Tasks", device: "this iPhone", kept: "tasks")
+
+    func package(_ held: HeldPackage?, _ id: String = "substrate.reamde.dev/tasks", needs: Int = 2) -> PackageStanding {
+        PackageStanding(id: id, name: words.packageName(id), held: held, needs: needs)
+    }
+
+    @Test func anAppSessionListsEachScopeAndWhenItEnds() {
         let session = SessionFacts(server: URL(string: "https://ada.example.com")!, repository: "ada.example.com",
-                                   scopes: ["read:*"], expiresAt: now)
-        let account = AccountPresenter.present(session: session, manifest: nil, serverVersion: "v0.114.0", unrevoked: [],
-                                               offersChangeAccess: true, locale: enUS, timeZone: utc)
-        #expect(account.rows == [LabeledValue("Server", "ada.example.com"), LabeledValue("Repository", "ada.example.com"),
-                                 LabeledValue("Server version", "0.114.0")])
-        #expect(account.approvedTitle == "Approved access")
-        #expect(account.until?.value.hasPrefix("Nov 3, 2026 at 9:00") == true)
-        #expect(account.changeAccess == "Change Access…")
-        #expect(account.footer == "Sign Out: signs out on this device and revokes its access on ada.example.com.")
+                                   scopes: ["read:*", "write:substrate.reamde.dev/tasks/*"], expiresAt: now)
+        let repository = RepositoryPresenter.present(session: session, manifest: nil, serverVersion: "v0.114.0", unrevoked: [],
+                                                     offersChangeAccess: true, locale: enUS, timeZone: utc)
+        #expect(repository.title == "Repository")
+        #expect(repository.rows == [LabeledValue("Server", "ada.example.com"), LabeledValue("Repository", "ada.example.com"),
+                                    LabeledValue("Server version", "0.114.0")])
+        #expect(repository.approved?.title == "Approved access")
+        #expect(repository.approved?.scopes.map(\.scope) == ["read:*", "write:substrate.reamde.dev/tasks/*"])
+        #expect(repository.approved?.until.value.hasPrefix("Nov 3, 2026 at 9:00") == true)
+        #expect(repository.changeAccess == "Change Access…")
+        #expect(repository.footer == "Sign Out: signs out on this device and revokes its access on ada.example.com.")
+        // The apps' own section keeps the word it had.
+        #expect(RepositoryPresenter.present(session: session, manifest: nil, serverVersion: nil, unrevoked: [], offersChangeAccess: true,
+                                            title: "Account", locale: enUS, timeZone: utc).title == "Account")
     }
 
     @Test func aPasswordSessionReachesEverything() {
-        let account = AccountPresenter.present(session: SessionFacts(server: URL(string: "https://ada.example.com")!, repository: "ada.example.com"),
-                                               manifest: nil, serverVersion: nil, unrevoked: [], offersChangeAccess: true, locale: enUS,
-                                               timeZone: utc)
-        #expect(account.access == LabeledValue("Access", "Everything, with your password"))
-        #expect(account.changeAccess == nil && account.until == nil)
-        #expect(account.footer.contains("revokes its sign-in"))
+        let repository = RepositoryPresenter.present(session: SessionFacts(server: URL(string: "https://ada.example.com")!,
+                                                                           repository: "ada.example.com"),
+                                                     manifest: nil, serverVersion: nil, unrevoked: [], offersChangeAccess: true, locale: enUS,
+                                                     timeZone: utc)
+        #expect(repository.access == LabeledValue("Access", "Everything, with your password"))
+        #expect(repository.changeAccess == nil && repository.approved == nil)
+        #expect(repository.footer.contains("revokes its sign-in"))
     }
 
     @Test func theStatusIsWhatBlocksMostInOrder() {
-        #expect(LinkStatus.derive(signedIn: false, package: nil, outbox: .idle, waiting: 0, known: 1) == .local)
-        #expect(LinkStatus.derive(signedIn: true, package: .current(held: 1), outbox: .signedOut, waiting: 2, known: 1) == .signedOut)
-        #expect(LinkStatus.derive(signedIn: true, package: .current(held: 1), outbox: .idle, waiting: 0, known: 1,
-                                  issues: [.needsApproval(changes: [])]) == .needsApproval)
-        #expect(LinkStatus.derive(signedIn: true, package: nil, outbox: .idle, waiting: 0, known: 1) == .preparing)
-        #expect(LinkStatus.derive(signedIn: true, package: .behind(held: 1), outbox: .idle, waiting: 0, known: 2) == .packageBehind(held: 1, known: 2))
-        #expect(LinkStatus.derive(signedIn: true, package: .current(held: 2), outbox: .offline("x"), waiting: 3, known: 2)
-            == .offline(waiting: 3, reason: "x"))
-        #expect(LinkStatus.derive(signedIn: true, package: .current(held: 2), outbox: .sent, waiting: 0, known: 2) == .ready(waiting: 0))
+        let current = [package(.current(held: 2))]
+        #expect(LinkStatus.derive(signedIn: false, packages: [package(nil)], outbox: .idle, waiting: 0) == .local)
+        #expect(LinkStatus.derive(signedIn: true, packages: current, outbox: .signedOut, waiting: 2) == .signedOut)
+        #expect(LinkStatus.derive(signedIn: true, packages: current, outbox: .idle, waiting: 0, issues: [.needsApproval(changes: [])])
+            == .needsApproval)
+        #expect(LinkStatus.derive(signedIn: true, packages: current, outbox: .idle, waiting: 0, notKept: "full") == .notKept("full"))
+        #expect(LinkStatus.derive(signedIn: true, packages: [package(nil)], outbox: .idle, waiting: 0) == .preparing(["Tasks"]))
+        #expect(LinkStatus.derive(signedIn: true, packages: [package(.behind(held: 1))], outbox: .idle, waiting: 0)
+            == .packagesBehind([package(.behind(held: 1))]))
+        #expect(LinkStatus.derive(signedIn: true, packages: current, outbox: .offline("x"), waiting: 3) == .offline(waiting: 3, reason: "x"))
+        #expect(LinkStatus.derive(signedIn: true, packages: current, outbox: .sent, waiting: 0) == .ready(waiting: 0))
+        #expect(LinkStatus.derive(signedIn: true, packages: [], outbox: .sent, waiting: 0) == .ready(waiting: 0))
     }
 
-    @Test func aRefusedWriteIsListedWithRetryAndDiscard() {
-        let write = ParkedWrite(id: UUID(), method: .patch, kind: "substrate.reamde.dev/tasks/task", recordID: "t1", words: "no", conflict: false)
-        let status = StatusPresenter.present(.refused(waiting: 1, reason: "no"), words: StatusWords(app: "Tasks", device: "this iPhone",
-                                                                                                    package: "Tasks", kept: "tasks"),
-                                             host: "ada.example.com", package: .current(held: 2), known: 2, sending: false, waiting: 1,
+    @Test func eachPackageIsDerivedAndWordedOnItsOwn() {
+        // Every package, not the first: the second one is behind.
+        let tasks = package(.current(held: 2))
+        let people = package(.behind(held: 2), "samples.substrate.reamde.dev/people", needs: 3)
+        let behind = LinkStatus.derive(signedIn: true, packages: [tasks, people], outbox: .sent, waiting: 0)
+        #expect(behind == .packagesBehind([people]))
+        #expect(words.sentence(behind, locale: enUS, timeZone: utc)
+            == "Your substrate has version 2 of the People package and this app needs version 3 or later. "
+            + "The update waits for your approval on your substrate; tasks wait on this iPhone until then.")
+        let both = LinkStatus.derive(signedIn: true, packages: [package(.behind(held: 1)), people], outbox: .sent, waiting: 0)
+        #expect(words.sentence(both, locale: enUS, timeZone: utc).hasPrefix("Your substrate has older versions of the Tasks and People packages"))
+        let unread = LinkStatus.derive(signedIn: true, packages: [package(nil), package(nil, "samples.substrate.reamde.dev/people")],
+                                       outbox: .sent, waiting: 0)
+        #expect(words.sentence(unread, locale: enUS, timeZone: utc) == "Checking the Tasks and People packages on your substrate.")
+        let status = StatusPresenter.present(both, words: words, host: "ada.example.com", packages: [package(.behind(held: 1)), people],
+                                             sending: false, waiting: 0, parked: [], locale: enUS, timeZone: utc)
+        #expect(status.packages.map(\.row) == [LabeledValue("Tasks package", "Version 1, waiting for the update to version 2"),
+                                                LabeledValue("People package", "Version 2, waiting for the update to version 3")])
+    }
+
+    @Test func aRefusedWriteIsListedWithRetryAndDiscardAndItsWordsStayApart() {
+        let write = ParkedWrite(id: UUID(), method: .patch, kind: "substrate.reamde.dev/tasks/task", recordID: "t1",
+                                words: "props.status: expected one of todo, doing, done", conflict: false)
+        let status = StatusPresenter.present(.refused(waiting: 1, reason: "props.status: expected one of todo, doing, done"), words: words,
+                                             host: "ada.example.com", packages: [package(.current(held: 2))], sending: false, waiting: 1,
                                              parked: [write], kindLabels: ["substrate.reamde.dev/tasks/task": "Task"], locale: enUS,
                                              timeZone: utc)
-        #expect(status.sentence == "Your substrate refused a change: no 1 change waits; retry or discard it below.")
+        #expect(status.sentence == "Your substrate refused a change. 1 change waits; retry or discard it below.")
+        #expect(status.problem == nil)
         #expect(status.refused?.rows.map(\.title) == ["Task, changed"])
+        #expect(status.refused?.rows.first?.words == "props.status: expected one of todo, doing, done")
         #expect(status.refused?.rows.first?.retry == ActionButton("Retry", .retry(write.id)))
         #expect(status.actions.map(\.title) == ["Send Now"])
+        let unlisted = StatusPresenter.present(.refused(waiting: 1, reason: "no"), words: words, host: nil, packages: [], sending: false,
+                                               waiting: 1, parked: [], locale: enUS, timeZone: utc)
+        #expect(unlisted.problem?.message == "no")
+    }
+
+    @Test func aChangeNotKeptSaysWhyApart() {
+        let status = StatusPresenter.present(.notKept("The disk is full."), words: words, host: nil, packages: [], sending: false,
+                                             waiting: 0, parked: [], locale: enUS, timeZone: utc)
+        #expect(status.sentence == "A change could not be kept on this iPhone. Tasks already kept stay.")
+        #expect(status.problem == ProblemPresentation(title: "Not kept on this iPhone", message: "The disk is full."))
+    }
+
+    @Test func settingsRowsAreNamedByWhatTheyAreAndEachScopeIsARow() throws {
+        let fixture = try #require(ScreenFixtures.all.first { $0.name == "settings-refused" })
+        guard case let .settings(settings) = fixture.presentation else { throw Refused(description: "not settings") }
+        let ids = settings.sections.flatMap { $0.rows.map(\.id) }
+        #expect(Set(ids).count == ids.count)
+        #expect(settings.sections.map(\.id) == [.app("tasks"), .status, .refused, .repository, .approvedAccess, .storage, .about])
+        let refused = try #require(settings.sections.first { $0.id == .refused })
+        let write = ScreenFixtures.refusedWrite
+        #expect(refused.rows.map(\.id) == [.status(.refused(write.id)), .status(.action(.retry(write.id))), .status(.action(.discard(write.id)))])
+        #expect(refused.rows[0].detail == write.words)
+        let approved = try #require(settings.sections.first { $0.id == .approvedAccess })
+        #expect(approved.rows.map(\.id) == ScreenFixtures.manifest.scopes.map { .repository(.scope($0)) } + [.repository(.until), .repository(.changeAccess)])
+        #expect(approved.rows.allSatisfy { !$0.label.contains("\n") })
+        let status = try #require(settings.sections.first { $0.id == .status })
+        #expect(status.rows.contains { $0.id == .status(.action(.sendNow)) })
+        // A row's id crosses as JSON without its words.
+        let encoded = String(decoding: try JSONEncoder().encode(SettingsRowID.status(.action(.sendNow))), as: UTF8.self)
+        #expect(!encoded.contains("Send Now"))
     }
 
     @Test func aSizeReadsInDecimalUnits() {
@@ -264,9 +331,9 @@ struct AccountStatusTests {
     }
 
     @Test func aSettingsCommandMovesItsValue() {
-        let values = SettingsValues().applying(.toggle(row: "reminders", on: true)).applying(.choose(row: "sort", option: "name"))
+        let values = SettingsValues().applying(.toggle(row: .app("reminders"), on: true)).applying(.choose(row: .app("sort"), option: "name"))
         #expect(values.toggle("reminders") && values.choice("sort", default: "due") == "name")
-        #expect(values.applying(.perform(row: "clear")) == values)
+        #expect(values.applying(.perform(row: .storage(.clear))) == values)
     }
 
     @Test func aStorageClearIsOfferedOnlyForWhatCanBeReadAgain() {
@@ -279,33 +346,44 @@ struct AccountStatusTests {
 struct LinkControllerTests {
     let secret = "sub_app_never_shown_9f1e"
     let server = URL(string: "https://ada.example.com")!
+    let words = StatusWords(app: "Substrate Tasks", device: "this iPhone", kept: "tasks")
 
-    func link(_ storage: MemoryStorage, folder: RepositoryFolder? = nil) -> (LinkController, AppEnvironment) {
-        let store = SessionStore(storage: storage)
-        let controller = LinkController(manifest: ScreenFixtures.manifest, sessions: store, packages: ["substrate.reamde.dev/tasks": 2],
-                                        words: StatusWords(app: "Substrate Tasks", device: "this iPhone", package: "Tasks", kept: "tasks"))
-        var environment = AppEnvironment.testing()
-        environment.devices.connectivity = ScriptedConnectivity()
+    func environment(folder: RepositoryFolder? = nil, transport: any HTTPTransport = StubTransport(),
+                     connectivity: ScriptedConnectivity = ScriptedConnectivity(), clock: TestClock = TestClock()) -> AppEnvironment
+    {
+        var environment = AppEnvironment.testing(clock: clock, transport: transport)
+        environment.devices.connectivity = connectivity
         environment.folder = folder
-        return (controller, environment)
+        return environment
     }
 
-    @Test func itOpensOnTheStoredSessionAndItsSnapshotCarriesNoSecret() async throws {
+    func link(_ storage: MemoryStorage, packages: [String: Int] = ["substrate.reamde.dev/tasks": 2],
+              outbox: Outbox? = nil) -> LinkController<NoApp>
+    {
+        LinkController(manifest: ScreenFixtures.manifest, sessions: SessionStore(storage: storage), outbox: outbox, packages: packages,
+                       words: words)
+    }
+
+    func signedIn() throws -> MemoryStorage {
         let storage = MemoryStorage()
         let session = Session(server: server, repository: "ada.example.com", secret: secret, clientID: "https://tasks.example.com/client.json",
-                              scopes: ["read:*"], expiresAt: now.addingTimeInterval(86400))
+                              scopes: ["read:*"])
         try SessionStore(storage: storage).save(session)
-        let (controller, environment) = link(storage, folder: try RepositoryFolder(root: temporaryFolder()))
-        let harness = ControllerHarness(controller, environment: environment)
-        await harness.send(.open)
+        return storage
+    }
+
+    @Test func itOpensOnTheStoredSessionOnItsOwnAndItsSnapshotCarriesNoSecret() async throws {
+        let harness = ControllerHarness(link(try signedIn()), environment: environment(folder: try RepositoryFolder(root: temporaryFolder())))
+        // No command: the link's event at open loads the session.
         try await harness.until { harness in
             let presented = await harness.presentation
-            return presented.snapshot.online == true && presented.account != nil
+            return presented.snapshot.online == true && presented.repository != nil
         }
         let presented = await harness.presentation
         #expect(presented.snapshot.phase == .signedIn)
         #expect(presented.snapshot.repository == "ada.example.com")
-        #expect(presented.account?.rows.first == LabeledValue("Server", "ada.example.com"))
+        #expect(presented.repository?.server == LabeledValue("Server", "ada.example.com"))
+        #expect(presented.app == NoApp.State())
         let state = await harness.state
         let encoded = String(decoding: try JSONEncoder().encode(presented), as: UTF8.self)
             + String(decoding: try JSONEncoder().encode(state), as: UTF8.self)
@@ -313,20 +391,17 @@ struct LinkControllerTests {
     }
 
     @Test func signedOutItSaysSoAndOffersTheWayIn() async throws {
-        let (controller, environment) = link(MemoryStorage())
-        let harness = ControllerHarness(controller, environment: environment)
-        await harness.send(.open)
+        let harness = ControllerHarness(link(MemoryStorage()), environment: environment())
         try await harness.until { await $0.presentation.snapshot.online == true }
         let presented = await harness.presentation
         #expect(presented.snapshot.phase == .signedOut)
-        #expect(presented.account == nil)
+        #expect(presented.repository == nil)
         #expect(presented.status.sentence == "Not signed in. Tasks stay on this iPhone.")
         #expect(presented.status.actions == [ActionButton("Sign In to Your Substrate…", .signIn)])
     }
 
     @Test func anEndedAccessIsTheSnapshotsAndTheScreensAndASignOutMovesTheGeneration() async throws {
-        let (controller, environment) = link(MemoryStorage())
-        let harness = ControllerHarness(controller, environment: environment, performsEffects: false)
+        let harness = ControllerHarness(link(MemoryStorage()), environment: environment(), performsEffects: false)
         let facts = SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"])
         await harness.deliver(.loaded(session: facts, unrevoked: [], generation: 4))
         await harness.deliver(.checked(AppStatus(issues: [.accessEnded], checkedAt: now)))
@@ -342,8 +417,7 @@ struct LinkControllerTests {
     }
 
     @Test func aCheckRunsAtMostEveryIntervalUnlessForced() async throws {
-        let (controller, environment) = link(MemoryStorage())
-        let harness = ControllerHarness(controller, environment: environment, performsEffects: false)
+        let harness = ControllerHarness(link(MemoryStorage()), environment: environment(), performsEffects: false)
         await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com"), unrevoked: [], generation: 0))
         await harness.deliver(.checked(AppStatus(checkedAt: harness.clock.now)))
         let before = harness.effects.count
@@ -354,12 +428,204 @@ struct LinkControllerTests {
     }
 
     @Test func comingBackOnlineSendsWhatWaits() async throws {
-        let (controller, environment) = link(MemoryStorage())
-        let harness = ControllerHarness(controller, environment: environment, performsEffects: false)
+        let harness = ControllerHarness(link(MemoryStorage()), environment: environment(), performsEffects: false)
         await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com"), unrevoked: [], generation: 0))
-        await harness.deliver(.outboxRead(state: .offline("gone"), waiting: 2, parked: []))
+        await harness.deliver(.network(NetworkPath(online: false)))
+        await harness.deliver(.outboxChanged(OutboxFacts(state: .offline("gone"), waiting: 2, sendable: 2, revision: 3)))
+        // Offline, a write queued waits.
+        #expect(!harness.effects.contains(.flush))
         await harness.deliver(.network(NetworkPath(online: true)))
         #expect(harness.effects.last == .flush)
+    }
+
+    @Test func aReportOfTheOutboxsOwnFlushStartsNoOther() async throws {
+        let harness = ControllerHarness(link(MemoryStorage()), environment: environment(), performsEffects: false)
+        await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com"), unrevoked: [], generation: 0))
+        await harness.deliver(.outboxChanged(OutboxFacts(state: .idle, waiting: 1, sendable: 1, revision: 1)))
+        #expect(harness.effects.filter { $0 == .flush }.count == 1)
+        // The same revision again (the flush's own reports, a hold that
+        // left a write queued) is no new write.
+        await harness.deliver(.outboxChanged(OutboxFacts(state: .sent, waiting: 1, sendable: 1, revision: 1)))
+        #expect(harness.effects.filter { $0 == .flush }.count == 1)
+        await harness.deliver(.outboxChanged(OutboxFacts(state: .sent, waiting: 2, sendable: 2, revision: 2)))
+        #expect(harness.effects.filter { $0 == .flush }.count == 2)
+    }
+
+    @Test func aWriteThroughTheOutboxMovesTheStatusAndIsSent() async throws {
+        let scripted = ScriptedServer()
+        let put = scripted.hold("PUT", "/api/v1/substrate.reamde.dev/tasks/task/t1")
+        scripted.on { sent in
+            if sent.method == "PUT" { return (200, #"{"id":"t1","kind":"substrate.reamde.dev/tasks/task","properties":{},"version":1}"#) }
+            return (404, #"{"error":{"code":"not_found","message":"not here"}}"#)
+        }
+        let folder = try RepositoryFolder(root: temporaryFolder())
+        let outbox = Outbox(folder: folder)
+        let clock = TestClock()
+        let harness = ControllerHarness(link(try signedIn(), packages: [:], outbox: outbox), clock: clock,
+                                        environment: environment(folder: folder, transport: scripted, clock: clock))
+        try await harness.until { await $0.presentation.status.sentence == "Up to date." }
+        try await outbox.enqueue([OutboxEntry(method: .put, kind: "substrate.reamde.dev/tasks/task", recordID: "t1")])
+        // Queued: the status says so, and a flush started on its own.
+        await put.arrived()
+        // A flush's reports are drawn within a window on the link's clock.
+        try await harness.until { harness in
+            await harness.advance(by: 0.1)
+            let status = await harness.presentation.status
+            return status.sentence == "Sending 1 change." && status.busy
+        }
+        #expect(await harness.presentation.snapshot.waiting == 1)
+        put.release()
+        try await harness.until { harness in
+            await harness.advance(by: 0.1)
+            return await harness.presentation.status.sentence == "Up to date."
+        }
+        #expect(await harness.presentation.snapshot.waiting == 0)
+        #expect(scripted.methodsAndPaths.filter { $0.hasPrefix("PUT") } == ["PUT /api/v1/substrate.reamde.dev/tasks/task/t1"])
+    }
+}
+
+/// An app under the link, small: it keeps what the link said last, its
+/// requests can be answered 401 or 403, and it may keep a journal.
+struct Notes: LinkedApp {
+    enum Command: Codable, Equatable, Sendable {
+        case fetch
+        case write(String)
+    }
+
+    enum Event: Codable, Equatable, Sendable {
+        case linked(LinkSnapshot.Phase, Int)
+        case fetchFailed(LinkReport)
+        case wrote(String)
+    }
+
+    struct State: Codable, Equatable, Sendable {
+        var phases: [LinkSnapshot.Phase] = []
+        var generation = 0
+        var notes: [String] = []
+    }
+
+    typealias Presentation = State
+
+    let journal: MemoryJournal<Event, State>?
+    let refusal: LinkReport
+
+    init(journal: MemoryJournal<Event, State>? = nil, refusal: LinkReport = .accessEnded) {
+        self.journal = journal
+        self.refusal = refusal
+    }
+
+    static func == (lhs: Notes, rhs: Notes) -> Bool { lhs.journal === rhs.journal && lhs.refusal == rhs.refusal }
+
+    var initialState: State { State() }
+
+    func events(for command: Command, in context: Enrichment<Notes>) -> [Event] {
+        switch command {
+        case .fetch: [.fetchFailed(refusal)]
+        case let .write(text): [.wrote(text)]
+        }
+    }
+
+    func apply(_ event: Event, to state: State) throws -> State {
+        var next = state
+        switch event {
+        case let .linked(phase, generation):
+            next.phases.append(phase)
+            next.generation = generation
+        case .fetchFailed: break
+        case let .wrote(text): next.notes.append(text)
+        }
+        return next
+    }
+
+    func journaling(of event: Event) -> Journaling {
+        if case .wrote = event { return .append }
+        return .skip
+    }
+
+    func present(_ input: PresenterInput<Notes>) -> State { input.state }
+
+    func event(forLink link: LinkSnapshot) -> Event? { .linked(link.phase, link.generation) }
+
+    func report(of event: Event) -> LinkReport? {
+        if case let .fetchFailed(report) = event { return report }
+        return nil
+    }
+
+    func journal(in environment: AppEnvironment) -> (any JournalStore<Event, State>)? { journal }
+}
+
+@Suite("The link and its app, one tree")
+struct LinkTreeTests {
+    let server = URL(string: "https://ada.example.com")!
+    let words = StatusWords(app: "Substrate Tasks", device: "this iPhone", kept: "notes")
+
+    func harness(_ app: Notes) -> ControllerHarness<LinkController<Notes>> {
+        let link = LinkController(app: app, manifest: ScreenFixtures.manifest, sessions: SessionStore(storage: MemoryStorage()),
+                                  words: words)
+        return ControllerHarness(link, performsEffects: false)
+    }
+
+    @Test func theLinksSnapshotReachesTheAppInsideTheStepThatMovedIt() async throws {
+        let harness = harness(Notes())
+        // At open, the app was told the link's first snapshot.
+        #expect(await harness.presentation.app?.phases == [.signedOut])
+        harness.clearTrace()
+        await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
+                                      unrevoked: [], generation: 2))
+        let presented = await harness.presentation
+        #expect(presented.app?.phases == [.signedOut, .signedIn])
+        #expect(presented.app?.generation == 2)
+        // The link's step and the app's went out as one tree.
+        #expect(harness.published == 1)
+    }
+
+    @Test func aRequestAnswered401InTheAppEndsTheLinksAccess() async throws {
+        let harness = harness(Notes(refusal: .accessEnded))
+        await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
+                                      unrevoked: [], generation: 0))
+        try await harness.runtime.send(Notes.Command.fetch, to: LinkController<Notes>.appPath)
+        let presented = await harness.presentation
+        #expect(presented.snapshot.phase == .accessEnded)
+        #expect(presented.ended != nil)
+        #expect(presented.status.sentence == "Your access ended. Sign in again to send what waits.")
+        // And the app heard the ended access in the same step.
+        #expect(presented.app?.phases.last == .accessEnded)
+        // A new sign-in clears it.
+        await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
+                                      unrevoked: [], generation: 0))
+        #expect(await harness.presentation.snapshot.phase == .signedIn)
+    }
+
+    @Test func aRequestAnswered403InTheAppAsksForApprovalAndChecksAgain() async throws {
+        let harness = harness(Notes(refusal: .needsApproval))
+        await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
+                                      unrevoked: [], generation: 0))
+        harness.clearTrace()
+        try await harness.runtime.send(Notes.Command.fetch, to: LinkController<Notes>.appPath)
+        #expect(harness.effects == [.check])
+        #expect(await harness.presentation.status.sentence == "Substrate Tasks needs your approval for more access. Review it to send what waits.")
+    }
+
+    @Test func aJournalTheAppCannotWriteIsAChangeNotKept() async throws {
+        let journal = MemoryJournal<Notes.Event, Notes.State>()
+        let harness = harness(Notes(journal: journal))
+        await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
+                                      unrevoked: [], generation: 0))
+        journal.failWrites(with: Refused(description: "No space left"))
+        try await harness.runtime.send(Notes.Command.write("milk"), to: LinkController<Notes>.appPath)
+        let status = await harness.presentation.status
+        #expect(status.sentence == "A change could not be kept on this iPhone. Notes already kept stay.")
+        #expect(status.problem?.message == "The journal could not be written: No space left")
+        journal.failWrites(with: nil)
+        try await harness.runtime.send(Notes.Command.write("eggs"), to: LinkController<Notes>.appPath)
+        #expect(await harness.presentation.status.problem == nil)
+    }
+
+    @Test func aCommandForAnotherTypeAtAPathIsRefused() async throws {
+        let harness = harness(Notes())
+        await #expect(throws: UnroutableCommand.self) {
+            try await harness.runtime.send(Room.Command.say("hi"), to: LinkController<Notes>.appPath)
+        }
     }
 }
 
@@ -369,6 +635,15 @@ struct ScreenFixtureTests {
         let fixtures = ScreenFixtures.all
         #expect(Set(fixtures.map(\.screen)) == Set(ScreenKind.allCases))
         #expect(Set(fixtures.map(\.name)).count == fixtures.count)
+    }
+
+    @Test func theStatesAnAppShowsAreEachAFixture() {
+        let names = Set(ScreenFixtures.all.map(\.name))
+        for name in ["status-ends-soon", "status-not-kept", "status-server-too-old", "status-preparing", "status-packages-behind",
+                     "connect-password", "connect-browser-waiting", "connect-sign-in-failed", "settings-journal-problem"]
+        {
+            #expect(names.contains(name), "\(name)")
+        }
     }
 
     @Test func everyFixtureCrossesAsJSONAndBack() throws {

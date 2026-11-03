@@ -70,7 +70,10 @@ let package = Package(
             "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateScreens",
             "SubstrateDeviceApple", "SubstrateUI",
         ]),
-        .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateLocal", "SubstrateScreens", "SubstrateTesting"]),
+        // Resources: files an older build wrote, read back (Workouts' format 1
+        // outbox).
+        .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateLocal", "SubstrateScreens", "SubstrateTesting"],
+                    resources: [.copy("Resources")]),
     ],
     swiftLanguageModes: [.v6]
 )

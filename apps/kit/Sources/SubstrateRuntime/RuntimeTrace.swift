@@ -10,6 +10,8 @@ public enum RuntimeTrace: Sendable {
     case journaled(path: [ChildKey], Journaling, event: any Sendable)
     case refused(path: [ChildKey], event: any Sendable, reason: String)
     case presented(path: [ChildKey])
+    /// A parent handed the child under `path` a new value; its state stayed.
+    case replaced(path: [ChildKey])
     /// The root's presentation tree went out to the UI.
     case published
     case effect(path: [ChildKey], effect: any Sendable)
