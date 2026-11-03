@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/geoah/substrate/internal/reach"
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -687,8 +688,8 @@ func (s *scopedDataset) talksTo(ctx context.Context, agent string) (bool, error)
 }
 
 // coversAgentReads reports whether the grant reads everything the agent
-// reads: each entry of its `permissions.reads.kinds`, a kind named in full
-// or a glob, is covered by a read or write scope at least as wide
+// reads, including its tools and subagents transitively: each kind or glob
+// is covered by a read or write scope at least as wide
 // (scope.Grant.Covers). A kind the registry lacks, or declares internal, is
 // covered by its exact scope alone, as a glob never reaches one.
 func (s *scopedDataset) coversAgentReads(ctx context.Context, agent string) (bool, error) {
@@ -706,40 +707,20 @@ func (s *scopedDataset) coversAgentReads(ctx context.Context, agent string) (boo
 	if err != nil {
 		return false, err
 	}
-	perms, _ := rec.Properties["permissions"].(map[string]any)
-	readsBlock, _ := perms["reads"].(map[string]any)
-	for _, k := range kindList(readsBlock["kinds"]) {
-		k = strings.TrimPrefix(k, vocabulary.CoreKind(vocabulary.DocKind)+"/")
-		internal := false
-		if !vocabulary.IsTypeGlob(k) {
-			info, held := reg[k]
-			internal = !held || internalKind(info)
+	entries, err := reach.Callable(ctx, s.inner, rec)
+	if err != nil {
+		return false, err
+	}
+	for _, r := range entries {
+		if r.Write {
+			continue
 		}
-		if !s.grant.Covers(scope.Scope{Verb: scope.Read, Pattern: k}, internal) {
+		info, held := reg[r.Pattern]
+		internal := !vocabulary.IsTypeGlob(r.Pattern) && (!held || internalKind(info))
+		if !s.grant.Covers(scope.Scope{Verb: scope.Read, Pattern: r.Pattern}, internal) {
 			return false, nil
 		}
 	}
-	return true, nil
-}
 
-// kindList reads a grant list: each entry a kind reference, as a string or a
-// stored `{ref: …}`.
-func kindList(v any) []string {
-	var out []string
-	list, _ := v.([]any)
-	for _, e := range list {
-		switch t := e.(type) {
-		case string:
-			out = append(out, t)
-		case map[string]any:
-			if ref, ok := t["ref"].(string); ok {
-				out = append(out, ref)
-			} else {
-				out = append(out, fmt.Sprint(t))
-			}
-		default:
-			out = append(out, fmt.Sprint(t))
-		}
-	}
-	return out
+	return true, nil
 }

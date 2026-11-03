@@ -34,7 +34,7 @@ func readFunctions(ctx context.Context, ds substrate.Dataset) ([]functionRow, er
 			if rec.Kind != kindFunction || rec.DeletedAt != nil {
 				continue
 			}
-			reach, err := resolveReach(ctx, ds.Get, rec)
+			reach, err := resolveReach(ctx, ds, rec)
 			if err != nil {
 				return nil, err
 			}

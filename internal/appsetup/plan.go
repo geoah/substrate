@@ -393,8 +393,8 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 	}
 	// Every closure the approval installs is held to the scopes left
 	// checked, the package's own first, then what it brings (decision 0215).
-	if row.Blocked = p.reachBlock(b, info, actionOnly); row.Blocked != nil || actionOnly {
-		return row, nil
+	if row.Blocked, err = p.reachBlock(ctx, b, info, actionOnly); err != nil || row.Blocked != nil || actionOnly {
+		return row, err
 	}
 	// The preview runs last and stops at the first package it blocks: it
 	// stages a closure against the owner's data.
@@ -553,7 +553,7 @@ func (p *planner) binaryChain(ctx context.Context, b *catalog.Bundle, steps []*c
 // scopes left checked: the package's own reach first, else the first
 // requirement's, each step carrying its own block. actionOnly leaves the
 // reach off the rows and keeps the block.
-func (p *planner) reachBlock(b *catalog.Bundle, info *substrate.AuthorizationPackage, actionOnly bool) *substrate.AuthorizationBlock {
+func (p *planner) reachBlock(ctx context.Context, b *catalog.Bundle, info *substrate.AuthorizationPackage, actionOnly bool) (*substrate.AuthorizationBlock, error) {
 	chain := []*catalog.Bundle{b}
 	for _, step := range info.Requires {
 		if dep := p.bundle(step.ID); dep != nil {
@@ -568,7 +568,10 @@ func (p *planner) reachBlock(b *catalog.Bundle, info *substrate.AuthorizationPac
 		if dep == nil {
 			continue
 		}
-		reach := p.reach(dep, internal)
+		reach, err := p.reach(ctx, dep, chain, internal)
+		if err != nil {
+			return nil, err
+		}
 		if !actionOnly {
 			step.Reach = reach
 		}
@@ -579,14 +582,17 @@ func (p *planner) reachBlock(b *catalog.Bundle, info *substrate.AuthorizationPac
 			}
 		}
 	}
-	reach := p.reach(b, internal)
+	reach, err := p.reach(ctx, b, chain, internal)
+	if err != nil {
+		return nil, err
+	}
 	if !actionOnly {
 		info.Reach = reach
 	}
 	if problem := reachesPast(reach); problem != nil {
-		return problem.own()
+		return problem.own(), nil
 	}
-	return first
+	return first, nil
 }
 
 // reachesPast is the block a reach earns, nil when every entry is covered.
@@ -606,9 +612,13 @@ func reachesPast(reach []substrate.AuthorizationReach) *packageProblem {
 // reach is what b's code reaches, each entry held to the scopes left
 // checked. internal says whether a kind's declared purpose is `internal`,
 // which a glob scope never reaches.
-func (p *planner) reach(b *catalog.Bundle, internal func(kind string) bool) []substrate.AuthorizationReach {
+func (p *planner) reach(ctx context.Context, b *catalog.Bundle, chain []*catalog.Bundle, internal func(kind string) bool) ([]substrate.AuthorizationReach, error) {
 	var out []substrate.AuthorizationReach
-	for _, r := range b.Reach() {
+	reach, err := b.ResolvedReach(ctx, p.ds, chain)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range reach {
 		entry := substrate.AuthorizationReach{Pattern: r.Pattern, Write: r.Write, Scope: scope.Covering(r.Pattern, r.Write)}
 		for _, by := range r.By {
 			entry.By = append(entry.By, substrate.AuthorizationReachBy{Type: by.Type, ID: by.ID})
@@ -616,7 +626,7 @@ func (p *planner) reach(b *catalog.Bundle, internal func(kind string) bool) []su
 		entry.Covered = p.opts.Approved.Covers(r.Pattern, r.Write, !vocabulary.IsTypeGlob(r.Pattern) && internal(r.Pattern))
 		out = append(out, entry)
 	}
-	return out
+	return out, nil
 }
 
 // internalIn answers whether a kind's declared purpose is `internal`: as the

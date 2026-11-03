@@ -1006,3 +1006,13 @@ func TestCatalogReadsNeverCountLiveRecords(t *testing.T) {
 		t.Errorf("the catalog reads asked for the counted bundle statuses %d times, want none", n)
 	}
 }
+
+func TestCatalogInstallRejectsAStaleReview(t *testing.T) {
+	env := newCatalogEnv(t)
+	tok := env.svc.token(fakeRepository)
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/install", tok, map[string]any{"expect": map[string]any{"version": 1, "digest": "stale"}})
+	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
+	if !strings.Contains(rec.Body.String(), "the publisher listed another version since you reviewed this one; review it again") {
+		t.Fatal(rec.Body.String())
+	}
+}

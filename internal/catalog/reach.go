@@ -3,6 +3,7 @@ package catalog
 import (
 	"slices"
 
+	"github.com/geoah/substrate/internal/reach"
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -17,26 +18,14 @@ import (
 
 // Reach is one kind, or one glob over kinds as the grant grammar spells it,
 // that a closure's code reads or writes, with what reaches it.
-type Reach struct {
-	Pattern string
-	Write   bool
-	// By is what reaches it, in document order: each a function, agent,
-	// trigger or mapping of the closure.
-	By []ReachBy
-}
+type Reach = reach.Entry
 
-// ReachBy is one piece of code that reaches a kind: its Type is
-// vocabulary.DocFunction, DocAgent, DocRecordMapping or TriggerKind's word,
-// `trigger`, and ID its id.
-type ReachBy struct {
-	Type string
-	ID   string
-}
+// ReachBy identifies the declaration that reaches a kind.
+type ReachBy = reach.By
 
 // AgentFact is one agent a closure ships: the kinds it reads and writes, as
-// its `permissions` declare them, each a kind or a glob. Its tools add no
-// reach of their own: a host tool runs under these permissions, and a
-// bundle function it calls runs under that function's.
+// its `permissions` declare them, each a kind or a glob. ResolvedReach adds
+// the reach of its function tools and subagents.
 type AgentFact struct {
 	ID     string
 	Reads  []string
@@ -59,8 +48,8 @@ func (b *Bundle) Agents() []AgentFact { return b.agents }
 // held, under the same approval.
 func (b *Bundle) Mappings() []MappingFact { return b.mappings }
 
-// Reach is everything the closure's code reaches, one entry per kind or
-// glob and verb, in the order the documents first name each.
+// Reach is the closure's direct grants. Approval uses ResolvedReach to include
+// callees outside the closure against the candidate and installed declarations.
 func (b *Bundle) Reach() []Reach { return b.reach }
 
 // readReach fills b.reach from the facts readFacts read.

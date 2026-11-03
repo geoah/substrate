@@ -484,9 +484,24 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 // preview (Upgrade) answered. The engine refuses a lossy plan without one, or
 // with one for another plan; a lossless plan ignores it.
 func (c *Catalog) InstallConfirmed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm) (*Bundle, []substrate.SuggestedMapping, error) {
+	return c.InstallReviewed(ctx, actor, id, ds, confirm, nil)
+}
+
+// PublishedCandidate binds consent to the exact document-published code reviewed.
+type PublishedCandidate struct {
+	Version int64  `json:"version"`
+	Digest  string `json:"digest"`
+}
+
+// InstallReviewed checks the candidate before any requirement or package lands.
+// The same resolved closure is checked and installed; it is never fetched twice.
+func (c *Catalog) InstallReviewed(ctx context.Context, actor substrate.Actor, id string, ds substrate.Dataset, confirm *substrate.ConversionConfirm, expect *PublishedCandidate) (*Bundle, []substrate.SuggestedMapping, error) {
 	b, err := c.installable(ctx, actor, id, ds)
 	if err != nil {
 		return nil, nil, err
+	}
+	if expect != nil && (b.origin == nil || expect.Version != b.Version || expect.Digest != b.origin.SHA256) {
+		return nil, nil, fmt.Errorf("%w: the publisher listed another version since you reviewed this one; review it again", substrate.ErrConflict)
 	}
 	// Each requirement commits on its own, before b: a refusal of b leaves
 	// the ones already installed in place, which is what installing them
