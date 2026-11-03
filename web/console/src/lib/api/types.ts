@@ -884,6 +884,13 @@ export interface TokenInfo {
   appAuthorityFromFile?: boolean
   /** The approval sent the access to a program on the owner's device. */
   appLocal?: boolean
+  /** The floor each of the app build's package details asks for, by
+   * package id (decision 0213). */
+  appPackages?: Record<string, number>
+  /** The app build's own version. */
+  appSoftwareVersion?: string
+  /** When the app's build last checked in. */
+  appCheckedAt?: string
   /** The agents the owner approved the app to declare (decision 0207). */
   agents?: AgentApproval[]
 }
@@ -1150,6 +1157,19 @@ export interface AuthorizationPackage {
   kinds?: AuthorizationKind[]
   functions?: AuthorizationFunction[]
   triggers?: AuthorizationTrigger[]
+  /** Present for a package an authority document publishes rather than
+   * this server's catalog ships (decision 0212). */
+  publisher?: AuthorizationPackagePublisher
+}
+
+/** Where a document-published package comes from: its publisher's
+ * authority, the document's name for it, the document listing it, and
+ * whether a file this server reads stood in for the authority's DNS. */
+export interface AuthorizationPackagePublisher {
+  authority: string
+  name?: string
+  documentUrl: string
+  fromFile?: boolean
 }
 
 /** One package a requested one requires, with what it brings of its own.

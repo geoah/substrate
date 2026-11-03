@@ -80,6 +80,12 @@ func (ds *dataset) MarkDomainVerified(ctx context.Context) (time.Time, error) {
 	return at, err
 }
 
+// RecordAppBuild records the calling app token's build facts (decision
+// 0213). Phase 2 fills it in; until then it records nothing.
+func (ds *dataset) RecordAppBuild(context.Context, map[string]int64, string) error {
+	return nil
+}
+
 // repositoryRow locks the repository record for the domain writes, so two
 // starts at once mint one proof between them.
 func (ds *dataset) repositoryRow(t *txn) (*erow, error) {

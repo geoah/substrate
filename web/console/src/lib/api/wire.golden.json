@@ -283,11 +283,18 @@
     "held": false,
     "id": true,
     "kinds": false,
+    "publisher": false,
     "required": true,
     "requires": false,
     "shipped": false,
     "tier": false,
     "triggers": false
+  },
+  "AuthorizationPackagePublisher": {
+    "authority": true,
+    "documentUrl": true,
+    "fromFile": false,
+    "name": false
   },
   "AuthorizationPackageStep": {
     "action": true,
@@ -868,7 +875,10 @@
     "agents": false,
     "appAuthority": false,
     "appAuthorityFromFile": false,
+    "appCheckedAt": false,
     "appLocal": false,
+    "appPackages": false,
+    "appSoftwareVersion": false,
     "clientId": false,
     "clientName": false,
     "createdAt": true,
