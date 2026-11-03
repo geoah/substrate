@@ -369,3 +369,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0209](0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md) | An app is verified by its authority's TXT record and document | proposed |
 | [0210](0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md) | A token declares new packages only under its repository's authority | proposed |
 | [0211](0211-the-console-groups-collections-by-package.md) | The console groups collections by package | proposed |
+| [0219](0219-an-apps-token-reads-windows-aggregates-semantic-search-blobs-and-the-feeds-history-over-the-kinds-it-reads-and-calls-the-functions-its-call-scope-names.md) | An app's token reads windows, aggregates, semantic search, blobs and the feed's history over the kinds it reads, and calls the functions its call scope names | proposed |

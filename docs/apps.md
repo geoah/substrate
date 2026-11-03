@@ -725,13 +725,17 @@ server.
 ### Use the token
 
 Send it as `Authorization: Bearer substrate_tok_…`. An app's token reaches
-the records route (`GET /api/v1/records` for lists and lexical search,
-`POST /api/v1/records`), the record path (`/api/v1/{authority}/{package}/{kind}/{id}`),
-the unit reads, the change feed's live tail, the set up check, blob
-storage under the blob rule below, under an `agents:` scope the chat and the
-thread routes, and under a `webhook:` scope the webhook door and that
-trigger's parked list ([deliver to a webhook](#deliver-to-a-webhook)), held
-to its scopes:
+the records route (`GET /api/v1/records` for lists, window and aggregate
+reads and every mode of search, `POST /api/v1/records`), the record path
+(`/api/v1/{authority}/{package}/{kind}/{id}`), the unit reads, the change
+feed ([follow changes](#follow-changes)), the set up check, blob storage
+and blob reads under the blob rules below, under a `call:` scope the
+function call ([run functions](#run-functions)), under an `agents:` scope
+the chat and the thread routes, and under a `webhook:` scope the webhook
+door and that trigger's parked list
+([deliver to a webhook](#deliver-to-a-webhook)), held to its scopes
+([0194](decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
+[0219](decisions/0219-an-apps-token-reads-windows-aggregates-semantic-search-blobs-and-the-feeds-history-over-the-kinds-it-reads-and-calls-the-functions-its-call-scope-names.md)):
 
 - a kind the token cannot read answers `404`, as an unknown kind does;
 - a write to a kind it reads but cannot write answers `403` with
@@ -743,9 +747,19 @@ to its scopes:
   whose value names a kind the reference's pin does not admit, which the
   engine resolves through a record mapping, also needs the pinned kind
   readable, or for a `trait:` pin every kind implementing the trait;
-- a search is lexical (a `semantic` one answers `403`), weighs every word
-  alike and carries no scores, since a word's frequency is counted over the
-  whole repository;
+- a search runs in any mode over the kinds it reads, the `semantic` and
+  `hybrid` ones included, which embed the query with your provider and so
+  spend your embedding budget (the approval page says so beside every read
+  and write scope); it weighs every word alike and carries no scores, since
+  a word's frequency is counted over the whole repository, and reports no
+  pending count, which counts the whole repository's embed queue;
+- a window read (`at` bounded on both ends) and an aggregate read run over
+  the kinds it reads: one naming a kind it cannot read answers `404`, one
+  naming none is cut to the readable kinds, never widened, and a metric
+  read over none is cut further to the kinds the observed index holds.
+  Every row, series, override and expanded referent is cut as a list's
+  records are, and the sources an aggregate names are cut to the kinds it
+  reads. Neither carries a changelog head;
 - a list carries no changelog head, in its body or in its cursor;
 - inbound links, property provenance and expanded referents of other kinds
   are left out of every record it receives;
@@ -764,11 +778,20 @@ to its scopes:
   digest, size and status, and its name and media type only when the token
   reads the blob manifests (`read:substrate.reamde.dev/core/blob`): bytes
   are stored once by their digest, so the name is whoever uploaded them
-  first.
+  first;
+- `GET /api/v1/blobs/{digest}` reads a blob when a live record of a kind
+  the token reads names it through a `blobref` property. A token reading no
+  such kind answers `403`; one that does is answered, for a blob no record
+  it reads names, exactly what a blob nobody stored answers (`404`), so the
+  read says nothing about blobs it cannot reach. The answer carries the
+  blob's name and media type only when the token reads the blob manifests,
+  as a blob reference does, so without them the `Content-Type` is
+  `application/octet-stream` and there is no `Content-Disposition`. An
+  app's reads wait for two slots of their own, never the owner's.
 
-Everything else answers `403`: the change feed's history, aggregate and
-window reads, reading a blob, the vocabulary, the catalog, functions, the
-agent call API, the export and the token endpoints. Writes are attributed to the app's own actor,
+Everything else answers `403`: the vocabulary, the catalog, a function its
+`call:` scopes do not name, the agent call API, the export and the token
+endpoints. Writes are attributed to the app's own actor,
 `app:` and the host of its client id, whatever `X-Substrate-Actor` says; no
 request can claim that name. Two apps on one host share it, and the
 changelog's principal (the token, which names the exact client id) tells
@@ -821,20 +844,23 @@ A search never reaches these kinds.
 
 ### Follow changes
 
-`GET /api/v1/changes?watch=1` is open to an app's token: the ndjson tail,
-with its bookmark and generation, heartbeats, terminal error frame, `from`
-and `generation` resume and `410` as for the owner
-([the change feed](changelog.md)). It carries only the rows of records the
-token reads, through its read and write scopes and the rows `agents:` and
-`decide:` reach, and each row names alone: `seq`, `ts`, `op`, `kind`,
+`GET /api/v1/changes` is open to an app's token on every route the feed
+has: the ndjson tail (`watch=1`, with its bookmark and generation,
+heartbeats, terminal error frame, `from` and `generation` resume and `410`
+as for the owner), the history pages (`before`, `first`), the run summaries
+(`runs=1`) and the forward read from a cursor
+([the change feed](changelog.md)). Each carries only the rows of records
+the token reads, through its read and write scopes and the rows `agents:`
+and `decide:` reach, and each row names alone: `seq`, `ts`, `op`, `kind`,
 `recordId`, `actor`, and `affected` cut to records the token reads. No
-`payload`, `hash` or trigger states. `values=1`, `q`, the history pages
-(`before`, `first`, `runs=1`) and the forward read without `watch=1` answer
-`403`; a `kinds` entry the token cannot read answers `404`.
+`payload`, `hash` or trigger states. A history page stays full while more
+lies below, so its cursor is right whatever the token cannot see between
+its rows. `values=1` and `q` answer `403` on every route; a `kinds` entry
+the token cannot read answers `404`.
 
 An app's lists carry no head, so it opens the watch first, keeps the
 bookmark, then reads its lists: every write after the bookmark arrives on
-the watch.
+the watch, and the history pages reach back from there.
 
 A stream outlives the check at its start, so an app's token is read again
 while it runs: before every batch of rows and at every heartbeat on the
@@ -843,6 +869,34 @@ watch, and at least every two seconds on an agent's stream (`chat` and
 ends with a terminal error frame whose code is `auth`, and an agent's
 stream with an `error` event, before anything more is written. The turn
 itself runs on; the app signs in again to follow it.
+
+### Run functions
+
+A `call:<pattern>` scope names functions by their ids
+(`<authority>/<package>/<name>`), with the kind pattern grammar: `*`, an
+authority's, a package's or one function; `~` is the repository's
+authority. A function of `substrate.reamde.dev/core` or
+`substrate.reamde.dev/llm` is never an app's to call: naming one outright
+is refused, and a glob skips them. Under it,
+`POST /api/v1/substrate.reamde.dev/core/function/{name}/call` (the name
+named in full, its slashes percent-encoded) runs a matching function as
+the owner's call does, when the token's read and write scopes cover the
+function's **reach**: every kind its `permissions.reads.kinds` and
+`permissions.writes` name, and those of every function its
+`permissions.call` may invoke and every agent its `permissions.agents` may
+run, since a call runs whatever runs under it. A write scope covers a
+read; no scope writes `core` or `llm`, so a function writing a kind of
+either, or `*`, is never callable by an app. A function the token does not
+reach is answered `404`, as a kind it cannot read is; one it reaches but
+whose reach its scopes do not cover answers `403` naming what is missing
+(`read <kind>`, `write <kind>`). The call runs under the function's own
+permissions, as a trigger's does: the app's actor is the caller, and the
+function's effects land as the function's.
+
+The approval page lists, under a `call:` scope, the functions it matches
+today with each one's reach and whether the request's other scopes cover
+it. Its sentence says the app runs the owner's code only as far as the
+app already reaches.
 
 ### Deliver to a webhook
 
@@ -900,15 +954,16 @@ A scope is a verb and a pattern:
 | `write` | kind references | the same, and writes them |
 | `agents` | agent ids | chats with the matching agents and their threads ([talk to agents](#talk-to-agents)) |
 | `decide` | agent ids | the change requests the matching agents propose ([talk to agents](#talk-to-agents)) |
+| `call` | function ids | running the matching functions, where the token's reads and writes cover each one's reach ([run functions](#run-functions)) |
 | `webhook` | one trigger id, never a pattern | delivering to that webhook and its parked list ([deliver to a webhook](#deliver-to-a-webhook)) |
 | `declare` | one package of the repository's own, `~/<package>`, never a pattern | applying that package's declarations and reading its package row; the app then owns the package ([keep a package of your own](#keep-a-package-of-your-own)) |
 
 | Pattern | Reaches |
 | --- | --- |
-| `<authority>/<package>/<name>` | one kind, or one agent |
-| `<authority>/<package>/*` | every kind or agent of one package |
-| `<authority>/*` | every kind or agent of one authority |
-| `*` | every kind or agent the owner has |
+| `<authority>/<package>/<name>` | one kind, one agent or one function |
+| `<authority>/<package>/*` | every kind, agent or function of one package |
+| `<authority>/*` | every kind, agent or function of one authority |
+| `*` | every kind, agent or function the owner has |
 
 An agent's id is its authority, package and name,
 `ada.example.com/llm/substrate`.
@@ -924,7 +979,8 @@ scope reaches:
   `read:substrate.reamde.dev/core/kind` may read one;
 - a write to `substrate.reamde.dev/core` or `substrate.reamde.dev/llm`, which
   hold the functions, triggers, agents, providers and policies, beyond the
-  few writes `agents:` and `decide:` carry;
+  few writes `agents:` and `decide:` carry, and a call of a function of
+  either;
 - a write to an account or a bundle input, the connections the owner manages.
 
 ### Full access

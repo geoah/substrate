@@ -1676,7 +1676,10 @@ beside the output. Over HTTP that is
 `POST /api/v1/substrate.reamde.dev/core/function/{name}/call` with `{"input": …}`,
 answering `{"output": …, "effects": n}`; what you send arrives at the body as
 `input["args"]`. A call moves no cursor, and its effects land under the
-function's actor as a fresh causal root. The trigger rows are ordinary
-records, so `get` / `apply` / `delete` edit them like anything else.
+function's actor as a fresh causal root. An app's token calls a function
+under a `call:` scope that names it, and only where the token's read and
+write scopes cover the function's reach ([apps](apps.md#run-functions)).
+The trigger rows are ordinary records, so `get` / `apply` / `delete` edit
+them like anything else.
 
 Next: [agents](agents.md), callables whose body is an LLM loop.
