@@ -450,10 +450,10 @@ func (h *handler) refreshBelowFloor(ctx context.Context, ds substrate.Dataset, d
 		}
 		res, err := h.refresher.RefreshPackage(ctx, ds, id)
 		if err != nil {
-			slog.Warn("authorize: a package below its app's floor could not be refreshed", "package", logLine(id), "error", err)
+			slog.Warn("authorize: a package below its app's floor could not be refreshed", "package", logLine(id), "error", logLine(err.Error()))
 			continue
 		}
-		slog.Info("authorize: a check refreshed a package below its app's floor", "package", logLine(id), "outcome", res.Outcome, "reason", res.Reason)
+		slog.Info("authorize: a check refreshed a package below its app's floor", "package", logLine(id), "outcome", res.Outcome, "reason", logLine(res.Reason))
 	}
 }
 
