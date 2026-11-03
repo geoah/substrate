@@ -9,6 +9,8 @@ import type {
   AuthorizationAccount,
   AuthorizationBlock,
   AuthorizationPackage,
+  AuthorizationPackagePublisher,
+  AuthorizationPackageStep,
   AuthorizationPrevious,
   AuthorizationRequest,
   AuthorizationScope,
@@ -87,21 +89,52 @@ export function setupTitle(row: AuthorizationSetup): string {
     const what = webhookWords(row.webhook)
     return row.action === "none" ? `The ${what} is on` : `Turn on the ${what}`
   }
-  if (row.agent) return `Add an AI agent: ${agentDisplayName(row.agent.agent)}`
   return row.type
 }
 
-/** An agent's name as a person reads it: its local name, words split
- * ("workoutCoach" reads "Workout coach"). */
-export function agentDisplayName(id: string): string {
-  const local = id.split("/").pop() ?? id
-  const words = local.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase()
-  return words.charAt(0).toUpperCase() + words.slice(1)
+/** Who publishes a document-published package, as a person reads it: the
+ * document's name for the publisher with its authority, or the authority
+ * alone where the document names none. */
+export function publisherWords(
+  publisher: AuthorizationPackagePublisher
+): string {
+  return publisher.name
+    ? `${publisher.name} (${publisher.authority})`
+    : publisher.authority
 }
 
-/** A daily cap in cents as the owner reads it: "$1.00". */
-export function dollars(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`
+/** The everyday line of a package row an authority document publishes
+ * (decision 0214): what approving installs or updates to, and who publishes
+ * it. "Installs Training 3, published by Substrate (substrate.reamde.dev)".
+ * Undefined for a package this server's catalog ships, whose versions
+ * `versionWords` says. */
+export function publishedWords(row: AuthorizationSetup): string | undefined {
+  const pkg = row.package
+  if (!pkg?.publisher) return undefined
+  const who = `published by ${publisherWords(pkg.publisher)}`
+  const name = packageName(pkg.id)
+  if (row.blocked || row.action === "none" || !pkg.shipped)
+    return `Published by ${publisherWords(pkg.publisher)}`
+  if (row.action === "upgrade" && pkg.held)
+    return `Updates ${name} from version ${pkg.held} to ${pkg.shipped}, ${who}`
+  return `Installs ${name} ${pkg.shipped}, ${who}`
+}
+
+/** The console page a package is paused or removed from: what the server
+ * names as a block's fix for one it offers, the provider page. */
+export function packagePage(id: string): string {
+  const [authority, name] = id.split("/")
+  return `/providers/${encodeURIComponent(authority)}/${encodeURIComponent(name ?? "")}`
+}
+
+/** What becomes of a package approving installs or updates once the app is
+ * gone (decision 0202): it stays, and the owner pauses or removes it from
+ * its own page. Undefined for a row in place or blocked, which installs
+ * nothing. */
+export function keptWords(row: AuthorizationSetup): string | undefined {
+  if (!row.package || row.blocked) return undefined
+  if (row.action !== "install" && row.action !== "upgrade") return undefined
+  return `${packageName(row.package.id)} stays on your server after you revoke the app. Pause or remove it from its page in the console.`
 }
 
 /** The triggers a request leaves on: every webhook it names, enabled by
@@ -142,9 +175,10 @@ export function codeWords(
   return clause && `${sentence(clause)}.`
 }
 
-/** Each package an install brings first, with the code it runs of its own:
- * "Also installs Labs, which runs code on your server, automatically." What
- * is in place already is left out. */
+/** Each package an install brings first, with who publishes it where a
+ * document does and the code it runs of its own: "Also installs Labs, which
+ * runs code on your server, automatically." What is in place already is
+ * left out. */
 export function chainLines(
   pkg: AuthorizationPackage,
   webhooks: readonly string[] = []
@@ -154,9 +188,18 @@ export function chainLines(
     const verb = step.action === "install" ? "installs" : "updates"
     const clause = codeClause(step, webhooks)
     return [
-      `Also ${verb} ${packageName(step.id)}${clause ? `, which ${clause}` : ""}.`,
+      `Also ${verb} ${stepName(step)}${clause ? `, which ${clause}` : ""}.`,
     ]
   })
+}
+
+/** A requirement by name, with its publisher where a document publishes
+ * it: "Training 3, published by Substrate (substrate.reamde.dev)". */
+function stepName(step: AuthorizationPackageStep): string {
+  const name = packageName(step.id)
+  if (!step.publisher) return name
+  const version = step.shipped ? ` ${step.shipped}` : ""
+  return `${name}${version}, published by ${publisherWords(step.publisher)}`
 }
 
 function count(n: number, one: string, many: string): string {
@@ -180,10 +223,11 @@ export function factCounts(facts: PackageFacts): string | undefined {
 
 /** The versions an everyday package row names: where an update goes from
  * and to, or what an install brings. A blocked row's problem says its
- * versions itself. */
+ * versions itself, and a document-published row's `publishedWords` names
+ * them with the publisher. */
 export function versionWords(row: AuthorizationSetup): string | undefined {
   const pkg = row.package
-  if (!pkg || row.blocked || !pkg.shipped) return undefined
+  if (!pkg || row.blocked || !pkg.shipped || pkg.publisher) return undefined
   if (row.action === "upgrade" && pkg.held)
     return `From version ${pkg.held} to ${pkg.shipped}`
   if (row.action === "install" || row.action === "upgrade")
@@ -234,6 +278,7 @@ export function blockRemedy(block: AuthorizationBlock): BlockRemedy {
     case "account-deleted":
       return "wait"
     case "not-shipped":
+    case "not-published":
     case "not-requested":
     case "unsupported":
       return "elsewhere"

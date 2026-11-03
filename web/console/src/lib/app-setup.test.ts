@@ -27,6 +27,9 @@ import {
   propertyLabel,
   propertyValue,
   reauthorizationHeading,
+  keptWords,
+  packagePage,
+  publishedWords,
   setupTitle,
   splitByPrevious,
   stillHeld,
@@ -269,6 +272,7 @@ describe("a blocked row", () => {
     expect(blockRemedy(block("account-deleted"))).toBe("wait")
     for (const reason of [
       "not-shipped",
+      "not-published",
       "not-requested",
       "unsupported",
     ] as const)
@@ -616,5 +620,94 @@ describe("consolePath", () => {
     expect(consolePath("/\\evil.example.com")).toBeUndefined()
     expect(consolePath("https://evil.example.com")).toBeUndefined()
     expect(consolePath(undefined)).toBeUndefined()
+  })
+})
+
+// Decision 0214: a package an authority document publishes names its
+// publisher and the version approving installs; what approving installs
+// stays after the app is revoked, and the row names the page it is paused
+// from.
+describe("a document-published package", () => {
+  const publisher = {
+    authority: "substrate.reamde.dev",
+    name: "Substrate",
+    documentUrl:
+      "https://substrate.reamde.dev/.well-known/substrate/authority.json",
+  }
+  const training: AuthorizationSetup = {
+    type: "package",
+    action: "install",
+    package: {
+      id: "substrate.reamde.dev/training",
+      required: 2,
+      shipped: 3,
+      publisher,
+    },
+  }
+  it("says what it installs and who publishes it", () => {
+    expect(publishedWords(training)).toBe(
+      "Installs Training 3, published by Substrate (substrate.reamde.dev)"
+    )
+    expect(
+      publishedWords({
+        ...training,
+        action: "upgrade",
+        package: { ...training.package!, held: 2 },
+      })
+    ).toBe(
+      "Updates Training from version 2 to 3, published by Substrate (substrate.reamde.dev)"
+    )
+    expect(publishedWords({ ...training, action: "none" })).toBe(
+      "Published by Substrate (substrate.reamde.dev)"
+    )
+    expect(
+      publishedWords({
+        ...training,
+        package: {
+          ...training.package!,
+          publisher: { ...publisher, name: undefined },
+        },
+      })
+    ).toBe("Installs Training 3, published by substrate.reamde.dev")
+    expect(versionWords(training)).toBeUndefined()
+    expect(publishedWords(HEALTH)).toBeUndefined()
+  })
+
+  it("says it stays after a revoke and names the page it is paused from", () => {
+    expect(keptWords(training)).toBe(
+      "Training stays on your server after you revoke the app. Pause or remove it from its page in the console."
+    )
+    expect(keptWords(HEALTH)).toBe(
+      "Apple Health stays on your server after you revoke the app. Pause or remove it from its page in the console."
+    )
+    expect(keptWords({ ...training, action: "none" })).toBeUndefined()
+    expect(
+      keptWords({ ...training, blocked: block("not-published") })
+    ).toBeUndefined()
+    expect(keptWords(ACCOUNT)).toBeUndefined()
+    expect(packagePage("substrate.reamde.dev/training")).toBe(
+      "/providers/substrate.reamde.dev/training"
+    )
+  })
+
+  it("names a published requirement with its publisher", () => {
+    expect(
+      chainLines({
+        id: "substrate.reamde.dev/trainingcoach",
+        required: 1,
+        requires: [
+          {
+            id: "substrate.reamde.dev/training",
+            action: "install",
+            shipped: 3,
+            publisher,
+          },
+          { id: "substrate.reamde.dev/health", action: "install", shipped: 4 },
+        ],
+      })
+    ).toEqual([
+      "Also installs Training 3, published by Substrate (substrate.reamde.dev).",
+      "Also installs Health.",
+    ])
   })
 })

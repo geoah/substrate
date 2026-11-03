@@ -313,7 +313,6 @@ function labelled(
  * package's and one kind or agent, with and without the kinds it reaches. */
 const SENTENCE_CASES: Omit<SentenceCase, "sentence">[] = [
   { scope: "read:*", kinds: [] },
-  { scope: "declare:ada.example.com/training", kinds: [] },
   {
     scope: "read:ada.example.com/*",
     kinds: [
