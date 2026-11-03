@@ -46,6 +46,12 @@ let manifest = AppManifest(
                  "providers.substrate.reamde.dev/applehealth/export": KindLabel(singular: "Delivery", plural: "Deliveries")])
 ```
 
+`softwareVersion` is this build's version, the bundle's short version and
+build number unless the app names one: it goes on the authorization request
+as `software_version` and in the set up check as `softwareVersion`, and the
+server records it on the token with the floors of the `package` details, so
+an upgrade that would break a connected build is held while it is
+connected (decision record 0213).
 `kindLabels` carries the labels (and a purpose other than `primary`) the
 kinds the app names declare, so a scope over one reads as the approval page
 words it ("See your Apple Health deliveries"), not as the word built from the
@@ -139,8 +145,12 @@ try await client.deliver(authority: session.repository, trigger: "applehealth-we
 
 **Still set up.** At launch and on return to the foreground, at most every
 few minutes, `AppStatusCheck` reads discovery and the metadata, posts the
-app's request to `/api/v1/authorizations/check` (its `scope` and its
-`details`), and reads when the access ends. A server whose metadata lists no
+app's request to `/api/v1/authorizations/check` (its `scope`, its `details`
+and its `softwareVersion`), and reads when the access ends. A `package`
+detail whose floor is above the version the repository holds has the server
+upgrade the package from its publisher's document at once, where the upgrade
+adds kinds alone; one that changes code waits for the owner, which the
+check's issues say. A server whose metadata lists no
 detail types has no check, and is not asked. Its issues, any number at once,
 are a server too old, an approval needed (with each change in the console's
 words), access ending soon (within a week, or a quarter of the approved

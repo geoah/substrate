@@ -2,10 +2,10 @@ import Foundation
 
 /// What an app token may do, from its scopes, matched as the server matches
 /// them (internal/scope): `read:` and `write:` over kinds, `write` including
-/// read; `agents:` and `decide:` over agent ids; `webhook:` one trigger. A
-/// glob never reaches an internal kind, no scope reaches the auth kinds,
-/// and none writes core or llm. `full` (decision 0204) is all of it: the
-/// server minted a token without scopes.
+/// read; `agents:` and `decide:` over agent ids; `call:` over function ids;
+/// `webhook:` one trigger. A glob never reaches an internal kind, no scope
+/// reaches the auth kinds, and none writes core or llm. `full` (decision
+/// 0204) is all of it: the server minted a token without scopes.
 public struct Grants: Codable, Hashable, Sendable {
     public var scopes: [String]
 
@@ -48,12 +48,40 @@ public struct Grants: Codable, Hashable, Sendable {
     /// proposes.
     public func decides(_ agent: String) -> Bool { full || matchesAgent("decide", agent) }
 
+    /// Whether the grant calls the function whose record id is `function`
+    /// (decision 0219). The function also reaches only what the grant's
+    /// reads and writes cover, which the server holds and this does not.
+    public func calls(_ function: String) -> Bool { full || matchesAgent("call", function) }
+
     /// Whether the grant delivers to the webhook trigger `trigger` and reads
     /// its parked deliveries. Never under `full`: the webhook door reads a
     /// full-access bearer as the trigger's key, which it is not.
     public func delivers(_ trigger: String) -> Bool {
         !trigger.isEmpty && parsed.contains { $0.verb == "webhook" && $0.pattern == trigger }
     }
+
+    /// Whether the grant already holds what `scope` asks for, as the server
+    /// decides it (internal/scope's Covers): a scope of the same verb, or a
+    /// write for a read, over a pattern at least as wide. `internal` is
+    /// whether the scope names one kind whose declared purpose is `internal`,
+    /// which a glob never reaches, so only the exact scope covers it. A
+    /// webhook scope covers its own trigger alone. `full` covers everything.
+    public func covers(_ scope: String, internal internalKind: Bool = false) -> Bool {
+        if full { return true }
+        let want = ScopeWords.split(scope)
+        return parsed.contains { held in
+            guard held.verb == want.verb || (held.verb == "write" && want.verb == "read") else { return false }
+            if held.pattern == want.pattern { return true }
+            if want.verb == "webhook" || !Self.isGlob(held.pattern) { return false }
+            if Self.isGlob(want.pattern) { return Self.globPrefix(want.pattern).hasPrefix(Self.globPrefix(held.pattern)) }
+            if internalKind, want.verb == "read" || want.verb == "write" { return false }
+            return Self.matchesGlob(held.pattern, want.pattern)
+        }
+    }
+
+    /// What every name a glob matches starts with: nothing for `*`, and the
+    /// pattern up to its `*` otherwise.
+    static func globPrefix(_ glob: String) -> String { glob.hasSuffix("*") ? String(glob.dropLast()) : glob }
 
     /// Whether the grant holds any `agents:` scope.
     public var talks: Bool { full || parsed.contains { $0.verb == "agents" } }
@@ -109,10 +137,12 @@ public struct ScopeKind: Hashable, Sendable {
 
 /// A scope as the sentence the console's approval page shows beside its
 /// checkbox (web/console's app-scopes.ts, whose words this mirrors): what the
-/// app may do, over the kinds or agents it reaches, by their labels. Every
-/// power stays in the words: a write may delete, a glob reaches what is
-/// added later, talking to an agent reaches whatever the agent may do and
-/// reads every chat with it, and a decision may edit the change it applies.
+/// app may do, over the kinds, agents or functions it reaches, by their
+/// labels. Every power stays in the words: a write may delete, a glob
+/// reaches what is added later, talking to an agent reaches whatever the
+/// agent may do and reads every chat with it, a decision may edit the change
+/// it applies, and a call runs code within what the rest of the access
+/// reaches.
 public enum ScopeWords {
     /// How many kind labels one sentence names before it counts the rest.
     static let maxLabels = 6
@@ -144,8 +174,8 @@ public enum ScopeWords {
         case "decide":
             let later = glob ? ", including agents added later" : ""
             return "Apply or dismiss the changes \(agentsPhrase(shape, pattern, agents)) \(glob ? "suggest" : "suggests")\(later), and edit one before applying it, as you"
-        case "declare":
-            return declareSentence(package: pattern)
+        case "call":
+            return callSentence(shape, pattern)
         case "webhook":
             return webhookSentence(trigger: pattern, packageName: packageName)
         case full:
@@ -155,16 +185,18 @@ public enum ScopeWords {
         }
     }
 
-    /// What a `declare:` scope lets the app do with one package of the
-    /// owner's own (decision 0203): install it and add to it, never remove
-    /// what it holds or declare code. The app owns the package's kinds from
-    /// then on, and the owner edits them only by taking it over (decision
-    /// 0205), which the sentence says too.
-    public static func declareSentence(package: String) -> String {
-        let parts = package.split(separator: "/")
-        let name = packageDisplayName(parts.count == 2 ? String(parts[1]) : package)
-        return "Install your \(name) package and add to it as the app changes; it can\u{2019}t remove a kind, property or value the package holds, or add code. "
-            + "The app will own these kinds: you can\u{2019}t edit them unless you take them over, and their records stay yours"
+    /// What a `call:` scope lets the app do (decision 0219): run the
+    /// functions it names, each held to what the app's reads and writes
+    /// already reach, so the sentence says that the call adds no reach of
+    /// its own.
+    static func callSentence(_ shape: Shape, _ pattern: String) -> String {
+        let within = "with no more access than this app already has"
+        switch shape {
+        case .all: return "Run all your functions, including functions added later, \(within)"
+        case .authority(let authority): return "Run the functions from \(authority), including functions added later, \(within)"
+        case .package(_, let package): return "Run the functions in \(packageDisplayName(package)), including functions added later, \(within)"
+        case .exact: return "Run the function \(agentWords(pattern)), \(within)"
+        }
     }
 
     /// The one scope with no pattern, asked for alone.
