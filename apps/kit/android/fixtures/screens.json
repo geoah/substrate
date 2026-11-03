@@ -3354,6 +3354,169 @@
     }
   },
   {
+    "name": "settings-storage",
+    "presentation": {
+      "settings": {
+        "_0": {
+          "sections": [
+            {
+              "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+              "id": {
+                "storage": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "2.4 KB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "outbox"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Waiting to be sent"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "1.8 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "records"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Saved records"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "12.3 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "area": {
+                          "_0": "cache"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Saved copies"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "14.1 MB of 100 MB",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "total": {}
+                      }
+                    }
+                  },
+                  "label": "Total"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": true,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "storage": {
+                      "_0": {
+                        "clear": {}
+                      }
+                    }
+                  },
+                  "label": "Clear Saved Copies"
+                }
+              ],
+              "title": "Storage"
+            },
+            {
+              "id": {
+                "about": {}
+              },
+              "rows": [
+                {
+                  "control": {
+                    "value": {
+                      "_0": "0.120.0-pre.20261103.090000+ac85863e",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "version": {}
+                      }
+                    }
+                  },
+                  "label": "Version"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "Pre-release",
+                      "verbatim": false
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "channel": {}
+                      }
+                    }
+                  },
+                  "label": "Channel"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "check": {}
+                      }
+                    }
+                  },
+                  "label": "Check for Updates"
+                }
+              ],
+              "title": "About"
+            }
+          ],
+          "title": "Settings"
+        }
+      }
+    }
+  },
+  {
     "name": "problem-signed-out",
     "presentation": {
       "problem": {

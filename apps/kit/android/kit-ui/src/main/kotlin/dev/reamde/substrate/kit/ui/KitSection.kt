@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -17,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 
 /**
  * One section of a settings screen, as a grouped form's section is on an
@@ -116,7 +118,9 @@ public fun Modifier.clickableRow(onClick: () -> Unit): Modifier = clickable(onCl
 
 /**
  * A row's value: in the body's size, secondary; an identifier in a
- * monospaced face a size down, so a long one wraps rarely.
+ * monospaced face a size down, so a long one wraps rarely. At a row's end it
+ * wraps within at most two thirds of the row, as a grouped form's value
+ * does, so a long one never squeezes its label to a letter a line.
  */
 @Composable
 public fun KitValueText(value: String, verbatim: Boolean = false, textAlign: TextAlign = TextAlign.End) {
@@ -126,5 +130,6 @@ public fun KitValueText(value: String, verbatim: Boolean = false, textAlign: Tex
         fontFamily = if (verbatim) FontFamily.Monospace else null,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = textAlign,
+        modifier = if (textAlign == TextAlign.End) Modifier.widthIn(max = 220.dp) else Modifier,
     )
 }
