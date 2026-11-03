@@ -57,6 +57,12 @@ func newPublishingCatalog(t *testing.T, cat *catalog.Catalog) *publishingCatalog
 	})}
 }
 
+// ResolveFor answers as Resolve: the own-authority refusal is the
+// catalog's, and its own tests hold it.
+func (c *publishingCatalog) ResolveFor(ctx context.Context, id string, atLeast int64, _ substrate.Dataset) (*catalog.Bundle, error) {
+	return c.Resolve(ctx, id, atLeast)
+}
+
 func (c *publishingCatalog) Resolve(_ context.Context, id string, atLeast int64) (*catalog.Bundle, error) {
 	if b, ok := c.Catalog.ByID(id); ok {
 		return b, nil
@@ -84,11 +90,11 @@ type refreshes struct {
 	err   error
 }
 
-func (r *refreshes) RefreshPackage(_ context.Context, ds substrate.Dataset, id string) error {
+func (r *refreshes) RefreshPackage(_ context.Context, ds substrate.Dataset, id string) (catalog.RefreshResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.asked = append(r.asked, ds.Repository().Authority+" "+id)
-	return r.err
+	return catalog.RefreshResult{ID: id, Outcome: "current"}, r.err
 }
 
 func (r *refreshes) list() []string {

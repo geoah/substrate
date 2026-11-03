@@ -66,7 +66,7 @@ func (c *Catalog) Resolve(ctx context.Context, id string, atLeast int64) (*Bundl
 		return nil, fmt.Errorf("%w: %s must be shipped by this server", ErrNotPublished, id)
 	}
 	if c.reader == nil {
-		return nil, fmt.Errorf("%w: %s has no authority document reader", ErrNotPublished, id)
+		return nil, fmt.Errorf("%w: %s is not in this server's catalog", ErrNotPublished, id)
 	}
 	source, err := c.reader.Read(ctx, a, false)
 	if err != nil {

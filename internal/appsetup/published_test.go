@@ -38,6 +38,12 @@ type publishing struct {
 	previews map[string]*substrate.BundleUpgrade
 }
 
+// ResolveFor answers as Resolve: the own-authority refusal is the
+// catalog's, and its own tests hold it.
+func (c *publishing) ResolveFor(ctx context.Context, id string, atLeast int64, _ substrate.Dataset) (*catalog.Bundle, error) {
+	return c.Resolve(ctx, id, atLeast)
+}
+
 func (c *publishing) Resolve(_ context.Context, id string, atLeast int64) (*catalog.Bundle, error) {
 	if b, ok := c.Catalog.ByID(id); ok {
 		return b, nil

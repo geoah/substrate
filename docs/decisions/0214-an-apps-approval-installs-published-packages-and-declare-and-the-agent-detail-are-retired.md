@@ -78,6 +78,12 @@ The rules this binds:
   is covered by a read or write scope at least as wide, an `internal` kind
   or one the repository lacks by its exact scope alone. An agent is no
   channel to data the caller could not read itself.
+- **A check sees a package through any scope that reaches into it.** The
+  set up check tells a token a package's versions where one of its scopes
+  names the package: a read or write over its kinds, as 0202 had it, and
+  now an `agents:` or `decide:` scope over its agents, so a package of
+  agents alone (Workouts' coach) is not `unknown` to the app that talks to
+  it.
 - **A build says its version.** `/oauth/authorize` reads an optional
   `software_version` (RFC 7591's name), at most 64 printable characters;
   the token the approval mints records it with the floor of each package

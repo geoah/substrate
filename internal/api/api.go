@@ -204,11 +204,7 @@ func New(cfg Config) http.Handler {
 		h.packages = cfg.Catalog
 	}
 	if h.refresher == nil && cfg.Catalog != nil {
-		// The catalog refreshes once it reads authority documents; a build
-		// whose catalog does not is a server whose checks refresh nothing.
-		if r, ok := any(cfg.Catalog).(packageRefresher); ok {
-			h.refresher = r
-		}
+		h.refresher = cfg.Catalog
 	}
 	h.setups = appsetup.NewRunner(h.packages)
 	if h.fetcher == nil {
