@@ -171,6 +171,9 @@ func (t *txn) writeSubject(src eref, property string, target eref) error {
 // whether the source PARKED on an ambiguous probe, so the caller can mark it
 // once the row is stored (ambiguous.go).
 func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (set, parked bool, err error) {
+	if err := t.admitOutsideMapping(m.Package); err != nil {
+		return false, false, err
+	}
 	if err := t.lockRecord(sp.ref()); err != nil {
 		return false, false, err
 	}
@@ -1425,6 +1428,9 @@ func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 // when the write was a no-op re-sync — and because recompute itself flows
 // through the ordinary write path, an unchanged recompute writes nothing.
 func (t *txn) recomputeSubjectOf(src eref, m *vocabulary.Mapping) error {
+	if err := t.admitOutsideMapping(m.Package); err != nil {
+		return err
+	}
 	target, err := t.subjectTargetOf(src, m.Property)
 	if err != nil || target.ID == "" {
 		return err

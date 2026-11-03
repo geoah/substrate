@@ -153,6 +153,9 @@ func underLifecycleLease(ctx context.Context) bool {
 // Either way the callee's bundle lifecycle is verified while the fence is
 // held. A callable outside any bundle admits with a no-op release.
 func (ds *dataset) admitCallable(ctx context.Context, authority, identity string) (context.Context, func(), error) {
+	if err := ds.admitOutsidePackage(ctx, authority); err != nil {
+		return ctx, nil, err
+	}
 	if underLifecycleLease(ctx) {
 		// Nested: the root already holds the fence. Re-check under it — the
 		// callee's bundle may have been disabled BEFORE the root admitted —

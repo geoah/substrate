@@ -175,7 +175,7 @@ func (c *Confiner) wrap(cmd *exec.Cmd, p Policy) error {
 		p.ReadExec, p.ReadOnly, p.ReadWrite = nil, nil, nil
 	}
 	// enforce means the CHILD refuses too, not just the boot probe.
-	p.Require = c.mode == ModeEnforce
+	p.Require = c.mode == ModeEnforce || (p.Outside && !p.UnconfinedOutside)
 	// The connect gate needs a live seccomp layer to install its notify filter.
 	// Without seccomp there is nothing to service, so drop it rather than set up
 	// a socket the stub can never send on (which would hang Serve). Under
@@ -193,7 +193,19 @@ func (c *Confiner) wrap(cmd *exec.Cmd, p Policy) error {
 		// The child's descriptor number after os/exec dups the ExtraFiles in.
 		p.NotifyFD = 3 + len(cmd.ExtraFiles)
 		cmd.ExtraFiles = append(cmd.ExtraFiles, child)
-		c.pending.Store(cmd, &pendingGate{parent: parent, child: child})
+		var proxy *hostProxy
+		if p.Outside {
+			proxy, err = newHostProxy(p.Hosts)
+			if err != nil {
+				_ = parent.Close()
+				_ = child.Close()
+				return err
+			}
+			p.ProxyAddress = proxy.listener.Addr().String()
+			endpoint := "http://" + p.ProxyAddress
+			cmd.Env = append(cmd.Env, "HTTP_PROXY="+endpoint, "HTTPS_PROXY="+endpoint, "http_proxy="+endpoint, "https_proxy="+endpoint, "NO_PROXY=", "no_proxy=")
+		}
+		c.pending.Store(cmd, &pendingGate{parent: parent, child: child, proxy: proxy, address: p.ProxyAddress})
 	} else {
 		p.NotifyConnect = false
 	}

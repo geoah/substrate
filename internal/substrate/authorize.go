@@ -196,12 +196,13 @@ type AuthorizationBlock struct {
 // Shipped alone, and ID and Required alone for a row it cannot see. A
 // client names a package from its ID; the catalog carries no other name.
 type AuthorizationPackage struct {
-	ID          string `json:"id"`
-	Description string `json:"description,omitempty"`
-	Tier        string `json:"tier,omitempty"`
-	Required    int64  `json:"required"`
-	Held        int64  `json:"held,omitempty"`
-	Shipped     int64  `json:"shipped,omitempty"`
+	OAuthHosts  []string `json:"oauthHosts,omitempty"`
+	ID          string   `json:"id"`
+	Description string   `json:"description,omitempty"`
+	Tier        string   `json:"tier,omitempty"`
+	Required    int64    `json:"required"`
+	Held        int64    `json:"held,omitempty"`
+	Shipped     int64    `json:"shipped,omitempty"`
 	// Requires is the requirement chain an install brings first, each with
 	// its own action and its own facts, in the order they land. Kinds,
 	// Functions and Triggers are this package's own.
@@ -230,6 +231,7 @@ type AuthorizationPackagePublisher struct {
 // what it brings of its own. Blocked is present when it cannot be installed
 // or upgraded, which blocks the row that requires it.
 type AuthorizationPackageStep struct {
+	OAuthHosts  []string                `json:"oauthHosts,omitempty"`
 	ID          string                  `json:"id"`
 	Description string                  `json:"description,omitempty"`
 	Action      string                  `json:"action"`

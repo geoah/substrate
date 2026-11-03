@@ -1154,6 +1154,7 @@ export interface AuthorizationBlock {
  * absent when none; `required` the floor the app asks for. A client names a
  * package from its `id`. */
 export interface AuthorizationPackage {
+  oauthHosts?: string[]
   id: string
   description?: string
   tier?: string
@@ -1186,6 +1187,7 @@ export interface AuthorizationPackagePublisher {
  * `blocked` is present when it cannot be installed or upgraded, which blocks
  * the row that requires it. */
 export interface AuthorizationPackageStep {
+  oauthHosts?: string[]
   id: string
   description?: string
   action: SetupAction
@@ -1639,7 +1641,14 @@ export interface ConversionConfirm {
  * would refuse on, and the conversion plan it would run. The upgrade verb IS
  * the door's verb (install for a provider, import for a sample); this is its
  * preview. */
+export interface BundleCodeChange {
+  kind: string
+  id: string
+  diff: string
+}
+
 export interface BundleUpgrade extends ConversionPlan {
+  codeChanges?: BundleCodeChange[]
   available: boolean
   /** Stored and shipped versions of the bundle's owned package; absent
    * (0 is omitted on the wire) where none is stored. */
@@ -1691,6 +1700,7 @@ export type CatalogTier = "provider" | "sample"
  * `installed` and `upgrade`, which the API adds around it, live on
  * CatalogItem instead. */
 export interface CatalogBundle {
+  oauthHosts?: string[]
   /** The bundle's id — the PACKAGE identity it owns
    * (`providers.substrate.reamde.dev/google`), matching BundleStatus.id once
    * installed. A SAMPLE lands under this repository's authority, so its

@@ -99,6 +99,7 @@ import type {
   BundleUninstalled,
   BundleUpgrade,
   BundleUpgradeChange,
+  BundleCodeChange,
   CatalogBundle,
   CatalogInput,
   CatalogItem,
@@ -743,6 +744,7 @@ const authorizationBlock: Shape<AuthorizationBlock> = {
 }
 
 const authorizationPackage: Shape<AuthorizationPackage> = {
+  oauthHosts: false,
   id: true,
   description: false,
   tier: false,
@@ -764,6 +766,7 @@ const authorizationPackagePublisher: Shape<AuthorizationPackagePublisher> = {
 }
 
 const authorizationPackageStep: Shape<AuthorizationPackageStep> = {
+  oauthHosts: false,
   id: true,
   description: false,
   action: true,
@@ -933,6 +936,7 @@ const agentEvent: Shape<AgentEvent> = {
 
 /** The catalog entry and the shapes nested in it. */
 const catalogBundle: Shape<CatalogBundle> = {
+  oauthHosts: false,
   id: true,
   name: true,
   authority: true,
@@ -1059,6 +1063,7 @@ const conversionConfirm: Shape<ConversionConfirm> = {
 
 /** The upgrade preview, on a catalog entry and on the shipped-upgrade read. */
 const bundleUpgrade: Shape<BundleUpgrade> = {
+  codeChanges: false,
   ...conversionPlan,
   available: true,
   from: false,
@@ -1072,6 +1077,12 @@ const vocabularyPlan: Shape<VocabularyPlan> = {
   ...conversionPlan,
   blockers: false,
   discardsEdits: false,
+}
+
+const bundleCodeChange: Shape<BundleCodeChange> = {
+  kind: true,
+  id: true,
+  diff: true,
 }
 
 const bundleUpgradeChange: Shape<BundleUpgradeChange> = {
@@ -1313,6 +1324,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   SetupItem: setupItem,
   BundleUpgrade: bundleUpgrade,
   BundleUpgradeChange: bundleUpgradeChange,
+  BundleCodeChange: bundleCodeChange,
   ConversionPlan: conversionPlan,
   ConversionStep: conversionStep,
   ConversionConfirm: conversionConfirm,

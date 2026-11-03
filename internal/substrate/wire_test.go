@@ -202,6 +202,7 @@ var wireTypes = map[string]any{
 	"SuggestedMapping": SuggestedMapping{},
 	// The upgrade preview: a catalog entry carries one for an installed
 	// provider. The Registry renders the motion and the blockers.
+	"BundleCodeChange":    BundleCodeChange{},
 	"BundleUpgrade":       BundleUpgrade{},
 	"BundleUpgradeChange": BundleUpgradeChange{},
 	// The conversion plan every upgrade preview carries flattened, the step it

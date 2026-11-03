@@ -62,6 +62,9 @@ import (
 // Spec is one function body as the runner needs it, flattened off the
 // manifest so this package needs no registry.
 type Spec struct {
+	Outside           bool
+	UnconfinedOutside bool
+	Refusal           error
 	// Repository and Function pin the INSTALLATION identity: live runner state
 	// (an interpreter and its module namespace) never crosses repositories or
 	// functions, even for byte-identical source.
@@ -92,14 +95,9 @@ type Spec struct {
 	// joined. The engine tells the two apart. Empty means every sub-call
 	// trips.
 	CallTargets []string
-	// Network is the `permissions.network` declaration. Its CONTENT (the
-	// host patterns) is still only documentation, but its EMPTINESS gates the
-	// coarse layer: a body that declares no egress is denied AF_INET and
-	// AF_INET6 sockets by the sandbox's seccomp filter. A body that declares
-	// egress additionally has its connect destinations filtered, so it reaches
-	// the internet but not the deployment's own private ranges
-	// (0035-a-network-body-connect-is-filtered-by-destination). Holding it to
-	// the declared host PATTERNS is not done yet.
+	// Network is the declared egress. Empty denies internet sockets. Outside
+	// bodies reach only these hosts through their per-body proxy; binary-shipped
+	// bodies retain the deployment-address rules.
 	Network []string
 	// Modules are the SHARED bundle library modules this function's bundle
 	// ships, filename → source. The `.py` files land on a bundle-scoped
@@ -130,6 +128,12 @@ func (s Spec) Key() string {
 func (s Spec) contentHash() string {
 	h := sha256.New()
 	h.Write([]byte(s.Runtime + "\x00" + s.Source))
+	if s.Outside {
+		h.Write([]byte("outside:" + strings.Join(s.Network, "\x00")))
+		if s.UnconfinedOutside {
+			h.Write([]byte("unconfined"))
+		}
+	}
 	for _, name := range sortedKeys(s.Modules) {
 		h.Write([]byte{0})
 		h.Write([]byte(name + "\x00" + s.Modules[name]))
@@ -256,6 +260,9 @@ func (r *Runner) Sandbox() *sandbox.Confiner { return r.sandbox }
 // surface to the caller, which is what lets schema admission fail on a body
 // that cannot compile or load.
 func (r *Runner) Warm(ctx context.Context, spec Spec) error {
+	if spec.Refusal != nil {
+		return spec.Refusal
+	}
 	switch spec.Runtime {
 	case vocabulary.RuntimePython:
 		// Provision at registration, where a slow cold uv resolve belongs,
@@ -320,6 +327,9 @@ func (r *Runner) Reconcile(_ context.Context, repository string, live []Spec) {
 // error even when the body swallowed the failed read — after a trip, nothing
 // applies.
 func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backend) (*Result, error) {
+	if spec.Refusal != nil {
+		return nil, spec.Refusal
+	}
 	if spec.ReadCalls > 0 || spec.ReadRows > 0 {
 		in.Budgets = &Budgets{Calls: spec.ReadCalls, Rows: spec.ReadRows}
 	}
@@ -397,6 +407,9 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 
 // proc returns the live process for one installation, starting it if needed.
 func (r *Runner) proc(ctx context.Context, spec Spec) (*proc, error) {
+	if spec.Refusal != nil {
+		return nil, spec.Refusal
+	}
 	switch spec.Runtime {
 	case vocabulary.RuntimePython:
 		// One process per installation, serving this body alone: a nested Call
@@ -669,6 +682,7 @@ func (r *Runner) startCmd(cmd *exec.Cmd, policy sandbox.Policy) (*proc, error) {
 	}
 	p, err := startCmd(cmd)
 	if err != nil {
+		r.sandbox.Cancel(cmd)
 		return nil, err
 	}
 	// Serve the connect gate, if the policy declared network. It must run after
@@ -691,6 +705,7 @@ func (r *Runner) startCmd(cmd *exec.Cmd, policy sandbox.Policy) (*proc, error) {
 // cmd.Stdout/Stderr before calling.
 func (r *Runner) runGatedCmd(cmd *exec.Cmd) error {
 	if err := cmd.Start(); err != nil {
+		r.sandbox.Cancel(cmd)
 		return err
 	}
 	gate, err := r.sandbox.Serve(cmd)

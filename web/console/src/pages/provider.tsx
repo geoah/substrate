@@ -1,3 +1,4 @@
+import { OAuthHosts } from "@/components/packages/outside-code"
 /** One provider (`/providers/$authority/$pkg`; a provider is a bundle, and
  * a bundle's id is its package). The page a person finishes setting a
  * provider up on and comes back to: its state, the four set-up steps with
@@ -363,6 +364,7 @@ function ProviderDoc({
         catalog={row.catalog}
         installed={installed}
       />
+      <OAuthHosts hosts={row.catalog?.oauthHosts} />
       <ProviderTools catalog={row.catalog} installed={installed} />
       {installed && <RecentActivity bundleId={row.id} name={info.name} />}
 
@@ -516,6 +518,7 @@ function PackageDoc({
         installed={status.installed}
         title="What it adds"
       />
+      <OAuthHosts hosts={row.catalog?.oauthHosts} />
       <ProviderTools catalog={row.catalog} installed={status.installed} />
       <Requirements chain={data.chains(row)} />
     </DocPage>

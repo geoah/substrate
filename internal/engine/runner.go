@@ -157,6 +157,9 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 		return nil, nil, nil, fmt.Errorf("substrate/engine: host function %s reached the runner — the engine is its body, and every caller branches before this",
 			fn.Identity())
 	}
+	if err := ds.admitOutsidePackage(ctx, fn.Package); err != nil {
+		return nil, nil, nil, err
+	}
 	origin := callOriginOf(ctx)
 	if slices.Contains(origin.stack, fn.Identity()) {
 		return nil, nil, nil, fmt.Errorf("call: %s is already on the call stack: recursion is refused", fn.Identity())
@@ -197,7 +200,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	res, err := func() (*runner.Result, error) {
 		ds.svc.invocationStarted()
 		defer ds.svc.invocationEnded()
-		return runner.Shared.Invoke(ctx, ds.runnerSpec(fn), in, backend)
+		return runner.Shared.Invoke(ctx, ds.outsideSpec(ctx, ds.runnerSpec(fn), fn.Package), in, backend)
 	}()
 	if err != nil {
 		err = inv.scrub.err(fmt.Errorf("run: %w", err))
@@ -495,7 +498,7 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 		b.inv.effects = b.inv.effects[:mark]
 		return nil, err
 	}
-	res, err := runner.Shared.Invoke(ctx, ds.runnerSpec(target), runner.Input{
+	res, err := runner.Shared.Invoke(ctx, ds.outsideSpec(ctx, ds.runnerSpec(target), target.Package), runner.Input{
 		Mode:           runner.ModeCall,
 		Args:           args,
 		Config:         cfg,
@@ -1011,7 +1014,7 @@ func (ds *dataset) prepareFunctions(ctx context.Context, reg *vocabulary.Registr
 			return fmt.Errorf("%w: function preparation exceeded the %s admission budget before %s",
 				substrate.ErrValidation, prepareBatchBudget, fn.Identity())
 		}
-		if err := runner.Shared.Warm(ctx, ds.runnerSpecIn(fn, reg)); err != nil {
+		if err := runner.Shared.Warm(ctx, ds.outsideSpec(ctx, ds.runnerSpecIn(fn, reg), fn.Package)); err != nil {
 			return fmt.Errorf("%w: function %s: body failed to prepare: %w",
 				substrate.ErrValidation, fn.Identity(), err)
 		}
@@ -1031,7 +1034,7 @@ func (ds *dataset) warmFunctions() {
 	}
 	ds.spawn("warm functions", func(ctx context.Context) {
 		for _, fn := range fns {
-			if err := runner.Shared.Warm(ctx, ds.runnerSpec(fn)); err != nil {
+			if err := runner.Shared.Warm(ctx, ds.outsideSpec(ctx, ds.runnerSpec(fn), fn.Package)); err != nil {
 				// A canceled context is the shutdown taking the warm down, not
 				// a body that no longer prepares: the next open runs it again.
 				if ctx.Err() != nil {
@@ -1059,7 +1062,7 @@ func (ds *dataset) reconcileRunner(ctx context.Context) {
 	fns := hostFunctionsRemoved(ds.registry().Functions())
 	live := make([]runner.Spec, 0, len(fns))
 	for _, fn := range fns {
-		live = append(live, ds.runnerSpec(fn))
+		live = append(live, ds.outsideSpec(ctx, ds.runnerSpec(fn), fn.Package))
 	}
 	runner.Shared.Reconcile(ctx, ds.Repository().ID, live)
 }

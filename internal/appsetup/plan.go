@@ -262,6 +262,7 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 	b := p.bundle(d.Package)
 	if b != nil {
 		info.Description, info.Tier, info.Shipped = b.Description, b.Tier, b.Version
+		info.OAuthHosts = slices.Clone(b.OAuthHosts)
 	}
 	// Installed or not: a package row admits the account and webhook rows of
 	// its package, which would otherwise reach the owner's own packages and
@@ -340,6 +341,7 @@ func (p *planner) chain(ctx context.Context, b *catalog.Bundle, steps []*catalog
 		}
 		if !actionOnly {
 			step.Kinds, step.Functions, step.Triggers = p.facts(dep)
+			step.OAuthHosts = slices.Clone(dep.OAuthHosts)
 		}
 		out = append(out, step)
 	}

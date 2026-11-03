@@ -77,6 +77,13 @@ type BundleStatus struct {
 	Modified bool `json:"modified,omitempty"`
 }
 
+// BundleCodeChange is the review evidence for one changed outside declaration.
+type BundleCodeChange struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	Diff string `json:"diff"`
+}
+
 // BundleUpgrade is what re-installing a bundle's SHIPPED closure over this
 // repository's stored declarations would do, computed on read and stored
 // nowhere. The install verb is already the upgrade (a bundle document
@@ -84,6 +91,7 @@ type BundleStatus struct {
 // preview, so the console can offer the upgrade, or explain why it would be
 // refused, before anyone asks for it.
 type BundleUpgrade struct {
+	CodeChanges []BundleCodeChange `json:"codeChanges,omitempty"`
 	// Available reports the shipped closure moves at least one stored
 	// declaration: a declaration this repository lacks, one whose shipped
 	// version is newer, or one the closure stopped shipping (which a
@@ -318,6 +326,9 @@ type OAuthStarted struct {
 // BundleInstall is what the caller decides about an install beyond the
 // documents themselves.
 type BundleInstall struct {
+	// PublishedFrom and PublishedDigest identify a document-published closure.
+	PublishedFrom   string
+	PublishedDigest string
 	// Published marks a PROVIDER install: the closure's packages land with
 	// `source: published`, and afterwards only a substrate path (an install,
 	// an upgrade) may write their declarations, the same refusal the seeded
