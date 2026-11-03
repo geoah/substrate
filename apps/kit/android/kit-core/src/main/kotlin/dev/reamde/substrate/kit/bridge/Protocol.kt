@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "2669d74c6efb8a14b9976fedfdc1d7a52c48e849444512ffb9dd42a8699ebe8b"
+    public const val VALUE: String = "231d079f734cc92c3cbab8b08a2c84d9d641f970bc46ab7b181de171d55a9dab"
 }
 
 /**
@@ -253,6 +253,12 @@ public data class BridgeStats(
 )
 
 @Serializable
+public data class BuildFacts(
+    val version: String,
+    val channel: String? = null,
+)
+
+@Serializable
 public data class ChangeLine(
     val id: String,
     val symbol: ScreenSymbol,
@@ -401,6 +407,15 @@ public enum class CheckTransport {
 }
 
 @Serializable
+public data class ConfirmationPresentation<Question>(
+    val question: Question,
+    val title: String,
+    val message: String,
+    val confirm: String,
+    val cancel: String,
+)
+
+@Serializable
 public data class ConnectPresentation(
     val field: ConnectPresentation.Field,
     val door: ConnectPresentation.Door,
@@ -523,6 +538,12 @@ public sealed interface DeviceRequest {
         ),
     )
 }
+
+@Serializable
+public data class EmptyPresentation(
+    val title: String,
+    val message: String,
+)
 
 @Serializable
 public data class Envelope(
@@ -723,6 +744,13 @@ public data class NetworkPath(
     val online: Boolean,
     val expensive: Boolean,
     val constrained: Boolean,
+)
+
+@Serializable
+public data class NoticeLine(
+    val text: String,
+    val symbol: ScreenSymbol,
+    val tone: ScreenTone,
 )
 
 @Serializable
@@ -1389,6 +1417,7 @@ public data class StatusPresentation(
     val busy: Boolean,
     val footer: String? = null,
     val refused: RefusedWrites? = null,
+    val notice: NoticeLine? = null,
 )
 
 @Serializable(with = TransportChunk.Serializer::class)
@@ -1657,6 +1686,7 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "BridgeFailure.Code" to BridgeFailure.Code.serializer(),
     "BridgeQuery" to BridgeQuery.Serializer,
     "BridgeStats" to BridgeStats.serializer(),
+    "BuildFacts" to BuildFacts.serializer(),
     "ChangeLine" to ChangeLine.serializer(),
     "CheckCommand" to CheckCommand.Serializer,
     "CheckPresentation" to CheckPresentation.serializer(),
@@ -1673,6 +1703,7 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "Counter.Presentation" to Counter.Presentation.serializer(),
     "DNSAnswer" to DNSAnswer.Serializer,
     "DeviceRequest" to DeviceRequest.Serializer,
+    "EmptyPresentation" to EmptyPresentation.serializer(),
     "Envelope" to Envelope.serializer(),
     "EnvironmentUpdate" to EnvironmentUpdate.serializer(),
     "FixturePresentation" to FixturePresentation.Serializer,
@@ -1690,6 +1721,7 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "ListMessage" to ListMessage.Serializer,
     "ListRow" to ListRow.serializer(),
     "NetworkPath" to NetworkPath.serializer(),
+    "NoticeLine" to NoticeLine.serializer(),
     "NotificationPermission" to NotificationPermission.serializer(),
     "NotificationRequest" to NotificationRequest.serializer(),
     "Op" to Op.serializer(),

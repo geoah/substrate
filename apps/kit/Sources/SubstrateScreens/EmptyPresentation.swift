@@ -1,5 +1,7 @@
+import SubstrateCore
+
 /// What a column shows with nothing in it: a title, and what fills it.
-public struct EmptyPresentation: Codable, Hashable, Sendable {
+public struct EmptyPresentation: Bridged, Hashable, Sendable {
     public var title: String
     public var message: String
 

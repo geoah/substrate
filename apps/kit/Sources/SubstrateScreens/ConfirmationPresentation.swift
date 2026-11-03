@@ -1,7 +1,9 @@
+import SubstrateCore
+
 /// A question the owner answers before something is given up, in its
 /// words: the app's own `question` it confirms, the title, what goes with
 /// it, and the two answers.
-public struct ConfirmationPresentation<Question: Codable & Hashable & Sendable>: Codable, Hashable, Sendable {
+public struct ConfirmationPresentation<Question: Codable & Hashable & Sendable>: Bridged, Hashable, Sendable {
     public var question: Question
     public var title: String
     public var message: String

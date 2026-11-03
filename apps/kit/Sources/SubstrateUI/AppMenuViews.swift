@@ -2,9 +2,11 @@
 import SubstrateScreens
 import SwiftUI
 
-/// The App menu (§5.6) as the window's width draws it: a tab per section on
-/// a phone, a split view on an iPad and a Mac. Both are drawn from the same
-/// presentation; which section is open is its `selected`, never the view's.
+/// The App menu (§5.6) as the window's width draws it, for an app whose wide
+/// layout is a split view of its own rather than `AppMenuView`'s sidebar of
+/// sections: the tabs (`AppMenuView` with `.tabs`) on a phone, the split
+/// view on an iPad and a Mac. Both are drawn from the same presentation;
+/// which section is open is its `selected`, never the view's.
 public struct AppMenuRoot<Tabs: View, Split: View>: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     let tabs: Tabs
@@ -17,37 +19,6 @@ public struct AppMenuRoot<Tabs: View, Split: View>: View {
 
     public var body: some View {
         if sizeClass == .compact { tabs } else { split }
-    }
-}
-
-/// A tab per section of the App menu, each with its badge, the selected one
-/// the presentation's; choosing another is a command.
-public struct AppMenuTabs<Content: View>: View {
-    let menu: AppMenuPresentation
-    let symbol: (String) -> String
-    let select: (String) -> Void
-    let content: (AppMenuSection) -> Content
-
-    /// - Parameter symbol: the SF Symbol for the app's name of a section's
-    ///   mark.
-    public init(_ menu: AppMenuPresentation, symbol: @escaping (String) -> String, select: @escaping (String) -> Void,
-                @ViewBuilder content: @escaping (AppMenuSection) -> Content)
-    {
-        self.menu = menu
-        self.symbol = symbol
-        self.select = select
-        self.content = content
-    }
-
-    public var body: some View {
-        TabView(selection: Binding(get: { menu.selected }, set: select)) {
-            ForEach(menu.sections) { section in
-                Tab(section.title, systemImage: symbol(section.symbol), value: section.id) {
-                    content(section)
-                }
-                .badge(section.badge ?? 0)
-            }
-        }
     }
 }
 

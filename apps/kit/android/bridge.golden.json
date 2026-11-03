@@ -180,6 +180,15 @@
       ]
     },
     {
+      "name": "BuildFacts",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "version", "type": "String"},
+        {"name": "channel", "type": "String?"}
+      ]
+    },
+    {
       "name": "ChangeLine",
       "module": "SubstrateScreens",
       "kind": "struct",
@@ -333,6 +342,19 @@
       "cases": [
         {"name": "bridge", "value": "bridge"},
         {"name": "urlSession", "value": "urlSession"}
+      ]
+    },
+    {
+      "name": "ConfirmationPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "parameters": ["Question"],
+      "fields": [
+        {"name": "question", "type": "Question"},
+        {"name": "title", "type": "String"},
+        {"name": "message", "type": "String"},
+        {"name": "confirm", "type": "String"},
+        {"name": "cancel", "type": "String"}
       ]
     },
     {
@@ -519,6 +541,15 @@
           "name": "connectivityWatch",
           "fields": []
         }
+      ]
+    },
+    {
+      "name": "EmptyPresentation",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "message", "type": "String"}
       ]
     },
     {
@@ -845,6 +876,16 @@
         {"name": "online", "type": "Bool"},
         {"name": "expensive", "type": "Bool"},
         {"name": "constrained", "type": "Bool"}
+      ]
+    },
+    {
+      "name": "NoticeLine",
+      "module": "SubstrateScreens",
+      "kind": "struct",
+      "fields": [
+        {"name": "text", "type": "String"},
+        {"name": "symbol", "type": "ScreenSymbol"},
+        {"name": "tone", "type": "ScreenTone"}
       ]
     },
     {
@@ -1564,7 +1605,8 @@
         {"name": "actions", "type": "[ActionButton<StatusAction>]"},
         {"name": "busy", "type": "Bool"},
         {"name": "footer", "type": "String?"},
-        {"name": "refused", "type": "RefusedWrites?"}
+        {"name": "refused", "type": "RefusedWrites?"},
+        {"name": "notice", "type": "NoticeLine?"}
       ]
     },
     {

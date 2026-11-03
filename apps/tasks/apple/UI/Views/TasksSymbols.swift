@@ -5,19 +5,12 @@ import SubstrateUI
 import SwiftUI
 import TasksCore
 
-/// The SF Symbols and colours the presentations' marks are drawn in: the
-/// app's names for its marks, the priorities and the due tones.
+/// The SF Symbols and colours of Tasks' own marks: the priorities, the due
+/// tones and a task's state; the menu's and the tones' are the kit's
+/// design tokens.
 enum TasksSymbols {
-    static func symbol(_ name: String) -> String {
-        switch name {
-        case "today": "calendar"
-        case "inbox": "tray"
-        case "list": "list.bullet"
-        case "lists": "checklist"
-        case "settings": "gearshape"
-        default: "circle"
-        }
-    }
+    /// A presentation's name for a mark, in the kit's design tokens.
+    static func symbol(_ name: String) -> String { DesignTokens.menuSymbol(name).sfSymbol }
 
     static func symbol(_ priority: TaskPriority) -> String {
         switch priority {
