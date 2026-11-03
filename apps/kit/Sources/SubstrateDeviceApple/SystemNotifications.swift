@@ -9,7 +9,13 @@ import UserNotifications
 /// An app calls `installDelegate()` before it finishes launching, so the tap
 /// that launched it is kept for the first reader rather than dropped.
 public struct SystemNotifications: Notifications {
-    public init() {}
+    /// Whether the permission asked for covers the number on the icon, for
+    /// an app that sets one.
+    public let badges: Bool
+
+    public init(badges: Bool = false) {
+        self.badges = badges
+    }
 
     /// Makes the kit's delegate the notification center's. Idempotent; an
     /// app that sets a delegate of its own after this takes the responses
@@ -23,12 +29,13 @@ public struct SystemNotifications: Notifications {
         Self.permission(of: await UNUserNotificationCenter.current().notificationSettings())
     }
 
-    /// Asks for alerts and sound only: being time sensitive comes from the
-    /// app's entitlement, not an option.
+    /// Asks for alerts and sound, and the badge where the app sets one:
+    /// being time sensitive comes from the app's entitlement, not an
+    /// option.
     public func requestPermission() async -> NotificationPermission {
         let center = UNUserNotificationCenter.current()
         if await center.notificationSettings().authorizationStatus == .notDetermined {
-            _ = try? await center.requestAuthorization(options: [.alert, .sound])
+            _ = try? await center.requestAuthorization(options: badges ? [.alert, .sound, .badge] : [.alert, .sound])
         }
         return await permission()
     }
