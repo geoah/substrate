@@ -912,7 +912,7 @@ serve it:
                         "bundle:<authority>:<package>",
                         "function:<authority>:<package>:<name>",
                         "agent:<authority>:<package>:<name>",
-                        "app:<host>",
+                        "app:<authority>", "app:local", "app:<host>",
                         "substrate"]},
  "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens",
                "password": "/password", "totp": "/totp",
@@ -2134,8 +2134,10 @@ A request names its actor with the optional `X-Substrate-Actor` header, and a
 request that names none is `api`, which is exactly what the substrate knows
 about it. This is **attribution, not authorization**: a full-access token has
 its whole repository either way, so there is nothing an actor name could
-unlock, and an app's token writes as its own `app:<host>` actor whatever it
-names.
+unlock, and an app's token writes as its own actor whatever it names:
+`app:<authority>` when its publisher was verified, `app:local` when its
+access went to a loopback address, else `app:<host>` of its client id
+([0209](decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)).
 What the header cannot do is claim one of the substrate's own writing hands —
 `substrate`, anything under `substrate.`, a `bundle:`/`function:`/`agent:`/`app:`
 name, or the retired `connector:` spelling — because those write past checks a
