@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -186,8 +187,25 @@ type deliveryDataset struct {
 	*fakeDataset
 	parked map[string][]substrate.TriggerFailure
 	stored map[string]substrate.BlobInfo
+	bytes  map[string][]byte
 	puts   int
 	actor  substrate.Actor
+}
+
+func (d *deliveryDataset) GetBlob(_ context.Context, digest string) (*substrate.BlobInfo, []byte, error) {
+	info, ok := d.stored[digest]
+	if !ok {
+		return nil, nil, fmt.Errorf("%w: blob %s", substrate.ErrNotFound, digest)
+	}
+	return &info, d.bytes[digest], nil
+}
+
+func (d *deliveryDataset) StatBlob(_ context.Context, digest string) (*substrate.BlobInfo, error) {
+	info, ok := d.stored[digest]
+	if !ok {
+		return nil, fmt.Errorf("%w: blob %s", substrate.ErrNotFound, digest)
+	}
+	return &info, nil
 }
 
 func (d *deliveryDataset) TriggerFailures(_ context.Context, id string) ([]substrate.TriggerFailure, error) {
@@ -208,6 +226,7 @@ func (d *deliveryDataset) PutBlob(_ context.Context, actor substrate.Actor, up s
 	}
 	info := substrate.BlobInfo{Digest: digest, Size: int64(len(data)), Name: up.Name, MediaType: up.MediaType, Status: substrate.BlobStored}
 	d.stored[digest] = info
+	d.bytes[digest] = data
 	return &info, nil
 }
 
@@ -254,6 +273,7 @@ func newDeliveryEnv(t *testing.T) (*appEnv, *deliveryDataset) {
 			"other-webhook": {{ID: 8, Trigger: "other-webhook", FireID: "hook-def", Attempts: 1, LastError: "x", ParkedAt: time.Unix(0, 0).UTC()}},
 		},
 		stored: map[string]substrate.BlobInfo{},
+		bytes:  map[string][]byte{},
 	}
 	e.svc.wrap = func(fd *fakeDataset) substrate.Dataset {
 		if fd == inner {
@@ -330,8 +350,10 @@ func TestAnAppsTokenStoresBlobsForAKindWithABlobRef(t *testing.T) {
 	if got := decodeJSON[substrate.BlobInfo](t, rec); got.Name != "" || got.MediaType != "" {
 		t.Fatalf("an upload that named nothing answered %+v", got)
 	}
-	// Reading a blob stays the owner's.
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/blobs/"+digest, app, nil, ""), http.StatusForbidden)
+	// Reading a blob takes a record the token reads that names it (decision
+	// 0219, TestAnAppReadsABlobARecordItReadsNamesAndNoOther): none does, so
+	// the blob is as absent as one nobody stored.
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/blobs/"+digest, app, nil, ""), http.StatusNotFound)
 
 	// A glob over a package reaches its blob-ref kind as a write does.
 	glob := appToken(e.svc, fakeRepository, "write:samples.substrate.reamde.dev/media/*")

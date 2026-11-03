@@ -419,7 +419,10 @@ func TestAnAppTailsTheChangeFeedHeldToWhatItReads(t *testing.T) {
 	app := e.grant("read:"+personKind+" agents:~/chat/*", []string{"read:" + personKind, "agents:" + fakeRepository + "/chat/*"})
 	ds := e.svc.datasets[fakeRepository]
 
-	for _, q := range []string{"", "?from=0", "?before=10", "?runs=1", "?watch=1&q=ada", "?watch=1&values=1"} {
+	// A text search and the values read across kinds and into payloads, on
+	// every feed route; the history itself is open (decision 0219,
+	// TestAnAppReadsTheFeedsHistoryCutToWhatItReads).
+	for _, q := range []string{"?q=ada", "?values=1", "?before=0&q=ada", "?runs=1&values=1", "?watch=1&q=ada", "?watch=1&values=1"} {
 		rec := e.do(http.MethodGet, "/api/v1/changes"+q, app, nil, "")
 		wantStatus(t, rec, http.StatusForbidden)
 		if wa := rec.Header().Get("WWW-Authenticate"); !strings.Contains(wa, "insufficient_scope") {
