@@ -143,8 +143,9 @@ class TasksShell(context: Context, val start: StartResult) {
     fun send(editor: String, command: TaskEditor.Command) =
         route(listOf(APP, editor), BridgeJson.encodeToJsonElement(TaskEditor.Command.Serializer, command))
 
+    /** A command for the connect screen, the root of its runtime: a route with no path. */
     fun send(command: ConnectController.Command) {
-        connect?.send(ConnectController.Command.Serializer, command)
+        connect?.send(RouteCommand.serializer(), RouteCommand(emptyList(), BridgeJson.encodeToJsonElement(ConnectController.Command.Serializer, command)))
     }
 
     /**
