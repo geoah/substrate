@@ -11,8 +11,10 @@ import (
 
 func TestOutsideRefuseOverridesInsecureException(t *testing.T) {
 	s := &service{outsideCode: "refuse", unconfinedOutsideCode: true}
-	if err := s.admitOutsideCode(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_OUTSIDE_CODE=refuse") {
-		t.Fatalf("got %v", err)
+	for name, admit := range map[string]func() error{"bodies": s.admitOutsideBodies, "policy": s.admitOutsidePolicy} {
+		if err := admit(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_OUTSIDE_CODE=refuse") {
+			t.Fatalf("%s: got %v", name, err)
+		}
 	}
 }
 
@@ -42,8 +44,8 @@ func TestOutsideOAuthRequiresHTTPSAndMayUseAnotherAuthority(t *testing.T) {
 	for _, endpoint := range []string{"authorizationEndpoint", "tokenEndpoint", "revocationEndpoint", "emailEndpoint"} {
 		for _, scheme := range []string{"https", "http"} {
 			docs := []vocabulary.Document{{Kind: vocabulary.DocBundle, ID: "publisher.example.com/addon", Data: map[string]any{"oauth2": map[string]any{endpoint: scheme + "://provider.example.org/endpoint"}}}}
-			code, err := validateOutsideCode(docs, nil)
-			if scheme == "https" && (err != nil || !code) {
+			code, bodies, err := validateOutsideCode(docs, nil)
+			if scheme == "https" && (err != nil || !code || bodies) {
 				t.Fatalf("HTTPS off-authority refused: %v", err)
 			}
 			if scheme == "http" && err == nil {
@@ -54,9 +56,26 @@ func TestOutsideOAuthRequiresHTTPSAndMayUseAnotherAuthority(t *testing.T) {
 }
 
 func TestOutsideKindsOnlyHasNoCode(t *testing.T) {
-	code, err := validateOutsideCode([]vocabulary.Document{{Kind: vocabulary.DocKind, Data: map[string]any{}}}, nil)
-	if err != nil || code {
-		t.Fatalf("kinds only: %v %v", code, err)
+	code, bodies, err := validateOutsideCode([]vocabulary.Document{{Kind: vocabulary.DocKind, Data: map[string]any{}}}, nil)
+	if err != nil || code || bodies {
+		t.Fatalf("kinds only: %v %v %v", code, bodies, err)
+	}
+}
+
+// An outside agent, trigger or mapping is outside code the operator's
+// policy decides, and none is a body the sandbox runs: only a function needs
+// a host that confines it, so a kernel without Landlock still takes an
+// outside package of agents.
+func TestOnlyAnOutsideFunctionNeedsTheSandbox(t *testing.T) {
+	for kind, wantBodies := range map[string]bool{vocabulary.DocFunction: true, vocabulary.DocAgent: false, vocabulary.DocRecordMapping: false} {
+		code, bodies, err := validateOutsideCode([]vocabulary.Document{{Kind: kind, ID: "publisher.example.com/pkg/x", Data: map[string]any{}}}, nil)
+		if err != nil || !code || bodies != wantBodies {
+			t.Errorf("%s: code %v bodies %v err %v, want code and bodies %v", kind, code, bodies, err, wantBodies)
+		}
+	}
+	s := &service{}
+	if err := s.admitOutsidePolicy(); err != nil {
+		t.Fatalf("the default policy refused outside code: %v", err)
 	}
 }
 
@@ -66,11 +85,11 @@ func TestOutsideConfinementRefusalAndExplicitException(t *testing.T) {
 	if report.Supported() && report.FS() && report.Seccomp && report.ConnectGate && runner.Shared.Sandbox().Mode() != sandbox.ModeOff {
 		t.Skip("this host provides confinement")
 	}
-	if err := s.admitOutsideCode(); err == nil {
+	if err := s.admitOutsideBodies(); err == nil {
 		t.Fatal("unconfined outside code admitted")
 	}
 	s.unconfinedOutsideCode = true
-	if err := s.admitOutsideCode(); err != nil {
+	if err := s.admitOutsideBodies(); err != nil {
 		t.Fatal(err)
 	}
 }
