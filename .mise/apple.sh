@@ -490,6 +490,7 @@ publish_site() {
 		id="$SUBSTRATE_APPLE_TEAM_ID.$(app_bundle "$app")"
 		mkdir -p "$out/apps/$app"
 		client_document "$app" >"$out/apps/$app/client.json"
+		callback_page "$app" >"$out/apps/$app/callback"
 		details="$(jq -c --arg id "$id" --arg path "/apps/$app/callback" \
 			'. + [{appIDs: [$id], components: [{"/": $path}]}]' <<<"$details")"
 		ids="$(jq -c --arg id "$id" '. + [$id]' <<<"$ids")"
@@ -497,6 +498,7 @@ publish_site() {
 			--argjson packages "$(app_packages "$app")" \
 			'. + [{client_id: $client, name: $name, packages: $packages, apple: {appIDs: [$id]}}]' <<<"$apps")"
 	done
+	site_index "$authority" >"$out/index.html"
 	jq -n --argjson details "$details" --argjson ids "$ids" \
 		'{applinks: {details: $details}, webcredentials: {apps: $ids}}' >"$out/.well-known/apple-app-site-association"
 	jq -n --arg authority "$authority" --argjson apps "$apps" --argjson packages "$packages" \
@@ -514,7 +516,9 @@ publish_site() {
 	site_upload "$dry" "$out/.well-known/apple-app-site-association" "$target/.well-known/apple-app-site-association" "no-cache"
 	for app in $APPS; do
 		site_upload "$dry" "$out/apps/$app/client.json" "$target/apps/$app/client.json" "no-cache"
+		site_upload "$dry" "$out/apps/$app/callback" "$target/apps/$app/callback" "no-cache"
 	done
+	site_upload "$dry" "$out/index.html" "$target/index.html" "no-cache"
 	site_upload "$dry" "$out/.well-known/substrate/authority.json" "$target/.well-known/substrate/authority.json" "no-cache"
 	# What is published now, for the generator's offline check: each
 	# package's newest version and its digest. Committed after a publish.
@@ -525,7 +529,8 @@ publish_site() {
 	if [ -n "$dry" ]; then
 		echo "apple: dry run: nothing was uploaded; the site is built under apps/apple/$out"
 		echo "apple: would write apps/apple/$lock:"
-		echo "$locked" | sed 's/^/apple:   /'
+		local line
+		while IFS= read -r line; do echo "apple:   $line"; done <<<"$locked"
 	else
 		echo "apple: published $site/.well-known/apple-app-site-association"
 		echo "apple: published $site/.well-known/substrate/authority.json"
@@ -535,6 +540,47 @@ publish_site() {
 	jq -r '.packages[] | "apple: \(.package): versions \([.versions[].version] | map(tostring) | join(", "))"' "$out/.well-known/substrate/authority.json"
 	echo "apple: the authority's DNS needs this record, once:"
 	echo "apple:   _substrate.$authority. TXT \"v=substrate1 doc=$site/.well-known/substrate/authority.json\""
+}
+
+# The page at an app's claimed callback, for the browser that opens it
+# without handing it to the app: macOS's fallback when the default browser
+# does not match the callback, or a device the association has not reached
+# yet. It reads nothing from the address and keeps nothing.
+callback_page() {
+	local name
+	name="$(app_name "$1")"
+	cat <<HTML
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Return to $name</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem;color:#222}</style>
+<h1>Return to $name</h1>
+<p>Your server approved $name. If $name did not open by itself, close this page,
+open $name and sign in again: it asks for a fresh approval, and this one expires
+unused.</p>
+</html>
+HTML
+}
+
+# The site's own front page.
+site_index() {
+	cat <<HTML
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$1</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;color:#222}code{font-size:.9em}</style>
+<h1>$1</h1>
+<p>The authority the Substrate apps and packages publish under. Servers read
+<a href="/.well-known/substrate/authority.json"><code>/.well-known/substrate/authority.json</code></a>,
+which the <code>_substrate.$1</code> TXT record names.</p>
+<p>Source: <a href="https://github.com/geoah/substrate">github.com/geoah/substrate</a>.</p>
+</html>
+HTML
 }
 
 # One site file: uploaded, or in a dry run named with where it would go.
@@ -841,6 +887,33 @@ export_archive() {
 	plutil -insert signingStyle -string automatic "$out/$platform-export.plist"
 	xcodebuild -exportArchive -archivePath "$out/$platform.xcarchive" -exportPath "$out/$platform" \
 		-exportOptionsPlist "$out/$platform-export.plist" -allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} -quiet
+	# A release that claims its sign-in callback on the site needs the
+	# associated domain in its signed entitlements, which a profile without
+	# the capability drops: such a build could never receive a sign-in.
+	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then
+		require_associated_domains "$out/$platform"
+	fi
+}
+
+# Refuses an exported app (an .ipa, or a Mac .app) whose signature carries no
+# associated domain.
+require_associated_domains() {
+	local dir="$1" app tmp="" ipa
+	ipa="$(find "$dir" -maxdepth 1 -name '*.ipa' | head -1)"
+	if [ -n "$ipa" ]; then
+		tmp="$(mktemp -d)"
+		unzip -q -o "$ipa" -d "$tmp"
+		app="$(find "$tmp/Payload" -maxdepth 1 -name '*.app' | head -1)"
+	else
+		app="$(find "$dir" -maxdepth 1 -name '*.app' | head -1)"
+	fi
+	if [ -z "$app" ] || ! codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q 'com.apple.developer.associated-domains'; then
+		[ -n "$tmp" ] && rm -rf "$tmp"
+		echo "apple: ${app:-$dir} is signed without the associated domain its sign-in needs; turn Associated Domains on for its App ID and release again" >&2
+		return 1
+	fi
+	[ -n "$tmp" ] && rm -rf "$tmp"
+	return 0
 }
 
 # curl, signed for S3 with the key in the environment, which reaches curl on
@@ -853,7 +926,7 @@ s3() {
 upload() {
 	local file="$1" url="$2" cache="$3" type
 	case "$file" in
-	*.html) type="text/html; charset=utf-8" ;;
+	*.html | */callback) type="text/html; charset=utf-8" ;;
 	*.json | */apple-app-site-association) type="application/json" ;;
 	*.xml | *.plist) type="application/xml" ;;
 	*.png) type="image/png" ;;
