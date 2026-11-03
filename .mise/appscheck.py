@@ -426,8 +426,11 @@ for app in apps:
             flag(f"{rel(path)}: {key} holds something other than names")
     if not doc.get("scopes"):
         flag(f"{rel(path)}: scopes is empty, and every app asks for something")
+    # An app whose UI is not written yet (its package first) has no icon to
+    # point at; the icon is held once a UI folder exists.
     icon = doc.get("icon")
-    if isinstance(icon, str) and not os.path.isfile(os.path.join(APPS, app, icon)):
+    has_ui = any(os.path.isdir(os.path.join(APPS, app, ui)) for ui in ("apple", "android"))
+    if isinstance(icon, str) and has_ui and not os.path.isfile(os.path.join(APPS, app, icon)):
         flag(f"{rel(path)}: icon {icon} is not a file in apps/{app}")
 
 

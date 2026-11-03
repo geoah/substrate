@@ -1,0 +1,20 @@
+{
+  "id": "tasks",
+  "name": "Substrate Tasks",
+  "platforms": [
+    "ios",
+    "macos"
+  ],
+  "apple": {
+    "bundleID": "dev.reamde.substrate.tasks",
+    "extensions": [],
+    "clientIDKey": "SubstrateTasksClientID",
+    "redirectKey": "SubstrateTasksRedirect"
+  },
+  "packages": [],
+  "scopes": [
+    "write:substrate.reamde.dev/tasks/*"
+  ],
+  "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "feed": "tasks"
+}
