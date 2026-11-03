@@ -66,6 +66,14 @@ func (c *Catalog) RefreshPackage(ctx context.Context, ds substrate.Dataset, id s
 	if err != nil {
 		return result, err
 	}
+	// The record now names another document than the package came from: a
+	// publisher that moved its files, or a DNS answer that should not be
+	// followed unseen. Nothing upgrades by itself until the owner looks.
+	if from := mstr(row.Properties, "publishedFrom"); source.DocURL != from {
+		result.Outcome = "upgrade-needs-review"
+		result.Reason = fmt.Sprintf("the publisher's document moved from %s to %s", from, source.DocURL)
+		return result, nil
+	}
 	held := mversion(row.Properties, "shippedVersion")
 	versions := listedVersions(source, id)
 	for _, v := range versions {
