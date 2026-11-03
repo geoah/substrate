@@ -235,6 +235,8 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 				substrate.BundleActorPrefix + "<authority>:<package>",
 				substrate.FunctionActorPrefix + "<authority>:<package>:<name>",
 				substrate.AgentActorPrefix + "<authority>:<package>:<name>",
+				substrate.AppActorPrefix + "<authority>",
+				substrate.AppActorPrefix + "local",
 				substrate.AppActorPrefix + "<host>",
 				string(substrate.ActorSystem),
 			},
