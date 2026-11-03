@@ -845,12 +845,13 @@ jobs:
       # above, which save 51s and 77s. Re-measure before adding one back.
       - run: mise run ci:console:test
 
-  # The kit and Substrate Workouts' core, built and tested on Linux in the
-  # swift container `ci:apps` pins, since what builds for Android builds
-  # here first. Not required, and gated on `changes`' `apps` answer: a
-  # change outside apps/ and this pipeline cannot move its result. mise is
-  # here for the task alone, which needs Docker and no tool, so it installs
-  # none.
+  # The kit and every app's core, built and tested on Linux in the swift
+  # container `ci:apps` pins, since what builds for Android builds here
+  # first, then the core of an app `apps:new` makes from the template, so
+  # the template cannot rot. Not required, and gated on `changes`' `apps`
+  # answer: a change outside apps/ and this pipeline cannot move its
+  # result. mise is here for the task alone, which needs Docker and no
+  # tool, so it installs none.
   apps-linux:
     name: apps linux
     needs: changes

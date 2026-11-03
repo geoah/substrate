@@ -80,7 +80,11 @@ def app_json(app: str) -> dict:
 
 
 def publishing_apps() -> list[str]:
-    return sorted(path.parent.name for path in APPS.glob("*/app.json") if app_json(path.parent.name).get("publishes"))
+    # apps/template is what `mise run apps:new` copies: its package is an
+    # example the server's reach test parses, and never one a site publishes.
+    return sorted(
+        path.parent.name for path in APPS.glob("*/app.json") if path.parent.name != "template" and app_json(path.parent.name).get("publishes")
+    )
 
 
 def generate_check(app: str) -> None:

@@ -66,10 +66,12 @@ die() {
 app_json() { echo "$APPS_DIR/$1/app.json"; }
 app_get() { jq -r "$2" "$(app_json "$1")"; }
 
-# Every app folder, by id.
+# Every app folder, by id. apps/template is what apps:new copies: a whole
+# app so the checks hold it, and never one that is released or published.
 all_apps() {
 	local file
 	for file in "$APPS_DIR"/*/app.json; do
+		[ "$(basename "$(dirname "$file")")" = template ] && continue
 		basename "$(dirname "$file")"
 	done
 }

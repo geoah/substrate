@@ -856,6 +856,32 @@ mise run apple:build:tasks   # the Mac app and the simulator app, registering no
 mise run apple:test:tasks    # TasksKit's tests and the views over its fixtures, on the Mac
 ```
 
+## A new app
+
+`mise run apps:new <id>` makes `apps/<id>/` from `template/`, and every app
+after Tasks starts there. The id is one lowercase word: the app's folder,
+its feed, its bundle id's last label (`dev.reamde.substrate.<id>`) and its
+package's name (`substrate.reamde.dev/<id>`). It writes:
+
+| Where | What |
+| --- | --- |
+| `app.json` | the app named once, asking for its own package at version 1 under `write:` on its kinds |
+| `<Id>Kit/` | its core, a Swift package named for the app: `<Id>Core` with one controller, `<Id>App` (its records the kit's `LinkedRecords` over its kinds), its manifest, presenter and fixtures, and a test holding the manifest to `app.json` |
+| `apple/` | `targets.yml` (the app, its `Substrate<Id>UI` framework and the tests that draw its views, with its package), the app's scene, the kit's `AppShell` over its root and one screen, Info.plists and entitlements as every app's, and a loopback client id for a local build |
+| `package/` | `substrate.reamde.dev/<id>` with one example kind, `item`, and its README |
+| `README.md` | the app's README |
+
+and includes `<id>/apple/targets.yml` in `xcode/project.yml`, so
+`mise run apple:project` shows the new scheme, `Substrate<Id>`. What it
+writes passes `lint:apps` and the server's first-party reach test
+unchanged, because the template is a whole app named `template` that both
+hold as they hold every other; `apps.sh` and `.mise/closures.py` skip it by
+name, so it is never released or published. CI's `apps linux` job runs
+`mise run apps:new:check`: `apps:new example` into a scratch copy of
+`apps/` in the swift container, and the result's core built and tested
+there. A change to the template is a change to every app made from then
+on; an app already made keeps what it copied.
+
 ## Android
 
 The kit runs on Android under a Kotlin UI through one fixed bridge, built by
@@ -942,7 +968,7 @@ xcode/scripts/feed.swift            a release's index.json, appcast.xml, install
 gradle/                             the one Gradle root of the Android build: settings, the version catalog, the wrapper, build-logic's convention plugins, swift-jnilibs.sh
 kit/android/                        the kit on Android: kit-core, kit-device, kit-ui, bridge-check, the Gallery app, the bridge's golden and the fixtures both systems draw ([its README](kit/android/README.md))
 kit/Tools/BridgeGen/                the bridge's generator: Bridged declarations to the golden, the Kotlin and the fingerprint
-kit/                                the apps' shared Swift package: SubstrateCore, SubstrateDevice, SubstrateAPI, SubstrateAuth and SubstrateTesting, which build for Linux and Android too, SubstrateDeviceApple and SubstrateUI, and SubstrateKit over all of them ([its README](kit/README.md))
+kit/                                the apps' shared Swift package: SubstrateCore, SubstrateDevice, SubstrateAPI, SubstrateAuth, SubstrateRuntime, SubstrateLocal, SubstrateScreens and SubstrateTesting, which build for Linux and Android too, SubstrateDeviceApple and SubstrateUI, and SubstrateKit over all of them ([its README](kit/README.md))
 console/apple/Support/              the console app's Info.plist per platform and its entitlements
 console/apple/Assets.xcassets       the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../docs/app-icons.md))
 console/apple/Sources/App/          the app, its macOS menus, ServerStore, ConsoleSessions
@@ -959,4 +985,5 @@ workouts/WorkoutsKit/               its Swift package: WorkoutsCore (model, engi
 tasks/apple/                        Substrate Tasks: Sources/ (the app), UI/ (SubstrateTasksUI: the shell and the views), Tests/ (the views over the fixtures)
 tasks/package/                      its published tasks package
 tasks/TasksKit/                     its Swift package: TasksCore (model, codec, the root under the link, the editor, presenters, reminders), with its tests; portable
+template/                           what `mise run apps:new` copies: a whole app named `template` (app.json, TemplateKit/, apple/, package/), released by nothing
 ```

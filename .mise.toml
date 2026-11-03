@@ -949,6 +949,27 @@ docker run --rm -v "$PWD:/src:ro" -w /src/apps \
   done'
 """
 
+[tasks."apps:new"]
+description = "Scaffold apps/<id>/ from apps/template: app.json, <Id>Kit (its core and a test), apple/ (its targets, included in apps/xcode/project.yml) and package/ (one example kind); <id>"
+run = ".mise/appsnew.sh"
+
+[tasks."apps:new:check"]
+description = "apps:new into a scratch copy of apps/ in the swift container, and the new app's core built and tested on Linux"
+# The template cannot rot: what it makes is built as an app's core is, on the
+# same pinned image as apps:test:linux. The scratch copy takes the kit's
+# sources and the project file alone, never a Mac's build output.
+run = """
+docker run --rm -v "$PWD:/src:ro" -w /src \
+  swift:6.4@sha256:119ff7d833ea622851b459513333bb4bda5ebb32b7acd05dd05077d5b0383129 \
+  bash -euc 'mkdir -p /tmp/apps/xcode
+    tar -C apps --exclude=.build --exclude=build --exclude=.gradle --exclude=.swiftpm -cf - kit | tar -C /tmp/apps -xf -
+    cp apps/xcode/project.yml /tmp/apps/xcode/project.yml
+    .mise/appsnew.sh --apps /tmp/apps example
+    grep -qxF "  - ../example/apple/targets.yml" /tmp/apps/xcode/project.yml
+    swift build --package-path /tmp/apps/example/ExampleKit --scratch-path /tmp/build/example
+    swift test --package-path /tmp/apps/example/ExampleKit --scratch-path /tmp/build/example'
+"""
+
 [tasks."apple:release:workouts"]
 description = "Alias of `apps:release [channel] workouts`, for one release"
 run = ".mise/apple.sh release:workouts"
@@ -1293,10 +1314,11 @@ description = "CI job `console test`: the console's vitest suite"
 depends = ["console:test"]
 
 [tasks."ci:apps"]
-description = "CI job `apps linux`: the kit, WorkoutsKit and ChatKit built and tested on Linux"
+description = "CI job `apps linux`: the kit and every app's core built and tested on Linux, then an app apps:new makes"
 # Gated on `changes`' `apps` answer: only a change to apps/, the console
-# fixture the kit's tests read, or this pipeline's own definition runs it.
-depends = ["apps:test:linux"]
+# fixture the kit's tests read, the scaffold or this pipeline's own
+# definition runs it. One after the other: each is a swift container.
+run = ["mise run apps:test:linux", "mise run apps:new:check"]
 
 [tasks."ci:android"]
 description = "CI job `android build`: the Android toolchain installed, the generator checked, the bridge's tests, and the kit cross-compiled for both ABIs"

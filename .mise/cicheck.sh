@@ -191,6 +191,7 @@ scenario apps-scope-fixture true seed web/console/src/lib/app-scopes.fixture.jso
 scenario apps-the-workflow-itself true touch_file .github/workflows/ci.yml
 scenario apps-the-tasks true seed .mise.toml '[tasks]'
 scenario apps-the-android-script true seed .mise/android.sh '#!/bin/sh'
+scenario apps-the-scaffold true seed .mise/appsnew.sh '#!/bin/sh'
 gate GITHUB_EVENT_NAME=push
 case "$gate_out" in *"apps=true"*) ;; *) flag "apps push: expected apps=true, got '${gate_out}'" ;; esac
 question=nonsense
