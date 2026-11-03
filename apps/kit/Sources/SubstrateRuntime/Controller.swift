@@ -26,8 +26,8 @@ import Foundation
 /// unchanged by an applied or a refused event; every event presented at
 /// once; no effects, and the effects seen from the state before an event
 /// those of the state after alone; no keys, no work; no next change and no
-/// tick event; no event at open, for the link, from a child or for a new
-/// value; no event resets; no children; no link.
+/// tick event; no event at open, for the link, from a child (one event or
+/// several) or for a new value; no event resets; no children; no link.
 public protocol Controller: Sendable {
     associatedtype Command: Codable & Equatable & Sendable
     associatedtype Event: Codable & Equatable & Sendable
@@ -84,6 +84,15 @@ public protocol Controller: Sendable {
     /// thread whose conversation owns the transcript). The default is
     /// `event(fromChild:_:)`, which sees the event alone.
     func event(fromChild key: ChildKey, _ event: Child.Event, after state: Child.State) -> Event?
+    /// A child's applied event as any number of this controller's own,
+    /// applied in order (an editor's save: the editor closed, and the write
+    /// it made), so the parent's engine and effects see each as they see
+    /// one of its own. The default is `event(fromChild:_:after:)` as one
+    /// event, else `events(fromChild:_:)`.
+    func events(fromChild key: ChildKey, _ event: Child.Event, after state: Child.State) -> [Event]
+    /// The same without the child's state. The default is
+    /// `event(fromChild:_:)` as one event.
+    func events(fromChild key: ChildKey, _ event: Child.Event) -> [Event]
     /// The event a child applies when its parent hands it a value that
     /// differs (`children(in:)`), so what changed reaches its engine and its
     /// effects (the thread a conversation shows moved: attach, or poll);
@@ -151,6 +160,11 @@ public extension Controller {
     func event(forLink link: LinkSnapshot) -> Event? { nil }
     func event(fromChild key: ChildKey, _ event: Child.Event) -> Event? { nil }
     func event(fromChild key: ChildKey, _ event: Child.Event, after state: Child.State) -> Event? { self.event(fromChild: key, event) }
+    func events(fromChild key: ChildKey, _ event: Child.Event, after state: Child.State) -> [Event] {
+        if let one = self.event(fromChild: key, event, after: state) { return [one] }
+        return events(fromChild: key, event)
+    }
+    func events(fromChild key: ChildKey, _ event: Child.Event) -> [Event] { self.event(fromChild: key, event).map { [$0] } ?? [] }
     func event(replacing previous: Self) -> Event? { nil }
     func resetting(of event: Event, on state: State) -> Bool { false }
     func journaling(of event: Event) -> Journaling { .skip }

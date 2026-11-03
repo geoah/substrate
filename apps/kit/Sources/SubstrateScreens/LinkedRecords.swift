@@ -17,11 +17,20 @@ import SubstrateRuntime
 /// its engine reads the records it enriches commands against and its
 /// presenter folds nothing. What the read and the watch do next follows from
 /// how an event moved the phase, never from a flag the engine keeps.
+///
+/// The first read takes at most `limit` records (`LinkedRecords.readLimit`
+/// unless the app names another); past it, `readLimitReached` says so, and
+/// `notice` puts it in the app's words, so a repository larger than the read
+/// is never shown as complete.
 public struct LinkedRecords: Equatable, Sendable {
     public enum Event: Codable, Equatable, Sendable {
+        /// The app opened: the device's copy is read, and the outbox followed.
+        case opened
         case linked(LinkSnapshot)
         case loaded([Record], cursor: WatchCursor?, queue: [OutboxEntry])
         case listed([Record], cursor: WatchCursor?)
+        /// The read stopped at its limit with records left unread.
+        case readLimitReached(Int)
         case readFailed(String, LinkReport?)
         /// A record read again, or removed by the watch, by `kind/id`.
         case changed(String, Record?)
@@ -64,17 +73,26 @@ public struct LinkedRecords: Equatable, Sendable {
     /// (`kept`: "Reading your tasks…").
     public let words: StatusWords
     public let line: WriteLine
+    /// The most records a read takes.
+    public let limit: Int
 
-    public init(kinds: [String], cache: RecordCache?, outbox: Outbox?, words: StatusWords, line: WriteLine = WriteLine()) {
+    /// The records a read takes unless an app names another limit.
+    public static let readLimit = 10000
+
+    public init(kinds: [String], cache: RecordCache?, outbox: Outbox?, words: StatusWords, line: WriteLine = WriteLine(),
+                limit: Int = LinkedRecords.readLimit)
+    {
         self.kinds = kinds
         self.cache = cache
         self.outbox = outbox
         self.words = words
         self.line = line
+        self.limit = limit
     }
 
     public static func == (lhs: LinkedRecords, rhs: LinkedRecords) -> Bool {
         lhs.kinds == rhs.kinds && lhs.cache === rhs.cache && lhs.outbox === rhs.outbox && lhs.words == rhs.words && lhs.line === rhs.line
+            && lhs.limit == rhs.limit
     }
 
     /// What the app's event at open asks for: the device's copy read, and
@@ -86,27 +104,37 @@ public struct LinkedRecords: Equatable, Sendable {
     public func apply(_ event: Event, to state: State) -> State {
         var next = state
         switch event {
+        case .opened:
+            break
         case let .linked(link):
             let before = state.link
             next.link = link
-            // A watch stopped for good opens again when the access may have
-            // come back: a new sign-in, or the network back.
-            startOrStop(&next, restart: before?.signedIn != true || (before?.online != true && link.online == true))
+            // A stop lifts where its reason may be gone: any, with a new
+            // token (a sign-in, an approval, which changes what it carries);
+            // one the server refused for its own reasons, with the network
+            // back. The network's first report, at every launch, is no new
+            // access.
+            let newAccess = link.signedIn && (before?.signedIn != true || before?.scopes != link.scopes || before?.accessEnds != link.accessEnds)
+            let networkBack = before?.online != true && link.online == true
+            startOrStop(&next, restarting: { newAccess || (networkBack && $0 == .refused) })
         case let .loaded(records, cursor, queue):
             next.server = keyed(records)
             next.cursor = cursor
             next.queue = queue.filter { kinds.contains($0.kind) }
             next.loaded = true
             fold(&next)
-            startOrStop(&next, restart: false)
+            startOrStop(&next, restarting: { _ in false })
         case let .listed(records, cursor):
             next.server = keyed(records)
             next.cursor = cursor ?? state.cursor
+            next.limitReached = nil
             fold(&next)
             // A read that ends after a sign-out starts no watch.
             if next.link?.signedIn == true, next.phase == .reading { next.phase = .following }
-        case let .readFailed(words, _):
-            next.phase = .stopped(words)
+        case let .readLimitReached(limit):
+            next.limitReached = limit
+        case let .readFailed(words, report):
+            next.phase = .stopped(Self.stop(report), words)
         case let .changed(key, record):
             next.server[key] = record.flatMap { $0.deletedAt == nil && kinds.contains($0.kind) ? $0 : nil }
             next.stale.remove(key)
@@ -118,8 +146,8 @@ public struct LinkedRecords: Equatable, Sendable {
             next.phase = .following
         case let .watchInterrupted(words):
             next.phase = .interrupted(words)
-        case let .watchEnded(_, words):
-            next.phase = .stopped(words)
+        case let .watchEnded(stop, words):
+            next.phase = .stopped(stop, words)
         case .relistNeeded:
             next.cursor = nil
             next.phase = .reading
@@ -140,7 +168,7 @@ public struct LinkedRecords: Equatable, Sendable {
         case .refreshAsked:
             if next.link?.signedIn == true, next.loaded, next.phase != .reading { next.phase = .reading }
         case .foregrounded:
-            startOrStop(&next, restart: true)
+            startOrStop(&next, restarting: { $0 == .refused })
         case .clearAsked:
             break
         case .cleared:
@@ -149,7 +177,7 @@ public struct LinkedRecords: Equatable, Sendable {
             next.stale = []
             fold(&next)
             next.phase = .idle
-            startOrStop(&next, restart: true)
+            startOrStop(&next, restarting: { _ in true })
         }
         return next
     }
@@ -166,12 +194,26 @@ public struct LinkedRecords: Equatable, Sendable {
         state.records = RecordFold.fold(state.server, state.queue)
     }
 
+    /// What a read failed for, as the stop it leaves: a read the network or
+    /// the server failed is tried again as a refused watch is.
+    private static func stop(_ report: LinkReport?) -> WatchStop {
+        switch report {
+        case .accessEnded?: .signedOut
+        case .needsApproval?: .needsApproval
+        case nil: .refused
+        }
+    }
+
     /// Signed in and loaded with nothing reading: the watch resumes where it
     /// was, or the repository is read first; a watch stopped for good, only
-    /// where `restart` says the reason may be gone. Signed out: it stops.
-    private func startOrStop(_ state: inout State, restart: Bool) {
+    /// where `restarting` says its reason may be gone. Signed out: it stops.
+    private func startOrStop(_ state: inout State, restarting: (WatchStop) -> Bool) {
         if state.link?.signedIn == true {
-            guard state.loaded, state.phase == .idle || (restart && !state.phase.running) else { return }
+            if case let .stopped(stop, _) = state.phase {
+                guard state.loaded, restarting(stop) else { return }
+            } else {
+                guard state.loaded, state.phase == .idle else { return }
+            }
             state.phase = state.cursor == nil ? .reading : .following
         } else if state.phase.running {
             state.phase = .idle
@@ -208,6 +250,8 @@ public struct LinkedRecords: Equatable, Sendable {
     public func effects(of event: Event, on state: State, from previous: State) -> [Effect] {
         var out: [Effect] = []
         switch event {
+        case .opened:
+            out += openEffects
         case let .wrote(write):
             if !write.entries.isEmpty { out.append(.enqueue(write)) }
         case .queueReported, .enqueued:
@@ -285,16 +329,18 @@ public struct LinkedRecords: Equatable, Sendable {
                 for await _ in await outbox.changes() { continuation.yield(.queueReported(await outbox.entries, landed: await outbox.landed)) }
             }
         case .read:
-            return .once {
-                guard let client = await source.current() else { return nil }
+            let limit = limit
+            return .relay { continuation in
+                guard let client = await source.current() else { return }
                 do {
-                    let page = try await client.listAll(ListQuery(kinds: kinds, first: 200), limit: 10000)
+                    let page = try await client.listAll(ListQuery(kinds: kinds, first: 200), limit: limit)
                     await cache?.listed(page, kinds: kinds)
                     try? await outbox?.saw(Dictionary(page.records.map { (RecordFold.key($0.kind, $0.id), $0.version) }) { a, _ in a })
                     let cursor = page.generation.isEmpty ? nil : WatchCursor(seq: page.head, generation: page.generation)
-                    return .listed(page.records, cursor: await cache?.cursor ?? cursor)
+                    continuation.yield(.listed(page.records, cursor: await cache?.cursor ?? cursor))
+                    if page.cursor != nil { continuation.yield(.readLimitReached(page.records.count)) }
                 } catch {
-                    return .readFailed(explain(error, app: words.app, server: client.server), LinkReport(error))
+                    continuation.yield(.readFailed(explain(error, app: words.app, server: client.server), LinkReport(error)))
                 }
             }
         case let .follow(cursor):
@@ -407,14 +453,18 @@ public struct LinkedRecords: Equatable, Sendable {
     // MARK: The presenter
 
     /// The line about reading the records, nil when nothing is worth
-    /// saying: the first read, the watch waiting to open again, or stopped.
+    /// saying: the first read, the watch waiting to open again, or stopped;
+    /// else a read that stopped at its limit.
     public func notice(_ state: State) -> NoticeLine? {
         guard state.link?.signedIn == true else { return nil }
         switch state.phase {
         case .reading where state.records.isEmpty: return NoticeLine("Reading your \(words.kept)…", symbol: .sending, tone: .quiet)
         case let .interrupted(reason): return NoticeLine(reason, symbol: .offline, tone: .caution)
-        case let .stopped(reason): return NoticeLine("Your \(words.kept) are not being updated: \(reason)", symbol: .warning, tone: .critical)
-        default: return nil
+        case let .stopped(_, reason): return NoticeLine("Your \(words.kept) are not being updated: \(reason)", symbol: .warning, tone: .critical)
+        default: break
         }
+        guard let limit = state.limitReached else { return nil }
+        return NoticeLine("Only the first \(limit) of your \(words.kept) are shown: \(words.app) reads no more.", symbol: .warning,
+                          tone: .caution)
     }
 }

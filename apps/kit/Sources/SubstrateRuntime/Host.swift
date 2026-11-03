@@ -400,8 +400,8 @@ final class Host<C: Controller>: @unchecked Sendable {
                 }
                 let host = Host<C.Child>(controller: child, path: path + [key], loop: loop, journal: child.journal(in: loop.environment))
                 host.offerUp = { [unowned self] event, after in
-                    guard let up = controller.event(fromChild: key, event, after: after) else { return }
-                    step([up])
+                    let up = controller.events(fromChild: key, event, after: after)
+                    if !up.isEmpty { step(up) }
                 }
                 children[key] = host
                 dirty = true

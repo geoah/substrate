@@ -26,6 +26,9 @@ public struct LinkedRecordsState: Codable, Equatable, Sendable {
     /// read at the next chance, so a write that landed is never shown laid
     /// over for longer than the connection is gone.
     public var stale: Set<String> = []
+    /// The records the last read stopped at, with more left unread; nil
+    /// while the read took them all.
+    public var limitReached: Int?
 
     public init() {}
 

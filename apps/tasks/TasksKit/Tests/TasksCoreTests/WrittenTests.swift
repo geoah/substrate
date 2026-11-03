@@ -97,13 +97,14 @@ struct WrittenTests {
         rig.server.answer("GET", "/api/v1/records", 403, #"{"error":{"code":"forbidden","message":"not in scope"}}"#,
                           headers: ["WWW-Authenticate": #"Bearer error="insufficient_scope""#])
         let harness = try linked(rig)
-        // The network's first report may open the read once more, which the
-        // server refuses the same way: the read ends stopped either way.
-        try await harness.until { harness in
-            guard await harness.presentation.status.actions.contains(where: { $0.action == .review }) else { return false }
-            if case .stopped = await harness.runtime.state(of: LinkController<TasksApp>.appKey)?.linked.phase { return true }
-            return false
-        }
+        try await harness.until { await $0.presentation.status.actions.contains { $0.action == .review } }
+        let app = try #require(await harness.runtime.state(of: LinkController<TasksApp>.appKey))
+        guard case .stopped(.needsApproval, _) = app.linked.phase else { throw Unexpected() }
+        // The network's first report is no new approval: the read is not
+        // asked again, to be refused the same way.
+        try await harness.until { await $0.presentation.snapshot.online == true }
+        await harness.settle()
+        #expect(rig.server.sent.count { $0.method == "GET" && $0.path == "/api/v1/records" } == 1)
         // The access stands: the token was not refused, the approval falls short.
         #expect(await harness.presentation.snapshot.phase == .signedIn)
     }
@@ -116,7 +117,7 @@ struct WrittenTests {
         await harness.deliver(.records(.linked(signedIn)))
         #expect(await harness.state.linked.phase == .following)
         await harness.deliver(.records(.watchEnded(.refused, "The server is restarting.")))
-        #expect(await harness.state.linked.phase == .stopped("The server is restarting."))
+        #expect(await harness.state.linked.phase == .stopped(.refused, "The server is restarting."))
         // A link that moves for another reason leaves it stopped.
         var waiting = signedIn
         waiting.waiting = 1
