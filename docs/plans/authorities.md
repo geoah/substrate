@@ -624,7 +624,17 @@ merge order, review record, where they run and what is left are on
 ## Existing installs
 
 Production holds Workouts' `~/training`, locked to its current client id.
-When phase 2 lands, Workouts' new build copies its records into
-`substrate.reamde.dev/training`, and the owner takes the old package over and
-deletes it. Anything else installed by hand under another authority is
-expected to break and is reinstalled through its app's approval.
+The new build copies nothing. At its first sync it uploads the phone's own
+history into `substrate.reamde.dev/training`: the respell of the old
+build's files drops what that build knew about `~/training` (its record
+versions, edit chains and queued session writes), so the published package
+reads as never synced from this phone and the exchange uploads a session
+the package lacks instead of reading its absence as a delete. Records the
+old package holds that the phone does not have (another phone's sessions, a
+routine the coach wrote) stay there until the owner copies them into the
+published package, as was done for `geoah.me` with a script, or deletes
+them; a phone whose history was copied by hand takes the copies as the
+server has them and sends nothing again. The old package is the owner's to
+take over and remove. Anything else installed by hand under another
+authority is expected to break and is reinstalled through its app's
+approval.
