@@ -32,6 +32,9 @@ dist/
 /apps/workouts/WorkoutsKit/.swiftpm/
 /apps/tasks/TasksKit/.build/
 /apps/tasks/TasksKit/.swiftpm/
+# Every app's core, the template's and one apps:new makes included.
+/apps/*/*Kit/.build/
+/apps/*/*Kit/.swiftpm/
 /apps/kit/Tools/BridgeGen/.build/
 /apps/kit/Tools/BridgeGen/.swiftpm/
 # The Android build: Gradle's caches and every module's output.
