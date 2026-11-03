@@ -62,6 +62,14 @@ func (c *Catalog) RefreshPackage(ctx context.Context, ds substrate.Dataset, id s
 	if mstr(row.Properties, "publishedFrom") == "" {
 		return result, nil
 	}
+	// The binary wins for every package it ships (decision 0212), on a
+	// refresh as on an install: a package a later binary ships is never
+	// upgraded from a document again.
+	if c.ships(id) {
+		result.Outcome = "upgrade-needs-review"
+		result.Reason = id + " now ships with this server; its catalog offers the shipped version"
+		return result, nil
+	}
 	source, err := c.reader.Read(ctx, mstr(row.Properties, "authority"), true)
 	if err != nil {
 		return result, err

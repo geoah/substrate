@@ -392,6 +392,11 @@ func (s *scopedDataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error)
 }
 
 func (s *scopedDataset) KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error) {
+	// The package kind is known to a grant that could name a package, so the
+	// one row Get serves it resolves; Get decides which row.
+	if ref == kindPackageRow && s.grant.NamesAnyPackage() {
+		return s.inner.KindByRef(ctx, ref)
+	}
 	if ok, err := s.reaches(ctx, ref); err != nil {
 		return substrate.KindInfo{}, err
 	} else if !ok {
@@ -425,6 +430,13 @@ func (s *scopedDataset) ConvertUnit(ctx context.Context, in substrate.UnitConver
 }
 
 func (s *scopedDataset) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
+	// The row of a package the grant's scopes reach into says which version
+	// the repository holds, which an app reads to know whether its build may
+	// write (scope.NamesPackage); every other declaration row stays the
+	// owner's.
+	if typ == kindPackageRow && s.grant.NamesPackage(id) {
+		return s.inner.Get(ctx, typ, id)
+	}
 	gated, err := s.rowGated(ctx, typ)
 	if err != nil {
 		return nil, err
