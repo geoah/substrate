@@ -66,3 +66,58 @@ func TestPublishedInstallIsBoundToReviewedCandidate(t *testing.T) {
 		t.Fatal("legacy install failed")
 	}
 }
+
+func (*reviewDataset) BundleStatusesUncounted(context.Context) ([]substrate.BundleStatus, error) {
+	return nil, nil
+}
+
+func TestApprovedInstallBindsEveryDependencyBeforeWriting(t *testing.T) {
+	ctx := context.Background()
+	old, _ := publishedFixture(t, 1)
+	reviewed, err := old.Resolve(ctx, "example.com/notes", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _ := publishedFixture(t, 1, 2)
+	root, err := ParseClosure([]byte(requiringClosure("example.com/root", 1, "example.com/safe", 1, "example.com/notes", 1)), "example.com/root", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	safe, err := ParseClosure([]byte(requiringClosure("example.com/safe", 1)), "example.com/safe", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root.Tier, safe.Tier = substrate.TierProvider, substrate.TierProvider
+	next.byID[root.ID], next.byID[safe.ID] = root, safe
+	current, err := next.Resolve(ctx, reviewed.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []*PublishedCandidate{
+		{Version: reviewed.Version, Digest: reviewed.origin.SHA256},
+		{Version: current.Version, Digest: reviewed.origin.SHA256},
+		nil,
+	} {
+		ds := &reviewDataset{}
+		expect := InstallExpectations{root.ID: nil, safe.ID: nil, reviewed.ID: want}
+		if _, _, err := next.InstallApproved(ctx, substrate.ActorConsole, root.ID, ds, expect); !errors.Is(err, substrate.ErrConflict) {
+			t.Fatalf("changed dependency accepted: %v", err)
+		}
+		if len(ds.installed) != 0 {
+			t.Fatal("even the unchanged first dependency must not land before validation")
+		}
+	}
+	ds := &reviewDataset{}
+	expect := InstallExpectations{root.ID: nil, safe.ID: nil, current.ID: {Version: current.Version, Digest: current.origin.SHA256}}
+	if _, _, err := next.InstallApproved(ctx, substrate.ActorConsole, root.ID, ds, expect); err != nil {
+		t.Fatal(err)
+	}
+	if len(ds.installed) != 3 || ds.installed[1].PublishedDigest != current.origin.SHA256 {
+		t.Fatalf("installed %+v", ds.installed)
+	}
+	delete(expect, safe.ID)
+	ds.installed = nil
+	if _, _, err := next.InstallApproved(ctx, substrate.ActorConsole, root.ID, ds, expect); !errors.Is(err, substrate.ErrConflict) || len(ds.installed) != 0 {
+		t.Fatalf("unapproved dependency installed: %v", err)
+	}
+}

@@ -238,11 +238,7 @@ func (r *Runner) setUpRow(ctx context.Context, ds substrate.Dataset, actor subst
 			return fmt.Errorf("%w: this server ships no catalog", substrate.ErrNotFound)
 		}
 		if approved.Action != substrate.SetupEnable {
-			var expect *catalog.PublishedCandidate
-			if pkg := approved.Package; pkg != nil && pkg.Publisher != nil && pkg.Publisher.Digest != "" {
-				expect = &catalog.PublishedCandidate{Version: pkg.Shipped, Digest: pkg.Publisher.Digest}
-			}
-			if _, _, err := r.catalog.InstallReviewed(ctx, actor, d.Package, ds, nil, expect); err != nil {
+			if _, _, err := r.catalog.InstallApproved(ctx, actor, d.Package, ds, installExpectations(approved.Package)); err != nil {
 				return err
 			}
 		}
@@ -441,4 +437,25 @@ func digestOf(p *substrate.AuthorizationPackagePublisher) string {
 		return ""
 	}
 	return p.Digest
+}
+
+// Every package the approved row brings must be bound, including requirements
+// of binary roots that resolve through an authority document.
+func installExpectations(pkg *substrate.AuthorizationPackage) catalog.InstallExpectations {
+	if pkg == nil {
+		return nil
+	}
+	out := catalog.InstallExpectations{}
+	add := func(id string, version int64, publisher *substrate.AuthorizationPackagePublisher) {
+		var candidate *catalog.PublishedCandidate
+		if publisher != nil {
+			candidate = &catalog.PublishedCandidate{Version: version, Digest: publisher.Digest}
+		}
+		out[id] = candidate
+	}
+	add(pkg.ID, pkg.Shipped, pkg.Publisher)
+	for _, step := range pkg.Requires {
+		add(step.ID, step.Shipped, step.Publisher)
+	}
+	return out
 }
