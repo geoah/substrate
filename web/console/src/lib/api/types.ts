@@ -891,8 +891,18 @@ export interface TokenInfo {
   appSoftwareVersion?: string
   /** When the app's build last checked in. */
   appCheckedAt?: string
+  /** Add-ons the owner approved that wait for their provider (decision
+   * 0216). */
+  appAddons?: AppAddon[]
   /** The agents the owner approved the app to declare (decision 0207). */
   agents?: AgentApproval[]
+}
+
+/** One add-on an approval left waiting for the provider it extends. */
+export interface AppAddon {
+  package: string
+  version: number
+  addonFor: string
 }
 
 /** One approved `agent` detail as a token stores it: the agent, the exact

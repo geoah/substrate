@@ -80,6 +80,7 @@ import type {
   AuthorizationPrevious,
   AuthorizationPublisher,
   AuthorizationPackagePublisher,
+  AppAddon,
   AuthorizationRedirectTo,
   AuthorizationRequest,
   AuthorizationScope,
@@ -606,7 +607,14 @@ const tokenInfo: Shape<TokenInfo> = {
   appPackages: false,
   appSoftwareVersion: false,
   appCheckedAt: false,
+  appAddons: false,
   agents: false,
+}
+
+const appAddon: Shape<AppAddon> = {
+  package: true,
+  version: true,
+  addonFor: true,
 }
 
 const agentApproval: Shape<AgentApproval> = {
@@ -1261,6 +1269,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   AuthorizationApp: authorizationApp,
   AuthorizationPublisher: authorizationPublisher,
   AuthorizationPackagePublisher: authorizationPackagePublisher,
+  AppAddon: appAddon,
   AuthorizationRedirectTo: authorizationRedirectTo,
   AuthorizationScope: authorizationScope,
   AuthorizationKind: authorizationKind,
