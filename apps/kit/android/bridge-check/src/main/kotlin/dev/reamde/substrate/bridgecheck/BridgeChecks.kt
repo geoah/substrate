@@ -10,6 +10,8 @@ import dev.reamde.substrate.kit.bridge.CheckPresentation
 import dev.reamde.substrate.kit.bridge.CheckResult
 import dev.reamde.substrate.kit.bridge.CheckRow
 import dev.reamde.substrate.kit.bridge.CheckTransport
+import dev.reamde.substrate.kit.bridge.Counter
+import dev.reamde.substrate.kit.bridge.RouteCommand
 import dev.reamde.substrate.kit.bridge.ProtocolFingerprint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -45,6 +47,19 @@ class BridgeChecks(private val context: Context, private val emit: (String) -> U
             }
             check("main actor") { ok(single(CheckCommand.MainActor)) }
             check("resource") { ok(single(CheckCommand.Resource)) }
+            check("runtime root") {
+                val handle = Bridge.open("counter").getOrThrow()
+                try {
+                    val presentations = handle.presentations(Counter.Presentation.serializer())
+                    withTimeout(5_000) { presentations.first { it.count == 0L } }
+                    val add = BridgeJson.encodeToJsonElement(Counter.Command.Serializer, Counter.Command.Add(1))
+                    handle.send(RouteCommand.serializer(), RouteCommand(emptyList(), add)).getOrThrow()
+                    val shown = withTimeout(5_000) { presentations.first { it.count == 1L } }
+                    "a Runtime opened as a root with no glue: count ${shown.count}, \"${shown.words}\""
+                } finally {
+                    handle.close()
+                }
+            }
             check("open and close x200") { openClose(200) }
             check("cancellation races x100") { cancellationRaces(100) }
             check("slow consumer") { slowConsumer(2000) }
