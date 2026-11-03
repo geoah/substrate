@@ -56,15 +56,21 @@ The rules this binds:
   installs first, the binary's and a publisher's alike
   (`internal/appsetup`, `Options.Approved`). A package in place is not
   held: its code runs already.
-- **Coverage is the grant's own rule** (`scope.Approved`, over
-  `scope.Covers`): a write scope covers a read; a glob scope covers the
-  kinds it matches and a glob no wider; a kind whose declared purpose is
-  `internal`, as the registry holds it or as a closure of the install
-  declares it, is covered by its exact scope alone, and so is a kind nobody
-  holds or declares, because its purpose is unknown and a glob must not
-  accidentally cover internal data; the auth kinds are covered by nothing, and a write of
-  the `core` or `llm` package by `full` alone, since no scope writes them.
-  `full` covers everything.
+- **Coverage compares effective reach**, shared by install, call and chat:
+  a write scope covers a read. Code globs do not inherit scope globs'
+  internal-kind exclusions. A non-full approval never covers a code glob
+  that could reach the core or llm package, for reads or writes, even when
+  those kinds are absent today. Other code globs require a scope at least
+  as wide plus an exact scope for every internal kind they currently match.
+  Candidate declarations take precedence over installed purposes. Exact
+  reaches of unknown kinds also require exact scopes. Auth kinds are never
+  covered, and core or llm writes require full access.
+  For future kinds outside core and llm, coverage is checked against the
+  registry at admission, not a promise that future internal kinds are
+  covered: every later install, call and chat must recheck. Already installed
+  autonomous code retains its own grants. This permits the clinical and
+  observations package globs used by Workouts without permitting global
+  code reads through an app's global scope. Full access covers everything.
 - **A row reaching further is blocked** `reaches-past-scopes`, on the
   package and on each requirement whose code does it, the problem naming
   each uncovered reach and the scope that would cover it (`full` where no
