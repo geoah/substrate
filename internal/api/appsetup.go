@@ -25,6 +25,7 @@ import (
 
 	"github.com/geoah/substrate/internal/appsetup"
 	"github.com/geoah/substrate/internal/authorize"
+	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -237,7 +238,7 @@ type checkBody struct {
 // one the catalog applies on its own (decision 0213). The catalog is one
 // once it reads authority documents; a test supplies its own.
 type packageRefresher interface {
-	RefreshPackage(ctx context.Context, ds substrate.Dataset, id string) error
+	RefreshPackage(ctx context.Context, ds substrate.Dataset, id string) (catalog.RefreshResult, error)
 }
 
 // postAuthorizationCheck answers an app, with its own token, whether it is
@@ -440,13 +441,16 @@ func (h *handler) refreshBelowFloor(ctx context.Context, ds substrate.Dataset, d
 		if held[id] == 0 || held[id] >= floors[id] {
 			continue
 		}
-		b, err := h.packages.Resolve(ctx, id, floors[id])
+		b, err := h.packages.ResolveFor(ctx, id, floors[id], ds)
 		if err != nil || b.Origin() == nil {
 			continue
 		}
-		if err := h.refresher.RefreshPackage(ctx, ds, id); err != nil {
+		res, err := h.refresher.RefreshPackage(ctx, ds, id)
+		if err != nil {
 			slog.Warn("authorize: a package below its app's floor could not be refreshed", "package", id, "error", err)
+			continue
 		}
+		slog.Info("authorize: a check refreshed a package below its app's floor", "package", id, "outcome", res.Outcome, "reason", res.Reason)
 	}
 }
 
