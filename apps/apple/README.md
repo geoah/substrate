@@ -249,8 +249,11 @@ metadata, and takes one of two doors, which make two kinds of session
   detail types, and that is 0.114.0 or later where it names a release, gets
   the app authorization flow, as Substrate Chat does: the browser sheet on
   the server's own sign-in and approval page, which asks for
-  `write:providers.substrate.reamde.dev/apple/*`,
-  `read:…/applehealth/account` and `read:…/applehealth/export`, and sets up
+  `write:providers.substrate.reamde.dev/apple/*`, and for every write the
+  applehealth package's own functions and triggers reach (a package an
+  approval installs reaches no further than the approved scopes): the
+  account and the deliveries by name, `write:…/applehealth/*`, health sleep
+  and workouts and `write:substrate.reamde.dev/observations/*`; and sets up
   on approval what Set Up would: `providers.substrate.reamde.dev/apple` at
   version 3 or later, `…/applehealth` at 5 or later, the Health account
   `substrate-sync-<first 8 characters of the install id>` (named for the
