@@ -524,7 +524,10 @@ func (c *Catalog) installReviewed(ctx context.Context, actor substrate.Actor, id
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(unmet) > 0 {
+	// An unmet requirement is refused here only where the whole install set
+	// must be the approved one; every other door leaves it to the engine,
+	// whose refusal names what the repository holds instead.
+	if closure != nil && len(unmet) > 0 {
 		return nil, nil, fmt.Errorf("%w: unresolved requirement %s", substrate.ErrValidation, unmet[0].ID)
 	}
 	if closure != nil {
