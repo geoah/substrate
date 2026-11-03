@@ -12,6 +12,7 @@ import type {
   AuthorizationPackagePublisher,
   AuthorizationPackageStep,
   AuthorizationPrevious,
+  AuthorizationReach,
   AuthorizationRequest,
   AuthorizationScope,
   AuthorizationSetup,
@@ -19,7 +20,12 @@ import type {
   SetupAction,
 } from "@/lib/api/types"
 import { webhookSentence } from "@/lib/app-scopes"
-import { displayName, lowerFirst, packageDisplayName } from "@/lib/kind-names"
+import {
+  displayName,
+  displayPlural,
+  lowerFirst,
+  packageDisplayName,
+} from "@/lib/kind-names"
 import { sentence } from "@/lib/tools"
 
 /** Whether approving runs something for this action; `none` is in place. A
@@ -146,8 +152,67 @@ export function webhookTriggers(rows: readonly AuthorizationSetup[]): string[] {
 /** What a package, or one of its requirements, ships of its own. */
 type PackageFacts = Pick<
   AuthorizationPackage,
-  "kinds" | "functions" | "triggers"
+  "kinds" | "functions" | "triggers" | "reach"
 >
+
+/** A list as a sentence names it: "a", "a and b", "a, b and c". */
+function joinWords(items: readonly string[]): string {
+  if (items.length <= 1) return items.join("")
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`
+}
+
+/** The hosts a package's code declares, every function's together, in
+ * declaration order and once each. */
+export function declaredHosts(facts: PackageFacts): string[] {
+  const out: string[] = []
+  for (const f of facts.functions ?? [])
+    for (const host of f.network ?? []) if (!out.includes(host)) out.push(host)
+  return out
+}
+
+/** Whether a package's code reaches the internet, as a sentence: the hosts
+ * it names, or that it has no network access; undefined when the package
+ * ships no code. */
+export function networkWords(facts: PackageFacts): string | undefined {
+  if (!facts.functions?.length) return undefined
+  const hosts = declaredHosts(facts)
+  if (hosts.length === 0) return "Its code has no internet access."
+  return `Its code can send data to the internet; it names ${joinWords(hosts)}.`
+}
+
+/** One reach in the owner's words: a kind by its plural label, a package
+ * glob as everything of that package, an authority glob as everything it
+ * publishes, and `*` as everything. */
+export function reachName(pattern: string): string {
+  if (pattern === "*") return "everything"
+  if (pattern.endsWith("/*")) {
+    const scope = pattern.slice(0, -2)
+    return scope.includes("/")
+      ? `every ${packageName(scope)} kind`
+      : `everything from ${scope}`
+  }
+  return lowerFirst(displayPlural(pattern))
+}
+
+/** What a package's code reads and changes, as one sentence, the reach no
+ * scope left checked covers marked; undefined when it reaches nothing. */
+export function reachWords(facts: PackageFacts): string | undefined {
+  const reach = facts.reach ?? []
+  if (reach.length === 0) return undefined
+  const name = (r: AuthorizationReach) =>
+    r.covered ? reachName(r.pattern) : `${reachName(r.pattern)} (not allowed)`
+  const writes = reach.filter((r) => r.write)
+  // A read of what it also changes says nothing more.
+  const reads = reach.filter(
+    (r) => !r.write && !writes.some((w) => w.pattern === r.pattern)
+  )
+  const parts = [
+    writes.length > 0 ? `changes ${joinWords(writes.map(name))}` : "",
+    reads.length > 0 ? `reads ${joinWords(reads.map(name))}` : "",
+  ].filter(Boolean)
+  const covered = reach.every((r) => r.covered)
+  return `Its code ${parts.join(" and ")}${covered ? ", all within the access you allow above." : "."}`
+}
 
 /** Whether a package ships code, and whether any of it starts on its own: an
  * enabled trigger that is not a webhook runs once the package is installed,
@@ -261,10 +326,11 @@ export function asSentence(text: string): string {
   return !t || /[.!?…]$/.test(t) ? t : `${t}.`
 }
 
-/** What can clear a block: the owner, in the console; a newer server; time;
+/** What can clear a block: the owner, in the console; the owner, on this
+ * page, by leaving the access the code needs checked; a newer server; time;
  * or nothing the owner does, since only the app or the server's catalog can
  * change what is asked or offered. */
-export type BlockRemedy = "console" | "server" | "wait" | "elsewhere"
+export type BlockRemedy = "console" | "scopes" | "server" | "wait" | "elsewhere"
 
 export function blockRemedy(block: AuthorizationBlock): BlockRemedy {
   switch (block.reason) {
@@ -273,6 +339,8 @@ export function blockRemedy(block: AuthorizationBlock): BlockRemedy {
     case "declared-by-owner":
     case "upgrade-needs-review":
       return "console"
+    case "reaches-past-scopes":
+      return "scopes"
     case "server-update":
       return "server"
     case "account-deleted":
@@ -291,6 +359,7 @@ export function blockRemedy(block: AuthorizationBlock): BlockRemedy {
 
 const BLOCK_STATUS: Record<BlockRemedy, string> = {
   console: "Needs a fix first",
+  scopes: "Needs more access",
   server: "Needs a server update",
   wait: "Can’t be done yet",
   elsewhere: "Can’t be done",
@@ -315,6 +384,10 @@ export function blockedWords(blocks: readonly AuthorizationBlock[]): string {
     return fixes > 0
       ? `Your server needs an update, and the rest can be fixed in the console (${link}), before this can be approved. Check again afterwards, or deny the request.`
       : "Your server needs an update before this can be approved. Whoever runs it can update it; check again afterwards, or deny the request."
+  if (remedies.includes("scopes"))
+    return fixes > 0
+      ? `Its code needs access that is unchecked above, or that the app did not ask for, and the rest can be fixed in the console (${link}). Allow what you can, then check again, or deny the request.`
+      : "Its code needs access that is unchecked above, or that the app did not ask for. Allow it above where you can; otherwise the app has to ask for it. Or deny the request."
   if (fixes > 0)
     return `Fix it in the console (${link}), then check again, or deny the request.`
   return "This can be approved once what is in the way has cleared. Check again later, or deny the request."
