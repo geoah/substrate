@@ -44,7 +44,8 @@ const TASKS = {
   ],
   agents: [],
 }
-const TASKS_WORDS = "See your tasks and projects, including kinds added later"
+const TASKS_WORDS =
+  "See your tasks and projects, including kinds added later, and search them by meaning, which spends your embedding budget"
 const NOTES = {
   scope: "write:ada.example.com/notes/note",
   requested: "write:ada.example.com/notes/note",
@@ -55,7 +56,8 @@ const NOTES = {
   kinds: [],
   agents: [],
 }
-const NOTES_WORDS = "See, add, change and delete your notes"
+const NOTES_WORDS =
+  "See, add, change and delete your notes, and search them by meaning, which spends your embedding budget"
 const UNITS = {
   scope: "read:substrate.reamde.dev/core/unit",
   requested: "read:substrate.reamde.dev/core/unit",
@@ -218,7 +220,8 @@ const SYNC = {
   setup: [INSTALL, CREATE, ENABLE],
   planHash: "plan-1",
 }
-const ACCOUNTS_WORDS = "See your Apple Health accounts"
+const ACCOUNTS_WORDS =
+  "See your Apple Health accounts, and search them by meaning, which spends your embedding budget"
 const WEBHOOK_POWER =
   "send data to your repository through the Apple Health webhook, for any Apple Health account, and see every delivery to it that could not be filed, whoever sent it"
 const SETTING_UP =
@@ -390,7 +393,11 @@ describe("AuthorizePage", () => {
 
     // Each scope is a sentence beside its checkbox, never its pattern.
     const access = screen.getByRole("region", { name: "It will be able to" })
-    for (const name of [TASKS_WORDS, NOTES_WORDS, "See your Core units"]) {
+    for (const name of [
+      TASKS_WORDS,
+      NOTES_WORDS,
+      "See your Core units, and search them by meaning, which spends your embedding budget",
+    ]) {
       expect(
         within(access).getByRole<HTMLInputElement>("checkbox", { name }).checked
       ).toBe(true)
