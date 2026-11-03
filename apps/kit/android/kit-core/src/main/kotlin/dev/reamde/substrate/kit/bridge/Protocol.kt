@@ -4,6 +4,7 @@
 package dev.reamde.substrate.kit.bridge
 
 import kotlin.reflect.KClass
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -13,10 +14,15 @@ import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonUnquotedLiteral
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
@@ -32,6 +38,33 @@ public object ProtocolFingerprint {
 public val BridgeJson: Json = Json {
     explicitNulls = false
     encodeDefaults = true
+}
+
+/**
+ * Any JSON (Swift's `JSONValue`), with every number written again as the
+ * digits it was read with: kotlinx writes a number back through Long or
+ * Double, which drops the digits a decimal or a large integer has past them.
+ */
+public object ExactJson : KSerializer<JsonElement> {
+    override val descriptor: SerialDescriptor = JsonElement.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): JsonElement {
+        val json = decoder as? JsonDecoder ?: throw SerializationException("JSON crosses as JSON only")
+        return exact(json.decodeJsonElement())
+    }
+
+    override fun serialize(encoder: Encoder, value: JsonElement) {
+        val json = encoder as? JsonEncoder ?: throw SerializationException("JSON crosses as JSON only")
+        json.encodeJsonElement(exact(value))
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    public fun exact(element: JsonElement): JsonElement = when (element) {
+        is JsonNull -> element
+        is JsonPrimitive -> if (element.isString || element.booleanOrNull != null) element else JsonUnquotedLiteral(element.content)
+        is JsonObject -> JsonObject(element.mapValues { exact(it.value) })
+        is JsonArray -> JsonArray(element.map(::exact))
+    }
 }
 
 /** Swift's synthesized enum coding: an object of one key, the case, holding its payload. */
@@ -337,7 +370,7 @@ public data class Envelope(
     val handle: Handle? = null,
     val id: Long? = null,
     val seq: Long? = null,
-    val body: JsonElement? = null,
+    val body: @Serializable(with = ExactJson::class) JsonElement? = null,
 )
 
 @Serializable
@@ -378,7 +411,7 @@ public sealed interface ListMessage {
 @Serializable
 public data class ListRow(
     val id: String,
-    val value: JsonElement,
+    val value: @Serializable(with = ExactJson::class) JsonElement,
 )
 
 @Serializable
@@ -409,7 +442,7 @@ public enum class Op {
 @Serializable
 public data class OpenRequest(
     val root: String,
-    val settings: JsonElement? = null,
+    val settings: @Serializable(with = ExactJson::class) JsonElement? = null,
 )
 
 @Serializable
