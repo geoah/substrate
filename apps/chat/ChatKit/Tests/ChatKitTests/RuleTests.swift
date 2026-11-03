@@ -241,6 +241,15 @@ struct ListRules {
         #expect(rig.server.count("/api/v1/records", query: "recordpatchrequest") == 0)
     }
 
+    @Test func aChatTheDeviceHoldsNothingOfIsReadWhenOpened() async throws {
+        let threads = #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3))]}"#
+        let rig = ChatRig(baseRoutes(threads: threads))
+        try await rig.signIn()
+        await rig.harness.send(.show(thread: "t1", scene: "s"))
+        let key = try #require(await rig.harness.state.scenes["s"]?.current)
+        try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
+    }
+
     @Test func aWindowLeavingKeepsAConversationAnotherShows() async throws {
         let rig = ChatRig()
         try await rig.signIn()

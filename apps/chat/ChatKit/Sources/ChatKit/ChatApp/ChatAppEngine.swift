@@ -60,10 +60,13 @@ extension ChatApp {
             guard next.readEpochs[thread, default: 0] == epoch, !next.owned(thread) else { break }
             publish(&next, thread, rows, version: version, full: full)
         case let .cachedLoaded(thread, cached):
-            guard let cached, next.transcripts[thread] == nil else { break }
-            next.transcripts[thread] = State.Held(records: cached.records, turns: transcript(of: cached.records),
-                                                  version: cached.threadVersion, full: cached.full)
-            load(&next, thread)
+            if let cached, next.transcripts[thread] == nil {
+                next.transcripts[thread] = State.Held(records: cached.records, turns: transcript(of: cached.records),
+                                                      version: cached.threadVersion, full: cached.full)
+            }
+            // What a conversation shows is read where the disk held none, or
+            // held rows that are not current.
+            if next.key(of: thread) != nil { load(&next, thread) }
         case let .prefetched(thread, epoch, version, rows):
             guard next.readEpochs[thread, default: 0] == epoch, !next.owned(thread) else { break }
             publish(&next, thread, rows, version: version, full: rows.count >= 100)
