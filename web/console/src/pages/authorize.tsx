@@ -28,6 +28,7 @@ import {
   PublisherFacts,
   PublisherLines,
 } from "@/components/authorize/publisher"
+import { HintMismatch } from "@/components/authorize/hint-mismatch"
 import { ScopeRow } from "@/components/authorize/scope-row"
 import { ProviderPicker } from "@/components/authorize/provider-picker"
 import { PackageChoices } from "@/components/authorize/package-choices"
@@ -878,6 +879,7 @@ function AutomationWarning() {
 
 function AuthorizeDoor() {
   const { request: id } = authorizeRoute.useParams()
+  const { login_hint: hint } = authorizeRoute.useSearch()
   const client = useQueryClient()
   const [technical] = useTechnicalDetails()
   // The scopes left checked, once the owner changed them: the set up is
@@ -904,6 +906,15 @@ function AuthorizeDoor() {
 
   return (
     <Door wide={technical}>
+      {authorization.data &&
+        hint &&
+        hint !== authorization.data.repository &&
+        authorization.data.state === "pending" && (
+          <HintMismatch
+            hint={hint}
+            repository={authorization.data.repository}
+          />
+        )}
       {authorization.data ? (
         <Approval
           id={id}
