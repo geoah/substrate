@@ -83,7 +83,7 @@ struct OutboxTests {
         #expect(try await openOutbox(root).entries.count == 5)
     }
 
-    @Test func aRefusalParksTheWriteHoldsTheRestOfItsGroupAndLetsAnotherGo() async throws {
+    @Test func aRefusalParksTheWriteHoldsTheRestOfItsBatchAndLetsAnotherGo() async throws {
         let server = ScriptedServer()
         server.answer("PUT", path(entryKind, "bad"), 422,
                       #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.sport: expected one of strength"]}}"#)
@@ -118,7 +118,7 @@ struct OutboxTests {
         #expect(await outbox.entries.count == 1)
     }
 
-    @Test func aDiscardDropsTheGroupAndAGroupTheServerHoldsIsPurgedAtItsVersion() async throws {
+    @Test func aDiscardDropsTheBatchAndABatchTheServerHoldsIsPurgedAtItsVersion() async throws {
         let outbox = try openOutbox()
         let purge = entry(.purge, entryKind, "s", batch: "s", guarded: true)
         try await outbox.enqueue([entry(.put, entryKind, "s", batch: "s"), entry(.put, entryKind, "s-1", batch: "s")])
@@ -149,7 +149,7 @@ struct OutboxTests {
         #expect(folder.setAside.count == 1)
     }
 
-    @Test func anEntryWorkoutsWroteReadsItsSessionAsItsGroup() throws {
+    @Test func anEntryWorkoutsWroteReadsItsSessionAsItsBatch() throws {
         let json = #"{"id":"6E1C3A4E-3D1B-4B8E-9E55-2F7A2B0C9D11","method":"PUT","kind":"k","recordID":"r","session":"s1"}"#
         let read = try JSONDecoder().decode(OutboxEntry.self, from: Data(json.utf8))
         #expect(read.batch == "s1")
@@ -159,7 +159,7 @@ struct OutboxTests {
 
 @Suite("The outbox while a write is in flight")
 struct OutboxInFlightTests {
-    @Test func aGroupPurgedWhileAnothersCreateIsInFlightLosesNoneOfTheOthersWrites() async throws {
+    @Test func aBatchPurgedWhileAnothersCreateIsInFlightLosesNoneOfTheOthersWrites() async throws {
         let server = ScriptedServer()
         let held = server.hold("PUT", path(entryKind, "a"))
         server.answer("PUT", path(entryKind, "b"), 422, #"{"error":{"code":"validation","message":"props.sport: no"}}"#)
@@ -180,7 +180,7 @@ struct OutboxInFlightTests {
         #expect(server.methodsAndPaths.last == "DELETE \(path(entryKind, "b"))")
     }
 
-    @Test func aGroupDiscardedWhileItsCreateIsInFlightIsPurgedAfterAtTheVersionItAnswered() async throws {
+    @Test func aBatchDiscardedWhileItsCreateIsInFlightIsPurgedAfterAtTheVersionItAnswered() async throws {
         let server = ScriptedServer()
         let held = server.hold("PUT", path(entryKind, "a"))
         server.on { $0.method == "PUT" ? (200, answered(4)) : nil }
@@ -350,7 +350,7 @@ struct OutboxEditTests {
         #expect(body["ifVersion"] == .number(0))
     }
 
-    @Test func aPurgeOutsideAnyGroupIsWithdrawnUntilItGoes() async throws {
+    @Test func aPurgeOutsideAnyBatchIsWithdrawnUntilItGoes() async throws {
         let outbox = try openOutbox()
         try await outbox.edit(edit("day-1", ["name": .string("One")], base: 4))
         try await outbox.delete(OutboxEntry(method: .purge, kind: noteKind, recordID: "day-1"))
