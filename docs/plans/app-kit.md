@@ -1,10 +1,11 @@
 # Plan: one app kit for every Substrate app, on Apple systems and Android
 
-Status: proposal, third draft, 2026-11-03; based on the domains stack
-(#1163 to #1167, [status](authorities/status.md)). Draft two was reviewed by
-Fable and Astra; this draft answers both (review record at the end). Nothing
-is built. The binding choices become decision records when the plan is
-accepted (§13).
+Status: implemented on branch `feat/app-kit`, 2026-11-03; based on the
+domains stack (#1163 to #1167, [status](authorities/status.md)). The plan was
+reviewed by Fable and Astra and confirmed by each; every step was reviewed by
+one of them as it landed (review record at the end, with what each step
+settled other than the plan said). The binding choices are decision records
+0222 to 0224 (§13).
 
 ## 1. The request
 
@@ -776,14 +777,15 @@ its own app or module.
 
 ## 13. Decision records
 
-When the plan is accepted:
-
-- Swift is the language of the apps' shared code, and Android runs it
+- [0222](../decisions/0222-swift-is-the-language-of-the-apps-shared-code-and-android-runs-it-through-the-swift-sdk-for-android.md):
+  Swift is the language of the apps' shared code, and Android runs it
   through the Swift SDK for Android.
-- A screen is a controller, engine, effects and presenter; a UI reads
-  presentations only, and Android receives them as JSON over a fixed bridge
-  whose Kotlin is generated.
-- An app is one folder named once by its `app.json`, and the kit's layering
+- [0223](../decisions/0223-a-screen-is-a-controller-over-a-pure-engine-and-presenter-and-android-receives-its-presentations-over-one-fixed-bridge.md):
+  a screen is a controller over a pure engine and presenter, and Android
+  receives its presentations over one fixed bridge whose Kotlin is
+  generated.
+- [0224](../decisions/0224-an-app-is-one-folder-named-once-by-its-app-json-and-the-kits-layering-is-checked.md):
+  an app is one folder named once by its `app.json`, and the kit's layering
   is checked.
 
 ## Review record
