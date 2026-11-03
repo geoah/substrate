@@ -57,7 +57,7 @@ public struct ServerRequirement: Hashable, Sendable {
         case "write": "let apps change your records"
         case "agents": "let apps talk to your agents"
         case "decide": "let apps apply what your agents suggest"
-        case "declare": "let apps keep a package of their own"
+        case "call": "let apps run your functions"
         case "webhook": "let apps send data to a webhook"
         case "full": "let apps sign in with full access"
         default: "give apps \(verb) access"
