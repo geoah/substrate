@@ -10,8 +10,9 @@ import (
 )
 
 // AddonPlanner checks a waiting package under the live token's approval.
-// Catalog owns the install walk; appsetup owns the approval policy.
-type AddonPlanner func(context.Context, substrate.Dataset, substrate.TokenInfo, substrate.AppAddon) *substrate.AuthorizationBlock
+// Success must carry every checked candidate; installation may not resolve
+// different code under that approval. Consent is still rechecked at write time.
+type AddonPlanner func(context.Context, substrate.Dataset, substrate.TokenInfo, substrate.AppAddon) (InstallExpectations, *substrate.AuthorizationBlock)
 
 // SetAddonPlanner wires the approval planner before this catalog is served.
 func (c *Catalog) SetAddonPlanner(plan AddonPlanner) { c.addonPlanner = plan }
@@ -54,9 +55,10 @@ func (c *Catalog) installAddons(ctx context.Context, ds substrate.Dataset, provi
 				continue
 			}
 			result := substrate.AddonInstallResult{Package: addon.Package, TokenID: token.ID, State: substrate.SetupWait}
-			if blocked := c.addonPlanner(ctx, ds, token, addon); blocked != nil {
+			expect, blocked := c.addonPlanner(ctx, ds, token, addon)
+			if blocked != nil {
 				result.Problem = blocked.Problem
-			} else if _, _, err := c.Install(ctx, substrate.ActorConsole, addon.Package, &addonConsentDataset{Dataset: ds, tokenID: token.ID}); err != nil {
+			} else if _, _, err := c.InstallApproved(ctx, substrate.ActorConsole, addon.Package, &addonConsentDataset{Dataset: ds, tokenID: token.ID}, expect); err != nil {
 				result.Problem = "The add-on could not be installed. Open its package page to resolve it."
 				if errors.Is(err, substrate.ErrForbidden) {
 					result.Problem = "The add-on's approval is no longer live. Approve the app again."
