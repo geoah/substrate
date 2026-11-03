@@ -35,15 +35,24 @@ function withLists(raw: AuthorizationRequest): AuthorizationRequest {
 
 /** The parked request: the app, where the code goes, the repository, the
  * scopes resolved against it and what approving would set up. Reading it is
- * when the server fetches the app's own document. */
+ * when the server fetches the app's own document. `checked` is the scopes
+ * the owner leaves checked, which the set up is planned against (decision
+ * 0215): absent, every scope is; an empty list is none. */
 export async function getAuthorization(
   id: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  checked?: readonly string[]
 ): Promise<AuthorizationRequest> {
+  const query =
+    checked === undefined
+      ? ""
+      : `?${new URLSearchParams(
+          (checked.length > 0 ? checked : [""]).map((s) => ["scope", s])
+        ).toString()}`
   return withLists(
     await request<AuthorizationRequest>(
       "GET",
-      authorizationPath(id),
+      authorizationPath(id) + query,
       undefined,
       { signal }
     )

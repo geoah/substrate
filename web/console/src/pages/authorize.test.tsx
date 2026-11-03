@@ -11,6 +11,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { clearSession, saveSession } from "@/lib/api/session"
+import { scopeSentence } from "@/lib/app-scopes"
 
 vi.mock("@/router", () => ({
   authorizeRoute: { useParams: () => ({ request: "req-1" }) },
@@ -268,8 +269,10 @@ const MODES = [
 describe("AuthorizePage", () => {
   const fetchMock = vi.fn<typeof fetch>()
   const assign = vi.fn()
-  /** What each route answers; a test overrides one to change the story. */
-  let answers: Record<string, () => Response>
+  /** What each route answers, given the address read; a test overrides
+   * one to change the story. A read with the scopes left checked
+   * (`?scope=`) is the GET route's too. */
+  let answers: Record<string, (url: string) => Response>
   /** What any other address answers, where a test needs more than absence. */
   let elsewhere: (url: string, init?: RequestInit) => Response | undefined
 
@@ -292,14 +295,14 @@ describe("AuthorizePage", () => {
       // Everything else the page reads (the preference record, the kind
       // registry) is absent unless a test says otherwise, which the console
       // treats as defaults.
-      if (String(url) !== PATH)
+      if (String(url).split("?")[0] !== PATH)
         return (
           elsewhere(String(url), init) ??
           jsonResponse(404, {
             error: { code: "not_found", message: "not found" },
           })
         )
-      return answers[method]()
+      return answers[method](String(url))
     })
   })
 
@@ -311,10 +314,11 @@ describe("AuthorizePage", () => {
     assign.mockReset()
   })
 
+  /** The calls to the request's route, a read with `?scope=` included. */
   const calls = (method: string) =>
     fetchMock.mock.calls.filter(
       ([url, init]) =>
-        String(url) === PATH && (init?.method ?? "GET") === method
+        String(url).split("?")[0] === PATH && (init?.method ?? "GET") === method
     )
   const body = (method: string, at = 0) =>
     JSON.parse((calls(method)[at][1] as RequestInit).body as string)
@@ -879,6 +883,110 @@ describe("AuthorizePage", () => {
     ).toBeTruthy()
   })
 
+  it("plans again with the scopes left checked, blocks the code they stop covering, and approves the plan read with them", async () => {
+    const HEALTH = {
+      scope: "write:substrate.reamde.dev/health/*",
+      requested: "write:substrate.reamde.dev/health/*",
+      verb: "write" as const,
+      write: true,
+      pattern: "substrate.reamde.dev/health/*",
+      glob: true,
+      kinds: [],
+      agents: [],
+    }
+    const covered = {
+      ...INSTALL,
+      package: {
+        ...INSTALL.package,
+        reach: [
+          {
+            pattern: "substrate.reamde.dev/health/sleep",
+            write: true,
+            by: [{ type: "function", id: `${APPLEHEALTH}/adaptapplehealth` }],
+            covered: true,
+            scope: "write:substrate.reamde.dev/health/sleep",
+          },
+        ],
+      },
+    }
+    const uncovered = {
+      ...covered,
+      package: {
+        ...covered.package,
+        reach: [{ ...covered.package.reach[0], covered: false }],
+      },
+      blocked: {
+        reason: "reaches-past-scopes",
+        problem:
+          "Its code reaches past the access you are approving: it writes substrate.reamde.dev/health/sleep (write:substrate.reamde.dev/health/sleep covers it). The app has to ask for that access, and you have to allow it.",
+      },
+    }
+    const query = (scopes: string[]) =>
+      `${PATH}?${new URLSearchParams(scopes.map((s) => ["scope", s])).toString()}`
+    const both = [ACCOUNTS.scope, HEALTH.scope]
+    answers.GET = (url) => {
+      const narrowed = url === query([ACCOUNTS.scope])
+      return jsonResponse(200, {
+        ...SYNC,
+        scopes: [ACCOUNTS, HEALTH],
+        setup: [narrowed ? uncovered : covered, CREATE, ENABLE],
+        planHash: narrowed ? "plan-narrow" : "plan-1",
+      })
+    }
+    renderPage()
+    const approve = await screen.findByRole<HTMLButtonElement>("button", {
+      name: "Approve and set up",
+    })
+    const setup = screen.getByRole("region", {
+      name: "It will set up on your server",
+    })
+    expect(
+      within(setup).getByText(
+        "Its code changes sleeps, all within the access you allow above."
+      )
+    ).toBeTruthy()
+    const health = screen.getByRole("checkbox", { name: scopeSentence(HEALTH) })
+    // Unchecking the health write reads the plan again with the account
+    // read alone, which the package's code reaches past.
+    fireEvent.click(health)
+    await screen.findByText("Needs more access")
+    expect(approve.disabled).toBe(true)
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => String(url) === query([ACCOUNTS.scope])
+      )
+    ).toBe(true)
+    expect(
+      within(setup).getByText(
+        /Its code reaches past the access you are approving/
+      )
+    ).toBeTruthy()
+    expect(
+      within(setup).getByText("Its code changes sleeps (not allowed).")
+    ).toBeTruthy()
+    expect(
+      screen.getByText(/Its code needs access that is unchecked above/)
+    ).toBeTruthy()
+    // Checking it back reads it again with both, and the plan is the first.
+    fireEvent.click(health)
+    await waitFor(() => expect(approve.disabled).toBe(false))
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url) === query(both))
+    ).toBe(true)
+    answers.POST = () => {
+      answers.GET = () =>
+        jsonResponse(200, running(["running", "waiting", "waiting"]))
+      return jsonResponse(202, { state: "setting-up" })
+    }
+    fireEvent.click(approve)
+    await screen.findByText(SETTING_UP)
+    expect(body("POST")).toEqual({
+      scopes: both,
+      lifetimeDays: 30,
+      planHash: "plan-1",
+    })
+  })
+
   it("names an update's versions", async () => {
     answers.GET = () =>
       jsonResponse(200, {
@@ -1408,10 +1516,14 @@ describe("AuthorizePage", () => {
         },
       })
     renderPage()
-    const approve = await screen.findByRole("button", {
+    const approve = await screen.findByRole<HTMLButtonElement>("button", {
       name: "Approve and set up",
     })
     fireEvent.click(screen.getByRole("checkbox", { name: NOTES_WORDS }))
+    // Unchecking reads the plan again with the scope left checked, and
+    // approving waits for that read.
+    await waitFor(() => expect(approve.disabled).toBe(false))
+    expect(calls("GET")).toHaveLength(2)
     const moved = {
       ...SYNC,
       scopes: [ACCOUNTS, NOTES],
@@ -1442,7 +1554,7 @@ describe("AuthorizePage", () => {
       )
     ).toBeTruthy()
     expect(note.textContent).toContain("Check it again, then approve.")
-    expect(calls("GET")).toHaveLength(2)
+    expect(calls("GET")).toHaveLength(3)
     expect(assign).not.toHaveBeenCalled()
 
     answers.GET = () =>

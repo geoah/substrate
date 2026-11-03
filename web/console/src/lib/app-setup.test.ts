@@ -15,17 +15,21 @@ import {
   chainLines,
   codeWords,
   consolePath,
+  declaredHosts,
   factCounts,
   failureWords,
   foldRequest,
   grantWords,
   lifetimeEnd,
   needsAction,
+  networkWords,
   packageName,
   planChanges,
   progressWords,
   propertyLabel,
   propertyValue,
+  reachName,
+  reachWords,
   reauthorizationHeading,
   keptWords,
   packagePage,
@@ -270,6 +274,8 @@ describe("a blocked row", () => {
       expect(blockRemedy(block(reason, "/providers/x"))).toBe("console")
     expect(blockRemedy(block("server-update"))).toBe("server")
     expect(blockRemedy(block("account-deleted"))).toBe("wait")
+    expect(blockRemedy(block("reaches-past-scopes"))).toBe("scopes")
+    expect(blockStatus(block("reaches-past-scopes"))).toBe("Needs more access")
     for (const reason of [
       "not-shipped",
       "not-published",
@@ -709,5 +715,87 @@ describe("a document-published package", () => {
       "Also installs Training 3, published by Substrate (substrate.reamde.dev).",
       "Also installs Health.",
     ])
+  })
+})
+
+describe("what a package's code reaches", () => {
+  const facts = {
+    functions: [
+      {
+        id: `${APPLEHEALTH}/applehealthingest`,
+        network: ["api.example.com", "10.0.0.1:8443"],
+      },
+      { id: `${APPLEHEALTH}/adaptapplehealth`, network: ["api.example.com"] },
+    ],
+    reach: [
+      {
+        pattern: "substrate.reamde.dev/health/sleep",
+        by: [
+          { type: "function" as const, id: `${APPLEHEALTH}/adaptapplehealth` },
+        ],
+        covered: true,
+        scope: "read:substrate.reamde.dev/health/sleep",
+      },
+      {
+        pattern: "substrate.reamde.dev/health/sleep",
+        write: true,
+        by: [
+          { type: "function" as const, id: `${APPLEHEALTH}/adaptapplehealth` },
+        ],
+        covered: true,
+        scope: "write:substrate.reamde.dev/health/sleep",
+      },
+      {
+        pattern: "substrate.reamde.dev/observations/*",
+        write: true,
+        by: [
+          { type: "function" as const, id: `${APPLEHEALTH}/adaptapplehealth` },
+        ],
+        covered: true,
+        scope: "write:substrate.reamde.dev/observations/*",
+      },
+      {
+        pattern: `${APPLEHEALTH}/export`,
+        by: [{ type: "trigger" as const, id: "applehealth-to-health" }],
+        covered: false,
+        scope: `read:${APPLEHEALTH}/export`,
+      },
+    ],
+  }
+
+  it("names the hosts its functions declare, once each, or that it has none", () => {
+    expect(declaredHosts(facts)).toEqual(["api.example.com", "10.0.0.1:8443"])
+    expect(networkWords(facts)).toBe(
+      "Its code can send data to the internet; it names api.example.com and 10.0.0.1:8443."
+    )
+    expect(networkWords({ functions: [{ id: "x/y/z" }] })).toBe(
+      "Its code has no internet access."
+    )
+    expect(networkWords({ functions: [] })).toBeUndefined()
+    expect(networkWords({})).toBeUndefined()
+  })
+
+  it("names a reach by its kind, package, authority or everything", () => {
+    expect(reachName("substrate.reamde.dev/health/sleep")).toBe("sleeps")
+    expect(reachName("ada.example.com/tasks/task")).toBe("tasks")
+    expect(reachName("substrate.reamde.dev/health/*")).toBe("every Health kind")
+    expect(reachName("ada.example.com/*")).toBe(
+      "everything from ada.example.com"
+    )
+    expect(reachName("*")).toBe("everything")
+  })
+
+  it("says what the code reads and changes, a read of what it changes folded, and marks what no scope covers", () => {
+    expect(reachWords(facts)).toBe(
+      "Its code changes sleeps and every Observations kind and reads exports (not allowed)."
+    )
+    const covered = {
+      reach: facts.reach.slice(0, 3),
+    }
+    expect(reachWords(covered)).toBe(
+      "Its code changes sleeps and every Observations kind, all within the access you allow above."
+    )
+    expect(reachWords({ reach: [] })).toBeUndefined()
+    expect(reachWords({})).toBeUndefined()
   })
 })
