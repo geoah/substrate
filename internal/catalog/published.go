@@ -15,6 +15,8 @@ import (
 // authority document of its publisher and the closure that document lists.
 // A bundle the binary ships has none.
 type Origin struct {
+	// AddonFor is the provider this optional package extends, from its document entry.
+	AddonFor string
 	// Authority is the publisher, and Name the document's own name for it.
 	Authority string
 	Name      string
@@ -93,6 +95,12 @@ func (c *Catalog) readClosure(ctx context.Context, id string, source authority.S
 		return nil, fmt.Errorf("%w: %s: %w", ErrNotPublished, id, err)
 	}
 	b.origin = &Origin{Authority: source.Document.Authority, Name: source.Document.Name, DocumentURL: source.DocURL, FromFile: source.FromFile, ClosureURL: v.Closure, SHA256: strings.ToLower(v.SHA256)}
+	for _, entry := range source.Document.Packages {
+		if entry.Package == b.Package {
+			b.origin.AddonFor = entry.AddonFor
+			break
+		}
+	}
 	b.Publisher = &substrate.AuthorizationPackagePublisher{Authority: b.origin.Authority, Name: b.origin.Name, DocumentURL: b.origin.DocumentURL, FromFile: b.origin.FromFile}
 	return b, nil
 }

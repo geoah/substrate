@@ -155,6 +155,13 @@ func (c *Catalog) publishedUpgrade(ctx context.Context, b *Bundle, ds substrate.
 			return nil, err
 		}
 		plan.Holders = BuildHolders(tokens, b.ID, b.Version, time.Now())
+		for _, holder := range plan.Holders {
+			checked := "no check-in recorded"
+			if holder.CheckedAt != nil {
+				checked = "last checked " + holder.CheckedAt.Format(time.RFC3339)
+			}
+			plan.Blockers = append(plan.Blockers, fmt.Sprintf("%s (%s), build %q, asks for version %d; %s", holder.ClientName, holder.ClientID, holder.SoftwareVersion, holder.Floor, checked))
+		}
 	}
 	return plan, nil
 }
