@@ -465,8 +465,6 @@ runs the check; it prints `verified` and the time, or the reason the check
 failed, and exits non-zero until the record passes, so a script can wait on
 DNS propagation. Both take `-o json` and `-o yaml`.
 
-Next: the [web console](console.md), the same repository in a browser.
-
 ## Check a package release
 
 ```sh
@@ -481,3 +479,5 @@ existing closure paths are relative to that file's directory.
 `--allow-narrowing` acknowledges removal or renaming from the newest listed
 closure. The command uploads nothing. It refuses changed published
 versions, downgrades, invalid closures and unexpected digests.
+
+Next: the [web console](console.md), the same repository in a browser.
