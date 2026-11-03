@@ -3,83 +3,62 @@ import SwiftUI
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
-import SubstrateDeviceApple
+import SubstrateScreens
 
-/// A server that cannot do what the app needs: which release it runs, which
-/// the app needs, what it cannot do yet, and who can change that.
-public struct ServerTooOldView: View {
-    let appName: String
-    let host: String
-    let running: String?
-    let needed: String?
-    let missing: [String]
-    /// The package rows only a newer server sets up, each with the server's
-    /// sentence.
-    let blocked: [Change]
+/// A server that cannot do what the app needs, as its presentation words it.
+public struct ServerTooOldScreen: View {
+    let presentation: ServerTooOldPresentation
     var onTryAgain: (() -> Void)?
     var onChangeServer: (() -> Void)?
 
-    public init(appName: String, host: String, running: String?, needed: String?, missing: [String], blocked: [Change] = [],
-                onTryAgain: (() -> Void)? = nil, onChangeServer: (() -> Void)? = nil)
-    {
-        self.appName = appName
-        self.host = host
-        self.running = running
-        self.needed = needed
-        self.missing = missing
-        self.blocked = blocked
+    public init(_ presentation: ServerTooOldPresentation, onTryAgain: (() -> Void)? = nil, onChangeServer: (() -> Void)? = nil) {
+        self.presentation = presentation
         self.onTryAgain = onTryAgain
         self.onChangeServer = onChangeServer
     }
 
     public var body: some View {
         VStack(spacing: 18) {
-            Image(systemName: "arrow.up.circle.fill")
+            Image(systemName: presentation.symbol.systemName)
                 .font(.system(size: 44))
                 .foregroundStyle(.orange)
                 .symbolRenderingMode(.hierarchical)
                 .accessibilityHidden(true)
             VStack(spacing: 8) {
-                Text("\(host) needs an update")
+                Text(presentation.title)
                     .font(.title2.weight(.semibold))
                     .multilineTextAlignment(.center)
-                Text(summary)
+                Text(presentation.summary)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if !missing.isEmpty || !blocked.isEmpty {
+            if let cannot = presentation.cannotTitle {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("It can't yet")
+                    Text(cannot)
                         .font(.subheadline.weight(.semibold))
-                    ForEach(missing, id: \.self) { line in
-                        Label {
-                            Text(line.capitalizedFirst).fixedSize(horizontal: false, vertical: true)
-                        } icon: {
-                            Image(systemName: "xmark.circle").foregroundStyle(.secondary)
-                        }
-                        .font(.subheadline)
-                    }
-                    ForEach(blocked) { ChangeRow($0).font(.subheadline) }
+                    ForEach(presentation.missing) { ChangeLineView($0).font(.subheadline) }
                 }
                 .modifier(KitCard())
             }
-            Text("Whoever runs \(host) can update it. Once it is, try again.")
+            Text(presentation.note)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            if onTryAgain != nil || onChangeServer != nil {
+            let tryAgain = presentation.tryAgain.flatMap { title in onTryAgain.map { (title, $0) } }
+            let changeServer = presentation.changeServer.flatMap { title in onChangeServer.map { (title, $0) } }
+            if tryAgain != nil || changeServer != nil {
                 VStack(spacing: 10) {
-                    if let onTryAgain {
-                        Button(action: onTryAgain) {
-                            Text("Try Again").frame(maxWidth: .infinity, minHeight: 30)
+                    if let (title, action) = tryAgain {
+                        Button(action: action) {
+                            Text(title).frame(maxWidth: .infinity, minHeight: 30)
                         }
                         .buttonStyle(.borderedProminent)
                         .buttonBorderShape(.capsule)
                         .controlSize(.large)
                     }
-                    if let onChangeServer {
-                        Button("Use Another Server", action: onChangeServer)
+                    if let (title, action) = changeServer {
+                        Button(title, action: action)
                             .buttonStyle(.borderless)
                     }
                 }
@@ -87,12 +66,28 @@ public struct ServerTooOldView: View {
         }
         .frame(maxWidth: 440)
     }
+}
 
-    private var summary: String {
-        let release = running.flatMap(ServerVersion.init)?.isRelease == true
-        let runs = "\(host) runs \(ServerVersion.display(running))" + (release ? "." : " that can't do it yet.")
-        guard let needed else { return "\(appName) needs a newer Substrate. \(runs)" }
-        return "\(appName) needs Substrate \(needed) or later. \(runs)"
+/// A server that cannot do what the app needs: which release it runs, which
+/// the app needs, what it cannot do yet, and who can change that.
+public struct ServerTooOldView: View {
+    let presentation: ServerTooOldPresentation
+    var onTryAgain: (() -> Void)?
+    var onChangeServer: (() -> Void)?
+
+    /// - Parameter blocked: the package rows only a newer server sets up,
+    ///   each with the server's sentence.
+    public init(appName: String, host: String, running: String?, needed: String?, missing: [String], blocked: [Change] = [],
+                onTryAgain: (() -> Void)? = nil, onChangeServer: (() -> Void)? = nil)
+    {
+        presentation = .present(appName: appName, host: host, running: running, needed: needed, missing: missing, blocked: blocked,
+                                tryAgain: onTryAgain != nil, changeServer: onChangeServer != nil)
+        self.onTryAgain = onTryAgain
+        self.onChangeServer = onChangeServer
+    }
+
+    public var body: some View {
+        ServerTooOldScreen(presentation, onTryAgain: onTryAgain, onChangeServer: onChangeServer)
     }
 }
 #endif

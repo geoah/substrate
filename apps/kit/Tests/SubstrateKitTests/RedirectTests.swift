@@ -136,6 +136,21 @@ final class LocalServer: @unchecked Sendable {
         #expect(elsewhere.requests.isEmpty)
     }
 
+    /// The transport's line stream answers the redirect itself, on every
+    /// system.
+    @Test func theTransportsLineStreamAnswersTheRedirectItself() async throws {
+        let (chosen, elsewhere) = try origins()
+        defer {
+            chosen.stop()
+            elsewhere.stop()
+        }
+        var request = URLRequest(url: chosen.origin.appending(path: "api/v1/changes"))
+        request.setValue("Bearer sub_x", forHTTPHeaderField: "Authorization")
+        let stream = try await URLSessionTransport(session: URLSession(configuration: .ephemeral)).lines(for: request)
+        #expect(stream.head.statusCode == 307)
+        #expect(elsewhere.requests.isEmpty)
+    }
+
     /// A stream an app reads from a session the kit made refuses it too.
     /// The open-source URLSession has no byte stream to read one from.
     #if canImport(Darwin)

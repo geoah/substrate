@@ -3,22 +3,89 @@ import SwiftUI
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
-import SubstrateDeviceApple
+import SubstrateScreens
+
+/// The review as its presentation words it: the heading and why, each
+/// list, and the way on to the browser.
+public struct ReviewScreen: View {
+    let presentation: ReviewPresentation
+    let onContinue: () -> Void
+    let onCancel: () -> Void
+
+    public init(_ presentation: ReviewPresentation, onContinue: @escaping () -> Void, onCancel: @escaping () -> Void) {
+        self.presentation = presentation
+        self.onContinue = onContinue
+        self.onCancel = onCancel
+    }
+
+    public var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(presentation.title)
+                            .font(.title2.weight(.semibold))
+                            .accessibilityAddTraits(.isHeader)
+                        Text(presentation.intro)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                ReviewSectionsView(presentation.sections)
+
+                Section {
+                    Button(action: onContinue) {
+                        Text(presentation.continueTitle).frame(maxWidth: .infinity, minHeight: 30)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                } footer: {
+                    Text(presentation.footer)
+                }
+            }
+            .formStyle(.grouped)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(presentation.cancelTitle, action: onCancel) }
+            }
+        }
+    }
+}
+
+/// A review's lists, as sections of a form.
+public struct ReviewSectionsView: View {
+    let sections: [ReviewSection]
+
+    public init(_ sections: [ReviewSection]) {
+        self.sections = sections
+    }
+
+    public var body: some View {
+        ForEach(sections) { section in
+            Section {
+                ForEach(section.rows) { ChangeLineView($0) }
+            } header: {
+                Text(section.title)
+            } footer: {
+                if let footer = section.footer { Text(footer) }
+            }
+        }
+    }
+}
 
 /// What the app will ask the owner for, before it opens the browser: the
 /// access it needs and what it sets up on their server, in the words the
 /// approval page uses, so nothing there is a surprise. The owner decides on
 /// the page; this only says what they will find.
 public struct ReviewChangesSheet: View {
-    let appName: String
-    let host: String
-    let heading: ReviewHeading
-    let changes: [Change]
-    /// The page lists what the app holds now under Already allowed: a
-    /// released app's client id, approved before.
-    let alreadyAllowed: Bool
-    /// The request carries details, whose access comes with setting them up.
-    let setsUp: Bool
+    let presentation: ReviewPresentation
     let onContinue: () -> Void
     let onCancel: () -> Void
 
@@ -32,12 +99,8 @@ public struct ReviewChangesSheet: View {
     init(appName: String, host: String, changes: [Change], heading: ReviewHeading, alreadyAllowed: Bool, setsUp: Bool,
          onContinue: @escaping () -> Void, onCancel: @escaping () -> Void)
     {
-        self.appName = appName
-        self.host = host
-        self.heading = heading
-        self.changes = changes
-        self.alreadyAllowed = alreadyAllowed
-        self.setsUp = setsUp
+        presentation = ReviewPresenter.present(appName: appName, host: host, changes: changes, heading: heading,
+                                               alreadyAllowed: alreadyAllowed, setsUp: setsUp)
         self.onContinue = onContinue
         self.onCancel = onCancel
     }
@@ -62,64 +125,10 @@ public struct ReviewChangesSheet: View {
     }
 
     public var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(heading == .firstSignIn ? "Connect \(appName) to \(host)" : heading.title(appName: appName))
-                            .font(.title2.weight(.semibold))
-                            .accessibilityAddTraits(.isHeader)
-                        Text(intro)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.vertical, 4)
-                }
-
-                ReviewChangesSections(appName: appName, host: host, heading: heading, changes: changes)
-
-                Section {
-                    Button(action: onContinue) {
-                        Text("Continue in Browser").frame(maxWidth: .infinity, minHeight: 30)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.large)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
-                } footer: {
-                    Text(ReviewChangesSections.choosing(host: host, setsUp: setsUp))
-                }
-            }
-            .formStyle(.grouped)
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Not Now", action: onCancel) }
-            }
-        }
+        ReviewScreen(presentation, onContinue: onContinue, onCancel: onCancel)
     }
 
-    var intro: String {
-        let leftOut = changes.contains(where: \.leftOut)
-        switch heading {
-        case .firstSignIn:
-            return "\(appName) will ask for this access. You see the same list in your browser, and approve it there."
-        case .renew:
-            return leftOut
-                ? "\(appName) asks to keep the access you approved, for another while, and asks again for what you left out last time."
-                : "Nothing new: \(appName) asks to keep the access you approved, for another while."
-        case .changeAccess:
-            let listed = alreadyAllowed
-                ? "You choose on \(host): what \(appName) has now is listed there under Already allowed, where you can uncheck it."
-                : "You choose on \(host), where you can uncheck any access \(appName) asks for."
-            // The footer (choosing(host:setsUp:)) says how set up is refused.
-            return listed
-        case .moreAccess, .serverSetup, .moreAccessAndServerSetup:
-            return "\(appName) has changed since you approved it. What it already has keeps working until you decide."
-        }
-    }
+    var intro: String { presentation.intro }
 }
 
 /// A review's lists, as sections of a form: the access the app asks for,
@@ -127,59 +136,20 @@ public struct ReviewChangesSheet: View {
 /// sets up on their server. A sign-in screen shows the same sections the
 /// review sheet does.
 public struct ReviewChangesSections: View {
-    let appName: String
-    let host: String
-    let heading: ReviewHeading
-    let changes: [Change]
+    let sections: [ReviewSection]
 
     public init(appName: String, host: String, heading: ReviewHeading, changes: [Change]) {
-        self.appName = appName
-        self.host = host
-        self.heading = heading
-        self.changes = changes
+        sections = ReviewPresenter.sections(appName: appName, host: host, heading: heading, changes: changes)
     }
 
-    private var access: [Change] { changes.filter { !$0.isSetup && !$0.leftOut } }
-    private var leftOut: [Change] { changes.filter(\.leftOut) }
-    private var setup: [Change] { changes.filter(\.isSetup) }
-
     public var body: some View {
-        if !access.isEmpty {
-            Section(heading == .firstSignIn ? "It will be able to" : "It asks to also") {
-                ForEach(access) { ChangeRow($0) }
-            }
-        }
-
-        if !leftOut.isEmpty {
-            Section {
-                ForEach(leftOut) { ChangeRow($0) }
-            } header: {
-                Text("You left these out last time")
-            } footer: {
-                Text("The page on \(host) asks for them again; uncheck them there to keep them out.")
-            }
-        }
-
-        if !setup.isEmpty {
-            Section {
-                ForEach(setup) { ChangeRow($0) }
-            } header: {
-                Text("It will set up on your server")
-            } footer: {
-                Text(setup.contains(where: \.blocked)
-                    ? "Some of this can't be set up yet: the page on \(host) shows why, and approving waits until it is fixed."
-                    : "Setting up continues even if you close the browser. What it sets up stays if it stops part way or you later revoke \(appName).")
-            }
-        }
+        ReviewSectionsView(sections)
     }
 
     /// What the owner can do on the page and after it, naming only the
-    /// controls there are: a checkbox per access, Deny for the set up,
-    /// Change Access in the app, and revoking in the server's Settings.
+    /// controls there are.
     public static func choosing(host: String, setsUp: Bool) -> String {
-        "You choose in your browser: you can uncheck any access with a checkbox there."
-            + (setsUp ? " Setting up comes with the request; to refuse it, deny." : "")
-            + " Later, Change Access in this app asks again; to revoke, use \(host)'s Settings, under Apps."
+        ReviewPresenter.choosing(host: host, setsUp: setsUp)
     }
 }
 #endif

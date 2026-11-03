@@ -1,0 +1,75 @@
+#if canImport(SwiftUI)
+import SwiftUI
+import SubstrateScreens
+
+/// A settings presentation as a grouped form: each row drawn by its
+/// control, each change a command.
+public struct SettingsScreen: View {
+    let presentation: SettingsPresentation
+    let send: (SettingsCommand) -> Void
+
+    public init(_ presentation: SettingsPresentation, send: @escaping (SettingsCommand) -> Void) {
+        self.presentation = presentation
+        self.send = send
+    }
+
+    public var body: some View {
+        Form {
+            ForEach(presentation.sections) { section in
+                Section {
+                    ForEach(section.rows) { row in SettingsRowView(row: row, send: send) }
+                } header: {
+                    if let title = section.title { Text(title) }
+                } footer: {
+                    if let footer = section.footer { Text(footer) }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+struct SettingsRowView: View {
+    let row: SettingsRow
+    let send: (SettingsCommand) -> Void
+
+    var body: some View {
+        switch row.control {
+        case let .toggle(on):
+            Toggle(row.label, isOn: Binding(get: { on }, set: { send(.toggle(row: row.id, on: $0)) }))
+        case let .choice(selected, options):
+            Picker(row.label, selection: Binding(get: { selected }, set: { send(.choose(row: row.id, option: $0)) })) {
+                ForEach(options) { Text($0.label).tag($0.id) }
+            }
+        case let .value(value, verbatim):
+            LabeledContent(row.label) {
+                if verbatim {
+                    Text(value).monospaced().textSelection(.enabled)
+                } else {
+                    Text(value)
+                }
+            }
+        case .link:
+            Button { send(.open(row: row.id)) } label: {
+                HStack {
+                    Text(row.label).foregroundStyle(Color.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+            }
+        case let .action(destructive, enabled):
+            Button(row.label, role: destructive ? .destructive : nil) { send(.perform(row: row.id)) }
+                .disabled(!enabled)
+        case let .note(tone):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(row.label).foregroundStyle(tone == .quiet ? Color.secondary : Color.primary)
+                if let detail = row.detail {
+                    Text(detail).font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        case let .problem(problem):
+            ProblemBox(problem)
+        }
+    }
+}
+#endif

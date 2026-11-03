@@ -3,7 +3,7 @@ import SwiftUI
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
-import SubstrateDeviceApple
+import SubstrateScreens
 
 /// What the app does about each issue. An issue whose action is nil shows
 /// no button.
@@ -27,11 +27,53 @@ public struct AppStatusActions {
         self.retry = retry
         self.openFix = openFix
     }
+
+    /// The actions there are closures for.
+    public var offers: Set<AccessAction.Offer> {
+        var offers = Set<AccessAction.Offer>()
+        if review != nil { offers.insert(.review) }
+        if signInAgain != nil { offers.insert(.signInAgain) }
+        if moveToAppAccess != nil { offers.insert(.moveToAppAccess) }
+        if retry != nil { offers.insert(.retry) }
+        if openFix != nil { offers.insert(.openFix) }
+        return offers
+    }
+
+    public func perform(_ action: AccessAction) {
+        switch action {
+        case .review: review?()
+        case .signInAgain: signInAgain?()
+        case .moveToAppAccess: moveToAppAccess?()
+        case .retry: retry?()
+        case let .openFix(path): openFix?(path)
+        }
+    }
 }
 
 /// Why an app's access ended, in one sentence every screen says it with.
 public func accessEndedWords(appName: String, host: String) -> String {
-    "\(host) no longer accepts \(appName): the time you approved it for is up, or it was revoked in Settings, under Apps."
+    AccessPresenter.endedWords(appName: appName, host: host)
+}
+
+/// The Access screen's banner: one line per issue, with its action.
+public struct AccessBannerView: View {
+    let banner: AccessBanner
+    let perform: (AccessAction) -> Void
+
+    public init(_ banner: AccessBanner, perform: @escaping (AccessAction) -> Void) {
+        self.banner = banner
+        self.perform = perform
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(banner.lines.enumerated()), id: \.offset) { index, line in
+                if index > 0 { Divider() }
+                IssueLineView(line: line, perform: perform)
+            }
+        }
+        .modifier(KitCard(tint: banner.tone.color))
+    }
 }
 
 /// An app's status issues, one line each with its action: what needs the
@@ -41,6 +83,8 @@ public struct AppStatusBanner: View {
     let appName: String
     let host: String
     let actions: AppStatusActions
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
 
     public init(issues: [AppIssue], appName: String, host: String, actions: AppStatusActions) {
         self.issues = issues
@@ -54,68 +98,10 @@ public struct AppStatusBanner: View {
     }
 
     public var body: some View {
-        if !issues.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(issues.enumerated()), id: \.offset) { index, issue in
-                    if index > 0 { Divider() }
-                    IssueLine(line: line(for: issue))
-                }
-            }
-            .modifier(KitCard(tint: issues.contains(where: \.isUrgent) || issues.approvalBlocked ? .orange : .blue))
-        }
-    }
-
-    private func line(for issue: AppIssue) -> IssueLine.Content {
-        switch issue {
-        case let .serverTooOld(running, needed, missing, blocked):
-            let cannot = missing.isEmpty ? blocked.isEmpty ? "" : "can't yet set up everything \(appName) needs"
-                : "can't yet \(joinWords(missing))"
-            let runs = running.map { "\(host) runs \(ServerVersion.display($0))" }
-            var message: String
-            if let needed {
-                message = "\(appName) needs Substrate \(needed) or later" + (runs.map { "; \($0)." } ?? ".")
-                if !cannot.isEmpty { message += " It \(cannot)." }
-            } else {
-                message = runs.map { "\($0), which \(cannot.isEmpty ? "is too old for \(appName)" : cannot)." }
-                    ?? "\(host) \(cannot.isEmpty ? "is too old for \(appName)" : cannot)."
-            }
-            return .init(symbol: "arrow.up.circle.fill", tint: .orange, title: "\(host) needs an update",
-                         message: message + " Whoever runs it can update it.", changes: blocked, action: nil)
-        case let .needsApproval(changes) where changes.contains(where: \.blocked):
-            // The approval page would refuse. A fix the server named is the
-            // way on; without one, the page itself shows why.
-            let count = changes.count == 1 ? "a change" : "\(changes.count) changes"
-            if let fix = changes.lazy.compactMap({ $0.block?.fix }).first, let openFix = actions.openFix {
-                return .init(symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Something on \(host) is in the way",
-                             message: "\(appName) needs \(count) that can't be approved until what is in the way is fixed on \(host):",
-                             changes: changes, action: ("Fix It on \(host)", { openFix(fix) }))
-            }
-            return .init(symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Something on \(host) is in the way",
-                         message: "\(appName) needs \(count) that can't be approved yet. The approval page on \(host) shows why:",
-                         changes: changes, action: actions.review.map { ("Review", $0) })
-        case let .needsApproval(changes) where issues.waitsForUpdate:
-            return .init(symbol: "checkmark.shield.fill", tint: .blue, title: "\(appName) needs your approval",
-                         message: "Once \(host) is updated, \(appName) will ask you to approve:", changes: changes, action: nil)
-        case let .needsApproval(changes):
-            return .init(symbol: "checkmark.shield.fill", tint: .blue, title: "\(appName) needs your approval",
-                         message: changes.count == 1 ? "One change, which you approve on \(host):"
-                             : "\(changes.count) changes, which you approve on \(host):",
-                         changes: changes, action: actions.review.map { ("Review", $0) })
-        case let .accessEndsSoon(date):
-            return .init(symbol: "clock.fill", tint: .orange, title: "Access ends \(dayWords(date))",
-                         message: "\(appName) stops working with \(host) then, until you approve it again.",
-                         action: issues.approvalBlocked ? nil : actions.review.map { ("Renew", $0) })
-        case .accessEnded:
-            return .init(symbol: "xmark.circle.fill", tint: .red, title: "\(appName)'s access ended",
-                         message: accessEndedWords(appName: appName, host: host),
-                         action: actions.signInAgain.map { ("Sign In Again", $0) })
-        case let .unreachable(message):
-            return .init(symbol: "wifi.exclamationmark", tint: .secondary, title: "Couldn't check with \(host)",
-                         message: message, action: actions.retry.map { ("Try Again", $0) })
-        case .legacyAccess:
-            return .init(symbol: "key.fill", tint: .blue, title: "Move to app access",
-                         message: "\(appName) signed in with your password, so it can reach everything. \(host) can now give it only the access it needs.",
-                         action: actions.moveToAppAccess.map { ("Move to App Access", $0) })
+        if let banner = AccessPresenter.banner(issues: issues, appName: appName, host: host, offers: actions.offers, now: Date(),
+                                               locale: locale, timeZone: timeZone)
+        {
+            AccessBannerView(banner, perform: actions.perform)
         }
     }
 }
@@ -140,6 +126,42 @@ public struct AccessEndingBanner: View {
     }
 }
 
+/// The access ended or was revoked, as its presentation words it.
+public struct AccessEndedScreen: View {
+    let presentation: AccessEndedPresentation
+    let onSignInAgain: () -> Void
+
+    public init(_ presentation: AccessEndedPresentation, onSignInAgain: @escaping () -> Void) {
+        self.presentation = presentation
+        self.onSignInAgain = onSignInAgain
+    }
+
+    public var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: presentation.symbol.systemName)
+                .font(.system(size: 48))
+                .foregroundStyle(.orange)
+                .symbolRenderingMode(.hierarchical)
+                .accessibilityHidden(true)
+            Text(presentation.title)
+                .font(.title2.weight(.semibold))
+                .multilineTextAlignment(.center)
+            Text(presentation.message)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: onSignInAgain) {
+                Text(presentation.signInAgain).frame(minWidth: 160, minHeight: 30)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+        }
+        .padding(32)
+        .frame(maxWidth: 440)
+    }
+}
+
 /// The access ended or was revoked: what happened, and the one way out.
 public struct AccessEndedView: View {
     let appName: String
@@ -153,52 +175,19 @@ public struct AccessEndedView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "person.crop.circle.badge.exclamationmark")
-                .font(.system(size: 48))
-                .foregroundStyle(.orange)
-                .symbolRenderingMode(.hierarchical)
-                .accessibilityHidden(true)
-            Text("\(appName)'s access ended")
-                .font(.title2.weight(.semibold))
-                .multilineTextAlignment(.center)
-            Text(accessEndedWords(appName: appName, host: host))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button(action: onSignInAgain) {
-                Text("Sign In Again").frame(minWidth: 160, minHeight: 30)
-            }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
-            .controlSize(.large)
-        }
-        .padding(32)
-        .frame(maxWidth: 440)
+        AccessEndedScreen(AccessPresenter.ended(appName: appName, host: host), onSignInAgain: onSignInAgain)
     }
 }
 
-/// One issue's line: its symbol, title, words and action.
-struct IssueLine: View {
-    struct Content {
-        var symbol: String
-        var tint: Color
-        var title: String
-        var message: String
-        /// The changes an approval makes, the first few listed.
-        var changes: [Change] = []
-        var action: (String, () -> Void)?
-    }
-
-    /// How many changes a line lists before it counts the rest.
-    static let shownChanges = 3
-
-    let line: Content
+/// One issue's line: its mark, title, words, changes and action.
+struct IssueLineView: View {
+    let line: IssueLine
+    let perform: (AccessAction) -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: line.symbol)
-                .foregroundStyle(line.tint)
+            Image(systemName: line.symbol.systemName)
+                .foregroundStyle(line.tone.color)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -210,16 +199,15 @@ struct IssueLine: View {
                 }
                 if !line.changes.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        ForEach(line.changes.prefix(Self.shownChanges)) { ChangeRow($0) }
-                        if line.changes.count > Self.shownChanges {
-                            Text("and \(line.changes.count - Self.shownChanges) more")
-                                .foregroundStyle(.secondary)
+                        ForEach(line.changes) { ChangeLineView($0) }
+                        if let more = line.more {
+                            Text(more).foregroundStyle(.secondary)
                         }
                     }
                     .font(.subheadline)
                 }
-                if let (title, action) = line.action {
-                    Button(title, action: action)
+                if let button = line.action {
+                    Button(button.title) { perform(button.action) }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                 }
@@ -227,16 +215,6 @@ struct IssueLine: View {
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .contain)
-    }
-}
-
-extension AppIssue {
-    /// Whether the app stops working, or will, until the owner acts.
-    var isUrgent: Bool {
-        switch self {
-        case .serverTooOld, .accessEnded, .accessEndsSoon: true
-        default: false
-        }
     }
 }
 #endif

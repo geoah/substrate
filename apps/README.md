@@ -657,6 +657,17 @@ feeds and install page as Sync's, and its client ID metadata document as
 notifications on the development profile, which `-allowProvisioningUpdates`
 adds to the app id.
 
+## Android
+
+The kit runs on Android under a Kotlin UI through one fixed bridge, built by
+the Gradle root in `gradle/` with the open-source Swift 6.4.2 and the Swift
+SDK for Android, which the `android:*` tasks pin as their own tools (the
+`apple:*` tasks keep Xcode's). `mise run android:sdk` installs the
+toolchain once, `android:build`, `android:test` and `android:smoke` build,
+test and run it on an emulator, and the CI job `android build` builds it on
+Linux. [kit/android/README.md](kit/android/README.md) says how the bridge
+runs, how its Kotlin is generated, and how an app adds its roots.
+
 ## An app's app.json
 
 Each app's folder holds an `app.json` that names the app once, as JSON so
@@ -704,6 +715,14 @@ nothing takes, and holds the layering the rest of this page relies on
 | --- | --- |
 | `Sparkle` | the macOS updater every Mac app compiles in (`xcode/Shared/Updater.swift`): it reads the release's `appcast.xml` and checks its signature |
 | `swift-crypto` | SHA-256 for PKCE on Linux and Android, where CryptoKit is not; SubstrateAuth takes it on those platforms alone |
+| `swift-syntax` | the bridge's generator (`kit/Tools/BridgeGen`) reads the `Bridged` declarations with it; a tool's dependency only, never linked into an app |
+| `com.squareup.okhttp3` | OkHttp, the transport on Android (`kit-device`): redirects off on every path, a line stream's included, and cancellation that reaches the socket |
+| `com.google.crypto.tink` | Tink, the secure store's AEAD on Android: a keyset wrapped by an Android Keystore key, so what is on disk is ciphertext |
+| `androidx` | AndroidX: DataStore, the secure store's ciphertext file, and the instrumented test runner |
+| `org.jetbrains.kotlinx` | kotlinx.serialization, which the generated Kotlin reads and writes bridged values with, and kotlinx.coroutines, the bridge's threads and flows |
+| `org.jetbrains.kotlin` | the Kotlin and serialization Gradle plugins `build-logic` applies |
+| `com.android.tools.build` | the Android Gradle Plugin |
+| `junit` | JUnit 4, the Kotlin unit and instrumented tests' runner |
 
 ## Layout
 
@@ -713,6 +732,9 @@ xcode/project.yml                   the xcodegen spec, the only project source; 
 xcode/Shared/Updater.swift          the updater every app compiles in
 xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync and Chat
 xcode/scripts/feed.swift            a release's index.json, appcast.xml, install page and manifest
+gradle/                             the one Gradle root of the Android build: settings, the version catalog, the wrapper, build-logic's convention plugins, swift-jnilibs.sh
+kit/android/                        the kit on Android: kit-core, kit-device, bridge-check, the bridge's golden and round-trip fixtures ([its README](kit/android/README.md))
+kit/Tools/BridgeGen/                the bridge's generator: Bridged declarations to the golden, the Kotlin and the fingerprint
 kit/                                the apps' shared Swift package: SubstrateCore, SubstrateDevice, SubstrateAPI, SubstrateAuth and SubstrateTesting, which build for Linux and Android too, SubstrateDeviceApple and SubstrateUI, and SubstrateKit over all of them ([its README](kit/README.md))
 console/apple/Support/              the console app's Info.plist per platform and its entitlements
 console/apple/Assets.xcassets       the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../docs/app-icons.md))

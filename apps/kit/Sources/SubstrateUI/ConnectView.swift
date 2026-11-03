@@ -4,6 +4,8 @@ import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
 import SubstrateDeviceApple
+import SubstrateRuntime
+import SubstrateScreens
 
 /// The app's name and what it is for, above the address field.
 public struct ConnectHeader: View {
@@ -38,90 +40,25 @@ public struct ConnectHeader: View {
     }
 }
 
-/// The server first: one field that takes a server's address or a
-/// repository's name, resolved by `ServerLocator` and checked against the
-/// server's discovery document and the app's requirement when the person
-/// presses Continue. A server found from a repository's name carries that
-/// name to the sign-in. A server that
-/// can give the app access of its own offers the browser sign-in; one the
-/// app falls back for shows the app's own password door; one too old says
-/// what it lacks. Without a password door, a server the app would fall back
-/// for is too old: there is no step to show for it.
-public struct ConnectView<Header: View, PasswordDoor: View>: View {
-    let manifest: AppManifest
-    @Binding var address: String
-    let probe: ServerProbe
-    let locator: ServerLocator
+/// The connect screen as its presentation words it: the field, the door the
+/// server found takes, the problem, the button and the footer. Every change
+/// is a command; the screen keeps no state but the field's focus.
+public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
+    let presentation: ConnectPresentation
     let header: Header
-    let onSignIn: (ServerProbe.Result) async throws -> Void
     let passwordDoor: (ServerProbe.Result) -> PasswordDoor
-    let hasPasswordDoor: Bool
-    /// Tokens the app stopped using that their servers have not revoked
-    /// yet, said below the door whatever server it is.
-    let unrevoked: [Session]
-
-    enum Phase {
-        case idle
-        case checking
-        case found(ServerProbe.Result)
-        case signingIn(ServerProbe.Result)
-    }
-
-    @State var phase: Phase
-    @State var problem: String?
-    /// The last check failed in a way the same check may not: the name's
-    /// DNS lookup did not answer, so the button offers Try Again.
-    @State private var retryable = false
-    /// The sign-in waiting on the browser, which Cancel stops.
-    @State private var signingIn: Task<Void, Never>?
+    let send: (ConnectController.Command) -> Void
+    @Binding var text: String
     @FocusState private var focused: Bool
 
-    public init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
-                @ViewBuilder header: () -> Header,
-                onSignIn: @escaping (ServerProbe.Result) async throws -> Void,
-                @ViewBuilder passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor)
+    public init(_ presentation: ConnectPresentation, text: Binding<String>, send: @escaping (ConnectController.Command) -> Void,
+                @ViewBuilder header: () -> Header, @ViewBuilder passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor)
     {
-        self.init(manifest: manifest, address: address, probe: probe, header: header(), onSignIn: onSignIn,
-                  passwordDoor: passwordDoor, hasPasswordDoor: true, phase: .idle, unrevoked: unrevoked)
-    }
-
-    init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe, header: Header,
-         onSignIn: @escaping (ServerProbe.Result) async throws -> Void,
-         passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor, hasPasswordDoor: Bool, phase: Phase,
-         problem: String? = nil, unrevoked: [Session] = [])
-    {
-        self.manifest = manifest
-        _address = address
-        self.probe = probe
-        locator = ServerLocator(probe: probe, resolver: DNSServiceTXTResolver())
-        self.header = header
-        self.onSignIn = onSignIn
+        self.presentation = presentation
+        self.header = header()
         self.passwordDoor = passwordDoor
-        self.hasPasswordDoor = hasPasswordDoor
-        self.unrevoked = unrevoked
-        _phase = State(initialValue: phase)
-        _problem = State(initialValue: problem)
-    }
-
-    private var found: ServerProbe.Result? {
-        switch phase {
-        case .found(let result), .signingIn(let result): result
-        default: nil
-        }
-    }
-
-    /// The door a server takes here: the manifest's, with the password door
-    /// read as too old where the app gave none.
-    private func door(for found: ServerProbe.Result) -> SignInDoor {
-        let door = manifest.door(for: found)
-        return door == .password && !hasPasswordDoor ? .tooOld : door
-    }
-
-    private var busy: Bool {
-        switch phase {
-        case .checking, .signingIn: true
-        default: false
-        }
+        self.send = send
+        _text = text
     }
 
     public var body: some View {
@@ -131,46 +68,63 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
 
                 addressField
 
-                if let found, door(for: found) == .tooOld, case let .tooOld(running, needed, missing) = found.verdict {
-                    ServerTooOldView(appName: manifest.appName, host: found.host, running: running, needed: needed,
-                                     missing: missing, onTryAgain: check, onChangeServer: changeServer)
+                if let tooOld = presentation.tooOld {
+                    ServerTooOldScreen(tooOld, onTryAgain: { send(.checkAgain) }, onChangeServer: {
+                        send(.changeServer)
+                        text = ""
+                        focused = true
+                    })
                 } else {
-                    if let found, door(for: found) == .password {
+                    if presentation.door == .password, let found = presentation.found {
                         passwordDoor(found)
                     }
-                    if let problem {
-                        ProblemBox(title: found == nil ? "Couldn't reach that server" : "Couldn't sign in", message: problem)
-                            .modifier(KitCard(tint: .red))
+                    if let problem = presentation.problem {
+                        ProblemBox(problem).modifier(KitCard(tint: problem.tone.color))
                     }
-                    if found.map({ door(for: $0) }) != .password {
-                        primaryButton
+                    if let button = presentation.button {
+                        Button {
+                            send(.proceed)
+                        } label: {
+                            HStack(spacing: 8) {
+                                if button.busy { ProgressView().controlSize(.small) }
+                                Text(button.title)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 30)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        .disabled(!button.enabled)
+                        .keyboardShortcut(.defaultAction)
                     }
-                    if WebAuthenticator.opensBrowser, case .signingIn = phase {
-                        Button("Cancel", action: cancelSignIn)
+                    if let cancel = presentation.cancel {
+                        Button(cancel) { send(.cancelSignIn) }
                             .buttonStyle(.borderless)
                             .keyboardShortcut(.cancelAction)
                     }
-                    footer
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                    if let footer = presentation.footer {
+                        footerView(footer)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
-                UnrevokedNotices(appName: manifest.appName, unrevoked: unrevoked)
+                UnrevokedNotices(presentation.unrevoked)
                     .modifier(KitCard(tint: .orange))
             }
             .padding(24)
             .frame(maxWidth: 440)
             .frame(maxWidth: .infinity)
         }
-        .onAppear { focused = address.isEmpty }
+        .onAppear { focused = text.isEmpty }
     }
 
     private var addressField: some View {
         HStack(spacing: 12) {
-            Image(systemName: "server.rack")
+            Image(systemName: ScreenSymbol.server.systemName)
                 .foregroundStyle(.secondary)
                 .frame(width: 22)
-            TextField("ada.example.com", text: $address)
+            TextField(presentation.field.placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .textContentType(.URL)
                 #if os(iOS)
@@ -179,131 +133,81 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
                 #endif
                 .autocorrectionDisabled()
                 .focused($focused)
-                .onSubmit(check)
-                .onChange(of: address) { _, typed in
-                    // Writing the checked origin back is not a new address.
-                    if let found, typed == Self.shown(found) { return }
-                    if found != nil { phase = .idle }
-                    problem = nil
-                    retryable = false
+                .onSubmit { send(.proceed) }
+                .onChange(of: text) { _, typed in
+                    if typed != presentation.field.text { send(.edit(typed)) }
                 }
-                .disabled(busy)
+                .disabled(presentation.field.disabled)
         }
         .padding(.horizontal, 16)
         .frame(minHeight: 50)
         .background(.fill.tertiary, in: .rect(cornerRadius: 14))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Repository or server")
+        .accessibilityLabel(presentation.field.label)
     }
 
-    private var primaryButton: some View {
-        Button {
-            if found == nil { check() } else { signIn() }
-        } label: {
-            HStack(spacing: 8) {
-                if busy { ProgressView().controlSize(.small) }
-                Text(buttonTitle)
-            }
-            .frame(maxWidth: .infinity, minHeight: 30)
-        }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
-        .disabled(busy || (found == nil && address.trimmingCharacters(in: .whitespaces).isEmpty))
-        .keyboardShortcut(.defaultAction)
-    }
-
-    private var buttonTitle: String {
-        switch phase {
-        case .idle: retryable ? "Try Again" : "Continue"
-        case .checking: "Checking…"
-        case .found: WebAuthenticator.opensBrowser ? "Continue in Your Browser" : "Sign In with Your Substrate"
-        case .signingIn: "Waiting for Your Browser…"
-        }
-    }
-
-    @ViewBuilder private var footer: some View {
-        if let found {
-            VStack(spacing: 6) {
+    @ViewBuilder private func footerView(_ footer: ConnectPresentation.Footer) -> some View {
+        VStack(spacing: 6) {
+            if let found = footer.found {
                 Label {
-                    Text("Server found: \(found.host)")
+                    Text(found)
                 } icon: {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                }
-                if let repository = found.repository {
-                    Text("Repository: \(repository)")
-                }
-                if door(for: found) == .password {
-                    Text("This server can't give \(manifest.appName) access of its own yet, so your password goes to it directly.")
-                } else if case .signingIn = phase, WebAuthenticator.opensBrowser {
-                    Text("\(found.host)'s sign-in page is open in your browser. Sign in there and choose what \(manifest.appName) may do; "
-                        + "this window comes back when you're done.")
-                } else {
-                    Text("You sign in on \(found.host) itself and choose what \(manifest.appName) may do there. "
-                        + "Later, Change Access in this app asks again; to revoke, use \(found.host)'s Settings, under Apps.")
+                    Image(systemName: ScreenSymbol.found.systemName).foregroundStyle(.green)
                 }
             }
-        } else {
-            Text("Your repository's name, such as ada.example.com, or your Substrate server's address. A name finds its server on its own.")
-        }
-    }
-
-    /// What the field shows once a server is found: the repository's name
-    /// it was found from, else the server's origin.
-    static func shown(_ found: ServerProbe.Result) -> String {
-        found.repository ?? found.origin.absoluteString
-    }
-
-    private func check() {
-        let typed = address
-        guard let origin = ServerAddress.origin(of: typed) else {
-            problem = "That is not a server address or a repository name."
-            return
-        }
-        phase = .checking
-        problem = nil
-        Task {
-            do {
-                let result = try await locator.locate(typed, requirement: manifest.requirement, app: manifest.appName)
-                address = Self.shown(result)
-                retryable = false
-                phase = .found(result)
-            } catch {
-                phase = .idle
-                retryable = error is ServerLocator.LookupFailed
-                if !isCancellation(error) { problem = (error as? LocalizedError)?.errorDescription ?? explain(error, app: manifest.appName, server: origin) }
+            if let repository = footer.repository {
+                Text(repository)
             }
+            Text(footer.note)
         }
     }
+}
 
-    private func signIn() {
-        guard let found else { return }
-        phase = .signingIn(found)
-        problem = nil
-        signingIn = Task {
-            defer {
-                if case .signingIn = phase { phase = .found(found) }
-                signingIn = nil
-            }
-            do {
-                try await onSignIn(found)
-            } catch is WebAuthenticator.Cancelled {
-                // The person closed the sheet: nothing to say.
-            } catch {
-                if !isCancellation(error) { problem = explain(error, app: manifest.appName, server: found.origin) }
-            }
-        }
+/// The server first: one field that takes a server's address or a
+/// repository's name, resolved by `ServerLocator` and checked against the
+/// server's discovery document and the app's requirement when the person
+/// presses Continue, then the door the server takes: the browser sign-in,
+/// the app's own password door, or what a server too old lacks. The logic
+/// is `ConnectController`'s, run on a runtime of its own; this view draws
+/// its presentation and keeps the app's address binding in step with it.
+public struct ConnectView<Header: View, PasswordDoor: View>: View {
+    @Binding var address: String
+    let header: Header
+    let passwordDoor: (ServerProbe.Result) -> PasswordDoor
+    @State private var model: PresentationModel<ConnectController>
+
+    public init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
+                @ViewBuilder header: () -> Header,
+                onSignIn: @escaping (ServerProbe.Result) async throws -> Void,
+                @ViewBuilder passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor)
+    {
+        self.init(manifest: manifest, address: address, probe: probe, header: header(), onSignIn: onSignIn,
+                  passwordDoor: passwordDoor, hasPasswordDoor: true, unrevoked: unrevoked)
     }
 
-    private func cancelSignIn() {
-        signingIn?.cancel()
+    init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe, header: Header,
+         onSignIn: @escaping (ServerProbe.Result) async throws -> Void,
+         passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor, hasPasswordDoor: Bool, unrevoked: [Session] = [])
+    {
+        _address = address
+        self.header = header
+        self.passwordDoor = passwordDoor
+        // The app's sign-in runs on the main actor, where it was written to.
+        let signIn = MainActorSignIn(onSignIn)
+        let controller = ConnectController(manifest: manifest, address: address.wrappedValue,
+                                           locator: ServerLocator(probe: probe, resolver: DNSServiceTXTResolver()),
+                                           hasPasswordDoor: hasPasswordDoor, opensBrowser: WebAuthenticator.opensBrowser,
+                                           unrevoked: unrevoked.map(SessionFacts.init), signIn: { try await signIn.run($0) })
+        _model = State(initialValue: PresentationModel(controller, environment: .apple(transport: probe.transport)))
     }
 
-    private func changeServer() {
-        phase = .idle
-        problem = nil
-        address = ""
-        focused = true
+    public var body: some View {
+        ConnectScreen(model.presentation, text: $address, send: model.send, header: { header }, passwordDoor: passwordDoor)
+            .onChange(of: model.presentation.field.revision) {
+                // What the controller wrote itself (the checked name, or an
+                // empty field for another server) is the app's address too.
+                address = model.presentation.field.text
+            }
     }
 }
 
@@ -313,7 +217,7 @@ public extension ConnectView where PasswordDoor == EmptyView {
          @ViewBuilder header: () -> Header, onSignIn: @escaping (ServerProbe.Result) async throws -> Void)
     {
         self.init(manifest: manifest, address: address, probe: probe, header: header(), onSignIn: onSignIn,
-                  passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, phase: .idle, unrevoked: unrevoked)
+                  passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, unrevoked: unrevoked)
     }
 }
 
@@ -325,8 +229,21 @@ public extension ConnectView where Header == ConnectHeader, PasswordDoor == Empt
     {
         self.init(manifest: manifest, address: address, probe: probe,
                   header: ConnectHeader(appName: manifest.appName, tagline: tagline, icon: icon),
-                  onSignIn: onSignIn, passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, phase: .idle,
-                  unrevoked: unrevoked)
+                  onSignIn: onSignIn, passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, unrevoked: unrevoked)
+    }
+}
+
+/// An app's sign-in closure, written for the main actor, called from the
+/// controller's effect.
+private final class MainActorSignIn: @unchecked Sendable {
+    private let body: (ServerProbe.Result) async throws -> Void
+
+    init(_ body: @escaping (ServerProbe.Result) async throws -> Void) {
+        self.body = body
+    }
+
+    @MainActor func run(_ found: ServerProbe.Result) async throws {
+        try await body(found)
     }
 }
 #endif

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- The secure store and the repository's folder live under
+         noBackupFilesDir, which no backup reads; the rules exclude it by
+         name as well, so a restore never revives a token or a queue of
+         writes for a session that no longer exists (app-kit.md §5.4). An
+         app with rules of its own keeps these exclusions in them. -->
+    <application
+        android:dataExtractionRules="@xml/substrate_data_extraction_rules"
+        android:fullBackupContent="@xml/substrate_backup_rules" />
+</manifest>

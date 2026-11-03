@@ -5,8 +5,8 @@ import SubstrateDevice
 
 /// One thing the owner's approval would change: a scope to allow, or set up
 /// to run on their server, in the console's everyday words.
-public struct Change: Hashable, Sendable, Identifiable {
-    public enum Kind: String, Hashable, Sendable {
+public struct Change: Codable, Hashable, Sendable, Identifiable {
+    public enum Kind: String, Codable, Hashable, Sendable {
         case scope, install, upgrade, account, webhook
     }
 
@@ -45,7 +45,7 @@ public struct Change: Hashable, Sendable, Identifiable {
 /// Something about an app's access the owner may need to act on. Several
 /// can hold at once: a server update and an approval, access ending soon
 /// and a review.
-public enum AppIssue: Hashable, Sendable, Identifiable {
+public enum AppIssue: Codable, Hashable, Sendable, Identifiable {
     /// The server cannot do what the app needs: `running` is its version,
     /// `needed` the release the app names, `missing` what it cannot do yet,
     /// and `blocked` each package row only a newer server sets up, in the
@@ -78,7 +78,7 @@ public enum AppIssue: Hashable, Sendable, Identifiable {
 }
 
 /// The app's standing with its server, as one check found it.
-public struct AppStatus: Hashable, Sendable {
+public struct AppStatus: Codable, Hashable, Sendable {
     public var issues: [AppIssue]
     /// What the server said it runs, where it answered.
     public var serverVersion: String?
@@ -138,7 +138,7 @@ public extension [AppIssue] {
 /// How a review of changes heads itself, by what changed since the access
 /// the app holds (the console's re-authorization headings), or by what the
 /// owner asked for.
-public enum ReviewHeading: Hashable, Sendable {
+public enum ReviewHeading: String, Codable, Hashable, Sendable {
     case firstSignIn
     case renew
     case moreAccess
