@@ -42,11 +42,15 @@ The rules this binds:
   touches once installed: each function's `permissions.reads.kinds` (read)
   and `permissions.writes` (write), each agent's `permissions.reads.kinds`
   and `permissions.writes`, each record trigger's `source.record.kinds`
-  (read), and each mapping's `from` (read) and `to` (write). It is read in
-  `internal/catalog` from the documents the install applies (`Bundle.Reach`),
-  once per closure, bare names completed under the declaring package. An
-  agent's tools add nothing: a host tool runs under the agent's own grants,
-  and a bundle function it calls runs under that function's.
+  (read), and each mapping's `from` (read) and `to` (write). Reach also follows
+  trigger callables, function `permissions.call` and `permissions.agents`,
+  and agents' function tools, offered tools and subagents, transitively with
+  cycle detection. Callees outside the closure count: candidate declarations
+  resolve first, then installed declarations. A missing callee refuses the
+  plan. Host tools run under the agent's grants and add no separate reach.
+  The `ask` tool's required write of `substrate.reamde.dev/llm/interaction`
+  is exempt for an asking agent in install, call and chat reach: these are
+  its questions to the owner. Other writes of that kind remain reach.
 - **Every closure an approval installs or upgrades is held to the scopes
   left checked**, the requested package and every requirement the catalog
   installs first, the binary's and a publisher's alike
@@ -57,7 +61,8 @@ The rules this binds:
   kinds it matches and a glob no wider; a kind whose declared purpose is
   `internal`, as the registry holds it or as a closure of the install
   declares it, is covered by its exact scope alone, and so is a kind nobody
-  holds or declares; the auth kinds are covered by nothing, and a write of
+  holds or declares, because its purpose is unknown and a glob must not
+  accidentally cover internal data; the auth kinds are covered by nothing, and a write of
   the `core` or `llm` package by `full` alone, since no scope writes them.
   `full` covers everything.
 - **A row reaching further is blocked** `reaches-past-scopes`, on the

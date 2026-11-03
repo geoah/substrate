@@ -88,10 +88,12 @@ The rules this binds:
   the function's reach**: every kind or glob its `permissions.reads.kinds`
   and `permissions.writes` name, and the reach of every function its
   `permissions.call` may invoke and every agent its `permissions.agents`
-  may run, since a call runs whatever runs under it and each callee's
+  may run, including agents' function tools, offered tools and subagents
+  transitively, since a call runs whatever runs under it and each callee's
   effects are held to the callee's own grant. An exact kind is covered
   when the grant reads or writes it under every rule a scope keeps (a glob
-  never reaches an internal kind); a glob is covered by a scope at least
+  never reaches an internal kind, and a kind the repository lacks needs an
+  exact scope because its purpose is unknown); a glob is covered by a scope at least
   as wide; a write of a glob that reaches `core` or `llm` is never
   covered, since no scope writes them. The refusal names what is missing
   (`read <kind>`, `write <kind>`). The function then runs under its own

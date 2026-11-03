@@ -32,7 +32,7 @@ func (s *scopedDataset) CallFunction(ctx context.Context, _ substrate.Actor, nam
 	if err != nil {
 		return nil, 0, err
 	}
-	reach, err := resolveReach(ctx, s.inner.Get, fn)
+	reach, err := resolveReach(ctx, s.inner, fn)
 	if err != nil {
 		return nil, 0, err
 	}
