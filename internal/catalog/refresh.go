@@ -157,6 +157,8 @@ func (c *Catalog) publishedUpgrade(ctx context.Context, b *Bundle, ds substrate.
 	if err != nil {
 		return nil, err
 	}
+	plan.CandidateVersion = b.Version
+	plan.CandidateDigest = b.origin.SHA256
 	old, err := c.heldClosure(ctx, b, ds)
 	if err != nil {
 		plan.Blockers = append(plan.Blockers, err.Error())

@@ -93,8 +93,11 @@ type BundleCodeChange struct {
 // preview, so the console can offer the upgrade, or explain why it would be
 // refused, before anyone asks for it.
 type BundleUpgrade struct {
-	Holders        []BundleUpgradeHolder `json:"holders,omitempty"`
-	ReviewRequired bool                  `json:"reviewRequired,omitempty"`
+	// CandidateVersion and CandidateDigest bind a document-published preview to its closure.
+	CandidateVersion int64                 `json:"candidateVersion,omitempty"`
+	CandidateDigest  string                `json:"candidateDigest,omitempty"`
+	Holders          []BundleUpgradeHolder `json:"holders,omitempty"`
+	ReviewRequired   bool                  `json:"reviewRequired,omitempty"`
 
 	CodeChanges []BundleCodeChange `json:"codeChanges,omitempty"`
 	// Available reports the shipped closure moves at least one stored
