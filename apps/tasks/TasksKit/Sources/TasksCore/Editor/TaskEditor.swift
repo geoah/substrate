@@ -10,7 +10,7 @@ import SubstrateRuntime
 /// typing alone. Save makes the write and hands it up; Cancel hands up
 /// nothing to write. Either way the root closes it.
 public struct TaskEditor: Controller, Equatable {
-    public enum Command: Codable, Equatable, Sendable {
+    public enum Command: Bridged, Equatable {
         case setName(String)
         case setNotes(String)
         case setLink(String)
@@ -149,7 +149,7 @@ public struct TaskEditor: Controller, Equatable {
         let named = !draft.trimmedName.isEmpty
         return TaskEditorPresentation(
             title: original == nil ? "New Task" : "Edit Task",
-            name: EditorText(label: TaskField.name.label, value: draft.name, prompt: "What to do"),
+            name: EditorText(label: TaskField.taskName.label, value: draft.name, prompt: "What to do"),
             notes: EditorText(label: TaskField.notes.label, value: draft.notes, prompt: "Details"),
             link: EditorText(label: TaskField.link.label, value: draft.link, prompt: "https://example.com"),
             list: EditorChoice(label: TaskField.list.label, selected: draft.list ?? "",

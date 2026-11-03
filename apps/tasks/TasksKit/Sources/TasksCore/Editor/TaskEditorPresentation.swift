@@ -1,8 +1,9 @@
 import Foundation
+import SubstrateCore
 
 /// The edit form: each field under the label the read view gives it, with
 /// what it holds, and Save and Cancel.
-public struct TaskEditorPresentation: Codable, Equatable, Sendable {
+public struct TaskEditorPresentation: Bridged, Equatable, Sendable {
     public var title: String
     public var name: EditorText
     public var notes: EditorText
@@ -19,29 +20,29 @@ public struct TaskEditorPresentation: Codable, Equatable, Sendable {
     /// Each field's label, by the fact it edits: what the read view's
     /// labels are held to.
     public var labels: [TaskField: String] {
-        [.name: name.label, .notes: notes.label, .link: link.label, .list: list.label, .due: due.label, .priority: priority.label]
+        [.taskName: name.label, .notes: notes.label, .link: link.label, .list: list.label, .due: due.label, .priority: priority.label]
     }
 }
 
-public struct EditorText: Codable, Hashable, Sendable {
+public struct EditorText: Bridged, Hashable, Sendable {
     public var label: String
     public var value: String
     public var prompt: String
 }
 
-public struct EditorChoice: Codable, Hashable, Sendable {
+public struct EditorChoice: Bridged, Hashable, Sendable {
     public var label: String
     /// The option chosen, by id ("" for none).
     public var selected: String
     public var options: [EditorOption]
 }
 
-public struct EditorOption: Codable, Hashable, Sendable, Identifiable {
+public struct EditorOption: Bridged, Hashable, Sendable, Identifiable {
     public var id: String
     public var title: String
 }
 
-public struct EditorDue: Codable, Hashable, Sendable {
+public struct EditorDue: Bridged, Hashable, Sendable {
     public var label: String
     public var kind: DueKind
     public var kinds: [EditorOption]

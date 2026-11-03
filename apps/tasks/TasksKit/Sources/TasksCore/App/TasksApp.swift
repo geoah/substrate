@@ -13,7 +13,7 @@ import SubstrateScreens
 /// its children. Its presentation is every screen of the app; the link's is
 /// the connection's, beside it.
 public struct TasksApp: LinkedApp {
-    public enum Command: Codable, Equatable, Sendable {
+    public enum Command: Bridged, Equatable {
         case select(section: String)
         /// A list shown, or none: on a phone, back to the lists.
         case show(ListSelection?)

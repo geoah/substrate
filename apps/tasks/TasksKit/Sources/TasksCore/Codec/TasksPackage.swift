@@ -15,8 +15,22 @@ public struct TasksPackage: Sendable {
     /// rather than the kind declares.
     public var bindings: [String: [String: [String: String]]] = [:]
 
+    /// The closure in this build's resources. On Android `Bundle.module`
+    /// looks beside `/system/bin` and stops the process when the bundle is
+    /// not there (docs/plans/app-kit.md §3.2), so there the bundle the
+    /// bridge copied out is read instead (`bundled(from:)`), and this throws.
     public static func bundled() throws -> TasksPackage {
-        guard let url = Bundle.module.url(forResource: "tasks", withExtension: "json", subdirectory: "Package") else {
+        #if os(Android)
+        throw CocoaError(.fileNoSuchFile)
+        #else
+        try bundled(from: .module)
+        #endif
+    }
+
+    /// The closure in `bundle`: the package's resources wherever they were
+    /// copied to.
+    public static func bundled(from bundle: Bundle) throws -> TasksPackage {
+        guard let url = bundle.url(forResource: "tasks", withExtension: "json", subdirectory: "Package") else {
             throw CocoaError(.fileNoSuchFile)
         }
         return try read(Data(contentsOf: url))

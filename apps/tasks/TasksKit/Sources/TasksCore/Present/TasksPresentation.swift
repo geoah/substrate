@@ -8,7 +8,7 @@ import SubstrateScreens
 /// column, the selected list, the open task, the editors open over them, a
 /// question waiting for an answer, and the app's settings. A UI reads this
 /// and sends commands; it decides nothing.
-public struct TasksPresentation: Codable, Equatable, Sendable {
+public struct TasksPresentation: Bridged, Equatable, Sendable {
     public var menu: AppMenuPresentation
     public var sidebar: SidebarPresentation
     public var list: ListPresentation?
@@ -32,7 +32,7 @@ public struct TasksPresentation: Codable, Equatable, Sendable {
 
 /// The lists column: what is due, the tasks in no list, then each list in
 /// the owner's order, with how many tasks are open in each.
-public struct SidebarPresentation: Codable, Equatable, Sendable {
+public struct SidebarPresentation: Bridged, Equatable, Sendable {
     public var title: String
     public var fixed: [SidebarRow]
     public var listsTitle: String
@@ -43,7 +43,7 @@ public struct SidebarPresentation: Codable, Equatable, Sendable {
     public var selected: ListSelection?
 }
 
-public struct SidebarRow: Codable, Hashable, Sendable, Identifiable {
+public struct SidebarRow: Bridged, Hashable, Sendable, Identifiable {
     /// `today`, `inbox`, or the list's id.
     public var id: String
     public var selection: ListSelection
@@ -58,14 +58,14 @@ public struct SidebarRow: Codable, Hashable, Sendable, Identifiable {
 }
 
 /// What the owner can do to a list.
-public enum ListAction: Codable, Hashable, Sendable {
+public enum ListAction: Bridged, Hashable, Sendable {
     case rename(String)
     case delete(String)
 }
 
 /// One list's tasks: the open ones in the chosen order, then the closed
 /// ones, shown or not.
-public struct ListPresentation: Codable, Equatable, Sendable {
+public struct ListPresentation: Bridged, Equatable, Sendable {
     public var selection: ListSelection
     public var title: String
     public var open: KeyedList<TaskRow>
@@ -89,7 +89,7 @@ public struct ListPresentation: Codable, Equatable, Sendable {
 
 /// The words of what a task offers from its row: its state, its priority,
 /// its list, edit and delete.
-public struct TaskMenuWords: Codable, Hashable, Sendable {
+public struct TaskMenuWords: Bridged, Hashable, Sendable {
     public var complete: String
     public var abandon: String
     public var reopen: String
@@ -104,7 +104,7 @@ public struct TaskMenuWords: Codable, Hashable, Sendable {
 
 /// A task as a row: its name, whether it is done, and each fact beside it
 /// labelled by its role.
-public struct TaskRow: Codable, Hashable, Sendable, Identifiable {
+public struct TaskRow: Bridged, Hashable, Sendable, Identifiable {
     public var id: String
     public var title: String
     public var status: TaskStatus
@@ -119,12 +119,12 @@ public struct TaskRow: Codable, Hashable, Sendable, Identifiable {
     public var spoken: String
 }
 
-public struct DueBadge: Codable, Hashable, Sendable {
+public struct DueBadge: Bridged, Hashable, Sendable {
     public var text: String
     public var tone: DueWords.Tone
 }
 
-public struct PriorityBadge: Codable, Hashable, Sendable {
+public struct PriorityBadge: Bridged, Hashable, Sendable {
     public var text: String
     public var priority: TaskPriority
 }
@@ -132,7 +132,7 @@ public struct PriorityBadge: Codable, Hashable, Sendable {
 /// The open task: its name, then each fact under the label the editor gives
 /// it too, the list and the priority as the choices that change them in
 /// place, and what can be done to it. Edit is the toolbar's.
-public struct TaskDetailPresentation: Codable, Equatable, Sendable {
+public struct TaskDetailPresentation: Bridged, Equatable, Sendable {
     public var id: String
     public var title: String
     public var status: TaskStatus
@@ -143,7 +143,7 @@ public struct TaskDetailPresentation: Codable, Equatable, Sendable {
 }
 
 /// One fact of the open task: read only, or a choice that changes it.
-public struct DetailField: Codable, Hashable, Sendable, Identifiable {
+public struct DetailField: Bridged, Hashable, Sendable, Identifiable {
     public var field: TaskField
     public var label: String
     public var value: String
@@ -158,7 +158,7 @@ public struct DetailField: Codable, Hashable, Sendable, Identifiable {
 }
 
 /// What the owner can do to a task.
-public enum TaskAction: Codable, Hashable, Sendable {
+public enum TaskAction: Bridged, Hashable, Sendable {
     case complete
     case reopen
     case abandon

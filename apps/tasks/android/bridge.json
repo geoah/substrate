@@ -1,0 +1,11 @@
+{
+  "sources": [
+    "apps/tasks/TasksKit/Sources/TasksCore",
+    "apps/tasks/TasksKit/Sources/TasksAndroid"
+  ],
+  "uses": ["apps/kit/android/bridge.json"],
+  "golden": "apps/tasks/android/bridge.golden.json",
+  "kotlin": "apps/tasks/android/src/main/kotlin/dev/reamde/substrate/tasks/bridge/Protocol.kt",
+  "kotlinPackage": "dev.reamde.substrate.tasks.bridge",
+  "swiftFingerprint": "apps/tasks/TasksKit/Sources/TasksAndroid/ProtocolFingerprint.swift"
+}

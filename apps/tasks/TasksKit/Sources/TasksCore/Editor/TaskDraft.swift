@@ -2,7 +2,7 @@ import Foundation
 import SubstrateCore
 
 /// How a draft is due: not at all, on a day, or at a moment.
-public enum DueKind: String, Codable, Hashable, Sendable, CaseIterable {
+public enum DueKind: String, Bridged, Hashable, Sendable, CaseIterable {
     case none
     case day
     case time

@@ -1,7 +1,11 @@
+import SubstrateCore
+
 /// A task's facts, each with the one label it has in the read view and the
 /// edit view alike.
-public enum TaskField: String, Codable, Hashable, Sendable, CaseIterable {
-    case name
+public enum TaskField: String, Bridged, Hashable, Sendable, CaseIterable {
+    /// Its raw value is the property's; the case is named apart because
+    /// Kotlin's enums take `name` for themselves.
+    case taskName = "name"
     case notes
     case link
     case list
@@ -12,7 +16,7 @@ public enum TaskField: String, Codable, Hashable, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .name: "Name"
+        case .taskName: "Name"
         case .notes: "Notes"
         case .link: "Link"
         case .list: "List"

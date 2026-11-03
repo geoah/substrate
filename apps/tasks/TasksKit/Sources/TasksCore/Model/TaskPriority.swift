@@ -1,5 +1,7 @@
+import SubstrateCore
+
 /// How urgent a task is: the `tasks` sample's ladder and default.
-public enum TaskPriority: String, Codable, Hashable, Sendable, CaseIterable, Comparable {
+public enum TaskPriority: String, Bridged, Hashable, Sendable, CaseIterable, Comparable {
     case none
     case low
     case medium

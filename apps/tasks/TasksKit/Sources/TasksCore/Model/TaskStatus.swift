@@ -1,6 +1,8 @@
+import SubstrateCore
+
 /// Where a task stands: open until marked done or abandoned, either undone
 /// back to open. The package's transitions allow nothing else.
-public enum TaskStatus: String, Codable, Hashable, Sendable, CaseIterable {
+public enum TaskStatus: String, Bridged, Hashable, Sendable, CaseIterable {
     case open
     case done
     case abandoned

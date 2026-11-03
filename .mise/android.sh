@@ -13,7 +13,8 @@
 #   smoke           on a booted emulator or device: the release build's
 #                   runtime checks, three cold starts, the instrumented tests
 #                   (the Gallery's: every fixture Swift makes there decodes)
-#   gallery <dir>   kit-ui's gallery test, keeping each fixture's PNG in <dir>
+#   gallery <dir>   kit-ui's gallery test, keeping each fixture's PNG in <dir>,
+#                   and each app's (its :<app> module's), in <dir>/<app>
 #   lock            rewrite the Gradle dependency locks
 #   release:build   one app's release APK, signed, for .mise/apps.sh
 #
@@ -140,17 +141,42 @@ host_swift() {
   fi
 }
 
+# The kit's configuration first, then each app's (apps/<app>/android/bridge.json),
+# which uses the kit's declarations and generates only its own.
 bridgegen() {
   host_swift build --package-path apps/kit/Tools/BridgeGen --product bridgegen --quiet
-  "$(host_swift build --package-path apps/kit/Tools/BridgeGen --show-bin-path)/bridgegen" "$@" apps/kit/android/bridge.json
+  local bin config
+  bin="$(host_swift build --package-path apps/kit/Tools/BridgeGen --show-bin-path)/bridgegen"
+  "$bin" "$@" apps/kit/android/bridge.json
+  for config in apps/*/android/bridge.json; do
+    [[ $config == apps/kit/* ]] || "$bin" "$@" "$config"
+  done
 }
 
 cmd_build() {
   need_sdk
   need_swift
+  local apps=()
+  read -r -a apps <<<"$(app_tasks assembleDebug assembleRelease)"
   gradle :kit-core:assembleDebug :kit-core:assembleRelease :kit-device:assembleDebug :kit-device:assembleRelease \
     :kit-ui:assembleDebug :kit-ui:assembleRelease :bridge-check:assembleDebug :bridge-check:assembleRelease \
-    :gallery:assembleDebug :gallery:assembleRelease
+    :gallery:assembleDebug :gallery:assembleRelease "${apps[@]}"
+}
+
+# The apps with an Android module (apps/<app>/android/build.gradle.kts), by id.
+android_apps() {
+  local module
+  for module in apps/*/android/build.gradle.kts; do
+    [[ $module == apps/kit/* ]] || basename "$(dirname "$(dirname "$module")")"
+  done
+}
+
+# `:<app>:<task>` for every app's module and each task named.
+app_tasks() {
+  local app task
+  for app in $(android_apps); do
+    for task in "$@"; do printf ':%s:%s ' "$app" "$task"; done
+  done
 }
 
 cmd_test() {
@@ -165,7 +191,11 @@ cmd_test() {
   local screens_out=$root/apps/kit/android/kit-core/build/roundtrip/testDebugUnitTest/screens.json
   # kit-core's RoundTripTest and ScreenFixturesTest write Kotlin's encoding
   # of the fixtures there.
-  gradle :kit-core:testDebugUnitTest :kit-device:testDebugUnitTest :kit-ui:testDebugUnitTest
+  # An app's unit tests are its gallery check: every fixture its core
+  # wrote, drawn by its own composables.
+  local apps=()
+  read -r -a apps <<<"$(app_tasks testDebugUnitTest)"
+  gradle :kit-core:testDebugUnitTest :kit-device:testDebugUnitTest :kit-ui:testDebugUnitTest "${apps[@]}"
   [[ -f $kotlin_out ]] || die "the Kotlin round trip wrote nothing to $kotlin_out"
   [[ -f $screens_out ]] || die "the screens' round trip wrote nothing to $screens_out"
   SUBSTRATE_ROUNDTRIP_KOTLIN=$kotlin_out SUBSTRATE_ROUNDTRIP_KOTLIN_SCREENS=$screens_out \
@@ -253,13 +283,20 @@ cmd_gallery() {
   need_swift
   mkdir -p "$folder"
   gradle :kit-ui:testDebugUnitTest --tests '*KitGalleryTest' "-Psubstrate.gallery=$folder"
+  local app
+  for app in $(android_apps); do
+    mkdir -p "$folder/$app"
+    gradle ":$app:testDebugUnitTest" "-Psubstrate.gallery=$folder/$app"
+  done
 }
 
 cmd_lock() {
   need_sdk
   need_swift
+  local apps=()
+  read -r -a apps <<<"$(app_tasks dependencies)"
   gradle :kit-core:dependencies :kit-device:dependencies :kit-ui:dependencies :bridge-check:dependencies :gallery:dependencies \
-    --write-locks >/dev/null
+    "${apps[@]}" --write-locks >/dev/null
   (cd apps/gradle && ./gradlew --console=plain -p build-logic dependencies --write-locks >/dev/null)
 }
 
