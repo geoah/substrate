@@ -47,6 +47,10 @@ public struct ServerLocator: Sendable {
         /// `_substrate.<name>`.
         public let query: String
         public let underlying: String
+        /// The system resolver said the name has no record and the plain
+        /// resolver could not confirm it, as a VPN, an encrypted DNS profile
+        /// or iCloud Private Relay can leave it.
+        public var unconfirmedNegative = false
 
         public var errorDescription: String? {
             "The DNS lookup for \(query) failed, so the server it names is unknown. Check your connection and try again."
@@ -86,11 +90,23 @@ public struct ServerLocator: Sendable {
     }
 
     /// Steps 2 to 4 for a name that is not a server itself.
+    ///
+    /// A negative answer the plain resolver could not confirm skips the web
+    /// host, which only a confirmed absence lets answer, and still probes the
+    /// parent: whoever controls the parent's zone controls the name, so the
+    /// parent is not a weaker answer than the record it may have missed, and
+    /// a default name needs no record at all. Only when the parent is no
+    /// substrate does the failed lookup stand.
     func locate(repository name: String, requirement: ServerRequirement, app: String) async throws -> ServerProbe.Result {
-        if let server = try await recordServer(name) {
-            return try await found(server, repository: name, requirement: requirement, app: app)
+        var unconfirmed: LookupFailed?
+        do {
+            if let server = try await recordServer(name) {
+                return try await found(server, repository: name, requirement: requirement, app: app)
+            }
+        } catch let failed as LookupFailed where failed.unconfirmedNegative {
+            unconfirmed = failed
         }
-        if let server = try await documentServer(name) {
+        if unconfirmed == nil, let server = try await documentServer(name) {
             return try await found(server, repository: name, requirement: requirement, app: app)
         }
         let parent = Self.parent(of: name)
@@ -99,6 +115,7 @@ public struct ServerLocator: Sendable {
                 return try await found(parentOrigin, repository: name, requirement: requirement, app: app)
             } catch is ServerProbe.NotASubstrate {}
         }
+        if let unconfirmed { throw unconfirmed }
         throw NotFound(name: name, parent: parent)
     }
 
@@ -114,7 +131,9 @@ public struct ServerLocator: Sendable {
             txts = try await resolver.txt(query)
         } catch {
             if isCancellation(error) { throw error }
-            throw LookupFailed(query: query, underlying: (error as? LocalizedError)?.errorDescription ?? "\(error)")
+            var failed = LookupFailed(query: query, underlying: (error as? LocalizedError)?.errorDescription ?? "\(error)")
+            failed.unconfirmedNegative = error is DNSServiceTXTResolver.Unconfirmed
+            throw failed
         }
         guard let txts, let record = try DomainRecord.parse(txts) else { return nil }
         guard let server = record.server, let url = URL(string: server) else { throw NoServerInRecord(name: name) }
