@@ -14,6 +14,16 @@ struct HevyImportView: View {
     @State private var apiKey = ""
     @State private var choosing = false
     @State private var stage: Stage = .start
+    /// What was read, kept so a change of the choices below plans again
+    /// without reading Hevy again.
+    @State private var read: Read?
+    @State private var pairs: HevyImport.PairedWeights = .each
+    @State private var zone: TimeZone = .current
+
+    private enum Read {
+        case account(HevyAPI.Export, library: [ExerciseID: Exercise])
+        case file(name: String, HevyCSV.File, library: [ExerciseID: Exercise])
+    }
 
     private enum Stage {
         case start
@@ -40,8 +50,20 @@ struct HevyImportView: View {
             } header: {
                 Text("Hevy account")
             } footer: {
-                Text("Reads your workouts, your routines and the exercises you made in Hevy. Get the key on hevy.com \u{2192} Settings \u{2192} Developer (it needs Hevy Pro). Nothing is written to Hevy, and the key is not kept.")
+                Text("Reads your workouts, routines, body measurements and the exercises you made in Hevy. Get the key on hevy.com \u{2192} Settings \u{2192} Developer (it needs Hevy Pro). Nothing is written to Hevy, and the key is not kept.")
             }
+
+            Section {
+                Picker("A pair of dumbbells was logged as", selection: $pairs) {
+                    Text("One dumbbell's weight").tag(HevyImport.PairedWeights.each)
+                    Text("Both together").tag(HevyImport.PairedWeights.together)
+                }
+            } header: {
+                Text("How you logged")
+            } footer: {
+                Text("Substrate Workouts counts one dumbbell or kettlebell of a pair. If you logged the two together in Hevy (40 kg for two 20 kg dumbbells), choose Both together and they are halved on import.")
+            }
+            .onChange(of: pairs) { _, _ in replan() }
 
             Section {
                 Button {
@@ -102,10 +124,24 @@ struct HevyImportView: View {
                 LabeledContent("From", value: Format.dayWithYear(first, in: plan.timeZone))
                 LabeledContent("To", value: Format.dayWithYear(last, in: plan.timeZone))
             }
-            LabeledContent("Times read in", value: plan.timeZone.localizedName(for: .generic, locale: .current) ?? plan.timeZone.identifier)
+            if case .file? = read {
+                NavigationLink {
+                    ZonePicker(zone: $zone)
+                } label: {
+                    LabeledContent("Times read in", value: zone.localizedName(for: .generic, locale: .current) ?? zone.identifier)
+                }
+            }
+            if !plan.measurements.isEmpty {
+                LabeledContent("Body measurements", value: Format.grouped(plan.measurements.count))
+            }
         } header: {
             Text("Workouts")
+        } footer: {
+            if case .file? = read {
+                Text("The file's times have no zone: they are read in the zone above, the one you trained in.")
+            }
         }
+        .onChange(of: zone) { _, _ in replan() }
 
         if !plan.routines.isEmpty || !plan.routinesHeld.isEmpty {
             Section {
@@ -128,7 +164,7 @@ struct HevyImportView: View {
                 Text("Routines")
             } footer: {
                 Text(link.session == nil
-                    ? "Routines live on your substrate: sign in to one, then import again to add them."
+                    ? "Routines and body measurements live on your substrate: sign in to one, then import again to add them."
                     : "Each routine keeps its folder, exercises, supersets, sets and rests. A routine here already is left as it is. Workouts started from a routine are linked to it.")
             }
         }
@@ -256,7 +292,6 @@ struct HevyImportView: View {
 
     private func readAccount() {
         let client = HevyClient(apiKey: apiKey)
-        let inputs = inputs
         stage = .reading("Reading your Hevy account\u{2026}")
         Task {
             do {
@@ -265,9 +300,8 @@ struct HevyImportView: View {
                 let export = try await client.export(known: known) { step in
                     Task { @MainActor in stage = .reading(step) }
                 }
-                let plan = HevyImport.plan(export, exercises: inputs.exercises, routines: inputs.routines, history: inputs.history,
-                                           deleted: inputs.deleted, timeZone: .current, adapter: inputs.adapter, library: library)
-                stage = .ready(source: "Your Hevy account", plan: plan)
+                read = .account(export, library: library)
+                replan()
             } catch {
                 stage = .failed(error.localizedDescription)
             }
@@ -275,10 +309,9 @@ struct HevyImportView: View {
     }
 
     private func readFile(_ url: URL) {
-        let inputs = inputs
         stage = .reading("Reading the file\u{2026}")
         Task {
-            let result = await Task.detached(priority: .userInitiated) { () -> Result<HevyImport.Plan, any Error> in
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<(HevyCSV.File, [ExerciseID: Exercise]), any Error> in
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 do {
@@ -286,18 +319,35 @@ struct HevyImportView: View {
                     guard let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
                         throw HevyImportError.unreadableText
                     }
-                    let file = try HevyCSV.read(text)
-                    let library = (try? ExerciseLibrary.bundled().catalog().exercises) ?? [:]
-                    return .success(HevyImport.plan(file, exercises: inputs.exercises, history: inputs.history, deleted: inputs.deleted,
-                                                    timeZone: .current, adapter: inputs.adapter, library: library))
+                    return .success((try HevyCSV.read(text), (try? ExerciseLibrary.bundled().catalog().exercises) ?? [:]))
                 } catch {
                     return .failure(error)
                 }
             }.value
             switch result {
-            case let .success(plan): stage = .ready(source: url.lastPathComponent, plan: plan)
-            case let .failure(error): stage = .failed(error.localizedDescription)
+            case let .success((file, library)):
+                read = .file(name: url.lastPathComponent, file, library: library)
+                replan()
+            case let .failure(error):
+                stage = .failed(error.localizedDescription)
             }
+        }
+    }
+
+    /// The plan for what was read, with the choices as they stand.
+    private func replan() {
+        guard let read else { return }
+        if case .importing = stage { return }
+        let inputs = inputs
+        switch read {
+        case let .account(export, library):
+            let plan = HevyImport.plan(export, exercises: inputs.exercises, routines: inputs.routines, history: inputs.history,
+                                       deleted: inputs.deleted, timeZone: .current, adapter: inputs.adapter, library: library, pairs: pairs)
+            stage = .ready(source: "Your Hevy account", plan: plan)
+        case let .file(name, file, library):
+            let plan = HevyImport.plan(file, exercises: inputs.exercises, history: inputs.history, deleted: inputs.deleted, timeZone: zone,
+                                       adapter: inputs.adapter, library: library, pairs: pairs)
+            stage = .ready(source: name, plan: plan)
         }
     }
 
@@ -309,9 +359,9 @@ struct HevyImportView: View {
                 try await app.importSessions(plan.sessions, exercises: plan.exercises)
                 var routines = 0
                 var problem: String?
-                if link.session != nil, !plan.routines.isEmpty {
+                if link.session != nil, !plan.routines.isEmpty || !plan.measurements.isEmpty {
                     do {
-                        try await link.importRoutines(plan.routines, exercises: plan.exercises)
+                        try await link.importRecords(routines: plan.routines, measurements: plan.measurements, exercises: plan.exercises)
                         routines = plan.routines.count
                     } catch {
                         problem = error.localizedDescription
@@ -323,6 +373,34 @@ struct HevyImportView: View {
             }
             await link.syncAfterRunning()
         }
+    }
+}
+
+/// Every zone the system knows, searchable: the one a CSV's wall-clock
+/// times were kept in.
+private struct ZonePicker: View {
+    @Binding var zone: TimeZone
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+
+    var body: some View {
+        let zones = TimeZone.knownTimeZoneIdentifiers.filter { query.isEmpty || $0.localizedCaseInsensitiveContains(query) }
+        List(zones, id: \.self) { identifier in
+            Button {
+                if let picked = TimeZone(identifier: identifier) { zone = picked }
+                dismiss()
+            } label: {
+                HStack {
+                    Text(identifier.replacingOccurrences(of: "_", with: " "))
+                    Spacer()
+                    if identifier == zone.identifier { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                }
+            }
+            .foregroundStyle(.primary)
+        }
+        .searchable(text: $query, prompt: "Search time zones")
+        .navigationTitle("Time zone")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

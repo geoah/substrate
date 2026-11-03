@@ -1,6 +1,6 @@
 {
   "package": "~/training",
-  "version": 3,
+  "version": 4,
   "documents": [
     {
       "kind": "substrate.reamde.dev/core/package",
@@ -10,7 +10,7 @@
       "data": {
         "authority": "~",
         "package": "training",
-        "version": 3
+        "version": 4
       }
     },
     {
@@ -32,7 +32,9 @@
           "~/training/routine",
           "~/training/session",
           "~/training/set",
-          "~/training/memory"
+          "~/training/memory",
+          "~/training/library",
+          "~/training/bodymeasurement"
         ]
       }
     },
@@ -3185,6 +3187,290 @@
                 "label": "Substrate Workouts"
               }
             ]
+          }
+        }
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/kind",
+      "metadata": {
+        "id": "~/training/library"
+      },
+      "data": {
+        "authority": "~",
+        "package": "training",
+        "description": "What Substrate Workouts has seeded into this package, such as the exercise library, and the version of it this repository holds whole.",
+        "purpose": "internal",
+        "names": {
+          "singular": "library"
+        },
+        "label": {
+          "singular": "Seeded library",
+          "plural": "Seeded libraries"
+        },
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "description": "what was seeded, such as Exercise library"
+          },
+          "version": {
+            "type": "int",
+            "min": 1,
+            "description": "the library version this repository holds whole; absent until a first run finishes"
+          },
+          "seeding": {
+            "type": "int",
+            "min": 1,
+            "description": "the library version a run is writing, until it finishes"
+          }
+        }
+      }
+    },
+    {
+      "kind": "substrate.reamde.dev/core/kind",
+      "metadata": {
+        "id": "~/training/bodymeasurement"
+      },
+      "data": {
+        "authority": "~",
+        "package": "training",
+        "description": "One day's body measurements: body mass, lean mass, body fat and circumferences, each optional.",
+        "purpose": "primary",
+        "names": {
+          "singular": "bodymeasurement"
+        },
+        "label": {
+          "singular": "Body measurement",
+          "plural": "Body measurements"
+        },
+        "traits": [
+          "substrate.reamde.dev/core/temporal(point)"
+        ],
+        "displayTemplate": "{id}",
+        "properties": {
+          "bodyMass": {
+            "type": "quantity",
+            "unit": "kg",
+            "units": [
+              "kg",
+              "lb"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "kg"
+            },
+            "description": "the body mass that day"
+          },
+          "leanMass": {
+            "type": "quantity",
+            "unit": "kg",
+            "units": [
+              "kg",
+              "lb"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "kg"
+            },
+            "description": "the lean body mass that day"
+          },
+          "bodyFat": {
+            "type": "decimal",
+            "min": 0,
+            "max": 100,
+            "description": "the share of body mass that is fat, in percent"
+          },
+          "neck": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the neck circumference"
+          },
+          "shoulders": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the shoulders circumference"
+          },
+          "chest": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the chest circumference"
+          },
+          "leftBicep": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the left upper arm circumference"
+          },
+          "rightBicep": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the right upper arm circumference"
+          },
+          "leftForearm": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the left forearm circumference"
+          },
+          "rightForearm": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the right forearm circumference"
+          },
+          "abdomen": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the abdomen circumference"
+          },
+          "waist": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the waist circumference"
+          },
+          "hips": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the hips circumference"
+          },
+          "leftThigh": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the left thigh circumference"
+          },
+          "rightThigh": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the right thigh circumference"
+          },
+          "leftCalf": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the left calf circumference"
+          },
+          "rightCalf": {
+            "type": "quantity",
+            "unit": "cm",
+            "units": [
+              "cm",
+              "in"
+            ],
+            "min": {
+              "value": "0",
+              "unit": "cm"
+            },
+            "description": "the right calf circumference"
+          },
+          "notes": {
+            "type": "text",
+            "description": "anything else about the day"
+          },
+          "adapter": {
+            "type": "string",
+            "description": "what wrote it and its version, `<name>@<version>`"
           }
         }
       }

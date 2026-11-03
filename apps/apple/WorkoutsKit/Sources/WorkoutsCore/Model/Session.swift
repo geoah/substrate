@@ -231,10 +231,19 @@ public struct Catalog: Sendable {
     }
 
     /// Gives each exercise that names no muscles of its own its movement's,
-    /// which is what it counts from.
+    /// which is what it counts from, unless its own group lists say
+    /// otherwise: lists the owner or the coach wrote, which differ from the
+    /// ones the movement's muscles imply, win over the movement.
     public mutating func resolveMovements() {
         for (id, exercise) in exercises {
-            exercises[id]?.inheritedMuscles = exercise.movement.flatMap { movements[$0]?.muscles } ?? []
+            guard let shares = exercise.movement.flatMap({ movements[$0]?.muscles }), !shares.isEmpty else {
+                exercises[id]?.inheritedMuscles = []
+                continue
+            }
+            let implied = Exercise.groupLists(shares)
+            let own = (exercise.primaryMuscles, exercise.secondaryMuscles)
+            let agrees = (own.0.isEmpty && own.1.isEmpty) || (Set(own.0) == Set(implied.primary) && Set(own.1) == Set(implied.secondary))
+            exercises[id]?.inheritedMuscles = agrees ? shares : []
         }
     }
 }

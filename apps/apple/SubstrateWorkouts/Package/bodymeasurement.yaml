@@ -1,0 +1,171 @@
+# bodymeasurement: one day's body measurements, as Hevy and similar apps
+# keep them: body mass, lean mass, body fat and circumferences, each
+# optional. The Hevy import writes one per Hevy entry, so a migration keeps
+# every value; a session reads the latest one on or before its day as its
+# body mass where it has none of its own.
+#
+# WHY HERE AND NOT AS OBSERVATIONS. Lean mass and the circumferences have no
+# metric in the health catalogue, and writing observations would ask every
+# existing user to approve a new scope. Mirroring body mass and body fat
+# into `substrate.reamde.dev/observations` is a later, additive step.
+#
+# THE ID IS THE SOURCE'S: `hevy-<entry id>`, so an import again rewrites
+# the same record.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ~/training/bodymeasurement
+data:
+  authority: "~"
+  package: training
+  description: >-
+    One day's body measurements: body mass, lean mass, body fat and circumferences,
+    each optional.
+  purpose: primary
+  names:
+    singular: bodymeasurement
+  label:
+    singular: Body measurement
+    plural: Body measurements
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+  displayTemplate: "{id}"
+  properties:
+    bodyMass:
+      type: quantity
+      unit: kg
+      units: [kg, lb]
+      min:
+        value: "0"
+        unit: kg
+      description: the body mass that day
+    leanMass:
+      type: quantity
+      unit: kg
+      units: [kg, lb]
+      min:
+        value: "0"
+        unit: kg
+      description: the lean body mass that day
+    bodyFat:
+      type: decimal
+      min: 0
+      max: 100
+      description: the share of body mass that is fat, in percent
+    neck:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the neck circumference
+    shoulders:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the shoulders circumference
+    chest:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the chest circumference
+    leftBicep:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the left upper arm circumference
+    rightBicep:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the right upper arm circumference
+    leftForearm:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the left forearm circumference
+    rightForearm:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the right forearm circumference
+    abdomen:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the abdomen circumference
+    waist:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the waist circumference
+    hips:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the hips circumference
+    leftThigh:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the left thigh circumference
+    rightThigh:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the right thigh circumference
+    leftCalf:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the left calf circumference
+    rightCalf:
+      type: quantity
+      unit: cm
+      units: [cm, in]
+      min:
+        value: "0"
+        unit: cm
+      description: the right calf circumference
+    notes:
+      type: text
+      description: anything else about the day
+    adapter:
+      type: string
+      description: what wrote it and its version, `<name>@<version>`
