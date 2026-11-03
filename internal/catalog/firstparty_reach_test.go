@@ -1,7 +1,11 @@
 package catalog
 
 import (
+	"bytes"
+	"encoding/json"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,70 +16,73 @@ import (
 )
 
 // The scopes the first-party apps need for the packages they ask to have
-// set up (decision 0215), held to the shipped closures: what each package
-// and its requirements reach, every entry covered by the app's scopes,
-// with an internal kind covered by its exact scope alone. A shipped
-// closure that comes to reach more fails here before it fails on the
-// owner's approval page, and the lists are what the apps ask for.
+// set up (decision 0215), held to the closures: what each package and its
+// requirements reach, every entry covered by the app's scopes, with an
+// internal kind covered by its exact scope alone. A closure that comes to
+// reach more fails here before it fails on the owner's approval page.
+//
+// Nothing here is a hand copy. What each app asks for is
+// apps/apple/scopes.json, which a Swift test on each side holds equal to
+// the app's manifest; the binary's packages come from the catalog it ships,
+// and Workouts' published packages from the closures the app carries
+// (Resources/Package/*.json, the documents the site publishes), parsed as
+// the server parses a published closure.
 
-// syncScopes is what Substrate Sync asks for: its own apple kinds, and
-// everything the applehealth package's code reaches, the two internal
-// kinds by name.
-var syncScopes = []string{
-	"write:providers.substrate.reamde.dev/apple/*",
-	"write:providers.substrate.reamde.dev/applehealth/*",
-	"write:providers.substrate.reamde.dev/applehealth/account",
-	"write:providers.substrate.reamde.dev/applehealth/export",
-	"write:substrate.reamde.dev/health/*",
-	"write:substrate.reamde.dev/observations/*",
+// appRequest is one app's entry in apps/apple/scopes.json.
+type appRequest struct {
+	Scopes   []string `json:"scopes"`
+	Packages []string `json:"packages"`
 }
 
-// workoutsScopes is what Substrate Workouts asks for beside its own
-// training kinds: the health catalogue ships no code, and its coach agent
-// reads the health, observations and clinical kinds below and writes its
-// training kinds (apps/apple/WorkoutsKit/Sources/WorkoutsSync/Coach.swift).
-var workoutsScopes = []string{
-	"write:substrate.reamde.dev/training/*",
-	"read:substrate.reamde.dev/health/*",
-	"read:substrate.reamde.dev/observations/*",
-	"read:substrate.reamde.dev/clinical/condition",
-	"read:substrate.reamde.dev/clinical/medicationrequest",
-	"read:substrate.reamde.dev/clinical/medicationdispense",
+// firstPartyRequests reads apps/apple/scopes.json.
+func firstPartyRequests(t *testing.T) map[string]appRequest {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "apps", "apple", "scopes.json"))
+	if err != nil {
+		t.Fatalf("read the apps' requests: %v", err)
+	}
+	var file struct {
+		Sync     appRequest `json:"sync"`
+		Workouts appRequest `json:"workouts"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatalf("apps/apple/scopes.json: %v", err)
+	}
+	return map[string]appRequest{"Substrate Sync": file.Sync, "Substrate Workouts": file.Workouts}
 }
 
-// trainingPurposes is the declared purpose of each training kind, which
-// the app's site publishes rather than the binary ships
-// (apps/apple/SubstrateWorkouts/Package, as of 2026-11-03): none is
-// internal, so the training write glob covers them all.
-var trainingPurposes = map[string]string{
-	"substrate.reamde.dev/training/exercise": vocabulary.PurposePrimary,
-	"substrate.reamde.dev/training/memory":   vocabulary.PurposePrimary,
-	"substrate.reamde.dev/training/routine":  vocabulary.PurposePrimary,
-	"substrate.reamde.dev/training/session":  vocabulary.PurposePrimary,
-	"substrate.reamde.dev/training/movement": vocabulary.PurposeSupporting,
-	"substrate.reamde.dev/training/set":      vocabulary.PurposeSupporting,
-	"substrate.reamde.dev/training/setup":    vocabulary.PurposeSupporting,
-}
-
-// coachReach is the workout coach's reach as its agent declares it once it
-// ships in the trainingcoach closure (decision 0217).
-var coachReach = []Reach{
-	{Pattern: "substrate.reamde.dev/training/exercise", Write: true},
-	{Pattern: "substrate.reamde.dev/training/setup", Write: true},
-	{Pattern: "substrate.reamde.dev/training/routine", Write: true},
-	{Pattern: "substrate.reamde.dev/training/memory", Write: true},
-	{Pattern: "substrate.reamde.dev/training/session"},
-	{Pattern: "substrate.reamde.dev/training/set"},
-	{Pattern: "substrate.reamde.dev/health/workout"},
-	{Pattern: "substrate.reamde.dev/health/sleep"},
-	{Pattern: "substrate.reamde.dev/observations/observation"},
-	{Pattern: "substrate.reamde.dev/observations/metric"},
-	{Pattern: "substrate.reamde.dev/observations/source"},
-	{Pattern: "substrate.reamde.dev/observations/sourcelink"},
-	{Pattern: "substrate.reamde.dev/observations/trace"},
-	{Pattern: "substrate.reamde.dev/clinical/condition"},
-	{Pattern: "substrate.reamde.dev/clinical/medicationrequest"},
-	{Pattern: "substrate.reamde.dev/clinical/medicationdispense"},
+// workoutsClosure parses one of the closures Substrate Workouts carries as
+// the server parses a published closure: the file's documents, in the order
+// the site publishes them, as one YAML stream.
+func workoutsClosure(t *testing.T, name, id string) *Bundle {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "apps", "apple", "WorkoutsKit", "Sources", "WorkoutsCore", "Resources", "Package", name+".json"))
+	if err != nil {
+		t.Fatalf("read the %s closure: %v", id, err)
+	}
+	var file struct {
+		Package   string            `json:"package"`
+		Version   int64             `json:"version"`
+		Documents []json.RawMessage `json:"documents"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatalf("%s.json: %v", name, err)
+	}
+	if file.Package != id {
+		t.Fatalf("%s.json is %s, not %s", name, file.Package, id)
+	}
+	var stream bytes.Buffer
+	for i, doc := range file.Documents {
+		if i > 0 {
+			stream.WriteString("\n---\n")
+		}
+		stream.Write(doc)
+	}
+	b, err := ParseClosure(stream.Bytes(), id, file.Version)
+	if err != nil {
+		t.Fatalf("parse the %s closure as the server does: %v", id, err)
+	}
+	return b
 }
 
 // shippedPurposes is the declared purpose of every kind the binary ships,
@@ -136,15 +143,29 @@ func TestTheFirstPartyAppsScopesCoverThePackagesTheyAskFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	published := map[string]*Bundle{
+		"substrate.reamde.dev/training":      workoutsClosure(t, "training", "substrate.reamde.dev/training"),
+		"substrate.reamde.dev/trainingcoach": workoutsClosure(t, "coach", "substrate.reamde.dev/trainingcoach"),
+	}
 	purposes := shippedPurposes(t, cat)
-	for k, p := range trainingPurposes {
-		purposes[k] = p
+	for _, b := range published {
+		for _, k := range b.Kinds() {
+			purposes[k.Identity] = k.Purpose
+		}
+	}
+	// The coach's reach is what the test is for: an agent with none would
+	// hold the scopes to nothing.
+	if coach := published["substrate.reamde.dev/trainingcoach"]; len(coach.Agents()) != 1 || len(coach.Reach()) == 0 {
+		t.Fatalf("the trainingcoach closure ships %d agents reaching %d patterns", len(coach.Agents()), len(coach.Reach()))
 	}
 	var closure func(id string) []Reach
 	closure = func(id string) []Reach {
-		b, ok := cat.ByID(id)
+		b, ok := published[id]
 		if !ok {
-			t.Fatalf("the catalog ships no %s", id)
+			b, ok = cat.ByID(id)
+		}
+		if !ok {
+			t.Fatalf("neither the catalog nor the app ships %s", id)
 		}
 		var out []Reach
 		for _, req := range b.Requires {
@@ -152,22 +173,17 @@ func TestTheFirstPartyAppsScopesCoverThePackagesTheyAskFor(t *testing.T) {
 		}
 		return append(out, b.Reach()...)
 	}
-	for name, c := range map[string]struct {
-		scopes   []string
-		packages []string
-		reach    []Reach
-	}{
-		"Substrate Sync": {
-			scopes: syncScopes, packages: []string{"providers.substrate.reamde.dev/apple", "providers.substrate.reamde.dev/applehealth"},
-		},
-		"Substrate Workouts": {scopes: workoutsScopes, packages: []string{"substrate.reamde.dev/health"}, reach: coachReach},
-	} {
+	requests := firstPartyRequests(t)
+	for name, c := range requests {
 		t.Run(name, func(t *testing.T) {
-			reach := c.reach
-			for _, pkg := range c.packages {
+			var reach []Reach
+			for _, pkg := range c.Packages {
 				reach = append(reach, closure(pkg)...)
 			}
-			if missing := uncovered(t, c.scopes, purposes, reach); len(missing) > 0 {
+			if len(reach) == 0 {
+				t.Fatalf("%s's packages reach nothing", name)
+			}
+			if missing := uncovered(t, c.Scopes, purposes, reach); len(missing) > 0 {
 				t.Fatalf("%s's scopes leave uncovered: %s", name, strings.Join(missing, ", "))
 			}
 		})
@@ -175,12 +191,16 @@ func TestTheFirstPartyAppsScopesCoverThePackagesTheyAskFor(t *testing.T) {
 	// Each exact scope in Sync's list is there because a glob does not
 	// reach the internal kind it names: without it, that kind alone is
 	// uncovered, read and written.
+	syncScopes := requests["Substrate Sync"].Scopes
 	for _, kind := range []string{"providers.substrate.reamde.dev/applehealth/account", "providers.substrate.reamde.dev/applehealth/export"} {
 		var fewer []string
 		for _, held := range syncScopes {
 			if held != "write:"+kind {
 				fewer = append(fewer, held)
 			}
+		}
+		if len(fewer) == len(syncScopes) {
+			t.Fatalf("Sync's request no longer names write:%s", kind)
 		}
 		missing := uncovered(t, fewer, purposes, closure("providers.substrate.reamde.dev/applehealth"))
 		if len(missing) == 0 {
@@ -190,6 +210,23 @@ func TestTheFirstPartyAppsScopesCoverThePackagesTheyAskFor(t *testing.T) {
 			if !strings.HasSuffix(m, ":"+kind) {
 				t.Fatalf("without write:%s, Sync leaves uncovered %v", kind, missing)
 			}
+		}
+	}
+	// Workouts' observations glob is what covers the coach's observation
+	// reads: without it they are uncovered, so the test is live on that side.
+	var fewer []string
+	for _, held := range requests["Substrate Workouts"].Scopes {
+		if held != "read:substrate.reamde.dev/observations/*" {
+			fewer = append(fewer, held)
+		}
+	}
+	missing := uncovered(t, fewer, purposes, closure("substrate.reamde.dev/trainingcoach"))
+	if len(missing) == 0 {
+		t.Fatal("without read:substrate.reamde.dev/observations/*, Workouts covers everything, so the coach reads no observation kind")
+	}
+	for _, m := range missing {
+		if !strings.HasPrefix(m, "read:substrate.reamde.dev/observations/") {
+			t.Fatalf("without the observations glob, Workouts leaves uncovered %v", missing)
 		}
 	}
 }

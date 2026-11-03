@@ -101,6 +101,23 @@ struct CoachTests {
         #expect(ClosureReach.of(try PackageManifest.bundled().documents) == ClosureReach())
     }
 
+    /// apps/apple/scopes.json is what the server's first-party reach test
+    /// reads in place of a hand copy of this manifest, so the two cannot
+    /// drift: the scopes in order, and the packages the details ask for.
+    @Test("the request is the one apps/apple/scopes.json records for the server's reach test")
+    func recordedRequest() throws {
+        let apple = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        struct Recorded: Decodable {
+            var scopes: [String]
+            var packages: [String]
+        }
+        struct Requests: Decodable { var workouts: Recorded }
+        let recorded = try JSONDecoder().decode(Requests.self, from: Data(contentsOf: apple.appendingPathComponent("scopes.json"))).workouts
+        #expect(recorded.scopes == WorkoutsManifest.scopes)
+        #expect(recorded.packages == WorkoutsManifest.details.filter { $0.type == AuthorizationDetail.Types.package }.compactMap(\.package))
+    }
+
     @Test("the prompt this build carries is under 20 KB and names the published kinds")
     func thePrompt() throws {
         guard case let .string(prompt)? = agent["prompt"] else { Issue.record("no prompt"); return }

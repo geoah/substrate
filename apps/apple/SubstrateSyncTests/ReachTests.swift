@@ -61,6 +61,21 @@ final class ReachTests: XCTestCase {
         return out
     }
 
+    /// apps/apple/scopes.json is what the server's first-party reach test
+    /// reads in place of a hand copy of this manifest, so the two cannot
+    /// drift: the scopes in order, and the packages the details ask for.
+    func testTheRequestIsTheOneScopesJSONRecordsForTheServersReachTest() throws {
+        let apple = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        struct Recorded: Decodable {
+            var scopes: [String]
+            var packages: [String]
+        }
+        struct Requests: Decodable { var sync: Recorded }
+        let recorded = try JSONDecoder().decode(Requests.self, from: Data(contentsOf: apple.appendingPathComponent("scopes.json"))).sync
+        XCTAssertEqual(recorded.scopes, SyncManifest.scopes)
+        XCTAssertEqual(recorded.packages, [AppModel.appleProvider, AppModel.healthProvider])
+    }
+
     func testSyncsScopesCoverWhatItsPackagesCodeReaches() throws {
         var reach = Reach()
         for package in ["apple", "applehealth"] {
