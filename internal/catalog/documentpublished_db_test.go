@@ -123,3 +123,52 @@ func TestPublishedInstallRefreshTakeover(t *testing.T) {
 		t.Fatalf("takeover: %+v %v", taken, err)
 	}
 }
+
+// A package's document that moved (the record names another URL than the
+// one the package was installed from) holds every upgrade for the owner:
+// a publisher that moved its files and a DNS answer that should not be
+// followed unseen read the same, so nothing upgrades by itself.
+func TestARefreshDoesNotFollowADocumentThatMoved(t *testing.T) {
+	ds := newDataset(t)
+	ctx := context.Background()
+	const id = "publisher.example/notes"
+	closure := func(v int) string {
+		return fmt.Sprintf("kind: substrate.reamde.dev/core/package\nmetadata:\n  id: %s\ndata:\n  authority: publisher.example\n  package: notes\n  version: %d\n---\nkind: substrate.reamde.dev/core/bundle\nmetadata:\n  id: %s\ndata:\n  authority: publisher.example\n  package: notes\n  description: Notes.\n  installs: [publisher.example/notes/note]\n---\nkind: substrate.reamde.dev/core/kind\nmetadata:\n  id: publisher.example/notes/note\ndata:\n  authority: publisher.example\n  package: notes\n  names:\n    singular: note\n  properties:\n    name:\n      type: string\n", id, v, id)
+	}
+	document := func(dir string, versions ...int) string {
+		t.Helper()
+		var listed []authority.AuthorityPackageVersion
+		for _, v := range versions {
+			file := fmt.Sprintf("v%d.yaml", v)
+			body := closure(v)
+			if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256([]byte(body))
+			listed = append(listed, authority.AuthorityPackageVersion{Version: v, Closure: file, SHA256: hex.EncodeToString(sum[:])})
+		}
+		raw, _ := json.Marshal(authority.AuthorityDocument{Authority: "publisher.example", Packages: []authority.AuthorityPackage{{Package: "notes", Versions: listed}}})
+		path := filepath.Join(dir, "authority.json")
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	docs := map[string]string{"publisher.example": document(t.TempDir(), 1)}
+	c, err := catalog.LoadWithReader(authority.NewReader(authority.Options{LocalDocuments: docs}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+		t.Fatal(err)
+	}
+	docs["publisher.example"] = document(t.TempDir(), 1, 2)
+	got, err := c.RefreshPackage(ctx, ds, id)
+	if err != nil || got.Outcome != "upgrade-needs-review" || !strings.Contains(got.Reason, "moved") {
+		t.Fatalf("refresh after the document moved = %+v, %v; want it held for review", got, err)
+	}
+	row, err := ds.Get(ctx, "substrate.reamde.dev/core/package", id)
+	if err != nil || fmt.Sprint(row.Properties["shippedVersion"]) != "1" {
+		t.Fatalf("the moved document upgraded the package: %v, %v", row.Properties["shippedVersion"], err)
+	}
+}
