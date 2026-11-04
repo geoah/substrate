@@ -16,7 +16,7 @@ draws it and sends commands, nothing else.
 | `apple/UI/` | `SubstrateTasksUI`: the kit's `AppShell` over the app's root, and the SwiftUI views |
 | `apple/Tests/` | the views drawn from TasksKit's fixtures, on the Mac |
 | `android/` | the Android app: the Gradle module `:tasks`, its Compose UI, its bridge configuration and generated Kotlin, and its gallery test over `fixtures/tasks.json` |
-| `docs/screenshots/` | the app on an iPhone simulator against a local substrate, and the Mac's split layout drawn offscreen; `android/`, the app on an Android emulator against one (sign-in, a list, a task, offline, Settings, a reminder) |
+| `docs/screenshots/` | the app on an iPhone and an iPad simulator against a local substrate (the approval, Today, the lists, a list, a task, the editor, offline, Settings, and the iPad's three columns), and the Mac's split layout drawn offscreen; `android/`, the app on an Android emulator against one (sign-in, a list, a task, offline, Settings, a reminder) |
 
 ## TasksKit
 
@@ -121,7 +121,7 @@ whose revisions follow `TasksState.revision`. TasksKit needed nothing but
 ```bash
 mise run apple:build:tasks   # the Mac app and the simulator app; registers nothing with Apple
 mise run apple:test:tasks    # TasksKit's tests, then the views over its fixtures, on the Mac
-mise run apps:test:linux     # TasksKit (with the kit and WorkoutsKit) on Linux
+mise run apps:test:linux     # TasksKit, with the kit, WorkoutsKit and ChatKit, on Linux
 mise run apps:gallery        # Tasks' screens drawn into build/gallery/apple/tasks and build/gallery/android/tasks
 mise run android:build       # every Android module, the Tasks app's :tasks among them
 mise run android:test        # its gallery check with the kit's tests

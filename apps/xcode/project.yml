@@ -1,8 +1,10 @@
 # The Apple apps: the console, bundled, in a native window on macOS, iPadOS
 # and iOS; Substrate Chat, the agent chat as a native app on the same three;
-# and Substrate Sync, an iPhone and iPad app that pushes Health,
-# Contacts and Calendar into a repository. xcodegen writes Substrate.xcodeproj from this file and the project
-# is never committed; `mise run apple:project` regenerates it. Each app's
+# Substrate Sync, an iPhone and iPad app that pushes Health, Contacts and
+# Calendar into a repository; Substrate Workouts, on iPhone; Substrate
+# Tasks, on the same three as Chat; and the template `mise run apps:new`
+# copies, built as an app is. xcodegen writes Substrate.xcodeproj from this
+# file and the project is never committed; `mise run apple:project` regenerates it. Each app's
 # targets are its own apple/targets.yml, included below; xcodegen reads the
 # source and package paths in an included file relative to that file, and
 # the build settings' paths (INFOPLIST_FILE, CODE_SIGN_ENTITLEMENTS) relative

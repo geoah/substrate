@@ -1,7 +1,12 @@
-# The Apple apps
+# The apps
 
 Five apps: the console in a native shell, Substrate Chat, Substrate Sync,
-Substrate Workouts and Substrate Tasks (each below).
+Substrate Workouts and Substrate Tasks (each below), all on Apple systems
+and Tasks on Android too; and the template `mise run apps:new` copies, a
+whole app that nothing releases ([A new app](#a-new-app)). Each is a folder
+here named by its [app.json](#an-apps-appjson), six in all, beside the kit
+they share ([kit/](kit/README.md)) and the two build roots, `xcode/` and
+`gradle/`.
 
 The console, bundled, in a native shell for macOS, iPadOS and iOS: one
 SwiftUI target (`Substrate`, bundle id `dev.reamde.substrate.console`) that
@@ -23,7 +28,11 @@ from `xcode/project.yml`, which includes each app's `apple/targets.yml`, and
 is never committed. Signing is Xcode's automatic signing
 for the team `xcode/project.yml` names; the builds use the Apple Development identity and the
 account signed in to Xcode, which `-allowProvisioningUpdates` registers the
-app id and the device profile with. Nothing here runs in CI.
+app id and the device profile with. CI builds no Apple app: its `apps linux`
+job builds and tests the kit and every app's core on Linux, then the core of
+an app `apps:new` makes, and its `android build` job builds the kit for
+Android ([Android](#android)); the SwiftUI side is a Mac's, through the
+`apple:test:*` tasks.
 
 ## How the console runs in it
 
@@ -767,7 +776,7 @@ is never sent again on its own.
 
 **Signing in** is the substrate's app authorization, through
 [SubstrateKit](kit/README.md) under Chat's manifest
-(`ChatManifest` in `App/Manifest.swift`): the kit's connect screen checks
+(`ChatManifest` in `chat/ChatKit/Sources/ChatKit/ChatManifest.swift`): the kit's connect screen checks
 the address's discovery document and OAuth metadata, and the system's
 sign-in sheet opens the server's own sign-in and approval page, where the
 owner chooses what the app may do (talk to the agents, `agents:*`; apply
@@ -895,6 +904,7 @@ watch are in [its README](tasks/README.md).
 ```bash
 mise run apple:build:tasks   # the Mac app and the simulator app, registering nothing with Apple
 mise run apple:test:tasks    # TasksKit's tests and the views over its fixtures, on the Mac
+mise run android:build       # every Android module, the Tasks app's :tasks among them
 ```
 
 ## A new app
@@ -952,7 +962,8 @@ every reader parses it with no dependency: the server's first-party reach
 test (`internal/catalog/firstparty_reach_test.go`) reads the scopes and
 asked-for packages of every app that asks for packages, and a Swift test holds each
 app's manifest to its file (Sync's `ReachTests`, Workouts' `CoachTests`,
-Chat's `AppJSON`), so the two never drift. `mise run lint:apps` refuses an
+Chat's `AppJSON`, Tasks' `AppTests` and the template's
+`TemplateAppTests`), so the two never drift. `mise run lint:apps` refuses an
 app folder without one, or one missing a field below.
 
 | Field | What |
@@ -993,7 +1004,7 @@ nothing takes, and holds the layering the rest of this page relies on
 | Package | Why |
 | --- | --- |
 | `Sparkle` | the macOS updater every Mac app compiles in (`xcode/Shared/Updater.swift`): it reads the release's `appcast.xml` and checks its signature |
-| `swift-crypto` | SHA-256 for PKCE on Linux and Android, where CryptoKit is not; SubstrateAuth takes it on those platforms alone |
+| `swift-crypto` | SHA-256 where CryptoKit is not, on Linux and Android, and taken on those platforms alone: SubstrateAuth's for PKCE, and ChatKit's for the hashed names its cache folder and files have always had |
 | `swift-syntax` | the bridge's generator (`kit/Tools/BridgeGen`) reads the `Bridged` declarations with it; a tool's dependency only, never linked into an app |
 | `com.squareup.okhttp3` | OkHttp, the transport on Android (`kit-device`): redirects off on every path, a line stream's included, and cancellation that reaches the socket |
 | `com.google.crypto.tink` | Tink, the secure store's AEAD on Android: a keyset wrapped by an Android Keystore key, so what is on disk is ciphertext |
@@ -1039,7 +1050,7 @@ xcode/scripts/feed.swift            a release's index.json, appcast.xml, install
 gradle/                             the one Gradle root of the Android build: settings, the version catalog, the wrapper, build-logic's convention plugins, swift-jnilibs.sh
 kit/android/                        the kit on Android: kit-core, kit-device, kit-ui, bridge-check, the Gallery app, the bridge's golden and the fixtures both systems draw ([its README](kit/android/README.md))
 kit/Tools/BridgeGen/                the bridge's generator: Bridged declarations to the golden, the Kotlin and the fingerprint
-kit/                                the apps' shared Swift package: SubstrateCore, SubstrateDevice, SubstrateAPI, SubstrateAuth, SubstrateRuntime, SubstrateLocal, SubstrateScreens and SubstrateTesting, which build for Linux and Android too, SubstrateDeviceApple and SubstrateUI, and SubstrateKit over all of them ([its README](kit/README.md))
+kit/                                the apps' shared Swift package: SubstrateCore, SubstrateDevice, SubstrateAPI, SubstrateAuth, SubstrateRuntime, SubstrateLocal, SubstrateScreens and SubstrateTesting, which build for Linux and Android too; SubstrateDeviceApple (over the SubstrateResolv C target) and SubstrateUI; SubstrateBridge (over the SubstrateJNI C target) and SubstrateBridgeCheck, the Android bridge, linked as SubstrateAndroid; and SubstrateKit, the Apple apps' one import ([its README](kit/README.md))
 console/apple/Support/              the console app's Info.plist per platform and its entitlements
 console/apple/Assets.xcassets       the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../docs/app-icons.md))
 console/apple/Sources/App/          the app, its macOS menus, ServerStore, ConsoleSessions

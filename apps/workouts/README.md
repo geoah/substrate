@@ -27,7 +27,7 @@ Dynamic Island.
 
 ```bash
 mise run apple:build:workouts     # the app for the simulator
-mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (593 tests, on the Mac)
+mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync, on the Mac
 mise run apps:release prerelease workouts   # archived, signed and published under workouts/
 uv run --with pyyaml apps/workouts/scripts/workouts-package.py   # the package's manifests into the app's JSON
 uv run --with pyyaml apps/workouts/scripts/exercise-library.py   # the exercise library into the app's JSON
@@ -306,14 +306,15 @@ observations would ask every user for a new scope.
 ## Tests
 
 `mise run apple:test:workouts` checks the generated JSON against its YAML,
-then runs both suites on the Mac (CI runs the check, in the `lint` job, and
-not the suites: no workflow builds the Apple apps): WorkoutsCore's 489 (the codec, the engine,
+then runs both suites on the Mac (CI runs the check in the `lint` job, and
+both suites on Linux in the `apps linux` job; no workflow builds the Apple
+app): WorkoutsCore's (the codec, the engine,
 the suggestions against their vectors, the presenters, the stores, the sample
 routine's methods and a session through it to Finish, and the Hevy import
 against `Tests/WorkoutsCoreTests/Fixtures/hevy`, the API's shape included, and the exercise library, and the files the last release left in the `~/training`
 spelling read back once, and the session's controller on the kit's runtime: its journal
 order, the Finish that is two events and a crash on either side of its history file,
-the open, the ticks, the entry check and a refusal) and WorkoutsSync's 104:
+the open, the ticks, the entry check and a refusal) and WorkoutsSync's:
 the sample written once and never again after a delete, on a second phone or a
 reinstall, a refused sample write that stops nothing, a session logged signed
 out finding its exercises, a routine's delete through the outbox and during a

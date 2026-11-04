@@ -4,10 +4,13 @@ What every app that speaks to a substrate shares, as one Swift package of
 libraries: which server it is and whether it is new enough, the requests and
 their errors, signing in through the app authorization flow, keeping the
 session, asking whether the app is still set up, and the screens for all of
-it. Beside that, the record and its values as the console draws them. The
-console's shell (Substrate), Substrate Sync, Substrate Chat and Substrate
-Workouts use it; an app adds it as a local package (`project.yml`'s
-`packages:`). The design it implements is
+it. Beside that, the record and its values as the console draws them, the
+loop every screen runs, what an app keeps on the device, and the bridge
+that carries all of it to Android. The console's shell (Substrate),
+Substrate Sync, Substrate Chat, Substrate Workouts, Substrate Tasks and the
+template `mise run apps:new` copies use it; an app's Apple target adds it as
+a local package (`project.yml`'s `packages:`), and an app's core as a path
+dependency in its `Package.swift`. The design it implements is
 [docs/plans/app-setup.md](../../docs/plans/app-setup.md), and its layout is
 [docs/plans/app-kit.md](../../docs/plans/app-kit.md)'s §5.3.
 
@@ -31,21 +34,25 @@ their JNI half on Android alone. The package is in Swift 6 language mode.
 | `SubstrateScreens` | the shared screens as engines, presenters and fixtures, each label written here: `LinkController` (the session and its revocations, the status check, the package versions, connectivity, the outbox; a `LinkSnapshot` with no secret) over the app's root (with one `outbox`, or `outboxes:` for an app that keeps one per repository; the packages read again after each set up check), a `LinkedApp` that tells it a `LinkReport`, `AppMenuPresentation` (an app's sections as data: a tab bar on a phone, a sidebar on a tablet and a computer), `ConnectController`, `AccessPresenter`, `ReviewPresenter`, `ServerTooOldPresentation`, `RepositoryPresenter`, `StatusPresenter` with `LinkStatus`, `PackageStanding` and `StatusWords` (`local`, an app's own signed-out sentence; `footer` and `refusedFooter`, where it writes other than as each change is made), a refused write's kind `label` and its `status` as two facts, `SettingsPresentation` with `SettingsPresenter`, `SettingsValues` and the rows' `SettingsRowID` (a row may carry the `confirmation` its action asks first: Sign Out's), Storage as each area's size and one total against the budget, `ProblemPresenter`, `AboutPresentation`; `LinkedRecords` with `LinkedRecordsState`, `ReadPhase` and `WatchStop`, and `LinkedRecordsApp` with `LinkedRecordsEvent`, `LinkedRecordsEffect` and `LinkedRecordsHolding` (below); `DueWords` (a due day or moment in words, and its tone); `SettingsPresenter.screen` and `SettingsRoute` (every app's Settings in one order, each row's command to what answers it); `ConfirmationPresentation`, `EmptyPresentation`, `NoticeLine` (a line above a column, and the Status screen's `notice` for a refused write), `BuildFacts`; `ScreenFixtures`, every screen in the states an app shows it in; every presentation and command `Bridged`, so its Kotlin is generated |
 | `SubstrateTesting` | the fakes tests use: `StubTransport` and `ScriptedServer` (scripted servers, by route and by rule), `ScriptedLines` (answers read line by line), `MemoryStorage`, `TableResolver`, `ScriptedBrowser`, `ScriptedConnectivity`, `ScriptedBackground`, `RecordedNotifications`, `RecordedActivities`, `TemporaryFolders`; and the runtime's harness: `ControllerHarness` with `TestClock`, `SequentialIDs` and `MemoryJournal` |
 | `SubstrateDeviceApple` | the device services on Apple frameworks: `KeychainStorage`, `WebAuthenticator` (`ASWebAuthenticationSession`, the claimed callback or the loopback redirect), `LoopbackReceiver`, `DNSServiceTXTResolver` and the `SubstrateResolv` C target behind it, `PathMonitor` (`NWPathMonitor`), `ApplicationFolders`, `SystemNotifications` (`UNUserNotificationCenter`, with the kit's one delegate, set by `installDelegate()` before the app finishes launching: it keeps a request quiet in front where it asks, and hands every response to `responses()`, the launch's tap kept for the first reader; `badges: true` asks for the icon's number with the permission), `LiveActivities` over an app's `OngoingActivityAttributes` (ActivityKit, iOS), `BackgroundTasksService` (refresh jobs, each one's payload kept in the defaults until its run, and `BGContinuedProcessingTask`, iOS) |
-| `SubstrateUI` | the renderers of SubstrateScreens' presentations (`ConnectScreen`, `AccessBannerView`, `AccessEndedScreen`, `ReviewScreen` and `ReviewSectionsView`, `ServerTooOldScreen`, `RepositoryScreen`, `StatusScreen`, `SettingsScreen` and `SettingsSectionView`, `AboutScreen`, `ProblemView`, `ChangeLineView`) with the design tokens, `Gallery` (each screen's renderer), `PresentationModel` (a root's presentations republished on the main actor; `onSignal` runs a handler once per `Signal` raised) and `AppEnvironment.apple`; the views apps call by their own initialisers, now thin wrappers over those (`ConnectView`, which runs a `ConnectController`, `AppStatusBanner`, `ReviewChangesSheet` and its `ReviewChangesSections`, `AccessEndedView`, `AccountSection` (the Repository screen for an app that keeps its own session), `UnrevokedNotices`, `ProblemBox`), `StatusBadge`; an app's shell: `AppShell` (the session, a repository's folder, its outbox and record cache, sign-in and Change Access, notification responses and the time zone's moves as the app's commands, from the app's `Configuration`; below), `AppShellRoot`, `AppSettingsView`, `checkForUpdates`, `AppMenuRoot` and `AppMenuSplit` beside `AppMenuView` (the tabs), `LinkNotices`, the `confirmation`, `problem` and `childSheet` modifiers, `ConfirmingButton` (a button that asks its question from itself), `DeviceWords`, `BuildFacts.bundle()`, and `OffscreenDrawing` (a view to PNG on the Mac, as a phone's screen or a Mac window with its toolbar, for a gallery); and the record views (`KindGlyph`, `RecordPill`, `RecordSheet`, `RecordDetailView`, `RecordValueView`); `AppMenuView`; `DesignTokens` (each tone's colour, each mark as an SF Symbol and a Material Symbol, the menu symbols by name, the type roles, spacing and radii, which a test writes as kit-ui's `KitTokens.kt`) |
+| `SubstrateUI` | the renderers of SubstrateScreens' presentations (`ConnectScreen`, `AccessBannerView`, `AccessEndedScreen`, `ReviewScreen` and `ReviewSectionsView`, `ServerTooOldScreen`, `RepositoryScreen`, `StatusScreen`, `SettingsScreen` and `SettingsSectionView`, `AboutScreen`, `ProblemView`, `ChangeLineView`) with the design tokens, `Gallery` (each screen's renderer), `PresentationModel` (a root's presentations republished on the main actor; `onSignal` runs a handler once per `Signal` raised) and `AppEnvironment.apple`; the views apps call by their own initialisers, now thin wrappers over those (`ConnectView`, which runs a `ConnectController`, `AppStatusBanner`, `ReviewChangesSheet` and its `ReviewChangesSections`, `AccessEndedView`, `AccountSection` (the Repository screen for an app that keeps its own session), `UnrevokedNotices`, `ProblemBox`), `StatusBadge`; an app's shell: `AppShell` (the session, a repository's folder, its outbox and record cache, sign-in and Change Access, notification responses and the time zone's moves as the app's commands, from the app's `Configuration`; below), `AppShellRoot`, `AppSettingsView`, `checkForUpdates`, `AppMenuRoot` and `AppMenuSplit` beside `AppMenuView` (the tabs), `LinkNotices`, the `confirmation`, `problem` and `childSheet` modifiers, `ConfirmingButton` (a button that asks its question from itself), `DeviceWords`, `BuildFacts.bundle()`, and `OffscreenDrawing` (a view to PNG on the Mac, as a phone's screen or a Mac window with its toolbar, for a gallery); and the record views (`KindGlyph`, `RecordPill`, `RecordSheet`, `RecordDetailView`, `RecordValueView`); `DesignTokens` (each tone's colour, each mark as an SF Symbol and a Material Symbol, the menu symbols by name, the type roles, spacing and radii, which a test writes as kit-ui's `KitTokens.kt`) |
 | `SubstrateBridge` | the Android bridge (§5.5, [android/](android/README.md)): `BridgeRuntime` (`start`, `post`, what `deliver` is handed), the `Envelope` and its `Op`s, `Handle`s with generations, `BridgeRoot` and `RootRegistry`, `RuntimeRoot` (any `Runtime` as a root) and `RouteCommand`, `BridgeContext` (a handle's presentations, keyed lists and `DeviceChannel`, and its `AppEnvironment`), `ListMessage`, `BridgeFailure`, `Redaction`, `StartConfig` and `BridgeEnvironment`, `ProtocolFingerprint`; the device services over it: `BridgeTransport`, `BridgeSecureStore`, `BridgeTXTResolver`, `BridgeConnectivity`, `BridgeFolders`, with `DeviceRequest` and their answers; the JNI surface in `Android/`, compiled on Android alone over the `SubstrateJNI` C target |
 | `SubstrateBridgeCheck` | `CheckRoot`, `Counter` and `Ledger` (a keyed list, the locale, a value kept whole), the roots the bridge's runtime checks open on a device; `GalleryRoot`, which presents every fixture of `ScreenFixtures` to Android's Gallery app |
 
-`SubstrateKit` is every library but `SubstrateTesting` and `SubstrateLocal`
-under one import (an app that keeps an outbox or a journal, as Workouts
-does, takes `SubstrateLocal` by name),
+`SubstrateKit` is the libraries an Apple app draws with under one import:
+every one but `SubstrateLocal`, `SubstrateTesting` and the two Android ones,
 with the Apple device services as the defaults the single module had: a
 `ServerLocator(probe:)` reads DNS through DNS-SD, `OAuthClient.signIn`
 without a `browser:` signs in through `WebAuthenticator`, and
 `SessionStore(service:accessGroup:…)` keeps the session in the Keychain
-through a `KeychainStorage` made of those settings.
-The console, Chat and Sync import it. Code that must build for Linux or
-Android (an app's core: WorkoutsCore and WorkoutsSync) imports the
-portable libraries it uses instead and passes its device services in.
+through a `KeychainStorage` made of those settings. Sync's and Chat's app
+targets import it, and so do Workouts' (in several files, beside
+`SubstrateLocal` by name where it reaches the outbox and the journal) and
+two files of the console's. An app's core, which must build for Linux and
+Android (ChatKit, WorkoutsKit, TasksKit, TemplateKit), imports the portable
+libraries it uses by name, `SubstrateLocal` among them where it keeps
+anything on the device, and passes its device services in; Tasks' and the
+template's Apple targets import the libraries by name as well, with
+`SubstrateUI` for the views.
 
 ## The loop
 
@@ -100,10 +107,11 @@ it as `event(forLink:)` inside the step that changed it, and the app tells
 it a `LinkReport` (a 401, a 403 `insufficient_scope`) from any event.
 
 ```swift
-let link = LinkController(app: TasksController(...), manifest: manifest, sessions: store, outbox: outbox,
-                          packages: ["substrate.reamde.dev/tasks": 2], words: words)
+let link = LinkController(app: TasksApp(cache: cache, outbox: outbox, words: words, device: device, build: build),
+                          manifest: manifest, sessions: store, outbox: outbox,
+                          packages: ["substrate.reamde.dev/tasks": 1], words: words)
 let model = PresentationModel(link, environment: .apple(transport: transport))  // SwiftUI reads model.presentation
-model.send(TasksController.Command.complete(taskID), to: LinkController<TasksController>.appPath)
+model.send(TasksApp.Command.complete(taskID), to: LinkController<TasksApp>.appPath)
 ```
 
 `ControllerHarness` (SubstrateTesting) runs a controller on a `TestClock`
@@ -158,12 +166,14 @@ under: the session in the Keychain, the repository's folder, its outbox and
 record cache, sign-in and Change Access, the notifications' answers and the
 time zone's moves as the app's commands, and Settings as one screen. The app
 hands it a `Configuration`. Its `parts` says where a session's folder is and
-what the kit keeps in it, as `AppShell.Parts`: by default
-(`folder: "SubstrateTasks"`) one folder per repository in Application
-Support, laid out by the kit; an app that kept its files before the kit
-hands its own, since a path on the device never moves (§6): a folder adopted
-where it was (`RepositoryFolder(adopting:)`), a record cache under its old
-name, or `outboxes`, one per repository, as Workouts keeps them. The shell
+what the kit keeps in it, as `AppShell.Parts`. There is no default: an app
+new to the kit names a folder in Application Support
+(`Configuration(…, folder: "SubstrateTasks", …)`, which is
+`Parts.repositoryFolders(in:)`, one folder per repository laid out by the
+kit); an app that kept its files before the kit hands `parts:` of its own,
+since a path on the device never moves (§6): a folder adopted where it was
+(`RepositoryFolder(adopting:)`), a record cache under its old name, or
+`outboxes`, one per repository, as Workouts keeps them. The shell
 fills in the device's facts and the Status screen's words, made once by
 `Configuration.words`, and the app's root is made from those parts, so the
 words have one source.

@@ -2,8 +2,10 @@
 
 The kit's Swift libraries run on Android under a Kotlin UI, through one
 fixed bridge ([docs/plans/app-kit.md](../../../docs/plans/app-kit.md) §5.5).
-Three Gradle modules here, built from the one Gradle root in
-[apps/gradle](../../gradle):
+Five Gradle modules here, three libraries an app builds on and two apps
+that are never published, built from the one Gradle root in
+[apps/gradle](../../gradle), which also includes each app's own module
+(`:tasks`, [apps/tasks/android](../../tasks/README.md#on-android)):
 
 | Module | What it holds |
 | --- | --- |
