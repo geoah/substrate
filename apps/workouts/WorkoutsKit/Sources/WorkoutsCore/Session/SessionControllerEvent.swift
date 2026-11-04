@@ -27,6 +27,11 @@ public extension SessionController {
         /// The replayed session is already in History: Finish wrote its
         /// file and the app died before it removed the journal.
         case alreadyFinished(SessionID, recoverHealth: Bool)
+        /// History holds no file for the replayed session: it is still open.
+        case historyChecked(SessionID)
+        /// History holds a file for the replayed session that could not be
+        /// read: the session waits, unchanged, until it reads.
+        case historyUnreadable(SessionID, String)
         case foregrounded
         /// Start asked: the device is asked for the body mass and the
         /// notification permission first.

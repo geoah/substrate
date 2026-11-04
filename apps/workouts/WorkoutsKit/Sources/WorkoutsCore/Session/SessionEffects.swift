@@ -29,15 +29,19 @@ extension SessionController {
             return effects
         case let .alreadyFinished(id, recoverHealth):
             return [.restore(nil)] + (recoverHealth ? [.health(.recover(id))] : [])
+        case let .historyUnreadable(id, _):
+            return state.historyProblem == nil ? [] : [.recheckHistory(id)]
         case .foregrounded:
-            return [.restore(sync(state, presentation)), .readAlerts, .health(.foreground)]
+            // A history file that did not read is read again at once.
+            let recheck: [Effect] = state.historyProblem.flatMap { _ in state.session.map { [.checkHistory($0.session.id)] } } ?? []
+            return [.restore(sync(state, presentation)), .readAlerts, .health(.foreground)] + recheck
         case let .starting(request):
             return [.prepareStart(request)]
         case .noted(.coverVisible):
             // In front of the cover the alert stays quiet; away from it, it
             // shows: the one scheduled is replaced with the other.
             return sync(state, presentation).map { [.countdown($0)] } ?? []
-        case .finishFailed, .finishRefused, .startDropped, .tick, .alertsRead, .setAsideFound, .noted:
+        case .finishFailed, .finishRefused, .startDropped, .tick, .alertsRead, .setAsideFound, .noted, .historyChecked:
             return []
         }
     }
@@ -61,7 +65,7 @@ extension SessionController {
         case .countdown, .restore, .countdownEnded: "countdown"
         case .prepareStart: "start"
         case .readAlerts: "alerts"
-        case .checkHistory: "history"
+        case .checkHistory, .recheckHistory: "history"
         case .writeHistory, .listSetAside, .health, .registerCategory: nil
         }
     }
@@ -129,13 +133,13 @@ extension SessionController {
                 return .finished(finished)
             }
         case let .checkHistory(id):
-            let store = historyStore
+            guard let store = historyStore else { return .none }
+            return .once { Self.check(id, in: store) }
+        case let .recheckHistory(id):
+            guard let store = historyStore else { return .none }
             return .once {
-                guard let saved = try? store?.read(id) else { return nil }
-                return .alreadyFinished(
-                    id,
-                    recoverHealth: saved.local.health.status == .pending
-                        && saved.records.session.healthKitWorkout == nil)
+                do { try await clock.sleep(until: clock.now.addingTimeInterval(Self.historyRetry)) } catch { return nil }
+                return Self.check(id, in: store)
             }
         case .registerCategory:
             guard let notifications else { return .none }
@@ -174,6 +178,25 @@ extension SessionController {
 
     /// How long the finished summary stays on the Lock Screen.
     public static let finishedDisplay: TimeInterval = 5 * 60
+
+    /// How long a history file that could not be read waits before it is
+    /// read again, beside the read each return to the foreground makes.
+    public static let historyRetry: TimeInterval = 15
+
+    /// What History holds of a replayed session: no file, and it is still
+    /// open; its file, which Finish wrote before the app died with the
+    /// journal still there; or a file there that does not read, which is
+    /// never the same as none.
+    static func check(_ id: SessionID, in store: HistoryStore) -> Event {
+        let saved: HistoryEntry
+        do {
+            guard let found = try store.find(id) else { return .historyChecked(id) }
+            saved = found
+        } catch {
+            return .historyUnreadable(id, error.localizedDescription)
+        }
+        return .alreadyFinished(id, recoverHealth: saved.local.health.status == .pending && saved.records.session.healthKitWorkout == nil)
+    }
 
     /// Every call runs the same steps in a fixed order (04 §2.4): the alert
     /// replaced, then, unless a newer change started meanwhile, the Live

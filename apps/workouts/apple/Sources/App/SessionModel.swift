@@ -83,6 +83,9 @@ final class SessionModel {
     var isStarting: Bool { screen.starting }
     var entryCheck: EntryCheckRequest? { screen.entryCheck }
     var journalWriteFailed: Bool { screen.journalProblem != nil }
+    /// History holds a file for this session that does not read: it may be
+    /// saved already, and nothing changes it until the file reads.
+    var historyUnread: Bool { screen.historyProblem != nil }
     /// The cover should run its Finish flow; reading it as done clears it.
     var pendingFinishFlow: Bool {
         get { screen.finishFlow }

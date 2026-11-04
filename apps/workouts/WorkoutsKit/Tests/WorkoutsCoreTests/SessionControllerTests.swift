@@ -198,6 +198,83 @@ struct SessionControllerTests {
         #expect(checked)
     }
 
+    @Test("a crash after the history file, whose file then does not read, keeps the session unchanged until it reads, then closes it")
+    func crashAfterHistoryUnread() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let clock = TestClock()
+        let first = try Rig(directory: directory.url, clock: clock, performsEffects: false)
+        await first.harness.send(.start(.empty))
+        let start = try #require(first.harness.effects.compactMap { if case let .prepareStart(request) = $0 { request } else { nil } }.first)
+        let controller = SessionController(
+            catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
+            directory: directory.url)
+        await first.harness.deliver(controller.start(start, bodyMass: nil, environment: first.harness.environment))
+        await first.finish()
+        let finishing = try #require(await first.harness.state.finishing)
+        let history = HistoryStore(directory: directory.url)
+        try history.write(finishing.entry)
+        await first.harness.runtime.close()
+        // At the relaunch the file Finish wrote does not read: half of it
+        // stands in for a file the device cannot read.
+        let file = history.url(for: finishing.id)
+        let written = try Data(contentsOf: file)
+        try written.prefix(written.count / 2).write(to: file)
+
+        let relaunched = try Rig(directory: directory.url, clock: clock)
+        try await relaunched.harness.until(timeout: .seconds(60)) { await $0.state.historyProblem != nil }
+        #expect(await relaunched.presentation.historyProblem != nil)
+        #expect(await relaunched.presentation.session?.sessionID == finishing.id)
+        #expect(relaunched.harness.effects.contains(.recheckHistory(finishing.id)))
+        // Nothing changes it meanwhile, a second Save above all, which would
+        // write over the first's file.
+        await relaunched.harness.send(.startTimer(60))
+        #expect(await relaunched.presentation.lastRefusal?.contains("may already be saved") == true)
+        let receipt = await relaunched.finish()
+        #expect(try await relaunched.outcome(receipt)?.contains("may already be saved") == true)
+        #expect(await relaunched.harness.state.finishing == nil)
+        #expect(relaunched.journalExists)
+        #expect(try Data(contentsOf: file) == written.prefix(written.count / 2))
+
+        // It reads again: the check that comes with the foreground closes
+        // the session, its history as Finish wrote it.
+        try written.write(to: file)
+        await relaunched.harness.send(.foreground)
+        try await relaunched.harness.until(timeout: .seconds(60)) { await $0.state.session == nil }
+        #expect(!relaunched.journalExists)
+        #expect(try Data(contentsOf: file) == written)
+    }
+
+    @Test("a folder that cannot be opened is no preview: the session's changes are refused until it opens, then journaled for a relaunch")
+    func folderThatCannotBeOpened() async throws {
+        let parent = try TemporaryDirectory()
+        defer { parent.remove() }
+        // A file where the app's folder goes: no folder can be made there.
+        let directory = parent.url.appendingPathComponent("Workouts", isDirectory: true)
+        try Data().write(to: directory)
+        let clock = TestClock()
+        let rig = try Rig(directory: directory, clock: clock)
+        #expect(await rig.presentation.journalProblem != nil)
+        let routine = try #require(try BundledCatalog().loadNow().routines.keys.sorted().first)
+        await rig.harness.send(.start(.routine(routine)))
+        try await rig.harness.until(timeout: .seconds(60)) { await $0.presentation.lastRefusal != nil }
+        #expect(await rig.presentation.session == nil)
+        #expect(await rig.presentation.starting == false)
+        #expect(await rig.presentation.journalProblem != nil)
+
+        try FileManager.default.removeItem(at: directory)
+        let session = try await rig.start()
+        await rig.harness.send(.tick(try Self.loggable(session)))
+        #expect(rig.journalExists)
+        #expect(await rig.presentation.journalProblem == nil)
+        let before = await rig.harness.state.session
+        await rig.harness.runtime.close()
+
+        let relaunched = try Rig(directory: directory, clock: clock)
+        #expect(await relaunched.harness.state.session == before)
+        #expect(await relaunched.presentation.session?.sessionID == session.sessionID)
+    }
+
     @Test("a history file that cannot be written keeps the session open and says why")
     func finishFails() async throws {
         let directory = try TemporaryDirectory()

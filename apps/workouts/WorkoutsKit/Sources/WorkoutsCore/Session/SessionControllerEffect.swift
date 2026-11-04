@@ -22,6 +22,9 @@ public extension SessionController {
         case writeHistory(FinishedSession)
         /// Whether History already holds the replayed session.
         case checkHistory(SessionID)
+        /// The same, once `historyRetry` has passed: History held a file for
+        /// it that could not be read.
+        case recheckHistory(SessionID)
         /// The countdown's category, through the device's service.
         case registerCategory
         case readAlerts

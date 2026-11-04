@@ -153,6 +153,9 @@ struct SessionCover: View {
                     SessionHeaderView(header: presentation.header) {
                         session.run(presentation.header.isPaused ? .resumeClock : .pauseClock)
                     }
+                    if session.historyUnread {
+                        HistoryUnreadBanner()
+                    }
                     if session.journalWriteFailed {
                         NotSavingBanner()
                     }

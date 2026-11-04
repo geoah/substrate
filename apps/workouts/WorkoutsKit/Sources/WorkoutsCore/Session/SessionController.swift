@@ -17,8 +17,11 @@ import SubstrateRuntime
 /// and its effect writes the history file; `finished` then removes the
 /// journal, or `finishFailed` leaves the session open. A crash between them
 /// replays to the session open, and the open's check against History closes
-/// it when its file was written. Every Save is answered under its receipt,
-/// saved or refused, so the sheet waits for its own outcome.
+/// it when its file was written. A file there that does not read leaves it
+/// unknown whether the session finished: the session is changed by nothing
+/// but a Discard, since a second Finish would write over the first, until a
+/// check again reads it. Every Save is answered under its receipt, saved or
+/// refused, so the sheet waits for its own outcome.
 public struct SessionController: Controller, Equatable {
     public typealias Command = SessionCommand
     public typealias Presentation = SessionScreenPresentation
@@ -29,7 +32,8 @@ public struct SessionController: Controller, Equatable {
     /// `substrate-workouts@0.1.0`, the session record's adapter.
     public var adapter: String
     /// `Application Support/Workouts/`: the journal and the history files.
-    /// Nil in a preview, which keeps no journal and writes nothing.
+    /// Nil in a preview, which keeps no journal and writes nothing; a
+    /// directory that cannot be opened is no preview (`journal(in:)`).
     public var directory: URL?
     /// A preview's session, open from the start.
     public var preview: SessionState?
@@ -62,10 +66,13 @@ public struct SessionController: Controller, Equatable {
     public var initialState: State { State(session: preview) }
     public var initialTransient: Transient { Transient() }
 
+    /// A preview's alone is none. The app's folder is opened when the
+    /// journal is first read and again at each use until it opens: a folder
+    /// that cannot be made reads as a journal the device cannot read, so
+    /// the runtime says so and refuses each change it would keep, rather
+    /// than keep none.
     public func journal(in environment: AppEnvironment) -> (any JournalStore<Event, State>)? {
-        guard let directory, let folder = try? RepositoryFolder(app: directory, writingOptions: WorkoutsFiles.protectedWriting)
-        else { return nil }
-        return SessionJournalFile(folder: folder)
+        directory.map { SessionJournalFile(directory: $0) }
     }
 
     /// The history files, beside the journal.
@@ -74,6 +81,12 @@ public struct SessionController: Controller, Equatable {
     // MARK: The engine
 
     public func apply(_ event: Event, to state: State) throws -> State {
+        if let problem = state.historyProblem {
+            switch event {
+            case .engine, .finishRequested: throw FinishUnresolved(reason: problem)
+            default: break
+            }
+        }
         var next = state
         switch event {
         case let .engine(envelope):
@@ -89,6 +102,10 @@ public struct SessionController: Controller, Equatable {
             next.finishing = finished
         case .finished, .alreadyFinished:
             next = State()
+        case let .historyChecked(id):
+            if state.session?.session.id == id { next.historyProblem = nil }
+        case let .historyUnreadable(id, reason):
+            if state.session?.session.id == id { next.historyProblem = reason }
         case .finishFailed:
             next.finishing = nil
         case let .noted(.refuse(error)), let .finishRefused(_, error):
@@ -165,7 +182,7 @@ public struct SessionController: Controller, Equatable {
             next.alerts = permission
         case let .setAsideFound(records):
             next.setAside = records
-        case .opened, .finishRefused:
+        case .opened, .finishRefused, .historyChecked, .historyUnreadable:
             break
         case let .noted(note):
             switch note {
@@ -266,7 +283,8 @@ public struct SessionController: Controller, Equatable {
             entryCheck: transient.entryCheck, scroll: transient.scroll, lastRefusal: transient.lastRefusal,
             finishProblem: transient.finishProblem, finishOutcomes: transient.finishOutcomes, journalProblem: input.journalProblem,
             cover: transient.cover, coverVisible: transient.coverVisible, cue: cue, finishFlow: transient.finishFlow,
-            startAfterFinish: transient.startAfterFinish, undo: transient.undo, alerts: transient.alerts, setAside: transient.setAside)
+            startAfterFinish: transient.startAfterFinish, undo: transient.undo, alerts: transient.alerts, setAside: transient.setAside,
+            historyProblem: state.historyProblem)
     }
 
     public func nextChange(of presentation: SessionScreenPresentation) -> Date? { presentation.session?.nextChange }
@@ -274,4 +292,19 @@ public struct SessionController: Controller, Equatable {
     public func event(atTick instant: Date) -> Event? { .tick(instant) }
 
     public func event(atOpen replayed: Bool) -> Event? { .opened(replayed: replayed) }
+}
+
+/// A change to a session whose history file is there and could not be read:
+/// Finish may have saved it already, and a change, or a second Finish over
+/// the first, would part it from what History holds.
+public struct FinishUnresolved: Error, CustomStringConvertible, Sendable {
+    public var reason: String
+
+    public init(reason: String) {
+        self.reason = reason
+    }
+
+    public var description: String {
+        "This session may already be saved: its history file could not be read (\(reason)), so it cannot be changed until it can."
+    }
 }
