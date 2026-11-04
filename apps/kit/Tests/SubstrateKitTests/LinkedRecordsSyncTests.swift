@@ -252,4 +252,33 @@ struct LinkedRecordsSyncTests {
         #expect(await cache.cursor == head)
         #expect(server.watches.filter { $0.query["from"] == "7" }.count == 1)
     }
+
+    /// A note whose read again failed is kept as waiting for one, on the
+    /// device too, and is read once the app opens again and connects.
+    @Test func aReadAgainThatFailedIsTriedAfterTheAppOpensAgain() async throws {
+        let folder = try RepositoryFolder(root: temporaryFolder())
+        let first = RecordCache(folder: folder)
+        await first.listed(RecordPage(records: [note("n1", "Milk")], head: 7, generation: "g1"), kinds: [noteKind])
+        let server = HistoryServer(head: 7, generation: "g1", notes: [note("n1", "Milk")])
+        server.failReads(of: "n1", true)
+        let key = RecordFold.key(noteKind, "n1")
+
+        let before = notebook(first, server)
+        await before.runtime.linkChanged(online)
+        try await before.until(timeout: .seconds(20)) { await $0.state.linked.phase == .following }
+        server.write("n1", title: "Oat milk")
+        try await before.until(timeout: .seconds(20)) { await $0.state.linked.stale == [key] }
+        #expect(await first.stale == [key])
+        await before.runtime.close()
+
+        server.failReads(of: "n1", false)
+        let second = RecordCache(folder: folder)
+        #expect(await second.stale == [key])
+        let after = notebook(second, server)
+        await after.runtime.linkChanged(online)
+        try await after.until(timeout: .seconds(20)) { await title($0, "n1") == "Oat milk" }
+        #expect(await after.state.linked.stale.isEmpty)
+        #expect(await second.stale.isEmpty)
+        #expect(await second.record(noteKind, "n1")?.version == 2)
+    }
 }

@@ -34,7 +34,9 @@ public struct LinkedRecords: Equatable, Sendable {
         /// The app opened: the device's copy is read, and the outbox followed.
         case opened
         case linked(LinkSnapshot)
-        case loaded([Record], cursor: WatchCursor?, queue: [OutboxEntry])
+        /// The device's copy: the records, where the watch resumes, the
+        /// records whose read again failed, and the outbox's queue.
+        case loaded([Record], cursor: WatchCursor?, stale: Set<String> = [], queue: [OutboxEntry])
         /// The kinds read whole: `cursor` is where the watch follows the read
         /// from, nil while the watch could not open; `more` when the read
         /// stopped at its limit with records left unread.
@@ -126,9 +128,12 @@ public struct LinkedRecords: Equatable, Sendable {
             let newAccess = link.signedIn && (before?.signedIn != true || before?.scopes != link.scopes || before?.accessEnds != link.accessEnds)
             let networkBack = before?.online != true && link.online == true
             startOrStop(&next, restarting: { newAccess || (networkBack && $0 == .refused) })
-        case let .loaded(records, cursor, queue):
+        case let .loaded(records, cursor, stale, queue):
             next.server = keyed(records)
             next.cursor = cursor
+            // The watch resumes past the rows that marked these, so only a
+            // read again brings them up to date.
+            next.stale = stale.filter { RecordReference(path: $0).map { kinds.contains($0.kind) } ?? false }
             next.queue = queue.filter { kinds.contains($0.kind) }
             next.loaded = true
             fold(&next)
@@ -336,7 +341,8 @@ public struct LinkedRecords: Equatable, Sendable {
             return .once {
                 var records: [Record] = []
                 if let cache { for kind in kinds { records += await cache.records(of: kind) } }
-                return .loaded(records, cursor: await cache?.cursor, queue: await outbox?.entries ?? [])
+                return .loaded(
+                    records, cursor: await cache?.cursor, stale: await cache?.stale ?? [], queue: await outbox?.entries ?? [])
             }
         case .followOutbox:
             guard let outbox else { return .none }

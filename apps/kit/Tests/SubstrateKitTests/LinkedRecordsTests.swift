@@ -90,6 +90,15 @@ struct LinkedRecordsTests {
         #expect(stepper.step(.relistNeeded) == [.read])
     }
 
+    @Test func aReadAgainThatFailedBeforeTheAppClosedIsTriedOnceConnected() {
+        var stepper = Stepper()
+        let key = RecordFold.key(noteKind, "n1")
+        let cursor = WatchCursor(seq: 8, generation: "g")
+        _ = stepper.step(.loaded([note("n1", "Milk")], cursor: cursor, stale: [key, "example.com/other/thing/x"], queue: []))
+        #expect(stepper.state.stale == [key])
+        #expect(stepper.step(.linked(online)) == [.reread([key]), .follow(cursor)])
+    }
+
     @Test func aWriteThatLandedIsLaidOverUntilReadAndOneDiscardedIsNot() {
         var stepper = Stepper()
         _ = stepper.step(.loaded([note("n1", "Milk"), note("n2", "Bread")], cursor: nil, queue: []))
