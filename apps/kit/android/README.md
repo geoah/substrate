@@ -75,9 +75,11 @@ the app schedule exact alarms), armed again at every start and by
 `NotificationReceiver` after a reboot, so `pending(prefix)` answers across
 launches; one with none shows at once, and one whose instant passed is
 dropped. The permission is asked once, from the activity in front
-(`PermissionActivity`). A tap opens the app's launch activity, which hands
-its intent to `Notifications.handle`; that, an action and a dismissal are
-responses, each once, kept for the first reader. An app names its
+(`PermissionActivity`). A tap lands on `NotificationOpened`, which is not
+exported, so no other app can forge one, and which brings the app's task
+forward; an app's launcher activity reads nothing from its intent. A tap,
+an action and a dismissal are responses, each once, kept for the first
+reader. An app names its
 notifications' channel in `KitDevice.services(context, notificationChannel)`
 and may replace the status bar's mark by declaring
 `@drawable/substrate_notification`.

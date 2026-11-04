@@ -117,9 +117,14 @@ whose revisions follow `TasksState.revision`. TasksKit needed nothing but
 - **Reminders** are kit-device's `Notifications`: each kept under
   `noBackupFilesDir` with an exact alarm (the app holds `USE_EXACT_ALARM`:
   an inexact one may come minutes late, after the app has stopped
-  planning it) until it is shown, a tap reaching the activity and, from
-  it, the app's `reminderTapped`. The permission is asked the first time
-  a task has a due date.
+  planning it) until it is shown, a tap reaching kit-device's unexported
+  `NotificationOpened` and, from it, the app's `reminderTapped`; the
+  exported launcher activity reads nothing from its intent, so no other
+  app can make a tap. The permission is asked the first time a task has a
+  due date. `USE_EXACT_ALARM` suits a sideloaded app; distributing through
+  Google Play would need `SCHEDULE_EXACT_ALARM` with the flow that asks
+  the owner for it, unless Play accepts the app's use as one that
+  qualifies for `USE_EXACT_ALARM`.
 
 `android/fixtures/tasks.json` is `TasksFixtures.all` as Swift writes it
 (`TasksAndroidTests`, `SUBSTRATE_UPDATE_FIXTURES=1` to write it again), and

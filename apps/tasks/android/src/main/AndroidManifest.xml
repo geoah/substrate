@@ -13,8 +13,8 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <!-- singleTop: a reminder's tap and the sign-in's return reach the
-             activity already open (onNewIntent). -->
+        <!-- singleTop: a reminder's tap and the sign-in's return bring the
+             activity already open forward rather than start another. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

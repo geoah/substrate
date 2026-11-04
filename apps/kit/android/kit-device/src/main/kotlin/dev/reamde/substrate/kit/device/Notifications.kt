@@ -37,8 +37,10 @@ import kotlinx.serialization.builtins.ListSerializer
  * reboot, so `pending(prefix)` answers across launches; one with none is
  * shown at once, and one whose instant has passed is dropped. The owner's
  * tap, action or dismissal is a `NotificationResponse` on [responses], each
- * once, kept for the first reader: the app's activity hands its intent to
- * [handle]. Nothing here is backed up, so a restore never revives a
+ * once, kept for the first reader. A tap lands on `NotificationOpened`,
+ * which no other app may start, never on the app's exported launcher
+ * activity, so no response is made from extras another app wrote. Nothing
+ * here is backed up, so a restore never revives a
  * reminder for a session that is gone.
  *
  * The alarm is exact where the owner lets the app schedule exact alarms,
@@ -147,12 +149,15 @@ public class Notifications internal constructor(context: Context, private val ch
     public fun responses(): Flow<NotificationResponse> = answers.receiveAsFlow()
 
     /**
-     * The app's activity hands every intent it is started with here: a tap
-     * on a notification, or an action that opens the app, becomes a
-     * response. Answers whether it was one.
+     * A tap on a notification, or an action that opens the app, as
+     * `NotificationOpened` was started with: a response. An intent that
+     * reached any other component (the app's exported launcher activity,
+     * which anyone may start with any extras) is none. Answers whether it
+     * was one.
      */
-    public fun handle(intent: Intent?): Boolean {
-        val id = intent?.getStringExtra(EXTRA_ID) ?: return false
+    internal fun handle(intent: Intent?): Boolean {
+        if (intent?.component?.let { it.packageName == app.packageName && it.className == NotificationOpened::class.java.name } != true) return false
+        val id = intent.getStringExtra(EXTRA_ID) ?: return false
         respond(intent, id, intent.getStringExtra(EXTRA_ACTION)?.let { NotificationResponse.Action.Named(it) } ?: NotificationResponse.Action.Open)
         intent.removeExtra(EXTRA_ID)
         manager.cancel(id, NOTIFICATION_ID)
@@ -224,11 +229,10 @@ public class Notifications internal constructor(context: Context, private val ch
         .putExtra(EXTRA_CATEGORY, request.category)
         .putExtra(EXTRA_INFO, Bundle().apply { request.userInfo.forEach { (key, value) -> putString(key, value) } })
 
-    /** The app's launch activity, with what the response needs. */
+    /** `NotificationOpened`, with what the response needs; it brings the app forward. */
     private fun opening(request: NotificationRequest, action: String?): PendingIntent {
-        val launch = app.packageManager.getLaunchIntentForPackage(app.packageName) ?: Intent().setPackage(app.packageName)
-        val intent = extras(launch, request).setData(uri(request.id, action ?: "open"))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val intent = extras(Intent(app, NotificationOpened::class.java), request).setData(uri(request.id, action ?: "open"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
         action?.let { intent.putExtra(EXTRA_ACTION, it) }
         return PendingIntent.getActivity(app, request.id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
