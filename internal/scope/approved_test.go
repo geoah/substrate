@@ -36,7 +36,7 @@ func TestAnApprovalCoversAReachAsAGrantCoversAScope(t *testing.T) {
 		"nothing like it":                     {pattern: "x.example.com/y/z", want: false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := approved.Covers(c.pattern, c.write, c.internal); got != c.want {
+			if got := approved.Covers(c.pattern, c.write, Kind{Internal: c.internal}); got != c.want {
 				t.Fatalf("Covers(%q, write %v, internal %v) = %v, want %v", c.pattern, c.write, c.internal, got, c.want)
 			}
 		})
@@ -44,17 +44,17 @@ func TestAnApprovalCoversAReachAsAGrantCoversAScope(t *testing.T) {
 	// Full covers everything, the zero value nothing, and a grant what its
 	// token does.
 	full, err := ApprovalOf([]string{"full"})
-	if err != nil || !full.Full() || !full.Covers("substrate.reamde.dev/llm/memory", true, true) || !full.Covers("substrate.reamde.dev/core/token", false, true) {
+	if err != nil || !full.Full() || !full.Covers("substrate.reamde.dev/llm/memory", true, Kind{Internal: true}) || !full.Covers("substrate.reamde.dev/core/token", false, Kind{Internal: true}) {
 		t.Fatalf("full = %+v, %v", full, err)
 	}
-	if none, err := ApprovalOf(nil); err != nil || none.Covers("ada.example.com/tasks/task", false, false) {
+	if none, err := ApprovalOf(nil); err != nil || none.Covers("ada.example.com/tasks/task", false, Kind{Internal: false}) {
 		t.Fatalf("an empty approval covers something, %v", err)
 	}
-	if (Approved{}).Covers("ada.example.com/tasks/task", false, false) {
+	if (Approved{}).Covers("ada.example.com/tasks/task", false, Kind{Internal: false}) {
 		t.Fatal("the zero value covers something")
 	}
 	g, _ := NewGrant([]string{"read:ada.example.com/tasks/*"})
-	if from := ApprovalFrom(g); !from.Covers("ada.example.com/tasks/task", false, false) || from.Covers("ada.example.com/tasks/task", true, false) {
+	if from := ApprovalFrom(g); !from.Covers("ada.example.com/tasks/task", false, Kind{Internal: false}) || from.Covers("ada.example.com/tasks/task", true, Kind{Internal: false}) {
 		t.Fatal("a grant's approval is not the grant's reach")
 	}
 	// An approval holds the stored grammar: no `~`, no `full` beside another.
@@ -92,7 +92,7 @@ func TestCodeGlobsCannotUseScopeExclusions(t *testing.T) {
 	}
 	for _, pattern := range []string{"*", "substrate.reamde.dev/*", "substrate.reamde.dev/core/*", "substrate.reamde.dev/llm/*"} {
 		for _, write := range []bool{false, true} {
-			if approved.Covers(pattern, write, false) || Covering(pattern, write) != "full" {
+			if approved.Covers(pattern, write, Kind{Internal: false}) || Covering(pattern, write) != "full" {
 				t.Fatalf("scope covered code glob %s, write %v", pattern, write)
 			}
 		}

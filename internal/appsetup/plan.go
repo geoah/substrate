@@ -562,7 +562,7 @@ func (p *planner) reachBlock(ctx context.Context, b *catalog.Bundle, info *subst
 			chain = append(chain, dep)
 		}
 	}
-	internal := p.internalIn(chain)
+	kindOf := p.kindIn(chain)
 	var first *substrate.AuthorizationBlock
 	for i := range info.Requires {
 		step := &info.Requires[i]
@@ -570,7 +570,7 @@ func (p *planner) reachBlock(ctx context.Context, b *catalog.Bundle, info *subst
 		if dep == nil {
 			continue
 		}
-		reach, err := p.reach(ctx, dep, chain, internal)
+		reach, err := p.reach(ctx, dep, chain, kindOf)
 		if err != nil {
 			return nil, err
 		}
@@ -584,7 +584,7 @@ func (p *planner) reachBlock(ctx context.Context, b *catalog.Bundle, info *subst
 			}
 		}
 	}
-	reach, err := p.reach(ctx, b, chain, internal)
+	reach, err := p.reach(ctx, b, chain, kindOf)
 	if err != nil {
 		return nil, err
 	}
@@ -612,9 +612,10 @@ func reachesPast(reach []substrate.AuthorizationReach) *packageProblem {
 }
 
 // reach is what b's code reaches, each entry held to the scopes left
-// checked. internal says whether a kind's declared purpose is `internal`,
-// which a glob scope never reaches.
-func (p *planner) reach(ctx context.Context, b *catalog.Bundle, chain []*catalog.Bundle, internal func(kind string) bool) ([]substrate.AuthorizationReach, error) {
+// checked. kindOf says what an exact kind is to the scopes: whether its
+// declared purpose is `internal`, which a glob scope never reaches, and the
+// traits it binds, which a trait scope reaches.
+func (p *planner) reach(ctx context.Context, b *catalog.Bundle, chain []*catalog.Bundle, kindOf func(kind string) scope.Kind) ([]substrate.AuthorizationReach, error) {
 	var out []substrate.AuthorizationReach
 	reach, err := b.ResolvedReach(ctx, p.ds, chain)
 	if err != nil {
@@ -625,28 +626,27 @@ func (p *planner) reach(ctx context.Context, b *catalog.Bundle, chain []*catalog
 		for _, by := range r.By {
 			entry.By = append(entry.By, substrate.AuthorizationReachBy{Type: by.Type, ID: by.ID})
 		}
-		entry.Covered = p.opts.Approved.Covers(r.Pattern, r.Write, !vocabulary.IsTypeGlob(r.Pattern) && internal(r.Pattern), p.internalKinds(chain)...)
+		entry.Covered = p.opts.Approved.Covers(r.Pattern, r.Write, kindOf(r.Pattern), p.internalKinds(chain)...)
 		out = append(out, entry)
 	}
 	return out, nil
 }
 
-// internalIn answers whether a kind's declared purpose is `internal`: as the
-// registry holds it, else as a closure of chain declares it. A kind neither
-// holds is read as internal, so only its exact scope covers it, as the set
-// up check reads a kind the repository lacks.
-func (p *planner) internalIn(chain []*catalog.Bundle) func(kind string) bool {
-	return func(kind string) bool {
+// kindIn answers what a kind is to the scopes (scope.KindOf): as a closure of
+// chain declares it, else as the registry holds it. A kind neither holds is
+// read as internal and binding nothing, so only its exact scope covers it, as
+// the set up check reads a kind the repository lacks.
+func (p *planner) kindIn(chain []*catalog.Bundle) func(kind string) scope.Kind {
+	return func(kind string) scope.Kind {
 		for _, b := range chain {
 			if k, ok := b.Kind(kind); ok {
-				return k.Purpose == vocabulary.PurposeInternal
+				return scope.KindOf(kind, k.Definition)
 			}
 		}
 		if k, held := p.kinds[kind]; held {
-			purpose, _ := k.Definition["purpose"].(string)
-			return purpose == vocabulary.PurposeInternal
+			return scope.KindOf(kind, k.Definition)
 		}
-		return true
+		return scope.Kind{Ref: kind, Internal: true}
 	}
 }
 

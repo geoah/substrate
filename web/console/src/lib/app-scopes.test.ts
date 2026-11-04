@@ -7,6 +7,7 @@ import {
   FULL_ACCESS_SENTENCE,
   overAgents,
   scopeSentence,
+  scopeTrait,
   scopeWords,
   webhookSentence,
   type SentenceScope,
@@ -486,5 +487,55 @@ describe("the sentence fixture", () => {
       if ((verb === "read" || verb === "write") && pattern !== "*")
         expect(pattern, c.scope).toContain("/")
     }
+  })
+})
+
+describe("a trait scope", () => {
+  // Decision 0225: what `*` would reach among the kinds that bind the trait.
+  const COMPLETABLE = "substrate.reamde.dev/core/completable"
+
+  it("is read off its pattern, and a kind pattern names no trait", () => {
+    expect(scopeTrait(`implements(${COMPLETABLE})`)).toBe(COMPLETABLE)
+    expect(scopeTrait("ada.example.com/tasks/*")).toBeUndefined()
+    expect(scopeTrait("implements()")).toBeUndefined()
+  })
+
+  it("says the meaning, the kinds that have it today, and that more may come", () => {
+    const sentence = (verb: "read" | "write", kinds: AuthorizationKind[]) =>
+      scopeSentence({
+        verb,
+        pattern: `implements(${COMPLETABLE})`,
+        glob: true,
+        kinds,
+        agents: [],
+        functions: [],
+      })
+    expect(
+      sentence("write", [
+        { identity: "ada.example.com/tasks/task" },
+        {
+          identity: "providers.substrate.reamde.dev/linear/issue",
+          label: { singular: "Issue", plural: "Issues" },
+        },
+      ])
+    ).toBe(
+      "See, add, change and delete your records of every kind that is completable (today your tasks, and Linear issues), including kinds that become completable later, and search them by meaning, which spends your embedding budget"
+    )
+    expect(sentence("read", [])).toBe(
+      "See your records of every kind that is completable (no kind is completable yet), including kinds that become completable later, and search them by meaning, which spends your embedding budget"
+    )
+  })
+
+  it("splits a camelCase trait name into words", () => {
+    expect(
+      scopeSentence({
+        verb: "read",
+        pattern: "implements(ada.example.com/scheduling/occurrenceLog)",
+        glob: true,
+        kinds: [],
+        agents: [],
+        functions: [],
+      })
+    ).toContain("every kind that is occurrence log")
   })
 })

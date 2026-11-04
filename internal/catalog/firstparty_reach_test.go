@@ -136,7 +136,7 @@ func uncovered(t *testing.T, scopes []string, purposes map[string]string, reach 
 	for _, r := range reach {
 		purpose, known := purposes[r.Pattern]
 		internal := !vocabulary.IsTypeGlob(r.Pattern) && (!known || purpose == vocabulary.PurposeInternal)
-		if !approved.Covers(r.Pattern, r.Write, internal, internals...) {
+		if !approved.Covers(r.Pattern, r.Write, scope.Kind{Internal: internal}, internals...) {
 			out = append(out, scope.Covering(r.Pattern, r.Write))
 		}
 	}

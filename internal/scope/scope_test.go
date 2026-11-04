@@ -140,10 +140,10 @@ func TestAGrantReachesWhatItNamesAndNeverTheMachinery(t *testing.T) {
 		{"substrate.reamde.dev/core/token", true, false, false, "the auth kinds are never reached"},
 	}
 	for _, c := range cases {
-		if got := g.Reads(c.kind, c.internal); got != c.reads {
+		if got := g.Reads(Kind{Ref: c.kind, Internal: c.internal}); got != c.reads {
 			t.Errorf("Reads(%s) = %v, want %v: %s", c.kind, got, c.reads, c.why)
 		}
-		if got := g.Writes(c.kind, c.internal); got != c.writes {
+		if got := g.Writes(Kind{Ref: c.kind, Internal: c.internal}); got != c.writes {
 			t.Errorf("Writes(%s) = %v, want %v: %s", c.kind, got, c.writes, c.why)
 		}
 	}
@@ -166,10 +166,10 @@ func TestAGrantReachesWhatItNamesAndNeverTheMachinery(t *testing.T) {
 		{"substrate.reamde.dev/core/token", true, false, false},
 		{"substrate.reamde.dev/core/secret", true, false, false},
 	} {
-		if got := everything.Reads(c.kind, c.internal); got != c.reads {
+		if got := everything.Reads(Kind{Ref: c.kind, Internal: c.internal}); got != c.reads {
 			t.Errorf("write:* Reads(%s) = %v, want %v", c.kind, got, c.reads)
 		}
-		if got := everything.Writes(c.kind, c.internal); got != c.writes {
+		if got := everything.Writes(Kind{Ref: c.kind, Internal: c.internal}); got != c.writes {
 			t.Errorf("write:* Writes(%s) = %v, want %v", c.kind, got, c.writes)
 		}
 	}
@@ -177,12 +177,12 @@ func TestAGrantReachesWhatItNamesAndNeverTheMachinery(t *testing.T) {
 	// internal: the guard is the kind, not the purpose.
 	for _, k := range []string{"token", "credential", "secret", "recoverykey"} {
 		kind := "substrate.reamde.dev/core/" + k
-		if everything.Reads(kind, false) || everything.Writes(kind, false) {
+		if everything.Reads(Kind{Ref: kind, Internal: false}) || everything.Writes(Kind{Ref: kind, Internal: false}) {
 			t.Errorf("write:* reached the auth kind %s", kind)
 		}
 	}
 	// Even a non-internal kind of core or llm is never written.
-	if everything.Writes("substrate.reamde.dev/core/unit", false) {
+	if everything.Writes(Kind{Ref: "substrate.reamde.dev/core/unit", Internal: false}) {
 		t.Error("write:* wrote a core kind")
 	}
 }
@@ -274,7 +274,7 @@ func TestAnAgentScopeReachesItsAgentsAndNoKindWhole(t *testing.T) {
 		"substrate.reamde.dev/llm/message",
 		"substrate.reamde.dev/core/recordpatchrequest",
 	} {
-		if g.Reads(kind, true) || g.Writes(kind, true) {
+		if g.Reads(Kind{Ref: kind, Internal: true}) || g.Writes(Kind{Ref: kind, Internal: true}) {
 			t.Errorf("an agent scope reached the kind %s whole", kind)
 		}
 	}
@@ -309,14 +309,14 @@ func TestAWebhookScopeIsStoredNeverRequestedAndReachesOneTrigger(t *testing.T) {
 		t.Error("the grant delivered to a trigger it does not name")
 	}
 	// It reads and writes no kind whole, the trigger kind least of all.
-	if g.Reads("substrate.reamde.dev/core/trigger", true) || g.Writes("substrate.reamde.dev/core/trigger", true) {
+	if g.Reads(Kind{Ref: "substrate.reamde.dev/core/trigger", Internal: true}) || g.Writes(Kind{Ref: "substrate.reamde.dev/core/trigger", Internal: true}) {
 		t.Error("a webhook scope reached the trigger kind")
 	}
 	only, err := NewGrant([]string{"webhook:applehealth-webhook"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if only.Reads("providers.example.com/apple/contact", false) {
+	if only.Reads(Kind{Ref: "providers.example.com/apple/contact", Internal: false}) {
 		t.Error("a webhook scope read a kind")
 	}
 }

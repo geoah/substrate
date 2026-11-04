@@ -7,7 +7,6 @@ import (
 	"github.com/geoah/substrate/internal/reach"
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // What a function reaches when it runs (decision 0219): the kinds its own
@@ -52,22 +51,18 @@ func resolveReach(ctx context.Context, ds reach.Reader, rec *substrate.Record) (
 
 // uncoveredReach names what the grant's read and write scopes do not cover
 // of a reach, `read <kind>` and `write <kind>`, in the reach's order. A kind
-// the registry holds is held to its declared purpose, which a glob never
-// reaches when internal. A missing kind needs an exact scope because its
-// purpose is unknown.
+// the registry holds is held to its declaration (scopeKind): its purpose,
+// which a glob never reaches when internal, and the traits it binds. A
+// missing kind needs an exact scope because its purpose is unknown.
 func uncoveredReach(g scope.Grant, reach functionReach, registry map[string]substrate.KindInfo) []string {
 	var out []string
-	internal := func(kind string) bool {
-		k, ok := registry[kind]
-		return !vocabulary.IsTypeGlob(kind) && (!ok || internalKind(k))
-	}
 	for _, k := range reach.reads {
-		if !g.ReachCovered(scope.Read, k, internal(k), internalKinds(registry)...) {
+		if !g.ReachCovered(scope.Read, k, scopeKind(k, registry), internalKinds(registry)...) {
 			out = append(out, "read "+k)
 		}
 	}
 	for _, k := range reach.writes {
-		if !g.ReachCovered(scope.Write, k, internal(k), internalKinds(registry)...) {
+		if !g.ReachCovered(scope.Write, k, scopeKind(k, registry), internalKinds(registry)...) {
 			out = append(out, "write "+k)
 		}
 	}

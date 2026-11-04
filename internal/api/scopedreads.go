@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -295,7 +296,7 @@ func (s *scopedDataset) requireBlob(ctx context.Context, digest string) error {
 	}
 	var sites []blobSite
 	for id, k := range reg {
-		if s.grant.Reads(id, internalKind(k)) {
+		if s.grant.Reads(scope.KindOf(id, k.Definition)) {
 			sites = append(sites, blobRefProperties(k)...)
 		}
 	}
@@ -332,7 +333,7 @@ func (s *scopedDataset) requireBlob(ctx context.Context, digest string) error {
 // not read the blob manifests never learns (decision 0202), as a blob
 // reference it reads carries neither.
 func (s *scopedDataset) cutBlobInfo(info *substrate.BlobInfo) *substrate.BlobInfo {
-	if info == nil || s.grant.Reads(kindBlob, true) {
+	if info == nil || s.grant.Reads(scope.Kind{Ref: kindBlob, Internal: true}) {
 		return info
 	}
 	cut := *info

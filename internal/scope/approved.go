@@ -56,8 +56,9 @@ func ApprovalFrom(g Grant) Approved { return Approved{scopes: slices.Clone(g.sco
 func (a Approved) Full() bool { return a.full }
 
 // Covers uses the same effective reach rule as call and chat admission.
+// kind is the kind an exact pattern names (Grant.ReachCovered), and
 // internalKinds must include the installed and candidate internal kinds.
-func (a Approved) Covers(pattern string, write, internal bool, internalKinds ...string) bool {
+func (a Approved) Covers(pattern string, write bool, kind Kind, internalKinds ...string) bool {
 	if a.full {
 		return true
 	}
@@ -65,7 +66,7 @@ func (a Approved) Covers(pattern string, write, internal bool, internalKinds ...
 	if write {
 		verb = Write
 	}
-	return (Grant{scopes: a.scopes}).ReachCovered(verb, pattern, internal, internalKinds...)
+	return (Grant{scopes: a.scopes}).ReachCovered(verb, pattern, kind, internalKinds...)
 }
 
 // Covering is the scope that would cover one reach, as a block names it:
