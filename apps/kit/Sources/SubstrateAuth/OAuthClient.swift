@@ -273,6 +273,7 @@ public struct OAuthClient: Sendable {
         switch try await browser.open(try page(redirect.uri), for: redirect) {
         case let .callback(query): return (redirect.uri, query)
         case .cancelled: throw SignInCancelled()
+        case .expired: throw SignInExpired()
         }
     }
 

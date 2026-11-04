@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "dbd49d6218748de1e757354dfdb94832aac1b37107bd3c77d5acddcdce5c4485"
+    public const val VALUE: String = "976ecd6f040b8aa26a9a7668850f44661ef4f15759e2a00529b98e5f5a081a1b"
 }
 
 /**
@@ -263,6 +263,9 @@ public sealed interface BrowserAnswer {
     public data object Cancelled : BrowserAnswer
 
     @Serializable
+    public data object Expired : BrowserAnswer
+
+    @Serializable
     public data class Failed(
         val reason: String,
     ) : BrowserAnswer
@@ -272,6 +275,7 @@ public sealed interface BrowserAnswer {
         listOf(
             SwiftEnumSerializer.Case("callback", Callback::class, Callback.serializer()),
             SwiftEnumSerializer.Case("cancelled", Cancelled::class, Cancelled.serializer()),
+            SwiftEnumSerializer.Case("expired", Expired::class, Expired.serializer()),
             SwiftEnumSerializer.Case("failed", Failed::class, Failed.serializer()),
         ),
     )

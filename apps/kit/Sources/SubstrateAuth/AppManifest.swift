@@ -129,7 +129,9 @@ public struct AppManifest: Sendable {
         return claimedRedirect(stamped)
     }
 
-    static func claimedRedirect(_ text: String) -> URL? {
+    /// `text` where it is a callback a release may claim: an https URL with
+    /// a host and a path, and no query, fragment or user.
+    public static func claimedRedirect(_ text: String) -> URL? {
         guard let url = URL(string: text), url.scheme?.lowercased() == "https",
               let host = url.host(percentEncoded: false), !host.isEmpty,
               url.path(percentEncoded: false).count > 1, url.query(percentEncoded: true) == nil,

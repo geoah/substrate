@@ -560,6 +560,7 @@
       "kind": "struct",
       "fields": [
         {"name": "fingerprint", "type": "String"},
+        {"name": "debug", "type": "Bool"},
         {"name": "clientID", "type": "String?"},
         {"name": "redirect", "type": "String?"},
         {"name": "version", "type": "String"},

@@ -205,6 +205,21 @@ struct ConnectScreenTests {
         #expect(presented.problem == nil)
         #expect(presented.button?.title == "Sign In with Your Substrate")
     }
+
+    @Test func anExpiredSignInSaysSoAndOffersItAgain() async throws {
+        let expired = ConnectController(manifest: ScreenFixtures.manifest,
+                                        locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
+                                        signIn: { _ in throw SignInExpired() })
+        let harness = ControllerHarness(expired, performsEffects: true)
+        await harness.send(.edit("ada.example.com"))
+        await harness.runtime.deliver(.located(probe))
+        await harness.send(.proceed)
+        try await harness.until { await $0.runtime.counters.delivered == 1 }
+        let presented = await harness.presentation
+        #expect(presented.problem?.title == "Couldn't sign in")
+        #expect(presented.problem?.message == "The sign-in waited too long for your browser. Start it again.")
+        #expect(presented.button?.enabled == true)
+    }
 }
 
 @Suite("The Repository and Status screens", .timeLimit(.minutes(10)))

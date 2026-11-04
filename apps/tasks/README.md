@@ -81,7 +81,10 @@ whose revisions follow `TasksState.revision`. TasksKit needed nothing but
 - **`android/`** is the Gradle module `:tasks`. Its ids come from
   `app.json`; a release's `-Psubstrate.release.*` stamp sets the version
   name and code and the client id and redirect, and the module never signs
-  a release (`mise run android:release:build tasks` does). `TasksShell`
+  a release (`mise run android:release:build tasks` does). A release-type
+  build without an https client id and redirect fails before anything is
+  built (build-logic's `requireReleaseSignIn`); `mise run android:build`
+  stamps placeholders on `example.com`. `TasksShell`
   says which root a command goes to and opens them; the screens
   (`ui/`) draw the App menu with kit-ui's `AppMenu` (a navigation bar on a
   phone, a rail or a drawer wider, with one, two or three panes), the
@@ -90,10 +93,16 @@ whose revisions follow `TasksState.revision`. TasksKit needed nothing but
   that change them, the editor under the same labels, the delete-list
   question, and Settings, Status, Repository, Storage and About as
   kit-ui's `SettingsScreen` draws them.
-- **Sign-in** is a local build's loopback route, with the local client
-  id: kit-device listens on `127.0.0.1` for the one path, the owner's
-  default browser shows the approval page, and Swift checks the callback
-  (`state`, `iss`, PKCE). Android freezes an app in the background within
+- **Sign-in** is a debug build's loopback route, with the local client id:
+  kit-device listens on `127.0.0.1` for the one path, the owner's default
+  browser shows the approval page, and Swift checks the callback (`state`,
+  `iss`, PKCE). Only a debug build (`BuildConfig.DEBUG`) takes that route;
+  a release-type build never does, whatever it was stamped with. The
+  listener takes as the callback only the request carrying the attempt's
+  `state`, answers anything else (another path, another `state`, a request
+  it cannot read) without ending the attempt, bounds every request in size
+  and time, and gives up after ten minutes, the server's own limit, which
+  the connect screen says. Android freezes an app in the background within
   seconds, and a frozen app's listener takes no callback, so a short
   foreground service ("Waiting for your browser") holds the process while
   the owner approves; Android ends it after about three minutes, and a

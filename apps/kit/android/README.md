@@ -58,8 +58,11 @@ command is read with the exact reader and decoded by `ValueCoding`, so a
 **Signing in.** `BrowserSignIn` takes a local build's loopback route: it
 listens on `127.0.0.1` alone, on a port the system picks, for the one path
 Swift named, opens the owner's default browser on the approval page, and
-hands the callback's query back unchecked; `OAuthClient` holds `state`,
-`iss` and PKCE in Swift. The page the browser lands on links back to the
+hands back the query of the request carrying the page's `state`;
+`OAuthClient` holds `state`, `iss` and PKCE in Swift. Every request is
+bounded in size and time, one it cannot read or with another `state` is
+refused without ending the attempt, and an attempt no callback reaches in
+ten minutes answers `expired`. The page the browser lands on links back to the
 app. A release's claimed route is refused until the app takes its
 verified App Link (the Auth Tab), never answered through loopback. The
 kit's `SignInController` is the Connect screen as a root of its own, with
