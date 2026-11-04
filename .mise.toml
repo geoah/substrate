@@ -930,7 +930,7 @@ run = ".mise/apple.sh sim"
 # command line is an argument mise does not see, and the console's bundle
 # needs dist/.
 [tasks."apps:release"]
-description = "Build every app (or the ones named) on every platform it has a UI for from one commit, stage the artifacts, publish the site and activate each app's feeds, under one release lease; [prerelease|stable] [app…]; SUBSTRATE_APPS_RELEASE_DRY_RUN=1 runs it all against build/apps"
+description = "Build every app (or the ones named) on every platform it has a UI for from one commit, stage the artifacts, publish the site and activate each app's feeds, under one release lease; [prerelease|stable] [app…]; SUBSTRATE_APPS_RELEASE_DRY_RUN=1 runs it all against build/apps, and =strict fails where a release would, with no placeholder for a build"
 depends = ["console:build"]
 run = ".mise/apps.sh release"
 

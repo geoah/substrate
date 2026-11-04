@@ -36,6 +36,9 @@
 # build/apps/dry-run/staged, and a stage records the mode it was built in, so
 # a release never resumes one. The one function that writes to a bucket
 # (upload) and the one that signs a request (s3) refuse to run in a dry run.
+# SUBSTRATE_APPS_RELEASE_DRY_RUN=strict is a dry run in which nothing stands
+# in for a build: an Apple app that does not archive unsigned fails it,
+# where a dry run's =1 stands a placeholder in.
 #
 # Every invocation works in its own directory under build/apps/runs, removed
 # when it exits, so two invocations in one checkout share no working file;
@@ -1715,6 +1718,12 @@ release_env() {
 	*) die "SUBSTRATE_APPLE_RELEASE_URL is an https address: $SUBSTRATE_APPLE_RELEASE_URL" ;;
 	esac
 	dry_only
+	# A strict dry run makes every build a release would, so nothing stands
+	# in for one: not the Apple placeholder (apple_archive), and not these.
+	if [ "$DRY" = strict ]; then
+		[ -z "${SUBSTRATE_APPS_RELEASE_PLACEHOLDERS:-}" ] || die "a strict dry run makes every build, and SUBSTRATE_APPS_RELEASE_PLACEHOLDERS stands placeholders in for them"
+		[ -z "${SUBSTRATE_APPS_RELEASE_ANDROID_BUILD:-}" ] || die "a strict dry run makes every build, and SUBSTRATE_APPS_RELEASE_ANDROID_BUILD stands another program in for android:release:build"
+	fi
 	if [ -z "$DRY" ]; then
 		: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID to a key that may write the bucket}"
 		: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"

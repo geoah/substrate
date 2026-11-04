@@ -194,7 +194,7 @@ still land), the ones that still list the release before (not written), the
 apps it did not reach, and the command that resumes it:
 
 ```bash
-SUBSTRATE_APPS_RELEASE_BUILD=<build> mise run apps:release   # and SUBSTRATE_APPS_RELEASE_DRY_RUN=1 for a dry run
+SUBSTRATE_APPS_RELEASE_BUILD=<build> mise run apps:release   # with the dry run's SUBSTRATE_APPS_RELEASE_DRY_RUN for one
 ```
 
 Run it from the same checkout at the same commit, with the release folder,
@@ -229,8 +229,13 @@ and takes the app out of the archive in place of an export, which would
 sign it, so it reads no keychain, and checks that no build it made names a
 signing identity (an app that does not archive unsigned is a placeholder,
 and it says so); it writes no closures lock, and the one function that
-uploads and the one that signs a request refuse to run in it. Only in a dry
-run: `SUBSTRATE_APPS_RELEASE_PLACEHOLDERS=1` stands placeholders in for
+uploads and the one that signs a request refuse to run in it.
+`SUBSTRATE_APPS_RELEASE_DRY_RUN=strict` is a strict dry run, the one that
+says a release would build: nothing stands in for a build, so an app that
+does not archive unsigned fails it as a failed archive fails a release, and
+it refuses the two switches below that stand something in for one
+(`SUBSTRATE_APPS_RELEASE_PLACEHOLDERS` and
+`SUBSTRATE_APPS_RELEASE_ANDROID_BUILD`). Only in a dry run: `SUBSTRATE_APPS_RELEASE_PLACEHOLDERS=1` stands placeholders in for
 every build, `SUBSTRATE_APPS_RELEASE_ANDROID_BUILD=<program>` another
 program in for `android:release:build`,
 `SUBSTRATE_APPS_RELEASE_STOP_AFTER=stage`, `site` or an app's id stops there

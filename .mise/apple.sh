@@ -307,7 +307,9 @@ apple_release_build() {
 # One platform's archive and export, to $4/<platform>. A dry run archives
 # unsigned and takes the app out of the archive in place of an export
 # (UNSIGNED, unsigned_export), and one that cannot archive stands a
-# placeholder in.
+# placeholder in, unless the dry run is strict
+# (SUBSTRATE_APPS_RELEASE_DRY_RUN=strict), which fails there as a release
+# does, so it passes only where every build was made.
 apple_archive() {
 	local app="$1" scheme="$2" platform="$3" scratch="$4" method="$5"
 	if [ -n "${SUBSTRATE_APPS_RELEASE_PLACEHOLDERS:-}" ]; then
@@ -321,6 +323,7 @@ apple_archive() {
 			unsigned_export "$platform" "$scratch"; then
 			return 0
 		fi
+		[ "$DRY" != strict ] || die "strict dry run: $app did not archive unsigned for $platform, and a strict dry run stands no placeholder in for a build"
 		say "dry run: $app did not archive unsigned for $platform; a placeholder stands in for it"
 		apple_placeholder "$app" "$scheme" "$platform" "$scratch"
 		return
