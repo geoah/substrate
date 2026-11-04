@@ -190,12 +190,6 @@ async function expect(page, what, wait) {
   }
 }
 
-function cardTitle(page, text) {
-  return page.locator('[data-slot="card-title"]', {
-    hasText: new RegExp(`^${text}$`),
-  })
-}
-
 function pageTitle(page, text) {
   return page.getByRole("heading", { level: 1, name: text, exact: true })
 }
@@ -322,35 +316,48 @@ const routes = [
     path: "/",
     async check(page) {
       await at(page, "/login")
-      await shows(page, '"Sign in" card', cardTitle(page, "Sign in"))
-      return 'redirected to /login, "Sign in"'
+      await shows(
+        page,
+        '"Sign in to your Substrate" heading',
+        pageTitle(page, "Sign in to your Substrate")
+      )
+      return 'redirected to /login, "Sign in to your Substrate"'
     },
   },
   {
     path: "/login",
     async check(page) {
-      await shows(page, '"Sign in" card', cardTitle(page, "Sign in"))
-      return '"Sign in"'
+      await shows(
+        page,
+        '"Sign in to your Substrate" heading',
+        pageTitle(page, "Sign in to your Substrate")
+      )
+      return '"Sign in to your Substrate"'
     },
   },
   {
     path: "/register",
     async check(page, origin) {
       await openDoor(origin)
-      await shows(page, '"Register" card', cardTitle(page, "Register"))
+      await shows(
+        page,
+        '"Create your Substrate" heading',
+        pageTitle(page, "Create your Substrate")
+      )
       const repository = `render-${randomBytes(4).toString("hex")}.example.com`
       const password = randomBytes(12).toString("hex")
       await page.locator("#repository").fill(repository)
       await page.locator("#password").fill(password)
       await page.locator("#confirm").fill(password)
-      // The label reads "Create my repository" only once discovery has said
-      // there is no second factor; before that the form would buy a seed.
-      const create = page.getByRole("button", { name: "Create my repository" })
-      await expect(page, '"Create my repository" button', () => create.click())
+      // The button reads "Create your Substrate" only once discovery has said
+      // there is no second factor; before that it reads "Continue" and the
+      // form would buy a seed.
+      const create = page.getByRole("button", { name: "Create your Substrate" })
+      await expect(page, '"Create your Substrate" button', () => create.click())
       await shows(
         page,
-        '"Your recovery key" card',
-        cardTitle(page, "Your recovery key")
+        '"Save your recovery key" heading',
+        pageTitle(page, "Save your recovery key")
       )
       await page.getByRole("button", { name: "Saved, continue" }).click()
       await at(page, "/")

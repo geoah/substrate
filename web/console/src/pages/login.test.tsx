@@ -69,6 +69,15 @@ vi.mock("@/lib/api/discovery", async (importOriginal) => {
   }
 })
 
+/** The deployment's site (lib/site.ts): none unless a case sets one. */
+const door = vi.hoisted(() => ({
+  site: null as null | { name: string; tagline?: string; logo?: string },
+}))
+vi.mock("@/lib/site", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/site")>()
+  return { ...real, useSite: () => door.site }
+})
+
 import { resetAuthPolicy } from "@/lib/api/discovery"
 
 import { LoginPage } from "./login"
@@ -90,7 +99,7 @@ const MINT = {
 }
 
 function signIn() {
-  fireEvent.change(screen.getByLabelText("Repository"), {
+  fireEvent.change(screen.getByLabelText("Your address"), {
     target: { value: "geoah" },
   })
   fireEvent.change(screen.getByLabelText("Password"), {
@@ -111,6 +120,7 @@ describe("LoginPage", () => {
     navigate.mockClear()
     policy.totpRequired = true
     policy.live = false
+    door.site = null
     loginSearch.redirect = undefined
     loginSearch.login_hint = undefined
   })
@@ -123,15 +133,51 @@ describe("LoginPage", () => {
 
   it("asks for the repository, password and the one-time code", () => {
     render(<LoginPage />)
-    expect(screen.getByLabelText("Repository")).toBeTruthy()
+    expect(screen.getByLabelText("Your address")).toBeTruthy()
     expect(screen.getByLabelText("Password")).toBeTruthy()
     expect(screen.getByLabelText("One-time code")).toBeTruthy()
+  })
+
+  it("shows the deployment's brand where it sets a site", () => {
+    door.site = {
+      name: "Crane",
+      tagline: "A home for your people",
+      logo: "/site/logo.svg",
+    }
+    render(<LoginPage />)
+    expect(screen.getByText("Crane")).toBeTruthy()
+    expect(screen.getByText("Welcome back to Crane.")).toBeTruthy()
+    expect(document.querySelector('img[src="/site/logo.svg"]')).not.toBeNull()
+    expect(document.querySelector('img[src="/substrate.svg"]')).toBeNull()
+  })
+
+  it("says a branded deployment is a Substrate provider, and only then", () => {
+    door.site = { name: "Crane" }
+    render(<LoginPage />)
+    expect(screen.getByText("A Substrate provider")).toBeTruthy()
+    expect(
+      screen.getByRole("heading", { name: "Sign in to your Substrate" })
+    ).toBeTruthy()
+    cleanup()
+    door.site = null
+    render(<LoginPage />)
+    expect(screen.queryByText(/provider/i)).toBeNull()
+    expect(
+      screen.getByRole("heading", { name: "Sign in to your Substrate" })
+    ).toBeTruthy()
+  })
+
+  it("keeps the substrate's brand where no site is set", () => {
+    render(<LoginPage />)
+    expect(screen.getByText("substrate")).toBeTruthy()
+    expect(screen.getByText("Welcome back.")).toBeTruthy()
+    expect(document.querySelector('img[src="/substrate.svg"]')).not.toBeNull()
   })
 
   it("fills the repository an app named in its login_hint", () => {
     loginSearch.login_hint = "ada.example.org"
     render(<LoginPage />)
-    expect(screen.getByLabelText<HTMLInputElement>("Repository").value).toBe(
+    expect(screen.getByLabelText<HTMLInputElement>("Your address").value).toBe(
       "ada.example.org"
     )
   })
@@ -189,13 +235,17 @@ describe("LoginPage", () => {
     loginSearch.redirect = "/authorize/AbC123"
     render(<LoginPage />)
     expect(
-      screen.getByRole("link", { name: "Register" }).getAttribute("href")
+      screen
+        .getByRole("link", { name: "Create your Substrate" })
+        .getAttribute("href")
     ).toBe("/register?redirect=%2Fauthorize%2FAbC123")
     cleanup()
     loginSearch.redirect = "//evil.example"
     render(<LoginPage />)
     expect(
-      screen.getByRole("link", { name: "Register" }).getAttribute("href")
+      screen
+        .getByRole("link", { name: "Create your Substrate" })
+        .getAttribute("href")
     ).toBe("/register")
   })
 
@@ -207,7 +257,7 @@ describe("LoginPage", () => {
     )
     render(<LoginPage />)
     signIn()
-    await screen.findByText(/repository name, password or code is wrong/i)
+    await screen.findByText(/address, password or code is wrong/i)
     expect(getToken()).toBeNull()
     expect(navigate).not.toHaveBeenCalled()
   })
@@ -231,7 +281,7 @@ describe("LoginPage", () => {
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     render(<LoginPage />)
     expect(screen.queryByLabelText("One-time code")).toBeNull()
-    fireEvent.change(screen.getByLabelText("Repository"), {
+    fireEvent.change(screen.getByLabelText("Your address"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -251,7 +301,7 @@ describe("LoginPage", () => {
 
   it("rejects a non-six-digit code before any request", async () => {
     render(<LoginPage />)
-    fireEvent.change(screen.getByLabelText("Repository"), {
+    fireEvent.change(screen.getByLabelText("Your address"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -303,7 +353,7 @@ describe("LoginPage and the door's own answer", () => {
     // Discovery has not answered yet: the strict door is what renders, so a
     // deployment that DOES want a code never hides the field.
     expect(screen.getByLabelText("One-time code")).toBeTruthy()
-    fireEvent.change(screen.getByLabelText("Repository"), {
+    fireEvent.change(screen.getByLabelText("Your address"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -316,7 +366,7 @@ describe("LoginPage and the door's own answer", () => {
     )
     // The two fields survived the answer. A password manager fills them the
     // moment the page paints, and nothing here may throw that away.
-    expect(screen.getByLabelText<HTMLInputElement>("Repository").value).toBe(
+    expect(screen.getByLabelText<HTMLInputElement>("Your address").value).toBe(
       "geoah"
     )
     expect(screen.getByLabelText<HTMLInputElement>("Password").value).toBe(
@@ -341,7 +391,7 @@ describe("LoginPage and the door's own answer", () => {
       return jsonResponse(201, MINT)
     })
     render(<LoginPage />)
-    fireEvent.change(screen.getByLabelText("Repository"), {
+    fireEvent.change(screen.getByLabelText("Your address"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {

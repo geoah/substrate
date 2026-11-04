@@ -1,17 +1,10 @@
 import { useState } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { BoxesIcon, CheckIcon, CopyIcon } from "lucide-react"
+import { CheckIcon, CopyIcon } from "lucide-react"
 import { QRCodeCanvas } from "qrcode.react"
 
-import { ShellServer } from "@/components/shell-server"
+import { DoorLayout, doorLinkClass } from "@/components/door/door-layout"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   Field,
   FieldDescription,
@@ -20,7 +13,12 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Separator } from "@/components/ui/separator"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group"
 import { Spinner } from "@/components/ui/spinner"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import {
@@ -34,6 +32,7 @@ import { saveSession } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 import { safeReturnPath } from "@/lib/return-path"
 import { substrateHostname } from "@/lib/shell"
+import { useSite } from "@/lib/site"
 import { registerRoute } from "@/router"
 
 /** Long enough that argon2id is not the only thing between a guess and the
@@ -57,7 +56,7 @@ function CopyBlock({ value, label }: { value: string; label: string }) {
   }
   return (
     <div className="flex items-center gap-2">
-      <code className="min-w-0 flex-1 truncate rounded-lg bg-muted px-2.5 py-1.5 data text-xs">
+      <code className="min-w-0 flex-1 rounded-lg bg-muted px-3 py-2 data text-xs [overflow-wrap:anywhere]">
         {value}
       </code>
       <Button
@@ -101,7 +100,7 @@ function KeepKeyField({
       <Input
         id={id}
         name={id}
-        className="min-w-0 flex-1 data"
+        className="h-10 min-w-0 flex-1 data"
         readOnly
         autoComplete="off"
         value={value}
@@ -148,8 +147,10 @@ function repositoryAuthority(name: string, host: string): string {
  * Where the substrate verifies no second factor there IS no step two: the one
  * form commits, and the seed is minted server-side and enrolled nowhere. */
 export function RegisterPage() {
-  useDocumentTitle("Register")
+  useDocumentTitle("Create your Substrate")
   const { inviteRequired, totpRequired } = useAuthPolicy()
+  const site = useSite()
+  const host = substrateHostname().replace(/\.$/, "").toLowerCase()
   const navigate = useNavigate()
   // Where registering returns to, as signing in does: only a path on this
   // console is followed.
@@ -159,7 +160,7 @@ export function RegisterPage() {
   // The name the repository will actually get. Sending the resolved value
   // rather than leaving the completion to the server keeps what the form
   // shows and what the repository gets one string.
-  const authority = repositoryAuthority(repository, substrateHostname())
+  const authority = repositoryAuthority(repository, host)
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
@@ -195,6 +196,14 @@ export function RegisterPage() {
   // enrollment is a seed with no door behind it, and the second step it would
   // open is a ceremony over a secret nothing will check.
   const enrollment = totpRequired ? enrolled : null
+
+  /** Back to step one. The enrollment wrote nothing, so dropping it loses
+   * nothing but the seed, and the next Continue buys a fresh one. */
+  function startOver() {
+    setEnrolled(null)
+    setCode("")
+    setError(null)
+  }
 
   /** Step one. With no second factor to enroll it IS the whole registration:
    * buying a seed nobody will ever be shown would be theater. */
@@ -273,265 +282,286 @@ export function RegisterPage() {
     }
   }
 
+  // Who resets a lost password: the people running this server, named the
+  // way the reader knows them.
+  const operator = site
+    ? `the people who run ${site.name}`
+    : "whoever runs this server"
+  const twoSteps = totpRequired && recoveryKey === null
+  const errorNote = error && (
+    <p
+      role="alert"
+      className="mb-5 rounded-lg bg-bad-soft px-3 py-2 text-sm text-destructive"
+    >
+      {error}
+    </p>
+  )
+
+  if (recoveryKey !== null) {
+    return (
+      <DoorLayout
+        eyebrow="Substrate created"
+        title="Save your recovery key"
+        description="It is shown once and never again. Put it in your password manager now."
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            void navigate({ to: returnTo ?? "/", replace: true })
+          }}
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="recovery-key">Recovery key</FieldLabel>
+              <KeepKeyField
+                id="recovery-key"
+                label="recovery key"
+                value={recoveryKey}
+              />
+              <FieldDescription>
+                Nobody can recover this key for you. With it, a download of
+                everything you keep here opens on another server. Without it,
+                only this server can read your saved keys and passwords.
+              </FieldDescription>
+            </Field>
+            <Field>
+              <Button type="submit" size="lg" className="h-10">
+                Saved, continue
+              </Button>
+            </Field>
+          </FieldGroup>
+        </form>
+      </DoorLayout>
+    )
+  }
+
   return (
-    <div className="flex min-h-svh items-center justify-center bg-background p-6">
-      <div className="flex w-full max-w-md flex-col gap-6">
-        <div className="flex items-center justify-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <BoxesIcon className="size-4" />
-          </div>
-          <span className="text-lg font-semibold">substrate</span>
-        </div>
-        {recoveryKey !== null && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Your recovery key</CardTitle>
-              <CardDescription>
-                The recovery key is shown once and never shown again. Put it in
-                your password manager now.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  void navigate({ to: returnTo ?? "/", replace: true })
-                }}
-              >
-                <FieldGroup>
-                  {recoveryKey !== null && (
-                    <Field>
-                      <FieldLabel htmlFor="recovery-key">
-                        Recovery key
-                      </FieldLabel>
-                      <KeepKeyField
-                        id="recovery-key"
-                        label="recovery key"
-                        value={recoveryKey}
-                      />
-                      <FieldDescription>
-                        Nobody can recover this key for you. With it, an export
-                        of your repository opens on any substrate. Without it,
-                        only this server can read your secrets.
-                      </FieldDescription>
-                    </Field>
-                  )}
-                  <Field>
-                    <Button type="submit">Saved, continue</Button>
-                  </Field>
-                </FieldGroup>
-              </form>
-            </CardContent>
-          </Card>
-        )}
-        {recoveryKey === null && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Register</CardTitle>
-              <CardDescription>
-                Choose the name your data lives under, and a password.
-                {totpRequired &&
-                  ` Then a ${CODE_DIGITS}-digit code from your authenticator app.`}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-6">
-              {error && (
-                <p
-                  role="alert"
-                  className="text-sm font-normal text-destructive"
-                >
-                  {error}
-                </p>
-              )}
-
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  void beginEnrollment()
-                }}
-              >
-                <FieldGroup>
-                  {inviteRequired && (
-                    <Field>
-                      <FieldLabel htmlFor="inviteCode">Invite code</FieldLabel>
-                      <Input
-                        id="inviteCode"
-                        className="data"
-                        value={inviteCode}
-                        onChange={(e) => setInviteCode(e.target.value)}
-                        disabled={enrollment !== null}
-                        autoFocus
-                      />
-                      <FieldDescription>
-                        The code you were given to join this substrate.
-                      </FieldDescription>
-                    </Field>
-                  )}
-                  <Field>
-                    <FieldLabel htmlFor="repository">Repository</FieldLabel>
-                    <Input
-                      id="repository"
-                      className="data"
-                      autoComplete="username"
-                      spellCheck={false}
-                      value={repository}
-                      onChange={(e) =>
-                        setRepository(e.target.value.toLowerCase())
-                      }
-                      disabled={enrollment !== null}
-                    />
-                    <FieldDescription>
-                      The name you sign in with, and the address of your data,
-                      such as ada.example.com.
-                      {authority
-                        ? ` A plain name becomes ${authority}.`
-                        : ""}{" "}
-                      You can’t change it later.
-                    </FieldDescription>
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="password">Password</FieldLabel>
-                    <Input
-                      id="password"
-                      type="password"
-                      autoComplete="new-password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      disabled={enrollment !== null}
-                    />
-                    <FieldDescription>
-                      At least {MIN_PASSWORD} characters.{" "}
-                      {totpRequired
-                        ? "If you lose both, only whoever runs this substrate can reset them."
-                        : "If you lose it, only whoever runs this substrate can reset it."}
-                    </FieldDescription>
-                  </Field>
-                  <Field
-                    data-invalid={
-                      (confirm.length > 0 && !passwordsMatch) || undefined
-                    }
-                  >
-                    <FieldLabel htmlFor="confirm">Confirm password</FieldLabel>
-                    <Input
-                      id="confirm"
-                      type="password"
-                      autoComplete="new-password"
-                      aria-invalid={confirm.length > 0 && !passwordsMatch}
-                      value={confirm}
-                      onChange={(e) => setConfirm(e.target.value)}
-                      disabled={enrollment !== null}
-                    />
-                    {confirm.length > 0 && !passwordsMatch && (
-                      <FieldError
-                        errors={[{ message: "The two passwords differ." }]}
-                      />
-                    )}
-                  </Field>
-                  {!enrollment && (
-                    <Field>
-                      <Button type="submit" disabled={!canEnroll || isBusy}>
-                        {isBusy && <Spinner />}
-                        {totpRequired ? "Continue" : "Create my repository"}
-                      </Button>
-                    </Field>
-                  )}
-                </FieldGroup>
-              </form>
-
-              {enrollment && (
-                <>
-                  <Separator />
-                  <div className="flex flex-col gap-3">
-                    <div>
-                      <h2 className="text-sm font-medium">
-                        Your authenticator
-                      </h2>
-                      <p className="text-sm text-muted-foreground">
-                        Scan this with your password manager or authenticator
-                        app, then prove it with one code below. Nothing has been
-                        written yet, so leaving now creates nothing.
-                      </p>
-                    </div>
-                    <div className="flex justify-center">
-                      <div className="rounded-xl bg-white p-3">
-                        <QRCodeCanvas
-                          value={enrollment.otpauthUri}
-                          size={168}
-                          marginSize={0}
-                          level="M"
-                          title="Authenticator setup QR code"
-                        />
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Can&rsquo;t scan? Add the secret by hand, or open{" "}
-                      <a
-                        href={enrollment.otpauthUri}
-                        className="underline underline-offset-4 hover:text-foreground"
-                      >
-                        the enrollment link
-                      </a>{" "}
-                      on a device with an authenticator.
-                    </p>
-                    <CopyBlock value={enrollment.totpSecret} label="secret" />
-                    <CopyBlock
-                      value={enrollment.otpauthUri}
-                      label="otpauth URI"
-                    />
-                  </div>
-
-                  <Separator />
-
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      void finish()
-                    }}
-                  >
-                    <FieldGroup>
-                      <Field>
-                        <FieldLabel htmlFor="code">One-time code</FieldLabel>
-                        <Input
-                          id="code"
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          maxLength={CODE_DIGITS + 2}
-                          placeholder="123456"
-                          className="data tracking-[0.25em]"
-                          value={code}
-                          onChange={(e) => setCode(e.target.value)}
-                        />
-                        <FieldDescription>
-                          The {CODE_DIGITS}-digit code your authenticator shows
-                          for this secret.
-                        </FieldDescription>
-                      </Field>
-                      <Field>
-                        <Button type="submit" disabled={!canFinish || isBusy}>
-                          {isBusy && <Spinner />}
-                          Create my repository
-                        </Button>
-                      </Field>
-                    </FieldGroup>
-                  </form>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        )}
-        <p className="text-center text-xs text-muted-foreground">
-          Already registered?{" "}
+    <DoorLayout
+      eyebrow={
+        twoSteps ? (enrollment ? "Step 2 of 2" : "Step 1 of 2") : undefined
+      }
+      title={enrollment ? "Connect an authenticator" : "Create your Substrate"}
+      description={
+        enrollment
+          ? "Scan the code with your authenticator app or password manager, then type the code it shows. Nothing is saved until you finish."
+          : site
+            ? `Choose your address on ${site.name} and a password.`
+            : "Choose your address and a password."
+      }
+      footer={
+        <>
+          Already have a Substrate?{" "}
           <Link
             to="/login"
             search={{ redirect: returnTo }}
-            className="underline underline-offset-4 hover:text-foreground"
+            className={doorLinkClass}
           >
             Sign in
           </Link>
-          .
-        </p>
-        <ShellServer />
-      </div>
-    </div>
+        </>
+      }
+    >
+      {errorNote}
+      <form
+        hidden={enrollment !== null}
+        onSubmit={(e) => {
+          e.preventDefault()
+          void beginEnrollment()
+        }}
+      >
+        <FieldGroup>
+          {inviteRequired && (
+            <Field>
+              <FieldLabel htmlFor="inviteCode">Invite code</FieldLabel>
+              <Input
+                id="inviteCode"
+                className="h-10 data text-base"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                disabled={enrollment !== null}
+                autoFocus
+              />
+              <FieldDescription>
+                From the person who invited you.
+              </FieldDescription>
+            </Field>
+          )}
+          <Field>
+            <FieldLabel htmlFor="repository">Choose your address</FieldLabel>
+            <InputGroup className="h-10">
+              <InputGroupInput
+                id="repository"
+                className="text-base md:text-sm"
+                autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                placeholder="yourname"
+                aria-describedby="repository-address"
+                value={repository}
+                onChange={(e) => setRepository(e.target.value.toLowerCase())}
+                disabled={enrollment !== null}
+              />
+              {host && !repository.includes(".") && (
+                <InputGroupAddon align="inline-end">
+                  <InputGroupText className="text-base text-muted-foreground md:text-sm">
+                    .{host}
+                  </InputGroupText>
+                </InputGroupAddon>
+              )}
+            </InputGroup>
+            <p
+              id="repository-address"
+              aria-live="polite"
+              className="text-sm text-muted-foreground"
+            >
+              {authority ? (
+                <>
+                  Your Substrate&rsquo;s address will be{" "}
+                  <span className="font-medium [overflow-wrap:anywhere] text-foreground">
+                    {authority}
+                  </span>
+                  . You sign in with it, and it can&rsquo;t be changed later.
+                </>
+              ) : (
+                "Your name becomes your Substrate’s address, and you sign in with it. It can’t be changed later."
+              )}
+            </p>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="password">Password</FieldLabel>
+            <Input
+              id="password"
+              type="password"
+              className="h-10"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={enrollment !== null}
+            />
+            <FieldDescription>
+              At least {MIN_PASSWORD} characters.{" "}
+              {totpRequired
+                ? `If you lose it and your authenticator, only ${operator} can reset them.`
+                : `If you lose it, only ${operator} can reset it.`}
+            </FieldDescription>
+          </Field>
+          <Field
+            data-invalid={(confirm.length > 0 && !passwordsMatch) || undefined}
+          >
+            <FieldLabel htmlFor="confirm">Confirm password</FieldLabel>
+            <Input
+              id="confirm"
+              type="password"
+              className="h-10"
+              autoComplete="new-password"
+              aria-invalid={confirm.length > 0 && !passwordsMatch}
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              disabled={enrollment !== null}
+            />
+            {confirm.length > 0 && !passwordsMatch && (
+              <FieldError errors={[{ message: "The two passwords differ." }]} />
+            )}
+          </Field>
+          {!enrollment && (
+            <Field>
+              <Button
+                type="submit"
+                size="lg"
+                className="h-10"
+                disabled={!canEnroll || isBusy}
+              >
+                {isBusy && <Spinner />}
+                {totpRequired ? "Continue" : "Create your Substrate"}
+              </Button>
+            </Field>
+          )}
+        </FieldGroup>
+      </form>
+
+      {enrollment && (
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2.5">
+            <div className="flex min-w-0 flex-col">
+              <span className="text-xs text-muted-foreground">
+                Your Substrate&rsquo;s address
+              </span>
+              <span className="text-sm font-medium [overflow-wrap:anywhere]">
+                {authority}
+              </span>
+            </div>
+            <Button type="button" variant="ghost" size="sm" onClick={startOver}>
+              Change
+            </Button>
+          </div>
+
+          <div className="flex flex-col items-center gap-4">
+            <div className="rounded-xl border bg-white p-3.5">
+              <QRCodeCanvas
+                value={enrollment.otpauthUri}
+                size={176}
+                marginSize={0}
+                level="M"
+                title="Authenticator setup QR code"
+              />
+            </div>
+            <a
+              href={enrollment.otpauthUri}
+              className={doorLinkClass + " text-center text-sm"}
+            >
+              On this phone? Open it in your authenticator
+            </a>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-muted-foreground">
+              Can&rsquo;t scan it? Type this setup key into your app instead.
+            </p>
+            <CopyBlock value={enrollment.totpSecret} label="setup key" />
+          </div>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              void finish()
+            }}
+          >
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="code">One-time code</FieldLabel>
+                <Input
+                  id="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={CODE_DIGITS + 2}
+                  placeholder="123456"
+                  className="h-10 data text-base tracking-[0.25em]"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+                <FieldDescription>
+                  The {CODE_DIGITS}-digit code your app shows now.
+                </FieldDescription>
+              </Field>
+              <Field>
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="h-10"
+                  disabled={!canFinish || isBusy}
+                >
+                  {isBusy && <Spinner />}
+                  Create your Substrate
+                </Button>
+              </Field>
+            </FieldGroup>
+          </form>
+        </div>
+      )}
+    </DoorLayout>
   )
 }

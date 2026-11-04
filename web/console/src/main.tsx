@@ -13,6 +13,7 @@ import {
 } from "@/lib/api/session"
 import { retryDelay, retryRead } from "@/lib/api/retry"
 import { returnAfterExpiry } from "@/lib/return-path"
+import { applySiteBranding, loadSite } from "@/lib/site"
 import { reloadOnStaleChunk } from "@/lib/stale-chunks"
 import { router } from "@/router"
 
@@ -23,6 +24,10 @@ reloadOnStaleChunk(window)
 // The Apple app holds the sign-in; a token this page kept before it did is
 // revoked, not left live.
 void retireStoredSession()
+
+// A deployment that sets a site names the tab after it and puts its logo in
+// the tab; one without keeps the substrate's.
+void loadSite().then((site) => applySiteBranding(site))
 
 // A 401 anywhere drops the session (session.ts does that part); this routes
 // what's left of the page to the login door. An app's approval page is

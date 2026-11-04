@@ -165,6 +165,7 @@ boot.
 | `SUBSTRATE_INSECURE_ALLOW_CLEARTEXT` | `false`                          | Admits a non-loopback `SUBSTRATE_BIND_ADDRESS`. It states that only a TLS terminator or a loopback port mapping reaches the port; the server serves plain HTTP either way, and the boot warns with the address. The image and `compose.yaml` set it. |
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
+| `SUBSTRATE_SITE_DIR`           | unset (no site)                        | An absolute path to a site directory: a `site.yaml` naming the brand the console's sign-in, register and landing pages show, and files served at `/site/`. An invalid `site.yaml` refuses the boot, naming the problem. See [a site for the deployment](#a-site-for-the-deployment). |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration asks for no code) | Gates registration. **Set it before anyone else can reach the port.** See below.                            |
 | `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
@@ -509,6 +510,71 @@ or not the code is set ([users and tokens](auth.md)).
 
 There is no admin user and no operator password. Everything privileged happens
 on the box, through the DSN.
+
+## A site for the deployment
+
+A deployment can carry its own name and a landing page for signed-out
+visitors. Point `SUBSTRATE_SITE_DIR` at a directory holding a `site.yaml`:
+
+```yaml
+name: Example               # required: the brand the console shows
+tagline: A place for our photos and plans   # optional: one line under it
+logo: logo.svg              # optional: a file in the directory
+landing: landing.html       # optional: a file in the directory
+```
+
+`name` is the brand on the sign-in and register pages and on the landing.
+Under it the sign-in and register pages say "A Substrate provider": a site
+names who hosts the Substrates on this server, and the doors keep calling
+what a visitor signs in to "your Substrate". `tagline` is the line under the
+name on a landing whose fragment cannot load, and the second half of the
+landing's page title. `logo` is an image shown beside the name.
+`landing` is an HTML fragment the console renders at `/` for a visitor who is
+not signed in, in place of sending them straight to sign in. Without
+`SUBSTRATE_SITE_DIR` none of this exists: `/site/` is the console's like
+any other path and discovery carries no `site`.
+
+The server reads `site.yaml` once, at boot, and refuses to boot when it is
+wrong: no `name`, a key it does not know, more than one YAML document, or a
+`logo` or `landing` that is not a regular file inside the directory (an
+absolute path, a `..`, a segment starting with a dot, or a symlink that leads
+out of the directory). A change to `site.yaml` needs a restart; the files it
+names are read on every request, so an edited `landing.html` shows on the
+next load.
+
+Every file in the directory is served at `GET /site/<path>` (and `HEAD`),
+`site.yaml` included, so keep nothing there that is not public. Only regular
+files are served: a directory, a dotfile or dot directory, a path with `..`
+or an empty segment, and a symlink out of the directory are all a `404`, and
+so is any other method. A file's `Content-Type` comes from its extension
+alone (`application/octet-stream` without one), and each answer carries
+`Cache-Control: no-cache` with an `ETag` and a `Last-Modified`, so an edit is
+seen at once and an unchanged file answers `304`. A site file is served under
+its own `Content-Security-Policy` with `sandbox`: opened at its own URL, a
+page in the directory runs no script and cannot read the console's storage.
+
+Discovery announces the site, so a client finds it before anyone signs in.
+`GET /.well-known/substrate/server.json` gains a `site` object; `tagline`,
+`logo` and `landing` are omitted when `site.yaml` does not set them, and the
+two files are named by their URLs under `/site/`:
+
+```json
+"site": {
+  "name": "Example",
+  "tagline": "A place for our photos and plans",
+  "logo": "/site/logo.svg",
+  "landing": "/site/landing.html"
+}
+```
+
+A minimal setup, with the image:
+
+```bash
+mkdir -p /srv/site
+printf 'name: Example\nlanding: landing.html\n' > /srv/site/site.yaml
+printf '<h1>Example</h1><p>Ask for an invite at hello@example.com.</p>\n' > /srv/site/landing.html
+docker run -v /srv/site:/srv/site:ro -e SUBSTRATE_SITE_DIR=/srv/site ...
+```
 
 ## TLS and the reverse proxy
 

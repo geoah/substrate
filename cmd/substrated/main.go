@@ -28,6 +28,7 @@ import (
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/domains"
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/site"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/kinds"
 	"github.com/geoah/substrate/samples"
@@ -123,6 +124,15 @@ func run() error {
 	// imports to say so.
 	if _, err := cfg.ListenAddress(); err != nil {
 		return err
+	}
+	// The site directory is read once, here, for the same reason: a typo in
+	// site.yaml is a refusal in the first second, not after the boot.
+	siteDir, err := site.Load(cfg.SiteDir)
+	if err != nil {
+		return fmt.Errorf("SUBSTRATE_SITE_DIR: %w", err)
+	}
+	if siteDir != nil {
+		slog.Info("serving the site directory at "+site.URLPrefix, "dir", siteDir.Dir(), "name", siteDir.Info().Name)
 	}
 
 	ctx, cancelCause := context.WithCancelCause(context.Background())
@@ -303,6 +313,7 @@ func run() error {
 	handler := api.New(api.Config{
 		Service:        svc,
 		WebDir:         cfg.WebDir,
+		Site:           siteDir,
 		Catalog:        cat,
 		ConsoleURL:     cfg.ConsoleURL,
 		PublicURL:      cfg.PublicURL,

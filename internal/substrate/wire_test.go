@@ -71,6 +71,9 @@ var wireTypes = map[string]any{
 	// card shows, and the check it runs.
 	"DomainProof": DomainProof{},
 	"DomainCheck": DomainCheck{},
+	// The deployer's site, discovery's optional `site` object: the doors and
+	// the landing read their brand from it.
+	"SiteInfo": SiteInfo{},
 
 	// The change feed: the entry, the trigger stance decorating a row, the
 	// row, and the history page. The row and the page are what /changes and
