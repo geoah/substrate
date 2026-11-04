@@ -519,6 +519,30 @@ Then add it to the internal TestFlight group that takes every build.
 Everything else about a new app (its bundle id, capabilities, profiles and
 extensions) the key registers on its own.
 
+### App Store
+
+Each app's listing is `store/listing.json` in its folder: subtitle,
+description, keywords, promotional text, categories, age rating answers and
+the review notes. `mise run apps:store [app…]` makes App Store Connect's
+editable iOS version of each app match it through `asc` (pinned in
+.mise.toml): the texts, the categories, the age rating, the content rights,
+the copyright, a manual release, free in every territory, the review details
+and the screenshots in `store/screenshots/<device type>/`. It never submits
+for review. `mise run apps:store --check` writes nothing and prints what App
+Store Connect still holds against a submission. App Privacy has no public
+API and is answered once per app in App Store Connect.
+
+What names a deployment comes from the environment: `SUBSTRATE_APPLE_PRIVACY_URL`,
+`SUBSTRATE_APPLE_SUPPORT_URL` and `SUBSTRATE_APPLE_COPYRIGHT`; for the review
+details, `SUBSTRATE_APPLE_REVIEW_SERVER`, `_USER` and `_PASSWORD` (the review
+server's sign-in, which fills `{server}`, `{user}` and `{password}` in the
+notes) and `SUBSTRATE_APPLE_REVIEW_CONTACT_FIRST`, `_LAST`, `_EMAIL` and
+`_PHONE`, without which App Store Connect refuses review details.
+
+TestFlight does not notify testers of each build: `apps:testflight` turns
+"notify testers" off for every build it uploads, while App Store Connect
+processes it (`SUBSTRATE_APPLE_TESTFLIGHT_NOTIFY=1` leaves it on).
+
 ## Driving a debug build
 
 A debug build carries `DebugDriver`: it watches `automation/` in the app's

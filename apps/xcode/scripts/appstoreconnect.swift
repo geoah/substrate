@@ -19,6 +19,15 @@
 // since invalidated is replaced. The key may not use the cloud-managed
 // distribution certificate, so an export signs with these, by hand.
 //
+//   swift scripts/appstoreconnect.swift quiet <build number|all> <bundle-id>…
+//
+// Turns TestFlight's "notify testers" off for each app's build of that build
+// number, or for every build it has (`all`), so a build reaches the groups
+// that take every build without an email and a push to each tester. A build
+// shows in App Store Connect a while after its upload and is given to the
+// groups once processed: this waits for it (up to 20 minutes) and switches it
+// before that. One line per build switched.
+//
 // The key is SUBSTRATE_APPLE_ASC_KEY_PATH (the AuthKey_….p8),
 // SUBSTRATE_APPLE_ASC_KEY_ID and SUBSTRATE_APPLE_ASC_ISSUER_ID, as for
 // xcodebuild. Its token is signed here (ES256) and lives ten minutes.
@@ -165,6 +174,30 @@ func profiles(_ dir: String, _ hashes: Set<String>, _ bundles: [String]) async t
     }
 }
 
+func quiet(_ number: String, _ bundles: [String]) async throws {
+    for bundle in bundles {
+        let apps = rows(try await call("GET", "/v1/apps", query: ["filter[bundleId]": bundle, "fields[apps]": "bundleId"]))
+        guard let app = apps.first(where: { attributes($0)["bundleId"] as? String == bundle })?["id"] as? String else {
+            fail("App Store Connect has no record for \(bundle)")
+        }
+        var query = ["filter[app]": app, "include": "buildBetaDetail", "fields[builds]": "version", "limit": "200"]
+        if number != "all" { query["filter[version]"] = number }
+        var details: [String] = []
+        for _ in 0 ..< 80 {
+            let answer = try await call("GET", "/v1/builds", query: query)
+            details = (answer["included"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+            if !details.isEmpty || number == "all" { break }
+            try await Task.sleep(for: .seconds(15))
+        }
+        guard !details.isEmpty || number == "all" else { fail("\(bundle)'s build \(number) did not show in App Store Connect in 20 minutes") }
+        for detail in details {
+            let body: [String: Any] = ["data": ["type": "buildBetaDetails", "id": detail, "attributes": ["autoNotifyEnabled": false]]]
+            try await call("PATCH", "/v1/buildBetaDetails/\(detail)", body: body)
+            print("\(bundle) \(detail)")
+        }
+    }
+}
+
 var arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
 case "records" where arguments.count > 1:
@@ -172,6 +205,8 @@ case "records" where arguments.count > 1:
 case "profiles" where arguments.count > 3:
     let hashes = Set(arguments[2].split(separator: ",").map { $0.uppercased() })
     try await profiles(arguments[1], hashes, Array(arguments.dropFirst(3)))
+case "quiet" where arguments.count > 2:
+    try await quiet(arguments[1], Array(arguments.dropFirst(2)))
 default:
-    fail("usage: appstoreconnect.swift records <bundle-id>… | profiles <dir> <sha1,…> <bundle-id>…")
+    fail("usage: appstoreconnect.swift records <bundle-id>… | profiles <dir> <sha1,…> <bundle-id>… | quiet <build number|all> <bundle-id>…")
 }

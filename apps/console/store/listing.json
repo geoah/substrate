@@ -1,0 +1,20 @@
+{
+  "subtitle": "Your substrate, in your pocket",
+  "promotionalText": "Your whole substrate, as a native app: records, agents, approvals and settings.",
+  "description": "The Substrate console is your substrate, the personal server you run or choose, in a native app for iPhone, iPad and Mac.\n\n• Browse and search your records, by kind\n• Your agents, their runs and what they ask you to approve\n• The apps you have approved, and what each may do\n• Your server's settings, packages and providers\n\nThe console is a client for a substrate: sign in with your server's address and approve the console's access on your server's own page.",
+  "keywords": [
+    "self-hosted",
+    "server",
+    "admin",
+    "records",
+    "agents",
+    "personal data",
+    "database"
+  ],
+  "primaryCategory": "DEVELOPER_TOOLS",
+  "secondaryCategory": "PRODUCTIVITY",
+  "ageRating": {
+    "all-none": true
+  },
+  "reviewNotes": "The Substrate console is a client for Substrate, a personal server its user runs; the app does nothing without one. We run a demonstration server for review with no real user's data.\n\nTo sign in, open the app, enter {server} as the server, and sign in with the repository and password below on the server's page.\n\nRepository: {user}\nPassword: {password}\n\nAccounts live on the user's own server and are never created in the app. Privacy policy: {privacy}"
+}

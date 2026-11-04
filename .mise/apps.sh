@@ -1938,6 +1938,16 @@ testflight() {
 		say "uploading $(app_get "${RELEASE_APPS[$i]}" .name) $short ($build)"
 		apple_upload "${ipas[$i]}" || die "$(app_get "${RELEASE_APPS[$i]}" .name)'s upload was refused; the apps before it went up, and a rerun sends every app again under a new build number"
 	done
+	# Testers are not told of every build by email and a push: each build's
+	# "notify testers" is turned off while App Store Connect processes it,
+	# before the groups receive it. SUBSTRATE_APPLE_TESTFLIGHT_NOTIFY=1 keeps it.
+	if [ -z "${SUBSTRATE_APPLE_TESTFLIGHT_NOTIFY:-}" ]; then
+		local bundles=()
+		for app in "${RELEASE_APPS[@]}"; do bundles+=("$(app_get "$app" .apple.bundleID)"); done
+		xcrun swift "$APPS_DIR/xcode/scripts/appstoreconnect.swift" quiet "$build" "${bundles[@]}" >/dev/null ||
+			say "the builds went up, and notifying testers could not be turned off for every one; TestFlight may tell them"
+		say "testers are not notified of $short ($build)"
+	fi
 	say "sent ${RELEASE_APPS[*]} to TestFlight as $short ($build); App Store Connect processes each before TestFlight offers it"
 }
 
