@@ -224,6 +224,11 @@ release's (0.x); the store accepts them. A `--submit` flag is later work
 1. The privacy policy (published on the publisher's website, §6.2), and the
    kit's Privacy Policy row.
 2. The review server (§6.1), decided and seeded.
+2a. A privacy manifest (`PrivacyInfo.xcprivacy`) in every app target and
+   extension, declaring the required-reason APIs each uses (UserDefaults,
+   file timestamps, disk space, boot time) and that it tracks nothing and
+   collects nothing for the developer; App Store Connect refuses an upload
+   that uses one of those APIs without a manifest (ITMS-91053).
 3. `asc` pinned in `.mise.toml`, and `apps:store` over it for the texts,
    review details and `--build`; Tasks' listing.
 4. Screenshots: `apps:store:screenshots` and Tasks' `StoreScreenshots` UI
