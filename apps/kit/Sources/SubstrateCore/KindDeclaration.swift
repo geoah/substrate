@@ -1,7 +1,8 @@
 import Foundation
 
-/// The part of a kind's declaration the record views read: its names and
-/// each property's type and words.
+/// The part of a kind's declaration the record views and the grants read:
+/// its names, each property's type and words, its purpose and the traits it
+/// binds.
 public struct KindDeclaration: Hashable, Sendable {
     public static let kind = "substrate.reamde.dev/core/kind"
 
@@ -10,6 +11,11 @@ public struct KindDeclaration: Hashable, Sendable {
     public var label: String?
     public var description: String?
     public var properties: [String: PropertyDeclaration]
+    /// The declared purpose; nil where the declaration names none, which
+    /// reads as `primary` (decision 0133).
+    public var purpose: String?
+    /// The traits the kind binds, each by its full identity.
+    public var traits: [String]
 
     public init?(record: Record) {
         guard record.kind == KindDeclaration.kind else { return nil }
@@ -21,9 +27,29 @@ public struct KindDeclaration: Hashable, Sendable {
             props[name] = PropertyDeclaration(value)
         }
         properties = props
+        purpose = record["purpose"]?.text
+        traits = (record["traits"]?.array ?? []).compactMap { $0.text.flatMap(Self.boundTrait) }
     }
 
     public var displayName: String { label ?? kindDisplayName(reference) }
+
+    /// The trait one `traits:` entry binds, by its full identity, as the
+    /// server reads it (internal/vocabulary's TraitBindingRef): the entry
+    /// before any `(`, since the variant and the remap say how the kind binds
+    /// the trait, not which. Nil for an entry that does not parse or names
+    /// the trait by a bare word, which no loaded declaration holds.
+    public static func boundTrait(_ entry: String) -> String? {
+        let whole = entry.trimmingCharacters(in: .whitespacesAndNewlines)
+        let identity = whole.prefix { $0 != "(" }.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = identity.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 3, let first = parts[0].first, let package = parts[1].first, let name = parts[2].first,
+            first.isASCII && (first.isLowercase || first.isNumber),
+            parts[0].allSatisfy({ $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "." || $0 == "-") }),
+            package.isASCII && package.isLowercase, parts[1].allSatisfy({ $0.isASCII && ($0.isLowercase || $0.isNumber) }),
+            name.isASCII && name.isLowercase, parts[2].allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) })
+        else { return nil }
+        return identity
+    }
 }
 
 public struct PropertyDeclaration: Hashable, Sendable {

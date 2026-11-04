@@ -87,6 +87,75 @@ import FoundationNetworking
         #expect(!reads.talks && !reads.talksTo("ada.example.com/chat/assistant") && !reads.decidesAny)
     }
 
+    /// internal/scope's trait_test.go: what `*` would reach among the kinds
+    /// whose declaration binds the trait (decision 0225).
+    @Test func aTraitScopeReachesWhatStarReachesAmongTheKindsThatBindIt() {
+        let lifecycle = "substrate.reamde.dev/core/lifecycle"
+        let temporal = "substrate.reamde.dev/core/temporal"
+        let accountConfig = "substrate.reamde.dev/core/accountconfig"
+        let writes = Grants(["write:implements(\(lifecycle))"])
+        let reads = Grants(["read:implements(\(lifecycle))"])
+        let everything = Grants(["write:*"])
+        let cases: [(name: String, kind: GrantKind, read: Bool, written: Bool)] = [
+            ("a kind that binds it", GrantKind("ada.example.com/tasks/task", purpose: "primary", traits: [temporal, lifecycle]), true, true),
+            // The trait is matched in its canonical spelling alone.
+            (
+                "a kind that binds another casing of it",
+                GrantKind("ada.example.com/tasks/chore", purpose: "primary", traits: ["substrate.reamde.dev/core/Lifecycle"]), false,
+                false
+            ),
+            // An account is the owner's connection, whatever else it binds.
+            (
+                "an account that binds it",
+                GrantKind("providers.example.com/mail/account", purpose: "primary", traits: [accountConfig, lifecycle]), true, false
+            ),
+            ("a kind that binds another trait", GrantKind("ada.example.com/notes/note", purpose: "primary", traits: [temporal]), false, false),
+            ("a kind that binds none", GrantKind("ada.example.com/people/person", purpose: "primary"), false, false),
+            ("an internal kind that binds it", GrantKind("ada.example.com/tasks/log", purpose: "internal", traits: [lifecycle]), false, false),
+            ("a core kind that binds it", GrantKind("substrate.reamde.dev/core/unit", purpose: "primary", traits: [lifecycle]), true, false),
+            ("an llm kind that binds it", GrantKind("substrate.reamde.dev/llm/memory", purpose: "primary", traits: [lifecycle]), true, false),
+            ("an auth kind that binds it", GrantKind("substrate.reamde.dev/core/token", purpose: "primary", traits: [lifecycle]), false, false),
+        ]
+        for c in cases {
+            #expect(writes.reads(c.kind) == c.read, "a write trait scope reads \(c.name)")
+            #expect(writes.writes(c.kind) == c.written, "a write trait scope writes \(c.name)")
+            #expect(reads.reads(c.kind) == c.read, "a read trait scope reads \(c.name)")
+            #expect(!reads.writes(c.kind), "a read trait scope writes \(c.name)")
+            // Never past what `*` reaches there.
+            #expect(!(c.read && !everything.reads(c.kind)) && !(c.written && !everything.writes(c.kind)), "past `*`: \(c.name)")
+        }
+        #expect(!Grants(["write:implements(\(accountConfig))"]).writes(GrantKind("providers.example.com/mail/account", traits: [accountConfig])))
+    }
+
+    /// A kind known by its reference alone binds no trait the caller knows
+    /// of, so a trait scope never reaches it here, nor a kind whose
+    /// declaration was not read: the server decides, and the app asks it.
+    @Test func aTraitScopeReachesNoKindWhoseDeclarationWasNotRead() {
+        let grants = Grants(["write:implements(substrate.reamde.dev/core/lifecycle)"])
+        #expect(!grants.reads("ada.example.com/tasks/task") && !grants.writes("ada.example.com/tasks/task", purpose: "primary"))
+        #expect(!grants.reads(GrantKind("ada.example.com/tasks/task")))
+        // A kind pattern still reaches it through the same value.
+        #expect(Grants(["write:ada.example.com/tasks/*"]).writes(GrantKind("ada.example.com/tasks/task", traits: ["x.example.com/y/z"])))
+    }
+
+    @Test func aKindIsReadOffItsDeclaration() throws {
+        let record = try JSONDecoder().decode(
+            Record.self,
+            from: Data(
+                #"""
+                {"id":"ada.example.com/tasks/task","kind":"substrate.reamde.dev/core/kind","version":3,
+                 "properties":{"purpose":"internal","traits":["substrate.reamde.dev/core/temporal(point: dueAt)",
+                 " substrate.reamde.dev/core/lifecycle ",7,"bare","Ada.example.com/tasks/done","ada.example.com/tasks/done-x"]}}
+                """#.utf8))
+        let declaration = try #require(KindDeclaration(record: record))
+        #expect(declaration.purpose == "internal")
+        #expect(declaration.traits == ["substrate.reamde.dev/core/temporal", "substrate.reamde.dev/core/lifecycle"])
+        #expect(GrantKind(declaration) == GrantKind("ada.example.com/tasks/task", purpose: "internal", traits: declaration.traits))
+        // A declaration that names no purpose is a primary kind's.
+        let plain = try #require(KindDeclaration(record: Record(id: "ada.example.com/tasks/task", kind: KindDeclaration.kind, properties: [:])))
+        #expect(GrantKind(plain).purpose == "primary" && GrantKind(plain).traits.isEmpty)
+    }
+
     @Test func aWebhookScopeReachesOneTriggerAndNoKind() {
         let g = Grants(["write:providers.example.com/apple/*", "webhook:applehealth-webhook"])
         #expect(g.delivers("applehealth-webhook"))
@@ -94,6 +163,44 @@ import FoundationNetworking
         #expect(!g.reads("substrate.reamde.dev/core/trigger", purpose: "internal"))
         #expect(!g.writes("substrate.reamde.dev/core/trigger", purpose: "internal"))
         #expect(!Grants(["webhook:applehealth-webhook"]).reads("providers.example.com/apple/contact", purpose: "primary"))
+    }
+}
+
+/// The cases of internal/scope's Covers and Resolve over trait scopes.
+@Suite(.timeLimit(.minutes(10))) struct TraitScopeCoverage {
+    static let lifecycle = "substrate.reamde.dev/core/lifecycle"
+
+    @Test func aTraitScopeCoversOnlyItselfAndOnlyStarCoversIt() {
+        let read = "read:implements(\(Self.lifecycle))"
+        let write = "write:implements(\(Self.lifecycle))"
+        let other = "read:implements(substrate.reamde.dev/core/temporal)"
+        let cases: [(held: String, want: String, covers: Bool)] = [
+            (read, read, true),
+            (write, read, true),
+            (read, write, false),
+            ("read:*", read, true),
+            ("write:*", write, true),
+            ("read:*", write, false),
+            ("read:substrate.reamde.dev/*", read, false),
+            ("read:substrate.reamde.dev/core/*", read, false),
+            (read, other, false),
+            (read, "read:ada.example.com/tasks/task", false),
+            (read, "read:ada.example.com/*", false),
+            (write, "read:*", false),
+        ]
+        for c in cases {
+            #expect(Grants([c.held]).covers(c.want) == c.covers, "\(c.held) covers \(c.want)")
+        }
+    }
+
+    @Test func aTraitScopeCompletesTheHomeAuthorityInsideItsTrait() {
+        #expect(
+            ScopeWords.resolve("read:implements(~/tasks/done)", authority: "ada.example.com")
+                == "read:implements(ada.example.com/tasks/done)")
+        #expect(ScopeWords.resolve("write:implements(\(Self.lifecycle))", authority: "ada.example.com") == "write:implements(\(Self.lifecycle))")
+        #expect(ScopeWords.resolve("read:~/tasks/*", authority: "ada.example.com") == "read:ada.example.com/tasks/*")
+        #expect(ScopeWords.trait(of: "implements(~/tasks/done)") == "~/tasks/done")
+        #expect(ScopeWords.trait(of: "ada.example.com/tasks/*") == nil && ScopeWords.trait(of: "implements()") == nil)
     }
 }
 
