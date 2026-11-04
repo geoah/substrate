@@ -43,6 +43,9 @@ type discoveryDoc struct {
 	// Registration is what the register door ASKS FOR, which a client cannot
 	// infer from the paths alone.
 	Registration registrationInfo `json:"registration"`
+	// Site is the deployer's brand and landing (SUBSTRATE_SITE_DIR), omitted
+	// where none is configured.
+	Site *substrate.SiteInfo `json:"site,omitempty"`
 }
 
 // registrationInfo is the register door's shape. It states a requirement,
@@ -250,6 +253,10 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			InviteRequired: h.inviteCode != "",
 			TOTPRequired:   !h.totpDisabled,
 		},
+	}
+	if h.site != nil {
+		info := h.site.Info()
+		doc.Site = &info
 	}
 	writeJSON(w, http.StatusOK, doc)
 }

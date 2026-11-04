@@ -816,6 +816,17 @@ export interface DomainCheck {
   reason?: string
 }
 
+/** The deployer's site, discovery's optional `site` object: absent where the
+ * server has no `SUBSTRATE_SITE_DIR`. `logo` and `landing` are server-relative
+ * URLs under `/site/`; `landing` is an HTML fragment the console renders at `/`
+ * for a signed-out visitor. */
+export interface SiteInfo {
+  name: string
+  tagline?: string
+  logo?: string
+  landing?: string
+}
+
 /** What a client calls one record of a kind and what it calls the
  * collection, as the kind's `label:` declares them. */
 export interface KindLabel {

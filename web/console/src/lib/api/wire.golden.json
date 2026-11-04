@@ -873,6 +873,12 @@
     "package": true,
     "upgrade": true
   },
+  "SiteInfo": {
+    "landing": false,
+    "logo": false,
+    "name": true,
+    "tagline": false
+  },
   "SubstrateRecord": {
     "annotations": false,
     "canonicalId": false,

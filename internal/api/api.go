@@ -27,6 +27,7 @@ import (
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/domains"
 	"github.com/geoah/substrate/internal/metrics"
+	"github.com/geoah/substrate/internal/site"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -58,6 +59,10 @@ type Config struct {
 	Service substrate.Service
 	// WebDir is the built SPA served at /; empty disables static serving.
 	WebDir string
+	// Site is the deployer's site directory (SUBSTRATE_SITE_DIR): its files
+	// are served at /site/ and discovery announces its brand. Nil is no
+	// site, and /site/ is the console's like any other path.
+	Site *site.Site
 	// Catalog is the read model over the bundle closures shipped in the
 	// binary — the "available integrations" the /catalog endpoints list and
 	// install. Nil serves an empty catalog.
@@ -149,6 +154,7 @@ type handler struct {
 	refresher  packageRefresher
 	consoleURL string
 	draining   <-chan struct{}
+	site       *site.Site
 	// The authorization flow's state, all of it in memory: the parked
 	// requests and codes, the document fetcher, and the per-address pace on
 	// the three bearer-less endpoints, kept apart from the door's limiter so
@@ -190,6 +196,7 @@ func New(cfg Config) http.Handler {
 		catalog:      cfg.Catalog,
 		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
 		draining:     cfg.Draining,
+		site:         cfg.Site,
 		authz:        authorize.NewStore(now),
 		fetcher:      cfg.ClientDocuments,
 		verifier:     cfg.Publishers,
@@ -309,6 +316,12 @@ func New(cfg Config) http.Handler {
 
 	r.Route("/api/"+APIVersion, h.mountResources)
 
+	if h.site != nil {
+		// The deployer's files, every method, so a wrong one is the 404 the
+		// rest of /site/ answers rather than the console shell.
+		r.Handle(site.URLPrefix+"*", http.HandlerFunc(h.serveSite))
+	}
+
 	// An unmatched path is a 404 — but WHICH 404 depends on where it sits. A
 	// path under an API prefix answers the standard JSON problem object with
 	// `not_found`: a mistyped API path must be distinguishable from
@@ -318,6 +331,20 @@ func New(cfg Config) http.Handler {
 	fallback := http.NotFound
 	if cfg.WebDir != "" {
 		fallback = spaHandler(cfg.WebDir)
+	}
+	if h.site != nil {
+		// chi matches the RAW path, so `/site%2Flogo.svg` misses the route
+		// above while its decoded path is a site file's. Without this, one
+		// URL is the console shell here and the file behind a proxy that
+		// decodes it.
+		console := fallback
+		fallback = func(w http.ResponseWriter, req *http.Request) {
+			if strings.HasPrefix(req.URL.Path, site.URLPrefix) {
+				h.serveSite(w, req)
+				return
+			}
+			console(w, req)
+		}
 	}
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
 		if isAPIPath(req.URL.Path) {

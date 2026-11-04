@@ -42,6 +42,11 @@ type Config struct {
 	// WebDir is the built SPA served at /; empty disables static serving
 	// (dev mode, where Vite proxies the API).
 	WebDir string `envconfig:"WEB_DIR" default:""`
+	// SiteDir is the deployer's site directory: a site.yaml naming the brand
+	// the console's doors show, and the files the server serves at /site/
+	// (internal/site). Unset is no site and no change to anything; set, it
+	// must be an absolute path, and an invalid site.yaml refuses the boot.
+	SiteDir string `envconfig:"SUBSTRATE_SITE_DIR" default:""`
 
 	// DatabaseURL is the one Postgres holding every repository, in one
 	// shared schema.
