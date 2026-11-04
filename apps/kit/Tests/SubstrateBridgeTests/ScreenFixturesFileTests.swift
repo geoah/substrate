@@ -55,13 +55,17 @@ struct ScreenFixturesFileTests {
     }
 
     /// The last leg: `android:test` sets SUBSTRATE_ROUNDTRIP_KOTLIN_SCREENS to
-    /// what kit-core's test wrote of each fixture.
+    /// what kit-core's test wrote of each fixture. Kotlin read the file, so
+    /// the file is what it must give back: the file holds the Mac's words
+    /// (theFileIsWhatTheScreensPresentToday), and a Linux host's presenters
+    /// word a device or a time otherwise.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATE_ROUNDTRIP_KOTLIN_SCREENS"] != nil))
     func swiftDecodesWhatKotlinWroteOfEachScreen() throws {
         let path = try #require(ProcessInfo.processInfo.environment["SUBSTRATE_ROUNDTRIP_KOTLIN_SCREENS"])
         let written = try ValueCoding.decode([ScreenFixture].self, from: JSONValue(data: Data(contentsOf: URL(fileURLWithPath: path))))
-        #expect(written.count == ScreenFixtures.all.count)
-        for (expected, kotlin) in zip(ScreenFixtures.all, written) {
+        let file = try ValueCoding.decode([ScreenFixture].self, from: JSONValue(data: Data(contentsOf: ScreenFixturesFile.file)))
+        #expect(written.count == file.count)
+        for (expected, kotlin) in zip(file, written) {
             #expect(kotlin == expected, "Kotlin's \(expected.name)")
         }
     }
