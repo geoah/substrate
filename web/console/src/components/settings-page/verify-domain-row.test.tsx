@@ -109,6 +109,11 @@ describe("VerifyDomainRow", () => {
     expect(
       screen.getByRole("button", { name: "Copy the record value" })
     ).toBeTruthy()
+    // The steps name where the record goes, and the name a provider that
+    // appends the zone wants.
+    expect(screen.getByText(/In the DNS settings for/)).toBeTruthy()
+    expect(screen.getByText("example.org")).toBeTruthy()
+    expect(screen.getByText("_substrate.ada")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Check" }))
     expect((await screen.findByRole("alert")).textContent).toContain(

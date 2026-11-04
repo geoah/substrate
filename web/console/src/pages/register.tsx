@@ -1,8 +1,14 @@
 import { useState } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { CheckIcon, CopyIcon } from "lucide-react"
+import {
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CopyIcon,
+} from "lucide-react"
 import { QRCodeCanvas } from "qrcode.react"
 
+import { DnsRecord } from "@/components/dns-record"
 import { DoorLayout, doorLinkClass } from "@/components/door/door-layout"
 import { Button } from "@/components/ui/button"
 import {
@@ -31,7 +37,7 @@ import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 import { safeReturnPath } from "@/lib/return-path"
-import { substrateHostname } from "@/lib/shell"
+import { substrateHostname, substrateOrigin } from "@/lib/shell"
 import { useSite } from "@/lib/site"
 import { registerRoute } from "@/router"
 
@@ -119,17 +125,65 @@ function KeepKeyField({
   )
 }
 
+/** A name as the reader typed it, the way the server reads it: trimmed,
+ * lowercase, without a trailing dot. */
+function cleanName(name: string): string {
+  return name.trim().replace(/\.$/, "").toLowerCase()
+}
+
+/** One DNS label, the server's grammar for each label of an authority
+ * (`vocabulary.ValidRepositoryAuthority`): checked here so a name the server
+ * would refuse is refused as it is typed, not after the password. */
+const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+
+function validDomain(name: string): boolean {
+  const labels = name.split(".")
+  return labels.length > 1 && labels.every((l) => LABEL.test(l))
+}
+
 /** The authority a repository name resolves to, mirroring the server's rule
  * (`vocabulary.RepositoryAuthority`) so the form shows the name the
- * repository will actually get: a name carrying a dot IS the authority, and a
- * bare label sits under the substrate's host, the way a handle sits
- * under its server. */
-function repositoryAuthority(name: string, host: string): string {
-  const n = name.trim().replace(/\.$/, "").toLowerCase()
-  if (!n) return ""
-  if (n.includes(".")) return n
+ * repository will actually get. On this server's address the reader types one
+ * label and it sits under the substrate's host, which never changes with what
+ * they type: a domain of their own is the advanced option's alone, so nobody
+ * claims one by accident. */
+function repositoryAuthority(
+  name: string,
+  host: string,
+  ownDomain: boolean
+): string {
+  const n = cleanName(name)
+  if (ownDomain) return validDomain(n) ? n : ""
+  if (!LABEL.test(n)) return ""
   const h = host.replace(/\.$/, "").toLowerCase()
   return h ? `${n}.${h}` : ""
+}
+
+/** What choosing their own domain means, said before the reader commits to a
+ * name nothing lets them change: it must be theirs, and it is proved after
+ * registration with one TXT record (decision 0208). */
+function OwnDomainGuide({ domain }: { domain: string }) {
+  const name = domain || "home.example.org"
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/50 p-3.5 text-sm">
+      <p className="text-warning">
+        <span className="font-medium">Only use a domain you own.</span> After
+        signing up, you prove it by adding this DNS record. Until then, your
+        Substrate is marked unverified.
+      </p>
+      <div className="rounded-md border border-border bg-background px-3 py-2.5 text-[12.5px]">
+        <DnsRecord
+          name={`_substrate.${name}`}
+          type="TXT"
+          value={`v=substrate1 server=${substrateOrigin()} proof=…`}
+        />
+      </div>
+      <p className="text-muted-foreground">
+        Settings, Verify domain has the exact value. This one record is all you
+        add: the domain doesn&rsquo;t need to point at this server.
+      </p>
+    </div>
+  )
 }
 
 /** Registration, in two steps.
@@ -157,10 +211,29 @@ export function RegisterPage() {
   const returnTo = safeReturnPath(registerRoute.useSearch().redirect)
   const [inviteCode, setInviteCode] = useState("")
   const [repository, setRepository] = useState("")
+  // With no host to complete a label under (a native shell whose server
+  // address does not parse), the reader's own domain is the only name there
+  // is.
+  const [ownDomainChosen, setOwnDomain] = useState(false)
+  const ownDomain = ownDomainChosen || !host
   // The name the repository will actually get. Sending the resolved value
   // rather than leaving the completion to the server keeps what the form
   // shows and what the repository gets one string.
-  const authority = repositoryAuthority(repository, host)
+  const authority = repositoryAuthority(repository, host, ownDomain)
+  const typed = cleanName(repository)
+  // A domain is wrong until its last label is typed, so its error waits for
+  // the reader to leave the field; a label is wrong the moment it is.
+  const [domainLeft, setDomainLeft] = useState(false)
+  const nameProblem =
+    !typed || authority
+      ? null
+      : ownDomain
+        ? domainLeft
+          ? "Enter a full domain, like home.example.org."
+          : null
+        : typed.includes(".")
+          ? "To use your own domain, choose Advanced below."
+          : "Use letters, numbers and hyphens, starting and ending with a letter or number."
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
@@ -179,6 +252,16 @@ export function RegisterPage() {
       return
     }
     setError("Something went wrong. Try again.")
+  }
+
+  // A return path wins over Verify domain: an app's approval page that sent
+  // the reader here is waiting for them, and Settings keeps.
+  function land() {
+    if (returnTo) return navigate({ to: returnTo, replace: true })
+    if (ownDomain) {
+      return navigate({ to: "/settings", hash: "verify-domain", replace: true })
+    }
+    return navigate({ to: "/", replace: true })
   }
 
   const passwordsMatch = password.length > 0 && password === confirm
@@ -259,7 +342,7 @@ export function RegisterPage() {
         minted.token.id
       )
       if (holdKeys) return
-      await navigate({ to: returnTo ?? "/", replace: true })
+      await land()
     } catch (err) {
       if (err instanceof ApiError && err.code === "auth") {
         // Which factor was wrong is whichever this door reads: a substrate
@@ -307,7 +390,7 @@ export function RegisterPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            void navigate({ to: returnTo ?? "/", replace: true })
+            void land()
           }}
         >
           <FieldGroup>
@@ -389,8 +472,10 @@ export function RegisterPage() {
               </FieldDescription>
             </Field>
           )}
-          <Field>
-            <FieldLabel htmlFor="repository">Choose your address</FieldLabel>
+          <Field data-invalid={nameProblem ? true : undefined}>
+            <FieldLabel htmlFor="repository">
+              {ownDomain ? "Your domain" : "Choose your address"}
+            </FieldLabel>
             <InputGroup className="h-10">
               <InputGroupInput
                 id="repository"
@@ -399,13 +484,15 @@ export function RegisterPage() {
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
-                placeholder="yourname"
+                placeholder={ownDomain ? "home.example.org" : "yourname"}
                 aria-describedby="repository-address"
+                aria-invalid={nameProblem ? true : undefined}
                 value={repository}
                 onChange={(e) => setRepository(e.target.value.toLowerCase())}
+                onBlur={() => setDomainLeft(ownDomain)}
                 disabled={enrollment !== null}
               />
-              {host && !repository.includes(".") && (
+              {!ownDomain && (
                 <InputGroupAddon align="inline-end">
                   <InputGroupText className="text-base text-muted-foreground md:text-sm">
                     .{host}
@@ -413,6 +500,7 @@ export function RegisterPage() {
                 </InputGroupAddon>
               )}
             </InputGroup>
+            {nameProblem && <FieldError errors={[{ message: nameProblem }]} />}
             <p
               id="repository-address"
               aria-live="polite"
@@ -420,16 +508,54 @@ export function RegisterPage() {
             >
               {authority ? (
                 <>
-                  Your Substrate&rsquo;s address will be{" "}
+                  You&rsquo;ll sign in as{" "}
                   <span className="font-medium [overflow-wrap:anywhere] text-foreground">
                     {authority}
                   </span>
-                  . You sign in with it, and it can&rsquo;t be changed later.
+                  . It can&rsquo;t be changed later.
                 </>
               ) : (
-                "Your name becomes your Substrate’s address, and you sign in with it. It can’t be changed later."
+                "Your Substrate’s address and sign-in name. It can’t be changed later."
               )}
             </p>
+            {host && (
+              <button
+                type="button"
+                className="inline-flex w-fit cursor-pointer items-center gap-1 text-sm text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-50"
+                aria-expanded={ownDomain}
+                aria-controls={ownDomain ? "own-domain-guide" : undefined}
+                disabled={enrollment !== null}
+                onClick={() => {
+                  // A typed name crosses over when it reads as the other
+                  // option's, so pasting a domain first and then choosing
+                  // this costs nothing; anything else is cleared rather than
+                  // reinterpreted.
+                  const keep = ownDomain
+                    ? !typed.includes(".")
+                    : typed.includes(".")
+                  if (!keep) setRepository("")
+                  setDomainLeft(false)
+                  setOwnDomain(!ownDomain)
+                }}
+              >
+                {ownDomain ? (
+                  <>
+                    <ChevronLeftIcon className="size-4" aria-hidden />
+                    Use an address on {host} instead
+                  </>
+                ) : (
+                  <>
+                    <ChevronRightIcon className="size-4" aria-hidden />
+                    Advanced: use your own domain
+                  </>
+                )}
+              </button>
+            )}
+            {ownDomain && (
+              <div id="own-domain-guide">
+                <OwnDomainGuide domain={authority} />
+              </div>
+            )}
           </Field>
           <Field>
             <FieldLabel htmlFor="password">Password</FieldLabel>

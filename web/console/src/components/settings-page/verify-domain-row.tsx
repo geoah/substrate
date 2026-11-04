@@ -1,11 +1,12 @@
 /** Settings' Verify domain row (decision 0208): the TXT record that proves the
  * repository's name, to copy into the name's DNS, and a Check that reads it
  * back. A repository named one label under the server's configured public URL
- * passes the check with no record. */
+ * passes the check with no record. The register page sends a reader who chose
+ * their own domain here, to `#verify-domain`. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { CopyButton } from "@/components/identity/copy-button"
+import { DnsRecord } from "@/components/dns-record"
 import { Pill } from "@/components/identity/pill"
 import { SettingRow } from "@/components/settings-page/setting-row"
 import { Button } from "@/components/ui/button"
@@ -13,6 +14,8 @@ import { Spinner } from "@/components/ui/spinner"
 import { startDomainVerification, verifyDomain } from "@/lib/api/domain"
 import { olderServerMessage } from "@/lib/api/http"
 import { repositoryQueryOptions } from "@/lib/api/repository"
+import { relativeRecordName, underHost } from "@/lib/dns"
+import { substrateHostname } from "@/lib/shell"
 
 function when(at: string): string {
   const d = new Date(at)
@@ -35,9 +38,19 @@ export function VerifyDomainRow() {
     },
   })
   const proof = start.data
+  const relative = proof ? relativeRecordName(proof.name) : null
+  const name = repository.data?.authority ?? "your repository’s name"
+  // A guess from the host the console was reached on; the check itself reads
+  // only the operator's configured public URL, so this sets the wording and
+  // nothing else.
+  const onThisServer = underHost(
+    repository.data?.authority ?? "",
+    substrateHostname()
+  )
 
   return (
     <SettingRow
+      id="verify-domain"
       title={
         <span className="inline-flex flex-wrap items-center gap-2">
           Verify domain
@@ -50,8 +63,10 @@ export function VerifyDomainRow() {
       }
       description={
         verifiedAt
-          ? `Verified ${when(verifiedAt)}. Your repository’s name points at this server and proved it controls the name’s DNS.`
-          : "Prove you control your repository’s name: add a TXT record to its DNS, then check it. A name directly under this server’s public address needs no record."
+          ? `Verified ${when(verifiedAt)}: ${name} points at this server.`
+          : onThisServer
+            ? `${name} is on this server’s domain, so it usually needs no record: just check it.`
+            : `Prove you own ${name}: add a DNS record, then check it.`
       }
       control={
         <>
@@ -86,29 +101,40 @@ export function VerifyDomainRow() {
             </p>
           )}
           {proof && (
-            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-              <dt className="text-faint">Name</dt>
-              <dd className="flex items-start gap-1.5 font-mono [overflow-wrap:anywhere]">
-                {proof.name}
-                <CopyButton value={proof.name} label="Copy the record name" />
-              </dd>
-              <dt className="text-faint">Type</dt>
-              <dd className="font-mono">TXT</dd>
-              <dt className="text-faint">Value</dt>
-              <dd className="flex items-start gap-1.5 font-mono [overflow-wrap:anywhere]">
-                {proof.record}
-                <CopyButton
-                  value={proof.record}
-                  label="Copy the record value"
-                />
-              </dd>
-            </dl>
-          )}
-          {proof && (
-            <p className="text-faint">
-              A name carries one such record. If it already has one, replace it
-              with this value, which keeps what the old one said.
-            </p>
+            <ol className="flex list-decimal flex-col gap-3 pl-5 marker:text-faint">
+              <li>
+                <div className="flex flex-col gap-2">
+                  <span>
+                    In the DNS settings for{" "}
+                    <span className="font-medium [overflow-wrap:anywhere]">
+                      {name}
+                    </span>
+                    , add this TXT record, replacing any already at that name.
+                  </span>
+                  <DnsRecord
+                    name={proof.name}
+                    type="TXT"
+                    value={proof.record}
+                    copyable
+                  />
+                  {relative && (
+                    <span className="text-faint">
+                      Some providers add the domain for you. If yours does,
+                      enter just{" "}
+                      <span className="font-mono [overflow-wrap:anywhere]">
+                        {relative.relative}
+                      </span>{" "}
+                      (your domain being{" "}
+                      <span className="font-mono [overflow-wrap:anywhere]">
+                        {relative.zone}
+                      </span>
+                      ).
+                    </span>
+                  )}
+                </div>
+              </li>
+              <li>Check it. A new record can take a while to appear.</li>
+            </ol>
           )}
           {check.isError && (
             <p role="alert" className="text-destructive">
@@ -120,7 +146,7 @@ export function VerifyDomainRow() {
           {check.data &&
             (check.data.verified ? (
               <p role="status" className="text-ok">
-                Verified. Your repository’s name is proved.
+                Verified.
               </p>
             ) : (
               <p role="alert" className="[overflow-wrap:anywhere]">
