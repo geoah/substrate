@@ -46,7 +46,10 @@ is the kit's ([its README](../kit/README.md)):
 - **`TaskEditor`**, a child kept by the root under a key it minted, made in
   the device's time zone: one task's form, or a new one's, whose Save is two
   of the root's events (`events(fromChild:_:)`): the editor closed, and the
-  write, as any other the owner makes.
+  write, as any other the owner makes. It keeps the task as it was when it
+  opened (`State.seen`), and Save patches the fields the owner changed on
+  that version, so a change made on another device meanwhile is a conflict
+  the outbox parks for the owner, never written over.
 - **The presenters**: `TasksPresenter` writes every word the screens show
   (the App menu, the lists column, a list's keyed rows and their menus, the
   open task with its list and priority as the choices that change them, the

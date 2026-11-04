@@ -160,6 +160,30 @@ struct LiveAppTests {
         #expect(rig.notifications.pending.isEmpty)
     }
 
+    @Test func anEditOnAVersionAnotherDeviceMovedOnIsAConflictForTheOwnerNeverAWriteOver() async throws {
+        let rig = try Rig()
+        serve(rig)
+        rig.server.on { $0.method == "PATCH" ? (409, #"{"error":{"code":"conflict","message":"version conflict: ifVersion 1, stored 2"}}"#) : nil }
+        let harness = rig.harness()
+        await harness.runtime.linkChanged(signedIn)
+        try await harness.until { await $0.state.linked.phase == .following }
+        await harness.send(.edit("t1"))
+        let (key, _) = try #require(await harness.presentation.editors.first)
+        try await harness.runtime.send(TaskEditor.Command.setNotes("A dozen"), to: [key])
+        // Renamed on another device while the editor is open.
+        await harness.deliver(
+            .records(.changed("\(TasksKinds.task)/t1", taskRecord("t1", "Free-range eggs", list: "groceries", position: "1", version: 2))))
+        try await harness.runtime.send(TaskEditor.Command.save, to: [key])
+        try await harness.until { await $0.presentation.editors.isEmpty }
+
+        guard case .refused = await rig.outbox.flush(rig.client) else { throw Unexpected() }
+        let parked = try #require(await rig.outbox.parked.first)
+        #expect(parked.conflict)
+        #expect(parked.properties == ["description": "A dozen"])
+        guard case let .object(body)? = rig.server.sent.last(where: { $0.method == "PATCH" })?.body else { throw Unexpected() }
+        #expect(body["ifVersion"] == .number(1))
+    }
+
     @Test func settingsAreKeptInTheRepositorysFolder() async throws {
         let rig = try Rig()
         serve(rig)
@@ -341,6 +365,24 @@ struct AppTests {
         let presented = await harness.presentation
         #expect(presented.editors.isEmpty)
         #expect(presented.detail?.title == "Pay the rent")
+    }
+
+    @Test func anEditSavedAfterAnotherDeviceChangedTheTaskWritesOnlyWhatTheOwnerChangedOnTheVersionTheySaw() async throws {
+        let (_, harness) = try await loaded([taskRecord("a", "Pay rent", version: 1)])
+        await harness.send(.open(task: "a"))
+        await harness.send(.edit("a"))
+        let (key, _) = try #require(await harness.presentation.editors.first)
+        try await harness.runtime.send(TaskEditor.Command.setNotes("Before the 6th."), to: [key])
+        // Another device renames the task while the editor is open.
+        await harness.deliver(.records(.changed("\(TasksKinds.task)/a", taskRecord("a", "Pay the rent", version: 2))))
+        try await harness.runtime.send(TaskEditor.Command.save, to: [key])
+        // The notes alone, on the version the owner saw: the server answers
+        // a conflict rather than taking the old name back.
+        let entry = try #require(enqueued(harness).last)
+        #expect(entry.method == .patch)
+        #expect(entry.properties == ["description": "Before the 6th."])
+        #expect(entry.baseVersion == 1)
+        #expect(await harness.presentation.detail?.title == "Pay the rent")
     }
 
     @Test func aNewTaskFromTheEditorGoesAfterTheLastOfItsList() async throws {
