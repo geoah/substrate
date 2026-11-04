@@ -374,7 +374,7 @@ apple_placeholder() {
 	rm -rf "${scratch:?}/$platform" "$scratch/$platform-placeholder"
 	mkdir -p "$scratch/$platform"
 	touch "$scratch/$platform/.placeholder"
-	minimum="$(uv run --quiet --with pyyaml python3 - "$APPS_DIR/$app/apple/targets.yml" "$scheme" "$platform" \
+	minimum="$("$APPLE_ROOT/.mise/python.sh" - "$APPS_DIR/$app/apple/targets.yml" "$scheme" "$platform" \
 		"$APPS_DIR/xcode/project.yml" <<'PY'
 import sys
 
@@ -514,9 +514,9 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 		# WorkoutsKit is a Swift package too: the model, both engines and the
 		# sync, on the Mac. The package's manifests and their JSON must agree,
 		# and so must the exercise library and its sources.
-		uv run --quiet --with pyyaml ../workouts/scripts/workouts-package.py --check
-		uv run --quiet --with pyyaml ../workouts/scripts/exercise-library.py --check
-		uv run --quiet --with pyyaml ../../.mise/closures.py --check workouts
+		../../.mise/python.sh ../workouts/scripts/workouts-package.py --check
+		../../.mise/python.sh ../workouts/scripts/exercise-library.py --check
+		../../.mise/python.sh ../../.mise/closures.py --check workouts
 		swift test --package-path ../workouts/WorkoutsKit
 		;;
 	build:tasks)
@@ -526,7 +526,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 	test:tasks)
 		# TasksKit on the Mac, then the app's views over its fixtures. The
 		# closure the app carries must be the one the site publishes.
-		uv run --quiet --with pyyaml ../../.mise/closures.py --check --json ../tasks/TasksKit/Sources/TasksCore/Resources/Package tasks
+		../../.mise/python.sh ../../.mise/closures.py --check --json ../tasks/TasksKit/Sources/TasksCore/Resources/Package tasks
 		swift test --package-path ../tasks/TasksKit
 		project
 		tasks -destination 'platform=macOS' test -only-testing:SubstrateTasksTests

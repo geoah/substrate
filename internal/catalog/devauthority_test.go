@@ -16,12 +16,11 @@ import (
 // it is written here from the tree and resolved as the server resolves an
 // app's `package` detail, through a reader given it as a local document.
 func TestTheDevAuthorityDocumentResolvesAsTheServerReadsIt(t *testing.T) {
-	uv, err := exec.LookPath("uv")
-	if err != nil {
-		t.Skip("uv is not on PATH: the closures are built by .mise/closures.py through it")
+	if _, err := exec.LookPath("uv"); err != nil {
+		t.Skip("uv is not on PATH: the closures are built by .mise/closures.py in the environment .mise/python.sh has uv make")
 	}
 	dir := t.TempDir()
-	cmd := exec.Command(uv, "run", "--quiet", "--with", "pyyaml", filepath.Join("..", "..", ".mise", "closures.py"),
+	cmd := exec.Command(filepath.Join("..", "..", ".mise", "python.sh"), filepath.Join("..", "..", ".mise", "closures.py"),
 		"--out", dir, "--authority", "substrate.reamde.dev", "tasks")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("closures.py --authority: %v\n%s", err, out)

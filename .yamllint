@@ -33,3 +33,4 @@ ignore: |
   .dev/
   bin/
   .claude/worktrees/
+  .mise/python/.venv/

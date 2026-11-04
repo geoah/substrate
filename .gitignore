@@ -78,3 +78,6 @@ dist/
 
 # Python bytecode: host.py is imported by a test probe, never installed.
 __pycache__/
+# The tree's own Python environment, which .mise/python.sh makes from
+# .mise/python/uv.lock on its first run.
+/.mise/python/.venv/

@@ -68,7 +68,9 @@ zizmor = "1.30.1"
 # python is deliberately NOT pinned here. The function runner shells out to
 # whatever `python3` is on PATH, and every runner and dev box has one — while
 # mise builds CPython from source, which is slow and flaky enough under
-# parallel CI jobs to have taken every job down at once.
+# parallel CI jobs to have taken every job down at once. The tree's own
+# scripts that need a library or a newer Python than a Mac's run through
+# .mise/python.sh instead, in one environment uv makes from a lock.
 
 [settings]
 experimental = true
@@ -435,12 +437,14 @@ description = "ruff over the runner's Python host, every function body under kin
 # --check): Python, so they run in the Linux `lint` job, where nothing builds
 # the Apple apps. The fourth holds every app's published closures to its
 # closures.lock.json (.mise/closures.py), so a closure changed under a
-# published version fails here, offline, before a release refuses it.
+# published version fails here, offline, before a release refuses it. The
+# three read YAML, so they run in the tree's locked environment
+# (.mise/python.sh), with the PyYAML the release builds the closures with.
 run = [
   "python3 .mise/pybodies.py lint internal/runner/host.py .mise internal/providere2e internal/providertest/py",
-  "uv run --quiet --with pyyaml apps/workouts/scripts/workouts-package.py --check",
-  "uv run --quiet --with pyyaml apps/workouts/scripts/exercise-library.py --check",
-  "uv run --quiet --with pyyaml .mise/closures.py --check",
+  ".mise/python.sh apps/workouts/scripts/workouts-package.py --check",
+  ".mise/python.sh apps/workouts/scripts/exercise-library.py --check",
+  ".mise/python.sh .mise/closures.py --check",
 ]
 
 [tasks."lint:migrations"]

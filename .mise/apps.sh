@@ -1282,7 +1282,7 @@ HTML
 build_closures() {
 	rm -rf "$1"
 	mkdir -p "$1"
-	(cd "$ROOT" && uv run --quiet --with pyyaml .mise/closures.py --out "$1" >/dev/null) || die "the closures did not build; nothing is published"
+	(cd "$ROOT" && .mise/python.sh .mise/closures.py --out "$1" >/dev/null) || die "the closures did not build; nothing is published"
 }
 
 # --- the release -----------------------------------------------------------
