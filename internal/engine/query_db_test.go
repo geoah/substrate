@@ -1025,6 +1025,370 @@ func TestAStateSplitNamingNoKindComparesTheOtherKindsByTheirVote(t *testing.T) {
 	}
 }
 
+// oweReferences stands for a re-derivation of the kinds' refs rows for
+// property that the pass behind the open has not finished, from the
+// tamperer's seat, and drops the refs rows of one record, as a declaration
+// change the pass has not reached would leave them: a filter answered from
+// refs leaves that record out, and one reading the row's own properties finds
+// it. The pass is drained first, so no run of it takes the request.
+func oweReferences(t *testing.T, ds substrate.Dataset, dsn, property, droppedKind, droppedID string, kinds ...string) {
+	t.Helper()
+	engine.DrainIndexReprojection(t, ds)
+	db := rawDB(t, dsn)
+	repo := testdb.Repository(t)
+	for _, kind := range kinds {
+		if _, err := db.Exec(`INSERT INTO index_reprojections (repository, kind, refs, refs_properties, fts)
+			VALUES ($1, $2, true, ARRAY[$3::text], false)`, repo, kind, property); err != nil {
+			t.Fatalf("owe a re-derivation of %s: %v", kind, err)
+		}
+	}
+	if _, err := db.Exec(`DELETE FROM refs WHERE repository = $1 AND src_kind = $2 AND src = $3`,
+		repo, droppedKind, droppedID); err != nil {
+		t.Fatalf("drop the refs rows of %s: %v", droppedID, err)
+	}
+}
+
+const stagePackage = "stage.example.substrate.reamde.dev/stage"
+
+// One name, a reference on two kinds and a string, an enum and an int on
+// three others. A filter and an order read each kind's rows as that kind
+// declares the name: a pointer by the path it names, through refs, with a
+// bare id completed by the declaration's `kind:`, and every other row by the
+// text it holds, against the operand as given. Once any kind the read spans
+// declared the name a reference, they used to read every row as a pointer:
+// answered from refs, which holds rows for the reference kinds alone, a
+// filter dropped every other kind's rows; read off the rows, it completed a
+// bare id to a path the string rows never hold; and an order sorted each
+// pointer by its stored object's text. Each filter answers the same whether
+// refs decide or a re-derivation is owed. A read naming no kind reads every
+// loaded kind declaring the name, and no other declares this one, so these
+// rows are its whole answer.
+func TestAReferenceAndAStringOfOneNameAreEachComparedAsDeclared(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds, dsn := newDatasetWithDSN(t)
+	step := stagePackage + "/step"
+	stage := func(singular string, def map[string]any) map[string]any {
+		return vocabulary.KindManifest(stagePackage, map[string]any{"singular": singular},
+			map[string]any{"properties": map[string]any{"stage": def}})
+	}
+	pointer := map[string]any{"type": "reference", "kind": step}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(stagePackage, 0),
+		vocabulary.KindManifest(stagePackage, map[string]any{"singular": "step"},
+			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+		stage("ticket", pointer),
+		stage("card", pointer),
+		stage("note", map[string]any{"type": "string"}),
+		stage("memo", map[string]any{"type": "enum", "values": []any{"open", "done"}}),
+		stage("tally", map[string]any{"type": "int"}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	for _, id := range []string{"open", "done"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: step, ID: id, Properties: map[string]any{"name": id}})
+	}
+	open, done := vocabulary.RecordPath(step, "open"), vocabulary.RecordPath(step, "done")
+	var all []string
+	for _, row := range []struct {
+		id    string
+		stage any
+	}{
+		{"ticket-open", "open"},
+		{"ticket-done", "done"},
+		{"card-open", "open"},
+		// The text of the path ticket-open points at, beside the bare words.
+		{"note-path", open},
+		{"note-open", "open"},
+		{"note-done", "done"},
+		{"memo-open", "open"},
+		{"memo-done", "done"},
+		{"tally-5", 5},
+	} {
+		singular, _, _ := strings.Cut(row.id, "-")
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: stagePackage + "/" + singular, ID: row.id, Properties: map[string]any{"stage": row.stage},
+		})
+		all = append(all, row.id)
+	}
+	// A ticket and a note holding no stage, for presence.
+	for _, id := range []string{"ticket-blank", "note-blank"} {
+		singular, _, _ := strings.Cut(id, "-")
+		mustPut(t, ds, owner, substrate.PutInput{Kind: stagePackage + "/" + singular, ID: id, Properties: map[string]any{}})
+	}
+	engine.DrainIndexReprojection(t, ds)
+	kinds := func(singulars ...string) []string {
+		out := make([]string, 0, len(singulars))
+		for _, s := range singulars {
+			out = append(out, stagePackage+"/"+s)
+		}
+		return out
+	}
+
+	filters := []struct {
+		name  string
+		kinds []string
+		cond  substrate.Cond
+		want  []string
+	}{
+		{"eq a path over a reference and a string", kinds("ticket", "note"), substrate.Cond{Eq: open}, []string{"note-path", "ticket-open"}},
+		{"eq a bare id over a reference and a string", kinds("ticket", "note"), substrate.Cond{Eq: "open"}, []string{"note-open", "ticket-open"}},
+		{"in over a reference and a string", kinds("ticket", "note"), substrate.Cond{In: []any{"open", done}}, []string{"note-open", "ticket-done", "ticket-open"}},
+		// The int's rows are read as their text, as the order sorts them: a
+		// read spanning a pointer is filtered by a path or an id, which a
+		// number cast would fail on.
+		{"eq over a reference and an int", kinds("ticket", "tally"), substrate.Cond{Eq: "5"}, []string{"tally-5"}},
+		{"eq a path naming no kind", nil, substrate.Cond{Eq: open}, []string{"card-open", "note-path", "ticket-open"}},
+		{"eq a bare id naming no kind", nil, substrate.Cond{Eq: "open"}, []string{"card-open", "memo-open", "note-open", "ticket-open"}},
+		{"in naming no kind", nil, substrate.Cond{In: []any{"done", open}}, []string{"card-open", "memo-done", "note-done", "note-path", "ticket-done", "ticket-open"}},
+		{"eq over two references", kinds("ticket", "card"), substrate.Cond{Eq: "open"}, []string{"card-open", "ticket-open"}},
+		{"in over two references", kinds("ticket", "card"), substrate.Cond{In: []any{"done", open}}, []string{"card-open", "ticket-done", "ticket-open"}},
+		{"eq over a string and an enum", kinds("note", "memo"), substrate.Cond{Eq: "open"}, []string{"memo-open", "note-open"}},
+		{"in over a string and an enum", kinds("note", "memo"), substrate.Cond{In: []any{"done", open}}, []string{"memo-done", "note-done", "note-path"}},
+	}
+	// A group returns once its parallel cases have, so refs are owed only
+	// after every case has asked with refs deciding.
+	answers := func(when string) {
+		t.Run(when, func(t *testing.T) {
+			for _, tc := range filters {
+				t.Run("filter "+tc.name, func(t *testing.T) {
+					t.Parallel()
+					got := listIDs(t, ds, substrate.Query{
+						Filter: substrate.Filter{Kinds: tc.kinds, Properties: map[string]substrate.Cond{"stage": tc.cond}},
+						First:  50,
+					})
+					if !equalStrings(got, tc.want) {
+						t.Fatalf("filtered to %v, want %v", got, tc.want)
+					}
+				})
+			}
+		})
+	}
+	answers("refs decide")
+
+	// Ascending by stage, a tie by kind: each pointer sorts by the path it
+	// names, every other row by its text, and a row holding none last. Pages
+	// of three put a cursor on the key, so the seek compares the same
+	// expression the order sorts by.
+	t.Run("orders", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			filter substrate.Filter
+			want   []string
+		}{
+			{
+				"over a reference and a string",
+				substrate.Filter{Kinds: kinds("ticket", "note")},
+				[]string{"note-done", "note-open", "ticket-done", "note-path", "ticket-open", "note-blank", "ticket-blank"},
+			},
+			{
+				"naming no kind",
+				substrate.Filter{IDs: all},
+				[]string{"tally-5", "memo-done", "note-done", "memo-open", "note-open", "ticket-done", "card-open", "note-path", "ticket-open"},
+			},
+			{
+				"over two references",
+				substrate.Filter{Kinds: kinds("ticket", "card")},
+				[]string{"ticket-done", "card-open", "ticket-open", "ticket-blank"},
+			},
+		} {
+			t.Run("orderBy "+tc.name, func(t *testing.T) {
+				t.Parallel()
+				if got := walkOrderedBy(t, ds, tc.filter, "stage", 3); !equalStrings(got, tc.want) {
+					t.Fatalf("ordered %v, want %v", got, tc.want)
+				}
+			})
+		}
+	})
+
+	// Presence reads both halves too, and an absent stage is also every row
+	// of a kind that declares none, such as the step at open.
+	t.Run("presence", func(t *testing.T) {
+		some := []string{"ticket-blank", "note-blank", "open", "ticket-open", "note-open"}
+		for _, tc := range []struct {
+			name  string
+			kinds []string
+			cond  substrate.Cond
+			want  []string
+		}{
+			{"absent naming no kind", nil, substrate.Cond{Exists: new(false)}, []string{"note-blank", "open", "ticket-blank"}},
+			{"present naming no kind", nil, substrate.Cond{Exists: new(true)}, []string{"note-open", "ticket-open"}},
+			{"absent over a reference and a string", kinds("ticket", "note"), substrate.Cond{Exists: new(false)}, []string{"note-blank", "ticket-blank"}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				got := listIDs(t, ds, substrate.Query{
+					Filter: substrate.Filter{Kinds: tc.kinds, IDs: some, Properties: map[string]substrate.Cond{"stage": tc.cond}},
+					First:  50,
+				})
+				if !equalStrings(got, tc.want) {
+					t.Fatalf("filtered to %v, want %v", got, tc.want)
+				}
+			})
+		}
+	})
+
+	// An operator a pointer does not answer stays refused where any kind the
+	// read spans declares the name a reference: applied to the other kinds'
+	// rows alone, it would answer without the pointers and not say so.
+	t.Run("refusals", func(t *testing.T) {
+		for name, named := range map[string][]string{"over a reference and a string": kinds("ticket", "note"), "naming no kind": nil} {
+			for op, cond := range map[string]substrate.Cond{"match": {Match: "open"}, "prefix": {Prefix: "op"}} {
+				t.Run(op+" "+name, func(t *testing.T) {
+					t.Parallel()
+					_, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
+						Kinds: named, Properties: map[string]substrate.Cond{"stage": cond},
+					}})
+					wantRefusal(t, err, substrate.ErrValidation, "stage is a reference")
+				})
+			}
+		}
+	})
+
+	oweReferences(t, ds, dsn, "stage", stagePackage+"/ticket", "ticket-open", kinds("ticket", "card")...)
+	answers("refs owed")
+}
+
+// walkOrderedBy lists every row a filter admits, ordered ascending by one
+// property, in pages of size, and returns their ids in the order the pages
+// gave them.
+func walkOrderedBy(t *testing.T, ds substrate.Dataset, filter substrate.Filter, property string, size int) []string {
+	t.Helper()
+	var got []string
+	after := ""
+	for pages := 0; ; pages++ {
+		if pages > 20 {
+			t.Fatal("walk did not terminate")
+		}
+		page, err := ds.List(context.Background(), substrate.Query{
+			Filter: filter, OrderBy: []substrate.Order{{Property: property}}, First: size, After: after,
+		})
+		if err != nil {
+			t.Fatalf("page %d: %v", pages, err)
+		}
+		got = append(got, ids(page.Records)...)
+		if page.Cursor == "" {
+			return got
+		}
+		after = page.Cursor
+	}
+}
+
+const lanePackage = "lane.example.substrate.reamde.dev/lane"
+
+// One name, a state machine on one kind, a reference on another and a string
+// on a third, is read in three ways at once: the state split runs first, and
+// its props half is where the reference split happens, so a state's rows
+// compare their states value, a pointer's the path it names and the string's
+// its text. Both splits are spelled the same way, a filter naming the kinds
+// and one naming none; the order puts each in its own arm of one CASE. They
+// used to compare the string rows as pointers, and to sort the pointers by
+// their stored object's text.
+func TestAStateAReferenceAndAStringOfOneNameAreEachReadAsDeclared(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds, dsn := newDatasetWithDSN(t)
+	step := lanePackage + "/step"
+	lane := func(singular string, def map[string]any) map[string]any {
+		return vocabulary.KindManifest(lanePackage, map[string]any{"singular": singular},
+			map[string]any{"properties": map[string]any{"lane": def}})
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(lanePackage, 0),
+		vocabulary.KindManifest(lanePackage, map[string]any{"singular": "step"},
+			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+		lane("job", map[string]any{
+			"type": "state", "states": []any{"open", "done"}, "initial": "open",
+			"transitions": []any{map[string]any{"from": "open", "to": "done"}},
+		}),
+		lane("ticket", map[string]any{"type": "reference", "kind": step}),
+		lane("note", map[string]any{"type": "string"}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	for _, id := range []string{"open", "done"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: step, ID: id, Properties: map[string]any{"name": id}})
+	}
+	open := vocabulary.RecordPath(step, "open")
+	var all []string
+	for _, row := range []struct{ id, lane string }{
+		{"job-open", "open"},
+		{"job-done", "done"},
+		{"ticket-open", "open"},
+		{"ticket-done", "done"},
+		{"note-open", "open"},
+		{"note-done", "done"},
+		{"note-path", open},
+	} {
+		singular, _, _ := strings.Cut(row.id, "-")
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: lanePackage + "/" + singular, ID: row.id, Properties: map[string]any{"lane": row.lane},
+		})
+		all = append(all, row.id)
+	}
+	engine.DrainIndexReprojection(t, ds)
+	kinds := func(singulars ...string) []string {
+		out := make([]string, 0, len(singulars))
+		for _, s := range singulars {
+			out = append(out, lanePackage+"/"+s)
+		}
+		return out
+	}
+	every := kinds("job", "ticket", "note")
+
+	filters := []struct {
+		name  string
+		kinds []string
+		cond  substrate.Cond
+		want  []string
+	}{
+		{"eq over a state, a reference and a string", every, substrate.Cond{Eq: "open"}, []string{"job-open", "note-open", "ticket-open"}},
+		{"in over a state, a reference and a string", every, substrate.Cond{In: []any{"done", open}}, []string{"job-done", "note-done", "note-path", "ticket-done", "ticket-open"}},
+		{"eq naming no kind", nil, substrate.Cond{Eq: "open"}, []string{"job-open", "note-open", "ticket-open"}},
+		{"in naming no kind", nil, substrate.Cond{In: []any{"done", open}}, []string{"job-done", "note-done", "note-path", "ticket-done", "ticket-open"}},
+		{"eq over a state and a reference", kinds("job", "ticket"), substrate.Cond{Eq: "open"}, []string{"job-open", "ticket-open"}},
+		{"in over a state and a reference", kinds("job", "ticket"), substrate.Cond{In: []any{"done", open}}, []string{"job-done", "ticket-done", "ticket-open"}},
+	}
+	answers := func(when string) {
+		t.Run(when, func(t *testing.T) {
+			for _, tc := range filters {
+				t.Run("filter "+tc.name, func(t *testing.T) {
+					t.Parallel()
+					got := listIDs(t, ds, substrate.Query{
+						Filter: substrate.Filter{Kinds: tc.kinds, Properties: map[string]substrate.Cond{"lane": tc.cond}},
+						First:  50,
+					})
+					if !equalStrings(got, tc.want) {
+						t.Fatalf("filtered to %v, want %v", got, tc.want)
+					}
+				})
+			}
+		})
+	}
+	answers("refs decide")
+
+	// Ascending by lane, a tie by kind: the job rows by their states value,
+	// the tickets by the path each names and the notes by their text, one
+	// text key across the three. Pages of two seek on the CASE.
+	t.Run("orders", func(t *testing.T) {
+		want := []string{"job-done", "note-done", "ticket-done", "note-path", "ticket-open", "job-open", "note-open"}
+		for name, filter := range map[string]substrate.Filter{
+			"over a state, a reference and a string": {Kinds: every},
+			"naming no kind":                         {IDs: all},
+		} {
+			t.Run("orderBy "+name, func(t *testing.T) {
+				t.Parallel()
+				if got := walkOrderedBy(t, ds, filter, "lane", 2); !equalStrings(got, want) {
+					t.Fatalf("ordered %v, want %v", got, want)
+				}
+			})
+		}
+	})
+
+	oweReferences(t, ds, dsn, "lane", lanePackage+"/ticket", "ticket-open", kinds("ticket")...)
+	answers("refs owed")
+}
+
 // Every value the write path accepts reaches a typed read whole: an offset
 // carries a written 9999 into a five-digit year the timestamptz cast reads,
 // and `decimal` is unbounded. Both compare by value, in a read naming the kind
