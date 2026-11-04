@@ -934,6 +934,46 @@ its grant reaches only through a glob
 not a property named `purpose` — a kind may declare one of those too, under
 `properties:`, and it is an ordinary property.
 
+**`done:` and `dropped:` say which values close a record.** An enum or a
+state property lists, among its own values, the ones that mean the work was
+done and the ones that mean it was dropped, and every other value is open
+([record 0226](decisions/0226-a-kinds-status-is-the-core-lifecycle-trait-and-names-its-done-and-dropped-states.md)).
+A kind that binds core's [`lifecycle`](traits.md#a-kinds-status-lifecycle)
+lists at least one done value, so an app that draws the kind's own states
+still knows which of them end the work:
+
+```yaml
+traits:
+  - substrate.reamde.dev/core/lifecycle
+properties:
+  status:
+    type: state
+    states: [todo, doing, done, skipped]
+    initial: todo
+    transitions:
+      - from: todo
+        to: doing
+      - from: doing
+        to: done
+      - from: todo
+        to: skipped
+    done:
+      - done
+    dropped:
+      - skipped
+```
+
+The rules:
+
+- Each entry names one of the property's own values.
+- No value is in both lists, and at least one is in neither.
+- A machine's initial state is in neither.
+- They sit on a kind's own property that holds one value. An object field,
+  link data, a list, a map or any other datatype refuses both keys.
+
+Like `purpose:`, they change no write and no stored record, so editing them
+is not a narrowing.
+
 ## Reference properties
 
 A link can carry values of its own: where it sits in a list, what role it

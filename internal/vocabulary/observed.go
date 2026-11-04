@@ -151,6 +151,9 @@ type contractShape struct {
 	// `unit` and `units` name unit records (decision 0186), which the write
 	// rules read by id.
 	pin string
+	// done requires the property to list at least one of its values in
+	// `done:`, so every reader knows what closes a record (decision 0226).
+	done bool
 }
 
 // contractShapes are the shapes held per core trait, keyed by the trait's
@@ -181,19 +184,26 @@ var contractShapes = map[string]map[string]contractShape{
 			"low": DatatypeQuantity, "high": DatatypeQuantity, "text": DatatypeString,
 		}},
 	},
+	TraitLifecycleCore: {
+		LifecycleStatus: {done: true},
+	},
 }
 
 // contractDatatypeMet reports whether a declared datatype meets the one a
 // trait contracts. Equal datatypes meet; a declared object meets `json`, an
 // object being a JSON value whose fields the kind declares, so a trait can
 // contract a structured property whose fields the loader holds
-// (contractShapes).
+// (contractShapes). A declared state meets `enum` the same way: a state
+// machine is an enum whose values move only along its transitions
+// (decision 0226).
 func contractDatatypeMet(want, got Datatype) bool {
-	return want == got || (want == DatatypeJSON && got == DatatypeObject)
+	return want == got || (want == DatatypeJSON && got == DatatypeObject) || (want == DatatypeEnum && got == DatatypeState)
 }
 
 // contractShapeProblems holds a binding kind's declaration of one contract
-// property to its shape under the trait (contractShapes).
+// property to its shape under the trait (contractShapes). name is the
+// contract property the shape is held under; a problem names the kind's own
+// property, which a binding may have renamed (decision 0226).
 func contractShapeProblems(where, name, trait string, p *Property) []string {
 	shapes, held := contractShapes[trait]
 	if !held {
@@ -204,37 +214,41 @@ func contractShapeProblems(where, name, trait string, p *Property) []string {
 	switch {
 	case want.keyed && !p.Keyed:
 		out = append(out, fmt.Sprintf("%s: data.properties.%s: trait %s requires %s to be a keyed map: declare keyed: true",
-			where, name, trait, name))
+			where, p.Name, trait, p.Name))
 	case !want.keyed && p.Keyed:
 		out = append(out, fmt.Sprintf("%s: data.properties.%s: trait %s requires %s unkeyed, not a keyed map",
-			where, name, trait, name))
+			where, p.Name, trait, p.Name))
 	case want.list && !p.Repeated:
 		out = append(out, fmt.Sprintf("%s: data.properties.%s: trait %s requires %s to be a list: declare repeated: true",
-			where, name, trait, name))
+			where, p.Name, trait, p.Name))
 	case !want.list && p.Repeated:
 		out = append(out, fmt.Sprintf("%s: data.properties.%s: trait %s requires %s to hold one value, not a list: drop repeated",
-			where, name, trait, name))
+			where, p.Name, trait, p.Name))
+	}
+	if want.done && len(p.Done) == 0 {
+		out = append(out, fmt.Sprintf("%s: data.properties.%s: trait %s requires %s to list the values that mean done: declare done: [...]",
+			where, p.Name, trait, p.Name))
 	}
 	if want.pin != "" && p.Datatype == DatatypeReference && (p.ToTrait != "" || !strings.EqualFold(p.To, want.pin)) {
 		out = append(out, fmt.Sprintf("%s: data.properties.%s: trait %s requires %s to pin kind %s",
-			where, name, trait, name, want.pin))
+			where, p.Name, trait, p.Name, want.pin))
 	}
 	if want.fields == nil {
 		return out
 	}
 	if p.Datatype != DatatypeObject {
 		return append(out, fmt.Sprintf("%s: data.properties.%s: trait %s requires %s to be an object with fields %s",
-			where, name, trait, name, strings.Join(slices.Sorted(maps.Keys(want.fields)), ", ")))
+			where, p.Name, trait, p.Name, strings.Join(slices.Sorted(maps.Keys(want.fields)), ", ")))
 	}
 	for _, field := range slices.Sorted(maps.Keys(want.fields)) {
 		f, ok := p.Fields[field]
 		switch {
 		case !ok:
 			out = append(out, fmt.Sprintf("%s: data.properties.%s: trait %s requires field %s: %s",
-				where, name, trait, field, want.fields[field]))
+				where, p.Name, trait, field, want.fields[field]))
 		case f.Datatype != want.fields[field] || f.Repeated || f.Keyed:
 			out = append(out, fmt.Sprintf("%s: data.properties.%s.fields.%s: trait %s requires one %s",
-				where, name, field, trait, want.fields[field]))
+				where, p.Name, field, trait, want.fields[field]))
 		}
 	}
 	return out
