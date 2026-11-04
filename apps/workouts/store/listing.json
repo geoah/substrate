@@ -1,0 +1,22 @@
+{
+  "subtitle": "Strength training, your server",
+  "promotionalText": "Plan, run and review your gym sessions, kept in your own substrate and saved to Apple Health.",
+  "description": "Substrate Workouts runs your strength sessions in the gym. It works on its own on your iPhone, and keeps your training in your substrate, the personal server you run or choose, once you sign in to one.\n\n• Routines by folder; start one, or an empty session\n• Exercises in any order, supersets, warm-up, drop and myo-rep sets, timed sets and RPE\n• Rest timers that notify when rest ends, with a Live Activity on the Lock Screen\n• A suggested load and rep count for your next set, from this session and earlier ones\n• History, stats across routines, and every exercise with its estimated 1RM trend\n• Each finished session saved to Apple Health, when you allow it\n• Import your history from Hevy\n\nTo keep your training in your substrate, sign in from Settings with your server's address and approve what the app may do there.",
+  "keywords": [
+    "workout",
+    "gym",
+    "lifting",
+    "weightlifting",
+    "log",
+    "sets",
+    "reps",
+    "rpe",
+    "1rm"
+  ],
+  "primaryCategory": "HEALTH_AND_FITNESS",
+  "ageRating": {
+    "all-none": true,
+    "health-or-wellness-topics": true
+  },
+  "reviewNotes": "Substrate Workouts works on its own on the device, with a sample routine; signing in to Substrate, a personal server its user runs, keeps the training there. We run a demonstration server for review with no real user's data.\n\nTo sign in:\n1. Open the app, go to Settings and tap Sign In with Your Substrate.\n2. Under Repository or server, enter {server} and tap Continue in Your Browser.\n3. On the server's Sign in to your Substrate page, enter the repository and password below and tap Sign in.\n4. Tap Approve and set up. The app returns signed in.\n\nRepository: {user}\nPassword: {password}\n\nThen start an empty session from Routines, add an exercise and log a set. HealthKit is used to save each finished session as a strength workout and to read body mass for suggestions; Health data is never used for advertising and goes only to the user's own server. Accounts live on the user's own server and are never created in the app. Privacy policy: {privacy}"
+}

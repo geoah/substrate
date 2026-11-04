@@ -1,0 +1,20 @@
+{
+  "subtitle": "Chat with your own AI agents",
+  "promotionalText": "Talk to the agents on your own substrate: streaming replies, voice input transcribed on your device.",
+  "description": "Substrate Chat is a native chat for the agents on your substrate, the personal server you run or choose. Your conversations stay on that server.\n\n• Streaming replies, instant from a warm cache\n• Voice input, transcribed on your device\n• Notifications when an agent answers\n• An Action Button shortcut to start a chat\n• On iPhone, iPad and Mac\n\nThe agents run on your substrate, with the AI model provider whoever runs it has chosen. Substrate Chat is a client for a substrate: sign in with your server's address and approve what the app may do there.",
+  "keywords": [
+    "assistant",
+    "llm",
+    "private",
+    "self-hosted",
+    "voice",
+    "dictation"
+  ],
+  "primaryCategory": "PRODUCTIVITY",
+  "ageRating": {
+    "all-none": true,
+    "mature-suggestive": "INFREQUENT_OR_MILD",
+    "profanity-humor": "INFREQUENT_OR_MILD"
+  },
+  "reviewNotes": "Substrate Chat is a client for Substrate, a personal server its user runs; the app does nothing without one. We run a demonstration server for review with no real user's data.\n\nTo sign in:\n1. Open the app and tap Sign In with Your Substrate.\n2. Under Repository or server, enter {server} and tap Continue in Your Browser.\n3. On the server's Sign in to your Substrate page, enter the repository and password below and tap Sign in.\n4. Tap Approve and set up. The app returns signed in.\n\nRepository: {user}\nPassword: {password}\n\nAgents run on the server with the AI provider its operator configures; the app itself sends nothing to an AI provider. Dictation is transcribed on the device. Accounts live on the user's own server and are never created in the app. Privacy policy: {privacy}"
+}

@@ -64,6 +64,11 @@ lychee = "0.24.2"
 # line, an unpinned action. zizmor runs --offline, so neither opens a socket.
 actionlint = "1.7.12"
 zizmor = "1.30.1"
+# The App Store listings (`mise run apps:store`, apps/README.md §App Store):
+# texts, screenshots, categories, age rating and review details through App
+# Store Connect's API. A release at least two weeks old, since it releases
+# almost daily; its telemetry is turned off where it runs (DO_NOT_TRACK).
+"github:rorkai/App-Store-Connect-CLI" = { version = "5.16.0", rename_exe = "asc" }
 #
 # python is deliberately NOT pinned here. The function runner shells out to
 # whatever `python3` is on PATH, and every runner and dev box has one — while
@@ -938,6 +943,10 @@ run = ".mise/apps.sh release"
 description = "Build every app with an iPhone and iPad UI (or the ones named) from one commit, export each for App Store Connect and upload it to TestFlight; [prerelease|stable] [app…]; refuses an app with no App Store Connect record, or whose callback the site does not claim yet"
 depends = ["console:build"]
 run = ".mise/apps.sh testflight"
+
+[tasks."apps:store"]
+description = "Make App Store Connect's editable iOS version of every app with a store/listing.json (or the ones named) match it: texts, categories, age rating, content rights, copyright, manual release, free in every territory, review details and screenshots; never submits. --check prints what still stands before a submission"
+run = ".mise/appstore.sh"
 
 [tasks."apps:site"]
 description = "Publish the apps' site alone, under the release lease: the association files, the authority document with every published package version, the closures and every app's client document, and print the _substrate record its DNS needs; SUBSTRATE_APPS_RELEASE_DRY_RUN=1 builds it under build/apps and uploads nothing"

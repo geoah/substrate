@@ -1,0 +1,20 @@
+{
+  "subtitle": "To-dos kept on your own server",
+  "promotionalText": "Your lists and tasks, kept in the substrate you run, and on every device you sign in to.",
+  "description": "Substrate Tasks is a to-do list that lives in your substrate, the personal server you run or choose. Your lists and tasks are records on that server, so they stay yours: there is no account with us, and nothing goes anywhere else.\n\n• Tasks with a due day or a due time, and a priority\n• Lists in the order you choose\n• Reminders when a task is due\n• Works offline: changes wait on your device and are sent when you are back online\n• Updates live when something changes on your server\n• On iPhone, iPad and Mac\n\nSubstrate Tasks is a client for a substrate. Sign in with your server's address and approve what the app may do there: it asks only for your lists and tasks.",
+  "keywords": [
+    "todo",
+    "to-do",
+    "lists",
+    "reminders",
+    "checklist",
+    "planner",
+    "self-hosted",
+    "private"
+  ],
+  "primaryCategory": "PRODUCTIVITY",
+  "ageRating": {
+    "all-none": true
+  },
+  "reviewNotes": "Substrate Tasks is a client for Substrate, a personal server its user runs; the app does nothing without one. We run a demonstration server for review with no real user's data.\n\nTo sign in:\n1. Open the app and tap Sign In with Your Substrate.\n2. Under Repository or server, enter {server} and tap Continue in Your Browser.\n3. On the server's Sign in to your Substrate page, enter the repository and password below and tap Sign in.\n4. Tap Approve and set up. The app returns signed in.\n\nRepository: {user}\nPassword: {password}\n\nThen create a list and a few tasks. Accounts live on the user's own server and are never created in the app, so there is no in-app account to delete; signing out revokes the app's access on the server. Privacy policy: {privacy}"
+}
