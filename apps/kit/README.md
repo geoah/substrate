@@ -25,7 +25,7 @@ their JNI half on Android alone. The package is in Swift 6 language mode.
 
 | Library | What it holds |
 | --- | --- |
-| `SubstrateCore` | `JSONValue` (a number keeps its decimal text: `JSONNumber`, read as a `Decimal`, a `Double` or an `Int`; an object its key order: `JSONObject`) with `DecimalText`; `Record`, `FlatRecord` (the record as the REST API speaks it) and `CodecError`; `KindReference`, `RecordReference`, `KindDeclaration`; `Timestamp` (RFC 3339) and `ISODuration`; a kind's and a property's name in words (`KindNames`, `kindDisplayName`, `propertyLabel`), its glyph (`KindGlyphSpec`, `KindHue`), `ValueShape` and `valueWords`; `CivilDay` (a `date` property's day), `Due` (a day, or a moment with its day), `Position` (a record's place among its neighbours as the shortest decimal between them, spread out where a gap runs out); `ServerAddress`; the errors (`ServerError`, `TransportError`, `Redirected`, `SessionExpired`, `InsufficientScope`, `LoginRefused`, `OAuthRefusal`) and `explain(_:app:server:)`; `Grants`, `ScopeWords` and `ScopeKind`; `ValueCoding` (any `Codable` to and from a `JSONValue` with every digit kept, a `Date` as RFC 3339, a `URL` and a `UUID` as strings: what crosses to Android, either way) |
+| `SubstrateCore` | `JSONValue` (a number keeps its decimal text: `JSONNumber`, read as a `Decimal`, a `Double` or an `Int`; an object its key order: `JSONObject`) with `DecimalText`; `Record`, `FlatRecord` (the record as the REST API speaks it) and `CodecError`; `KindReference`, `RecordReference`, `KindDeclaration`; `Timestamp` (RFC 3339) and `ISODuration`; a kind's and a property's name in words (`KindNames`, `kindDisplayName`, `propertyLabel`), its glyph (`KindGlyphSpec`, `KindHue`), `ValueShape` and `valueWords`; `CivilDay` (a `date` property's day), `Due` (a day, or a moment with its day), `Position` (a record's place among its neighbours as the shortest decimal between them, spread out where a gap runs out); `ServerAddress`; the errors (`ServerError`, `TransportError`, `Redirected`, `SessionExpired`, `InsufficientScope`, `LoginRefused`, `OAuthRefusal`) and `explain(_:app:server:)`; `Grants` with `GrantKind` (a kind as a scope is held to it: its purpose and the traits its declaration binds), `ScopeWords` and `ScopeKind`; `ValueCoding` (any `Codable` to and from a `JSONValue` with every digit kept, a `Date` as RFC 3339, a `URL` and a `UUID` as strings: what crosses to Android, either way) |
 | `SubstrateDevice` | the device services' protocols and their values: `HTTPTransport` with `URLSessionTransport`, which never follows a redirect, whose `lines(for:)` reads an answer line by line as a `LineStream`; `SessionStorage`, the secure store, with `StoredItem` (missing told from failed) and `SecureStoreRefused`; `BrowserSignIn` with `SignInRoute`, `SignInRedirect`, `SignInAnswer` and `SignInCancelled`; `TXTResolver`, whose `TXTAnswer` keeps records, a confirmed absence, an unconfirmed absence and a failure apart; `Connectivity` with `NetworkPath`; `AppFolders`; `Notifications` with `NotificationPermission`, `NotificationRequest` (`fireAt` nil shows it at once; `showsWhileActive` false keeps it quiet while the app is in front), `NotificationCategory`, `NotificationAction` and `NotificationTextInput` (the categories an app registers through the service), and `NotificationResponse` (a tap, an action or a dismissal, read from `responses()`), and `pending(prefix:)` for an app that schedules a whole plan and takes back what it no longer holds; `OngoingActivities` with `OngoingActivity` (a Live Activity's content as JSON the app's widget side reads); `BackgroundWork` with `BackgroundJob` (its `payload` handed back on the `BackgroundRun` it becomes, such as the repository and link generation it was scheduled under), `BackgroundRun`, `expirations()` (the runs the system takes back) and `ContinuedProcessing` |
 | `SubstrateAPI` | `SubstrateClient`: `Timeout` tiers, `Retry-After`, `segment(_:)`, records, lists (`ListQuery`, `RecordPage`), blobs, webhook deliveries, parked deliveries, the password door; `RecordReader`, `HTTPRecordReader` and `RecordDirectory`; `Discovery`, `AuthorizationServerMetadata` and `ServerMismatch`, `ServerVersion`, `ServerRequirement`, `ServerProbe`; `DomainRecord` and `ServerLocator` over a `TXTResolver`; `RecordWriter`, the record calls an outbox sends through; the watch: `WatchFollower` (a cursor and its generation, heartbeats, a dropped connection opened again, a relist on a 410 or a `compacted` frame) with `WatchFrame`, `WatchRow`, `WatchCursor`, `WatchEvent` and `WatchEnd` |
 | `SubstrateAuth` | `AppManifest`, `KindLabel`, `AuthorizationDetail` and the check's wire shapes with `checkAuthorization`; `PKCE` (SHA-256 from CryptoKit, or swift-crypto where it is missing); `OAuthClient`, whose `signIn` takes the device's `BrowserSignIn` and refuses a release build without its claimed callback (`UnclaimedRedirect`), `TokenResponse`, `RepositoryMismatch`; `Session` and its `revoke`; `SessionStore`, its pending revocations and its transitions, over a `SessionStorage`; `AppStatusCheck`, `AppStatus`, `AppIssue`, `Change` and its words, `AppStatusModel` |
@@ -146,7 +146,14 @@ are drawn within their window. The app writes what is its own alone:
 line to show.
 
 The records are read once, then followed through the watch; what the read
-and the watch do next follows from how an event moved the `ReadPhase`. Every
+and the watch do next follows from how an event moved the `ReadPhase`. The
+read opens the watch first and lists after its bookmark, and the watch is
+followed from that bookmark, since an app token's lists carry no head
+(decision 0195): a change written while the list was read comes again from
+the watch, and its record is read again after the list. A cursor the server
+no longer holds is dropped from the cache before the read starts over, and
+a record whose read again failed is kept as such in the cache, so it is
+read again after the app opens again. Every
 write the app makes (`RecordWrites`) is laid over at once and queued in
 order; a write that leaves the queue is laid over as landed only where
 `Outbox.landed` says so, until its record is read again, and a read again
@@ -383,6 +390,14 @@ reads the same on the approval page and in the app. `Grants` matches as
 `internal/scope` does, and its tests are that package's cases. A change to
 either side is a change to both. A blocked row's words are the server's own
 sentence, never rebuilt here.
+
+A trait scope (`read:implements(<trait>)`, decision 0225) reaches what `*`
+does among the kinds that bind the trait, so `reads` and `writes` take a
+`GrantKind`, made from the kind's `KindDeclaration` where the app read it.
+A kind known by its reference alone binds no trait the kit knows of, and no
+trait scope reaches it here: the server, which reads the declaration, is the
+judge. Without the kinds a trait reaches, its sentence names none, since
+only the server can say that none binds it.
 
 ## Tests
 

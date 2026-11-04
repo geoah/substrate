@@ -73,6 +73,32 @@ struct LinkedRecordsTests {
         #expect(stepper.state.phase == .idle)
     }
 
+    @Test func aReadIsFollowedFromTheWatchsBookmarkAndOneReadWithoutItIsNot() {
+        var stepper = Stepper()
+        _ = stepper.step(.loaded([], cursor: nil, queue: []))
+        #expect(stepper.step(.linked(online)) == [.read])
+        // The watch could not open: the list is shown, and nothing follows it.
+        #expect(stepper.step(.listed([note("n1", "Milk")], cursor: nil)).isEmpty)
+        #expect(stepper.step(.watchInterrupted("The server could not be reached.")).isEmpty)
+        #expect(stepper.state.records.count == 1 && stepper.state.cursor == nil)
+        // Open at last, and read again after its bookmark: followed from it.
+        let bookmark = WatchCursor(seq: 9, generation: "g")
+        #expect(stepper.step(.listed([note("n1", "Oat milk", version: 2)], cursor: bookmark)) == [.follow(bookmark)])
+        #expect(stepper.state.phase == .following)
+        // A relist reads again, even one from the read itself.
+        _ = stepper.step(.refreshAsked)
+        #expect(stepper.step(.relistNeeded) == [.read])
+    }
+
+    @Test func aReadAgainThatFailedBeforeTheAppClosedIsTriedOnceConnected() {
+        var stepper = Stepper()
+        let key = RecordFold.key(noteKind, "n1")
+        let cursor = WatchCursor(seq: 8, generation: "g")
+        _ = stepper.step(.loaded([note("n1", "Milk")], cursor: cursor, stale: [key, "example.com/other/thing/x"], queue: []))
+        #expect(stepper.state.stale == [key])
+        #expect(stepper.step(.linked(online)) == [.reread([key]), .follow(cursor)])
+    }
+
     @Test func aWriteThatLandedIsLaidOverUntilReadAndOneDiscardedIsNot() {
         var stepper = Stepper()
         _ = stepper.step(.loaded([note("n1", "Milk"), note("n2", "Bread")], cursor: nil, queue: []))

@@ -1,11 +1,13 @@
 import Foundation
 
 /// What an app token may do, from its scopes, matched as the server matches
-/// them (internal/scope): `read:` and `write:` over kinds, `write` including
-/// read; `agents:` and `decide:` over agent ids; `call:` over function ids;
-/// `webhook:` one trigger. A glob never reaches an internal kind, no scope
-/// reaches the auth kinds, and none writes core or llm. `full` (decision
-/// 0204) is all of it: the server minted a token without scopes.
+/// them (internal/scope): `read:` and `write:` over kinds, or over the kinds
+/// that bind a trait (`read:implements(<trait>)`, decision 0225), `write`
+/// including read; `agents:` and `decide:` over agent ids; `call:` over
+/// function ids; `webhook:` one trigger. Neither a glob nor a trait scope
+/// reaches an internal kind, no scope reaches the auth kinds, none writes
+/// core or llm, and no trait scope writes an account. `full` (decision 0204)
+/// is all of it: the server minted a token without scopes.
 public struct Grants: Codable, Hashable, Sendable {
     public var scopes: [String]
 
@@ -23,23 +25,35 @@ public struct Grants: Codable, Hashable, Sendable {
     /// The seeded packages whose every kind is internal, for a caller that
     /// does not know a kind's declared purpose.
     static let machinery = ["substrate.reamde.dev/core/", "substrate.reamde.dev/llm/", "substrate.reamde.dev/console/"]
+    /// The trait an account binds: no trait scope writes one, whatever else
+    /// it binds.
+    static let accountConfig = "substrate.reamde.dev/core/accountconfig"
 
-    /// Whether the grant reads records of `kind`. `purpose` is the kind's
-    /// declared purpose where the caller read it; without it, a kind of the
-    /// seeded core, llm and console packages counts as internal, which every
-    /// one of them is.
-    public func reads(_ kind: String, purpose: String? = nil) -> Bool {
+    /// Whether the grant reads records of `kind`.
+    public func reads(_ kind: GrantKind) -> Bool {
         if full { return true }
-        let internalKind = Self.isInternal(kind, purpose: purpose)
-        return parsed.contains { ($0.verb == "read" || $0.verb == "write") && Self.matches($0.pattern, kind, internalKind) }
+        return parsed.contains { ($0.verb == "read" || $0.verb == "write") && Self.matches($0.pattern, kind) }
     }
 
-    public func writes(_ kind: String, purpose: String? = nil) -> Bool {
+    /// Whether the grant writes records of `kind`.
+    public func writes(_ kind: GrantKind) -> Bool {
         if full { return true }
-        guard !Self.unwritable.contains(where: kind.hasPrefix) else { return false }
-        let internalKind = Self.isInternal(kind, purpose: purpose)
-        return parsed.contains { $0.verb == "write" && Self.matches($0.pattern, kind, internalKind) }
+        guard !Self.unwritable.contains(where: kind.reference.hasPrefix) else { return false }
+        return parsed.contains { scope in
+            guard scope.verb == "write" else { return false }
+            if ScopeWords.trait(of: scope.pattern) != nil, kind.binds(Self.accountConfig) { return false }
+            return Self.matches(scope.pattern, kind)
+        }
     }
+
+    /// Whether the grant reads records of the kind `kind` names, knowing no
+    /// trait it binds, so no trait scope reaches it. `purpose` is its
+    /// declared purpose where the caller read it.
+    public func reads(_ kind: String, purpose: String? = nil) -> Bool { reads(GrantKind(kind, purpose: purpose)) }
+
+    /// Whether the grant writes records of the kind `kind` names, knowing no
+    /// trait it binds, so no trait scope reaches it.
+    public func writes(_ kind: String, purpose: String? = nil) -> Bool { writes(GrantKind(kind, purpose: purpose)) }
 
     /// Whether the grant talks to the agent whose record id is `agent`.
     public func talksTo(_ agent: String) -> Bool { full || matchesAgent("agents", agent) }
@@ -64,14 +78,19 @@ public struct Grants: Codable, Hashable, Sendable {
     /// decides it (internal/scope's Covers): a scope of the same verb, or a
     /// write for a read, over a pattern at least as wide. `internal` is
     /// whether the scope names one kind whose declared purpose is `internal`,
-    /// which a glob never reaches, so only the exact scope covers it. A
-    /// webhook scope covers its own trigger alone. `full` covers everything.
+    /// which a glob never reaches, so only the exact scope covers it. A trait
+    /// scope reaches what `*` does among the kinds that bind the trait, so
+    /// only `*` covers it, and since which kinds bind a trait moves with the
+    /// registry, it covers no scope but itself. A webhook scope covers its
+    /// own trigger alone. `full` covers everything.
     public func covers(_ scope: String, internal internalKind: Bool = false) -> Bool {
         if full { return true }
         let want = ScopeWords.split(scope)
         return parsed.contains { held in
             guard held.verb == want.verb || (held.verb == "write" && want.verb == "read") else { return false }
             if held.pattern == want.pattern { return true }
+            if Self.isTraitScope(want) { return held.pattern == "*" }
+            if Self.isTraitScope(held) { return false }
             if want.verb == "webhook" || !Self.isGlob(held.pattern) { return false }
             if Self.isGlob(want.pattern) { return Self.globPrefix(want.pattern).hasPrefix(Self.globPrefix(held.pattern)) }
             if internalKind, want.verb == "read" || want.verb == "write" { return false }
@@ -102,12 +121,18 @@ public struct Grants: Codable, Hashable, Sendable {
         purpose.map { $0 == "internal" } ?? machinery.contains(where: kind.hasPrefix)
     }
 
-    /// One pattern against one kind: the auth kinds are never reached, and a
-    /// glob never reaches an internal kind.
-    static func matches(_ pattern: String, _ kind: String, _ internalKind: Bool) -> Bool {
-        if authKinds.contains(kind) { return false }
-        if isGlob(pattern) { return !internalKind && matchesGlob(pattern, kind) }
-        return pattern == kind
+    /// One pattern against one kind: the auth kinds are never reached, and
+    /// neither a glob nor a trait scope reaches an internal kind.
+    static func matches(_ pattern: String, _ kind: GrantKind) -> Bool {
+        if authKinds.contains(kind.reference) { return false }
+        if let trait = ScopeWords.trait(of: pattern) { return !kind.isInternal && kind.binds(trait) }
+        if isGlob(pattern) { return !kind.isInternal && matchesGlob(pattern, kind.reference) }
+        return pattern == kind.reference
+    }
+
+    /// Whether a scope is a read or write scope over a trait.
+    static func isTraitScope(_ scope: (verb: String, pattern: String)) -> Bool {
+        (scope.verb == "read" || scope.verb == "write") && ScopeWords.trait(of: scope.pattern) != nil
     }
 
     static func isGlob(_ pattern: String) -> Bool { pattern == "*" || pattern.hasSuffix("/*") }
@@ -118,6 +143,38 @@ public struct Grants: Codable, Hashable, Sendable {
         if pattern.hasSuffix("/*") { return name.hasPrefix(pattern.dropLast()) }
         return pattern == name
     }
+}
+
+/// One kind as a read or write scope is held to it (internal/scope's
+/// `Kind`): its reference, its declared purpose, and the traits its
+/// declaration binds, each by its full identity. A kind whose declaration
+/// the caller has not read binds no trait here, so no trait scope reaches it:
+/// the server, which reads the declaration, stays the judge.
+public struct GrantKind: Hashable, Sendable {
+    public var reference: String
+    /// The declared purpose; nil where the caller did not read it, which
+    /// counts a kind of the seeded core, llm and console packages as
+    /// internal, as every one of them is.
+    public var purpose: String?
+    public var traits: [String]
+
+    public init(_ reference: String, purpose: String? = nil, traits: [String] = []) {
+        self.reference = reference
+        self.purpose = purpose
+        self.traits = traits
+    }
+
+    /// The kind as its declaration says it, a purpose left out read as
+    /// `primary`.
+    public init(_ declaration: KindDeclaration) {
+        self.init(declaration.reference, purpose: declaration.purpose ?? "primary", traits: declaration.traits)
+    }
+
+    var isInternal: Bool { Grants.isInternal(reference, purpose: purpose) }
+
+    /// Whether the kind binds `trait`, matched in its canonical spelling
+    /// alone.
+    func binds(_ trait: String) -> Bool { traits.contains(trait) }
 }
 
 /// A kind a scope reaches, as the approval page lists it: its reference,
@@ -139,10 +196,10 @@ public struct ScopeKind: Hashable, Sendable {
 /// checkbox (web/console's app-scopes.ts, whose words this mirrors): what the
 /// app may do, over the kinds, agents or functions it reaches, by their
 /// labels. Every power stays in the words: a write may delete, a read
-/// searches by meaning at the owner's cost, a glob reaches what is added
-/// later, talking to an agent reaches whatever the agent may do and reads
-/// every chat with it, a decision may edit the change it applies, and a
-/// call runs the owner's code as far as the app already reaches.
+/// searches by meaning at the owner's cost, a glob or a trait reaches what is
+/// added later, talking to an agent reaches whatever the agent may do and
+/// reads every chat with it, a decision may edit the change it applies, and
+/// a call runs the owner's code as far as the app already reaches.
 public enum ScopeWords {
     /// How many kind labels one sentence names before it counts the rest.
     static let maxLabels = 6
@@ -154,9 +211,11 @@ public enum ScopeWords {
 
     /// The sentence for one scope. `kinds` are the kinds it reaches today,
     /// where the caller knows them; without them a pattern reads by its
-    /// shape. `agents` are the names of the agents an agent scope matches.
+    /// shape, and a trait scope says nothing of which kinds have the trait,
+    /// since an empty list says none does. `agents` are the names of the
+    /// agents an agent scope matches.
     public static func sentence(
-        _ scope: String, kinds: [ScopeKind] = [], agents: [String] = [],
+        _ scope: String, kinds: [ScopeKind]? = nil, agents: [String] = [],
         functions: [String] = [], packageName: String? = nil
     ) -> String {
         let (verb, pattern) = split(scope)
@@ -165,9 +224,13 @@ public enum ScopeWords {
         switch verb {
         case "read", "write":
             let action = verb == "read" ? "See" : "See, add, change and delete"
+            if let trait = trait(of: pattern) {
+                let today = kinds.map { $0.isEmpty ? " (no kind has it yet)" : " (today your \(kindsPhrase($0)))" } ?? ""
+                return "\(action) your records of every kind with the \(traitWord(trait)) trait\(today), including kinds that take it on later\(semanticClause)"
+            }
             let later = glob ? ", including kinds added later" : ""
             if case .all = shape { return "\(action) all your records\(later)\(semanticClause)" }
-            let what = kinds.isEmpty ? patternPhrase(shape) : kindsPhrase(kinds)
+            let what = kinds.flatMap { $0.isEmpty ? nil : kindsPhrase($0) } ?? patternPhrase(shape)
             return "\(action) your \(what)\(later)\(semanticClause)"
         case "call":
             let later = glob ? ", including functions added later" : ""
@@ -214,12 +277,46 @@ public enum ScopeWords {
         return "Send data to your repository through the \(packageName) webhook, for any \(packageName) account, \(parked)"
     }
 
-    /// A scope with `~` in its authority completed with the repository's,
-    /// as the server stores it.
+    /// A scope with `~` in its authority, a trait scope's trait's included,
+    /// completed with the repository's, as the server stores it.
     public static func resolve(_ scope: String, authority: String) -> String {
         let (verb, pattern) = split(scope)
+        if verb == "read" || verb == "write", let trait = trait(of: pattern) {
+            guard trait.hasPrefix("~/") else { return scope }
+            return "\(verb):\(traitOpen)\(authority)\(trait.dropFirst())\(traitClose)"
+        }
         guard !verb.isEmpty, pattern == "~" || pattern.hasPrefix("~/") else { return scope }
         return "\(verb):\(authority)\(pattern.dropFirst())"
+    }
+
+    /// How a read or write pattern names a trait rather than kinds, as the
+    /// records filter spells one (decision 0225).
+    static let traitOpen = "implements("
+    static let traitClose = ")"
+
+    /// The trait a read or write pattern names, `implements(<trait>)`, or nil
+    /// for a kind pattern.
+    public static func trait(of pattern: String) -> String? {
+        guard pattern.count > traitOpen.count + traitClose.count, pattern.hasPrefix(traitOpen), pattern.hasSuffix(traitClose)
+        else { return nil }
+        return String(pattern.dropFirst(traitOpen.count).dropLast(traitClose.count))
+    }
+
+    /// A trait by its name, as a sentence says it: `lifecycle`, and
+    /// `due date` for `dueDate`.
+    static func traitWord(_ trait: String) -> String {
+        let parts = trait.split(separator: "/", maxSplits: 2, omittingEmptySubsequences: false)
+        let name = parts.count == 3 ? parts[2] : Substring(trait)
+        var words = ""
+        var previous: Character?
+        for character in name {
+            if let previous, previous.isASCII, previous.isLowercase || previous.isNumber, character.isASCII, character.isUppercase {
+                words.append(" ")
+            }
+            words.append(character)
+            previous = character
+        }
+        return words.lowercased()
     }
 
     public static func split(_ scope: String) -> (verb: String, pattern: String) {

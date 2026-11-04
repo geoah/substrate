@@ -49,21 +49,22 @@ public actor RecordCache {
     }
 
     /// A list read of `kinds`, whole: their records replaced by the page's.
-    /// The watch resumes from the page's head unless it already follows
-    /// this history from earlier, so nothing written between two reads is
-    /// missed.
-    public func listed(_ page: RecordPage, kinds: [String]) {
+    /// The watch resumes from `bookmark`, the one it opened at before the
+    /// list was read, else from the page's head (an app token's lists carry
+    /// none), unless it already follows this history from earlier, so
+    /// nothing written between two reads is missed.
+    public func listed(_ page: RecordPage, kinds: [String], from bookmark: WatchCursor? = nil) {
         let replaced = Set(kinds)
         file.records = file.records.filter { !replaced.contains($0.value.kind) }
         for record in page.records where record.deletedAt == nil {
             file.records["\(record.kind)/\(record.id)"] = record
         }
         file.stale = file.stale.filter { key in !replaced.contains(where: { key.hasPrefix("\($0)/") }) }
-        if !page.generation.isEmpty {
-            if let cursor = file.cursor, cursor.generation == page.generation {
-                file.cursor = WatchCursor(seq: min(cursor.seq, page.head), generation: page.generation)
+        if let start = bookmark ?? (page.generation.isEmpty ? nil : WatchCursor(seq: page.head, generation: page.generation)) {
+            if let cursor = file.cursor, cursor.generation == start.generation {
+                file.cursor = WatchCursor(seq: min(cursor.seq, start.seq), generation: start.generation)
             } else {
-                file.cursor = WatchCursor(seq: page.head, generation: page.generation)
+                file.cursor = start
             }
         }
         save()

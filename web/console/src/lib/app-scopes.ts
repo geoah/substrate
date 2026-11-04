@@ -62,8 +62,8 @@ export function scopeTrait(pattern: string): string | undefined {
   return /^implements\((.+)\)$/.exec(pattern)?.[1]
 }
 
-/** A trait by its name, as a sentence says it: `completable`, and
- * `occurrence log` for `occurrenceLog`. */
+/** A trait by its name, as a sentence says it: `lifecycle`, and
+ * `due date` for `dueDate`. */
 function traitWord(trait: string): string {
   return splitKind(trait)
     .name.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -214,14 +214,14 @@ export function scopeSentence(scope: SentenceScope): string {
       const trait = scopeTrait(scope.pattern)
       if (trait) {
         // A trait scope reaches the kinds that bind the trait when the app
-        // asks, so the sentence names the meaning, then the kinds that have
-        // it today, and says that more may come.
-        const word = traitWord(trait)
+        // asks, so the sentence names the trait, then the kinds that have it
+        // today, and says that more may come. A trait is named by a noun as
+        // often as by an adjective, so the words never make it either.
         const today =
           scope.kinds.length > 0
             ? `today your ${kindsPhrase(scope.kinds)}`
-            : `no kind is ${word} yet`
-        return `${verb} your records of every kind that is ${word} (${today}), including kinds that become ${word} later${SEMANTIC_CLAUSE}`
+            : "no kind has it yet"
+        return `${verb} your records of every kind with the ${traitWord(trait)} trait (${today}), including kinds that take it on later${SEMANTIC_CLAUSE}`
       }
       const later = scope.glob ? ", including kinds added later" : ""
       if (shape.shape === "all")
