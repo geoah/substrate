@@ -880,6 +880,10 @@ jobs:
   # install_args names that Swift and JDK, as lint:toolchain holds it to:
   # this workflow installs nothing a job does not name, and the runner image
   # carries a Swift and a JDK of its own that every task would otherwise run.
+  # MISE_SWIFT_PLATFORM names the Swift build for the release ubuntu-latest
+  # runs (26.04), and follows it when that moves: left to itself, mise
+  # fetches the ubuntu24.04 build onto 26.04, whose swift-sdk cannot load
+  # the libxml2.so.2 that 26.04 no longer ships.
   # Nothing here needs an emulator; `android:smoke` is a laptop's. Not
   # required, and gated on the `apps` answer as `apps linux` is.
   android:
@@ -888,6 +892,8 @@ jobs:
     if: needs.changes.outputs.apps == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      MISE_SWIFT_PLATFORM: ubuntu26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
