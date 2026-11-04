@@ -58,7 +58,12 @@ count() { entries | wc -l; }
 
 case "$verb" in
 age)
-  entries -exec touch -m -d '2 hours ago' {} +
+  # Through -t, which BSD's touch reads as GNU's does (`-d '2 hours ago'` is
+  # GNU's alone, and lint:ci runs this on a Mac), from the epoch either date
+  # prints, in UTC so no clock change falls inside the two hours.
+  at=$(($(date +%s) - 7200))
+  stamp="$(TZ=UTC0 date -d "@$at" +%Y%m%d%H%M.%S 2>/dev/null || TZ=UTC0 date -r "$at" +%Y%m%d%H%M.%S)"
+  entries -exec env TZ=UTC0 touch -m -t "$stamp" {} +
   echo "gocache: aged $(count) entries in ${dir}"
   ;;
 prune)

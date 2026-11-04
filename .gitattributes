@@ -12,6 +12,7 @@
 # them readable; they are still versioned and still reviewed by their content.
 pnpm-lock.yaml linguist-generated=true -diff
 go.sum linguist-generated=true
+.mise/python/uv.lock linguist-generated=true
 
 # The vocabulary is the contract as files, and the console is a real part of
 # the project — neither is vendored, and neither should be written off as

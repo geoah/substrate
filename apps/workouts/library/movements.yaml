@@ -1,0 +1,7119 @@
+# The exercise library's movements, curated: each movement, the muscles it
+# works and their share of a set (1 a prime mover, 0.75 a major synergist, 0.5
+# a synergist, 0.25 a stabiliser), and its exercises, one per equipment
+# version, with their measurement and load conventions, the free-exercise-db
+# entries that are the same exercise and the Hevy template ids that map onto
+# it. An exercise keeps Hevy's name where one maps. The muscles are this
+# library's own, not Hevy's tags. apps/workouts/scripts/exercise-library.py turns
+# this file and free-exercise-db.json into the records the app seeds.
+- id: 21s-bicep-curl
+  name: 21s Bicep Curl
+  aliases: [21s, Twenty-ones]
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.5
+    brachioradialis: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: 21s Bicep Curl
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [3BC06AD3]
+- id: ab-scissors
+  name: Ab Scissors
+  aliases: [Scissor kicks]
+  force: pull
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 0.75
+    transverseabdominis: 0.5
+    obliques: 0.5
+    rectusfemoris: 0.5
+    adductors: 0.25
+  exercises:
+    - name: Ab Scissors
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [B4F2FF72]
+- id: ab-wheel
+  name: Ab Wheel
+  aliases: [Ab rollout, Rollout, Ab roller]
+  force: pull
+  mechanic: compound
+  muscles:
+    rectusabdominis: 1
+    transverseabdominis: 0.75
+    obliques: 0.5
+    lats: 0.5
+    serratus: 0.5
+    deltfront: 0.25
+    tricepslong: 0.25
+    iliopsoas: 0.25
+  exercises:
+    - name: Ab Wheel
+      equipment: other
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [99D5F10E]
+      fedb: [Ab_Roller]
+    - name: Ab Wheel (Barbell)
+      equipment: barbell
+      measurement: bodyweightreps
+      restClass: highrep
+      fedb: [Barbell_Ab_Rollout, Barbell_Ab_Rollout_-_On_Knees, Barbell_Rollout_from_Bench]
+    - name: Ab Wheel (Suspension)
+      aliases: [Suspended fallout]
+      equipment: suspension
+      measurement: bodyweightreps
+      restClass: highrep
+      fedb: [Suspended_Fallout]
+- id: aerobics
+  name: Aerobics
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    gastrocnemius: 0.75
+    glutemax: 0.5
+    soleus: 0.5
+    hamstrings: 0.25
+    iliopsoas: 0.25
+    deltside: 0.25
+  exercises:
+    - name: Aerobics
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [5E0DDACE]
+- id: air-bike
+  name: Air Bike
+  aliases: [Assault bike, Fan bike, Echo bike]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.5
+    hamstrings: 0.5
+    rectusfemoris: 0.5
+    gastrocnemius: 0.25
+    deltfront: 0.25
+    lats: 0.25
+    tricepslateral: 0.25
+    bicepsbrachii: 0.25
+  exercises:
+    - name: Air Bike
+      equipment: machine
+      measurement: duration
+      restClass: timed
+      hevy: [43573BB8]
+- id: arnold-press
+  name: Arnold Press
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    deltside: 0.75
+    tricepslateral: 0.5
+    tricepslong: 0.25
+    pecclavicular: 0.25
+    trapsupper: 0.25
+    serratus: 0.25
+  exercises:
+    - name: Arnold Press (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [A69FF221]
+      fedb: [Arnold_Dumbbell_Press]
+    - name: Arnold Press (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: compound
+      fedb: [Kettlebell_Arnold_Press]
+- id: around-the-world
+  name: Around The World
+  aliases: [Dumbbell around the world]
+  force: push
+  mechanic: isolation
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.75
+    deltfront: 0.75
+    lats: 0.5
+    serratus: 0.25
+    tricepslong: 0.25
+  exercises:
+    - name: Around The World
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [D4A2FE7E]
+      fedb: [Around_The_Worlds]
+- id: assisted-pistol-squat
+  name: Assisted Pistol Squat
+  aliases: [Assisted single leg squat]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.5
+    rectusfemoris: 0.5
+    glutemed: 0.5
+    soleus: 0.25
+  exercises:
+    - name: Assisted Pistol Squats
+      equipment: none
+      measurement: bodyweightreps
+      laterality: unilateral
+      restClass: compound
+      hevy: [5BFF35BA]
+- id: back-extension
+  name: Back Extension
+  aliases: [Hyperextension, Roman chair]
+  force: pull
+  mechanic: compound
+  muscles:
+    erectors: 1
+    glutemax: 0.75
+    hamstrings: 0.75
+    adductors: 0.25
+  exercises:
+    - name: Back Extension (Hyperextension)
+      equipment: other
+      measurement: bodyweightreps
+      restClass: isolation
+      hevy: [4F5866F8]
+      fedb: [Hyperextensions_Back_Extensions]
+    - name: Back Extension (Weighted Hyperextension)
+      equipment: other
+      measurement: weightedbodyweightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [091737FA]
+    - name: Back Extension (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [A05C064D]
+      muscles:
+        erectors: 1
+        glutemax: 0.5
+        hamstrings: 0.5
+    - name: Back Extension (Bodyweight)
+      equipment: none
+      measurement: bodyweightreps
+      restClass: isolation
+      fedb: [Hyperextensions_With_No_Hyperextension_Bench]
+    - name: Back Extension (Exercise Ball)
+      equipment: other
+      measurement: weightedbodyweightreps
+      loadBasis: total
+      restClass: isolation
+      fedb: [Weighted_Ball_Hyperextension]
+- id: ball-slams
+  name: Ball Slams
+  aliases: [Medicine ball slam, Slam ball]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rectusabdominis: 0.75
+    deltfront: 0.5
+    tricepslong: 0.5
+    glutemax: 0.5
+    obliques: 0.5
+    vasti: 0.25
+    hamstrings: 0.25
+  exercises:
+    - name: Ball Slams
+      equipment: other
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [F51D9080]
+- id: band-pullaparts
+  name: Band Pullaparts
+  aliases: [Band pull apart]
+  force: pull
+  mechanic: isolation
+  muscles:
+    deltrear: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    rotatorcuff: 0.5
+    trapslower: 0.25
+  exercises:
+    - name: Band Pullaparts
+      equipment: resistanceband
+      measurement: repsonly
+      restClass: highrep
+      hevy: [E8D86EE8]
+      fedb: [Band_Pull_Apart]
+- id: battle-ropes
+  name: Battle Ropes
+  aliases: [Battling ropes]
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    deltside: 0.5
+    forearmflexors: 0.5
+    rectusabdominis: 0.5
+    bicepsbrachii: 0.25
+    transverseabdominis: 0.25
+    vasti: 0.25
+    glutemax: 0.25
+  exercises:
+    - name: Battle Ropes
+      equipment: other
+      measurement: duration
+      restClass: timed
+      hevy: [084A67CA]
+      fedb: [Battling_Ropes]
+- id: bear-crawl
+  name: Bear Crawl
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    transverseabdominis: 0.75
+    rectusabdominis: 0.5
+    vasti: 0.5
+    serratus: 0.5
+    tricepslateral: 0.25
+    rectusfemoris: 0.25
+    iliopsoas: 0.25
+  exercises:
+    - name: Bear Crawl
+      equipment: none
+      measurement: distanceduration
+      restClass: timed
+      hevy: [B3B1D947]
+- id: behind-the-back-curl
+  name: Behind the Back Curl
+  aliases: [Bayesian curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.5
+    brachioradialis: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Behind the Back Curl (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [2DBCA395]
+- id: behind-the-back-wrist-curl
+  name: Behind the Back Wrist Curl
+  force: pull
+  mechanic: isolation
+  muscles:
+    forearmflexors: 1
+  exercises:
+    - name: Behind the Back Wrist Curl (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [DDB29047]
+      fedb: [Standing_Palms-Up_Barbell_Behind_The_Back_Wrist_Curl]
+- id: belt-squat
+  name: Belt Squat
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.75
+    rectusfemoris: 0.5
+    soleus: 0.25
+  exercises:
+    - name: Belt Squat (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [3D1CDC75]
+- id: bench-dip
+  name: Bench Dip
+  aliases: [Bench triceps dip]
+  force: push
+  mechanic: compound
+  muscles:
+    tricepslateral: 1
+    tricepslong: 0.75
+    deltfront: 0.5
+    pecsternal: 0.25
+  exercises:
+    - name: Bench Dip
+      equipment: other
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [CD6DC8E5]
+      fedb: [Bench_Dips]
+    - name: Bench Dip (Weighted)
+      equipment: other
+      measurement: weightedbodyweightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Weighted_Bench_Dip]
+- id: bench-press
+  name: Bench Press
+  aliases: [Flat bench, Chest press]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.5
+    deltfront: 0.5
+    tricepslateral: 0.5
+    tricepslong: 0.25
+  exercises:
+    - name: Bench Press (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [79D0BB3A]
+      fedb: [Barbell_Bench_Press_-_Medium_Grip, Bench_Press_-_Powerlifting,
+        Bench_Press_with_Chains, Reverse_Band_Bench_Press]
+    - name: Bench Press (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [3601968B]
+      fedb: [Dumbbell_Bench_Press, Dumbbell_Bench_Press_with_Neutral_Grip]
+    - name: Bench Press (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [0FBF7195]
+      fedb: [Smith_Machine_Bench_Press]
+    - name: Bench Press (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [99C1F2AD]
+- id: bench-press-close-grip
+  name: Bench Press - Close Grip
+  aliases: [Close grip bench press, CGBP]
+  force: push
+  mechanic: compound
+  muscles:
+    tricepslateral: 1
+    pecsternal: 0.75
+    tricepslong: 0.5
+    deltfront: 0.5
+    pecclavicular: 0.25
+  exercises:
+    - name: Bench Press - Close Grip (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [35B51B87]
+      fedb: [Close-Grip_Barbell_Bench_Press, Close-Grip_EZ-Bar_Press]
+    - name: Bench Press - Close Grip (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Smith_Machine_Close-Grip_Bench_Press]
+- id: bench-press-wide-grip
+  name: Bench Press - Wide Grip
+  aliases: [Wide grip bench press]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.5
+    deltfront: 0.5
+    tricepslateral: 0.25
+    tricepslong: 0.25
+  exercises:
+    - name: Bench Press - Wide Grip (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [E644F828]
+      fedb: [Wide-Grip_Barbell_Bench_Press]
+- id: bent-over-row
+  name: Bent Over Row
+  aliases: [Barbell row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    erectors: 0.5
+    brachialis: 0.25
+    forearmflexors: 0.25
+    hamstrings: 0.25
+  exercises:
+    - name: Bent Over Row (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [55E6546F]
+      fedb: [Bent_Over_Barbell_Row]
+    - name: Bent Over Row (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [23E92538]
+      fedb: [Bent_Over_Two-Dumbbell_Row, Bent_Over_Two-Dumbbell_Row_With_Palms_In]
+    - name: Bent Over Row (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [EB813C91]
+      fedb: [Smith_Machine_Bent_Over_Row]
+    - name: Bent Over Row (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [EA820646]
+- id: bicep-curl
+  name: Bicep Curl
+  aliases: [Biceps curl, Curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.5
+    brachioradialis: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: Bicep Curl (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [A5AC6449]
+      fedb: [Barbell_Curl]
+    - name: EZ Bar Biceps Curl
+      aliases: [EZ bar curl]
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [01A35BF9]
+      fedb: [EZ-Bar_Curl]
+    - name: Bicep Curl (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [37FCC2BB]
+      fedb: [Dumbbell_Bicep_Curl, Dumbbell_Alternate_Bicep_Curl]
+    - name: Bicep Curl (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [ADA8623C]
+      fedb: [Standing_Biceps_Cable_Curl]
+    - name: Bicep Curl (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [AF328E3D]
+      fedb: [Machine_Bicep_Curl]
+    - name: Bicep Curl (Suspension)
+      equipment: suspension
+      measurement: bodyweightreps
+      restClass: isolation
+      hevy: [0B4C1902]
+- id: bicycle-crunch
+  name: Bicycle Crunch
+  aliases: [Bicycle, Air bike crunch]
+  force: pull
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    obliques: 1
+    iliopsoas: 0.5
+    transverseabdominis: 0.5
+    rectusfemoris: 0.25
+  exercises:
+    - name: Bicycle Crunch
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: highrep
+      hevy: [A41C7261]
+      fedb: [Air_Bike]
+    - name: Bicycle Crunch Raised Legs
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: highrep
+      hevy: [594450D2]
+- id: bird-dog
+  name: Bird Dog
+  force: static
+  mechanic: compound
+  muscles:
+    erectors: 1
+    glutemax: 0.75
+    transverseabdominis: 0.75
+    deltfront: 0.5
+    glutemed: 0.25
+    hamstrings: 0.25
+    obliques: 0.25
+  exercises:
+    - name: Bird Dog
+      equipment: none
+      measurement: repsonly
+      laterality: alternating
+      restClass: highrep
+      hevy: [BD0AD077]
+- id: box-jump
+  name: Box Jump
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 1
+    gastrocnemius: 0.75
+    soleus: 0.5
+    hamstrings: 0.5
+    rectusfemoris: 0.5
+  exercises:
+    - name: Box Jump
+      equipment: other
+      measurement: bodyweightreps
+      restClass: power
+      hevy: [56092DD1]
+- id: box-squat
+  name: Box Squat
+  aliases: [Squat to bench]
+  force: push
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    vasti: 1
+    adductors: 0.75
+    hamstrings: 0.5
+    erectors: 0.5
+    rectusfemoris: 0.25
+  exercises:
+    - name: Box Squat (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [38FC1AB9]
+      fedb: [Box_Squat, Box_Squat_with_Bands, Box_Squat_with_Chains, Speed_Box_Squat,
+        Reverse_Band_Box_Squat, Barbell_Squat_To_A_Bench]
+    - name: Box Squat (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      fedb: [Dumbbell_Squat_To_A_Bench]
+- id: boxing
+  name: Boxing
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    obliques: 0.75
+    tricepslateral: 0.5
+    pecsternal: 0.5
+    serratus: 0.5
+    rectusabdominis: 0.5
+    gastrocnemius: 0.25
+    vasti: 0.25
+  exercises:
+    - name: Boxing
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [A0D8FA1B]
+- id: bulgarian-split-squat
+  name: Bulgarian Split Squat
+  aliases: [Rear foot elevated split squat, RFESS]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 1
+    adductors: 0.5
+    glutemed: 0.5
+    rectusfemoris: 0.25
+    hamstrings: 0.25
+    soleus: 0.25
+  exercises:
+    - name: Bulgarian Split Squat (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: compound
+      hevy: [0F24286A]
+      fedb: [One_Leg_Barbell_Squat]
+    - name: Bulgarian Split Squat (Dumbbell)
+      aliases: [Bulgarian Split Squat]
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [B5D3A742]
+- id: burpee
+  name: Burpee
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    pecsternal: 0.5
+    deltfront: 0.5
+    tricepslateral: 0.5
+    rectusabdominis: 0.5
+    gastrocnemius: 0.5
+    hamstrings: 0.25
+    rectusfemoris: 0.25
+  exercises:
+    - name: Burpee
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [BB792A36]
+    - name: Burpee Over the Bar
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [86B00DDE]
+    - name: Burpee Broad Jumps
+      equipment: none
+      measurement: distanceduration
+      restClass: power
+      hevy: [115CC72C]
+- id: cable-crunch
+  name: Cable Crunch
+  aliases: [Kneeling cable crunch, Rope crunch]
+  force: pull
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    obliques: 0.5
+    transverseabdominis: 0.25
+  exercises:
+    - name: Cable Crunch
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [23A48484]
+      fedb: [Cable_Crunch, Rope_Crunch]
+- id: cable-fly-crossovers
+  name: Cable Fly Crossovers
+  aliases: [Cable crossover, Cable fly]
+  force: push
+  mechanic: isolation
+  muscles:
+    pecsternal: 1
+    deltfront: 0.5
+    pecclavicular: 0.25
+    bicepsbrachii: 0.25
+  exercises:
+    - name: Cable Fly Crossovers
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [651F844C]
+      fedb: [Cable_Crossover]
+- id: cable-pull-through
+  name: Cable Pull Through
+  aliases: [Pull through]
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 0.75
+    erectors: 0.5
+    adductors: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Cable Pull Through
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [8C331CD8]
+      fedb: [Pull_Through]
+- id: cable-twist
+  name: Cable Twist
+  aliases: [Woodchop, Cable woodchopper, Cable lift]
+  force: pull
+  mechanic: compound
+  muscles:
+    obliques: 1
+    transverseabdominis: 0.5
+    rectusabdominis: 0.5
+    deltfront: 0.25
+    glutemax: 0.25
+  exercises:
+    - name: Cable Twist (Down to up)
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: highrep
+      hevy: [92D858EA]
+      fedb: [Standing_Cable_Lift]
+    - name: Cable Twist (Up to down)
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: highrep
+      hevy: [A2D838BD]
+      fedb: [Standing_Cable_Wood_Chop]
+- id: calf-press
+  name: Calf Press
+  aliases: [Calf extension]
+  force: push
+  mechanic: isolation
+  muscles:
+    gastrocnemius: 1
+    soleus: 0.75
+  exercises:
+    - name: Calf Press (Machine)
+      aliases: [Calf press on leg press]
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [91237BDD]
+      fedb: [Calf_Press_On_The_Leg_Press_Machine]
+    - name: Calf Extension (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [47B9DF13]
+      fedb: [Calf_Press]
+- id: chest-dip
+  name: Chest Dip
+  aliases: [Dip, Parallel bar dip]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    deltfront: 0.75
+    tricepslateral: 0.75
+    tricepslong: 0.5
+    pecclavicular: 0.25
+    serratus: 0.25
+  exercises:
+    - name: Chest Dip
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [6FCD7755]
+      fedb: [Dips_-_Chest_Version]
+    - name: Chest Dip (Weighted)
+      equipment: none
+      measurement: weightedbodyweightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [29472BE1]
+    - name: Chest Dip (Assisted)
+      equipment: machine
+      measurement: bodyweightassistedreps
+      loadBasis: total
+      restClass: compound
+      hevy: [E9E4089F]
+- id: chest-fly
+  name: Chest Fly
+  aliases: [Fly, Flye, Pec fly, Pec deck]
+  force: push
+  mechanic: isolation
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.5
+    deltfront: 0.5
+    bicepsbrachii: 0.25
+  exercises:
+    - name: Chest Fly (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: ['12017185']
+      fedb: [Dumbbell_Flyes]
+    - name: Chest Fly (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: ['78683336']
+      muscles:
+        pecsternal: 1
+        pecclavicular: 0.5
+        deltfront: 0.25
+    - name: Butterfly (Pec Deck)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [9DCE2D64]
+      fedb: [Butterfly]
+      muscles:
+        pecsternal: 1
+        pecclavicular: 0.5
+        deltfront: 0.25
+    - name: Chest Fly (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [DDB7C19F]
+      fedb: [Cross_Over_-_With_Bands]
+    - name: Chest Fly (Suspension)
+      equipment: suspension
+      measurement: bodyweightreps
+      restClass: isolation
+      hevy: [720B0D70]
+    - name: Chest Fly (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      fedb: [Flat_Bench_Cable_Flyes]
+- id: chest-press
+  name: Chest Press
+  aliases: [Machine press]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.5
+    deltfront: 0.5
+    tricepslateral: 0.5
+    tricepslong: 0.25
+  exercises:
+    - name: Chest Press (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [7EB3F7C3]
+      fedb: [Leverage_Chest_Press, Machine_Bench_Press]
+    - name: Chest Press (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [EAC7D9C5]
+    - name: Chest Press (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Cable_Chest_Press, Standing_Cable_Chest_Press]
+- id: chest-supported-incline-row
+  name: Chest Supported Incline Row
+  aliases: [Incline dumbbell row, Incline bench pull]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    brachialis: 0.25
+    trapslower: 0.25
+  exercises:
+    - name: Chest Supported Incline Row (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [914F3A96]
+      fedb: [Dumbbell_Incline_Row]
+    - name: Chest Supported Incline Row (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Incline_Bench_Pull]
+- id: chest-supported-reverse-fly
+  name: Chest Supported Reverse Fly
+  aliases: [Prone rear delt raise, Lying rear lateral raise]
+  force: pull
+  mechanic: isolation
+  muscles:
+    deltrear: 1
+    rhomboids: 0.5
+    trapsmiddle: 0.5
+    rotatorcuff: 0.25
+    trapslower: 0.25
+  exercises:
+    - name: Chest Supported Reverse Fly (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [B582299E]
+      fedb: [Dumbbell_Lying_Rear_Lateral_Raise, Lying_Rear_Delt_Raise]
+- id: chest-supported-t-bar-row
+  name: Chest Supported T Bar Row
+  aliases: [Lying T-bar row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    brachialis: 0.25
+    trapslower: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Chest Supported T Bar Row
+      equipment: plateloaded
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [6A8D3193]
+      fedb: [Lying_T-Bar_Row]
+- id: chest-supported-y-raise
+  name: Chest Supported Y Raise
+  aliases: [Prone Y raise]
+  force: pull
+  mechanic: isolation
+  muscles:
+    trapslower: 1
+    deltside: 0.5
+    deltrear: 0.5
+    trapsmiddle: 0.5
+    rotatorcuff: 0.25
+    deltfront: 0.25
+  exercises:
+    - name: Chest Supported Y Raise (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: highrep
+      hevy: [F21D5693]
+- id: chin-up
+  name: Chin Up
+  aliases: [Chinup, Underhand pull up]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    bicepsbrachii: 0.75
+    brachialis: 0.5
+    rhomboids: 0.5
+    trapslower: 0.5
+    trapsmiddle: 0.25
+    pecsternal: 0.25
+    forearmflexors: 0.25
+    deltrear: 0.25
+  exercises:
+    - name: Chin Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: ['29083183']
+      fedb: [Chin-Up]
+    - name: Chin Up (Weighted)
+      equipment: none
+      measurement: weightedbodyweightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [023943F1]
+    - name: Chin Up (Assisted)
+      equipment: machine
+      measurement: bodyweightassistedreps
+      loadBasis: total
+      restClass: compound
+      hevy: [D23C609B]
+- id: clamshell
+  name: Clamshell
+  force: push
+  mechanic: isolation
+  muscles:
+    glutemed: 1
+    glutemax: 0.25
+  exercises:
+    - name: Clamshell
+      equipment: resistanceband
+      measurement: repsonly
+      laterality: unilateral
+      restClass: highrep
+      hevy: [CC016611]
+- id: clap-push-ups
+  name: Clap Push Ups
+  aliases: [Plyometric push up, Clapping push up]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    tricepslateral: 0.75
+    deltfront: 0.5
+    pecclavicular: 0.5
+    tricepslong: 0.25
+    serratus: 0.25
+  exercises:
+    - name: Clap Push Ups
+      equipment: none
+      measurement: bodyweightreps
+      restClass: power
+      hevy: [10D76E8F]
+- id: clean
+  name: Clean
+  aliases: [Squat clean]
+  force: pull
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 1
+    hamstrings: 0.75
+    erectors: 0.75
+    trapsupper: 0.75
+    gastrocnemius: 0.5
+    forearmflexors: 0.5
+    deltfront: 0.25
+  exercises:
+    - name: Clean
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [ABB00838]
+      fedb: [Clean]
+    - name: Clean (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: power
+      fedb: [Dumbbell_Clean]
+- id: clean-and-jerk
+  name: Clean and Jerk
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 1
+    deltfront: 0.75
+    hamstrings: 0.75
+    erectors: 0.75
+    trapsupper: 0.75
+    tricepslateral: 0.5
+    gastrocnemius: 0.5
+  exercises:
+    - name: Clean and Jerk
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [9E09CEC3]
+      fedb: [Clean_and_Jerk]
+    - name: Clean and Jerk (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: power
+      fedb: [One-Arm_Kettlebell_Clean_and_Jerk]
+- id: clean-and-press
+  name: Clean and Press
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    glutemax: 0.75
+    hamstrings: 0.75
+    trapsupper: 0.75
+    tricepslateral: 0.5
+    vasti: 0.5
+    erectors: 0.5
+    deltside: 0.5
+    tricepslong: 0.25
+  exercises:
+    - name: Clean and Press
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [D3095577]
+      fedb: [Clean_and_Press]
+- id: clean-pull
+  name: Clean Pull
+  force: pull
+  mechanic: compound
+  muscles:
+    hamstrings: 1
+    glutemax: 1
+    trapsupper: 0.75
+    erectors: 0.75
+    vasti: 0.5
+    forearmflexors: 0.5
+    gastrocnemius: 0.25
+  exercises:
+    - name: Clean Pull
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [652FEA39]
+      fedb: [Clean_Pull]
+- id: climbing
+  name: Climbing
+  aliases: [Rock climbing, Bouldering]
+  force: pull
+  mechanic: compound
+  muscles:
+    forearmflexors: 1
+    lats: 0.75
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    deltrear: 0.25
+    rhomboids: 0.25
+    rectusabdominis: 0.25
+    gastrocnemius: 0.25
+    vasti: 0.25
+  exercises:
+    - name: Climbing
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [E23F1F2B]
+- id: concentration-curl
+  name: Concentration Curl
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.75
+    brachioradialis: 0.25
+  exercises:
+    - name: Concentration Curl
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: isolation
+      hevy: [724CDE60]
+      fedb: [Concentration_Curls, Standing_Concentration_Curl]
+- id: cross-body-hammer-curl
+  name: Cross Body Hammer Curl
+  aliases: [Crossbody curl, Pinwheel curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    brachialis: 1
+    brachioradialis: 1
+    bicepsbrachii: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: Cross Body Hammer Curl
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [32C4D4A2]
+      fedb: [Cross_Body_Hammer_Curl]
+    - name: Pinwheel Curl (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [942BAD12]
+- id: crunch
+  name: Crunch
+  aliases: [Ab crunch]
+  force: pull
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    obliques: 0.5
+    transverseabdominis: 0.25
+  exercises:
+    - name: Crunch
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [DCF3B31B]
+      fedb: [Crunches, Crunch_-_Hands_Overhead]
+    - name: Crunch (Weighted)
+      equipment: other
+      measurement: weightedbodyweightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [D928C232]
+      fedb: [Weighted_Crunches]
+    - name: Crunch (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [EB43ADD4]
+      fedb: [Ab_Crunch_Machine]
+- id: curtsy-lunge
+  name: Curtsy Lunge
+  force: push
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    vasti: 1
+    glutemed: 0.75
+    adductors: 0.5
+    rectusfemoris: 0.25
+    hamstrings: 0.25
+  exercises:
+    - name: Curtsy Lunge (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [D39EC9EB]
+- id: cycling
+  name: Cycling
+  aliases: [Bike, Bicycle]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.5
+    rectusfemoris: 0.5
+    hamstrings: 0.25
+    gastrocnemius: 0.25
+    soleus: 0.25
+    iliopsoas: 0.25
+  exercises:
+    - name: Cycling
+      equipment: other
+      measurement: distanceduration
+      restClass: timed
+      hevy: [D8F7F851]
+- id: dead-bug
+  name: Dead Bug
+  force: static
+  mechanic: compound
+  muscles:
+    transverseabdominis: 1
+    rectusabdominis: 0.75
+    obliques: 0.5
+    iliopsoas: 0.25
+  exercises:
+    - name: Dead Bug
+      equipment: none
+      measurement: repsonly
+      laterality: alternating
+      restClass: highrep
+      hevy: [D8911FC4]
+      fedb: [Dead_Bug]
+- id: dead-hang
+  name: Dead Hang
+  aliases: [Bar hang]
+  force: static
+  mechanic: isolation
+  muscles:
+    forearmflexors: 1
+    lats: 0.25
+    trapslower: 0.25
+    rotatorcuff: 0.25
+  exercises:
+    - name: Dead Hang
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [B9380898]
+- id: deadlift
+  name: Deadlift
+  aliases: [Conventional deadlift]
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    erectors: 1
+    hamstrings: 0.75
+    vasti: 0.5
+    adductors: 0.5
+    trapsupper: 0.5
+    forearmflexors: 0.5
+    lats: 0.25
+  exercises:
+    - name: Deadlift (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [C6272009]
+      fedb: [Barbell_Deadlift, Deadlift_with_Bands, Deadlift_with_Chains,
+        Reverse_Band_Deadlift]
+    - name: Deadlift (Trap bar)
+      aliases: [Hex bar deadlift]
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [B923B230]
+      fedb: [Trap_Bar_Deadlift]
+      muscles:
+        glutemax: 1
+        vasti: 0.75
+        erectors: 0.75
+        hamstrings: 0.5
+        adductors: 0.5
+        trapsupper: 0.5
+        forearmflexors: 0.5
+    - name: Deadlift (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [5F4E6DD3]
+    - name: Deadlift (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [20870ED5]
+    - name: Deadlift (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: ['99507114']
+    - name: Deadlift (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Cable_Deadlifts]
+    - name: Deadlift (Machine)
+      equipment: plateloaded
+      measurement: weightreps
+      loadBasis: perside
+      restClass: compound
+      fedb: [Leverage_Deadlift]
+- id: deadlift-high-pull
+  name: Deadlift High Pull
+  aliases: [High pull]
+  force: pull
+  mechanic: compound
+  muscles:
+    trapsupper: 1
+    glutemax: 0.75
+    hamstrings: 0.75
+    deltside: 0.75
+    erectors: 0.5
+    vasti: 0.5
+    bicepsbrachii: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Deadlift High Pull
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [FA5D0DE1]
+- id: decline-bench-press
+  name: Decline Bench Press
+  aliases: [Decline press]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    tricepslateral: 0.5
+    tricepslong: 0.25
+    deltfront: 0.25
+    pecclavicular: 0.25
+  exercises:
+    - name: Decline Bench Press (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [DA0F0470]
+      fedb: [Decline_Barbell_Bench_Press]
+    - name: Decline Bench Press (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [18487FA7]
+      fedb: [Decline_Dumbbell_Bench_Press]
+    - name: Decline Bench Press (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [FAF31231]
+      fedb: [Leverage_Decline_Chest_Press]
+    - name: Decline Bench Press (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [FFC106CB]
+      fedb: [Decline_Smith_Press, Smith_Machine_Decline_Press]
+- id: decline-chest-fly
+  name: Decline Chest Fly
+  aliases: [Decline fly]
+  force: push
+  mechanic: isolation
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.25
+    deltfront: 0.25
+    bicepsbrachii: 0.25
+  exercises:
+    - name: Decline Chest Fly (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [A351AED7]
+      fedb: [Decline_Dumbbell_Flyes]
+- id: decline-crunch
+  name: Decline Crunch
+  force: pull
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    obliques: 0.5
+    iliopsoas: 0.5
+    transverseabdominis: 0.25
+    rectusfemoris: 0.25
+  exercises:
+    - name: Decline Crunch
+      equipment: other
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [BC10A922]
+      fedb: [Decline_Crunch]
+    - name: Decline Crunch (Weighted)
+      equipment: other
+      measurement: weightedbodyweightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [B2398CD1]
+- id: decline-push-up
+  name: Decline Push Up
+  aliases: [Feet elevated push up]
+  force: push
+  mechanic: compound
+  muscles:
+    pecclavicular: 1
+    pecsternal: 0.75
+    deltfront: 0.75
+    tricepslateral: 0.5
+    tricepslong: 0.25
+    serratus: 0.25
+    rectusabdominis: 0.25
+  exercises:
+    - name: Decline Push Up
+      equipment: other
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [C43825EA]
+      fedb: [Decline_Push-Up, Push-Ups_With_Feet_Elevated]
+- id: diamond-push-up
+  name: Diamond Push Up
+  aliases: [Triangle push up]
+  force: push
+  mechanic: compound
+  muscles:
+    tricepslateral: 1
+    pecsternal: 0.75
+    tricepslong: 0.5
+    deltfront: 0.5
+    serratus: 0.25
+    rectusabdominis: 0.25
+  exercises:
+    - name: Diamond Push Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [6575F52D]
+- id: downward-dog
+  name: Downward Dog
+  aliases: [Downward facing dog]
+  force: static
+  mechanic: compound
+  muscles:
+    hamstrings: 1
+    gastrocnemius: 1
+    soleus: 0.5
+    lats: 0.5
+    deltfront: 0.25
+  exercises:
+    - name: Downward Dog
+      equipment: none
+      measurement: repsonly
+      restClass: highrep
+      hevy: [7DA843A3]
+- id: drag-curl
+  name: Drag Curl
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.5
+    brachioradialis: 0.25
+    deltrear: 0.25
+  exercises:
+    - name: Drag Curl
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [D950429E]
+      fedb: [Drag_Curl]
+- id: dragon-flag
+  name: Dragon Flag
+  aliases: [Dragonfly]
+  force: pull
+  mechanic: compound
+  muscles:
+    rectusabdominis: 1
+    transverseabdominis: 0.75
+    obliques: 0.5
+    iliopsoas: 0.5
+    lats: 0.5
+    glutemax: 0.25
+  exercises:
+    - name: Dragon Flag
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [AFC29472]
+    - name: Dragonfly
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [B7192800]
+- id: dumbbell-row
+  name: Dumbbell Row
+  aliases: [One arm dumbbell row, Single arm row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    brachialis: 0.25
+    forearmflexors: 0.25
+    obliques: 0.25
+  exercises:
+    - name: Dumbbell Row
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: compound
+      hevy: [F1E57334]
+      fedb: [One-Arm_Dumbbell_Row]
+- id: dumbbell-snatch
+  name: Dumbbell Snatch
+  aliases: [Single arm dumbbell snatch]
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 0.75
+    trapsupper: 0.75
+    vasti: 0.5
+    deltfront: 0.5
+    deltside: 0.5
+    erectors: 0.5
+    obliques: 0.25
+  exercises:
+    - name: Dumbbell Snatch
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: power
+      hevy: [F3717B0E]
+- id: dumbbell-step-up
+  name: Dumbbell Step Up
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 1
+    glutemed: 0.5
+    adductors: 0.25
+    rectusfemoris: 0.25
+    hamstrings: 0.25
+    soleus: 0.25
+  exercises:
+    - name: Dumbbell Step Up
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [BF6ECE89]
+      fedb: [Dumbbell_Step_Ups]
+- id: elbow-to-knee
+  name: Elbow to Knee
+  aliases: [Cross body crunch]
+  force: pull
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    obliques: 1
+    iliopsoas: 0.5
+    transverseabdominis: 0.25
+  exercises:
+    - name: Elbow to Knee
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: highrep
+      hevy: [A01BE509]
+      fedb: [Elbow_to_Knee]
+- id: elliptical-trainer
+  name: Elliptical Trainer
+  aliases: [Elliptical, Cross trainer]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.5
+    hamstrings: 0.5
+    rectusfemoris: 0.25
+    gastrocnemius: 0.25
+    deltfront: 0.25
+    lats: 0.25
+  exercises:
+    - name: Elliptical Trainer
+      equipment: machine
+      measurement: distanceduration
+      restClass: timed
+      hevy: [3303376C]
+- id: face-pull
+  name: Face Pull
+  force: pull
+  mechanic: compound
+  muscles:
+    deltrear: 1
+    trapsmiddle: 0.75
+    rhomboids: 0.5
+    rotatorcuff: 0.5
+    trapslower: 0.25
+    bicepsbrachii: 0.25
+  exercises:
+    - name: Face Pull
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [BE640BA0]
+      fedb: [Face_Pull]
+- id: farmers-walk
+  name: Farmers Walk
+  aliases: [Farmers carry]
+  force: static
+  mechanic: compound
+  muscles:
+    forearmflexors: 1
+    trapsupper: 0.75
+    obliques: 0.5
+    transverseabdominis: 0.5
+    erectors: 0.5
+    glutemed: 0.25
+    vasti: 0.25
+    gastrocnemius: 0.25
+  exercises:
+    - name: Farmers Walk
+      equipment: other
+      measurement: shortdistanceweight
+      loadBasis: perimplement
+      implements: 2
+      restClass: carry
+      hevy: [50C613D0]
+      fedb: [Farmers_Walk]
+- id: feet-up-bench-press
+  name: Feet Up Bench Press
+  aliases: [Legs up bench press]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.5
+    deltfront: 0.5
+    tricepslateral: 0.5
+    tricepslong: 0.25
+    rectusabdominis: 0.25
+  exercises:
+    - name: Feet Up Bench Press (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [867AC3B6]
+- id: fire-hydrants
+  name: Fire Hydrants
+  force: push
+  mechanic: isolation
+  muscles:
+    glutemed: 1
+    glutemax: 0.5
+  exercises:
+    - name: Fire Hydrants
+      equipment: none
+      measurement: repsonly
+      laterality: unilateral
+      restClass: highrep
+      hevy: [2AF8B552]
+- id: floor-press
+  name: Floor Press
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    tricepslateral: 0.75
+    deltfront: 0.5
+    tricepslong: 0.25
+    pecclavicular: 0.25
+  exercises:
+    - name: Floor Press (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [D53F2886]
+      fedb: [Floor_Press, Floor_Press_with_Chains]
+    - name: Floor Press (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [756EE329]
+      fedb: [Dumbbell_Floor_Press]
+    - name: Floor Press (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: compound
+      fedb: [One-Arm_Kettlebell_Floor_Press]
+- id: floor-triceps-dip
+  name: Floor Triceps Dip
+  aliases: [Floor dip]
+  force: push
+  mechanic: compound
+  muscles:
+    tricepslateral: 1
+    tricepslong: 0.75
+    deltfront: 0.25
+  exercises:
+    - name: Floor Triceps Dip
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [A57D38D5]
+- id: flutter-kicks
+  name: Flutter Kicks
+  force: pull
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 1
+    rectusfemoris: 0.5
+    transverseabdominis: 0.5
+    adductors: 0.25
+  exercises:
+    - name: Flutter Kicks
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: highrep
+      hevy: [2FA77B28]
+- id: frog-jumps
+  name: Frog Jumps
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 1
+    adductors: 0.5
+    gastrocnemius: 0.5
+    hamstrings: 0.25
+    rectusfemoris: 0.25
+    soleus: 0.25
+  exercises:
+    - name: Frog Jumps
+      equipment: none
+      measurement: bodyweightreps
+      restClass: power
+      hevy: [207DC636]
+- id: frog-pumps
+  name: Frog Pumps
+  force: push
+  mechanic: isolation
+  muscles:
+    glutemax: 1
+    adductors: 0.25
+    hamstrings: 0.25
+    glutemed: 0.25
+  exercises:
+    - name: Frog Pumps (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [F6948F17]
+- id: front-lever
+  name: Front Lever
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rectusabdominis: 0.75
+    transverseabdominis: 0.5
+    trapslower: 0.5
+    deltrear: 0.5
+    tricepslong: 0.5
+    rhomboids: 0.25
+    glutemax: 0.25
+  exercises:
+    - name: Front Lever Hold
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [0E608350]
+    - name: Front Lever Raise
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [30F03BF0]
+- id: front-raise
+  name: Front Raise
+  force: push
+  mechanic: isolation
+  muscles:
+    deltfront: 1
+    pecclavicular: 0.5
+    deltside: 0.25
+    serratus: 0.25
+    trapsupper: 0.25
+  exercises:
+    - name: Front Raise (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [8293E554]
+      fedb: [Front_Dumbbell_Raise, Front_Two-Dumbbell_Raise]
+    - name: Front Raise (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [BD86EFD5]
+    - name: Front Raise (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [DBB91A3C]
+      fedb: [Front_Cable_Raise]
+    - name: Front Raise (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [47B036EF]
+    - name: Front Raise (Suspension)
+      equipment: suspension
+      measurement: bodyweightreps
+      restClass: isolation
+      hevy: [796E8E2C]
+- id: front-squat
+  name: Front Squat
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.5
+    adductors: 0.5
+    rectusfemoris: 0.5
+    erectors: 0.75
+    rectusabdominis: 0.25
+    trapsmiddle: 0.25
+  exercises:
+    - name: Front Squat
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [5046D0A9]
+      fedb: [Front_Barbell_Squat, Front_Squat_Clean_Grip]
+    - name: Front Squat (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      fedb: [Front_Squats_With_Two_Kettlebells]
+- id: full-squat
+  name: Full Squat
+  aliases: [Deep squat, ATG squat, Olympic squat]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 1
+    adductors: 0.75
+    rectusfemoris: 0.5
+    erectors: 0.5
+    soleus: 0.25
+  exercises:
+    - name: Full Squat
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [1283BBA6]
+      fedb: [Barbell_Full_Squat, Olympic_Squat]
+- id: glute-bridge
+  name: Glute Bridge
+  aliases: [Hip bridge, Butt lift]
+  force: push
+  mechanic: isolation
+  muscles:
+    glutemax: 1
+    hamstrings: 0.5
+    adductors: 0.25
+    erectors: 0.25
+    glutemed: 0.25
+  exercises:
+    - name: Glute Bridge
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [CDA23948]
+      fedb: [Butt_Lift_Bridge]
+    - name: Glute Bridge (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [49C922A1]
+      fedb: [Barbell_Glute_Bridge]
+    - name: Glute Bridge (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Hip_Lift_with_Band]
+- id: glute-ham-raise
+  name: Glute Ham Raise
+  aliases: [GHR, GHD raise]
+  force: pull
+  mechanic: compound
+  muscles:
+    hamstrings: 1
+    glutemax: 0.5
+    gastrocnemius: 0.5
+    erectors: 0.25
+  exercises:
+    - name: Glute Ham Raise
+      equipment: other
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [68B83EE0]
+      fedb: [Glute_Ham_Raise]
+- id: glute-kickback
+  name: Glute Kickback
+  aliases: [Donkey kick]
+  force: push
+  mechanic: isolation
+  muscles:
+    glutemax: 1
+    hamstrings: 0.5
+    glutemed: 0.25
+    erectors: 0.25
+  exercises:
+    - name: Glute Kickback (Machine)
+      equipment: machine
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [CBA02382]
+    - name: Glute Kickback on Floor
+      equipment: none
+      measurement: repsonly
+      laterality: unilateral
+      restClass: highrep
+      hevy: [987234AB]
+      fedb: [Glute_Kickback]
+    - name: Rear Kick (Machine)
+      equipment: machine
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [1ADF8723]
+- id: goblet-squat
+  name: Goblet Squat
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.75
+    rectusfemoris: 0.5
+    erectors: 0.25
+    rectusabdominis: 0.25
+    soleus: 0.25
+  exercises:
+    - name: Goblet Squat
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [3D0C7C75]
+    - name: Kettlebell Goblet Squat
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [A127DA73]
+      fedb: [Goblet_Squat]
+- id: good-morning
+  name: Good Morning
+  force: pull
+  mechanic: compound
+  muscles:
+    hamstrings: 1
+    erectors: 1
+    glutemax: 0.75
+    adductors: 0.5
+  exercises:
+    - name: Good Morning (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [4180C405]
+      fedb: [Good_Morning, Good_Morning_off_Pins, Stiff_Leg_Barbell_Good_Morning,
+        Hanging_Bar_Good_Morning]
+    - name: Good Morning (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Band_Good_Morning]
+- id: gorilla-row
+  name: Gorilla Row
+  aliases: [Alternating kettlebell row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    erectors: 0.5
+    obliques: 0.25
+    hamstrings: 0.25
+  exercises:
+    - name: Gorilla Row (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [05487216]
+      fedb: [Alternating_Kettlebell_Row]
+- id: hack-squat
+  name: Hack Squat
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.5
+    adductors: 0.5
+    rectusfemoris: 0.5
+  exercises:
+    - name: Hack Squat (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [1E42FD5F]
+      fedb: [Hack_Squat]
+    - name: Hack Squat
+      aliases: [Barbell hack squat]
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [AC5A4C58]
+      fedb: [Barbell_Hack_Squat]
+      muscles:
+        vasti: 1
+        glutemax: 0.75
+        hamstrings: 0.5
+        erectors: 0.5
+        adductors: 0.5
+        forearmflexors: 0.5
+        trapsupper: 0.25
+- id: hammer-curl
+  name: Hammer Curl
+  force: pull
+  mechanic: isolation
+  muscles:
+    brachialis: 1
+    brachioradialis: 1
+    bicepsbrachii: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: Hammer Curl (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [7E3BC8B6]
+      fedb: [Hammer_Curls, Alternate_Hammer_Curl]
+    - name: Hammer Curl (Cable)
+      aliases: [Rope hammer curl]
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [36E8F14E]
+      fedb: [Cable_Hammer_Curls_-_Rope_Attachment]
+    - name: Hammer Curl (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [1D4B3D6B]
+- id: handstand-hold
+  name: Handstand Hold
+  aliases: [Handstand]
+  force: static
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    tricepslateral: 0.5
+    trapsupper: 0.5
+    serratus: 0.5
+    deltside: 0.25
+    tricepslong: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Handstand Hold
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [BE3615CF]
+- id: handstand-push-up
+  name: Handstand Push Up
+  aliases: [HSPU]
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    tricepslateral: 0.75
+    deltside: 0.5
+    tricepslong: 0.5
+    trapsupper: 0.5
+    pecclavicular: 0.25
+    serratus: 0.25
+  exercises:
+    - name: Handstand Push Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [90B04F96]
+      fedb: [Handstand_Push-Ups]
+- id: hang-clean
+  name: Hang Clean
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 1
+    vasti: 0.75
+    trapsupper: 0.75
+    erectors: 0.75
+    gastrocnemius: 0.5
+    forearmflexors: 0.5
+    deltfront: 0.25
+  exercises:
+    - name: Hang Clean
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [BD4E7E53]
+      fedb: [Hang_Clean, Hang_Clean_-_Below_the_Knees]
+- id: hang-snatch
+  name: Hang Snatch
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 1
+    vasti: 0.75
+    trapsupper: 0.75
+    erectors: 0.75
+    deltside: 0.5
+    deltfront: 0.5
+    trapslower: 0.25
+  exercises:
+    - name: Hang Snatch
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [F4E77594]
+      fedb: [Hang_Snatch, Hang_Snatch_-_Below_Knees]
+- id: hanging-knee-raise
+  name: Hanging Knee Raise
+  force: pull
+  mechanic: isolation
+  muscles:
+    iliopsoas: 1
+    rectusabdominis: 0.75
+    obliques: 0.5
+    forearmflexors: 0.5
+    rectusfemoris: 0.25
+    lats: 0.25
+  exercises:
+    - name: Hanging Knee Raise
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [08590920]
+- id: hanging-leg-raise
+  name: Hanging Leg Raise
+  force: pull
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 1
+    rectusfemoris: 0.5
+    obliques: 0.5
+    forearmflexors: 0.5
+    lats: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Hanging Leg Raise
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [F8356514]
+      fedb: [Hanging_Leg_Raise]
+- id: heel-taps
+  name: Heel Taps
+  aliases: [Heel touchers, Alternate heel touch]
+  force: pull
+  mechanic: isolation
+  muscles:
+    obliques: 1
+    rectusabdominis: 0.75
+    transverseabdominis: 0.25
+  exercises:
+    - name: Heel Taps
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: highrep
+      hevy: [567FB505]
+      fedb: [Alternate_Heel_Touchers]
+- id: hex-press
+  name: Hex Press
+  aliases: [Squeeze press, Crush press, Close grip dumbbell press]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    tricepslateral: 0.75
+    pecclavicular: 0.5
+    deltfront: 0.5
+    tricepslong: 0.25
+  exercises:
+    - name: Hex Press (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [BE89C631]
+    - name: Dumbbell Squeeze Press
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [F72FA239]
+      fedb: [Close-Grip_Dumbbell_Press]
+- id: high-knee-skips
+  name: High Knee Skips
+  force: push
+  mechanic: compound
+  muscles:
+    gastrocnemius: 1
+    iliopsoas: 0.75
+    soleus: 0.5
+    glutemax: 0.5
+    rectusfemoris: 0.5
+    vasti: 0.25
+  exercises:
+    - name: High Knee Skips
+      equipment: none
+      measurement: repsonly
+      restClass: highrep
+      hevy: [C9CCB878]
+- id: high-knees
+  name: High Knees
+  force: push
+  mechanic: compound
+  muscles:
+    iliopsoas: 1
+    rectusfemoris: 0.75
+    gastrocnemius: 0.5
+    soleus: 0.25
+    glutemax: 0.25
+    rectusabdominis: 0.25
+  exercises:
+    - name: High Knees
+      equipment: none
+      measurement: repsonly
+      restClass: highrep
+      hevy: [150E076B]
+- id: hiit
+  name: HIIT
+  aliases: [High intensity interval training, Intervals]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.5
+    gastrocnemius: 0.5
+    hamstrings: 0.25
+    rectusabdominis: 0.25
+    deltfront: 0.25
+  exercises:
+    - name: HIIT
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [023947AB]
+- id: hiking
+  name: Hiking
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    hamstrings: 0.5
+    gastrocnemius: 0.5
+    soleus: 0.5
+    erectors: 0.25
+  exercises:
+    - name: Hiking
+      equipment: none
+      measurement: distanceduration
+      restClass: timed
+      hevy: [1C34A172]
+- id: hip-abduction
+  name: Hip Abduction
+  aliases: [Thigh abductor, Abductor machine]
+  force: push
+  mechanic: isolation
+  muscles:
+    glutemed: 1
+    glutemax: 0.25
+  exercises:
+    - name: Hip Abduction (Cable)
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [C469EA70]
+    - name: Hip Abduction (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [F4B4C6EE]
+      fedb: [Thigh_Abductor]
+- id: hip-adduction
+  name: Hip Adduction
+  aliases: [Thigh adductor, Adductor machine]
+  force: pull
+  mechanic: isolation
+  muscles:
+    adductors: 1
+    iliopsoas: 0.25
+  exercises:
+    - name: Hip Adduction (Cable)
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [22578A94]
+      fedb: [Cable_Hip_Adduction]
+    - name: Hip Adduction (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [8BEBFED6]
+      fedb: [Thigh_Adductor]
+    - name: Hip Adduction (Band)
+      equipment: resistanceband
+      measurement: repsonly
+      laterality: unilateral
+      restClass: isolation
+      fedb: [Band_Hip_Adductions]
+- id: hip-thrust
+  name: Hip Thrust
+  force: push
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 0.5
+    adductors: 0.5
+    vasti: 0.5
+    glutemed: 0.25
+    erectors: 0.25
+  exercises:
+    - name: Hip Thrust
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [92B8C7E1]
+    - name: Hip Thrust (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [D57C2EC7]
+      fedb: [Barbell_Hip_Thrust]
+    - name: Hip Thrust (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [DA5430FC]
+    - name: Hip Thrust (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [68CE0B9B]
+    - name: Hip Thrust (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [291ABA92]
+- id: hollow-rock
+  name: Hollow Rock
+  aliases: [Hollow body rock]
+  force: static
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    transverseabdominis: 0.75
+    iliopsoas: 0.5
+    obliques: 0.5
+    rectusfemoris: 0.25
+  exercises:
+    - name: Hollow Rock
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [970ADF87]
+- id: incline-bench-press
+  name: Incline Bench Press
+  aliases: [Incline press]
+  force: push
+  mechanic: compound
+  muscles:
+    pecclavicular: 1
+    pecsternal: 0.5
+    deltfront: 0.75
+    tricepslateral: 0.5
+    tricepslong: 0.25
+  exercises:
+    - name: Incline Bench Press (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [50DFDFAB]
+      fedb: [Barbell_Incline_Bench_Press_-_Medium_Grip]
+    - name: Incline Bench Press (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [07B38369]
+      fedb: [Incline_Dumbbell_Press, Incline_Dumbbell_Bench_With_Palms_Facing_In,
+        Hammer_Grip_Incline_DB_Bench_Press]
+    - name: Incline Bench Press (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [3A6FA3D1]
+      fedb: [Smith_Machine_Incline_Bench_Press]
+- id: incline-chest-fly
+  name: Incline Chest Fly
+  aliases: [Incline fly, Incline flye]
+  force: push
+  mechanic: isolation
+  muscles:
+    pecclavicular: 1
+    pecsternal: 0.5
+    deltfront: 0.5
+    bicepsbrachii: 0.25
+  exercises:
+    - name: Incline Chest Fly (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [D3E2AB55]
+      fedb: [Incline_Dumbbell_Flyes, Incline_Dumbbell_Flyes_-_With_A_Twist]
+    - name: Incline Chest Fly (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      fedb: [Incline_Cable_Flye]
+- id: incline-chest-press
+  name: Incline Chest Press
+  aliases: [Incline machine press]
+  force: push
+  mechanic: compound
+  muscles:
+    pecclavicular: 1
+    pecsternal: 0.5
+    deltfront: 0.75
+    tricepslateral: 0.5
+    tricepslong: 0.25
+  exercises:
+    - name: Incline Chest Press (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [FBF92739]
+      fedb: [Leverage_Incline_Chest_Press]
+    - name: Incline Chest Press (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Incline_Cable_Chest_Press]
+- id: incline-push-up
+  name: Incline Push Up
+  aliases: [Incline Push Ups, Hands elevated push up]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    deltfront: 0.5
+    tricepslateral: 0.5
+    tricepslong: 0.25
+    serratus: 0.25
+    rectusabdominis: 0.25
+  exercises:
+    - name: Incline Push Ups
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [39C99849]
+      fedb: [Incline_Push-Up, Incline_Push-Up_Medium]
+- id: inverted-row
+  name: Inverted Row
+  aliases: [Body row, Australian pull up, TRX row, Suspension row]
+  force: pull
+  mechanic: compound
+  muscles:
+    rhomboids: 1
+    trapsmiddle: 1
+    lats: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    rectusabdominis: 0.25
+  exercises:
+    - name: Inverted Row
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [425805F4]
+      fedb: [Inverted_Row]
+    - name: Low Row (Suspension)
+      equipment: suspension
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [8A2E6481]
+      fedb: [Suspended_Row, Inverted_Row_with_Straps]
+- id: iso-lateral-chest-press
+  name: Iso-Lateral Chest Press
+  aliases: [Hammer Strength chest press, Plate loaded chest press]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.5
+    deltfront: 0.5
+    tricepslateral: 0.5
+    tricepslong: 0.25
+  exercises:
+    - name: Iso-Lateral Chest Press (Machine)
+      equipment: plateloaded
+      measurement: weightreps
+      loadBasis: perside
+      restClass: compound
+      hevy: [24706DCD]
+- id: iso-lateral-high-row
+  name: Iso-Lateral High Row
+  aliases: [Hammer Strength high row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    trapslower: 0.5
+    rhomboids: 0.5
+    trapsmiddle: 0.5
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    brachialis: 0.25
+  exercises:
+    - name: Iso-Lateral High Row (Machine)
+      equipment: plateloaded
+      measurement: weightreps
+      loadBasis: perside
+      restClass: compound
+      hevy: [BC3492DA]
+      fedb: [Leverage_High_Row]
+- id: iso-lateral-low-row
+  name: Iso-Lateral Low Row
+  aliases: [Hammer Strength low row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    brachialis: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Iso-Lateral Low Row
+      equipment: plateloaded
+      measurement: weightreps
+      loadBasis: perside
+      restClass: compound
+      hevy: [91FAFBA3]
+- id: iso-lateral-row
+  name: Iso-Lateral Row
+  aliases: [Hammer Strength row, Plate loaded row]
+  force: pull
+  mechanic: compound
+  muscles:
+    rhomboids: 1
+    trapsmiddle: 1
+    lats: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    brachialis: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Iso-Lateral Row (Machine)
+      equipment: plateloaded
+      measurement: weightreps
+      loadBasis: perside
+      restClass: compound
+      hevy: [AA1EB7D8]
+      fedb: [Leverage_Iso_Row]
+- id: jack-knife
+  name: Jack Knife
+  aliases: [TRX jackknife, Suspension knee tuck]
+  force: pull
+  mechanic: compound
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 0.75
+    transverseabdominis: 0.5
+    rectusfemoris: 0.5
+    deltfront: 0.25
+    serratus: 0.25
+    tricepslateral: 0.25
+  exercises:
+    - name: Jack Knife (Suspension)
+      equipment: suspension
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [D410F649]
+      fedb: [Suspended_Reverse_Crunch]
+- id: jackknife-sit-up
+  name: Jackknife Sit Up
+  aliases: [V sit up]
+  force: pull
+  mechanic: compound
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 0.75
+    obliques: 0.5
+    rectusfemoris: 0.5
+    transverseabdominis: 0.25
+  exercises:
+    - name: Jackknife Sit Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [32B0B590]
+      fedb: [Jackknife_Sit-Up]
+- id: jm-press
+  name: JM Press
+  force: push
+  mechanic: compound
+  muscles:
+    tricepslateral: 1
+    tricepslong: 0.75
+    pecsternal: 0.25
+    deltfront: 0.25
+  exercises:
+    - name: JM Press (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [74103F24]
+      fedb: [JM_Press]
+- id: jump-rope
+  name: Jump Rope
+  aliases: [Skipping rope]
+  force: push
+  mechanic: compound
+  muscles:
+    gastrocnemius: 1
+    soleus: 0.75
+    vasti: 0.25
+    tibialis: 0.25
+    forearmflexors: 0.25
+    deltside: 0.25
+  exercises:
+    - name: Jump Rope
+      equipment: other
+      measurement: duration
+      restClass: timed
+      hevy: [040BA2E3]
+- id: jump-shrug
+  name: Jump Shrug
+  force: pull
+  mechanic: compound
+  muscles:
+    trapsupper: 1
+    glutemax: 0.75
+    hamstrings: 0.75
+    vasti: 0.5
+    erectors: 0.5
+    gastrocnemius: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: Jump Shrug
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [BA3DE542]
+- id: jump-squat
+  name: Jump Squat
+  aliases: [Squat jump]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    rectusfemoris: 0.5
+    adductors: 0.5
+    gastrocnemius: 0.5
+    soleus: 0.25
+  exercises:
+    - name: Jump Squat
+      equipment: none
+      measurement: bodyweightreps
+      restClass: power
+      hevy: [70D4EBBF]
+      fedb: [Freehand_Jump_Squat]
+    - name: Jump Squat (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      fedb: [Weighted_Jump_Squat]
+- id: jumping-jack
+  name: Jumping Jack
+  aliases: [Star jumps]
+  force: push
+  mechanic: compound
+  muscles:
+    gastrocnemius: 1
+    soleus: 0.5
+    glutemed: 0.5
+    adductors: 0.5
+    deltside: 0.5
+    vasti: 0.25
+  exercises:
+    - name: Jumping Jack
+      equipment: none
+      measurement: repsonly
+      restClass: highrep
+      hevy: [991833C2]
+- id: jumping-lunge
+  name: Jumping Lunge
+  aliases: [Lunge jump, Split jump]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 1
+    rectusfemoris: 0.5
+    adductors: 0.5
+    gastrocnemius: 0.5
+    hamstrings: 0.25
+    soleus: 0.25
+  exercises:
+    - name: Jumping Lunge
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: power
+      hevy: [5CC07A1F]
+- id: kettlebell-around-the-world
+  name: Kettlebell Around the World
+  aliases: [Kettlebell around the body pass]
+  force: static
+  mechanic: compound
+  muscles:
+    obliques: 1
+    transverseabdominis: 0.75
+    rectusabdominis: 0.5
+    forearmflexors: 0.5
+    deltfront: 0.25
+    erectors: 0.25
+  exercises:
+    - name: Kettlebell Around the World
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [55BA475A]
+- id: kettlebell-clean
+  name: Kettlebell Clean
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 1
+    erectors: 0.5
+    trapsupper: 0.5
+    forearmflexors: 0.5
+    vasti: 0.25
+    deltfront: 0.25
+    bicepsbrachii: 0.25
+  exercises:
+    - name: Kettlebell Clean
+      equipment: kettlebell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: power
+      hevy: [F99C211D]
+      fedb: [One-Arm_Kettlebell_Clean]
+- id: kettlebell-curl
+  name: Kettlebell Curl
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.5
+    brachioradialis: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: Kettlebell Curl
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [4E239ED8]
+- id: kettlebell-halo
+  name: Kettlebell Halo
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    deltside: 0.5
+    tricepslong: 0.5
+    trapsupper: 0.5
+    rotatorcuff: 0.5
+    rectusabdominis: 0.25
+    obliques: 0.25
+  exercises:
+    - name: Kettlebell Halo
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [4288G454]
+      fedb: [Kettlebell_Halo]
+- id: kettlebell-high-pull
+  name: Kettlebell High Pull
+  aliases: [Kettlebell sumo high pull]
+  force: pull
+  mechanic: compound
+  muscles:
+    trapsupper: 1
+    deltside: 0.75
+    glutemax: 0.75
+    hamstrings: 0.75
+    deltrear: 0.5
+    vasti: 0.5
+    erectors: 0.5
+    bicepsbrachii: 0.25
+  exercises:
+    - name: Kettlebell High Pull
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [9B13BA4B]
+      fedb: [Kettlebell_Sumo_High_Pull]
+- id: kettlebell-snatch
+  name: Kettlebell Snatch
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 1
+    deltfront: 0.5
+    trapsupper: 0.5
+    erectors: 0.5
+    forearmflexors: 0.5
+    tricepslateral: 0.25
+    rotatorcuff: 0.25
+  exercises:
+    - name: Kettlebell Snatch
+      equipment: kettlebell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: power
+      hevy: ['89304423']
+      fedb: [One-Arm_Kettlebell_Snatch]
+- id: kettlebell-swing
+  name: Kettlebell Swing
+  aliases: [Russian swing]
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 1
+    erectors: 0.5
+    forearmflexors: 0.5
+    deltfront: 0.25
+    transverseabdominis: 0.25
+    trapsupper: 0.25
+  exercises:
+    - name: Kettlebell Swing
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [F8A0FCCA]
+      fedb: [One-Arm_Kettlebell_Swings]
+- id: kettlebell-turkish-get-up
+  name: Kettlebell Turkish Get Up
+  aliases: [Turkish get up, TGU]
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    obliques: 0.75
+    rotatorcuff: 0.5
+    tricepslateral: 0.5
+    serratus: 0.5
+    rectusabdominis: 0.5
+    glutemax: 0.5
+    vasti: 0.5
+  exercises:
+    - name: Kettlebell Turkish Get Up
+      equipment: kettlebell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: compound
+      hevy: [5F8903BF]
+      fedb: [Kettlebell_Turkish_Get-Up_Lunge_style, Kettlebell_Turkish_Get-Up_Squat_style]
+- id: kipping-pull-up
+  name: Kipping Pull Up
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    rectusabdominis: 0.5
+    forearmflexors: 0.5
+    iliopsoas: 0.25
+    trapslower: 0.25
+    deltrear: 0.25
+  exercises:
+    - name: Kipping Pull Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [A91838C0]
+- id: knee-raise-parallel-bars
+  name: Knee Raise Parallel Bars
+  aliases: [Captain's chair knee raise, Vertical knee raise]
+  force: pull
+  mechanic: compound
+  muscles:
+    iliopsoas: 1
+    rectusabdominis: 1
+    rectusfemoris: 0.5
+    obliques: 0.5
+    transverseabdominis: 0.25
+    tricepslateral: 0.25
+  exercises:
+    - name: Knee Raise Parallel Bars
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [98237BA2]
+      fedb: [Knee_Hip_Raise_On_Parallel_Bars]
+- id: kneeling-pulldown
+  name: Kneeling Pulldown
+  aliases: [Kneeling lat pulldown, Kneeling high pulley row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    rhomboids: 0.5
+    trapslower: 0.5
+    trapsmiddle: 0.25
+    deltrear: 0.25
+    rectusabdominis: 0.25
+  exercises:
+    - name: Kneeling Pulldown (band)
+      equipment: resistanceband
+      measurement: weightreps
+      restClass: compound
+      hevy: [D82EA543]
+    - name: Kneeling Pulldown (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Kneeling_High_Pulley_Row]
+- id: kneeling-push-up
+  name: Kneeling Push Up
+  aliases: [Knee push up]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.5
+    deltfront: 0.5
+    tricepslateral: 0.5
+    tricepslong: 0.25
+    serratus: 0.25
+  exercises:
+    - name: Kneeling Push Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [B74A95BB]
+- id: l-sit-hold
+  name: L-Sit Hold
+  aliases: [L-sit]
+  force: static
+  mechanic: compound
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 1
+    rectusfemoris: 0.75
+    transverseabdominis: 0.5
+    tricepslateral: 0.5
+    trapslower: 0.5
+    lats: 0.25
+  exercises:
+    - name: L-Sit Hold
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [6D54A050]
+- id: landmine-180
+  name: Landmine 180
+  aliases: [Landmine rotation, Landmine twist]
+  force: pull
+  mechanic: compound
+  muscles:
+    obliques: 1
+    transverseabdominis: 0.75
+    rectusabdominis: 0.5
+    deltfront: 0.5
+    glutemax: 0.25
+    erectors: 0.25
+  exercises:
+    - name: Landmine 180
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [923874CA]
+      fedb: [Landmine_180s]
+- id: landmine-row
+  name: Landmine Row
+  aliases: [Long bar row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    erectors: 0.5
+    brachialis: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Landmine Row
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [D7D7FCCE]
+      fedb: [Bent_Over_Two-Arm_Long_Bar_Row]
+- id: landmine-squat-and-press
+  name: Landmine Squat and Press
+  aliases: [Landmine thruster, Linear jammer]
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    vasti: 0.75
+    glutemax: 0.75
+    pecclavicular: 0.5
+    tricepslateral: 0.5
+    rectusfemoris: 0.25
+    serratus: 0.25
+    rectusabdominis: 0.25
+  exercises:
+    - name: Landmine Squat and Press
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [983274DD]
+      fedb: [Landmine_Linear_Jammer]
+- id: lat-pulldown
+  name: Lat Pulldown
+  aliases: [Pulldown, Wide grip pulldown]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    rhomboids: 0.5
+    trapslower: 0.5
+    trapsmiddle: 0.25
+    deltrear: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Lat Pulldown (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      restClass: compound
+      hevy: [D2FE7B2E]
+    - name: Lat Pulldown (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [6A6C31A5]
+      fedb: [Wide-Grip_Lat_Pulldown, Full_Range-Of-Motion_Lat_Pulldown]
+    - name: Lat Pulldown (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [473CF5B8]
+    - name: Vertical Traction (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [72880C57]
+- id: lat-pulldown-close-grip
+  name: Lat Pulldown - Close Grip
+  aliases: [Close grip pulldown, V-bar pulldown]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    rhomboids: 0.5
+    trapsmiddle: 0.5
+    trapslower: 0.25
+    deltrear: 0.25
+    pecsternal: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Lat Pulldown - Close Grip (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [4E5257DE]
+      fedb: [Close-Grip_Front_Lat_Pulldown, V-Bar_Pulldown]
+- id: lateral-band-walk
+  name: Lateral Band Walk
+  aliases: [Lateral Band Walks, Monster walk, Band side steps]
+  force: push
+  mechanic: isolation
+  muscles:
+    glutemed: 1
+    glutemax: 0.5
+    vasti: 0.25
+  exercises:
+    - name: Lateral Band Walks
+      equipment: resistanceband
+      measurement: repsonly
+      restClass: highrep
+      hevy: [EC02979E]
+      fedb: [Monster_Walk]
+- id: lateral-box-jump
+  name: Lateral Box Jump
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    gastrocnemius: 0.75
+    glutemed: 0.5
+    adductors: 0.5
+    rectusfemoris: 0.5
+    soleus: 0.25
+  exercises:
+    - name: Lateral Box Jump
+      equipment: other
+      measurement: bodyweightreps
+      restClass: power
+      hevy: [07EBC4DC]
+- id: lateral-leg-raise
+  name: Lateral Leg Raise
+  aliases: [Lateral Leg Raises, Side lying leg raise]
+  force: push
+  mechanic: isolation
+  muscles:
+    glutemed: 1
+    glutemax: 0.25
+    obliques: 0.25
+  exercises:
+    - name: Lateral Leg Raises
+      equipment: none
+      measurement: repsonly
+      laterality: unilateral
+      restClass: highrep
+      hevy: [DC59D143]
+- id: lateral-lunge
+  name: Lateral Lunge
+  aliases: [Side lunge, Side split squat]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    adductors: 1
+    glutemax: 0.75
+    glutemed: 0.5
+    hamstrings: 0.25
+    rectusfemoris: 0.25
+  exercises:
+    - name: Lateral Lunge
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: compound
+      hevy: [F2A37357]
+    - name: Lateral Lunge (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: total
+      restClass: compound
+      fedb: [Barbell_Side_Split_Squat]
+- id: lateral-raise
+  name: Lateral Raise
+  aliases: [Side raise, Side lateral raise]
+  force: push
+  mechanic: isolation
+  muscles:
+    deltside: 1
+    deltfront: 0.25
+    trapsupper: 0.25
+  exercises:
+    - name: Lateral Raise (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      restClass: isolation
+      hevy: [DF200976]
+      fedb: [Lateral_Raise_-_With_Bands]
+    - name: Lateral Raise (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [BE289E45]
+    - name: Lateral Raise (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [422B08F1]
+      fedb: [Side_Lateral_Raise]
+    - name: Lateral Raise (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [D5D0354D]
+- id: lateral-squat
+  name: Lateral Squat
+  aliases: [Side to side squat, Cossack squat]
+  force: push
+  mechanic: compound
+  muscles:
+    adductors: 1
+    vasti: 1
+    glutemax: 0.75
+    glutemed: 0.5
+    hamstrings: 0.25
+  exercises:
+    - name: Lateral Squat
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: compound
+      hevy: [D731CCA8]
+- id: leg-extension
+  name: Leg Extension
+  aliases: [Quad extension]
+  force: push
+  mechanic: isolation
+  muscles:
+    vasti: 1
+    rectusfemoris: 1
+  exercises:
+    - name: Leg Extension (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [75A4F6C4]
+      fedb: [Leg_Extensions]
+- id: leg-press
+  name: Leg Press
+  aliases: [Sled leg press, Seated leg press]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.5
+    rectusfemoris: 0.5
+    hamstrings: 0.25
+    soleus: 0.25
+  exercises:
+    - name: Leg Press (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [C7973E0E]
+      fedb: [Leg_Press]
+    - name: Leg Press Horizontal (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [0EB695C9]
+- id: leg-raise-parallel-bars
+  name: Leg Raise Parallel Bars
+  aliases: [Captain's chair leg raise, Vertical leg raise]
+  force: pull
+  mechanic: compound
+  muscles:
+    iliopsoas: 1
+    rectusabdominis: 0.75
+    rectusfemoris: 0.75
+    obliques: 0.5
+    transverseabdominis: 0.25
+    tricepslateral: 0.25
+  exercises:
+    - name: Leg Raise Parallel Bars
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [0482DA98]
+- id: low-cable-fly-crossover
+  name: Low Cable Fly Crossover
+  aliases: [Low Cable Fly Crossovers, Low to high cable fly]
+  force: push
+  mechanic: isolation
+  muscles:
+    pecclavicular: 1
+    pecsternal: 0.75
+    deltfront: 0.5
+    bicepsbrachii: 0.25
+  exercises:
+    - name: Low Cable Fly Crossovers
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [293483AD]
+      fedb: [Low_Cable_Crossover]
+- id: lunge
+  name: Lunge
+  aliases: [Forward lunge, Front lunge]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 1
+    adductors: 0.5
+    rectusfemoris: 0.5
+    hamstrings: 0.25
+    glutemed: 0.25
+    soleus: 0.25
+  exercises:
+    - name: Lunge
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: compound
+      hevy: [5E1A7777]
+    - name: Lunge (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: total
+      restClass: compound
+      hevy: [6E6EE645]
+      fedb: [Barbell_Lunge]
+    - name: Lunge (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [B537D09F]
+      fedb: [Dumbbell_Lunges]
+- id: lying-knee-raise
+  name: Lying Knee Raise
+  aliases: [Lying knee tuck, Leg pull-in]
+  force: pull
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 0.75
+    rectusfemoris: 0.25
+    obliques: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Lying Knee Raise
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [BD5935CF]
+      fedb: [Leg_Pull-In, Flat_Bench_Leg_Pull-In]
+- id: lying-leg-curl
+  name: Lying Leg Curl
+  aliases: [Prone leg curl, Hamstring curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    hamstrings: 1
+    gastrocnemius: 0.25
+  exercises:
+    - name: Lying Leg Curl (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [B8127AD1]
+      fedb: [Lying_Leg_Curls]
+- id: lying-leg-raise
+  name: Lying Leg Raise
+  aliases: [Flat leg raise]
+  force: pull
+  mechanic: isolation
+  muscles:
+    iliopsoas: 1
+    rectusabdominis: 0.75
+    rectusfemoris: 0.5
+    transverseabdominis: 0.5
+    obliques: 0.25
+  exercises:
+    - name: Lying Leg Raise
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [09C9F635]
+      fedb: [Flat_Bench_Lying_Leg_Raise]
+- id: lying-neck-curl
+  name: Lying Neck Curl
+  aliases: [Lying Neck Curls, Neck flexion]
+  force: pull
+  mechanic: isolation
+  muscles:
+    neck: 1
+  exercises:
+    - name: Lying Neck Curls
+      equipment: none
+      measurement: repsonly
+      restClass: highrep
+      hevy: [22FEDCA4]
+    - name: Lying Neck Curls (Weighted)
+      equipment: plate
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [31B8DA0F]
+      fedb: [Lying_Face_Up_Plate_Neck_Resistance]
+- id: lying-neck-extension
+  name: Lying Neck Extension
+  aliases: [Neck extension]
+  force: push
+  mechanic: isolation
+  muscles:
+    neck: 1
+    trapsupper: 0.25
+  exercises:
+    - name: Lying Neck Extension
+      equipment: none
+      measurement: repsonly
+      restClass: highrep
+      hevy: [0910BD28]
+    - name: Lying Neck Extension (Weighted)
+      equipment: plate
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [D6A73CF2]
+      fedb: [Lying_Face_Down_Plate_Neck_Resistance]
+- id: meadows-row
+  name: Meadows Row
+  aliases: [Meadows Rows, Single arm landmine row, One arm long bar row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    deltrear: 0.75
+    rhomboids: 0.5
+    trapsmiddle: 0.5
+    bicepsbrachii: 0.5
+    forearmflexors: 0.5
+    brachialis: 0.25
+    erectors: 0.25
+  exercises:
+    - name: Meadows Rows (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: compound
+      hevy: [C732C341]
+      fedb: [Bent_Over_One-Arm_Long_Bar_Row, One-Arm_Long_Bar_Row]
+- id: mountain-climber
+  name: Mountain Climber
+  force: push
+  mechanic: compound
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 0.75
+    transverseabdominis: 0.75
+    deltfront: 0.5
+    rectusfemoris: 0.5
+    obliques: 0.25
+    pecsternal: 0.25
+    tricepslateral: 0.25
+  exercises:
+    - name: Mountain Climber
+      equipment: none
+      measurement: repsonly
+      restClass: highrep
+      hevy: [F49E31D6]
+- id: muscle-up
+  name: Muscle Up
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    pecsternal: 0.75
+    tricepslateral: 0.75
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    deltfront: 0.5
+    tricepslong: 0.5
+    trapslower: 0.25
+  exercises:
+    - name: Muscle Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [9F9C164B]
+      fedb: [Muscle_Up]
+- id: negative-pull-up
+  name: Negative Pull Up
+  aliases: [Eccentric pull up]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    rhomboids: 0.5
+    trapslower: 0.5
+    forearmflexors: 0.5
+    trapsmiddle: 0.25
+    deltrear: 0.25
+  exercises:
+    - name: Negative Pull Up
+      equipment: none
+      measurement: weightedbodyweightreps
+      restClass: compound
+      hevy: [F60BDDF8]
+- id: nordic-hamstring-curl
+  name: Nordic Hamstring Curl
+  aliases: [Nordic Hamstrings Curls, Nordic curl, Natural glute ham raise]
+  force: pull
+  mechanic: isolation
+  muscles:
+    hamstrings: 1
+    gastrocnemius: 0.25
+    glutemax: 0.25
+    erectors: 0.25
+  exercises:
+    - name: Nordic Hamstrings Curls
+      equipment: none
+      measurement: bodyweightreps
+      restClass: isolation
+      hevy: [108D7A14]
+      fedb: [Natural_Glute_Ham_Raise, Floor_Glute-Ham_Raise]
+- id: oblique-crunch
+  name: Oblique Crunch
+  aliases: [Side crunch]
+  force: pull
+  mechanic: isolation
+  muscles:
+    obliques: 1
+    rectusabdominis: 0.5
+    transverseabdominis: 0.25
+  exercises:
+    - name: Oblique Crunch
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [DBE341AA]
+      fedb: [Oblique_Crunches, Oblique_Crunches_-_On_The_Floor]
+- id: one-arm-push-up
+  name: One Arm Push Up
+  aliases: [Single arm push up]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    deltfront: 0.75
+    tricepslateral: 0.75
+    pecclavicular: 0.5
+    obliques: 0.5
+    transverseabdominis: 0.5
+    tricepslong: 0.25
+    serratus: 0.25
+  exercises:
+    - name: One Arm Push Up
+      equipment: none
+      measurement: bodyweightreps
+      laterality: unilateral
+      restClass: compound
+      hevy: [B140095E]
+      fedb: [Single-Arm_Push-Up]
+- id: overhead-curl
+  name: Overhead Curl
+  aliases: [High cable curl, Double biceps cable curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.5
+    brachioradialis: 0.25
+  exercises:
+    - name: Overhead Curl (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [582ADA23]
+      fedb: [Overhead_Cable_Curl, High_Cable_Curls]
+- id: overhead-dumbbell-lunge
+  name: Overhead Dumbbell Lunge
+  aliases: [Overhead lunge]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 1
+    adductors: 0.5
+    rectusfemoris: 0.5
+    deltfront: 0.5
+    trapsupper: 0.25
+    obliques: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Overhead Dumbbell Lunge
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: total
+      restClass: compound
+      hevy: [4C6721B9]
+- id: overhead-plate-raise
+  name: Overhead Plate Raise
+  force: push
+  mechanic: isolation
+  muscles:
+    deltfront: 1
+    pecclavicular: 0.5
+    trapsupper: 0.5
+    serratus: 0.5
+    deltside: 0.25
+    trapslower: 0.25
+  exercises:
+    - name: Overhead Plate Raise
+      equipment: plate
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [54E60954]
+- id: overhead-press
+  name: Overhead Press
+  aliases: [OHP, Shoulder press, Military press, Strict press]
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    deltside: 0.5
+    tricepslateral: 0.5
+    tricepslong: 0.5
+    pecclavicular: 0.25
+    trapsupper: 0.25
+    serratus: 0.25
+  exercises:
+    - name: Overhead Press (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [7B8D84E8]
+    - name: Overhead Press (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [6AC96645]
+      fedb: [Standing_Dumbbell_Press]
+    - name: Overhead Press (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [B09A1304]
+      fedb: [Smith_Machine_Overhead_Shoulder_Press]
+    - name: Kettlebell Shoulder Press
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [6433CD93]
+      fedb: [Two-Arm_Kettlebell_Military_Press]
+    - name: Standing Military Press (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [073032BB]
+      fedb: [Standing_Military_Press]
+- id: overhead-squat
+  name: Overhead Squat
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.75
+    rectusfemoris: 0.5
+    erectors: 0.5
+    deltfront: 0.5
+    trapsupper: 0.5
+    transverseabdominis: 0.25
+  exercises:
+    - name: Overhead Squat
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [2CFED196]
+      fedb: [Overhead_Squat]
+- id: overhead-triceps-extension
+  name: Overhead Triceps Extension
+  aliases: [Overhead rope extension, French press]
+  force: push
+  mechanic: isolation
+  muscles:
+    tricepslong: 1
+    tricepslateral: 0.5
+  exercises:
+    - name: Overhead Triceps Extension (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [B5EFBF9C]
+      fedb: [Cable_Rope_Overhead_Triceps_Extension, Triceps_Overhead_Extension_with_Rope]
+- id: pallof-press
+  name: Pallof Press
+  aliases: [Cable core press, Anti-rotation press]
+  force: static
+  mechanic: compound
+  muscles:
+    transverseabdominis: 1
+    obliques: 1
+    rectusabdominis: 0.5
+    glutemed: 0.25
+    deltfront: 0.25
+    pecsternal: 0.25
+  exercises:
+    - name: Cable Core Pallof Press
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: highrep
+      hevy: [CC55119B]
+      fedb: [Pallof_Press]
+      aliases: [Cable Core Palloff Press]
+- id: partial-glute-bridge
+  name: Partial Glute Bridge
+  force: push
+  mechanic: isolation
+  muscles:
+    glutemax: 1
+    hamstrings: 0.5
+    adductors: 0.25
+    erectors: 0.25
+  exercises:
+    - name: Partial Glute Bridge (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [FBEE8279]
+- id: pause-squat
+  name: Pause Squat
+  aliases: [Paused squat]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.75
+    rectusfemoris: 0.5
+    erectors: 0.5
+    soleus: 0.25
+  exercises:
+    - name: Pause Squat (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [CE1054CE]
+- id: pendlay-row
+  name: Pendlay Row
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    erectors: 0.5
+    brachialis: 0.25
+    hamstrings: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Pendlay Row (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [018ADC12]
+- id: pendulum-squat
+  name: Pendulum Squat
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.5
+    rectusfemoris: 0.5
+  exercises:
+    - name: Pendulum Squat (Machine)
+      equipment: plateloaded
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [30E293E3]
+- id: pike-push-up
+  name: Pike Push Up
+  aliases: [Pike Pushup]
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    tricepslateral: 0.75
+    pecclavicular: 0.5
+    serratus: 0.5
+    tricepslong: 0.25
+    deltside: 0.25
+    trapsupper: 0.25
+  exercises:
+    - name: Pike Pushup
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [0EFE8162]
+- id: pilates
+  name: Pilates
+  force: static
+  mechanic: compound
+  muscles:
+    rectusabdominis: 1
+    transverseabdominis: 1
+    obliques: 0.5
+    glutemax: 0.25
+    erectors: 0.25
+    iliopsoas: 0.25
+  exercises:
+    - name: Pilates
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [EC2510CD]
+- id: pistol-squat
+  name: Pistol Squat
+  aliases: [Single leg squat]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    rectusfemoris: 0.5
+    adductors: 0.5
+    glutemed: 0.5
+    iliopsoas: 0.25
+    soleus: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Pistol Squat
+      equipment: none
+      measurement: bodyweightreps
+      laterality: unilateral
+      restClass: compound
+      hevy: [3FF6A22E]
+    - name: Pistol Squat (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: compound
+      fedb: [Kettlebell_Pistol_Squat]
+- id: plank
+  name: Plank
+  aliases: [Front plank, Forearm plank]
+  force: static
+  mechanic: compound
+  muscles:
+    rectusabdominis: 1
+    transverseabdominis: 1
+    obliques: 0.5
+    serratus: 0.25
+    deltfront: 0.25
+    glutemax: 0.25
+  exercises:
+    - name: Plank
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [C6C9B8A0]
+      fedb: [Plank]
+- id: plank-push-up
+  name: Plank Push Up
+  aliases: [Plank Pushup, Plank up-down, Up-down plank]
+  force: push
+  mechanic: compound
+  muscles:
+    tricepslateral: 1
+    rectusabdominis: 0.75
+    transverseabdominis: 0.75
+    deltfront: 0.5
+    pecsternal: 0.5
+    tricepslong: 0.5
+    obliques: 0.25
+    serratus: 0.25
+  exercises:
+    - name: Plank Pushup
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [31436F5D]
+- id: plate-curl
+  name: Plate Curl
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.5
+    brachioradialis: 0.5
+    forearmflexors: 0.5
+  exercises:
+    - name: Plate Curl
+      equipment: plate
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [9283ABD5]
+- id: plate-front-raise
+  name: Plate Front Raise
+  force: push
+  mechanic: isolation
+  muscles:
+    deltfront: 1
+    pecclavicular: 0.5
+    deltside: 0.25
+    serratus: 0.25
+    trapsupper: 0.25
+  exercises:
+    - name: Plate Front Raise
+      equipment: plate
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [DBF9273A]
+      fedb: [Front_Plate_Raise]
+- id: plate-press
+  name: Plate Press
+  aliases: [Plate front press]
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    pecclavicular: 0.75
+    pecsternal: 0.5
+    tricepslateral: 0.5
+    serratus: 0.25
+  exercises:
+    - name: Plate Press
+      equipment: plate
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [982734D4]
+- id: power-clean
+  name: Power Clean
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 1
+    vasti: 0.75
+    trapsupper: 0.75
+    erectors: 0.5
+    gastrocnemius: 0.5
+    forearmflexors: 0.5
+    deltfront: 0.25
+  exercises:
+    - name: Power Clean
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [C628D768]
+      fedb: [Power_Clean]
+- id: power-snatch
+  name: Power Snatch
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 1
+    vasti: 0.75
+    trapsupper: 0.75
+    deltside: 0.5
+    deltfront: 0.5
+    erectors: 0.5
+    tricepslateral: 0.25
+  exercises:
+    - name: Power Snatch
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [E22F9358]
+      fedb: [Power_Snatch]
+- id: preacher-curl
+  name: Preacher Curl
+  aliases: [Scott curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.75
+    brachioradialis: 0.5
+  exercises:
+    - name: Preacher Curl (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [4F942934]
+      fedb: [Preacher_Curl]
+    - name: Preacher Curl (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: isolation
+      hevy: [FAB6EB2F]
+      fedb: [One_Arm_Dumbbell_Preacher_Curl]
+    - name: Preacher Curl (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [1E9A6B8E]
+      fedb: [Machine_Preacher_Curls]
+    - name: Preacher Curl (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      fedb: [Cable_Preacher_Curl]
+- id: press-under
+  name: Press Under
+  aliases: [Snatch press under]
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    tricepslateral: 0.75
+    trapsupper: 0.5
+    vasti: 0.5
+    glutemax: 0.5
+    transverseabdominis: 0.5
+    adductors: 0.25
+    serratus: 0.25
+  exercises:
+    - name: Press Under
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [84A77566]
+- id: pull-up
+  name: Pull Up
+  aliases: [Pullup, Pull-up]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    rhomboids: 0.5
+    trapslower: 0.5
+    forearmflexors: 0.5
+    trapsmiddle: 0.25
+    deltrear: 0.25
+  exercises:
+    - name: Pull Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [1B2B1E7C]
+      fedb: [Pullups]
+    - name: Pull Up (Assisted)
+      equipment: machine
+      measurement: bodyweightassistedreps
+      restClass: compound
+      hevy: [2C37EC5E]
+    - name: Pull Up (Band)
+      equipment: resistanceband
+      measurement: bodyweightassistedreps
+      restClass: compound
+      hevy: [56808FD2]
+      fedb: [Band_Assisted_Pull-Up]
+    - name: Pull Up (Weighted)
+      equipment: none
+      measurement: weightedbodyweightreps
+      restClass: compound
+      hevy: [729237D1]
+      fedb: [Weighted_Pull_Ups]
+- id: pullover
+  name: Pullover
+  force: pull
+  mechanic: isolation
+  muscles:
+    lats: 1
+    pecsternal: 0.75
+    tricepslong: 0.5
+    serratus: 0.5
+  exercises:
+    - name: Pullover (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: ['67280085']
+      fedb: [Bent-Arm_Dumbbell_Pullover, Straight-Arm_Dumbbell_Pullover]
+    - name: Pullover (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [B123DD01]
+    - name: Pullover (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      fedb: [Bent-Arm_Barbell_Pullover]
+- id: push-press
+  name: Push Press
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    tricepslateral: 0.75
+    vasti: 0.75
+    glutemax: 0.5
+    deltside: 0.5
+    tricepslong: 0.5
+    trapsupper: 0.25
+    gastrocnemius: 0.25
+  exercises:
+    - name: Push Press
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [542F3CD5]
+      fedb: [Push_Press]
+    - name: Push Press (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: power
+      fedb: [Double_Kettlebell_Push_Press]
+- id: push-up
+  name: Push Up
+  aliases: [Pushup, Press up]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.5
+    deltfront: 0.5
+    tricepslateral: 0.5
+    serratus: 0.5
+    tricepslong: 0.25
+    rectusabdominis: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Push Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [392887AA]
+      fedb: [Pushups]
+    - name: Push Up (Weighted)
+      equipment: plate
+      measurement: weightedbodyweightreps
+      restClass: compound
+      hevy: [19372ABC]
+- id: push-up-close-grip
+  name: Push Up - Close Grip
+  aliases: [Close grip push up, Triceps push up]
+  force: push
+  mechanic: compound
+  muscles:
+    tricepslateral: 1
+    pecsternal: 0.75
+    tricepslong: 0.5
+    deltfront: 0.5
+    pecclavicular: 0.25
+    serratus: 0.25
+    rectusabdominis: 0.25
+  exercises:
+    - name: Push Up - Close Grip
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [947DAC23]
+      fedb: [Push-Ups_-_Close_Triceps_Position]
+- id: rack-pull
+  name: Rack Pull
+  aliases: [Block pull, Partial deadlift]
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    erectors: 1
+    trapsupper: 0.75
+    hamstrings: 0.75
+    forearmflexors: 0.75
+    lats: 0.5
+    rhomboids: 0.25
+    vasti: 0.25
+  exercises:
+    - name: Rack Pull
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [FE389074]
+      fedb: [Rack_Pulls]
+- id: rear-delt-reverse-fly
+  name: Rear Delt Reverse Fly
+  aliases: [Reverse fly, Rear delt fly, Rear lateral raise]
+  force: pull
+  mechanic: isolation
+  muscles:
+    deltrear: 1
+    rhomboids: 0.5
+    trapsmiddle: 0.5
+    rotatorcuff: 0.25
+    trapslower: 0.25
+  exercises:
+    - name: Rear Delt Reverse Fly (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [C315DC2A]
+      fedb: [Cable_Rear_Delt_Fly]
+    - name: Rear Delt Reverse Fly (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [E5988A0A]
+      fedb: [Reverse_Flyes, Seated_Bent-Over_Rear_Delt_Raise, Bent_Over_Dumbbell_Rear_Delt_Raise_With_Head_On_Bench]
+    - name: Rear Delt Reverse Fly (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [D8281C62]
+      fedb: [Reverse_Machine_Flyes]
+    - name: Reverse Fly Single Arm (Cable)
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [9264ADA1]
+    - name: Rear Delt Reverse Fly (Band)
+      equipment: resistanceband
+      measurement: repsonly
+      restClass: isolation
+      fedb: [Back_Flyes_-_With_Bands]
+- id: recumbent-bike
+  name: Recumbent Bike
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    rectusfemoris: 0.5
+    glutemax: 0.5
+    hamstrings: 0.25
+    gastrocnemius: 0.25
+  exercises:
+    - name: Recumbent Bike
+      equipment: machine
+      measurement: distanceduration
+      restClass: timed
+      hevy: [7FD2EC3E]
+- id: renegade-row
+  name: Renegade Row
+  aliases: [Plank row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    transverseabdominis: 0.75
+    obliques: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    rectusabdominis: 0.5
+  exercises:
+    - name: Renegade Row (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [1B89CA1B]
+    - name: Renegade Row (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      fedb: [Alternating_Renegade_Row]
+- id: reverse-crunch
+  name: Reverse Crunch
+  force: pull
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 0.5
+    obliques: 0.5
+    transverseabdominis: 0.25
+  exercises:
+    - name: Reverse Crunch
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [7952B5CD]
+      fedb: [Reverse_Crunch]
+    - name: Reverse Crunch (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      fedb: [Cable_Reverse_Crunch]
+- id: reverse-curl
+  name: Reverse Curl
+  aliases: [Reverse grip curl, Overhand curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    brachioradialis: 1
+    brachialis: 0.75
+    forearmextensors: 0.75
+    bicepsbrachii: 0.5
+  exercises:
+    - name: Reverse Curl (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [112FC6B7]
+      fedb: [Reverse_Barbell_Curl]
+    - name: Reverse Curl (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [9F48F858]
+      fedb: [Reverse_Cable_Curl]
+    - name: Reverse Curl (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [B567DD46]
+      fedb: [Standing_Dumbbell_Reverse_Curl]
+    - name: Reverse Curl (Plate)
+      equipment: plate
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      fedb: [Reverse_Plate_Curls]
+- id: reverse-grip-concentration-curl
+  name: Reverse Grip Concentration Curl
+  force: pull
+  mechanic: isolation
+  muscles:
+    brachioradialis: 1
+    brachialis: 0.75
+    bicepsbrachii: 0.5
+    forearmextensors: 0.5
+  exercises:
+    - name: Reverse Grip Concentration Curl
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: isolation
+      hevy: [1FF4097B]
+- id: reverse-grip-lat-pulldown
+  name: Reverse Grip Lat Pulldown
+  aliases: [Underhand pulldown, Supinated pulldown]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    bicepsbrachii: 0.75
+    brachialis: 0.5
+    rhomboids: 0.5
+    trapslower: 0.5
+    trapsmiddle: 0.25
+    pecsternal: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Reverse Grip Lat Pulldown (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [046E25A2]
+      fedb: [Underhand_Cable_Pulldowns]
+- id: reverse-grip-triceps-pushdown
+  name: Reverse Grip Triceps Pushdown
+  aliases: [Underhand pushdown]
+  force: push
+  mechanic: isolation
+  muscles:
+    tricepslateral: 1
+    tricepslong: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Reverse Grip Triceps Pushdown
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [8B5BED30]
+      fedb: [Reverse_Grip_Triceps_Pushdown]
+- id: reverse-hyperextension
+  name: Reverse Hyperextension
+  aliases: [Reverse hyper]
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 0.75
+    erectors: 0.75
+  exercises:
+    - name: Reverse Hyperextension
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [7C0028C3]
+      fedb: [Reverse_Hyperextension]
+- id: reverse-lunge
+  name: Reverse Lunge
+  aliases: [Rear lunge, Back lunge]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.5
+    rectusfemoris: 0.25
+    hamstrings: 0.25
+    glutemed: 0.25
+  exercises:
+    - name: Reverse Lunge
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: compound
+      hevy: [C284D923]
+    - name: Reverse Lunge (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: total
+      restClass: compound
+      hevy: [818BA121]
+    - name: Reverse Lunge (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: alternating
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [FFDA283B]
+      fedb: [Dumbbell_Rear_Lunge]
+- id: reverse-plank
+  name: Reverse Plank
+  force: static
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 0.75
+    erectors: 0.75
+    deltrear: 0.25
+    tricepslateral: 0.25
+    rhomboids: 0.25
+  exercises:
+    - name: Reverse Plank
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [99B49684]
+- id: reverse-wrist-curl
+  name: Reverse Wrist Curl
+  aliases: [Wrist extension, Palms down wrist curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    forearmextensors: 1
+    brachioradialis: 0.25
+  exercises:
+    - name: Reverse Wrist Curl (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: highrep
+      hevy: [D8460FA6]
+      fedb: [Palms-Down_Dumbbell_Wrist_Curl_Over_A_Bench, Seated_Dumbbell_Palms-Down_Wrist_Curl]
+    - name: Seated Wrist Extension (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [9202CC23]
+      fedb: [Seated_Palms-Down_Barbell_Wrist_Curl, Palms-Down_Wrist_Curl_Over_A_Bench]
+- id: ring-dips
+  name: Ring Dips
+  force: push
+  mechanic: compound
+  muscles:
+    tricepslateral: 1
+    pecsternal: 0.75
+    tricepslong: 0.5
+    deltfront: 0.5
+    rotatorcuff: 0.25
+    serratus: 0.25
+  exercises:
+    - name: Ring Dips
+      equipment: suspension
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [51A0EDAA]
+      fedb: [Ring_Dips]
+- id: ring-pull-up
+  name: Ring Pull Up
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    rhomboids: 0.5
+    trapslower: 0.5
+    forearmflexors: 0.5
+    trapsmiddle: 0.25
+    deltrear: 0.25
+  exercises:
+    - name: Ring Pull Up
+      equipment: suspension
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [5F09F0FC]
+- id: ring-push-up
+  name: Ring Push Up
+  aliases: [Suspended push-up]
+  force: push
+  mechanic: compound
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.5
+    deltfront: 0.5
+    tricepslateral: 0.5
+    serratus: 0.5
+    tricepslong: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Ring Push Up
+      equipment: suspension
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [AEA56BDC]
+      fedb: [Suspended_Push-Up]
+- id: romanian-deadlift
+  name: Romanian Deadlift
+  aliases: [RDL]
+  force: pull
+  mechanic: compound
+  muscles:
+    hamstrings: 1
+    glutemax: 1
+    erectors: 0.75
+    adductors: 0.5
+    forearmflexors: 0.5
+    trapsupper: 0.25
+  exercises:
+    - name: Romanian Deadlift (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [2B4B7310]
+      fedb: [Romanian_Deadlift, Romanian_Deadlift_from_Deficit]
+    - name: Romanian Deadlift (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [72CFFAD5]
+    - name: Romanian Deadlift (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [0B9B92BA]
+- id: rope-cable-curl
+  name: Rope Cable Curl
+  aliases: [Rope hammer curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    brachialis: 1
+    brachioradialis: 1
+    bicepsbrachii: 0.75
+    forearmflexors: 0.25
+  exercises:
+    - name: Rope Cable Curl
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [234897AB]
+- id: rowing-machine
+  name: Rowing Machine
+  aliases: [Rower, Erg]
+  force: pull
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.5
+    lats: 0.5
+    hamstrings: 0.5
+    erectors: 0.25
+    rhomboids: 0.25
+    bicepsbrachii: 0.25
+  exercises:
+    - name: Rowing Machine
+      equipment: machine
+      measurement: distanceduration
+      restClass: timed
+      hevy: [0222DB42]
+- id: running
+  name: Running
+  aliases: [Run, Jog]
+  force: push
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 0.75
+    vasti: 0.75
+    gastrocnemius: 0.75
+    soleus: 0.75
+    iliopsoas: 0.5
+    rectusfemoris: 0.25
+  exercises:
+    - name: Running
+      equipment: none
+      measurement: distanceduration
+      restClass: timed
+      hevy: [AC1BB830]
+- id: russian-twist
+  name: Russian Twist
+  force: pull
+  mechanic: compound
+  muscles:
+    obliques: 1
+    rectusabdominis: 0.5
+    transverseabdominis: 0.5
+    iliopsoas: 0.25
+  exercises:
+    - name: Russian Twist (Bodyweight)
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [BB83BDDE]
+      fedb: [Russian_Twist]
+    - name: Russian Twist (Weighted)
+      equipment: plate
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [2982AA23]
+      fedb: [Plate_Twist]
+- id: scapular-pull-ups
+  name: Scapular Pull Ups
+  aliases: [Scap pull-up, Scapular pull]
+  force: pull
+  mechanic: isolation
+  muscles:
+    trapslower: 1
+    lats: 0.5
+    rhomboids: 0.5
+    trapsmiddle: 0.5
+    forearmflexors: 0.5
+  exercises:
+    - name: Scapular Pull Ups
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [C7AE420A]
+      fedb: [Scapular_Pull-Up]
+- id: seal-row
+  name: Seal Row
+  aliases: [Prone bench row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    trapsmiddle: 0.75
+    rhomboids: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: Seal Row (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [DF3BDB9C]
+      fedb: [Lying_Cambered_Barbell_Row]
+    - name: Seal Row (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [7E93E23F]
+- id: seated-calf-raise
+  name: Seated Calf Raise
+  force: push
+  mechanic: isolation
+  muscles:
+    soleus: 1
+    gastrocnemius: 0.5
+  exercises:
+    - name: Seated Calf Raise
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [062AB91A]
+      fedb: [Seated_Calf_Raise]
+    - name: Seated Calf Raise (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      fedb: [Barbell_Seated_Calf_Raise]
+- id: seated-chest-flys
+  name: Seated Chest Flys
+  aliases: [Seated cable fly]
+  force: push
+  mechanic: isolation
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.5
+    deltfront: 0.5
+    serratus: 0.25
+  exercises:
+    - name: Seated Chest Flys (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [6B4C797E]
+- id: seated-dip
+  name: Seated Dip
+  aliases: [Dip machine, Triceps press machine]
+  force: push
+  mechanic: compound
+  muscles:
+    tricepslateral: 1
+    tricepslong: 0.5
+    pecsternal: 0.5
+    deltfront: 0.25
+  exercises:
+    - name: Seated Dip Machine
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [5122E7D9]
+      fedb: [Dip_Machine]
+    - name: Seated Triceps Press
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [234BC743]
+- id: seated-incline-curl
+  name: Seated Incline Curl
+  aliases: [Incline dumbbell curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.5
+    brachioradialis: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Seated Incline Curl (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [8BAB2735]
+      fedb: [Incline_Dumbbell_Curl]
+- id: seated-incline-hammer-curl
+  name: Seated Incline Hammer Curl
+  aliases: [Incline hammer curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    brachialis: 1
+    brachioradialis: 1
+    bicepsbrachii: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: Seated Incline Hammer Curl (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [C01F58D1]
+      fedb: [Incline_Hammer_Curls]
+- id: seated-lateral-raise
+  name: Seated Lateral Raise
+  aliases: [Seated side raise]
+  force: push
+  mechanic: isolation
+  muscles:
+    deltside: 1
+    deltfront: 0.25
+    trapsupper: 0.25
+  exercises:
+    - name: Seated Lateral Raise (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [9372FFAA]
+      fedb: [Seated_Side_Lateral_Raise]
+    - name: Seated Lateral Raise (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      fedb: [Cable_Seated_Lateral_Raise]
+- id: seated-leg-curl
+  name: Seated Leg Curl
+  aliases: [Hamstring curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    hamstrings: 1
+    gastrocnemius: 0.25
+  exercises:
+    - name: Seated Leg Curl (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [11A123F3]
+      fedb: [Seated_Leg_Curl]
+    - name: Seated Leg Curl (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      fedb: [Seated_Band_Hamstring_Curl]
+- id: seated-overhead-press
+  name: Seated Overhead Press
+  aliases: [Seated military press]
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    deltside: 0.5
+    tricepslateral: 0.5
+    tricepslong: 0.25
+    pecclavicular: 0.25
+    trapsupper: 0.25
+    serratus: 0.25
+  exercises:
+    - name: Seated Overhead Press (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [91AF29E0]
+      fedb: [Seated_Barbell_Military_Press]
+    - name: Seated Overhead Press (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [9930DF71]
+      fedb: [Seated_Dumbbell_Press]
+- id: seated-row
+  name: Seated Row
+  aliases: [Seated cable row, Cable row, Low row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    erectors: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Seated Cable Row - Bar Grip
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [F1D60854]
+    - name: Seated Cable Row - V Grip (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [0393F233]
+      fedb: [Seated_Cable_Rows]
+    - name: Seated Row (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [1DF4A847]
+- id: shoulder-press
+  name: Shoulder Press
+  aliases: [Machine shoulder press, Dumbbell shoulder press]
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    deltside: 0.5
+    tricepslateral: 0.5
+    tricepslong: 0.25
+    pecclavicular: 0.25
+    trapsupper: 0.25
+  exercises:
+    - name: Shoulder Press (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [878CD1D0]
+      fedb: [Dumbbell_Shoulder_Press]
+    - name: Shoulder Press (Machine Plates)
+      equipment: plateloaded
+      measurement: weightreps
+      loadBasis: perside
+      restClass: compound
+      hevy: [059E835D]
+      fedb: [Leverage_Shoulder_Press]
+    - name: Seated Shoulder Press (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [9237BAD1]
+      fedb: [Machine_Shoulder_Military_Press]
+    - name: Shoulder Press (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Cable_Shoulder_Press, Seated_Cable_Shoulder_Press]
+    - name: Shoulder Press (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Shoulder_Press_-_With_Bands]
+- id: shoulder-taps
+  name: Shoulder Taps
+  aliases: [Plank shoulder taps]
+  force: static
+  mechanic: compound
+  muscles:
+    transverseabdominis: 1
+    obliques: 0.75
+    rectusabdominis: 0.5
+    deltfront: 0.5
+    serratus: 0.5
+    glutemax: 0.25
+  exercises:
+    - name: Shoulder Taps
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: highrep
+      hevy: [502FCE31]
+- id: shrug
+  name: Shrug
+  aliases: [Shoulder shrug, Trap shrug]
+  force: pull
+  mechanic: isolation
+  muscles:
+    trapsupper: 1
+    forearmflexors: 0.5
+    trapsmiddle: 0.25
+  exercises:
+    - name: Shrug (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [0B841777]
+      fedb: [Barbell_Shrug]
+    - name: Shrug (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [FFABC123]
+      fedb: [Cable_Shrugs]
+    - name: Shrug (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [ABEC557F]
+      fedb: [Dumbbell_Shrug]
+    - name: Shrug (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [19A38071]
+      fedb: [Calf-Machine_Shoulder_Shrug, Leverage_Shrug]
+    - name: Shrug (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [742E5BD5]
+- id: side-bend
+  name: Side Bend
+  aliases: [Lateral flexion]
+  force: pull
+  mechanic: isolation
+  muscles:
+    obliques: 1
+    erectors: 0.25
+    rectusabdominis: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Side Bend
+      equipment: none
+      measurement: repsonly
+      restClass: highrep
+      hevy: [37F9EDA7]
+    - name: Side Bend (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: highrep
+      hevy: [026FD047]
+      fedb: [Dumbbell_Side_Bend]
+    - name: Side Bend (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      fedb: [Barbell_Side_Bend]
+- id: side-plank
+  name: Side Plank
+  aliases: [Side bridge]
+  force: static
+  mechanic: compound
+  muscles:
+    obliques: 1
+    transverseabdominis: 0.75
+    glutemed: 0.5
+    rectusabdominis: 0.25
+    rotatorcuff: 0.25
+    adductors: 0.25
+  exercises:
+    - name: Side Plank
+      equipment: none
+      measurement: duration
+      laterality: unilateral
+      restClass: timed
+      hevy: [E3EDA509]
+      fedb: [Side_Bridge]
+- id: single-arm-cable-crossover
+  name: Single Arm Cable Crossover
+  aliases: [One arm cable fly]
+  force: push
+  mechanic: isolation
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.5
+    deltfront: 0.5
+    serratus: 0.25
+    obliques: 0.25
+  exercises:
+    - name: Single Arm Cable Crossover
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [8372BBCC]
+      fedb: [Single-Arm_Cable_Crossover]
+- id: single-arm-cable-row
+  name: Single Arm Cable Row
+  aliases: [One arm cable row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.5
+    trapsmiddle: 0.5
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    obliques: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Single Arm Cable Row
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: compound
+      hevy: [D0C4A899]
+      fedb: [Seated_One-arm_Cable_Pulley_Rows]
+- id: single-arm-curl
+  name: Single Arm Curl
+  aliases: [One arm cable curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.5
+    brachioradialis: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: Single Arm Curl (Cable)
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [B33B526E]
+      fedb: [Standing_One-Arm_Cable_Curl]
+- id: single-arm-landmine-press
+  name: Single Arm Landmine Press
+  aliases: [Landmine press]
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    pecclavicular: 0.75
+    tricepslateral: 0.5
+    serratus: 0.5
+    tricepslong: 0.25
+    obliques: 0.25
+  exercises:
+    - name: Single Arm Landmine Press (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: compound
+      hevy: [1837BA23]
+      fedb: [Single-Arm_Linear_Jammer]
+- id: single-arm-lat-pulldown
+  name: Single Arm Lat Pulldown
+  aliases: [One arm lat pulldown]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    rhomboids: 0.5
+    trapslower: 0.5
+    trapsmiddle: 0.25
+    deltrear: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Single Arm Lat Pulldown
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: compound
+      hevy: [2EE45F81]
+      fedb: [One_Arm_Lat_Pulldown]
+- id: single-arm-lateral-raise
+  name: Single Arm Lateral Raise
+  aliases: [One arm lateral raise]
+  force: push
+  mechanic: isolation
+  muscles:
+    deltside: 1
+    deltfront: 0.25
+    trapsupper: 0.25
+    obliques: 0.25
+  exercises:
+    - name: Single Arm Lateral Raise (Cable)
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [DE68C825]
+      fedb: [Standing_Low-Pulley_Deltoid_Raise]
+    - name: Single Arm Lateral Raise (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: isolation
+      fedb: [One-Arm_Side_Laterals]
+- id: single-arm-tricep-extension
+  name: Single Arm Tricep Extension
+  aliases: [One arm overhead triceps extension]
+  force: push
+  mechanic: isolation
+  muscles:
+    tricepslong: 1
+    tricepslateral: 0.5
+  exercises:
+    - name: Single Arm Tricep Extension (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: isolation
+      hevy: [8347DFD1]
+      fedb: [Dumbbell_One-Arm_Triceps_Extension, Standing_One-Arm_Dumbbell_Triceps_Extension]
+    - name: Single Arm Tricep Extension (Cable)
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      fedb: [Standing_Low-Pulley_One-Arm_Triceps_Extension]
+- id: single-arm-triceps-pushdown
+  name: Single Arm Triceps Pushdown
+  aliases: [One arm pushdown]
+  force: push
+  mechanic: isolation
+  muscles:
+    tricepslateral: 1
+    tricepslong: 0.5
+  exercises:
+    - name: Single Arm Triceps Pushdown (Cable)
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [552AB030]
+      fedb: [Cable_One_Arm_Tricep_Extension]
+- id: single-leg-extensions
+  name: Single Leg Extensions
+  aliases: [Single leg extension]
+  force: push
+  mechanic: isolation
+  muscles:
+    vasti: 1
+    rectusfemoris: 0.75
+  exercises:
+    - name: Single Leg Extensions
+      equipment: machine
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [629AE73D]
+      fedb: [Single-Leg_Leg_Extension]
+- id: single-leg-glute-bridge
+  name: Single Leg Glute Bridge
+  force: push
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 0.5
+    glutemed: 0.25
+    erectors: 0.25
+  exercises:
+    - name: Single Leg Glute Bridge
+      equipment: none
+      measurement: bodyweightreps
+      laterality: unilateral
+      restClass: highrep
+      hevy: [CBC0D834]
+      fedb: [Single_Leg_Glute_Bridge]
+- id: single-leg-hip-thrust
+  name: Single Leg Hip Thrust
+  force: push
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 0.5
+    glutemed: 0.5
+    vasti: 0.25
+    adductors: 0.25
+  exercises:
+    - name: Single Leg Hip Thrust
+      equipment: none
+      measurement: bodyweightreps
+      laterality: unilateral
+      restClass: compound
+      hevy: [487B3755]
+    - name: Single Leg Hip Thrust (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: compound
+      hevy: [D1CD146F]
+- id: single-leg-press
+  name: Single Leg Press
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.5
+    hamstrings: 0.25
+    glutemed: 0.25
+  exercises:
+    - name: Single Leg Press (Machine)
+      equipment: machine
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: compound
+      hevy: [3FD83744]
+- id: single-leg-romanian-deadlift
+  name: Single Leg Romanian Deadlift
+  aliases: [Single leg RDL]
+  force: pull
+  mechanic: compound
+  muscles:
+    hamstrings: 1
+    glutemax: 1
+    glutemed: 0.5
+    erectors: 0.5
+    adductors: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: Single Leg Romanian Deadlift (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: compound
+      hevy: [93472AC1]
+    - name: Single Leg Romanian Deadlift (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: compound
+      hevy: [937292AB]
+    - name: Single Leg Romanian Deadlift (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: compound
+      fedb: [Kettlebell_One-Legged_Deadlift]
+- id: single-leg-standing-calf-raise
+  name: Single Leg Standing Calf Raise
+  aliases: [One leg calf raise]
+  force: push
+  mechanic: isolation
+  muscles:
+    gastrocnemius: 1
+    soleus: 0.5
+    tibialis: 0.25
+  exercises:
+    - name: Single Leg Standing Calf Raise
+      equipment: none
+      measurement: bodyweightreps
+      laterality: unilateral
+      restClass: highrep
+      hevy: [238BA231]
+    - name: Single Leg Standing Calf Raise (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: highrep
+      hevy: [E51CCBE5]
+    - name: Single Leg Standing Calf Raise (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: highrep
+      hevy: [5DA40761]
+    - name: Single Leg Standing Calf Raise (Machine)
+      equipment: machine
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: highrep
+      hevy: [B05C2C29]
+- id: sissy-squat
+  name: Sissy Squat
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    rectusfemoris: 0.75
+    iliopsoas: 0.25
+    rectusabdominis: 0.25
+  exercises:
+    - name: Sissy Squat (Weighted)
+      equipment: plate
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [F5DEF1EB]
+      fedb: [Weighted_Sissy_Squat]
+- id: sit-up
+  name: Sit Up
+  aliases: [Situp]
+  force: pull
+  mechanic: compound
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 0.75
+    obliques: 0.5
+    rectusfemoris: 0.25
+  exercises:
+    - name: Sit Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [022DF610]
+      fedb: [Sit-Up]
+    - name: Sit Up (Weighted)
+      equipment: plate
+      measurement: weightedbodyweightreps
+      restClass: highrep
+      hevy: [9237BA12]
+- id: skating
+  name: Skating
+  aliases: [Ice skating, Inline skating]
+  force: push
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    glutemed: 0.75
+    vasti: 0.75
+    adductors: 0.5
+    hamstrings: 0.25
+    gastrocnemius: 0.25
+  exercises:
+    - name: Skating
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [24A809EF]
+- id: ski-erg
+  name: Ski Erg
+  aliases: [SkiErg]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    tricepslong: 0.5
+    rectusabdominis: 0.5
+    obliques: 0.25
+    pecsternal: 0.25
+    glutemax: 0.25
+    hamstrings: 0.25
+  exercises:
+    - name: Ski Erg
+      equipment: machine
+      measurement: distanceduration
+      restClass: timed
+      hevy: [5D99A2FA]
+- id: skiing
+  name: Skiing
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.5
+    hamstrings: 0.5
+    glutemed: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Skiing
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: ['84325755']
+- id: skullcrusher
+  name: Skullcrusher
+  aliases: [Lying triceps extension, Skull crusher]
+  force: push
+  mechanic: isolation
+  muscles:
+    tricepslong: 1
+    tricepslateral: 0.75
+  exercises:
+    - name: Skullcrusher (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [875F585F]
+      fedb: [EZ-Bar_Skullcrusher, Lying_Triceps_Press]
+    - name: Skullcrusher (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [68F8A292]
+      fedb: [Lying_Dumbbell_Tricep_Extension]
+    - name: Skullcrusher (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      fedb: [Band_Skull_Crusher]
+- id: sled-pull
+  name: Sled Pull
+  aliases: [Sled drag]
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    vasti: 0.75
+    hamstrings: 0.75
+    gastrocnemius: 0.5
+    erectors: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Sled Pull
+      equipment: other
+      measurement: shortdistanceweight
+      loadBasis: total
+      restClass: carry
+      hevy: [7D1BD41D]
+      fedb: [Sled_Drag_-_Harness]
+- id: sled-push
+  name: Sled Push
+  aliases: [Prowler push]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    gastrocnemius: 0.5
+    hamstrings: 0.25
+    soleus: 0.25
+    deltfront: 0.25
+    tricepslateral: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Sled Push
+      equipment: other
+      measurement: shortdistanceweight
+      loadBasis: total
+      restClass: carry
+      hevy: [AC0A1BF3]
+      fedb: [Sled_Push]
+- id: snatch
+  name: Snatch
+  aliases: [Squat snatch]
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 0.75
+    vasti: 0.75
+    trapsupper: 0.75
+    deltside: 0.5
+    deltfront: 0.5
+    erectors: 0.5
+    gastrocnemius: 0.25
+  exercises:
+    - name: Snatch
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [FB09C938]
+      fedb: [Snatch]
+- id: snowboarding
+  name: Snowboarding
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    tibialis: 0.5
+    hamstrings: 0.25
+    gastrocnemius: 0.25
+    obliques: 0.25
+  exercises:
+    - name: Snowboarding
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [911A58D3]
+- id: spider-curl
+  name: Spider Curl
+  aliases: [Prone incline curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.5
+    brachioradialis: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Spider Curl (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [2348AB72]
+      fedb: [Spider_Curl]
+    - name: Spider Curl (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [90427D4A]
+      fedb: [Dumbbell_Prone_Incline_Curl]
+- id: spiderman
+  name: Spiderman
+  aliases: [Spiderman plank, Spiderman crawl]
+  force: pull
+  mechanic: compound
+  muscles:
+    obliques: 1
+    rectusabdominis: 0.75
+    iliopsoas: 0.5
+    transverseabdominis: 0.5
+    deltfront: 0.25
+    serratus: 0.25
+  exercises:
+    - name: Spiderman
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: highrep
+      hevy: [C10A5AC9]
+- id: spinning
+  name: Spinning
+  aliases: [Indoor cycling, Spin bike]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.5
+    rectusfemoris: 0.5
+    hamstrings: 0.25
+    gastrocnemius: 0.25
+  exercises:
+    - name: Spinning
+      equipment: machine
+      measurement: duration
+      restClass: timed
+      hevy: [213AB238]
+- id: split-jerk
+  name: Split Jerk
+  force: push
+  mechanic: compound
+  muscles:
+    deltfront: 1
+    vasti: 0.75
+    glutemax: 0.75
+    tricepslateral: 0.75
+    deltside: 0.5
+    trapsupper: 0.5
+    serratus: 0.25
+    gastrocnemius: 0.25
+  exercises:
+    - name: Split Jerk
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [E764B907]
+      fedb: [Split_Jerk]
+- id: split-squat
+  name: Split Squat
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.5
+    rectusfemoris: 0.25
+    hamstrings: 0.25
+    glutemed: 0.25
+  exercises:
+    - name: Split Squat (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [20C1A3CB]
+      fedb: [Split_Squat_with_Dumbbells]
+    - name: Split Squat (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: compound
+      fedb: [Smith_Single-Leg_Split_Squat]
+    - name: Split Squat (Suspension)
+      equipment: suspension
+      measurement: bodyweightreps
+      laterality: unilateral
+      restClass: compound
+      fedb: [Suspended_Split_Squat]
+- id: sprints
+  name: Sprints
+  aliases: [Sprint, Wind sprints]
+  force: push
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    hamstrings: 1
+    vasti: 0.75
+    gastrocnemius: 0.75
+    iliopsoas: 0.75
+    soleus: 0.5
+    rectusfemoris: 0.5
+  exercises:
+    - name: Sprints
+      equipment: none
+      measurement: distanceduration
+      restClass: power
+      hevy: [9283BABA]
+- id: squat
+  name: Squat
+  aliases: [Back squat]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.75
+    rectusfemoris: 0.5
+    erectors: 0.5
+    soleus: 0.25
+  exercises:
+    - name: Squat (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [F1258206]
+      fedb: [Squats_-_With_Bands]
+    - name: Squat (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [D04AC939]
+      fedb: [Barbell_Squat]
+    - name: Squat (Bodyweight)
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [9694DA61]
+      fedb: [Bodyweight_Squat]
+    - name: Squat (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [DCFF3E9F]
+      fedb: [Dumbbell_Squat]
+    - name: Squat (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [CC35A01F]
+    - name: Squat (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [DDCC3821]
+      fedb: [Smith_Machine_Squat]
+    - name: Squat (Suspension)
+      equipment: suspension
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [B82D6418]
+- id: squat-row
+  name: Squat Row
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.5
+    trapsmiddle: 0.5
+    bicepsbrachii: 0.5
+    vasti: 0.5
+    glutemax: 0.5
+    deltrear: 0.25
+    erectors: 0.25
+  exercises:
+    - name: Squat Row
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [A8814C06]
+- id: stair-machine
+  name: Stair Machine
+  aliases: [Stair climber, StairMaster, Stepmill]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    gastrocnemius: 0.5
+    rectusfemoris: 0.25
+    hamstrings: 0.25
+    soleus: 0.25
+  exercises:
+    - name: Stair Machine (Floors)
+      equipment: machine
+      measurement: duration
+      restClass: timed
+      hevy: [4377A52B]
+    - name: Stair Machine (Steps)
+      equipment: machine
+      measurement: duration
+      restClass: timed
+      hevy: [4377A52C]
+- id: standing-cable-glute-kickbacks
+  name: Standing Cable Glute Kickbacks
+  aliases: [Cable kickback, Cable glute kickback]
+  force: push
+  mechanic: isolation
+  muscles:
+    glutemax: 1
+    hamstrings: 0.5
+    glutemed: 0.25
+  exercises:
+    - name: Standing Cable Glute Kickbacks
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [ACB2751D]
+      fedb: [One-Legged_Cable_Kickback]
+- id: standing-calf-raise
+  name: Standing Calf Raise
+  aliases: [Calf raise]
+  force: push
+  mechanic: isolation
+  muscles:
+    gastrocnemius: 1
+    soleus: 0.5
+  exercises:
+    - name: Standing Calf Raise
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [06745E58]
+    - name: Standing Calf Raise (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [E53CCBE5]
+      fedb: [Standing_Barbell_Calf_Raise]
+    - name: Standing Calf Raise (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: highrep
+      hevy: [6DA40660]
+      fedb: [Standing_Dumbbell_Calf_Raise]
+    - name: Standing Calf Raise (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [E05C2C38]
+      fedb: [Standing_Calf_Raises]
+    - name: Standing Calf Raise (Smith)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [AA52E8D2]
+      fedb: [Smith_Machine_Calf_Raise]
+    - name: Standing Calf Raise (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      fedb: [Calf_Raises_-_With_Bands]
+- id: standing-leg-curls
+  name: Standing Leg Curls
+  aliases: [Standing hamstring curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    hamstrings: 1
+    gastrocnemius: 0.25
+  exercises:
+    - name: Standing Leg Curls
+      equipment: machine
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [6120CAAB]
+      fedb: [Standing_Leg_Curl]
+- id: standing-y-raise
+  name: Standing Y Raise
+  aliases: [Cable Y raise]
+  force: push
+  mechanic: isolation
+  muscles:
+    trapslower: 1
+    deltside: 0.5
+    deltrear: 0.5
+    trapsmiddle: 0.5
+    rotatorcuff: 0.25
+  exercises:
+    - name: Standing Y Raise (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [28927A36]
+- id: step-up
+  name: Step Up
+  aliases: [Box step-up]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 1
+    rectusfemoris: 0.25
+    adductors: 0.25
+    hamstrings: 0.25
+    glutemed: 0.25
+  exercises:
+    - name: Step Up
+      equipment: other
+      measurement: bodyweightreps
+      laterality: unilateral
+      restClass: compound
+      hevy: [128A2381]
+    - name: Step Up (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: compound
+      fedb: [Barbell_Step_Ups]
+- id: sternum-pull-up-gironda
+  name: Sternum Pull up (Gironda)
+  aliases: [Gironda sternum chin, Sternum chin-up]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    rhomboids: 0.75
+    trapsmiddle: 0.75
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    trapslower: 0.5
+    deltrear: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: Sternum Pull up (Gironda)
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [EE2938D1]
+      fedb: [Gironda_Sternum_Chins]
+- id: straight-arm-lat-pulldown
+  name: Straight Arm Lat Pulldown
+  aliases: [Straight arm pulldown, Lat prayer]
+  force: pull
+  mechanic: isolation
+  muscles:
+    lats: 1
+    tricepslong: 0.5
+    trapslower: 0.25
+    deltrear: 0.25
+    pecsternal: 0.25
+  exercises:
+    - name: Straight Arm Lat Pulldown (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [D2387AB1]
+      fedb: [Straight-Arm_Pulldown]
+    - name: Rope Straight Arm Pulldown
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [9273BA17]
+      fedb: [Rope_Straight-Arm_Pulldown]
+- id: straight-leg-deadlift
+  name: Straight Leg Deadlift
+  aliases: [Stiff leg deadlift, SLDL]
+  force: pull
+  mechanic: compound
+  muscles:
+    hamstrings: 1
+    glutemax: 0.75
+    erectors: 0.75
+    forearmflexors: 0.5
+    adductors: 0.25
+    trapsupper: 0.25
+  exercises:
+    - name: Straight Leg Deadlift
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [2A48E443]
+      fedb: [Stiff-Legged_Barbell_Deadlift]
+    - name: Straight Leg Deadlift (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      fedb: [Stiff-Legged_Dumbbell_Deadlift]
+    - name: Straight Leg Deadlift (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Smith_Machine_Stiff-Legged_Deadlift]
+- id: stretching
+  name: Stretching
+  aliases: [Stretch, Mobility]
+  force: static
+  mechanic: compound
+  muscles:
+    hamstrings: 1
+    iliopsoas: 1
+    glutemax: 0.5
+    lats: 0.5
+    pecsternal: 0.5
+    gastrocnemius: 0.5
+  exercises:
+    - name: Stretching
+      equipment: none
+      measurement: duration
+      restClass: highrep
+      hevy: [527DA061]
+- id: suitcase-carry
+  name: Suitcase Carry
+  aliases: [One arm farmers walk]
+  force: static
+  mechanic: compound
+  muscles:
+    obliques: 1
+    forearmflexors: 0.75
+    trapsupper: 0.5
+    glutemed: 0.5
+    transverseabdominis: 0.5
+    erectors: 0.25
+  exercises:
+    - name: Suitcase Carry (Dumbbell)
+      equipment: dumbbell
+      measurement: shortdistanceweight
+      laterality: unilateral
+      loadBasis: perimplement
+      implements: 1
+      restClass: carry
+      hevy: [7593855D]
+- id: sumo-deadlift
+  name: Sumo Deadlift
+  force: pull
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    adductors: 1
+    vasti: 0.75
+    hamstrings: 0.75
+    erectors: 0.75
+    forearmflexors: 0.5
+    trapsupper: 0.5
+  exercises:
+    - name: Sumo Deadlift
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [D20D7BBE]
+      fedb: [Sumo_Deadlift]
+- id: sumo-squat
+  name: Sumo Squat
+  aliases: [Plie squat, Wide stance squat]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    adductors: 1
+    glutemax: 0.75
+    rectusfemoris: 0.25
+    hamstrings: 0.25
+    erectors: 0.25
+  exercises:
+    - name: Sumo Squat
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [3F5F8D40]
+    - name: Sumo Squat (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [6622E5A0]
+      fedb: [Wide_Stance_Barbell_Squat]
+    - name: Sumo Squat (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [05293BCA]
+      fedb: [Plie_Dumbbell_Squat]
+    - name: Sumo Squat (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [5E10D0E6]
+- id: superman
+  name: Superman
+  aliases: [Prone back extension]
+  force: pull
+  mechanic: compound
+  muscles:
+    erectors: 1
+    glutemax: 0.5
+    hamstrings: 0.25
+    trapslower: 0.25
+    deltrear: 0.25
+  exercises:
+    - name: Superman
+      equipment: none
+      measurement: repsonly
+      restClass: highrep
+      hevy: [218DA87C]
+- id: svend-press
+  name: Svend Press
+  aliases: [Plate Squeeze, Plate squeeze press]
+  force: push
+  mechanic: isolation
+  muscles:
+    pecsternal: 1
+    pecclavicular: 0.75
+    deltfront: 0.5
+    tricepslateral: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Plate Squeeze (Svend Press)
+      equipment: plate
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [9373FSD1]
+      fedb: [Svend_Press]
+- id: swimming
+  name: Swimming
+  aliases: [Swim]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    deltfront: 0.5
+    pecsternal: 0.5
+    tricepslong: 0.25
+    rotatorcuff: 0.25
+    glutemax: 0.25
+    hamstrings: 0.25
+  exercises:
+    - name: Swimming
+      equipment: none
+      measurement: distanceduration
+      restClass: timed
+      hevy: [B60A678F]
+- id: t-bar-row
+  name: T Bar Row
+  aliases: [T-bar row]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    trapsmiddle: 0.75
+    rhomboids: 0.75
+    deltrear: 0.5
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    erectors: 0.5
+    forearmflexors: 0.25
+  exercises:
+    - name: T Bar Row
+      equipment: plateloaded
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [08A2974E]
+      fedb: [T-Bar_Row_with_Handle]
+- id: thruster
+  name: Thruster
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    deltfront: 0.75
+    tricepslateral: 0.5
+    adductors: 0.5
+    deltside: 0.25
+    rectusfemoris: 0.25
+    erectors: 0.25
+  exercises:
+    - name: Thruster (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [90E506D5]
+    - name: Thruster (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: power
+      hevy: [10313AFD]
+      fedb: [Kettlebell_Thruster]
+- id: toe-touch
+  name: Toe Touch
+  aliases: [Lying toe touch, Toe reach crunch]
+  force: pull
+  mechanic: isolation
+  muscles:
+    rectusabdominis: 1
+    obliques: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Toe Touch
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [75BAC5C3]
+- id: toes-to-bar
+  name: Toes to Bar
+  aliases: [T2B, Hanging pike]
+  force: pull
+  mechanic: compound
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 0.75
+    obliques: 0.5
+    lats: 0.5
+    forearmflexors: 0.5
+    rectusfemoris: 0.25
+  exercises:
+    - name: Toes to Bar
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [B94E35E1]
+      fedb: [Hanging_Pike]
+- id: torso-rotation
+  name: Torso Rotation
+  aliases: [Rotary torso, Machine twist]
+  force: pull
+  mechanic: isolation
+  muscles:
+    obliques: 1
+    rectusabdominis: 0.25
+    transverseabdominis: 0.25
+  exercises:
+    - name: Torso Rotation
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [FBB62888]
+- id: treadmill
+  name: Treadmill
+  aliases: [Treadmill run, Treadmill walk]
+  force: push
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    vasti: 0.75
+    hamstrings: 0.5
+    gastrocnemius: 0.5
+    soleus: 0.5
+    iliopsoas: 0.25
+    rectusfemoris: 0.25
+  exercises:
+    - name: Treadmill
+      equipment: machine
+      measurement: distanceduration
+      restClass: timed
+      hevy: [243710DE]
+- id: triceps-dip
+  name: Triceps Dip
+  aliases: [Dip, Parallel bar dip]
+  force: push
+  mechanic: compound
+  muscles:
+    tricepslateral: 1
+    tricepslong: 0.5
+    pecsternal: 0.5
+    deltfront: 0.5
+    rotatorcuff: 0.25
+  exercises:
+    - name: Triceps Dip
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [28BB4A95]
+      fedb: [Dips_-_Triceps_Version, Parallel_Bar_Dip]
+    - name: Triceps Dip (Assisted)
+      equipment: machine
+      measurement: bodyweightassistedreps
+      restClass: compound
+      hevy: [4B4BF8C2]
+    - name: Triceps Dip (Weighted)
+      equipment: none
+      measurement: weightedbodyweightreps
+      restClass: compound
+      hevy: [10347BAC]
+- id: triceps-extension
+  name: Triceps Extension
+  aliases: [Overhead triceps extension, French press]
+  force: push
+  mechanic: isolation
+  muscles:
+    tricepslong: 1
+    tricepslateral: 0.5
+  exercises:
+    - name: Triceps Extension (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [2F8D3067]
+      fedb: [Standing_Overhead_Barbell_Triceps_Extension]
+    - name: Triceps Extension (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [21310F5F]
+    - name: Triceps Extension (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [3765684D]
+      fedb: [Standing_Dumbbell_Triceps_Extension, Seated_Triceps_Press]
+    - name: Triceps Extension (Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [3092FADD]
+      fedb: [Machine_Triceps_Extension]
+    - name: Triceps Extension (Suspension)
+      equipment: suspension
+      measurement: bodyweightreps
+      restClass: isolation
+      hevy: [6182EE83]
+    - name: Triceps Extension (Kettlebell)
+      equipment: kettlebell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      fedb: [Kettlebell_Overhead_Triceps_Extension]
+    - name: Triceps Extension (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      fedb: [Speed_Band_Overhead_Triceps]
+- id: triceps-kickback
+  name: Triceps Kickback
+  aliases: [Kickback]
+  force: push
+  mechanic: isolation
+  muscles:
+    tricepslateral: 1
+    tricepslong: 0.5
+    deltrear: 0.25
+  exercises:
+    - name: Triceps Kickback (Cable)
+      equipment: cable
+      measurement: weightreps
+      laterality: unilateral
+      loadBasis: total
+      restClass: isolation
+      hevy: [EC3B69A3]
+    - name: Triceps Kickback (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [6127A3AD]
+      fedb: [Tricep_Dumbbell_Kickback]
+- id: triceps-pushdown
+  name: Triceps Pushdown
+  aliases: [Triceps pressdown, Cable pushdown]
+  force: push
+  mechanic: isolation
+  muscles:
+    tricepslateral: 1
+    tricepslong: 0.5
+  exercises:
+    - name: Triceps Pushdown
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [93A552C6]
+      fedb: [Triceps_Pushdown, Triceps_Pushdown_-_V-Bar_Attachment]
+    - name: Triceps Pressdown
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [CDC472B1]
+    - name: Triceps Rope Pushdown
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [94B7239B]
+      fedb: [Triceps_Pushdown_-_Rope_Attachment]
+- id: upright-row
+  name: Upright Row
+  force: pull
+  mechanic: compound
+  muscles:
+    deltside: 1
+    trapsupper: 0.75
+    deltfront: 0.5
+    bicepsbrachii: 0.25
+    brachialis: 0.25
+    trapsmiddle: 0.25
+  exercises:
+    - name: Upright Row (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [7AB9A362]
+      fedb: [Upright_Barbell_Row]
+    - name: Upright Row (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [286C1D0B]
+      fedb: [Upright_Cable_Row]
+    - name: Upright Row (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [797F0782]
+      fedb: [Standing_Dumbbell_Upright_Row]
+    - name: Upright Row (Smith Machine)
+      equipment: machine
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Smith_Machine_Upright_Row]
+    - name: Upright Row (Band)
+      equipment: resistanceband
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      fedb: [Upright_Row_-_With_Bands]
+- id: v-up
+  name: V Up
+  aliases: [V-sit up]
+  force: pull
+  mechanic: compound
+  muscles:
+    rectusabdominis: 1
+    iliopsoas: 0.75
+    obliques: 0.5
+    rectusfemoris: 0.5
+    transverseabdominis: 0.5
+  exercises:
+    - name: V Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: highrep
+      hevy: [6BE68B62]
+- id: waiter-curl
+  name: Waiter Curl
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachialis: 0.5
+    brachioradialis: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Waiter Curl (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: isolation
+      hevy: [72297E8C]
+- id: walking
+  name: Walking
+  aliases: [Walk]
+  force: push
+  mechanic: compound
+  muscles:
+    glutemax: 1
+    vasti: 0.5
+    hamstrings: 0.5
+    gastrocnemius: 0.5
+    soleus: 0.5
+    iliopsoas: 0.25
+    tibialis: 0.25
+  exercises:
+    - name: Walking
+      equipment: none
+      measurement: distanceduration
+      restClass: timed
+      hevy: [33EDD7DB]
+- id: walking-lunge
+  name: Walking Lunge
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.5
+    rectusfemoris: 0.25
+    hamstrings: 0.25
+    glutemed: 0.25
+  exercises:
+    - name: Walking Lunge
+      equipment: none
+      measurement: bodyweightreps
+      laterality: alternating
+      restClass: compound
+      hevy: [32HKJ34K]
+      fedb: [Bodyweight_Walking_Lunge]
+    - name: Walking Lunge (Dumbbell)
+      equipment: dumbbell
+      measurement: shortdistanceweight
+      laterality: alternating
+      loadBasis: perimplement
+      implements: 2
+      restClass: compound
+      hevy: [A733CC5B]
+    - name: Walking Lunge (Sandbag)
+      equipment: other
+      measurement: shortdistanceweight
+      laterality: alternating
+      loadBasis: total
+      restClass: compound
+      hevy: [F30A4F01]
+    - name: Walking Lunge (Barbell)
+      equipment: barbell
+      measurement: shortdistanceweight
+      laterality: alternating
+      loadBasis: total
+      restClass: compound
+      fedb: [Barbell_Walking_Lunge]
+- id: wall-ball
+  name: Wall Ball
+  aliases: [Wall ball shot]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    deltfront: 0.75
+    tricepslateral: 0.5
+    adductors: 0.25
+    deltside: 0.25
+    rectusfemoris: 0.25
+  exercises:
+    - name: Wall Ball
+      equipment: other
+      measurement: weightreps
+      loadBasis: total
+      restClass: power
+      hevy: [A1F47ACC]
+- id: wall-sit
+  name: Wall Sit
+  force: static
+  mechanic: compound
+  muscles:
+    vasti: 1
+    rectusfemoris: 0.5
+    glutemax: 0.5
+    adductors: 0.25
+  exercises:
+    - name: Wall Sit
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [C8706C80]
+- id: warm-up
+  name: Warm Up
+  aliases: [Warmup]
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.5
+    hamstrings: 0.5
+    gastrocnemius: 0.25
+    deltfront: 0.25
+  exercises:
+    - name: Warm Up
+      equipment: none
+      measurement: duration
+      restClass: timed
+      hevy: [79EF4E4F]
+- id: wide-grip-seated-cable-row
+  name: Wide Grip Seated Cable Row
+  aliases: [Wide grip cable row]
+  force: pull
+  mechanic: compound
+  muscles:
+    trapsmiddle: 1
+    rhomboids: 1
+    deltrear: 0.75
+    lats: 0.75
+    bicepsbrachii: 0.5
+    brachialis: 0.5
+    trapslower: 0.25
+    forearmflexors: 0.25
+  exercises:
+    - name: Seated Cable Row - Bar Wide Grip
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: compound
+      hevy: [C3BCABB3]
+- id: wide-pull-up
+  name: Wide Pull Up
+  aliases: [Wide grip pull-up]
+  force: pull
+  mechanic: compound
+  muscles:
+    lats: 1
+    trapslower: 0.5
+    rhomboids: 0.5
+    brachialis: 0.5
+    forearmflexors: 0.5
+    bicepsbrachii: 0.25
+    trapsmiddle: 0.25
+    deltrear: 0.25
+  exercises:
+    - name: Wide Pull Up
+      equipment: none
+      measurement: bodyweightreps
+      restClass: compound
+      hevy: [7C50F118]
+- id: wide-elbow-triceps-press
+  name: Wide-Elbow Triceps Press
+  aliases: [Tate press]
+  force: push
+  mechanic: isolation
+  muscles:
+    tricepslateral: 1
+    tricepslong: 0.5
+    pecsternal: 0.25
+  exercises:
+    - name: Wide-Elbow Triceps Press (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [B31EB524]
+      fedb: [Tate_Press]
+- id: wrist-curl
+  name: Wrist Curl
+  aliases: [Palms up wrist curl, Seated wrist curl]
+  force: pull
+  mechanic: isolation
+  muscles:
+    forearmflexors: 1
+    brachioradialis: 0.25
+  exercises:
+    - name: Seated Wrist Curl (Barbell)
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [95F2E076]
+      fedb: [Seated_Palm-Up_Barbell_Wrist_Curl, Palms-Up_Barbell_Wrist_Curl_Over_A_Bench]
+    - name: Seated Palms Up Wrist Curl
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: highrep
+      hevy: [1006DF48]
+      fedb: [Seated_Dumbbell_Palms-Up_Wrist_Curl, Palms-Up_Dumbbell_Wrist_Curl_Over_A_Bench]
+    - name: Wrist Curl (Cable)
+      equipment: cable
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      fedb: [Cable_Wrist_Curl, Seated_Two-Arm_Palms-Up_Low-Pulley_Wrist_Curl]
+- id: wrist-roller
+  name: Wrist Roller
+  force: pull
+  mechanic: isolation
+  muscles:
+    forearmextensors: 1
+    forearmflexors: 1
+    brachioradialis: 0.5
+    deltfront: 0.25
+  exercises:
+    - name: Wrist Roller
+      equipment: other
+      measurement: weightreps
+      loadBasis: total
+      restClass: highrep
+      hevy: [0E4523F4]
+      fedb: [Wrist_Roller]
+- id: yoga
+  name: Yoga
+  force: static
+  mechanic: compound
+  muscles:
+    hamstrings: 1
+    transverseabdominis: 1
+    glutemax: 0.5
+    deltfront: 0.5
+    erectors: 0.5
+    iliopsoas: 0.5
+  exercises:
+    - name: Yoga
+      equipment: none
+      measurement: duration
+      restClass: highrep
+      hevy: [8C9D2928]
+- id: zercher-squat
+  name: Zercher Squat
+  force: push
+  mechanic: compound
+  muscles:
+    vasti: 1
+    glutemax: 0.75
+    adductors: 0.75
+    erectors: 0.75
+    rectusabdominis: 0.5
+    bicepsbrachii: 0.25
+    trapsupper: 0.25
+  exercises:
+    - name: Zercher Squat
+      equipment: barbell
+      measurement: weightreps
+      loadBasis: total
+      restClass: heavycompound
+      hevy: [40C6A9FC]
+      fedb: [Zercher_Squats]
+- id: zottman-curl
+  name: Zottman Curl
+  force: pull
+  mechanic: isolation
+  muscles:
+    bicepsbrachii: 1
+    brachioradialis: 0.75
+    brachialis: 0.75
+    forearmextensors: 0.5
+  exercises:
+    - name: Zottman Curl (Dumbbell)
+      equipment: dumbbell
+      measurement: weightreps
+      loadBasis: perimplement
+      implements: 2
+      restClass: isolation
+      hevy: [123EE239]
+      fedb: [Zottman_Curl]

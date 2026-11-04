@@ -1,0 +1,18 @@
+# The apps' two languages, over the tree's .editorconfig, whose two-space
+# default is neither's.
+#
+# The Kotlin section is not only a hint: ktfmt reads it (--enable-editorconfig,
+# in build-logic's KtfmtConvention), so its width and indent are the Kotlin
+# formatter's, for `fmt:kotlin` and `fmt:kotlin:check` alike. Without the
+# indent here ktfmt would take the root file's two spaces. Swift's
+# configuration is .swift-format beside this file, which swift-format reads
+# and an editor does not; the section below repeats its indent and width for
+# the editor.
+
+[*.swift]
+indent_size = 4
+max_line_length = 160
+
+[*.{kt,kts}]
+indent_size = 4
+max_line_length = 160

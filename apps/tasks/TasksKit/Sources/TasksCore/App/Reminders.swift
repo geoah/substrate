@@ -1,0 +1,52 @@
+import Foundation
+import SubstrateCore
+import SubstrateDevice
+import SubstrateScreens
+
+/// What this device reminds the owner of: each open task with a due date
+/// still ahead, at its moment, or at the chosen hour of its day. The plan
+/// is a value the presenter makes, so a test reads it, and the effects
+/// schedule exactly it.
+public enum Reminders {
+    /// Every reminder's id starts with it, so the app cancels its own alone.
+    public static let prefix = "tasks.reminder."
+    /// The most a system keeps waiting for one app (iOS keeps 64); the
+    /// soonest go first.
+    public static let limit = 60
+
+    public static func id(_ task: String) -> String { prefix + task }
+
+    /// The category a reminder is scheduled under, which a tap's response
+    /// carries; the task's id is in its `userInfo` under `task`.
+    public static let category = "tasks.reminder"
+
+    /// The app's command for a notification the owner answered: a tap on a
+    /// reminder opens its task; nothing else of another category or action.
+    public static func command(for response: NotificationResponse) -> TasksApp.Command? {
+        guard response.category == category, response.action == .open, let task = response.userInfo["task"] else { return nil }
+        return .reminderTapped(task)
+    }
+
+    public static func plan(
+        _ model: TasksModel, settings: SettingsValues, permission: NotificationPermission?, now: Date,
+        calendar: Calendar, locale: Locale
+    ) -> [NotificationRequest] {
+        guard TasksSettings.reminds(settings), permission == .on || permission == .notTimeSensitive else { return [] }
+        var out: [NotificationRequest] = []
+        for task in model.tasks.values where task.isOpen {
+            guard let due = task.due else { continue }
+            let at = due.instant ?? due.day.start(in: calendar, hour: TasksSettings.hour(settings))
+            guard at > now else { continue }
+            let list = task.list.flatMap { model.lists[$0]?.name }
+            let when = due.instant.map { "Due at \(DueWords.time($0, calendar: calendar, locale: locale))" } ?? "Due today"
+            out.append(
+                NotificationRequest(
+                    id: id(task.id), title: task.name.isEmpty ? "Untitled task" : task.name,
+                    body: list.map { "\(when), in \($0)" } ?? when, fireAt: at, thread: "tasks",
+                    category: category, userInfo: ["task": task.id]))
+        }
+        // A reminder is planned only for a time to come, so every request here
+        // carries one; nil (shown at once) would sort first.
+        return Array(out.sorted { ($0.fireAt ?? .distantPast, $0.id) < ($1.fireAt ?? .distantPast, $1.id) }.prefix(limit))
+    }
+}

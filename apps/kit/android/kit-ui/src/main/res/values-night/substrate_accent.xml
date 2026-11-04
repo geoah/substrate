@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Substrate's blue in the dark (icons.mjs' `substrate` hi), which
+         reads as text as it is. -->
+    <color name="substrate_accent">#86BBFF</color>
+    <color name="substrate_accent_text">#86BBFF</color>
+</resources>

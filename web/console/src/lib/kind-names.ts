@@ -324,13 +324,13 @@ export function untitled(kind: KindInfo | string): string {
   return `Untitled ${lowerFirst(displayName(kind))}`
 }
 
-/** A display name inside a sentence: the first letter down unless the first
- * word keeps its casing ("Calendar events" → "calendar events"; "API keys"
- * and "Gmail threads" stay). */
+/** A display name inside a sentence: the first letter down unless it opens
+ * with a word that keeps its casing ("Calendar events" → "calendar events";
+ * "API keys", "Gmail threads" and "Apple Health accounts" stay). */
 export function lowerFirst(name: string): string {
   const first = name.split(" ")[0]
-  const proper = Object.values(PROPER).some(
-    (p) => first === p || first === pluralWord(p)
+  const proper = Object.values(PROPER).some((p) =>
+    [p, pluralWord(p)].some((w) => name === w || name.startsWith(`${w} `))
   )
   if (proper || /[A-Z]/.test(first.slice(1))) return name
   return name.charAt(0).toLowerCase() + name.slice(1)

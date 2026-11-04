@@ -1,10 +1,12 @@
 # Changelog review
 
 You are reviewing one pull request to substrate. You are not reviewing the
-code's quality, style or correctness. You are checking one thing: after this
-merges and ships, will a person or an agent that uses substrate learn from
-`CHANGELOG.md` what they must change, what they can now use, and what the
-docs now say?
+code's quality or style. You are checking one thing for every pull request:
+after this merges and ships, will a person or an agent that uses substrate
+learn from `CHANGELOG.md` what they must change, what they can now use, and
+what the docs now say? And, when the diff touches `apps/` or the scripts
+that build and release the apps, a second one: does it keep the apps'
+contract ([Apps](#apps) below)?
 
 Read `AGENTS.md` (the repository guide) and `docs/releasing.md` (how a
 title and a `BREAKING CHANGE:` footer become the changelog) first. Then read
@@ -50,6 +52,58 @@ commit message on the branch with `git log`.
    surfaces above. Name any sentence in them that the diff makes false, with
    its file and line. Do not ask for docs on internal refactors.
 
+## Apps
+
+Only when the diff touches `apps/`, `.mise/apps.sh`, `.mise/apple.sh`,
+`.mise/apps-android.sh` or `.mise/android.sh`. Read `apps/README.md` and
+`docs/plans/app-kit.md` §5 and §9 first. CI already runs `mise run
+lint:apps` and the apps' tests, so do not repeat what they hold; check what
+no linter reads.
+
+1. **The layering.** `lint:apps` (`.mise/appscheck.py`, one `# ---` section
+   per rule) holds the kit's libraries in order, portable code to what Linux
+   and Android have, and no app importing another. Name what it cannot see:
+   a rule or a decision written in an app's `apple/` or `android/` folder
+   that belongs in its portable core, code copied into an app that the kit
+   already has, or a new kit library `apps/kit/README.md`'s table does not
+   name.
+
+2. **The security contract** (the plan's §5.4). A request never follows a
+   redirect. A token never reaches a presentation, a link snapshot, a
+   WorkManager input, a log or a bridge message other than the secure
+   store's and the transport's. A token to revoke is kept until the server
+   confirms it. A release signs in only through the callback it claims;
+   loopback is a local build's client id and nothing else, and a missing
+   or failed claimed callback is a refusal, never a fallback. On Android,
+   what the app keeps stays under `noBackupFilesDir` and out of backups.
+   Name any line that loosens one, with the rule it breaks.
+
+3. **Presentations, not logic, in views.** A SwiftUI or Compose view draws
+   a presentation and sends commands. A decision in a view (formatting,
+   sorting, filtering, a rule about what to show) is a finding: it belongs
+   in a presenter, where a test pins it by value.
+
+4. **Both renderers together.** A changed presentation, screen or fixture
+   changes the SwiftUI view and the Compose one in the same pull request,
+   and the fixtures both galleries draw (`apps/kit/android/fixtures/`). A
+   presentation field one renderer ignores is a finding.
+
+5. **On-device formats.** What an installed app already wrote must still
+   read after the update: the session store and its pending revocations,
+   the outbox, a journal, a cache, a file's format version, a Keychain or
+   DataStore key, a bundle or application id, a serialized field's name.
+   A change to one either reads the old shape or migrates it, and a test
+   holds that; otherwise the update loses an owner's data or signs them
+   out. Name the change and what it would lose.
+
+6. **Release safety.** In the release scripts: a credential never reaches a
+   command line or a dry run, and a dry run writes nowhere but `build/`;
+   every write to a bucket is conditional and bounded by the lease; a
+   release needs the site, so every app it publishes claims its callback; a
+   published closure version never changes (`closures.lock.json`); an app is
+   named once, by its `app.json`; and no deployment's host, bucket, team or
+   path appears in the tree, which is public.
+
 ## How to answer
 
 Post exactly one comment with `gh pr comment <number> --edit-last
@@ -57,10 +111,12 @@ Post exactly one comment with `gh pr comment <number> --edit-last
 instead of adding one. Write the body to a file under `$RUNNER_TEMP` first.
 
 The comment opens with one line: `Changelog: nothing missing`, or
-`Changelog: N findings`. Then one bullet per finding, each under three
+`Changelog: N findings`, and, for a diff the Apps checks apply to, a second:
+`Apps: nothing missing`, or `Apps: N findings`. Then one bullet per finding, each under three
 sentences: what is missing or wrong, the file and line, and the title,
-footer or doc text you would write, written out. No praise, no summary of
-the PR, no findings about code quality. Only claim what you checked in the
+footer or doc text you would write, written out, or for an Apps finding the
+rule it breaks. No praise, no summary of the PR, no findings about code
+quality outside those rules. Only claim what you checked in the
 diff or the tree; when unsure whether a change reaches a client, say so in
 one clause.
 

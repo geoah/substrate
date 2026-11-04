@@ -1,0 +1,15 @@
+{
+  "sources": [
+    "apps/kit/Sources/SubstrateCore",
+    "apps/kit/Sources/SubstrateDevice",
+    "apps/kit/Sources/SubstrateRuntime",
+    "apps/kit/Sources/SubstrateScreens",
+    "apps/kit/Sources/SubstrateBridge",
+    "apps/kit/Sources/SubstrateBridgeCheck"
+  ],
+  "opaque": ["ServerProbe.Result", "FolderArea"],
+  "golden": "apps/kit/android/bridge.golden.json",
+  "kotlin": "apps/kit/android/kit-core/src/main/kotlin/dev/reamde/substrate/kit/bridge/Protocol.kt",
+  "kotlinPackage": "dev.reamde.substrate.kit.bridge",
+  "swiftFingerprint": "apps/kit/Sources/SubstrateBridge/ProtocolFingerprint.swift"
+}

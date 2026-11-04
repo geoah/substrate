@@ -20,10 +20,11 @@ suites are where most of the behaviour is actually pinned down.
 | End-to-end | `mise run test:e2e` | Docker; leaves data | ~3 minutes |
 
 `mise run test` is the one to run before pushing. `mise run ci:quick` is the
-required checks that need no database or Docker (`lint`, `lint go`,
-`console`, `console test`, `go test`). `mise run ci` is the pipeline as CI
-runs it, including the linters, the console, an image build and the provider
-suite, except the weekly live suite (`ci:llm`), which spends money.
+required checks that need no database, Docker or Android toolchain (`lint`,
+`lint go`, `console`, `console test`, `go test`). `mise run ci` is the
+pipeline as CI runs it, including the linters, the console, an image build
+and the provider suite, except the weekly live suite (`ci:llm`), which
+spends money.
 
 The two provider suites (`internal/providertest` and `internal/providere2e`)
 skip a case when `uv` or `python3` is missing or a dependency resolve fails
@@ -663,6 +664,9 @@ Every job is one `mise run ci:<job>`, defined once in `.mise.toml` so the
 pipeline is reproducible on a laptop. Each job behind a required check has a
 budget of about a minute on the runner, and several are over it; the rest
 run on the same pull request and on `main` and do not block a merge. The
+apps' two jobs behind `apps gate` are far past it, and run only on a change
+to what they build (the `changes` job's `apps` answer): such a pull request
+waits for them, and every other one passes the gate with both skipped. The
 Median column is the median job time over the 29 pull request runs of
 2026-10-10 to 2026-10-12 that ran the Go suite (the coverage job: the 12
 pushes to `main` in the same days); `gh run view <id> --json createdAt,jobs`
@@ -681,12 +685,15 @@ runs.
 | db catalog 1/2, 2/2 | `ci:db:catalog` | one shard of `internal/catalog` each | through `go gate` | 72 s, 75 s |
 | db rest | `ci:db:rest` | `internal/providertest`, and `internal/testenv` without the acceptance drill | through `go gate` | 122 s |
 | go gate | (in the workflow) | red unless `go test`, every shard and every `db` job succeeded | yes | 3 s |
+| apps linux | `ci:apps` | the kit and every app's core built and tested on Linux in the swift container, then the core of an app `apps:new` makes | through `apps gate` | |
+| android build | `ci:android` | the apps' Swift and Kotlin format checks, the Android toolchain installed, the bridge's generator checked and its tests, and the kit cross-compiled for Android | through `apps gate` | |
+| apps gate | `.mise/appsgate.sh` (in the workflow) | reads `changes`' `apps` answer: red unless both apps jobs succeeded on `true`, or passed skipped on `false`, and red with no answer | yes | |
 | acceptance drill | `ci:drill` | `TestReleaseAcceptanceDrill`: seven stages that read each other's outputs, so it cannot be cut | no | 50 s |
 | providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs seven provider closures against a `substrated` it starts, over recorded upstreams; a failed run keeps `.dev/providere2e/`, the server's log included, as the `providere2e-logs` artifact | no | 260 s |
 | race | `ci:race` | the short suite under `-race` | no | 145 s |
 | cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64, and golangci-lint for darwin | no | 82 s |
 | image builds | `ci:image` | the image builds from a clean tree, boots, and renders the console in headless Chrome | no | 115 s |
-| changes | `ci:changes` | answers `go=true` or `go=false` for the non-required Go suites | no | 9 s |
+| changes | `ci:changes` | answers `go=true` or `go=false` for the non-required Go suites, and `apps=` for the apps' jobs | no | 9 s |
 | coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` only | 632 s |
 
 CodeQL runs beside them in its own workflow, on a schedule as well as on

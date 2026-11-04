@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Notifications: shown (asked for on Android 13 and later), and their
+         alarms set again after a reboot. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- The browser sign-in holds the process with a short foreground
+         service while the owner approves, so its loopback listener is not
+         frozen with it (SignInWait). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SHORT_SERVICE" />
+
+    <!-- The secure store and the repository's folder live under
+         noBackupFilesDir, which no backup reads; the rules exclude it by
+         name as well, so a restore never revives a token or a queue of
+         writes for a session that no longer exists (app-kit.md §5.4). An
+         app with rules of its own keeps these exclusions in them. -->
+    <application
+        android:dataExtractionRules="@xml/substrate_data_extraction_rules"
+        android:fullBackupContent="@xml/substrate_backup_rules">
+
+        <activity
+            android:name="dev.reamde.substrate.kit.device.PermissionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Where a notification's tap lands: not exported, so no other app
+             can start it with a response of its own making; its own task,
+             so it never sits on the app's (NotificationOpened). -->
+        <activity
+            android:name="dev.reamde.substrate.kit.device.NotificationOpened"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- The sign-in page's way back to the app: browsable, on a scheme
+             of the app's own id, carrying nothing (ReturnToApp). -->
+        <activity
+            android:name="dev.reamde.substrate.kit.device.ReturnToApp"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${applicationId}.signin" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name="dev.reamde.substrate.kit.device.SignInWait"
+            android:exported="false"
+            android:foregroundServiceType="shortService" />
+
+        <receiver
+            android:name="dev.reamde.substrate.kit.device.NotificationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

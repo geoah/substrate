@@ -1,0 +1,201 @@
+# The kit on Android
+
+The kit's Swift libraries run on Android under a Kotlin UI, through one
+fixed bridge ([docs/plans/app-kit.md](../../../docs/plans/app-kit.md) §5.5).
+Five Gradle modules here, three libraries an app builds on and two apps
+that are never published, built from the one Gradle root in
+[apps/gradle](../../gradle), which also includes each app's own module
+(`:tasks`, [apps/tasks/android](../../tasks/README.md#on-android)):
+
+| Module | What it holds |
+| --- | --- |
+| `kit-core` | `libSubstrateAndroid.so` (the kit's portable libraries, `SubstrateBridge` and `SubstrateBridgeCheck`, from `apps/kit/Package.swift`) with the Swift runtime and Foundation it loads, per ABI; the Swift packages' resource bundles as assets; `Bridge`, `BridgeCore`, `BridgeHandle`, `KeyedListState`, `DeviceServices`, `Redaction`; the values generated from `bridge.golden.json` (`bridge/Protocol.kt`) |
+| `kit-device` | the device services in Kotlin, the only kit module that touches an Android service: `Transport` (OkHttp), `SecureStore` (Tink and DataStore), `Dns` (`DnsResolver.rawQuery`), `Connectivity`, `BrowserSignIn` (the default browser; a local build's loopback callback on `127.0.0.1`, a release's verified App Link through `SignInCallback`), `Notifications` (`NotificationManager`, alarms, the permission's question), `KitDevice.services(context)`; the backup and device-transfer rules |
+| `kit-ui` | the shared screens in Compose and Material 3, one composable per SubstrateUI view (`ConnectScreen`, `ServerTooOldScreen`, `AccessBannerView`, `AccessEndedScreen`, `ReviewScreen`, `RepositoryScreen`, `StatusScreen`, `SettingsScreen`, `AboutScreen`, `ProblemView`, `ChangeLineView`, `UnrevokedNotices`, `AppMenu`), the building blocks an app draws its own screens with (`KitTheme`, `KitCard`, `KitSection`, `KitRow`, `KitValueRow`, `KitNavigationRow`, `KitDestructiveRow`, `StatusBadge`, `ProblemBox`), the design tokens Swift writes (`KitTokens.kt`), and `KitGallery`, each screen's composable |
+| `bridge-check` | an app that starts the bridge from its `Application` and runs `BridgeChecks` (the runtime checks) against the Swift library; never published |
+| `gallery` | the Gallery app: every shared screen in every state, live, from the fixtures the `gallery` root presents through the bridge, drawn by kit-ui; never published |
+
+## How it runs
+
+`Bridge.start(context, KitDevice.services(context))` runs once, from
+`Application.onCreate` on the main thread: it loads the library, copies the
+resource bundles out to `noBackupFilesDir/swift-resources`, and hands Swift
+the device's locale, time zone, folders and SDK level with the protocol
+fingerprint the Kotlin was generated with. Swift binds libdispatch's main
+queue to the main Looper, takes the app's roots, and answers `Started` or a
+terminal `Failed` (a fingerprint from another tree, a library that did not
+load); nothing is half started. Then `Bridge.open("<root>")` answers a
+`BridgeHandle`: its `state` is a `StateFlow` of the newest presentation and
+every keyed list with its deltas applied, `send` posts a command, `close` is
+idempotent.
+
+Every message is one envelope, `{v, op, handle, id, seq, body}`, posted by
+Kotlin (`NativeBridge.post`) or delivered by Swift (`NativeBridge.deliver`,
+from a thread Swift attached, in a local frame, as UTF-16). Presentations
+are coalesced in Swift, keyed lists cross as `KeyedListDelta`s and are never
+coalesced, a device call is answered exactly once, a chunked answer is
+ordered and bounded and ends once, closing a handle answers what it waits on
+`cancelled`, a message Kotlin does not take fails what waited on it, and a
+body is recorded only where what it answers is known to carry no secret.
+Messages are read and written with `JSONValue`'s exact reader and writer,
+so a number crosses with every digit. The host tests
+(`SubstrateBridgeTests`) hold each of those rules.
+
+A runtime root's presentation crosses without its keyed lists' rows. The
+runtime encodes each tree (`Runtime.encodedFrames()`) with every
+`KeyedList` in it written as `{"$list": "app/tasks", "revision": 4}`, the
+list named by where it sits in the tree, and hands over beside it the lists
+whose rows moved, at a revision of the crossing's own that only moves
+forward. `RuntimeRoot` publishes those first, whole the first time and as
+deltas after, then the tree, so a tree always follows the rows it names.
+Kotlin applies the lists to the handle's state, and `HandleSnapshot.tree`
+is the presentation with each reference replaced by its list's
+`{"revision", "rows"}` (`KeyedListTree`), made again only when every list
+it names is at the revision it names; `BridgeHandle.presentations` decodes
+that, so the generated `KeyedList<Row>` reads it as Swift presented it. A
+command is read with the exact reader and decoded by `ValueCoding`, so a
+`JSONValue` in it keeps its digits, and a new locale or time zone has
+`Runtime.environmentChanged` present the whole tree again.
+
+**Signing in.** `BrowserSignIn` opens the owner's default browser on the
+approval page and hands back the query of the callback carrying the page's
+`state`; `OAuthClient` holds `state`, `iss` and PKCE in Swift. A local
+build's loopback route listens on `127.0.0.1` alone, on a port the system
+picks, for the one path Swift named: every request is bounded in size and
+time, one it cannot read or with another `state` is refused without ending
+the attempt, and the page the browser lands on links back to the app. A
+release's claimed route is its https callback as a verified App Link:
+build-logic's `requireReleaseSignIn` declares kit-device's `SignInCallback`
+for the stamped host and path, with `autoVerify`, in a release's manifest
+alone; Android verifies the host against the site's `assetlinks.json`; and
+the activity hands each callback to the attempt whose address and `state`
+it carries (`ClaimedCallbacks`), then brings the app forward. A claimed
+route Android has not verified for the app (from Android 12, which says)
+is refused, never answered through loopback. On either route an attempt
+no callback reaches in ten minutes answers `expired`, and an attempt lets
+go of its socket or its wait however it ends, a cancel and its handle's
+close among them. The kit's `SignInController` is the Connect screen as a
+root of its own, with a count of finished sign-ins an app opens its link
+again on.
+
+**Notifications.** `Notifications.get(context)` is the process's one
+instance: a request with a `fireAt` is kept in
+`noBackupFilesDir/notifications` with an alarm (exact where the owner lets
+the app schedule exact alarms), armed again at every start and by
+`NotificationReceiver` after a reboot, so `pending(prefix)` answers across
+launches; one with none shows at once, and one whose instant passed is
+dropped. The permission is asked once, from the activity in front
+(`PermissionActivity`). A tap lands on `NotificationOpened`, which is not
+exported, so no other app can forge one, and which brings the app's task
+forward; an app's launcher activity reads nothing from its intent. A tap,
+an action and a dismissal are responses, each once, kept for the first
+reader. An app names its
+notifications' channel in `KitDevice.services(context, notificationChannel)`
+and may replace the status bar's mark by declaring
+`@drawable/substrate_notification`.
+
+A body too large for a message is a file under `noBackupFilesDir/bridge`,
+deleted by whichever side holds it last and swept when kit-device's
+`Transport` is made; a credential exchange's never is. A locale or time
+zone change reaches every open root as `environment`.
+
+An app's roots are Swift: its library defines
+`@_cdecl("substrate_bridge_roots") func roots(_ registry: UnsafeMutableRawPointer)`
+and registers each by name on `RootRegistry.from(registry)`. A controller
+tree needs no glue: `registry.register("tasks") { settings, context in
+(TasksRoot(), context.appEnvironment(secureStore: "session")) }` opens it as
+a `Runtime`, whose commands are `RouteCommand`s. An app builds its own
+library the way `kit-core` builds `SubstrateAndroid` (the `substrate.swift`
+convention plugin) and passes its name to `Bridge.start`; its APK leaves
+out kit-core's `libSubstrateAndroid.so` and takes one copy of the Swift
+runtime both carry (`packaging.jniLibs`). Substrate Tasks is the first
+([apps/tasks/README.md](../../tasks/README.md#on-android)): its library is
+`TasksKit`'s `SubstrateTasks` product, its `bridge.json` names
+`"uses": ["apps/kit/android/bridge.json"]` and generates only its own
+values, and `mise run android:generate` runs every app's configuration
+after the kit's.
+
+## The generated Kotlin
+
+A value that crosses conforms to `Bridged` (SubstrateCore) where it is
+declared, and keeps to the model that protocol's comment names.
+`bridge.json` lists the sources read; `kit/Tools/BridgeGen` reads them with
+swift-syntax and writes `bridge.golden.json`, `kit-core`'s
+`bridge/Protocol.kt` and `SubstrateBridge/ProtocolFingerprint.swift` (the
+golden's SHA-256). Nobody edits the three by hand:
+
+```bash
+mise run android:generate          # after changing a Bridged value
+mise run android:generate:check    # fails on a stale one; android:test runs it
+```
+
+`fixtures/roundtrip.json` is what Swift encodes of a value of each shape
+(payload enums, an absent against a null optional, Unicode, decimals and
+large integers); Kotlin decodes and encodes it, and Swift reads Kotlin's
+back. `SUBSTRATE_UPDATE_FIXTURES=1 swift test --filter RoundTripTests`
+rewrites it after a change to a value it holds.
+
+## The shared screens in Compose
+
+kit-ui draws the presentations SubstrateScreens makes, decoded by the
+generated Kotlin, and sends the commands SwiftUI sends: the same facts,
+labels, order and states, in Material's own look (docs/plans/app-kit.md
+§4, §7.4). Colours, marks, the type roles, spacing and radii come from
+SubstrateUI's `DesignTokens`, which SubstrateKitTests' `DesignTokensKotlinTests`
+writes as `kit-ui/…/KitTokens.kt`; a tone is the same colour on both
+systems, a mark an SF Symbol there and a Material Symbol here. A screen's
+composable takes its presentation and a `send`; an app's own screens are
+made of the same blocks (`KitSection` of `KitRow`s, `KitCard`,
+`ProblemBox`), and its root's presentation is decoded through its handle
+(`BridgeHandle.presentations`). The App menu (`AppMenu`) is a navigation
+bar under 600 dp, a rail under 1200 dp, and a drawer of its sections
+above.
+
+**An app's colour is its accent.** `KitTheme` makes the whole Material 3
+scheme from two colours (`KitScheme`), `substrate_accent` and its text
+tone, `substrate_accent_text`, each the light value in light mode and the
+dark one in dark mode. Primary is the text tone, exactly as iOS tints the
+app's text, links and controls: the accent where it reads at 4.5:1 on
+every surface text sits on, else the accent's hue a tone darker in light
+mode and lighter in dark, since accent text is as small as body text
+(app.json's `accent.text`). Every other role is a tone of a palette made
+from the accent, the containers and the secondary roles the accent's hue,
+the tertiary sixty degrees on, the surfaces barely tinted by it; the
+accent itself is `MaterialTheme.brandAccent`, which an app's own fills and
+graphics are drawn in. A tone is CIELAB lightness, which fixes a colour's
+luminance, so contrast is a function of tones and holds for any accent;
+`KitSchemeTest` holds every app.json's accent to WCAG AA (each `on` role at
+4.5:1) and the text tone of kit-ui and of every app on Android at 4.5:1 on
+the screen's surface and every container's, naming the tone that reads
+where one does not. kit-ui declares both colours as Substrate's blue
+(`res/values/` and `res/values-night/`), which the Gallery is drawn in; the
+`substrate.android.application` convention writes an app's app.json
+`accent` over them into `build/generated/substrate/accent`, so an app needs
+no code for its colour. There is no wallpaper colour: an app looks the
+same on every phone.
+
+The gallery is a check. `fixtures/screens.json` is `ScreenFixtures.all` as
+Swift writes it (`ScreenFixturesFileTests` fails while it is stale;
+`SUBSTRATE_UPDATE_FIXTURES=1` writes it again). kit-core's
+`ScreenFixturesTest` decodes and encodes every fixture, which Swift reads
+back; kit-ui's `KitGalleryTest` draws each with `KitGallery` under
+Robolectric and fails on a screen with no composable. `mise run
+apps:gallery` keeps those pictures beside SwiftUI's. The Gallery app shows
+the same fixtures live: the `gallery` root (SubstrateBridgeCheck) makes
+them on the device and sends them as any root's presentation, so it shows
+the generated Kotlin reading what Swift wrote; `substrate-gallery://fixture/<name>`
+opens one.
+
+## Building and testing
+
+```bash
+mise run android:sdk     # once: the SDK packages at their pinned revisions, NDK r30, the Swift SDK for Android
+mise run android:build   # every module, the Gallery app and every app's included, debug and release; each release claims its stamped callback
+mise run android:test    # the generator, the bridge on this host, the Kotlin tests, the round trip
+mise run android:smoke   # on a booted emulator: the release build's checks, cold starts, the APK's libraries, the contract tests (kit-device's: transport, secure store, DNS, browser sign-in, notifications)
+mise run android:lock    # after a change to gradle/libs.versions.toml: the locks and the verification metadata
+```
+
+`SUBSTRATE_ABIS=arm64-v8a` builds one ABI (the default is `arm64-v8a` and
+`x86_64`). Swift on Android has no breakpoints, so the bridge's rules are
+debugged in the host tests, where they run.

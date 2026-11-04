@@ -134,6 +134,48 @@ unit's linear component, which a declaration names with `unit:` (decision
 | **watch** | The ndjson tail of the records route, narrowed to a set of kinds, or of the changelog, resumable from a cursor. |
 | **feature** | A named entry in `GET /.well-known/substrate/server.json` carrying its stability and the surfaces that serve it (`rest`, the one there is), so a client reads what a deployment offers instead of probing for failures. |
 
+## In an app
+
+The apps' code is under `apps/`, and the plan for it is
+[plans/app-kit.md](plans/app-kit.md). An app converted to the kit builds
+each screen as one loop: a command, a controller that enriches it into an
+event, then, in this order, an engine that applies the event, a journal
+written before anything can suspend, a presenter, and the effects.
+Workouts' session, Chat and Tasks are built so; Sync is not converted yet. These
+words mean that loop's parts "in an app", and three of them are not the
+server's: an app's **engine** is not `internal/engine`, its **effect** is
+not a function's returned effects, and its **link** is not a reference.
+The kit takes none of adapter, mirror, stream, sync, feature, group or
+account for a name of its own.
+
+| Term | What it is |
+| ---- | ---------- |
+| **command** | In an app: what the UI asks a controller for, as a value (tap Done on row 3). The UI sends nothing else. |
+| **event** | In an app: a command enriched by its controller with what a pure function may not read (new ids, the current instant, lookups in caches), or the result of an effect; what an engine applies. Not a calendar event record. |
+| **controller** | In an app: the one writer of a piece of state. It turns each command into an event, has its engine apply it, writes the journal where it keeps one, presents, and only then runs the effects. A child controller is keyed by an id the app minted, and reaches its parent only through an event. |
+| **engine** | In an app: a controller's `apply(event, to: state) throws -> State`, pure, so folding the journal's events through it gives the same state every time. Not `internal/engine`, the server's implementation of the substrate. |
+| **effect** | In an app: work an event asks for through the client, the local store or a device service, decided by a pure function of the event, the state (and the state before it, where what changed matters) and the presentation, and run only live, never on a replay. Its result comes back as an event. Not the effects a function body returns for the server to apply ([functions](functions.md)). |
+| **presenter** | In an app: `present(state, inputs) -> Presentation`, pure, with every input it reads (catalogue, history, settings, the instant, the locale) declared, so a test pins each. |
+| **presentation** | In an app: the value a view draws, made of strings, numbers, enums and ids, and the only thing a UI reads. Its `nextChange` instant has the runtime deliver a tick then, so no view keeps a timer. |
+| **signal** | In an app: a value in a presentation the UI acts on once rather than draws (a haptic, a cover to open, a row to scroll to), with a serial its controller moves at each raise, so the same value raised twice acts twice and a presentation drawn again acts not at all. |
+| **journal** | In an app: a controller's events kept on the device, written once the engine has applied the event and before the controller suspends, presents or runs an effect, and folded back through its engine at launch. Optional per controller: Workouts' session keeps one, Chat's conversation does not, since the server holds it. Not the **changelog**. |
+| **link** | In an app: the root controller that owns the connection to one repository: the session and its revocations, the status check, the versions of the app's packages, connectivity and the outbox's state. It keeps the app's own root as its one child, tells every controller under it its snapshot, which carries no secret, and hears back when a request was refused. Not a **reference**, which is the only link between records. |
+| **device service** | In an app: what the device does for the core behind one protocol (transport, secure store, browser sign-in, DNS lookups, connectivity, app folders, notifications, background work, ongoing activities), with an Apple implementation, an Android one where an Android app needs it, and a fake. A request and its answer are values, and an answer keeps each outcome apart. |
+| **chunked answer** | In an app on Android: a device service's answer that crosses the bridge in parts (a line stream's lines, connectivity's changes), in order, into a bounded queue, ending once with its end, an error or a cancel. |
+| **outbox** | In an app: the writes waiting to reach the server, kept on the device in order: puts, patches and deletes with their `ifVersion` chains, held back when refused until they are retried, discarded or resolved. |
+| **batch** | In an app: the outbox's writes that stand or fall together (Workouts' session and its sets): discarding one drops the batch, and a write the server refuses holds the rest of it back. |
+| **watch generation** | In an app: the `generation` a records page hands over with its `head`, which a **watch** resumed from them must match; a watch answered with another relists. |
+| **keyed list** | In an app: a long collection in a presentation (a transcript, a task list) whose rows are keyed by id and which carries a revision, so the Android bridge sends it whole once and then only the rows that changed. |
+| **handle generation** | In an app: the number an Android bridge handle carries, so a message for a closed handle, or one opened again, is dropped. |
+| **controller generation** | In an app: the number closing or resetting a controller moves, so every result still outstanding for it is dropped, whatever its key. |
+| **linked records** | In an app: the records of the kinds it shows, read once and then followed through the **watch**, with the outbox's waiting writes laid over them, kept by the app's root through the kit's `LinkedRecords`. |
+| **record cache** | In an app: the records it last read and where its watch resumes, kept in the repository's folder on the device, so the app opens on them before the server answers; the server's, read again on demand. |
+| **fold** | In an app: the records as the owner sees them, the server's as last read with the outbox's waiting writes applied in order over them; a refused write is not laid over. Not `internal/engine/fold.go`, the server's one path from the changelog to the records table. |
+| **read again** | In an app: one record read from the server after the watch named it or a write of it left the outbox, so the fold holds the server's copy; one that fails waits for the network. |
+| **shell** | In an app: what an Apple app runs its link and root under, the kit's `AppShell`: the session, the repository's folder, sign-in and Change Access, and Settings as one screen. The console's shell is another thing: the native window the bundled console runs in. |
+| **App menu** | In an app: its top level as data, its sections drawn as a tab bar on a phone and as a sidebar on a tablet, a computer and a wide Android screen, which section is open its presentation's. |
+| **link generation** | In an app: the number a sign-out moves, kept in the repository's folder on the device, which background work names when it is scheduled and checks before every write, so a job from before a sign-out writes nothing. |
+
 ## Words that mean something narrower than they look
 
 - **capabilities** — only ever the name for a function's security envelope, and

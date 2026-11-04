@@ -1,0 +1,33 @@
+{
+  "id": "chat",
+  "name": "Substrate Chat",
+  "platforms": [
+    "ios",
+    "macos"
+  ],
+  "apple": {
+    "bundleID": "dev.reamde.substrate.chat",
+    "scheme": "SubstrateChat",
+    "extensions": [],
+    "clientIDKey": "SubstrateChatClientID",
+    "redirectKey": "SubstrateChatRedirect"
+  },
+  "publishes": [],
+  "asks": [],
+  "scopes": [
+    "agents:*",
+    "decide:*",
+    "read:substrate.reamde.dev/llm/provider",
+    "read:*"
+  ],
+  "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "accent": {
+    "light": "#6A3FE0",
+    "dark": "#A286FF",
+    "text": {
+      "light": "#6A3FE0",
+      "dark": "#A286FF"
+    }
+  },
+  "feed": "chat"
+}

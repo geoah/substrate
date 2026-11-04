@@ -1,0 +1,86 @@
+targets:
+  SubstrateSync:
+    # iPhone and iPad only, and nothing of the console: no bundled dist/, no
+    # Sparkle. The updater is the shared file in apps/xcode/Shared, whose iOS
+    # path reads this app's own release feed.
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - Assets.xcassets
+      - ../../xcode/Shared/Updater.swift
+    dependencies:
+      - target: SubstrateShare
+      - package: SubstrateKit
+    scheme:
+      testTargets:
+        - SubstrateSyncTests
+        - SubstrateSyncUITests
+    settings:
+      base:
+        PRODUCT_NAME: SubstrateSync
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.sync
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: ../sync/apple/Support/Info-Sync.plist
+        CODE_SIGN_ENTITLEMENTS: $(SUBSTRATE_ENTITLEMENTS_$(SUBSTRATE_ASSOCIATED_DOMAINS))
+        SUBSTRATE_ENTITLEMENTS_NO: ../sync/apple/Support/SubstrateSync.entitlements
+        SUBSTRATE_ENTITLEMENTS_YES: ../sync/apple/Support/SubstrateSync-site.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SUPPORTS_MACCATALYST: "NO"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
+  SubstrateShare:
+    # "Send to Substrate" in every app's share sheet: a link, text or images
+    # saved as one record, with the app's sign-in, either kind, read from the
+    # Keychain group the app and the extension share. It compiles the app's
+    # client, Keychain and ids over SubstrateKit rather than a framework of
+    # its own.
+    type: app-extension
+    platform: iOS
+    sources:
+      - Share
+      - Sources/API/Client.swift
+      - Sources/API/Keychain.swift
+      - Sources/Sync/Identity.swift
+      - Sources/Views/Components.swift
+    dependencies:
+      - package: SubstrateKit
+    settings:
+      base:
+        PRODUCT_NAME: SubstrateShare
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.sync.share
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: ../sync/apple/Support/Info-Share.plist
+        CODE_SIGN_ENTITLEMENTS: ../sync/apple/Support/SubstrateShare.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: "NO"
+  SubstrateSyncTests:
+    # The goldens these tests compare against live in the Go suite's
+    # testdata, read from the checkout, so one file holds the app and the
+    # receiver to the same format.
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: SubstrateSync
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.sync.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TARGETED_DEVICE_FAMILY: "1,2"
+  SubstrateSyncUITests:
+    # The app against a real substrate; skipped unless SYNC_E2E_SERVER names
+    # one (UITests/EndToEndTests.swift).
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    dependencies:
+      - target: SubstrateSync
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.reamde.substrate.sync.uitests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TARGETED_DEVICE_FAMILY: "1,2"

@@ -26,9 +26,9 @@ import (
 )
 
 // coachManifestFile is the trainingcoach closure the app carries
-// (apps/apple/scripts/workouts-package.py), read from the tree so the
+// (apps/workouts/scripts/workouts-package.py), read from the tree so the
 // personas run it.
-const coachManifestFile = "../../apps/apple/WorkoutsKit/Sources/WorkoutsCore/Resources/Package/coach.json"
+const coachManifestFile = "../../apps/workouts/WorkoutsKit/Sources/WorkoutsCore/Resources/Package/coach.json"
 
 // shippedCoach is the agent the trainingcoach closure publishes, its training
 // kinds homed under home's own training package, on the test's provider and

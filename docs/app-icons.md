@@ -5,7 +5,7 @@ its own glyph and colour. Every icon has the same band along the bottom with
 the substrate mark, three stacked layers, so on a home screen the apps read
 as one family and each one is still easy to find. This page holds the rules
 that keep it that way.
-[`apps/apple/scripts/icons.mjs`](../apps/apple/scripts/icons.mjs) draws every
+[`apps/xcode/scripts/icons.mjs`](../apps/xcode/scripts/icons.mjs) draws every
 icon from code. Where this page and the script disagree, the
 script is right and this page is the bug.
 
@@ -57,9 +57,15 @@ appearance.
 | Substrate Sync | two arrows round a core | green | `#f2fcf8`, `#d3f2e5` | `#72e2bb`, `#0f936d` |
 | Substrate Chat | a speech bubble with a spark | purple | `#f8f5ff`, `#e4dcfd` | `#bba2ff`, `#6a3fe0` |
 | Substrate Workouts | a dumbbell | orange | `#fff8f2`, `#ffdfcc` | `#ffab72`, `#e3471f` |
+| Substrate Tasks | a ticked checklist card | rose | `#fff5f7`, `#ffdbe4` | `#ff9bb2`, `#d92c58` |
+| The template (`apps:new`) | a lidded box | grey | `#f7f8fa`, `#e1e5ea` | `#aab4c0`, `#5f6b7a` |
 
 A new app takes a hue no other app uses, with a background pale enough that
-the glyph's deep shade reads on it.
+the glyph's deep shade reads on it. The template's grey is no hue: an app
+`mise run apps:new` makes starts with it and the template's box, and takes
+its own entry before it ships. An app's accent, app.json's `accent`, is
+its own choice in the same hue: Tasks' light accent is its deep colour,
+and the template's is too.
 
 ## Appearances
 
@@ -79,6 +85,41 @@ Composer `.icon` file, export the background, glyph, band and mark as
 separate layers. Leave out the frosting's rim and shadow, because the system
 adds its own.
 
+## Android
+
+An app on Android ships an adaptive icon: three 108 dp layers that the
+launcher masks to its own shape (a circle, a squircle or a rounded square)
+inside the inner 72 dp. `icons.mjs` writes them from the same entry and
+glyph as the Apple icon, as vector drawables, so no density is drawn
+twice:
+
+- **Background:** the light frame's gradient, glow and band, full bleed.
+  The 1024 px frame maps onto the inner 72 dp, so the masked icon is the
+  light iOS icon.
+- **Foreground:** the glyph and the mark, drawn at 0.88 about the
+  centre so the glyph's top corners stay inside the 66 dp safe zone that
+  every mask keeps. A vector drawable has no blur, so the glyph's soft
+  shadow is three widening silhouettes at a low opacity. It has no masks
+  either, so each layer of the mark is cut from the one below by an outline
+  in the band's colour.
+- **Monochrome:** the glyph's silhouette and the mark in one colour,
+  which Android 13 and later tint for themed icons. The back level is
+  faint, so the card still sits behind the marks.
+
+`mipmap-anydpi/ic_launcher.xml` and `ic_launcher_round.xml` name the three
+layers. The minimum SDK is 28, so there are no per-density PNGs and no
+`-v26` qualifier. Write them, and the previews that show them under each
+mask, themed and over the safe zone, from the repository root:
+
+```bash
+node apps/xcode/scripts/icons.mjs adaptive <app> apps/<app>/android/src/main/res
+node apps/xcode/scripts/icons.mjs adaptive-previews <app> apps/<app>/docs/screenshots/android
+```
+
+The manifest names `@mipmap/ic_launcher` as the icon and
+`@mipmap/ic_launcher_round` as the round icon. Substrate Tasks' previews
+are in [apps/tasks/docs/screenshots/android](../apps/tasks/docs/screenshots/android).
+
 ## Adding an app
 
 1. Add an entry to `APPS` in `icons.mjs` with a name, the background pair,
@@ -89,8 +130,9 @@ adds its own.
    the glyph reads at 29 px, the shades sit close together, and nothing looks
    glossy.
 4. Write the app's AppIcon set:
-   `node scripts/icons.mjs appiconset <app> <App>/Assets.xcassets/AppIcon.appiconset`
-   (add `--mac` for a Mac app).
+   `node apps/xcode/scripts/icons.mjs appiconset <app> apps/<app>/apple/Assets.xcassets/AppIcon.appiconset`, from the repository root
+   (add `--mac` for a Mac app), and for an app on Android its adaptive
+   icon ([Android](#android)).
 
 An app in another repository copies `icons.mjs` and adds its own entry.
 Frame changes are made here first, then copied.

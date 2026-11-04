@@ -1,0 +1,38 @@
+{
+  "id": "sync",
+  "name": "Substrate Sync",
+  "platforms": [
+    "ios"
+  ],
+  "apple": {
+    "bundleID": "dev.reamde.substrate.sync",
+    "scheme": "SubstrateSync",
+    "extensions": [
+      "dev.reamde.substrate.sync.share"
+    ],
+    "clientIDKey": "SubstrateSyncClientID",
+    "redirectKey": "SubstrateSyncRedirect"
+  },
+  "publishes": [],
+  "asks": [
+    {
+      "package": "providers.substrate.reamde.dev/apple",
+      "atLeast": 3
+    },
+    {
+      "package": "providers.substrate.reamde.dev/applehealth",
+      "atLeast": 5
+    }
+  ],
+  "scopes": [
+    "write:providers.substrate.reamde.dev/apple/*",
+    "write:providers.substrate.reamde.dev/applehealth/account",
+    "write:providers.substrate.reamde.dev/applehealth/export",
+    "write:providers.substrate.reamde.dev/applehealth/*",
+    "write:substrate.reamde.dev/health/sleep",
+    "write:substrate.reamde.dev/health/workout",
+    "write:substrate.reamde.dev/observations/*"
+  ],
+  "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "feed": "sync"
+}

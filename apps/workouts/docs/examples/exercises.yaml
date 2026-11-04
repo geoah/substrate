@@ -1,0 +1,676 @@
+# Carried into substrate on 2026-11-02 from the owner's private repository, where it was
+# research/workouts/substrate/examples/exercises.yaml, the kinds were the draft
+# mneme.example.org/training and the app was called Spotter. The kinds are now
+# the app's own substrate.reamde.dev/training (decision record 0203) and the adapter is
+# substrate-workouts; nothing else changed, so where the comments below
+# mention Mneme they describe the plan of the time. README.md beside this
+# file says how these records relate to the JSON the app bundles.
+#
+# Example records: the thirty exercises in the owner's Hevy screenshots, as
+# records of substrate.reamde.dev/training/exercise (research draft of 2026-10-30).
+#
+# Apply this file first: routines and sets point at these ids. Nothing here is
+# applied anywhere yet; README.md beside this file says how and where to.
+#
+# IDS ARE SLUGS OF THE NAME, as the package's exercise kind asks
+# (`chest-press-machine`). The names are Hevy's, as the screenshots print
+# them, so an import of the owner's Hevy history finds them by eye; an
+# importer still resolves by `codes`, never by name.
+#
+# CODES ONLY WHERE THEY ARE CERTAIN.
+#   - `free-exercise-db`: the id in yuhonas/free-exercise-db,
+#     dist/exercises.json (876 exercises, fetched 2026-10-30), only where its
+#     entry is the same movement on the same equipment, checked against its
+#     instructions. `display` is its own name for it.
+#   - `healthconnect`: the androidx ExerciseSegment constant, only where
+#     Health Connect has a segment type for exactly this movement.
+# The chest press, the seated row and the vertical traction are selectorized
+# machines, which free-exercise-db does not have (its machine presses are the
+# plate-loaded "Leverage" ones), so they carry no code. No Hevy template ids:
+# they are read from the owner's account (GET /v1/exercise_templates), which
+# this draft had no access to; the importer adds them, matched on the exact
+# titles the screenshots print, when the owner confirms each mapping.
+#
+# THE UNIT IS `loadStep`'s. Every loaded exercise names its step, which pins it
+# to kilograms. Steps are 03 §9.1's defaults by equipment, except the
+# plate-loaded machines (2.5 kg, one plate on one arm), the chest press (5 kg,
+# which the logged 25 and 35 kg fit) and the three cable exercises (2.5 kg).
+# 03 §9.1's cable default of 5 kg made the Pallof press jump from 10 to 15 kg,
+# a 50 % step on a light core lift; 2.5 kg is the step a stack's add-on
+# weight gives, and the owner can change it per exercise. With every step
+# named, the default-grid path (no `loadStep`, the owner's default unit) is
+# covered by hand-made exercises in the app's tests.
+#
+# MUSCLES are Hevy's twenty lay groups. Rest classes are 02 §4.3's rows. The
+# default rep ranges are set only on the high-rep exercises, where the
+# engine's own default (8 to 12 at RPE 8) is wrong; routines name their own.
+#
+# IMPLEMENTS on the per-implement exercises: two dumbbells for the presses,
+# the fly, the raise, the Romanian deadlift and the split squat, one for the
+# single-leg Romanian deadlift (its slot note: one dumbbell, in the opposite
+# hand). Volume multiplies the logged load by it; comparisons do not.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: leg-press-machine
+data:
+  properties:
+    name: Leg Press (Machine)
+    measurement: weightreps
+    equipment: machine
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [quadriceps]
+    secondaryMuscles: [glutes, hamstrings]
+    restClass: compound
+    loadStep:
+      value: "5"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Leg_Press
+        display: Leg Press
+      - system: healthconnect
+        code: EXERCISE_SEGMENT_TYPE_LEG_PRESS
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: calf-press-machine
+data:
+  properties:
+    name: Calf Press (Machine)
+    measurement: weightreps
+    equipment: machine
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [calves]
+    restClass: highrep
+    loadStep:
+      value: "5"
+      unit: kg
+    defaultRepsMin: 12
+    defaultRepsMax: 20
+    codes:
+      - system: free-exercise-db
+        code: Calf_Press
+        display: Calf Press
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: seated-leg-curl-machine
+data:
+  properties:
+    name: Seated Leg Curl (Machine)
+    measurement: weightreps
+    equipment: machine
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [hamstrings]
+    restClass: isolation
+    loadStep:
+      value: "5"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Seated_Leg_Curl
+        display: Seated Leg Curl
+      - system: healthconnect
+        code: EXERCISE_SEGMENT_TYPE_LEG_CURL
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: leg-extension-machine
+data:
+  properties:
+    name: Leg Extension (Machine)
+    measurement: weightreps
+    equipment: machine
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [quadriceps]
+    restClass: isolation
+    loadStep:
+      value: "5"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Leg_Extensions
+        display: Leg Extensions
+      - system: healthconnect
+        code: EXERCISE_SEGMENT_TYPE_LEG_EXTENSION
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: hip-thrust-barbell
+data:
+  properties:
+    name: Hip Thrust (Barbell)
+    measurement: weightreps
+    equipment: barbell
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [glutes]
+    secondaryMuscles: [hamstrings]
+    restClass: compound
+    loadBase:
+      value: "20"
+      unit: kg
+    loadStep:
+      value: "2.5"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Barbell_Hip_Thrust
+        display: Barbell Hip Thrust
+      - system: healthconnect
+        code: EXERCISE_SEGMENT_TYPE_HIP_THRUST
+---
+# A kettlebell, as free-exercise-db's goblet squat is: the screenshots name no
+# implement. If the owner holds a dumbbell, the equipment becomes dumbbell and
+# the step 2 kg; the code stays, since the movement is the same.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: goblet-squat
+data:
+  properties:
+    name: Goblet Squat
+    measurement: weightreps
+    equipment: kettlebell
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [quadriceps]
+    secondaryMuscles: [glutes, adductors]
+    restClass: compound
+    loadStep:
+      value: "4"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Goblet_Squat
+        display: Goblet Squat
+---
+# The screenshots' chest press: a selectorized stack in 5 kg pins (the warm-up
+# at 25 kg, the working sets at 35 kg). Same values as the package README's
+# excerpt, so applying both lands one record.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: chest-press-machine
+data:
+  properties:
+    name: Chest Press (Machine)
+    measurement: weightreps
+    equipment: machine
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [chest]
+    secondaryMuscles: [shoulders, triceps]
+    restClass: compound
+    loadStep:
+      value: "5"
+      unit: kg
+---
+# Plate-loaded with independent arms, pushed together: both sides at once
+# (bilateral), and the load logged is the plates on one arm (perside), so the
+# step is one 2.5 kg plate. A variation of the stack chest press, whose
+# history a reader may offer when this one has none.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: iso-lateral-chest-press-machine
+data:
+  properties:
+    name: Iso-Lateral Chest Press (Machine)
+    measurement: weightreps
+    equipment: plateloaded
+    laterality: bilateral
+    loadBasis: perside
+    primaryMuscles: [chest]
+    secondaryMuscles: [shoulders, triceps]
+    restClass: compound
+    variationOf: substrate.reamde.dev/training/exercise/chest-press-machine
+    loadStep:
+      value: "2.5"
+      unit: kg
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: seated-row-machine
+data:
+  properties:
+    name: Seated Row (Machine)
+    measurement: weightreps
+    equipment: machine
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [upperback]
+    secondaryMuscles: [lats, biceps]
+    restClass: compound
+    loadStep:
+      value: "5"
+      unit: kg
+---
+# The myo-rep exercise of Day 1. The stop rule is written out although it is
+# the default (the method's own: stop when a mini-set loses a rep from the
+# first), so the agent sees where to change it.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: lateral-raise-dumbbell
+data:
+  properties:
+    name: Lateral Raise (Dumbbell)
+    measurement: weightreps
+    equipment: dumbbell
+    laterality: bilateral
+    loadBasis: perimplement
+    implements: 2
+    primaryMuscles: [shoulders]
+    restClass: isolation
+    loadStep:
+      value: "2"
+      unit: kg
+    myoStopRule: repdrop
+    codes:
+      - system: free-exercise-db
+        code: Side_Lateral_Raise
+        display: Side Lateral Raise
+      - system: healthconnect
+        code: EXERCISE_SEGMENT_TYPE_DUMBBELL_LATERAL_RAISE
+---
+# DUMBBELL, NOT BARBELL. The Day 1 card cuts the name at "Romanian Deadlift (".
+# The folder is back-friendly: dumbbells hang beside the legs, can be put down
+# at once when the back complains, and start far lighter than a 20 kg bar. The
+# owner already does the single-leg version with dumbbells. free-exercise-db's
+# Romanian deadlift is the barbell one, so there is no code.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: romanian-deadlift-dumbbell
+data:
+  properties:
+    name: Romanian Deadlift (Dumbbell)
+    aliases: [RDL, DB RDL]
+    measurement: weightreps
+    equipment: dumbbell
+    laterality: bilateral
+    loadBasis: perimplement
+    implements: 2
+    primaryMuscles: [hamstrings]
+    secondaryMuscles: [glutes, lowerback]
+    restClass: compound
+    loadStep:
+      value: "2"
+      unit: kg
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: incline-bench-press-dumbbell
+data:
+  properties:
+    name: Incline Bench Press (Dumbbell)
+    measurement: weightreps
+    equipment: dumbbell
+    laterality: bilateral
+    loadBasis: perimplement
+    implements: 2
+    primaryMuscles: [chest]
+    secondaryMuscles: [shoulders, triceps]
+    restClass: compound
+    loadStep:
+      value: "2"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Incline_Dumbbell_Press
+        display: Incline Dumbbell Press
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: vertical-traction-machine
+data:
+  properties:
+    name: Vertical Traction (Machine)
+    aliases: [Lat pulldown machine]
+    measurement: weightreps
+    equipment: machine
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [lats]
+    secondaryMuscles: [biceps, upperback]
+    restClass: compound
+    loadStep:
+      value: "5"
+      unit: kg
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: triceps-pushdown
+data:
+  properties:
+    name: Triceps Pushdown
+    measurement: weightreps
+    equipment: cable
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [triceps]
+    restClass: isolation
+    loadStep:
+      value: "2.5"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Triceps_Pushdown
+        display: Triceps Pushdown
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: triceps-rope-pushdown
+data:
+  properties:
+    name: Triceps Rope Pushdown
+    measurement: weightreps
+    equipment: cable
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [triceps]
+    restClass: isolation
+    loadStep:
+      value: "2.5"
+      unit: kg
+    variationOf: substrate.reamde.dev/training/exercise/triceps-pushdown
+    codes:
+      - system: free-exercise-db
+        code: Triceps_Pushdown_-_Rope_Attachment
+        display: Triceps Pushdown - Rope Attachment
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: calf-extension-machine
+data:
+  properties:
+    name: Calf Extension (Machine)
+    measurement: weightreps
+    equipment: machine
+    laterality: bilateral
+    loadBasis: total
+    primaryMuscles: [calves]
+    restClass: highrep
+    loadStep:
+      value: "5"
+      unit: kg
+    defaultRepsMin: 12
+    defaultRepsMax: 20
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: chest-fly-dumbbell
+data:
+  properties:
+    name: Chest Fly (Dumbbell)
+    measurement: weightreps
+    equipment: dumbbell
+    laterality: bilateral
+    loadBasis: perimplement
+    implements: 2
+    primaryMuscles: [chest]
+    secondaryMuscles: [shoulders]
+    restClass: isolation
+    loadStep:
+      value: "2"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Dumbbell_Flyes
+        display: Dumbbell Flyes
+---
+# No code: free-exercise-db's dumbbell shoulder press is seated, and whether
+# Hevy's "Overhead Press (Dumbbell)" is was not checked. Day 3 asks for it
+# seated; the exercise stays the owner's.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: overhead-press-dumbbell
+data:
+  properties:
+    name: Overhead Press (Dumbbell)
+    measurement: weightreps
+    equipment: dumbbell
+    laterality: bilateral
+    loadBasis: perimplement
+    implements: 2
+    primaryMuscles: [shoulders]
+    secondaryMuscles: [triceps]
+    restClass: compound
+    loadStep:
+      value: "2"
+      unit: kg
+---
+# Plate-loaded, logged per arm like the iso-lateral press. free-exercise-db's
+# "Leverage Shoulder Press" loads plates onto the machine's pins.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: shoulder-press-machine-plates
+data:
+  properties:
+    name: Shoulder Press (Machine Plates)
+    measurement: weightreps
+    equipment: plateloaded
+    laterality: bilateral
+    loadBasis: perside
+    primaryMuscles: [shoulders]
+    secondaryMuscles: [triceps]
+    restClass: compound
+    loadStep:
+      value: "2.5"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Leverage_Shoulder_Press
+        display: Leverage Shoulder Press
+---
+# The rotary torso machine in the thumbnail, one direction at a time. No code:
+# free-exercise-db's "Torso Rotation" is a stretch on an exercise ball.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: torso-rotation
+data:
+  properties:
+    name: Torso Rotation
+    measurement: weightreps
+    equipment: machine
+    laterality: unilateral
+    loadBasis: total
+    primaryMuscles: [abdominals]
+    restClass: highrep
+    loadStep:
+      value: "5"
+      unit: kg
+---
+# free-exercise-db's "Split Squat with Dumbbells" has the rear foot elevated,
+# which is the Bulgarian split squat.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: bulgarian-split-squat-dumbbell
+data:
+  properties:
+    name: Bulgarian Split Squat (Dumbbell)
+    aliases: [BSS, Rear-foot-elevated split squat]
+    measurement: weightreps
+    equipment: dumbbell
+    laterality: unilateral
+    loadBasis: perimplement
+    implements: 2
+    primaryMuscles: [quadriceps]
+    secondaryMuscles: [glutes, hamstrings]
+    restClass: compound
+    loadStep:
+      value: "2"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Split_Squat_with_Dumbbells
+        display: Split Squat with Dumbbells
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: single-leg-romanian-deadlift-dumbbell
+data:
+  properties:
+    name: Single Leg Romanian Deadlift (Dumbbell)
+    aliases: [SL RDL]
+    measurement: weightreps
+    equipment: dumbbell
+    laterality: unilateral
+    loadBasis: perimplement
+    implements: 1
+    primaryMuscles: [hamstrings]
+    secondaryMuscles: [glutes, lowerback]
+    restClass: compound
+    variationOf: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
+    loadStep:
+      value: "2"
+      unit: kg
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: plank
+data:
+  properties:
+    name: Plank
+    measurement: duration
+    equipment: none
+    laterality: bilateral
+    primaryMuscles: [abdominals]
+    restClass: timed
+    codes:
+      - system: free-exercise-db
+        code: Plank
+        display: Plank
+      - system: healthconnect
+        code: EXERCISE_SEGMENT_TYPE_PLANK
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: crunch
+data:
+  properties:
+    name: Crunch
+    measurement: repsonly
+    equipment: none
+    laterality: bilateral
+    primaryMuscles: [abdominals]
+    restClass: highrep
+    defaultRepsMin: 15
+    defaultRepsMax: 20
+    codes:
+      - system: free-exercise-db
+        code: Crunches
+        display: Crunches
+      - system: healthconnect
+        code: EXERCISE_SEGMENT_TYPE_CRUNCH
+---
+# The name as it should be spelt; Hevy's own spelling is an alias so search
+# and an import by eye still find it. The thumbnail is a prone press-up: hips
+# on the floor, the arms lifting the chest. No code: free-exercise-db's lower
+# back curl lifts the chest without the arms.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: lumbar-extension-stretch
+data:
+  properties:
+    name: Lumbar Extension Stretch
+    aliases: [Lumbar Extention Stretch, Prone press-up]
+    measurement: repsonly
+    equipment: none
+    laterality: bilateral
+    primaryMuscles: [lowerback]
+    restClass: highrep
+    defaultRepsMin: 10
+    defaultRepsMax: 10
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: glute-bridge
+data:
+  properties:
+    name: Glute Bridge
+    measurement: repsonly
+    equipment: none
+    laterality: bilateral
+    primaryMuscles: [glutes]
+    secondaryMuscles: [hamstrings]
+    restClass: highrep
+    defaultRepsMin: 12
+    defaultRepsMax: 20
+    codes:
+      - system: free-exercise-db
+        code: Butt_Lift_Bridge
+        display: Butt Lift (Bridge)
+---
+# Alternating sides inside one set. Reps count per side, as on every
+# alternating and one-side-at-a-time exercise: 10 reps are 10 with each side.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: bird-dog
+data:
+  properties:
+    name: Bird Dog
+    measurement: repsonly
+    equipment: none
+    laterality: alternating
+    primaryMuscles: [lowerback]
+    secondaryMuscles: [abdominals, glutes]
+    restClass: highrep
+    defaultRepsMin: 8
+    defaultRepsMax: 12
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: cable-core-pallof-press
+data:
+  properties:
+    name: Cable Core Pallof Press
+    aliases: [Pallof press]
+    measurement: weightreps
+    equipment: cable
+    laterality: unilateral
+    loadBasis: total
+    primaryMuscles: [abdominals]
+    restClass: highrep
+    loadStep:
+      value: "2.5"
+      unit: kg
+    codes:
+      - system: free-exercise-db
+        code: Pallof_Press
+        display: Pallof Press
+---
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: glute-focused-step-down
+data:
+  properties:
+    name: Glute Focused Step Down
+    measurement: repsonly
+    equipment: none
+    laterality: unilateral
+    primaryMuscles: [glutes]
+    secondaryMuscles: [quadriceps]
+    restClass: highrep
+---
+# Bodyweight: the effective load is bodyShare times the session's body mass.
+# 0.65 is the figure the exercise kind itself gives for a push-up; open
+# question 22 (what share) is still the owner's.
+kind: substrate.reamde.dev/training/exercise
+metadata:
+  id: push-up
+data:
+  properties:
+    name: Push Up
+    aliases: [Push-up, Press-up]
+    measurement: bodyweightreps
+    equipment: none
+    laterality: bilateral
+    primaryMuscles: [chest]
+    secondaryMuscles: [shoulders, triceps]
+    restClass: compound
+    bodyShare: "0.65"
+    codes:
+      - system: free-exercise-db
+        code: Pushups
+        display: Pushups

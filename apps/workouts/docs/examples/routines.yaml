@@ -1,0 +1,1016 @@
+# Carried into substrate on 2026-11-02 from the owner's private repository, where it was
+# research/workouts/substrate/examples/routines.yaml, the kinds were the draft
+# mneme.example.org/training and the app was called Spotter. The kinds are now
+# the app's own substrate.reamde.dev/training (decision record 0203) and the adapter is
+# substrate-workouts; nothing else changed, so where the comments below
+# mention Mneme they describe the plan of the time. README.md beside this
+# file says how these records relate to the JSON the app bundles.
+#
+# Example records: the owner's Hevy folder "Full Body 3x Week (Back-Friendly)"
+# as four records of substrate.reamde.dev/training/routine (research draft of
+# 2026-10-30). Apply after exercises.yaml; sessions name these ids.
+#
+# WHAT THE SCREENSHOTS GIVE AND WHAT IS WRITTEN HERE.
+#   - The folder, the four routines' order and names, and each card's
+#     exercises, in the card's order. A card stops after two lines, so each
+#     Day routine holds the five names visible; the agent may append more.
+#   - The fourth card's title is hidden behind the in-progress bar. Its
+#     exercises are read from the card text ("Calf Extension (Machine), Leg
+#     Press (Machine), Chest Fly (Dumbbell), Seated Row (Machine), Overhead
+#     Press (Dumbbel..."); its name here is a stand-in, "Day 3", with the id
+#     `day-3` so a later rename keeps the id.
+#   - Fully Body Collection #1 is the routine the screenshotted session ran:
+#     the card's first six names, then the exercises the session's reorder
+#     list and set grids show, in that order. Nothing is assumed between
+#     Goblet Squat and Chest Press (Machine).
+#   - The rests the screenshots show are kept: Plank 15 s, Crunch and
+#     Lumbar Extension Stretch off (PT0S), Chest Press (Machine) 1 min 30 s,
+#     and no rest inside the Glute Bridge and Bird Dog superset. One change:
+#     Hevy had no rest after that superset's round either; here the round
+#     rest is 1 min, so the rest inside the superset and the rest after it
+#     differ, which Hevy cannot say (research 02 §3.4).
+#   - Everything else is written for the folder's purpose: rep ranges with a
+#     target RPE, the hinge and the squat kept further from failure, one or
+#     two warm-ups on each routine's first compound, slot notes that keep the
+#     lower back neutral. Loads are seeds; once history exists the
+#     suggestion wins (research 03 §11.4).
+#
+# ABSENT IS NOT ZERO. A rest left out takes the app's default: 02 §4.3 by the
+# exercise's rest class, 02 §4.4 inside groups and structures, 45 s after a
+# warm-up. Day 1's seated row and Day 2's superset transition are left out on
+# purpose, to exercise that path. PT0S means no rest and no timer.
+#
+# TARGETS: repsMin equal to repsMax is an exact count; a duration alone is a
+# timed set. Effort is a range too: rpeMin equal to rpeMax is one value
+# ("RPE 8"); Day 3's overhead press is a real range, RPE 7 to 8, whose top
+# the suggestion reads. `termination` is written only where it is not what
+# the targets imply (rirstop, failure). `role: working` and `structure: straight` are the
+# declared defaults and are left out. Every planned set has a `key`, `w1`
+# and `w2` for warm-ups and `s1` to `s3` for working sets, which the sets of
+# a session name in `target.plannedSet`; an edit keeps them. Reps count per
+# side on one-side-at-a-time and alternating exercises.
+#
+# THE METHODS THESE ROUTINES USE (coverage.yaml has the rest: top and
+# back-off sets, myo-rep match, rest-pause, clusters, AMRAP, paired sets and
+# circuits, assistance, distance):
+#   warm-ups and a rest override after one    Day 1 leg press
+#   a myo-rep set                             Day 1 lateral raise
+#   a drop set                                Fully Body chest press
+#   timed holds                               Fully Body plank
+#   one side at a time, with a side switch    Fully Body split squat (and
+#                                             four more)
+#   bodyweight, ended by an effort target     Fully Body push up (rirstop)
+#   a superset, 0 s inside and 1 min after    Fully Body glute bridge and
+#                                             bird dog
+#   a push and pull superset, default inside  Day 2 incline press and
+#                                             vertical traction
+#   a set to failure                          Day 2 rope pushdown
+#   a tempo                                   Day 1 Romanian deadlift
+kind: substrate.reamde.dev/training/routine
+metadata:
+  id: fully-body-collection-1
+data:
+  properties:
+    name: "Fully Body Collection #1"
+    folder: Full Body 3x Week (Back-Friendly)
+    position: 1
+    notes: >-
+      Every exercise of the folder in one routine: open it and do what the
+      day allows, in any order. Two sets each, stopped one or two reps short,
+      except the chest press, whose second set ends with a drop. Core and
+      glute work is a good start on a stiff day.
+    groups:
+      - key: a
+        groupKind: superset
+        roundRest: PT1M
+    slots:
+      - key: leg-press
+        exercise: substrate.reamde.dev/training/exercise/leg-press-machine
+        setRest: PT2M
+        sets:
+          - key: w1
+            role: warmup
+            load:
+              value: "40"
+              unit: kg
+            repsMin: 12
+            repsMax: 12
+          - key: s1
+            load:
+              value: "90"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "90"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: calf-press
+        exercise: substrate.reamde.dev/training/exercise/calf-press-machine
+        setRest: PT1M
+        sets:
+          - key: s1
+            load:
+              value: "60"
+              unit: kg
+            repsMin: 12
+            repsMax: 20
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "60"
+              unit: kg
+            repsMin: 12
+            repsMax: 20
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: seated-leg-curl
+        exercise: substrate.reamde.dev/training/exercise/seated-leg-curl-machine
+        setRest: PT1M30S
+        sets:
+          - key: s1
+            load:
+              value: "35"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "35"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: leg-extension
+        exercise: substrate.reamde.dev/training/exercise/leg-extension-machine
+        setRest: PT1M30S
+        sets:
+          - key: s1
+            load:
+              value: "35"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "35"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: hip-thrust
+        exercise: substrate.reamde.dev/training/exercise/hip-thrust-barbell
+        setRest: PT2M
+        notes: >-
+          Ribs down and chin tucked; stop with the hips level with the knees,
+          without arching the lower back.
+        sets:
+          - key: s1
+            load:
+              value: "60"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "60"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: goblet-squat
+        exercise: substrate.reamde.dev/training/exercise/goblet-squat
+        setRest: PT2M
+        sets:
+          - key: s1
+            load:
+              value: "16"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "7"
+            rpeMax: "7"
+          - key: s2
+            load:
+              value: "16"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "7"
+            rpeMax: "7"
+      # The screenshot's chest press: the 25 kg warm-up, 35 kg working sets,
+      # 1 min 30 s between them, and a drop after set 2. RPE 9.5 is the
+      # effort the owner logs here; a machine press is safe that close. The
+      # drop's load is not written: the app cuts 20 % and rounds down to the
+      # 5 kg grid (35 kg to 25 kg, research 03 §11.7).
+      - key: chest-press
+        exercise: substrate.reamde.dev/training/exercise/chest-press-machine
+        setRest: PT1M30S
+        sets:
+          - key: w1
+            role: warmup
+            load:
+              value: "25"
+              unit: kg
+            repsMin: 15
+            repsMax: 15
+          - key: s1
+            load:
+              value: "35"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "9.5"
+            rpeMax: "9.5"
+          - key: s2
+            load:
+              value: "35"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "9.5"
+            rpeMax: "9.5"
+            structure: drop
+            drops: 1
+      - key: seated-row
+        exercise: substrate.reamde.dev/training/exercise/seated-row-machine
+        setRest: PT1M30S
+        sets:
+          - key: s1
+            load:
+              value: "40"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "40"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: shoulder-press
+        exercise: substrate.reamde.dev/training/exercise/shoulder-press-machine-plates
+        setRest: PT2M
+        sets:
+          - key: s1
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: triceps-pushdown
+        exercise: substrate.reamde.dev/training/exercise/triceps-pushdown
+        setRest: PT1M
+        sets:
+          - key: s1
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "9"
+            rpeMax: "9"
+          - key: s2
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "9"
+            rpeMax: "9"
+      - key: torso-rotation
+        exercise: substrate.reamde.dev/training/exercise/torso-rotation
+        setRest: PT1M
+        sideSwitch: PT10S
+        sideOrder: left
+        sets:
+          - key: s1
+            load:
+              value: "25"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "7"
+            rpeMax: "7"
+          - key: s2
+            load:
+              value: "25"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "7"
+            rpeMax: "7"
+      # One side at a time: each set is two records, left then right, 15 s
+      # apart. A dumbbell in each hand; the load is one dumbbell's.
+      - key: bulgarian-split-squat
+        exercise: substrate.reamde.dev/training/exercise/bulgarian-split-squat-dumbbell
+        setRest: PT2M
+        sideSwitch: PT15S
+        sideOrder: left
+        notes: >-
+          Rear foot on the bench, torso upright; step far enough forward that
+          the front heel stays down.
+        sets:
+          - key: s1
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: single-leg-romanian-deadlift
+        exercise: substrate.reamde.dev/training/exercise/single-leg-romanian-deadlift-dumbbell
+        setRest: PT1M30S
+        sideSwitch: PT15S
+        sideOrder: left
+        notes: >-
+          One dumbbell, in the hand opposite the working leg; hinge only as
+          far as the back stays flat.
+        sets:
+          - key: s1
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "7"
+          - key: s2
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "7"
+      # Timed holds, counted down (the default timer mode when a duration is
+      # set). Hevy's routine values were last time's 1:02 and 0:53; a range
+      # says what the owner is aiming for instead, and the suggestion adds
+      # 5 s a session inside it (research 03 §11.8, test vector V11).
+      - key: plank
+        exercise: substrate.reamde.dev/training/exercise/plank
+        setRest: PT15S
+        sets:
+          - key: s1
+            durationMin: PT45S
+            durationMax: PT1M30S
+          - key: s2
+            durationMin: PT45S
+            durationMax: PT1M30S
+      - key: crunch
+        exercise: substrate.reamde.dev/training/exercise/crunch
+        setRest: PT0S
+        sets:
+          - key: s1
+            repsMin: 12
+            repsMax: 20
+          - key: s2
+            repsMin: 12
+            repsMax: 20
+      - key: lumbar-extension-stretch
+        exercise: substrate.reamde.dev/training/exercise/lumbar-extension-stretch
+        setRest: PT0S
+        notes: >-
+          Hips stay on the floor; press up only as far as is comfortable and
+          hold two seconds at the top.
+        sets:
+          - key: s1
+            repsMin: 10
+            repsMax: 10
+          - key: s2
+            repsMin: 10
+            repsMax: 10
+      # The superset: straight from the bridge to the bird dog (transition
+      # PT0S, as the screenshot's "Rest: OFF"), then 1 min after the round.
+      # The bird dog, the last member, needs no transition.
+      - key: glute-bridge
+        exercise: substrate.reamde.dev/training/exercise/glute-bridge
+        group: a
+        transition: PT0S
+        sets:
+          - key: s1
+            repsMin: 12
+            repsMax: 20
+          - key: s2
+            repsMin: 12
+            repsMax: 20
+      - key: bird-dog
+        exercise: substrate.reamde.dev/training/exercise/bird-dog
+        group: a
+        notes: Reps per side, alternating; slow, and the hips stay square.
+        sets:
+          - key: s1
+            repsMin: 8
+            repsMax: 10
+          - key: s2
+            repsMin: 8
+            repsMax: 10
+      - key: pallof-press
+        exercise: substrate.reamde.dev/training/exercise/cable-core-pallof-press
+        setRest: PT1M
+        sideSwitch: PT10S
+        sideOrder: left
+        sets:
+          - key: s1
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 10
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "7"
+          - key: s2
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 10
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "7"
+      - key: glute-focused-step-down
+        exercise: substrate.reamde.dev/training/exercise/glute-focused-step-down
+        setRest: PT1M
+        sideSwitch: PT10S
+        sideOrder: left
+        sets:
+          - key: s1
+            repsMin: 8
+            repsMax: 12
+          - key: s2
+            repsMin: 8
+            repsMax: 12
+      # Bodyweight, ended by the effort target: keep going until one rep is
+      # left in reserve (RPE 9). Under `rirstop` the RPE is the stop rule, not
+      # a load selector (research 02 §5.4).
+      - key: push-up
+        exercise: substrate.reamde.dev/training/exercise/push-up
+        setRest: PT1M30S
+        sets:
+          - key: s1
+            termination: rirstop
+            rpeMin: "9"
+            rpeMax: "9"
+          - key: s2
+            termination: rirstop
+            rpeMin: "9"
+            rpeMax: "9"
+---
+# The heavier day of the three, in sets of 6 to 10. The hinge stays at RPE 7.
+kind: substrate.reamde.dev/training/routine
+metadata:
+  id: day-1-strength-foundation
+data:
+  properties:
+    name: Day 1 – Strength Foundation
+    folder: Full Body 3x Week (Back-Friendly)
+    position: 2
+    notes: >-
+      The heavier day: sets of 6 to 10, two reps short of failure (RPE 8).
+      The Romanian deadlift stays easier (RPE 7) and slow on the way down,
+      to spare the lower back. Two warm-ups on the leg press; the second lateral
+      raise is a myo-rep set.
+    slots:
+      # Two warm-ups, then a longer rest before the first working set (the
+      # second warm-up's `rest` overrides the 45 s warm-up rest).
+      - key: leg-press
+        exercise: substrate.reamde.dev/training/exercise/leg-press-machine
+        setRest: PT2M30S
+        notes: >-
+          Feet high and shoulder width; lower only until the hips start to
+          tuck.
+        sets:
+          - key: w1
+            role: warmup
+            load:
+              value: "40"
+              unit: kg
+            repsMin: 12
+            repsMax: 12
+          - key: w2
+            role: warmup
+            load:
+              value: "70"
+              unit: kg
+            repsMin: 6
+            repsMax: 6
+            rest: PT1M30S
+          - key: s1
+            load:
+              value: "100"
+              unit: kg
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "100"
+              unit: kg
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            load:
+              value: "100"
+              unit: kg
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+      # The load is the plates on one arm.
+      - key: iso-lateral-chest-press
+        exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
+        setRest: PT2M
+        sets:
+          - key: s1
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 6
+            repsMax: 10
+            rpeMin: "8"
+            rpeMax: "8"
+      # No setRest: the exercise's rest class (compound) gives 2 min.
+      - key: seated-row
+        exercise: substrate.reamde.dev/training/exercise/seated-row-machine
+        sets:
+          - key: s1
+            load:
+              value: "45"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "45"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            load:
+              value: "45"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "8"
+            rpeMax: "8"
+      # A straight set, then a myo-rep set: an activation set of 12 to 20 at
+      # RPE 9, then mini-sets 15 s apart (five breaths). The mini-set target
+      # (a quarter of the activation reps, 3 to 5), the cap (5) and the stop
+      # rule (the exercise's, repdrop) are the defaults, so not written.
+      - key: lateral-raise
+        exercise: substrate.reamde.dev/training/exercise/lateral-raise-dumbbell
+        setRest: PT1M30S
+        sets:
+          - key: s1
+            load:
+              value: "6"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "6"
+              unit: kg
+            repsMin: 12
+            repsMax: 20
+            rpeMin: "9"
+            rpeMax: "9"
+            structure: myo
+            intraSetPause: PT15S
+      - key: romanian-deadlift
+        exercise: substrate.reamde.dev/training/exercise/romanian-deadlift-dumbbell
+        setRest: PT2M
+        notes: >-
+          Bells close to the legs; hinge to mid-shin and end the set when
+          the back starts to round.
+        sets:
+          - key: s1
+            load:
+              value: "16"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "7"
+            tempo: 3-1-1-0
+          - key: s2
+            load:
+              value: "16"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "7"
+            tempo: 3-1-1-0
+          - key: s3
+            load:
+              value: "16"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "7"
+            tempo: 3-1-1-0
+---
+# The volume day, in sets of 10 to 15. The incline press and the vertical
+# traction alternate as a push and pull superset: no transition is written,
+# so the app takes 02 §4.4's 15 s for antagonists, and the round rest is
+# 2 min 30 s, 02 §4.4's figure for a superset of compounds. The incline
+# press's warm-up runs before the first round, not inside it (02 §2.2).
+kind: substrate.reamde.dev/training/routine
+metadata:
+  id: day-2-volume-stability
+data:
+  properties:
+    name: Day 2 – Volume & Stability
+    folder: Full Body 3x Week (Back-Friendly)
+    position: 3
+    notes: >-
+      The volume day: sets of 10 to 15 at RPE 8. The incline press and the
+      vertical traction alternate as a superset. The goblet squat stays easy
+      (RPE 7) to keep the trunk upright; the last pushdown goes to failure.
+    groups:
+      - key: a
+        groupKind: superset
+        pairing: antagonist
+        roundRest: PT2M30S
+    slots:
+      - key: seated-leg-curl
+        exercise: substrate.reamde.dev/training/exercise/seated-leg-curl-machine
+        setRest: PT1M30S
+        sets:
+          - key: s1
+            load:
+              value: "35"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "35"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            load:
+              value: "35"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: incline-bench-press
+        exercise: substrate.reamde.dev/training/exercise/incline-bench-press-dumbbell
+        group: a
+        sets:
+          - key: w1
+            role: warmup
+            load:
+              value: "10"
+              unit: kg
+            repsMin: 12
+            repsMax: 12
+          - key: s1
+            load:
+              value: "14"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "14"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            load:
+              value: "14"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: vertical-traction
+        exercise: substrate.reamde.dev/training/exercise/vertical-traction-machine
+        group: a
+        sets:
+          - key: s1
+            load:
+              value: "45"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "45"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            load:
+              value: "45"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: goblet-squat
+        exercise: substrate.reamde.dev/training/exercise/goblet-squat
+        setRest: PT2M
+        notes: >-
+          Heels down and elbows inside the knees; only as deep as the lower
+          back stays neutral.
+        sets:
+          - key: s1
+            load:
+              value: "16"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "7"
+            rpeMax: "7"
+          - key: s2
+            load:
+              value: "16"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "7"
+            rpeMax: "7"
+          - key: s3
+            load:
+              value: "16"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "7"
+            rpeMax: "7"
+      # The last set goes to failure: no rep ceiling, 12 as the floor.
+      - key: triceps-rope-pushdown
+        exercise: substrate.reamde.dev/training/exercise/triceps-rope-pushdown
+        setRest: PT1M
+        sets:
+          - key: s1
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "9"
+            rpeMax: "9"
+          - key: s2
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "9"
+            rpeMax: "9"
+          - key: s3
+            load:
+              value: "20"
+              unit: kg
+            repsMin: 12
+            termination: failure
+---
+# The fourth routine; its title is hidden in the screenshot (see the top of
+# this file). The overhead press is done seated, back on the pad.
+kind: substrate.reamde.dev/training/routine
+metadata:
+  id: day-3
+data:
+  properties:
+    name: Day 3
+    folder: Full Body 3x Week (Back-Friendly)
+    position: 4
+    notes: >-
+      Sets of 10 to 15 at RPE 8, and 8 to 12 at RPE 7 to 8 on the press; one
+      warm-up on the leg press. The overhead press is done seated, back on
+      the pad.
+    slots:
+      - key: calf-extension
+        exercise: substrate.reamde.dev/training/exercise/calf-extension-machine
+        setRest: PT1M
+        sets:
+          - key: s1
+            load:
+              value: "50"
+              unit: kg
+            repsMin: 12
+            repsMax: 20
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "50"
+              unit: kg
+            repsMin: 12
+            repsMax: 20
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            load:
+              value: "50"
+              unit: kg
+            repsMin: 12
+            repsMax: 20
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: leg-press
+        exercise: substrate.reamde.dev/training/exercise/leg-press-machine
+        setRest: PT2M
+        sets:
+          - key: w1
+            role: warmup
+            load:
+              value: "40"
+              unit: kg
+            repsMin: 12
+            repsMax: 12
+          - key: s1
+            load:
+              value: "90"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "90"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            load:
+              value: "90"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: chest-fly
+        exercise: substrate.reamde.dev/training/exercise/chest-fly-dumbbell
+        setRest: PT1M30S
+        notes: Elbows soft; stop the stretch with the hands level with the
+          chest.
+        sets:
+          - key: s1
+            load:
+              value: "8"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "8"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            load:
+              value: "8"
+              unit: kg
+            repsMin: 12
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: seated-row
+        exercise: substrate.reamde.dev/training/exercise/seated-row-machine
+        setRest: PT2M
+        sets:
+          - key: s1
+            load:
+              value: "45"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "45"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+          - key: s3
+            load:
+              value: "45"
+              unit: kg
+            repsMin: 10
+            repsMax: 15
+            rpeMin: "8"
+            rpeMax: "8"
+      - key: overhead-press
+        exercise: substrate.reamde.dev/training/exercise/overhead-press-dumbbell
+        setRest: PT2M
+        notes: Seated on an upright bench with the back on the pad, so the
+          lower back does not arch.
+        sets:
+          - key: s1
+            load:
+              value: "12"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "8"
+          - key: s2
+            load:
+              value: "12"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "8"
+          - key: s3
+            load:
+              value: "12"
+              unit: kg
+            repsMin: 8
+            repsMax: 12
+            rpeMin: "7"
+            rpeMax: "8"

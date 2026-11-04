@@ -1,0 +1,94 @@
+# The Apple apps: the console, bundled, in a native window on macOS, iPadOS
+# and iOS; Substrate Chat, the agent chat as a native app on the same three;
+# Substrate Sync, an iPhone and iPad app that pushes Health, Contacts and
+# Calendar into a repository; Substrate Workouts, on iPhone; Substrate
+# Tasks, on the same three as Chat; and the template `mise run apps:new`
+# copies, built as an app is. xcodegen writes Substrate.xcodeproj from this
+# file and the project is never committed; `mise run apple:project` regenerates it. Each app's
+# targets are its own apple/targets.yml, included below; xcodegen reads the
+# source and package paths in an included file relative to that file, and
+# the build settings' paths (INFOPLIST_FILE, CODE_SIGN_ENTITLEMENTS) relative
+# to this folder, where the project is written.
+name: Substrate
+options:
+  bundleIdPrefix: dev.reamde.substrate
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+packages:
+  # The macOS updater. iOS has none: an iPhone installs a release from its
+  # manifest, and the app only offers the link (Updater.swift).
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
+  # What the apps share: the server's address and discovery, the requests,
+  # signing in, the session, the status check and their screens, and the
+  # record views (../kit/README.md).
+  SubstrateKit:
+    path: ../kit
+  # Substrate Workouts' model, session and suggestion engines (WorkoutsCore)
+  # and its sync with a substrate (WorkoutsSync), over the kit's portable
+  # libraries alone.
+  WorkoutsKit:
+    path: ../workouts/WorkoutsKit
+  # Substrate Chat below its views: the list and its conversations on the
+  # kit's runtime, the transcript fold, the words, what the device keeps.
+  ChatKit:
+    path: ../chat/ChatKit
+  # Substrate Tasks' core (TasksCore): its root under the kit's link, the
+  # task editor and the presenters, with no UI framework.
+  TasksKit:
+    path: ../tasks/TasksKit
+settings:
+  base:
+    DEVELOPMENT_TEAM: KFA5J8GDWJ
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Stamped by `apple.sh release` and empty everywhere else: a build with
+    # no SUBSTRATE_UPDATES_URL never looks for an update, so a local build
+    # is not offered whatever was published last.
+    SUBSTRATE_VERSION: ""
+    SUBSTRATE_CHANNEL: ""
+    SUBSTRATE_COMMIT: ""
+    SUBSTRATE_UPDATES_URL: ""
+    SUBSTRATE_SPARKLE_KEY: ""
+    # The console app's OAuth client id, the same way: empty is a local
+    # build's loopback id (ConsoleSignIn.localClientID).
+    SUBSTRATE_CONSOLE_CLIENT_ID: ""
+    # Substrate Chat's OAuth client id: the URL of the client ID metadata
+    # document a release publishes beside itself. Empty is a local app's
+    # loopback id (ChatManifest.localClientID).
+    SUBSTRATE_CHAT_CLIENT_ID: ""
+    # Substrate Sync's, the same way: empty is a local build's loopback id
+    # (SyncManifest.localClientID).
+    SUBSTRATE_SYNC_CLIENT_ID: ""
+    # Substrate Workouts', the same way (WorkoutsManifest.localClientID).
+    SUBSTRATE_WORKOUTS_CLIENT_ID: ""
+    # Substrate Tasks', the same way (TasksManifest.localClientID).
+    SUBSTRATE_TASKS_CLIENT_ID: ""
+    # The https redirect each release claims, beside its client id:
+    # `https://<site host>/apps/<app>/callback`, listed in the client
+    # document `apple.sh` publishes. Empty is a local build, which signs in
+    # through a loopback port (AppManifest.claimedRedirect).
+    SUBSTRATE_CONSOLE_REDIRECT: ""
+    SUBSTRATE_CHAT_REDIRECT: ""
+    SUBSTRATE_SYNC_REDIRECT: ""
+    SUBSTRATE_WORKOUTS_REDIRECT: ""
+    SUBSTRATE_TASKS_REDIRECT: ""
+    # The host of the site `apple.sh site` publishes, whose association file
+    # names every app. With SUBSTRATE_ASSOCIATED_DOMAINS=YES, which the
+    # release sets beside it, each app signs with the `-site` entitlements:
+    # `webcredentials:` and `applinks:` on that host. A local build sets
+    # neither and carries no associated domain, so it needs no provisioning
+    # profile with the capability.
+    SUBSTRATE_SITE_HOST: ""
+    SUBSTRATE_ASSOCIATED_DOMAINS: "NO"
+include:
+  - ../console/apple/targets.yml
+  - ../chat/apple/targets.yml
+  - ../sync/apple/targets.yml
+  - ../workouts/apple/targets.yml
+  - ../tasks/apple/targets.yml
+  - ../template/apple/targets.yml

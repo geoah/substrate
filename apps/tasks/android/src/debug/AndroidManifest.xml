@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- A debug build talks to a local substrate, which serves plain HTTP:
+         the config allows it to the loopback names and the emulator's way
+         to the host, and nowhere else; a release allows it nowhere. -->
+    <application android:networkSecurityConfig="@xml/debug_network_security_config" />
+</manifest>

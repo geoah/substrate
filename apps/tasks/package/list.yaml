@@ -1,0 +1,36 @@
+# list: a named list of the owner's tasks. "Task list" on every surface,
+# because "List" alone reads as a page of the console rather than a record.
+#
+# NOT THE SAMPLE'S `project`. A project has a lifecycle of its own (active,
+# on hold, done, abandoned) and a summary of where the work stands, and it
+# is finished one day. A list is a heading and a place in the sidebar:
+# "Groceries" is never done. So it has no state, and adding one later is
+# additive if the owner ever wants to archive a list.
+#
+# THE ORDER IS `position`, a decimal, as on the task: moving a list writes
+# that one list, a number between its new neighbours.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/tasks/list
+data:
+  authority: substrate.reamde.dev
+  package: tasks
+  description: >-
+    A task list: a named list of your tasks, such as Groceries or Home, kept
+    in the order you arrange your lists. A task is in one list or in none.
+  purpose: primary
+  names:
+    singular: list
+  label:
+    singular: Task list
+    plural: Task lists
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the list's name, such as Groceries
+    position:
+      type: decimal
+      description: where the list sits among your lists, lowest first; a number
+        written as a string, such as "2" or "1.5"

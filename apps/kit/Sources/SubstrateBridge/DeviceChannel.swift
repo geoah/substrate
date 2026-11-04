@@ -1,0 +1,149 @@
+import Foundation
+import SubstrateCore
+
+/// Device-service calls to Kotlin, for one handle or for none. A call is
+/// answered exactly once; cancelling the task that waits on it, or closing
+/// its handle, answers it `cancelled` and tells Kotlin to stop. A request
+/// leaves through `CallTable.admit`, so a cancel either keeps it from
+/// leaving or follows it.
+public final class DeviceChannel: Sendable {
+    let handle: Handle?
+    private let calls: CallTable
+    private let outbox: HandleOutbox
+    private let canceller: Canceller
+
+    init(handle: Handle?, calls: CallTable, outbox: HandleOutbox, record: BridgeRecord) {
+        self.handle = handle
+        self.calls = calls
+        self.outbox = outbox
+        canceller = Canceller(handle: handle, calls: calls, outbox: outbox, record: record)
+    }
+
+    /// One answer, decoded as the type the request's comment names.
+    public func call<Answer: Decodable>(_ request: DeviceRequest, as _: Answer.Type) async throws -> Answer {
+        let body = try await call(request)
+        return try BridgeCodec.decode(Answer.self, from: body)
+    }
+
+    public func call(_ request: DeviceRequest) async throws -> JSONValue {
+        let id = calls.nextID()
+        let message = try BridgeCodec.encode(op: .request, handle: handle, id: id, body: request)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                calls.waitCall(id, handle: handle, service: request.service, continuation)
+                // A cancel that came before the call was waiting found nothing
+                // to answer; the flag it set first is read here.
+                if Task.isCancelled {
+                    cancel(id, "the caller was cancelled")
+                } else {
+                    send(id, message)
+                }
+            }
+        } onCancel: {
+            cancel(id, "the caller was cancelled")
+        }
+    }
+
+    /// One answer, waited for on the calling thread, for a caller that
+    /// cannot suspend (a `SessionStorage` is synchronous). The thread that
+    /// answers the call wakes the caller, and the request leaves on the
+    /// handle's own queue, so the wait needs no thread of Swift's executors:
+    /// a few callers blocked on those would otherwise leave none for the
+    /// answers, and every wait would run out its time. Past `timeout` the
+    /// call is cancelled on both sides.
+    public func callBlocking(_ request: DeviceRequest, timeout: TimeInterval) -> Result<JSONValue, Error> {
+        let id = calls.nextID()
+        let message: String
+        do {
+            message = try BridgeCodec.encode(op: .request, handle: handle, id: id, body: request)
+        } catch {
+            return .failure(error)
+        }
+        let box = AnswerBox()
+        calls.waitBlocking(id, handle: handle, service: request.service) { box.set($0) }
+        send(id, message)
+        if !box.wait(timeout: timeout) {
+            cancel(id, "the caller stopped waiting")
+        }
+        return box.result ?? .failure(BridgeFailure(.unavailable, "call \(id) was not answered in time"))
+    }
+
+    /// A chunked answer: values in order, one `chunk` each, until Kotlin
+    /// ends it. At most `capacity` wait to be read: past that the answer
+    /// fails with `overflow` and Kotlin is told to stop, never a value
+    /// silently dropped. Ending the iteration early cancels it on Kotlin's
+    /// side, whether or not this channel is still there: the stream holds
+    /// what the cancel needs, as the table holds the call.
+    public func chunks(_ request: DeviceRequest, capacity: Int = 256) -> AsyncThrowingStream<JSONValue, Error> {
+        let id = calls.nextID()
+        let (chunks, continuation) = AsyncThrowingStream<JSONValue, Error>.makeStream(bufferingPolicy: .bufferingOldest(capacity))
+        let cancel = canceller
+        continuation.onTermination = { termination in
+            if case .cancelled = termination { cancel(id, "the reader stopped") }
+        }
+        calls.waitChunks(id, handle: handle, service: request.service, continuation)
+        do {
+            send(id, try BridgeCodec.encode(op: .request, handle: handle, id: id, body: request))
+        } catch {
+            _ = calls.finish(id, failure: BridgeFailure(.swiftFailure, "a request did not encode: \(BridgeCodec.describe(error))"))
+        }
+        return chunks
+    }
+
+    /// Answers the call `cancelled` and, when its request had left, tells
+    /// Kotlin.
+    func cancel(_ id: Int, _ reason: String) {
+        canceller(id, reason)
+    }
+
+    /// The call's request, unless the call was answered first.
+    private func send(_ id: Int, _ message: String) {
+        let calls = calls
+        let outbox = outbox
+        if calls.admit(id, { outbox.enqueue(message, onFailure: { _ = calls.finish(id, failure: $0) }) }) == .refused {
+            calls.cancel(id, "the handle is closed")
+        }
+    }
+}
+
+/// What cancelling a call takes, held apart from the channel that made it:
+/// a stream's reader may stop after the channel is gone, and its call is
+/// still the table's to answer and Kotlin's to stop.
+private struct Canceller: Sendable {
+    let handle: Handle?
+    let calls: CallTable
+    let outbox: HandleOutbox
+    let record: BridgeRecord
+
+    func callAsFunction(_ id: Int, _ reason: String) {
+        guard let cancelled = calls.cancel(id, reason) else { return }
+        record.count(\.cancelled)
+        // A request that never left has nothing on Kotlin's side to stop.
+        guard cancelled == .sent else { return }
+        // Kotlin may never hear it; the call is answered here either way.
+        outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true, onFailure: { _ in })
+    }
+}
+
+/// The one answer a blocking call waits for, set from whichever thread
+/// answers it.
+private final class AnswerBox: @unchecked Sendable {
+    private let semaphore = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var value: Result<JSONValue, Error>?
+
+    func set(_ result: Result<JSONValue, Error>) {
+        let first = lock.withLock { () -> Bool in
+            guard value == nil else { return false }
+            value = result
+            return true
+        }
+        if first { semaphore.signal() }
+    }
+
+    func wait(timeout: TimeInterval) -> Bool {
+        semaphore.wait(timeout: .now() + timeout) == .success
+    }
+
+    var result: Result<JSONValue, Error>? { lock.withLock { value } }
+}

@@ -383,7 +383,7 @@ The prompt is static per app release and rendered by the app from three
 checked-in parts, so it is a cacheable prefix and has its own review:
 
 1. **Coaching instructions**,
-   [`Package/coach/instructions.md`](../../apps/apple/SubstrateWorkouts/Package/coach/instructions.md),
+   [`Package/coach/instructions.md`](../../apps/workouts/package/coach/instructions.md),
    distilled from the coaching research (sources and evidence grades are in
    `apps/apple/SubstrateWorkouts/docs/research/07-coaching.md`): role and
    scope; read before asking; the intake as two `ask` forms (goal,
@@ -396,7 +396,7 @@ checked-in parts, so it is a cacheable prefix and has its own review:
    flags; how to treat clinical reads; conversation style; and the change
    shape it must confirm before any write.
 2. **Substrate mechanics and memory rules**,
-   [`Package/coach/mechanics.md`](../../apps/apple/SubstrateWorkouts/Package/coach/mechanics.md):
+   [`Package/coach/mechanics.md`](../../apps/workouts/package/coach/mechanics.md):
    the tools, reading before writing, `ifVersion` patches, no routine write
    while a session of it is `active`, no sessions or sets, honest reporting
    of refused or gated writes, and what a memory may hold (§7).

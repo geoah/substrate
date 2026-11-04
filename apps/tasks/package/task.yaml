@@ -1,0 +1,127 @@
+# task: something the owner has to do. The words are the `tasks` sample's
+# wherever the meaning is the same (`name`, `description`, `url`, `status`,
+# `completedAt`, `priority`, `dueAt`), so a reader who knows one knows the
+# other; the full reference tells them apart on every surface.
+#
+# THE ID IS CHOSEN ON THE DEVICE, a lowercase UUIDv7: every retry of the
+# create from the outbox is a PUT that lands the same row.
+#
+# DUE: A DAY, OR A MOMENT. Most tasks are due on a day ("Friday"), and a day
+# has no instant: midnight in whose zone? So, as the Apple provider keeps an
+# EKReminder, `dueDay` is the civil day and `dueAt` is the moment, written
+# only when the task is due at a time. A timed task carries both, `dueDay`
+# being the day of `dueAt` on the writer's clock, so "what is due by Friday"
+# is one filter on `dueDay` whichever kind of due date a task has. The app
+# writes the pair; nothing on the server ties them. `dueAt` is the trait's
+# point, so a timed task sits on the timeline and a window read finds it.
+#
+# NO REPEAT YET. The sample binds core's `recurring` and `override` and
+# marks each occurrence off with a `tasklog`. A first cut does without:
+# binding them later adds `recurrence`, `rdates`, `exdates`, `timezone`,
+# `recurrenceOf` and `originalAt`, all optional, which is additive.
+#
+# THE STATE MOVES ONLY BY PATCH ("patch does transitions"), so a create
+# replayed from the outbox after the task was done never moves it back.
+# `completedAt` is stamped by the move to `done`. Reopening does not clear
+# it: the app's reopen patch names `completedAt: null` beside
+# `status: open`.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/tasks/task
+data:
+  authority: substrate.reamde.dev
+  package: tasks
+  description: >-
+    Something you have to do, such as Buy milk or Renew passport, with when
+    it is due and how urgent it is. It is in one of your task lists or in
+    none, and stays open until you mark it done or abandon it.
+  purpose: primary
+  names:
+    singular: task
+  traits:
+    - "substrate.reamde.dev/core/temporal(point: dueAt)"
+  displayTemplate: "{name}"
+  properties:
+    # ---- what it is ------------------------------------------------------------
+    # Required, where the sample's is optional only because its older tasks
+    # have none. Requiring it later would be a narrowing.
+    name:
+      type: string
+      required: true
+      description: what to do, in one line, such as Buy milk
+    description:
+      type: markdown
+      description: the details, as prose
+    url:
+      type: url
+      description: a link that goes with the task, such as the page to read
+        or the form to fill in
+    # ---- where it is -----------------------------------------------------------
+    # The list owns its tasks, as a Reminders list does: deleting a list
+    # takes its tasks with it. Moving a task rewrites `list` and keeps the
+    # row.
+    list:
+      type: reference
+      kind: substrate.reamde.dev/tasks/list
+      mustExist: true
+      onDelete: cascade
+      description: the task list it is in; absent when it is in none, which
+        Substrate Tasks shows as its inbox
+    # A decimal, not an int: moving a task writes that one task, a number
+    # between its new neighbours ("1.5" between "1" and "2"), where an int
+    # would renumber every task below it from every device at once. A
+    # decimal is exact and sorts as a number, so halving never runs out.
+    # Its own property and not a link property on `list`: a task in no list
+    # has no link to carry it, and a read orders by a property only.
+    position:
+      type: decimal
+      description: where the task sits among the tasks of its list, lowest
+        first; a number written as a string, such as "2" or "1.5"
+    # ---- when ------------------------------------------------------------------
+    dueDay:
+      type: date
+      description: the day it is due; written on every task with a due date,
+        timed or not
+    # ---- how it stands ---------------------------------------------------------
+    # The sample's ladder and default, so a filter on `priority` means the
+    # same in both.
+    priority:
+      type: enum
+      description: how urgent it is, from none to urgent
+      default: none
+      values:
+        - none
+        - low
+        - medium
+        - high
+        - urgent
+    # The sample's states, without `proposed`: nothing proposes a task to
+    # this package yet, and a state nothing writes is not declared. Adding it
+    # is additive. `abandoned` is kept, and reachable from `open`, which the
+    # sample's is not: dropping a task is a decision worth keeping, where
+    # deleting it leaves nothing.
+    status:
+      type: state
+      description: open until you mark it done or abandon it; either can be
+        undone
+      states:
+        - open
+        - done
+        - abandoned
+      initial: open
+      transitions:
+        - from: open
+          to: done
+          stamps:
+            completedAt: now
+        - from: done
+          to: open
+        - from: open
+          to: abandoned
+        - from: abandoned
+          to: open
+    # Stamped by the move to `done`. Not managed: an importer creating a
+    # task already done supplies its own time.
+    completedAt:
+      type: datetime
+      description: when it was marked done

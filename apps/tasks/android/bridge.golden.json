@@ -1,0 +1,613 @@
+{
+  "version": 1,
+  "types": [
+    {
+      "name": "Confirmation",
+      "module": "TasksCore",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "deleteList",
+          "fields": [
+            {"name": "id", "type": "String"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "DetailField",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "field", "type": "TaskField"},
+        {"name": "label", "type": "String"},
+        {"name": "value", "type": "String"},
+        {"name": "url", "type": "String?"},
+        {"name": "tone", "type": "DueWords.Tone?"},
+        {"name": "choice", "type": "EditorChoice?"}
+      ]
+    },
+    {
+      "name": "DueBadge",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "text", "type": "String"},
+        {"name": "tone", "type": "DueWords.Tone"}
+      ]
+    },
+    {
+      "name": "DueKind",
+      "module": "TasksCore",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "none", "value": "none"},
+        {"name": "day", "value": "day"},
+        {"name": "time", "value": "time"}
+      ]
+    },
+    {
+      "name": "EditorChoice",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "label", "type": "String"},
+        {"name": "selected", "type": "String"},
+        {"name": "options", "type": "[EditorOption]"}
+      ]
+    },
+    {
+      "name": "EditorDue",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "label", "type": "String"},
+        {"name": "kind", "type": "DueKind"},
+        {"name": "kinds", "type": "[EditorOption]"},
+        {"name": "date", "type": "Date?"},
+        {"name": "dateLabel", "type": "String?"}
+      ]
+    },
+    {
+      "name": "EditorOption",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "title", "type": "String"}
+      ]
+    },
+    {
+      "name": "EditorText",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "label", "type": "String"},
+        {"name": "value", "type": "String"},
+        {"name": "prompt", "type": "String"}
+      ]
+    },
+    {
+      "name": "ListAction",
+      "module": "TasksCore",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "rename",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "delete",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ListPresentation",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "selection", "type": "ListSelection"},
+        {"name": "title", "type": "String"},
+        {"name": "open", "type": "KeyedList<TaskRow>"},
+        {"name": "closed", "type": "KeyedList<TaskRow>"},
+        {"name": "closedTitle", "type": "String"},
+        {"name": "showsClosed", "type": "Bool"},
+        {"name": "toggleClosed", "type": "String"},
+        {"name": "quickAdd", "type": "String"},
+        {"name": "newTask", "type": "String"},
+        {"name": "reorders", "type": "Bool"},
+        {"name": "orderNote", "type": "String?"},
+        {"name": "empty", "type": "EmptyPresentation?"},
+        {"name": "actions", "type": "[ActionButton<ListAction>]"},
+        {"name": "rowMenu", "type": "TaskMenuWords"}
+      ]
+    },
+    {
+      "name": "ListSelection",
+      "module": "TasksCore",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "today",
+          "fields": []
+        },
+        {
+          "name": "inbox",
+          "fields": []
+        },
+        {
+          "name": "list",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "PriorityBadge",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "text", "type": "String"},
+        {"name": "priority", "type": "TaskPriority"}
+      ]
+    },
+    {
+      "name": "SidebarPresentation",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "fixed", "type": "[SidebarRow]"},
+        {"name": "listsTitle", "type": "String"},
+        {"name": "lists", "type": "KeyedList<SidebarRow>"},
+        {"name": "newList", "type": "String"},
+        {"name": "noLists", "type": "String?"},
+        {"name": "selected", "type": "ListSelection?"}
+      ]
+    },
+    {
+      "name": "SidebarRow",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "selection", "type": "ListSelection"},
+        {"name": "title", "type": "String"},
+        {"name": "symbol", "type": "String"},
+        {"name": "open", "type": "Int"},
+        {"name": "openWords", "type": "String"},
+        {"name": "actions", "type": "[ActionButton<ListAction>]"}
+      ]
+    },
+    {
+      "name": "TaskAction",
+      "module": "TasksCore",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "complete",
+          "fields": []
+        },
+        {
+          "name": "reopen",
+          "fields": []
+        },
+        {
+          "name": "abandon",
+          "fields": []
+        },
+        {
+          "name": "delete",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "TaskDetailPresentation",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "title", "type": "String"},
+        {"name": "status", "type": "TaskStatus"},
+        {"name": "fields", "type": "[DetailField]"},
+        {"name": "actions", "type": "[ActionButton<TaskAction>]"},
+        {"name": "edit", "type": "String"}
+      ]
+    },
+    {
+      "name": "TaskEditor.Command",
+      "module": "TasksCore",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "setName",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "setNotes",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "setLink",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "setList",
+          "fields": [
+            {"name": "_0", "type": "String?"}
+          ]
+        },
+        {
+          "name": "setDueKind",
+          "fields": [
+            {"name": "_0", "type": "DueKind"}
+          ]
+        },
+        {
+          "name": "setDueDate",
+          "fields": [
+            {"name": "_0", "type": "Date"}
+          ]
+        },
+        {
+          "name": "setPriority",
+          "fields": [
+            {"name": "_0", "type": "TaskPriority"}
+          ]
+        },
+        {
+          "name": "save",
+          "fields": []
+        },
+        {
+          "name": "cancel",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "TaskEditorPresentation",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "name", "type": "EditorText"},
+        {"name": "notes", "type": "EditorText"},
+        {"name": "link", "type": "EditorText"},
+        {"name": "list", "type": "EditorChoice"},
+        {"name": "due", "type": "EditorDue"},
+        {"name": "priority", "type": "EditorChoice"},
+        {"name": "save", "type": "String"},
+        {"name": "canSave", "type": "Bool"},
+        {"name": "cancel", "type": "String"},
+        {"name": "problem", "type": "String?"},
+        {"name": "notKept", "type": "ProblemPresentation?"}
+      ]
+    },
+    {
+      "name": "TaskField",
+      "module": "TasksCore",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "taskName", "value": "name"},
+        {"name": "notes", "value": "notes"},
+        {"name": "link", "value": "link"},
+        {"name": "list", "value": "list"},
+        {"name": "due", "value": "due"},
+        {"name": "priority", "value": "priority"},
+        {"name": "status", "value": "status"},
+        {"name": "completed", "value": "completed"}
+      ]
+    },
+    {
+      "name": "TaskMenuWords",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "complete", "type": "String"},
+        {"name": "abandon", "type": "String"},
+        {"name": "reopen", "type": "String"},
+        {"name": "edit", "type": "String"},
+        {"name": "priority", "type": "String"},
+        {"name": "priorities", "type": "[EditorOption]"},
+        {"name": "move", "type": "String"},
+        {"name": "delete", "type": "String"},
+        {"name": "swipeDelete", "type": "String"}
+      ]
+    },
+    {
+      "name": "TaskPriority",
+      "module": "TasksCore",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "none", "value": "none"},
+        {"name": "low", "value": "low"},
+        {"name": "medium", "value": "medium"},
+        {"name": "high", "value": "high"},
+        {"name": "urgent", "value": "urgent"}
+      ]
+    },
+    {
+      "name": "TaskRow",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "title", "type": "String"},
+        {"name": "status", "type": "TaskStatus"},
+        {"name": "toggle", "type": "String"},
+        {"name": "due", "type": "DueBadge?"},
+        {"name": "priority", "type": "PriorityBadge?"},
+        {"name": "listName", "type": "String?"},
+        {"name": "hasNotes", "type": "Bool"},
+        {"name": "spoken", "type": "String"}
+      ]
+    },
+    {
+      "name": "TaskStatus",
+      "module": "TasksCore",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "open", "value": "open"},
+        {"name": "done", "value": "done"},
+        {"name": "abandoned", "value": "abandoned"}
+      ]
+    },
+    {
+      "name": "TasksApp.Command",
+      "module": "TasksCore",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "select",
+          "fields": [
+            {"name": "section", "type": "String"}
+          ]
+        },
+        {
+          "name": "show",
+          "fields": [
+            {"name": "_0", "type": "ListSelection?"}
+          ]
+        },
+        {
+          "name": "open",
+          "fields": [
+            {"name": "task", "type": "String?"}
+          ]
+        },
+        {
+          "name": "quickAdd",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "newTask",
+          "fields": []
+        },
+        {
+          "name": "edit",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "complete",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "reopen",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "abandon",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "setPriority",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "_1", "type": "TaskPriority"}
+          ]
+        },
+        {
+          "name": "move",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "toList", "type": "String?"}
+          ]
+        },
+        {
+          "name": "reorderTask",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "to", "type": "Int"}
+          ]
+        },
+        {
+          "name": "reorderList",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "to", "type": "Int"}
+          ]
+        },
+        {
+          "name": "deleteTask",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "createList",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "renameList",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "to", "type": "String"}
+          ]
+        },
+        {
+          "name": "deleteList",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "confirm",
+          "fields": []
+        },
+        {
+          "name": "dismissConfirmation",
+          "fields": []
+        },
+        {
+          "name": "settings",
+          "fields": [
+            {"name": "_0", "type": "SettingsCommand"}
+          ]
+        },
+        {
+          "name": "clearSaved",
+          "fields": []
+        },
+        {
+          "name": "refresh",
+          "fields": []
+        },
+        {
+          "name": "foreground",
+          "fields": []
+        },
+        {
+          "name": "reminderTapped",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "offered",
+          "fields": [
+            {"name": "_0", "type": "String?"}
+          ]
+        },
+        {
+          "name": "dismissProblem",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "TasksFrame",
+      "module": "TasksAndroid",
+      "kind": "struct",
+      "fields": [
+        {"name": "stored", "type": "Bool"},
+        {"name": "link", "type": "LinkPresentation<TasksPresentation>"},
+        {"name": "settings", "type": "SettingsPresentation?"}
+      ]
+    },
+    {
+      "name": "TasksGalleryFixture",
+      "module": "TasksAndroid",
+      "kind": "struct",
+      "fields": [
+        {"name": "name", "type": "String"},
+        {"name": "screen", "type": "TasksGalleryFixture.Screen"},
+        {"name": "app", "type": "TasksPresentation"},
+        {"name": "editor", "type": "String?"},
+        {"name": "settings", "type": "SettingsPresentation?"}
+      ]
+    },
+    {
+      "name": "TasksGalleryFixture.Screen",
+      "module": "TasksAndroid",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "sidebar", "value": "sidebar"},
+        {"name": "list", "value": "list"},
+        {"name": "detail", "value": "detail"},
+        {"name": "editor", "value": "editor"},
+        {"name": "confirmation", "value": "confirmation"},
+        {"name": "settings", "value": "settings"}
+      ]
+    },
+    {
+      "name": "TasksOpening",
+      "module": "TasksAndroid",
+      "kind": "struct",
+      "fields": [
+        {"name": "fingerprint", "type": "String"},
+        {"name": "debug", "type": "Bool"},
+        {"name": "clientID", "type": "String?"},
+        {"name": "redirect", "type": "String?"},
+        {"name": "version", "type": "String"},
+        {"name": "channel", "type": "String?"},
+        {"name": "device", "type": "String"},
+        {"name": "address", "type": "String?"}
+      ]
+    },
+    {
+      "name": "TasksPresentation",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "menu", "type": "AppMenuPresentation"},
+        {"name": "sidebar", "type": "SidebarPresentation"},
+        {"name": "list", "type": "ListPresentation?"},
+        {"name": "detail", "type": "TaskDetailPresentation?"},
+        {"name": "editors", "type": "[String: TaskEditorPresentation]"},
+        {"name": "confirmation", "type": "ConfirmationPresentation<Confirmation>?"},
+        {"name": "settings", "type": "[SettingsSection]"},
+        {"name": "storage", "type": "SettingsSection"},
+        {"name": "about", "type": "AboutPresentation"},
+        {"name": "notices", "type": "[NoticeLine]"},
+        {"name": "problem", "type": "ProblemPresentation?"},
+        {"name": "reminders", "type": "[NotificationRequest]"},
+        {"name": "nextChange", "type": "Date?"}
+      ]
+    },
+    {
+      "name": "TasksShellCommand",
+      "module": "TasksAndroid",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "route",
+          "fields": [
+            {"name": "command", "type": "RouteCommand"}
+          ]
+        },
+        {
+          "name": "settings",
+          "fields": [
+            {"name": "command", "type": "SettingsCommand"}
+          ]
+        }
+      ]
+    }
+  ]
+}

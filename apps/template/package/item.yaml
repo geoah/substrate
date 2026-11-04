@@ -1,0 +1,23 @@
+# item: the package's one example kind. The owner's data, so `primary`; it
+# titles itself from the property it declares (`name`), never the built-in
+# title.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/template/item
+data:
+  authority: substrate.reamde.dev
+  package: template
+  description: >-
+    One item Substrate Template keeps for you, with its name.
+  purpose: primary
+  names:
+    singular: item
+  label:
+    singular: Item
+    plural: Items
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the item's name

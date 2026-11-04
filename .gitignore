@@ -15,14 +15,38 @@ node_modules/
 dist/
 
 # The Apple apps: xcodegen's project and xcodebuild's derived data. Here, not
-# in apps/apple/, because `.yamlfmt` reads this file alone, and the derived
+# in apps/, because `.yamlfmt` reads this file alone, and the derived
 # data holds YAML of Xcode's.
-/apps/apple/Substrate.xcodeproj/
-/apps/apple/build/
-/apps/apple/SubstrateKit/.build/
-/apps/apple/SubstrateKit/.swiftpm/
-/apps/apple/WorkoutsKit/.build/
-/apps/apple/WorkoutsKit/.swiftpm/
+/apps/xcode/Substrate.xcodeproj/
+/apps/xcode/build/
+# The apps' release (.mise/apps.sh): staged builds, the site, and a dry run's
+# simulated release folder and site.
+/build/
+/apps/kit/.build/
+# `mise run apps:gallery`: every shared screen drawn, one folder per system.
+/build/gallery/
+/apps/kit/.swiftpm/
+/apps/workouts/WorkoutsKit/.build/
+/apps/chat/ChatKit/.build/
+/apps/chat/ChatKit/.swiftpm/
+/apps/workouts/WorkoutsKit/.swiftpm/
+/apps/tasks/TasksKit/.build/
+/apps/tasks/TasksKit/.swiftpm/
+# Every app's core, the template's and one apps:new makes included.
+/apps/*/*Kit/.build/
+/apps/*/*Kit/.swiftpm/
+/apps/kit/Tools/BridgeGen/.build/
+/apps/kit/Tools/BridgeGen/.swiftpm/
+# The Android build: Gradle's caches and every module's output.
+/apps/gradle/.gradle/
+/apps/gradle/.kotlin/
+/apps/gradle/build/
+/apps/gradle/build-logic/.gradle/
+/apps/gradle/build-logic/.kotlin/
+/apps/gradle/build-logic/build/
+/apps/gradle/local.properties
+/apps/kit/android/*/build/
+/apps/*/android/build/
 
 # Editors / OS
 .DS_Store
@@ -54,3 +78,6 @@ dist/
 
 # Python bytecode: host.py is imported by a test probe, never installed.
 __pycache__/
+# The tree's own Python environment, which .mise/python.sh makes from
+# .mise/python/uv.lock on its first run.
+/.mise/python/.venv/

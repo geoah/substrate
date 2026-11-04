@@ -1,0 +1,5517 @@
+[
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "editors": {},
+      "list": {
+        "actions": [
+          {
+            "action": {
+              "rename": {
+                "_0": "groceries"
+              }
+            },
+            "title": "Rename List…"
+          },
+          {
+            "action": {
+              "delete": {
+                "_0": "groceries"
+              }
+            },
+            "title": "Delete List…"
+          }
+        ],
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "1 Completed",
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "hasNotes": false,
+              "id": "milk",
+              "spoken": "Oat milk",
+              "status": "open",
+              "title": "Oat milk",
+              "toggle": "Mark as Done"
+            },
+            {
+              "due": {
+                "text": "Today",
+                "tone": "soon"
+              },
+              "hasNotes": false,
+              "id": "bread",
+              "spoken": "Sourdough bread, due Today",
+              "status": "open",
+              "title": "Sourdough bread",
+              "toggle": "Mark as Done"
+            }
+          ]
+        },
+        "quickAdd": "Add a task to Groceries",
+        "reorders": true,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "list": {
+            "_0": "groceries"
+          }
+        },
+        "showsClosed": false,
+        "title": "Groceries",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "badge": 3,
+            "id": "today",
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "lists"
+      },
+      "nextChange": "2026-11-03T15:00:00Z",
+      "notices": [],
+      "reminders": [
+        {
+          "body": "Due at 3:00 PM, in Home",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-03T15:00:00Z",
+          "id": "tasks.reminder.plumber",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Call the plumber",
+          "userInfo": {
+            "task": "plumber"
+          }
+        },
+        {
+          "body": "Due today",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-20T09:00:00Z",
+          "id": "tasks.reminder.passport",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Renew passport",
+          "userInfo": {
+            "task": "passport"
+          }
+        }
+      ],
+      "settings": [
+        {
+          "footer": "A task due at a time reminds you then; a task due on a day, at the hour above.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": true
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            },
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "7",
+                      "label": "7:00 AM"
+                    },
+                    {
+                      "id": "8",
+                      "label": "8:00 AM"
+                    },
+                    {
+                      "id": "9",
+                      "label": "9:00 AM"
+                    },
+                    {
+                      "id": "12",
+                      "label": "12:00 PM"
+                    },
+                    {
+                      "id": "18",
+                      "label": "6:00 PM"
+                    }
+                  ],
+                  "selected": "9"
+                }
+              },
+              "detail": "When the reminder comes",
+              "id": {
+                "app": {
+                  "_0": "remindHour"
+                }
+              },
+              "label": "Tasks Due on a Day"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "scheduled"
+                }
+              },
+              "label": "Reminders Set on This iPhone"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "today",
+            "open": 3,
+            "openWords": "3 open tasks",
+            "selection": {
+              "today": {}
+            },
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 1,
+            "openWords": "1 open task",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "groceries",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "groceries"
+                }
+              },
+              "symbol": "list",
+              "title": "Groceries"
+            },
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "home",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "home"
+                }
+              },
+              "symbol": "list",
+              "title": "Home"
+            }
+          ]
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "selected": {
+          "list": {
+            "_0": "groceries"
+          }
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "name": "tasks-sidebar",
+    "screen": "sidebar"
+  },
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "editors": {},
+      "list": {
+        "actions": [
+          {
+            "action": {
+              "rename": {
+                "_0": "groceries"
+              }
+            },
+            "title": "Rename List…"
+          },
+          {
+            "action": {
+              "delete": {
+                "_0": "groceries"
+              }
+            },
+            "title": "Delete List…"
+          }
+        ],
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "1 Completed",
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "hasNotes": false,
+              "id": "milk",
+              "spoken": "Oat milk",
+              "status": "open",
+              "title": "Oat milk",
+              "toggle": "Mark as Done"
+            },
+            {
+              "due": {
+                "text": "Today",
+                "tone": "soon"
+              },
+              "hasNotes": false,
+              "id": "bread",
+              "spoken": "Sourdough bread, due Today",
+              "status": "open",
+              "title": "Sourdough bread",
+              "toggle": "Mark as Done"
+            }
+          ]
+        },
+        "quickAdd": "Add a task to Groceries",
+        "reorders": true,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "list": {
+            "_0": "groceries"
+          }
+        },
+        "showsClosed": false,
+        "title": "Groceries",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "badge": 3,
+            "id": "today",
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "lists"
+      },
+      "nextChange": "2026-11-03T15:00:00Z",
+      "notices": [],
+      "reminders": [
+        {
+          "body": "Due at 3:00 PM, in Home",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-03T15:00:00Z",
+          "id": "tasks.reminder.plumber",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Call the plumber",
+          "userInfo": {
+            "task": "plumber"
+          }
+        },
+        {
+          "body": "Due today",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-20T09:00:00Z",
+          "id": "tasks.reminder.passport",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Renew passport",
+          "userInfo": {
+            "task": "passport"
+          }
+        }
+      ],
+      "settings": [
+        {
+          "footer": "A task due at a time reminds you then; a task due on a day, at the hour above.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": true
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            },
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "7",
+                      "label": "7:00 AM"
+                    },
+                    {
+                      "id": "8",
+                      "label": "8:00 AM"
+                    },
+                    {
+                      "id": "9",
+                      "label": "9:00 AM"
+                    },
+                    {
+                      "id": "12",
+                      "label": "12:00 PM"
+                    },
+                    {
+                      "id": "18",
+                      "label": "6:00 PM"
+                    }
+                  ],
+                  "selected": "9"
+                }
+              },
+              "detail": "When the reminder comes",
+              "id": {
+                "app": {
+                  "_0": "remindHour"
+                }
+              },
+              "label": "Tasks Due on a Day"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "scheduled"
+                }
+              },
+              "label": "Reminders Set on This iPhone"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "today",
+            "open": 3,
+            "openWords": "3 open tasks",
+            "selection": {
+              "today": {}
+            },
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 1,
+            "openWords": "1 open task",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "groceries",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "groceries"
+                }
+              },
+              "symbol": "list",
+              "title": "Groceries"
+            },
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "home",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "home"
+                }
+              },
+              "symbol": "list",
+              "title": "Home"
+            }
+          ]
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "selected": {
+          "list": {
+            "_0": "groceries"
+          }
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "name": "tasks-list",
+    "screen": "list"
+  },
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "editors": {},
+      "list": {
+        "actions": [],
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "0 Completed",
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "due": {
+                "text": "Overdue: Yesterday",
+                "tone": "overdue"
+              },
+              "hasNotes": false,
+              "id": "rent",
+              "listName": "Home",
+              "priority": {
+                "priority": "urgent",
+                "text": "Urgent"
+              },
+              "spoken": "Pay rent, due Overdue: Yesterday, priority Urgent, in Home",
+              "status": "open",
+              "title": "Pay rent",
+              "toggle": "Mark as Done"
+            },
+            {
+              "due": {
+                "text": "Today",
+                "tone": "soon"
+              },
+              "hasNotes": false,
+              "id": "bread",
+              "listName": "Groceries",
+              "spoken": "Sourdough bread, due Today, in Groceries",
+              "status": "open",
+              "title": "Sourdough bread",
+              "toggle": "Mark as Done"
+            },
+            {
+              "due": {
+                "text": "Today, 3:00 PM",
+                "tone": "soon"
+              },
+              "hasNotes": true,
+              "id": "plumber",
+              "listName": "Home",
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "spoken": "Call the plumber, due Today, 3:00 PM, priority High, in Home",
+              "status": "open",
+              "title": "Call the plumber",
+              "toggle": "Mark as Done"
+            }
+          ]
+        },
+        "quickAdd": "Add a task for today",
+        "reorders": false,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "today": {}
+        },
+        "showsClosed": false,
+        "title": "Today",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "badge": 3,
+            "id": "today",
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "today"
+      },
+      "nextChange": "2026-11-03T15:00:00Z",
+      "notices": [],
+      "reminders": [
+        {
+          "body": "Due at 3:00 PM, in Home",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-03T15:00:00Z",
+          "id": "tasks.reminder.plumber",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Call the plumber",
+          "userInfo": {
+            "task": "plumber"
+          }
+        },
+        {
+          "body": "Due today",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-20T09:00:00Z",
+          "id": "tasks.reminder.passport",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Renew passport",
+          "userInfo": {
+            "task": "passport"
+          }
+        }
+      ],
+      "settings": [
+        {
+          "footer": "A task due at a time reminds you then; a task due on a day, at the hour above.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": true
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            },
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "7",
+                      "label": "7:00 AM"
+                    },
+                    {
+                      "id": "8",
+                      "label": "8:00 AM"
+                    },
+                    {
+                      "id": "9",
+                      "label": "9:00 AM"
+                    },
+                    {
+                      "id": "12",
+                      "label": "12:00 PM"
+                    },
+                    {
+                      "id": "18",
+                      "label": "6:00 PM"
+                    }
+                  ],
+                  "selected": "9"
+                }
+              },
+              "detail": "When the reminder comes",
+              "id": {
+                "app": {
+                  "_0": "remindHour"
+                }
+              },
+              "label": "Tasks Due on a Day"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "scheduled"
+                }
+              },
+              "label": "Reminders Set on This iPhone"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "today",
+            "open": 3,
+            "openWords": "3 open tasks",
+            "selection": {
+              "today": {}
+            },
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 1,
+            "openWords": "1 open task",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "groceries",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "groceries"
+                }
+              },
+              "symbol": "list",
+              "title": "Groceries"
+            },
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "home",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "home"
+                }
+              },
+              "symbol": "list",
+              "title": "Home"
+            }
+          ]
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "selected": {
+          "today": {}
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "name": "tasks-today",
+    "screen": "list"
+  },
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "editors": {},
+      "list": {
+        "actions": [],
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "0 Completed",
+        "empty": {
+          "message": "Tasks in no list show here. Add one below.",
+          "title": "No tasks"
+        },
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "quickAdd": "Add a task",
+        "reorders": true,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "inbox": {}
+        },
+        "showsClosed": false,
+        "title": "No List",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "id": "today",
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "lists"
+      },
+      "nextChange": "2026-11-04T00:00:00Z",
+      "notices": [],
+      "reminders": [],
+      "settings": [
+        {
+          "footer": "A task due at a time reminds you then; a task due on a day, at the hour above.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": true
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            },
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "7",
+                      "label": "7:00 AM"
+                    },
+                    {
+                      "id": "8",
+                      "label": "8:00 AM"
+                    },
+                    {
+                      "id": "9",
+                      "label": "9:00 AM"
+                    },
+                    {
+                      "id": "12",
+                      "label": "12:00 PM"
+                    },
+                    {
+                      "id": "18",
+                      "label": "6:00 PM"
+                    }
+                  ],
+                  "selected": "9"
+                }
+              },
+              "detail": "When the reminder comes",
+              "id": {
+                "app": {
+                  "_0": "remindHour"
+                }
+              },
+              "label": "Tasks Due on a Day"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "scheduled"
+                }
+              },
+              "label": "Reminders Set on This iPhone"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "today",
+            "open": 0,
+            "openWords": "0 open tasks",
+            "selection": {
+              "today": {}
+            },
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 0,
+            "openWords": "0 open tasks",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "noLists": "No lists yet. Add one to sort your tasks.",
+        "selected": {
+          "inbox": {}
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "name": "tasks-empty-inbox",
+    "screen": "list"
+  },
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "detail": {
+        "actions": [
+          {
+            "action": {
+              "complete": {}
+            },
+            "title": "Mark as Done"
+          },
+          {
+            "action": {
+              "abandon": {}
+            },
+            "title": "Won't Do"
+          },
+          {
+            "action": {
+              "delete": {}
+            },
+            "title": "Delete Task"
+          }
+        ],
+        "edit": "Edit",
+        "fields": [
+          {
+            "field": "status",
+            "label": "Status",
+            "value": "Open"
+          },
+          {
+            "choice": {
+              "label": "List",
+              "options": [
+                {
+                  "id": "",
+                  "title": "No List"
+                },
+                {
+                  "id": "groceries",
+                  "title": "Groceries"
+                },
+                {
+                  "id": "home",
+                  "title": "Home"
+                }
+              ],
+              "selected": "home"
+            },
+            "field": "list",
+            "label": "List",
+            "value": "Home"
+          },
+          {
+            "field": "due",
+            "label": "Due",
+            "tone": "soon",
+            "value": "Tuesday, November 3, 2026 at 3:00 PM"
+          },
+          {
+            "choice": {
+              "label": "Priority",
+              "options": [
+                {
+                  "id": "none",
+                  "title": "None"
+                },
+                {
+                  "id": "low",
+                  "title": "Low"
+                },
+                {
+                  "id": "medium",
+                  "title": "Medium"
+                },
+                {
+                  "id": "high",
+                  "title": "High"
+                },
+                {
+                  "id": "urgent",
+                  "title": "Urgent"
+                }
+              ],
+              "selected": "high"
+            },
+            "field": "priority",
+            "label": "Priority",
+            "value": "High"
+          },
+          {
+            "field": "notes",
+            "label": "Notes",
+            "value": "About the kitchen tap. Ask for Thursday morning."
+          },
+          {
+            "field": "link",
+            "label": "Link",
+            "url": "https://example.com/plumbers",
+            "value": "https://example.com/plumbers"
+          }
+        ],
+        "id": "plumber",
+        "status": "open",
+        "title": "Call the plumber"
+      },
+      "editors": {},
+      "list": {
+        "actions": [
+          {
+            "action": {
+              "rename": {
+                "_0": "home"
+              }
+            },
+            "title": "Rename List…"
+          },
+          {
+            "action": {
+              "delete": {
+                "_0": "home"
+              }
+            },
+            "title": "Delete List…"
+          }
+        ],
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "0 Completed",
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "due": {
+                "text": "Overdue: Yesterday",
+                "tone": "overdue"
+              },
+              "hasNotes": false,
+              "id": "rent",
+              "priority": {
+                "priority": "urgent",
+                "text": "Urgent"
+              },
+              "spoken": "Pay rent, due Overdue: Yesterday, priority Urgent",
+              "status": "open",
+              "title": "Pay rent",
+              "toggle": "Mark as Done"
+            },
+            {
+              "due": {
+                "text": "Today, 3:00 PM",
+                "tone": "soon"
+              },
+              "hasNotes": true,
+              "id": "plumber",
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "spoken": "Call the plumber, due Today, 3:00 PM, priority High",
+              "status": "open",
+              "title": "Call the plumber",
+              "toggle": "Mark as Done"
+            }
+          ]
+        },
+        "quickAdd": "Add a task to Home",
+        "reorders": true,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "list": {
+            "_0": "home"
+          }
+        },
+        "showsClosed": false,
+        "title": "Home",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "badge": 3,
+            "id": "today",
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "lists"
+      },
+      "nextChange": "2026-11-03T15:00:00Z",
+      "notices": [],
+      "reminders": [
+        {
+          "body": "Due at 3:00 PM, in Home",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-03T15:00:00Z",
+          "id": "tasks.reminder.plumber",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Call the plumber",
+          "userInfo": {
+            "task": "plumber"
+          }
+        },
+        {
+          "body": "Due today",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-20T09:00:00Z",
+          "id": "tasks.reminder.passport",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Renew passport",
+          "userInfo": {
+            "task": "passport"
+          }
+        }
+      ],
+      "settings": [
+        {
+          "footer": "A task due at a time reminds you then; a task due on a day, at the hour above.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": true
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            },
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "7",
+                      "label": "7:00 AM"
+                    },
+                    {
+                      "id": "8",
+                      "label": "8:00 AM"
+                    },
+                    {
+                      "id": "9",
+                      "label": "9:00 AM"
+                    },
+                    {
+                      "id": "12",
+                      "label": "12:00 PM"
+                    },
+                    {
+                      "id": "18",
+                      "label": "6:00 PM"
+                    }
+                  ],
+                  "selected": "9"
+                }
+              },
+              "detail": "When the reminder comes",
+              "id": {
+                "app": {
+                  "_0": "remindHour"
+                }
+              },
+              "label": "Tasks Due on a Day"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "scheduled"
+                }
+              },
+              "label": "Reminders Set on This iPhone"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "today",
+            "open": 3,
+            "openWords": "3 open tasks",
+            "selection": {
+              "today": {}
+            },
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 1,
+            "openWords": "1 open task",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "groceries",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "groceries"
+                }
+              },
+              "symbol": "list",
+              "title": "Groceries"
+            },
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "home",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "home"
+                }
+              },
+              "symbol": "list",
+              "title": "Home"
+            }
+          ]
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "selected": {
+          "list": {
+            "_0": "home"
+          }
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "name": "tasks-detail",
+    "screen": "detail"
+  },
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "detail": {
+        "actions": [
+          {
+            "action": {
+              "complete": {}
+            },
+            "title": "Mark as Done"
+          },
+          {
+            "action": {
+              "abandon": {}
+            },
+            "title": "Won't Do"
+          },
+          {
+            "action": {
+              "delete": {}
+            },
+            "title": "Delete Task"
+          }
+        ],
+        "edit": "Edit",
+        "fields": [
+          {
+            "field": "status",
+            "label": "Status",
+            "value": "Open"
+          },
+          {
+            "choice": {
+              "label": "List",
+              "options": [
+                {
+                  "id": "",
+                  "title": "No List"
+                },
+                {
+                  "id": "groceries",
+                  "title": "Groceries"
+                },
+                {
+                  "id": "home",
+                  "title": "Home"
+                }
+              ],
+              "selected": "home"
+            },
+            "field": "list",
+            "label": "List",
+            "value": "Home"
+          },
+          {
+            "field": "due",
+            "label": "Due",
+            "tone": "soon",
+            "value": "Tuesday, November 3, 2026 at 3:00 PM"
+          },
+          {
+            "choice": {
+              "label": "Priority",
+              "options": [
+                {
+                  "id": "none",
+                  "title": "None"
+                },
+                {
+                  "id": "low",
+                  "title": "Low"
+                },
+                {
+                  "id": "medium",
+                  "title": "Medium"
+                },
+                {
+                  "id": "high",
+                  "title": "High"
+                },
+                {
+                  "id": "urgent",
+                  "title": "Urgent"
+                }
+              ],
+              "selected": "high"
+            },
+            "field": "priority",
+            "label": "Priority",
+            "value": "High"
+          },
+          {
+            "field": "notes",
+            "label": "Notes",
+            "value": "About the kitchen tap. Ask for Thursday morning."
+          },
+          {
+            "field": "link",
+            "label": "Link",
+            "url": "https://example.com/plumbers",
+            "value": "https://example.com/plumbers"
+          }
+        ],
+        "id": "plumber",
+        "status": "open",
+        "title": "Call the plumber"
+      },
+      "editors": {
+        "editor": {
+          "canSave": true,
+          "cancel": "Cancel",
+          "due": {
+            "date": "2026-11-03T15:00:00Z",
+            "dateLabel": "Day and Time",
+            "kind": "time",
+            "kinds": [
+              {
+                "id": "none",
+                "title": "No Due Date"
+              },
+              {
+                "id": "day",
+                "title": "On a Day"
+              },
+              {
+                "id": "time",
+                "title": "At a Time"
+              }
+            ],
+            "label": "Due"
+          },
+          "link": {
+            "label": "Link",
+            "prompt": "https://example.com",
+            "value": "https://example.com/plumbers"
+          },
+          "list": {
+            "label": "List",
+            "options": [
+              {
+                "id": "",
+                "title": "No List"
+              },
+              {
+                "id": "groceries",
+                "title": "Groceries"
+              },
+              {
+                "id": "home",
+                "title": "Home"
+              }
+            ],
+            "selected": "home"
+          },
+          "name": {
+            "label": "Name",
+            "prompt": "What to do",
+            "value": "Call the plumber"
+          },
+          "notes": {
+            "label": "Notes",
+            "prompt": "Details",
+            "value": "About the kitchen tap. Ask for Thursday morning."
+          },
+          "priority": {
+            "label": "Priority",
+            "options": [
+              {
+                "id": "none",
+                "title": "None"
+              },
+              {
+                "id": "low",
+                "title": "Low"
+              },
+              {
+                "id": "medium",
+                "title": "Medium"
+              },
+              {
+                "id": "high",
+                "title": "High"
+              },
+              {
+                "id": "urgent",
+                "title": "Urgent"
+              }
+            ],
+            "selected": "high"
+          },
+          "save": "Save",
+          "title": "Edit Task"
+        }
+      },
+      "list": {
+        "actions": [
+          {
+            "action": {
+              "rename": {
+                "_0": "home"
+              }
+            },
+            "title": "Rename List…"
+          },
+          {
+            "action": {
+              "delete": {
+                "_0": "home"
+              }
+            },
+            "title": "Delete List…"
+          }
+        ],
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "0 Completed",
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "due": {
+                "text": "Overdue: Yesterday",
+                "tone": "overdue"
+              },
+              "hasNotes": false,
+              "id": "rent",
+              "priority": {
+                "priority": "urgent",
+                "text": "Urgent"
+              },
+              "spoken": "Pay rent, due Overdue: Yesterday, priority Urgent",
+              "status": "open",
+              "title": "Pay rent",
+              "toggle": "Mark as Done"
+            },
+            {
+              "due": {
+                "text": "Today, 3:00 PM",
+                "tone": "soon"
+              },
+              "hasNotes": true,
+              "id": "plumber",
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "spoken": "Call the plumber, due Today, 3:00 PM, priority High",
+              "status": "open",
+              "title": "Call the plumber",
+              "toggle": "Mark as Done"
+            }
+          ]
+        },
+        "quickAdd": "Add a task to Home",
+        "reorders": true,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "list": {
+            "_0": "home"
+          }
+        },
+        "showsClosed": false,
+        "title": "Home",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "badge": 3,
+            "id": "today",
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "lists"
+      },
+      "nextChange": "2026-11-03T15:00:00Z",
+      "notices": [],
+      "reminders": [
+        {
+          "body": "Due at 3:00 PM, in Home",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-03T15:00:00Z",
+          "id": "tasks.reminder.plumber",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Call the plumber",
+          "userInfo": {
+            "task": "plumber"
+          }
+        },
+        {
+          "body": "Due today",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-20T09:00:00Z",
+          "id": "tasks.reminder.passport",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Renew passport",
+          "userInfo": {
+            "task": "passport"
+          }
+        }
+      ],
+      "settings": [
+        {
+          "footer": "A task due at a time reminds you then; a task due on a day, at the hour above.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": true
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            },
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "7",
+                      "label": "7:00 AM"
+                    },
+                    {
+                      "id": "8",
+                      "label": "8:00 AM"
+                    },
+                    {
+                      "id": "9",
+                      "label": "9:00 AM"
+                    },
+                    {
+                      "id": "12",
+                      "label": "12:00 PM"
+                    },
+                    {
+                      "id": "18",
+                      "label": "6:00 PM"
+                    }
+                  ],
+                  "selected": "9"
+                }
+              },
+              "detail": "When the reminder comes",
+              "id": {
+                "app": {
+                  "_0": "remindHour"
+                }
+              },
+              "label": "Tasks Due on a Day"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "scheduled"
+                }
+              },
+              "label": "Reminders Set on This iPhone"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "today",
+            "open": 3,
+            "openWords": "3 open tasks",
+            "selection": {
+              "today": {}
+            },
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 1,
+            "openWords": "1 open task",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "groceries",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "groceries"
+                }
+              },
+              "symbol": "list",
+              "title": "Groceries"
+            },
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "home",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "home"
+                }
+              },
+              "symbol": "list",
+              "title": "Home"
+            }
+          ]
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "selected": {
+          "list": {
+            "_0": "home"
+          }
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "editor": "editor",
+    "name": "tasks-edit",
+    "screen": "editor"
+  },
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "detail": {
+        "actions": [
+          {
+            "action": {
+              "complete": {}
+            },
+            "title": "Mark as Done"
+          },
+          {
+            "action": {
+              "abandon": {}
+            },
+            "title": "Won't Do"
+          },
+          {
+            "action": {
+              "delete": {}
+            },
+            "title": "Delete Task"
+          }
+        ],
+        "edit": "Edit",
+        "fields": [
+          {
+            "field": "status",
+            "label": "Status",
+            "value": "Open"
+          },
+          {
+            "choice": {
+              "label": "List",
+              "options": [
+                {
+                  "id": "",
+                  "title": "No List"
+                },
+                {
+                  "id": "groceries",
+                  "title": "Groceries"
+                },
+                {
+                  "id": "home",
+                  "title": "Home"
+                }
+              ],
+              "selected": "home"
+            },
+            "field": "list",
+            "label": "List",
+            "value": "Home"
+          },
+          {
+            "field": "due",
+            "label": "Due",
+            "tone": "soon",
+            "value": "Tuesday, November 3, 2026 at 3:00 PM"
+          },
+          {
+            "choice": {
+              "label": "Priority",
+              "options": [
+                {
+                  "id": "none",
+                  "title": "None"
+                },
+                {
+                  "id": "low",
+                  "title": "Low"
+                },
+                {
+                  "id": "medium",
+                  "title": "Medium"
+                },
+                {
+                  "id": "high",
+                  "title": "High"
+                },
+                {
+                  "id": "urgent",
+                  "title": "Urgent"
+                }
+              ],
+              "selected": "high"
+            },
+            "field": "priority",
+            "label": "Priority",
+            "value": "High"
+          },
+          {
+            "field": "notes",
+            "label": "Notes",
+            "value": "About the kitchen tap. Ask for Thursday morning."
+          },
+          {
+            "field": "link",
+            "label": "Link",
+            "url": "https://example.com/plumbers",
+            "value": "https://example.com/plumbers"
+          }
+        ],
+        "id": "plumber",
+        "status": "open",
+        "title": "Call the plumber"
+      },
+      "editors": {
+        "editor": {
+          "canSave": true,
+          "cancel": "Cancel",
+          "due": {
+            "date": "2026-11-03T15:00:00Z",
+            "dateLabel": "Day and Time",
+            "kind": "time",
+            "kinds": [
+              {
+                "id": "none",
+                "title": "No Due Date"
+              },
+              {
+                "id": "day",
+                "title": "On a Day"
+              },
+              {
+                "id": "time",
+                "title": "At a Time"
+              }
+            ],
+            "label": "Due"
+          },
+          "link": {
+            "label": "Link",
+            "prompt": "https://example.com",
+            "value": "https://example.com/plumbers"
+          },
+          "list": {
+            "label": "List",
+            "options": [
+              {
+                "id": "",
+                "title": "No List"
+              },
+              {
+                "id": "groceries",
+                "title": "Groceries"
+              },
+              {
+                "id": "home",
+                "title": "Home"
+              }
+            ],
+            "selected": "home"
+          },
+          "name": {
+            "label": "Name",
+            "prompt": "What to do",
+            "value": "Call the plumber"
+          },
+          "notKept": {
+            "message": "This iPhone could not keep the change: the disk is full.",
+            "symbol": "warning",
+            "title": "A change was not kept",
+            "tone": "critical"
+          },
+          "notes": {
+            "label": "Notes",
+            "prompt": "Details",
+            "value": "About the kitchen tap. Ask for Thursday morning."
+          },
+          "priority": {
+            "label": "Priority",
+            "options": [
+              {
+                "id": "none",
+                "title": "None"
+              },
+              {
+                "id": "low",
+                "title": "Low"
+              },
+              {
+                "id": "medium",
+                "title": "Medium"
+              },
+              {
+                "id": "high",
+                "title": "High"
+              },
+              {
+                "id": "urgent",
+                "title": "Urgent"
+              }
+            ],
+            "selected": "high"
+          },
+          "save": "Retry",
+          "title": "Edit Task"
+        }
+      },
+      "list": {
+        "actions": [
+          {
+            "action": {
+              "rename": {
+                "_0": "home"
+              }
+            },
+            "title": "Rename List…"
+          },
+          {
+            "action": {
+              "delete": {
+                "_0": "home"
+              }
+            },
+            "title": "Delete List…"
+          }
+        ],
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "0 Completed",
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "due": {
+                "text": "Overdue: Yesterday",
+                "tone": "overdue"
+              },
+              "hasNotes": false,
+              "id": "rent",
+              "priority": {
+                "priority": "urgent",
+                "text": "Urgent"
+              },
+              "spoken": "Pay rent, due Overdue: Yesterday, priority Urgent",
+              "status": "open",
+              "title": "Pay rent",
+              "toggle": "Mark as Done"
+            },
+            {
+              "due": {
+                "text": "Today, 3:00 PM",
+                "tone": "soon"
+              },
+              "hasNotes": true,
+              "id": "plumber",
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "spoken": "Call the plumber, due Today, 3:00 PM, priority High",
+              "status": "open",
+              "title": "Call the plumber",
+              "toggle": "Mark as Done"
+            }
+          ]
+        },
+        "quickAdd": "Add a task to Home",
+        "reorders": true,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "list": {
+            "_0": "home"
+          }
+        },
+        "showsClosed": false,
+        "title": "Home",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "badge": 3,
+            "id": "today",
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "lists"
+      },
+      "nextChange": "2026-11-03T15:00:00Z",
+      "notices": [],
+      "reminders": [
+        {
+          "body": "Due at 3:00 PM, in Home",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-03T15:00:00Z",
+          "id": "tasks.reminder.plumber",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Call the plumber",
+          "userInfo": {
+            "task": "plumber"
+          }
+        },
+        {
+          "body": "Due today",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-20T09:00:00Z",
+          "id": "tasks.reminder.passport",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Renew passport",
+          "userInfo": {
+            "task": "passport"
+          }
+        }
+      ],
+      "settings": [
+        {
+          "footer": "A task due at a time reminds you then; a task due on a day, at the hour above.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": true
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            },
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "7",
+                      "label": "7:00 AM"
+                    },
+                    {
+                      "id": "8",
+                      "label": "8:00 AM"
+                    },
+                    {
+                      "id": "9",
+                      "label": "9:00 AM"
+                    },
+                    {
+                      "id": "12",
+                      "label": "12:00 PM"
+                    },
+                    {
+                      "id": "18",
+                      "label": "6:00 PM"
+                    }
+                  ],
+                  "selected": "9"
+                }
+              },
+              "detail": "When the reminder comes",
+              "id": {
+                "app": {
+                  "_0": "remindHour"
+                }
+              },
+              "label": "Tasks Due on a Day"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "scheduled"
+                }
+              },
+              "label": "Reminders Set on This iPhone"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "today",
+            "open": 3,
+            "openWords": "3 open tasks",
+            "selection": {
+              "today": {}
+            },
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 1,
+            "openWords": "1 open task",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "groceries",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "groceries"
+                }
+              },
+              "symbol": "list",
+              "title": "Groceries"
+            },
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "home",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "home"
+                }
+              },
+              "symbol": "list",
+              "title": "Home"
+            }
+          ]
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "selected": {
+          "list": {
+            "_0": "home"
+          }
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "editor": "editor",
+    "name": "tasks-edit-not-kept",
+    "screen": "editor"
+  },
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "editors": {
+        "editor": {
+          "canSave": false,
+          "cancel": "Cancel",
+          "due": {
+            "kind": "none",
+            "kinds": [
+              {
+                "id": "none",
+                "title": "No Due Date"
+              },
+              {
+                "id": "day",
+                "title": "On a Day"
+              },
+              {
+                "id": "time",
+                "title": "At a Time"
+              }
+            ],
+            "label": "Due"
+          },
+          "link": {
+            "label": "Link",
+            "prompt": "https://example.com",
+            "value": ""
+          },
+          "list": {
+            "label": "List",
+            "options": [
+              {
+                "id": "",
+                "title": "No List"
+              },
+              {
+                "id": "groceries",
+                "title": "Groceries"
+              },
+              {
+                "id": "home",
+                "title": "Home"
+              }
+            ],
+            "selected": "groceries"
+          },
+          "name": {
+            "label": "Name",
+            "prompt": "What to do",
+            "value": ""
+          },
+          "notes": {
+            "label": "Notes",
+            "prompt": "Details",
+            "value": ""
+          },
+          "priority": {
+            "label": "Priority",
+            "options": [
+              {
+                "id": "none",
+                "title": "None"
+              },
+              {
+                "id": "low",
+                "title": "Low"
+              },
+              {
+                "id": "medium",
+                "title": "Medium"
+              },
+              {
+                "id": "high",
+                "title": "High"
+              },
+              {
+                "id": "urgent",
+                "title": "Urgent"
+              }
+            ],
+            "selected": "none"
+          },
+          "save": "Add",
+          "title": "New Task"
+        }
+      },
+      "list": {
+        "actions": [
+          {
+            "action": {
+              "rename": {
+                "_0": "groceries"
+              }
+            },
+            "title": "Rename List…"
+          },
+          {
+            "action": {
+              "delete": {
+                "_0": "groceries"
+              }
+            },
+            "title": "Delete List…"
+          }
+        ],
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "1 Completed",
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "hasNotes": false,
+              "id": "milk",
+              "spoken": "Oat milk",
+              "status": "open",
+              "title": "Oat milk",
+              "toggle": "Mark as Done"
+            },
+            {
+              "due": {
+                "text": "Today",
+                "tone": "soon"
+              },
+              "hasNotes": false,
+              "id": "bread",
+              "spoken": "Sourdough bread, due Today",
+              "status": "open",
+              "title": "Sourdough bread",
+              "toggle": "Mark as Done"
+            }
+          ]
+        },
+        "quickAdd": "Add a task to Groceries",
+        "reorders": true,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "list": {
+            "_0": "groceries"
+          }
+        },
+        "showsClosed": false,
+        "title": "Groceries",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "badge": 3,
+            "id": "today",
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "lists"
+      },
+      "nextChange": "2026-11-03T15:00:00Z",
+      "notices": [],
+      "reminders": [
+        {
+          "body": "Due at 3:00 PM, in Home",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-03T15:00:00Z",
+          "id": "tasks.reminder.plumber",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Call the plumber",
+          "userInfo": {
+            "task": "plumber"
+          }
+        },
+        {
+          "body": "Due today",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-20T09:00:00Z",
+          "id": "tasks.reminder.passport",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Renew passport",
+          "userInfo": {
+            "task": "passport"
+          }
+        }
+      ],
+      "settings": [
+        {
+          "footer": "A task due at a time reminds you then; a task due on a day, at the hour above.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": true
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            },
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "7",
+                      "label": "7:00 AM"
+                    },
+                    {
+                      "id": "8",
+                      "label": "8:00 AM"
+                    },
+                    {
+                      "id": "9",
+                      "label": "9:00 AM"
+                    },
+                    {
+                      "id": "12",
+                      "label": "12:00 PM"
+                    },
+                    {
+                      "id": "18",
+                      "label": "6:00 PM"
+                    }
+                  ],
+                  "selected": "9"
+                }
+              },
+              "detail": "When the reminder comes",
+              "id": {
+                "app": {
+                  "_0": "remindHour"
+                }
+              },
+              "label": "Tasks Due on a Day"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "scheduled"
+                }
+              },
+              "label": "Reminders Set on This iPhone"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "today",
+            "open": 3,
+            "openWords": "3 open tasks",
+            "selection": {
+              "today": {}
+            },
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 1,
+            "openWords": "1 open task",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "groceries",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "groceries"
+                }
+              },
+              "symbol": "list",
+              "title": "Groceries"
+            },
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "home",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "home"
+                }
+              },
+              "symbol": "list",
+              "title": "Home"
+            }
+          ]
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "selected": {
+          "list": {
+            "_0": "groceries"
+          }
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "editor": "editor",
+    "name": "tasks-new",
+    "screen": "editor"
+  },
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "confirmation": {
+        "cancel": "Cancel",
+        "confirm": "Delete List and 2 Tasks",
+        "message": "Its 2 tasks are deleted with it.",
+        "question": {
+          "deleteList": {
+            "id": "home"
+          }
+        },
+        "title": "Delete “Home”?"
+      },
+      "editors": {},
+      "list": {
+        "actions": [
+          {
+            "action": {
+              "rename": {
+                "_0": "home"
+              }
+            },
+            "title": "Rename List…"
+          },
+          {
+            "action": {
+              "delete": {
+                "_0": "home"
+              }
+            },
+            "title": "Delete List…"
+          }
+        ],
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "0 Completed",
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "due": {
+                "text": "Overdue: Yesterday",
+                "tone": "overdue"
+              },
+              "hasNotes": false,
+              "id": "rent",
+              "priority": {
+                "priority": "urgent",
+                "text": "Urgent"
+              },
+              "spoken": "Pay rent, due Overdue: Yesterday, priority Urgent",
+              "status": "open",
+              "title": "Pay rent",
+              "toggle": "Mark as Done"
+            },
+            {
+              "due": {
+                "text": "Today, 3:00 PM",
+                "tone": "soon"
+              },
+              "hasNotes": true,
+              "id": "plumber",
+              "priority": {
+                "priority": "high",
+                "text": "High"
+              },
+              "spoken": "Call the plumber, due Today, 3:00 PM, priority High",
+              "status": "open",
+              "title": "Call the plumber",
+              "toggle": "Mark as Done"
+            }
+          ]
+        },
+        "quickAdd": "Add a task to Home",
+        "reorders": true,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "list": {
+            "_0": "home"
+          }
+        },
+        "showsClosed": false,
+        "title": "Home",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "badge": 3,
+            "id": "today",
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "lists"
+      },
+      "nextChange": "2026-11-03T15:00:00Z",
+      "notices": [],
+      "reminders": [
+        {
+          "body": "Due at 3:00 PM, in Home",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-03T15:00:00Z",
+          "id": "tasks.reminder.plumber",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Call the plumber",
+          "userInfo": {
+            "task": "plumber"
+          }
+        },
+        {
+          "body": "Due today",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-20T09:00:00Z",
+          "id": "tasks.reminder.passport",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Renew passport",
+          "userInfo": {
+            "task": "passport"
+          }
+        }
+      ],
+      "settings": [
+        {
+          "footer": "A task due at a time reminds you then; a task due on a day, at the hour above.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": true
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            },
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "7",
+                      "label": "7:00 AM"
+                    },
+                    {
+                      "id": "8",
+                      "label": "8:00 AM"
+                    },
+                    {
+                      "id": "9",
+                      "label": "9:00 AM"
+                    },
+                    {
+                      "id": "12",
+                      "label": "12:00 PM"
+                    },
+                    {
+                      "id": "18",
+                      "label": "6:00 PM"
+                    }
+                  ],
+                  "selected": "9"
+                }
+              },
+              "detail": "When the reminder comes",
+              "id": {
+                "app": {
+                  "_0": "remindHour"
+                }
+              },
+              "label": "Tasks Due on a Day"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "scheduled"
+                }
+              },
+              "label": "Reminders Set on This iPhone"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "today",
+            "open": 3,
+            "openWords": "3 open tasks",
+            "selection": {
+              "today": {}
+            },
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 1,
+            "openWords": "1 open task",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "groceries",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "groceries"
+                }
+              },
+              "symbol": "list",
+              "title": "Groceries"
+            },
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "home",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "home"
+                }
+              },
+              "symbol": "list",
+              "title": "Home"
+            }
+          ]
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "selected": {
+          "list": {
+            "_0": "home"
+          }
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "name": "tasks-delete-list",
+    "screen": "confirmation"
+  },
+  {
+    "app": {
+      "about": {
+        "title": "About",
+        "version": {
+          "label": "Version",
+          "value": "0.1.0 (1)",
+          "verbatim": false
+        }
+      },
+      "editors": {},
+      "list": {
+        "actions": [
+          {
+            "action": {
+              "rename": {
+                "_0": "groceries"
+              }
+            },
+            "title": "Rename List…"
+          },
+          {
+            "action": {
+              "delete": {
+                "_0": "groceries"
+              }
+            },
+            "title": "Delete List…"
+          }
+        ],
+        "closed": {
+          "revision": 29894940,
+          "rows": []
+        },
+        "closedTitle": "1 Completed",
+        "newTask": "New Task",
+        "open": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "hasNotes": false,
+              "id": "milk",
+              "spoken": "Oat milk",
+              "status": "open",
+              "title": "Oat milk",
+              "toggle": "Mark as Done"
+            },
+            {
+              "due": {
+                "text": "Today",
+                "tone": "soon"
+              },
+              "hasNotes": false,
+              "id": "bread",
+              "spoken": "Sourdough bread, due Today",
+              "status": "open",
+              "title": "Sourdough bread",
+              "toggle": "Mark as Done"
+            }
+          ]
+        },
+        "quickAdd": "Add a task to Groceries",
+        "reorders": true,
+        "rowMenu": {
+          "abandon": "Won't Do",
+          "complete": "Mark as Done",
+          "delete": "Delete Task",
+          "edit": "Edit",
+          "move": "Move to List",
+          "priorities": [
+            {
+              "id": "none",
+              "title": "None"
+            },
+            {
+              "id": "low",
+              "title": "Low"
+            },
+            {
+              "id": "medium",
+              "title": "Medium"
+            },
+            {
+              "id": "high",
+              "title": "High"
+            },
+            {
+              "id": "urgent",
+              "title": "Urgent"
+            }
+          ],
+          "priority": "Priority",
+          "reopen": "Reopen",
+          "swipeDelete": "Delete"
+        },
+        "selection": {
+          "list": {
+            "_0": "groceries"
+          }
+        },
+        "showsClosed": false,
+        "title": "Groceries",
+        "toggleClosed": "Show Completed"
+      },
+      "menu": {
+        "sections": [
+          {
+            "badge": 3,
+            "id": "today",
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "id": "lists",
+            "symbol": "lists",
+            "title": "Lists"
+          },
+          {
+            "id": "settings",
+            "symbol": "settings",
+            "title": "Settings"
+          }
+        ],
+        "selected": "lists"
+      },
+      "nextChange": "2026-11-03T15:00:00Z",
+      "notices": [],
+      "reminders": [
+        {
+          "body": "Due at 3:00 PM, in Home",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-03T15:00:00Z",
+          "id": "tasks.reminder.plumber",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Call the plumber",
+          "userInfo": {
+            "task": "plumber"
+          }
+        },
+        {
+          "body": "Due today",
+          "category": "tasks.reminder",
+          "fireAt": "2026-11-20T09:00:00Z",
+          "id": "tasks.reminder.passport",
+          "showsWhileActive": true,
+          "thread": "tasks",
+          "timeSensitive": false,
+          "title": "Renew passport",
+          "userInfo": {
+            "task": "passport"
+          }
+        }
+      ],
+      "settings": [
+        {
+          "footer": "A task due at a time reminds you then; a task due on a day, at the hour above.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": true
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            },
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "7",
+                      "label": "7:00 AM"
+                    },
+                    {
+                      "id": "8",
+                      "label": "8:00 AM"
+                    },
+                    {
+                      "id": "9",
+                      "label": "9:00 AM"
+                    },
+                    {
+                      "id": "12",
+                      "label": "12:00 PM"
+                    },
+                    {
+                      "id": "18",
+                      "label": "6:00 PM"
+                    }
+                  ],
+                  "selected": "9"
+                }
+              },
+              "detail": "When the reminder comes",
+              "id": {
+                "app": {
+                  "_0": "remindHour"
+                }
+              },
+              "label": "Tasks Due on a Day"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "scheduled"
+                }
+              },
+              "label": "Reminders Set on This iPhone"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        }
+      ],
+      "sidebar": {
+        "fixed": [
+          {
+            "actions": [],
+            "id": "today",
+            "open": 3,
+            "openWords": "3 open tasks",
+            "selection": {
+              "today": {}
+            },
+            "symbol": "today",
+            "title": "Today"
+          },
+          {
+            "actions": [],
+            "id": "inbox",
+            "open": 1,
+            "openWords": "1 open task",
+            "selection": {
+              "inbox": {}
+            },
+            "symbol": "inbox",
+            "title": "No List"
+          }
+        ],
+        "lists": {
+          "revision": 29894940,
+          "rows": [
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "groceries"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "groceries",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "groceries"
+                }
+              },
+              "symbol": "list",
+              "title": "Groceries"
+            },
+            {
+              "actions": [
+                {
+                  "action": {
+                    "rename": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Rename…"
+                },
+                {
+                  "action": {
+                    "delete": {
+                      "_0": "home"
+                    }
+                  },
+                  "title": "Delete…"
+                }
+              ],
+              "id": "home",
+              "open": 2,
+              "openWords": "2 open tasks",
+              "selection": {
+                "list": {
+                  "_0": "home"
+                }
+              },
+              "symbol": "list",
+              "title": "Home"
+            }
+          ]
+        },
+        "listsTitle": "My Lists",
+        "newList": "New List",
+        "selected": {
+          "list": {
+            "_0": "groceries"
+          }
+        },
+        "title": "Lists"
+      },
+      "storage": {
+        "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+        "id": {
+          "storage": {}
+        },
+        "rows": [
+          {
+            "control": {
+              "value": {
+                "_0": "18.4 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "records"
+                  }
+                }
+              }
+            },
+            "label": "Saved records"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "412 bytes",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "area": {
+                    "_0": "outbox"
+                  }
+                }
+              }
+            },
+            "label": "Waiting to be sent"
+          },
+          {
+            "control": {
+              "value": {
+                "_0": "18.8 KB",
+                "verbatim": false
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "total": {}
+                }
+              }
+            },
+            "label": "Total"
+          },
+          {
+            "control": {
+              "action": {
+                "destructive": true,
+                "enabled": true
+              }
+            },
+            "id": {
+              "storage": {
+                "_0": {
+                  "clear": {}
+                }
+              }
+            },
+            "label": "Clear Saved Copies"
+          }
+        ],
+        "title": "Storage"
+      }
+    },
+    "name": "tasks-settings",
+    "screen": "settings",
+    "settings": {
+      "sections": [
+        {
+          "footer": "A task due at a time reminds you then; a task due on a day, at the hour above.",
+          "id": {
+            "app": {
+              "_0": "reminders"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "toggle": {
+                  "_0": true
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "remind"
+                }
+              },
+              "label": "Remind Me When Tasks Are Due"
+            },
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "7",
+                      "label": "7:00 AM"
+                    },
+                    {
+                      "id": "8",
+                      "label": "8:00 AM"
+                    },
+                    {
+                      "id": "9",
+                      "label": "9:00 AM"
+                    },
+                    {
+                      "id": "12",
+                      "label": "12:00 PM"
+                    },
+                    {
+                      "id": "18",
+                      "label": "6:00 PM"
+                    }
+                  ],
+                  "selected": "9"
+                }
+              },
+              "detail": "When the reminder comes",
+              "id": {
+                "app": {
+                  "_0": "remindHour"
+                }
+              },
+              "label": "Tasks Due on a Day"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "scheduled"
+                }
+              },
+              "label": "Reminders Set on This iPhone"
+            }
+          ],
+          "title": "Reminders"
+        },
+        {
+          "id": {
+            "app": {
+              "_0": "lists"
+            }
+          },
+          "rows": [
+            {
+              "control": {
+                "choice": {
+                  "options": [
+                    {
+                      "id": "manual",
+                      "label": "My Order"
+                    },
+                    {
+                      "id": "due",
+                      "label": "Due Date"
+                    }
+                  ],
+                  "selected": "manual"
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "order"
+                }
+              },
+              "label": "Sort Tasks By"
+            },
+            {
+              "control": {
+                "toggle": {
+                  "_0": false
+                }
+              },
+              "id": {
+                "app": {
+                  "_0": "showCompleted"
+                }
+              },
+              "label": "Show Completed Tasks"
+            }
+          ],
+          "title": "Lists"
+        },
+        {
+          "footer": "Changes are written to ada.example.com as you make them, and wait on this iPhone while it cannot be reached.",
+          "id": {
+            "status": {}
+          },
+          "rows": [
+            {
+              "control": {
+                "note": {
+                  "_0": "positive"
+                }
+              },
+              "id": {
+                "status": {
+                  "_0": {
+                    "sentence": {}
+                  }
+                }
+              },
+              "label": "Up to date."
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "Version 2",
+                  "verbatim": false
+                }
+              },
+              "detail": "substrate.reamde.dev/tasks",
+              "id": {
+                "status": {
+                  "_0": {
+                    "package": {
+                      "_0": "substrate.reamde.dev/tasks"
+                    }
+                  }
+                }
+              },
+              "label": "Tasks package"
+            }
+          ],
+          "title": "Your Substrate"
+        },
+        {
+          "footer": "Sign Out: signs out on this device and revokes its access on ada.example.com.",
+          "id": {
+            "repository": {}
+          },
+          "rows": [
+            {
+              "control": {
+                "value": {
+                  "_0": "ada.example.com",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "repository": {
+                  "_0": {
+                    "server": {}
+                  }
+                }
+              },
+              "label": "Server"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "ada.example.com",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "repository": {
+                  "_0": {
+                    "repository": {}
+                  }
+                }
+              },
+              "label": "Repository"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "0.114.0",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "repository": {
+                  "_0": {
+                    "serverVersion": {}
+                  }
+                }
+              },
+              "label": "Server version"
+            },
+            {
+              "confirmation": {
+                "cancel": "Cancel",
+                "confirm": "Sign Out",
+                "message": "Substrate Tasks's access on ada.example.com is revoked.",
+                "question": {
+                  "repository": {
+                    "_0": {
+                      "signOut": {}
+                    }
+                  }
+                },
+                "title": "Sign out of ada.example.com?"
+              },
+              "control": {
+                "action": {
+                  "destructive": true,
+                  "enabled": true
+                }
+              },
+              "id": {
+                "repository": {
+                  "_0": {
+                    "signOut": {}
+                  }
+                }
+              },
+              "label": "Sign Out"
+            }
+          ],
+          "title": "Repository"
+        },
+        {
+          "id": {
+            "approvedAccess": {}
+          },
+          "rows": [
+            {
+              "control": {
+                "note": {
+                  "_0": "positive"
+                }
+              },
+              "id": {
+                "repository": {
+                  "_0": {
+                    "scope": {
+                      "_0": "read:substrate.reamde.dev/tasks/*"
+                    }
+                  }
+                }
+              },
+              "label": "See your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+            },
+            {
+              "control": {
+                "note": {
+                  "_0": "positive"
+                }
+              },
+              "id": {
+                "repository": {
+                  "_0": {
+                    "scope": {
+                      "_0": "write:substrate.reamde.dev/tasks/*"
+                    }
+                  }
+                }
+              },
+              "label": "See, add, change and delete your lists and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "Dec 3, 2026 at 9:00 AM",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "repository": {
+                  "_0": {
+                    "until": {}
+                  }
+                }
+              },
+              "label": "Until"
+            },
+            {
+              "control": {
+                "action": {
+                  "destructive": false,
+                  "enabled": true
+                }
+              },
+              "id": {
+                "repository": {
+                  "_0": {
+                    "changeAccess": {}
+                  }
+                }
+              },
+              "label": "Change Access…"
+            }
+          ],
+          "title": "Approved access"
+        },
+        {
+          "footer": "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.",
+          "id": {
+            "storage": {}
+          },
+          "rows": [
+            {
+              "control": {
+                "value": {
+                  "_0": "18.4 KB",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "storage": {
+                  "_0": {
+                    "area": {
+                      "_0": "records"
+                    }
+                  }
+                }
+              },
+              "label": "Saved records"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "412 bytes",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "storage": {
+                  "_0": {
+                    "area": {
+                      "_0": "outbox"
+                    }
+                  }
+                }
+              },
+              "label": "Waiting to be sent"
+            },
+            {
+              "control": {
+                "value": {
+                  "_0": "18.8 KB",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "storage": {
+                  "_0": {
+                    "total": {}
+                  }
+                }
+              },
+              "label": "Total"
+            },
+            {
+              "control": {
+                "action": {
+                  "destructive": true,
+                  "enabled": true
+                }
+              },
+              "id": {
+                "storage": {
+                  "_0": {
+                    "clear": {}
+                  }
+                }
+              },
+              "label": "Clear Saved Copies"
+            }
+          ],
+          "title": "Storage"
+        },
+        {
+          "id": {
+            "about": {}
+          },
+          "rows": [
+            {
+              "control": {
+                "value": {
+                  "_0": "0.1.0 (1)",
+                  "verbatim": false
+                }
+              },
+              "id": {
+                "about": {
+                  "_0": {
+                    "version": {}
+                  }
+                }
+              },
+              "label": "Version"
+            }
+          ],
+          "title": "About"
+        }
+      ],
+      "title": "Settings"
+    }
+  }
+]
