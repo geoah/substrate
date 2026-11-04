@@ -12,6 +12,7 @@ dependencies {
     runtimeOnly(libs.android.gradle.plugin)
     runtimeOnly(libs.kotlin.serialization.plugin)
     runtimeOnly(libs.compose.compiler.plugin)
+    testImplementation(libs.junit)
 }
 
 gradlePlugin {

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The Android build of the apps (docs/plans/app-kit.md §5.5, §8): one
-# subcommand per `android:*` task in .mise.toml.
+# subcommand per `android:*` task in .mise.toml, and `claims`, which those
+# tasks and .mise/apps-android.sh read an APK with.
 #
 #   sdk             install the pinned SDK packages, each at its pinned
 #                   revision, and the Swift SDK for Android, and link the
@@ -19,6 +20,8 @@
 #   lock            rewrite the Gradle dependency locks and the dependency
 #                   verification metadata (every artifact's sha256)
 #   release:build   one app's release APK, signed, for .mise/apps.sh
+#   claims <apk>    the https callbacks an APK claims as verified App Links,
+#                   one a line
 #
 # The tasks run with the open-source Swift and the JDK as task tools
 # (`tools =` on each task), so `swift` here is never Xcode's and the
@@ -142,6 +145,14 @@ install_platform_tools() {
   rm -rf "$dir"
 }
 
+# The pinned build-tools, where zipalign, apksigner and aapt2 are.
+build_tools() {
+  local package
+  for package in "${sdk_packages[@]}"; do
+    [[ $package != "build-tools;"* ]] || printf '%s' "$ANDROID_HOME/build-tools/${package#build-tools;}"
+  done
+}
+
 sdkmanager_bin() {
   local candidate
   for candidate in "$ANDROID_HOME"/cmdline-tools/latest/bin/sdkmanager "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager; do
@@ -248,22 +259,63 @@ build_tasks=(:kit-core:assembleDebug :kit-core:assembleRelease :kit-device:assem
   :gallery:assembleDebug :gallery:assembleRelease)
 # An app's unit tests are its gallery check: every fixture its core wrote,
 # drawn by its own composables.
-test_tasks=(:kit-core:testDebugUnitTest :kit-device:testDebugUnitTest :kit-ui:testDebugUnitTest)
+test_tasks=(:kit-core:testDebugUnitTest :kit-device:testDebugUnitTest :kit-ui:testDebugUnitTest :build-logic:test)
 while IFS= read -r task; do build_tasks+=("$task"); done < <(app_tasks assembleDebug assembleRelease)
 while IFS= read -r task; do test_tasks+=("$task"); done < <(app_tasks testDebugUnitTest)
 device_test_tasks=(:kit-device:assembleDebugAndroidTest :bridge-check:assembleDebugAndroidTest :gallery:assembleDebugAndroidTest)
 # An app's release refuses to build without an https client id and callback
 # (build-logic's requireReleaseSignIn); `build` and `lock` build every
 # release, so they stamp it with these, which name no real app.
+placeholder_redirect=https://example.com/app/callback
 placeholder_stamp=("-Psubstrate.release.clientID=https://example.com/app/client.json"
-  "-Psubstrate.release.redirect=https://example.com/app/callback")
+  "-Psubstrate.release.redirect=${placeholder_redirect}")
+
+# The https callbacks the APK $1 claims as verified App Links, one a line:
+# each <data> of an `autoVerify` intent filter on kit-device's
+# SignInCallback, as aapt2 prints the manifest the APK carries, an element's
+# attributes two spaces in from it and its children further. A release
+# claims its stamped callback and nothing else; a debug build claims none.
+claims() {
+  local apk=${1:-}
+  [[ -f $apk ]] || die "usage: claims <apk>"
+  need_sdk
+  "$(build_tools)/aapt2" dump xmltree --file AndroidManifest.xml "$apk" | awk '
+    function depth() { match($0, /^ */); return RLENGTH }
+    function name(  s) { s = $0; sub(/^ *A: /, "", s); sub(/\(.*/, "", s); sub(/.*:/, "", s); return s }
+    function value(  s) { s = $0; sub(/^[^=]*=/, "", s); if (s ~ /^"/) { sub(/^"/, "", s); sub(/".*/, "", s) } return s }
+    function flush() {
+      if (activity == "dev.reamde.substrate.kit.device.SignInCallback" && verified && scheme != "") print scheme "://" host path
+      data = 0
+    }
+    /^ *E: / {
+      d = depth()
+      if (data && d <= data_d) flush()
+      if (filter && d <= filter_d) filter = 0
+      if (inside && d <= activity_d) inside = 0
+      if ($2 == "activity") { inside = 1; activity_d = d; activity = "" }
+      else if (inside && $2 == "intent-filter") { filter = 1; filter_d = d; verified = 0 }
+      else if (filter && $2 == "data") { data = 1; data_d = d; scheme = ""; host = ""; path = "" }
+      next
+    }
+    /^ *A: / {
+      d = depth(); n = name(); v = value()
+      if (data && d == data_d + 2) {
+        if (n == "scheme") scheme = v; else if (n == "host") host = v; else if (n == "path") path = v
+      } else if (filter && d == filter_d + 2 && n == "autoVerify") {
+        verified = (v == "true" || v ~ /0xffffffff$/)
+      } else if (inside && d == activity_d + 2 && n == "name") {
+        activity = v
+      }
+    }
+    END { if (data) flush() }'
+}
 
 cmd_build() {
   need_sdk
   need_swift
   gradle "${build_tasks[@]}" "${placeholder_stamp[@]}"
   # And unstamped, every app's release is refused before any of it is built.
-  local app out
+  local app out apk claimed
   for app in $(android_apps); do
     if out=$(gradle ":$app:preReleaseBuild" 2>&1); then
       die "apps/$app's release built without its sign-in stamp"
@@ -271,6 +323,17 @@ cmd_build() {
     grep -q 'A release signs in only through its claimed https callback' <<<"$out" ||
       die "apps/$app's unstamped release failed, but not on its sign-in stamp: $out"
     printf 'android: %s release refused without its stamp\n' "$app"
+    # The stamped release claims its callback alone, as a verified App Link;
+    # the debug build claims none, and signs in through loopback.
+    for apk in apps/"$app"/android/build/outputs/apk/release/*-unsigned.apk; do
+      claimed=$(claims "$apk")
+      [[ $claimed == "$placeholder_redirect" ]] ||
+        die "apps/$app's release claims ${claimed:-no callback}, and it was stamped with ${placeholder_redirect}"
+    done
+    for apk in apps/"$app"/android/build/outputs/apk/debug/*-debug.apk; do
+      [[ -z $(claims "$apk") ]] || die "apps/$app's debug build claims a callback, which only a release does"
+    done
+    printf 'android: %s release claims %s, its debug build none\n' "$app" "$placeholder_redirect"
   done
 }
 
@@ -349,10 +412,8 @@ cmd_release_build() {
     "-Psubstrate.release.siteHost=$SUBSTRATE_RELEASE_SITE_HOST"
   local built=(apps/"$app"/android/build/outputs/apk/release/*-unsigned.apk)
   [[ ${#built[@]} -eq 1 && -f ${built[0]} ]] || die "apps/$app's release build left ${#built[@]} unsigned APKs, and one is signed"
-  local package tools=""
-  for package in "${sdk_packages[@]}"; do
-    [[ $package == "build-tools;"* ]] && tools=$ANDROID_HOME/build-tools/${package#build-tools;}
-  done
+  local tools
+  tools=$(build_tools)
   local aligned
   aligned=$(mktemp -d)/aligned.apk
   "$tools/zipalign" -f -p 4 "${built[0]}" "$aligned"
@@ -448,5 +509,6 @@ smoke) cmd_smoke ;;
 gallery) cmd_gallery "${2:-}" ;;
 lock) cmd_lock ;;
 release:build) cmd_release_build "${2:-}" ;;
+claims) claims "${2:-}" ;;
 *) die "unknown subcommand ${1:-}; see the header of .mise/android.sh" ;;
 esac

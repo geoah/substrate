@@ -206,6 +206,43 @@ struct ServicesTests {
         #expect(cancel.id == request.id)
     }
 
+    /// A sign-in stopped while Kotlin prepares its route, or after the
+    /// browser opened, is cancelled on Kotlin's side, after the request it
+    /// stops: by its caller, or by its handle's close, which no `finish`
+    /// outlives, so Kotlin lets go of the attempt itself (kit-device's
+    /// BrowserSignInContractTest).
+    @Test func aSignInStoppedDuringPrepareOrAfterTheBrowserOpenedIsCancelledOnKotlinsSide() async throws {
+        let (runtime, outlet, box) = started()
+        let route = SignInRoute.loopback(appName: "Substrate Tasks", path: "/oauth/callback")
+        let redirect = SignInRedirect(route: route, uri: "http://127.0.0.1:1/oauth/callback")
+        let page = try #require(URL(string: "https://example.com/authorize?state=s"))
+        for (step, closing) in [("prepare", false), ("open", false), ("prepare", true), ("open", true)] {
+            let handle = try open(runtime)
+            let browser = BridgeBrowserSignIn(channel: try #require(box.value?.context.device))
+            let count = outlet.messages.count
+            let waiting = Task { @MainActor in
+                if step == "prepare" { _ = try await browser.prepare(route) } else { _ = try await browser.open(page, for: redirect) }
+            }
+            let request = try await outlet.next(after: count) { $0.op == .request && $0.handle == handle }
+            if closing {
+                _ = try post(runtime, Envelope(op: .close, handle: handle))
+            } else {
+                waiting.cancel()
+            }
+            await #expect(throws: CancellationError.self, "\(step), closing: \(closing)") { try await waiting.value }
+            let cancel = try await outlet.next(after: count) { $0.op == .cancel && $0.id == request.id }
+            #expect(outlet.messages.firstIndex(of: request)! < outlet.messages.firstIndex(of: cancel)!)
+            if closing {
+                let closed = try await outlet.next(after: count) { $0.op == .closed && $0.handle == handle }
+                #expect(outlet.messages.firstIndex(of: cancel)! < outlet.messages.firstIndex(of: closed)!)
+            } else {
+                _ = try post(runtime, Envelope(op: .close, handle: handle))
+            }
+        }
+        #expect(outlet.running.isEmpty)
+        #expect(runtime.calls.outstanding == 0)
+    }
+
     @Test func aTXTAnswerKeepsEachOutcomeApart() {
         let name = "_substrate.example.com"
         #expect(

@@ -1,5 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- The contract tests' server is plain HTTP on the loopback address. -->
-    <application android:usesCleartextTraffic="true" />
+    <application android:usesCleartextTraffic="true">
+        <!-- The claimed route's activity, as a release's manifest declares it
+             (build-logic's requireReleaseSignIn), on a callback nobody
+             verified for this package: the tests hand it callbacks
+             themselves, and Android 12 and later refuse the route through
+             it when no test stands in for the verification. -->
+        <activity
+            android:name="dev.reamde.substrate.kit.device.SignInCallback"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="example.com" android:path="/kit/callback" />
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>

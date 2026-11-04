@@ -388,10 +388,11 @@ app that needs them on Android.
 and notifications are built on both systems, notifications on Android as
 `NotificationManager` with an alarm per scheduled request, for Tasks'
 reminders. Browser sign-in on Android takes a local build's loopback route
-alone; a release refuses to sign in until its App Link and Auth Tab are
-built (§14). Ongoing activities joined the list on Apple systems (Workouts'
-Live Activity). Background work is built on Apple systems only
-(`BGTaskScheduler` refresh jobs, which Chat runs, and continued processing),
+and a release's claimed callback, a verified App Link the owner's default
+browser follows back to the app; the Auth Tab is not built (§14). Ongoing
+activities joined the list on Apple systems (Workouts' Live Activity).
+Background work is built on Apple systems only (`BGTaskScheduler` refresh
+jobs, which Chat runs, and continued processing),
 with the link generation checked before a run's result lands; WorkManager
 and the headless start below are not built, since no Android app has
 background work yet. Updates is not a device service: the Apple apps keep
@@ -875,10 +876,9 @@ its own app or module.
 
 What this round knowingly leaves, each for the change that needs it.
 
-- **Release sign-in on Android.** A release's claimed callback, an App Link
-  the site's `assetlinks.json` verifies, received through an Auth Tab (a
-  Custom Tab where Auth Tab is missing). Until then a release refuses to
-  sign in rather than fall back to loopback, which is §5.4's contract.
+- **The Auth Tab on Android.** A release's claimed callback is an App Link
+  the default browser follows; receiving it in an Auth Tab (a Custom Tab
+  where Auth Tab is missing) would keep the approval beside the app.
 - **Chat and Workouts on `AppShell`.** Tasks and the template run under the
   kit's shell; Chat and Workouts keep their own hosts over the same link,
   because the shell lacks what they use: the password door, the link's
