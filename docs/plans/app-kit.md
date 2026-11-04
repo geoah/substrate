@@ -1,11 +1,12 @@
 # Plan: one app kit for every Substrate app, on Apple systems and Android
 
-Status: implemented on branch `feat/app-kit`, 2026-11-03; based on the
-domains stack (#1163 to #1167, [status](authorities/status.md)). The plan was
-reviewed by Fable and Astra and confirmed by each; every step was reviewed by
-one of them as it landed (review record at the end, with what each step
-settled other than the plan said). The binding choices are decision records
-0222 to 0224 (§13).
+Status: implemented on branch `feat/app-kit`, 2026-11-03 to 2026-11-04;
+based on the domains stack (#1163 to #1167, [status](authorities/status.md)).
+The plan was reviewed by Fable and Astra and confirmed by each; every step
+was reviewed by one of them as it landed (review record at the end, with what
+each step settled other than the plan said). Where the build differs from a
+section, the section says so under **As built**; what is knowingly left is
+§14. The binding choices are decision records 0222 to 0224 (§13).
 
 ## 1. The request
 
@@ -332,6 +333,16 @@ libraries as `.so` files with `SubstrateBridge` and the generated Kotlin, one
 AAR), `kit-ui` (a composable per SwiftUI view, fed the same presentations)
 and `kit-device` (the device services in Kotlin).
 
+**As built.** The table above, plus `SubstrateBridgeCheck` (the roots the
+bridge's runtime checks open, and the one that presents the gallery's
+fixtures), two C targets (`SubstrateResolv` under `SubstrateDeviceApple`,
+`SubstrateJNI` under `SubstrateBridge`) and `SubstrateKit`, one import of
+every library an Apple app draws with; the kit's
+[README](../../apps/kit/README.md) is the table as it stands. Beside the
+three Gradle modules are two apps that are never published, `bridge-check`
+(the runtime checks on a device) and `gallery` (the shared screens live),
+and the Gradle root includes each app's own module (`:tasks`).
+
 Sync is not converted. It keeps its own `JSON`, `LocalState`, `pushRows` and
 client code until it is, and the kit does not take them; that duplication is
 listed in `apps/sync/README.md` as the work its conversion does.
@@ -372,6 +383,22 @@ First cut, the ones the converted apps and Tasks use:
 
 Ongoing activity, location, health, contacts and calendars land with the
 app that needs them on Android.
+
+**As built.** Transport, DNS, the secure store, app folders, connectivity
+and notifications are built on both systems, notifications on Android as
+`NotificationManager` with an alarm per scheduled request, for Tasks'
+reminders. Browser sign-in on Android takes a local build's loopback route
+alone; a release refuses to sign in until its App Link and Auth Tab are
+built (§14). Ongoing activities joined the list on Apple systems (Workouts'
+Live Activity). Background work is built on Apple systems only
+(`BGTaskScheduler` refresh jobs, which Chat runs, and continued processing),
+with the link generation checked before a run's result lands; WorkManager
+and the headless start below are not built, since no Android app has
+background work yet. Updates is not a device service: the Apple apps keep
+the updater they had (`xcode/Shared/Updater.swift`, Sparkle on the Mac and
+the manifest link on iOS), whose offer reaches an app's About screen (as
+a command, in Tasks and the template), and an Android app has no updater
+(§9, §14).
 
 **Security parity is an acceptance test, not a library choice.** Each
 Android implementation passes the same contract tests as the Apple one, and
@@ -534,6 +561,15 @@ size and share of its budget, a clear action that never drops unsent writes
 silently) and the **App menu** (sections as data, drawn as a tab bar on a
 phone and a sidebar on iPad, Mac and a wide Android screen).
 
+**As built.** The App menu is built on both systems. Storage is a section of
+the Settings screen, not a screen of its own: each area's size and one total
+against the budget the saved copies share, with Clear Saved Copies. The
+Records screen is not built: what the kit took from Tasks is how an app keeps
+its records (`LinkedRecords`: read once, followed through the watch, the
+outbox's writes laid over), and Tasks draws its own list and detail over it;
+a screen made from a kind's declaration waits for an app that shows records
+it does not own (§14).
+
 ## 6. Where things live
 
 By app, not by platform: one app is one folder.
@@ -541,10 +577,10 @@ By app, not by platform: one app is one folder.
 ```
 apps/
   README.md            how the apps are built, tested and released
-  kit/                 the Swift package of §5.3, README per library, android/ (Gradle) inside
+  kit/                 the Swift package of §5.3, one README with a row per library, android/ (Gradle) inside
   xcode/               project.yml (includes each app's apple/targets.yml), Shared/, scripts/
   gradle/              settings.gradle.kts (includes each app's android/), build-logic/
-  console/             app.json, apple/
+  console/             app.json, apple/, docs/
   chat/                app.json, ChatKit/, apple/, docs/
   workouts/            app.json, WorkoutsKit/, apple/ (app, widgets), package/, library/, scripts/, docs/
   sync/                app.json, apple/ (app, share target): moved, not converted
@@ -572,6 +608,12 @@ apps/
 - **Nothing in `apps/<app>` imports another app**, and each app's scripts,
   docs and locks live under it: Workouts' `package/closures.lock.json` and
   `library/library.lock.json` move with it, and the site reads them there.
+- **An app's Android side has two halves.** Its Kotlin UI is the Gradle
+  module in `apps/<app>/android`; the Swift it loads (its roots over the
+  bridge, registered by name) is a library of its core's package, since that
+  package is what builds its Swift for Android: Tasks' is `TasksKit`'s
+  `TasksAndroid`, linked as `libSubstrateTasks.so`. Tasks is the one app with
+  an `android/` folder in this round.
 - **What does not move**: bundle ids, Keychain services and access groups,
   App Groups, and every on-device path (`Application Support/Workouts/`,
   `SubstrateChat/`), so an installed app upgrades in place.
@@ -608,6 +650,19 @@ that touches the kit, and a kit change fixes every app it breaks in the same
 pull request: `mise run apps:build` builds all of them on a Mac, and CI
 builds every core on Linux and for Android.
 
+**As built.** Formatters: the next commit, `fmt:swift` (swift-format) and
+`fmt:kotlin` (ktfmt) in `fmt` and `fmt:check`, with the existing code
+reformatted in that commit alone. Deferred: `detekt`, a second Kotlin
+configuration and Gradle plugin for a Kotlin side that is still the kit and
+one app, where the compiler's warnings, `lint:apps` and the review hold it;
+the API-break check, since the kit has no consumer outside this tree and
+`diagnose-api-breaking-changes` needs a released baseline the kit has never
+had, while a kit change already fixes its apps in the same pull request,
+which CI's Linux and Android builds of every core enforce; and
+`apps:build`, since each app has its `apple:build:<app>` and
+`apple:test:<app>` and nothing runs the Apple side in CI to call one task
+for all of them.
+
 ### 7.3 Conventions
 
 - Swift 6 language mode and complete concurrency checking everywhere; the
@@ -625,10 +680,16 @@ builds every core on Linux and for Android.
   a reference), so the section says which sense an app's code means. The
   kit takes none of adapter, mirror, stream, sync, feature, group or
   account.
-- Each library and each app has a README saying what it holds.
+- Each library and each app has a README saying what it holds. As built,
+  the kit has one README with a row per library, and an app's README is
+  `apps/README.md`'s section for it, beside its own where it has one (Tasks,
+  Workouts, the template; Chat's `DESIGN.md`).
 - `mise run apps:new <id>` scaffolds `apps/<id>/` from `apps/template/`;
   CI runs it and builds the result, so the template cannot rot. Substrate
-  Tasks is the first app it makes.
+  Tasks is the first app it makes. As built, Tasks came first, and the
+  template was extracted from it once the kit had taken what every app
+  repeated (linked records, the shell, the App menu's views); every app
+  after Tasks starts there.
 - `.github/review.md` gains an apps section: the layering, the security
   contract, presentations instead of logic in views, both renderers changed
   together.
@@ -645,7 +706,9 @@ builds every core on Linux and for Android.
   A fixture without both renderers fails the build, so a presentation change
   ships both views in one pull request. `mise run apps:gallery` writes the
   two sets side by side, and a Gallery app on each platform shows them
-  live.
+  live. As built, Compose draws under Robolectric with Roborazzi (step 7's
+  record), and the Gallery app is Android's alone; on Apple systems the
+  gallery is `apps:gallery`'s pictures and each app's view tests.
 
 ## 8. Building and testing
 
@@ -664,11 +727,20 @@ builds every core on Linux and for Android.
   recreated). Presenter tests and screenshots cannot catch JNI lifetimes or
   missing native resources; the runtime tests can.
 - **A real server is one command away**: `mise run dev` serves the simulator
-  and the emulator (the emulator reaches the host at `10.0.2.2:8080`).
+  and the emulator. As built, the emulator reaches it through
+  `adb reverse` at `localhost`, not at `10.0.2.2`: a server with no public
+  URL names itself `http://` only on a loopback host, and the app refuses
+  the mismatch.
 - **Debugging** Swift on Android has no breakpoints in Android Studio, so
   logic is debugged on the host where its tests run.
 - **Tasks**: `apps:build`, `apps:test`, `apps:test:linux`, `android:build`,
-  `android:test`, `android:smoke`, `apps:gallery`, `apps:new`.
+  `android:test`, `android:smoke`, `apps:gallery`, `apps:new`. As built,
+  `apps:build` and `apps:test` are each app's `apple:build:<app>` and
+  `apple:test:<app>` (the kit's is `apple:test:kit`), and the rest are as
+  named, with `apps:new:check`, `android:generate`, `android:lock`,
+  `android:release:build`, and `ci:apps` and `ci:android`, the two CI jobs.
+  The Android runtime tests run the bridge's contract and kit-device's
+  services; a cold background job is not among them, since none is built.
 
 ## 9. Releasing both platforms together
 
@@ -720,7 +792,8 @@ names; losing it means every install is replaced by hand, as losing
 Sparkle's key does on the Mac, and `apps/README.md` says how to rotate it.
 The updater shows each state: a newer build, permission to install from this
 app (`REQUEST_INSTALL_PACKAGES`), the system's confirmation, cancelled,
-failed.
+failed. As built, a release lists the APK in the app's feed and signs it as
+above, and no Android updater reads the feed yet (§14).
 
 ## 10. Substrate Tasks
 
@@ -743,7 +816,10 @@ Android.
 - **What it exercises**: sign-in and approval, the package version, the
   record screens, offline writes through the outbox, live updates through
   the watch, due-date reminders through notifications, background work,
-  settings, status and storage, the app menu.
+  settings, status and storage, the app menu. As built, all but the record
+  screens (its own over the kit's linked records, §5.6) and background work
+  (reminders are planned on the device while the app runs; nothing refreshes
+  in the background).
 - **Not in the first cut**: sharing, location reminders, attachments, QR
   codes.
 
@@ -787,6 +863,61 @@ its own app or module.
 - [0224](../decisions/0224-an-app-is-one-folder-named-once-by-its-app-json-and-the-kits-layering-is-checked.md):
   an app is one folder named once by its `app.json`, and the kit's layering
   is checked.
+
+## 14. Later
+
+What this round knowingly leaves, each for the change that needs it.
+
+- **Release sign-in on Android.** A release's claimed callback, an App Link
+  the site's `assetlinks.json` verifies, received through an Auth Tab (a
+  Custom Tab where Auth Tab is missing). Until then a release refuses to
+  sign in rather than fall back to loopback, which is §5.4's contract.
+- **Chat and Workouts on `AppShell`.** Tasks and the template run under the
+  kit's shell; Chat and Workouts keep their own hosts over the same link,
+  because the shell lacks what they use: the password door, the link's
+  `offers` and `checkInterval`, Change Access reporting its problem to the
+  app, background work and badges, and a transport of the app's own.
+- **Android UIs for Chat, Workouts and the console**, on the same kit (§1).
+- **Sync's conversion** (§5.3): its own `JSON`, `LocalState`, `pushRows`
+  and client code until then. The views kept for apps that hold their own
+  session, named `*Sheet`, `*Section` and `*Banner` (`ReviewChangesSheet`,
+  `AccountSection`, `AppStatusBanner`), retire with it, and so does Sync's
+  `Components.swift`.
+- **Device services not built** (§5.4): background work on Android
+  (WorkManager, the headless start, a cold job in the runtime tests) and
+  Updates on both, with an Android updater that reads the feed and shows
+  §9's states.
+- **The Records screen** (§5.6), from a kind's declaration and later the
+  console's `recordview` records, for an app that shows records it does not
+  own.
+- **Tooling** (§7.2): `detekt`, the API-break check once the kit has a
+  baseline, and `apps:build` once something runs every app's Apple side at
+  once. An Apple Gallery app beside Android's.
+- **Words.** `StubTransport` and its kin renamed for what they script, as
+  `ScriptedServer` is; `LineStream`, which still says stream, a word the kit
+  does not take; Workouts' `AccountRef` and its `.sync` command and effect,
+  which say account and sync where the kit says repository and flush.
+- **One way to ask first.** A question is asked three ways (the
+  `confirmation` modifier over a presentation's `ConfirmationPresentation`,
+  a settings row's `confirmation` through `ConfirmingButton`, and the
+  Repository screen's own Sign Out question); the modifier is the one to
+  keep.
+- **The umbrella.** `SubstrateKit` and the defaults in
+  `AppleDefaults.swift` go once each caller imports the libraries it uses
+  and passes its device services in, as Tasks does.
+- **Label casing per platform** (Astra's ruling on the Android review):
+  platform-aware wording is a kit presentation and localization concern.
+  Android receives authored sentence-case strings and Apple title case, the
+  read and edit wording identical within a platform, and Compose never
+  lowercases an arbitrary string.
+- **Play distribution of Tasks** needs `SCHEDULE_EXACT_ALARM` (asked of the
+  owner) in place of `USE_EXACT_ALARM`, which Play reserves for alarm and
+  calendar apps.
+- **The gallery's offscreen drawing** shows an on switch grey and a
+  sidebar's selection black, where the device shows the accent; the
+  pictures, not the apps, are wrong.
+- **The APK's size.** ICU is most of it (§3.2); FoundationEssentials alone
+  would do once the cores' formatters do without ICU.
 
 ## Review record
 
@@ -964,3 +1095,100 @@ is outstanding, keyed lists carry revisions and are never coalesced, a
 stream ends once, the lease is a conditional write with a fencing token,
 activation is per app and rewrites the old feeds, and `versionCode` is
 allocated under the lease.
+
+**Steps 2 and 3, 2026-11-03** (Astra). The relocation named Workouts'
+package folder for its package, so two apps' cores cannot collide in one
+Xcode project, and an app came to be named once in `app.json`, which every
+reader parses without a dependency. The kit split kept every digit of a JSON
+number and every key's place in a request body, read a loosely decoded
+`true` as a `Bool` off Apple systems, and left a session store's Keychain
+settings to its storage alone; `lint:apps` read Swift 6's access-level and
+attributed imports, and `app.json` told the packages an app publishes from
+the ones it asks for (`publishes`, `asks`).
+
+**Step 5, Chat, 2026-11-03** (Astra). Chat moved onto the runtime whole
+(7c0e67f3): the list as the app's root under the link, each conversation a
+keyed child, its seven rules the runtime's behaviour with a test each, and
+the console shell's sign-in onto `SubstrateAuth`. The review found a chat
+the device held nothing of opening empty (e68853ee), a folder a save could
+reach after a sign-out, background runs not checked against the link
+generation and a failed transcript read never asked again (0515e89a), and
+notifications Chat kept outside the kit; now a session reaches its folder
+only through the lease its open answered, opening a chat takes back its
+pending notifications as well as its delivered ones, and Chat runs on the
+kit's notification service and signals (c074355f).
+
+**Step 6, Workouts, 2026-11-03** (Fable). The session became a controller on
+the runtime with the kit's journal and a Finish that is two events, and the
+sync run the app's root under the link with the kit's outbox (289ab41a). The
+review found a retried Save that could read the last one's problem,
+`syncing` and `starting` left set where nothing ran, and flags the engine
+kept to say what the last event did; each Save now carries a receipt, the
+effects compare the state before and after, the cue, the cover and the
+scroll target are signals, and the alert, its category and its tap go
+through the kit's notifications (37e5fa64).
+
+**Step 8, Tasks, 2026-11-03 to 2026-11-04** (Fable, twice). The first review
+found Tasks repeating what any app on the kit would, the detail showing List
+and Priority twice, a reminder's tap lost at a cold launch and a write
+discarded as stale still drawn as landed. The kit took the repeated parts
+(0921377d: linked records, `AppShell`, the App menu's views, Settings
+composed, offscreen drawing) and Tasks moved onto them with each fact shown
+once (62d20085, 3ab5e600). The second review found an app over linked
+records still writing the records' stages and a stopped read lifting on any
+change; `LinkedRecordsApp` now answers those stages and a stop keeps its
+reason (c16cbc75, 439a3f1e), an app hands its shell the folder and outboxes
+it already keeps (8267b952), and the template became an app built and tested
+as Tasks is (9ecd5182, 65ff4335).
+
+**Step 9, the release, 2026-11-03 to 2026-11-04** (Astra, twice).
+`apps:release` landed whole (c1509f3a). The first review found writes
+fenced only by the publisher's own checks and a stage a rerun could resume
+from another release folder or a dry run; every write became conditional on
+what the run read under its lease, a stage records what it was made for and
+versionCodes are reserved before the build (b899d8ed, a25c4af3). The second
+found a release that could ship without a claimed callback, a write's time
+bound read before its file was hashed, and a dry run that read the release
+key; now every release needs its site, a write is bounded at the moment it
+is sent, and a dry run signs with a throwaway key (99113850).
+
+**The first run on devices, 2026-11-03.** Sign Out left the app's token for
+the next launch to revoke and said so on every Sign Out; the link's effect
+now revokes it (9ebf9fad). A chat whose run failed before it was opened
+showed only its question; it says why (87973c98).
+
+**Integrating main, 2026-11-03** (c31e694d). Main rebased the domains stack
+this branch is built on; the merge took main's later commits and ported its
+Apple changes to where this branch moved them: the `_substrate` record's
+whitespace and the set-up words into the kit, and the outbox upgrade that
+uploads a phone's history instead of deleting it into the kit's
+`OutboxUpgrade` and Workouts' own.
+
+**Tasks on Android, 2026-11-04.** Browser sign-in and notifications became
+device services on Android (c5f639fc), TasksKit's presentations and commands
+crossed the bridge (425b6abf) and the app was drawn in Compose (73475e23).
+Running it on an emulator found the connect screen's commands refused
+(33fa30f5), a sign-in lost while Android froze the app in the browser, a
+link back the browser would not open and late reminders (5fca562e), the
+kit's own library shipped beside the app's (8e3017be), and the gallery's
+index not written (cb468bbc). Astra's review found that a malformed loopback
+request could crash the listener, an unstamped release build chose
+loopback, the sign-in had no overall deadline for its callback, a
+notification tap could be forged through the exported launcher, and debug
+builds allowed cleartext to every host; the pass after this record fixes
+each.
+
+**The final reviews, 2026-11-04.** Fable read the whole branch: an app's
+records event and effect were found by reflection, and an app naming its
+case otherwise went unread (6d8a34f7); dead views, words and coders went
+(4e8093d4); tests now assert what they claim and wait for the runtime's
+effects to end rather than for time (f57bf567, 35693f79, 2805a8d4), with a
+time limit on every suite (9a201fc0); a refused write, a package and
+Connect's footer carry their labels (efaaf669); the words moved to the
+kit's (5162aa77, 54770667, 03bc1fda); and every file holds one concept
+(1dab9c36, 27e77994), ending with 59477e0b. Astra's security sweep found a
+malformed reply's spilled body left on disk (9e96ea7a), a release build
+without its claimed callback signing in through loopback (88e573b2), Gradle
+artifacts checked by version and not by bytes (91fa4c32), and the
+deployment's names in the docs and tests of a public tree (80e6dce8); the
+agent review gained the apps' contract (8db0436b).
