@@ -214,4 +214,42 @@ struct LinkedRecordsSyncTests {
         let first = try #require(server.sent.first)
         #expect(first.path == "/api/v1/changes" && first.query["from"] == nil)
     }
+
+    /// A cursor the server no longer holds (the history was replaced) is
+    /// dropped before the read, so the next watch opens at the new head
+    /// rather than at the cursor answered 410 again.
+    @Test func aCursorFromAReplacedHistoryIsDroppedAndTheReadFollowsTheNewOne() async throws {
+        let cache = RecordCache(folder: try RepositoryFolder(root: temporaryFolder()))
+        await cache.listed(RecordPage(records: [note("n1", "Milk")], head: 7, generation: "g1"), kinds: [noteKind])
+        let server = HistoryServer(head: 3, generation: "g2", notes: [note("n1", "Milk"), note("n2", "Bread")])
+        let harness = notebook(cache, server)
+        await harness.runtime.linkChanged(online)
+        let current = WatchCursor(seq: 3, generation: "g2")
+        try await harness.until(timeout: .seconds(20)) { harness in
+            let linked = await harness.state.linked
+            return linked.cursor == current && linked.phase == .following && linked.records.count == 2
+        }
+        #expect(await cache.cursor == current)
+        // Answered 410 once, from the old history, and never asked again.
+        #expect(server.watches.filter { $0.query["generation"] == "g1" }.count == 1)
+        #expect(server.watches.contains { $0.query["generation"] == nil && $0.query["from"] == nil })
+    }
+
+    /// The same history, with the cursor below what it keeps: the read's
+    /// bookmark is past the cursor, so only dropping it keeps the watch from
+    /// resuming there again.
+    @Test func aCursorPastTheHistoryKeptIsDroppedAndTheReadFollowsTheHead() async throws {
+        let cache = RecordCache(folder: try RepositoryFolder(root: temporaryFolder()))
+        await cache.listed(RecordPage(records: [note("n1", "Milk")], head: 7, generation: "g1"), kinds: [noteKind])
+        let server = HistoryServer(head: 40, generation: "g1", horizon: 20, notes: [note("n1", "Milk"), note("n2", "Bread")])
+        let harness = notebook(cache, server)
+        await harness.runtime.linkChanged(online)
+        let head = WatchCursor(seq: 40, generation: "g1")
+        try await harness.until(timeout: .seconds(20)) { harness in
+            let linked = await harness.state.linked
+            return linked.cursor == head && linked.phase == .following && linked.records.count == 2
+        }
+        #expect(await cache.cursor == head)
+        #expect(server.watches.filter { $0.query["from"] == "7" }.count == 1)
+    }
 }

@@ -376,6 +376,7 @@ public struct LinkedRecords: Equatable, Sendable {
                         continuation.yield(Self.stopped(end, words: words))
                         return
                     case .relist:
+                        await cache?.relist()
                         continuation.yield(.relistNeeded)
                         return
                     case .row:
@@ -406,6 +407,9 @@ public struct LinkedRecords: Equatable, Sendable {
                             }
                         }
                     case .relist:
+                        // Dropped here, or the read would resume from the
+                        // cursor the server just refused.
+                        await cache?.relist()
                         continuation.yield(.relistNeeded)
                     case let .interrupted(reason):
                         continuation.yield(.watchInterrupted(reason))

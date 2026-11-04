@@ -150,7 +150,8 @@ and the watch do next follows from how an event moved the `ReadPhase`. The
 read opens the watch first and lists after its bookmark, and the watch is
 followed from that bookmark, since an app token's lists carry no head
 (decision 0195): a change written while the list was read comes again from
-the watch, and its record is read again after the list. Every
+the watch, and its record is read again after the list. A cursor the server
+no longer holds is dropped from the cache before the read starts over. Every
 write the app makes (`RecordWrites`) is laid over at once and queued in
 order; a write that leaves the queue is laid over as landed only where
 `Outbox.landed` says so, until its record is read again, and a read again
