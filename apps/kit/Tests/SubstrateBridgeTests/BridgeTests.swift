@@ -204,6 +204,30 @@ struct BridgeTests {
         #expect(await box.value?.closed == true)
     }
 
+    /// The table holds a stream's call for as long as it waits, whatever
+    /// made it: a reader that stops after its channel is gone still cancels
+    /// it, here and on Kotlin's side.
+    @Test func aStreamsReaderStoppingAfterItsChannelIsGoneCancelsItOnBothSides() async throws {
+        let (runtime, outlet, _) = started()
+        weak var gone: DeviceChannel?
+        let stream = try { () throws -> AsyncThrowingStream<JSONValue, Error> in
+            let channel = try #require(runtime.device)
+            gone = channel
+            return channel.chunks(.connectivityWatch)
+        }()
+        #expect(gone == nil)
+        let reading = Task { for try await _ in stream {} }
+        let request = try await outlet.next { $0.op == .request }
+        #expect(outlet.running == [try #require(request.id)])
+        #expect(runtime.calls.outstanding == 1)
+        reading.cancel()
+        _ = try? await reading.value
+        // Answered as the reader stopped; Kotlin hears it after the request.
+        try #require(runtime.calls.outstanding == 0)
+        _ = try await outlet.next { $0.op == .cancel && $0.id == request.id }
+        #expect(outlet.running.isEmpty)
+    }
+
     @Test func aStreamTakesItsChunksInOrderAndEndsOnce() async throws {
         let (runtime, outlet, _) = started()
         let handle = try open(runtime)

@@ -10,13 +10,13 @@ public final class DeviceChannel: Sendable {
     let handle: Handle?
     private let calls: CallTable
     private let outbox: HandleOutbox
-    private let record: BridgeRecord
+    private let canceller: Canceller
 
     init(handle: Handle?, calls: CallTable, outbox: HandleOutbox, record: BridgeRecord) {
         self.handle = handle
         self.calls = calls
         self.outbox = outbox
-        self.record = record
+        canceller = Canceller(handle: handle, calls: calls, outbox: outbox, record: record)
     }
 
     /// One answer, decoded as the type the request's comment names.
@@ -72,12 +72,14 @@ public final class DeviceChannel: Sendable {
     /// ends it. At most `capacity` wait to be read: past that the answer
     /// fails with `overflow` and Kotlin is told to stop, never a value
     /// silently dropped. Ending the iteration early cancels it on Kotlin's
-    /// side.
+    /// side, whether or not this channel is still there: the stream holds
+    /// what the cancel needs, as the table holds the call.
     public func chunks(_ request: DeviceRequest, capacity: Int = 256) -> AsyncThrowingStream<JSONValue, Error> {
         let id = calls.nextID()
         let (chunks, continuation) = AsyncThrowingStream<JSONValue, Error>.makeStream(bufferingPolicy: .bufferingOldest(capacity))
-        continuation.onTermination = { [weak self] termination in
-            if case .cancelled = termination { self?.cancel(id, "the reader stopped") }
+        let cancel = canceller
+        continuation.onTermination = { termination in
+            if case .cancelled = termination { cancel(id, "the reader stopped") }
         }
         calls.waitChunks(id, handle: handle, service: request.service, continuation)
         do {
@@ -91,12 +93,7 @@ public final class DeviceChannel: Sendable {
     /// Answers the call `cancelled` and, when its request had left, tells
     /// Kotlin.
     func cancel(_ id: Int, _ reason: String) {
-        guard let cancelled = calls.cancel(id, reason) else { return }
-        record.count(\.cancelled)
-        // A request that never left has nothing on Kotlin's side to stop.
-        guard cancelled == .sent else { return }
-        // Kotlin may never hear it; the call is answered here either way.
-        outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true, onFailure: { _ in })
+        canceller(id, reason)
     }
 
     /// The call's request, unless the call was answered first.
@@ -106,6 +103,25 @@ public final class DeviceChannel: Sendable {
         if calls.admit(id, { outbox.enqueue(message, onFailure: { _ = calls.finish(id, failure: $0) }) }) == .refused {
             calls.cancel(id, "the handle is closed")
         }
+    }
+}
+
+/// What cancelling a call takes, held apart from the channel that made it:
+/// a stream's reader may stop after the channel is gone, and its call is
+/// still the table's to answer and Kotlin's to stop.
+private struct Canceller: Sendable {
+    let handle: Handle?
+    let calls: CallTable
+    let outbox: HandleOutbox
+    let record: BridgeRecord
+
+    func callAsFunction(_ id: Int, _ reason: String) {
+        guard let cancelled = calls.cancel(id, reason) else { return }
+        record.count(\.cancelled)
+        // A request that never left has nothing on Kotlin's side to stop.
+        guard cancelled == .sent else { return }
+        // Kotlin may never hear it; the call is answered here either way.
+        outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true, onFailure: { _ in })
     }
 }
 
