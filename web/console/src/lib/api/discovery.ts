@@ -31,11 +31,14 @@ interface DiscoveryDoc {
   server?: { version?: string }
   features?: { name: string; stability: string }[]
   surfaces?: Record<string, { endpoint?: string }>
+  /** The deployment's own name, logo and landing page, where it sets one.
+   * Held as the server wrote it; `readSite` (lib/site.ts) is what checks it. */
+  site?: unknown
 }
 
 const DISCOVERY_PATH = "/.well-known/substrate/server.json"
 
-function fetchDiscovery(): Promise<DiscoveryDoc> {
+export function fetchDiscoveryDoc(): Promise<DiscoveryDoc> {
   return request<DiscoveryDoc>("GET", DISCOVERY_PATH, undefined, {
     anonymous: true,
   })
@@ -45,7 +48,7 @@ function fetchDiscovery(): Promise<DiscoveryDoc> {
  * itself. */
 export const discoveryQueryOptions = queryOptions({
   queryKey: ["discovery", "server"],
-  queryFn: fetchDiscovery,
+  queryFn: fetchDiscoveryDoc,
   staleTime: 5 * 60_000,
 })
 
@@ -69,7 +72,7 @@ export const STRICT_AUTH_POLICY: AuthPolicy = {
 let pending: Promise<AuthPolicy> | null = null
 
 export function fetchAuthPolicy(): Promise<AuthPolicy> {
-  pending ??= fetchDiscovery()
+  pending ??= fetchDiscoveryDoc()
     .then((doc) => ({
       inviteRequired: doc?.registration?.inviteRequired !== false,
       totpRequired: doc?.registration?.totpRequired !== false,

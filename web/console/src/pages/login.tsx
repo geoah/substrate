@@ -1,19 +1,11 @@
 import { useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { BoxesIcon } from "lucide-react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { ShellServer } from "@/components/shell-server"
+import { DoorLayout, doorLinkClass } from "@/components/door/door-layout"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   Field,
   FieldDescription,
@@ -29,6 +21,8 @@ import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
 import { ApiError } from "@/lib/api/types"
 import { safeReturnPath } from "@/lib/return-path"
+import { substrateHostname } from "@/lib/shell"
+import { useSite } from "@/lib/site"
 import { loginRoute } from "@/router"
 
 /** The door refuses to say WHICH factor was wrong — repository, password and
@@ -43,8 +37,8 @@ function describeError(err: unknown, totpRequired: boolean): string {
     }
     if (err.code === "auth") {
       return totpRequired
-        ? "The repository name, password or code is wrong. Wait for a fresh code and try again."
-        : "The repository name or password is wrong. Check both and try again."
+        ? "The address, password or code is wrong. Wait for a fresh code and try again."
+        : "The address or password is wrong. Check both and try again."
     }
     return err.message
   }
@@ -55,7 +49,7 @@ function describeError(err: unknown, totpRequired: boolean): string {
  * not, an empty field is valid and the input is never rendered. */
 function loginSchema(totpRequired: boolean) {
   return z.object({
-    repository: z.string().trim().min(1, "Enter your repository name."),
+    repository: z.string().trim().min(1, "Enter your address."),
     password: z.string().min(1, "Enter your password."),
     code: z.string().refine((v) => !totpRequired || normalizeCode(v) !== null, {
       message: `Enter the current ${CODE_DIGITS}-digit code.`,
@@ -77,6 +71,8 @@ export function LoginPage() {
   // session ran out. Only a path on this console is followed.
   const returnTo = safeReturnPath(search.redirect)
   const { inviteRequired, totpRequired } = useAuthPolicy()
+  const site = useSite()
+  const host = substrateHostname()
   const [apiError, setApiError] = useState<string | null>(null)
   // The policy lands one render AFTER the first paint, so the resolver has to
   // FOLLOW it rather than be fixed at mount: react-hook-form reads the options
@@ -119,103 +115,96 @@ export function LoginPage() {
   const { errors, isSubmitting } = form.formState
 
   return (
-    <div className="flex min-h-svh items-center justify-center bg-background p-6">
-      <div className="flex w-full max-w-sm flex-col gap-6">
-        <div className="flex items-center justify-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <BoxesIcon className="size-4" />
-          </div>
-          <span className="text-lg font-semibold">substrate</span>
-        </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>Sign in</CardTitle>
-            <CardDescription>
-              {totpRequired
-                ? `Your name, password and the current ${CODE_DIGITS}-digit code.`
-                : "Your name and password."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={form.handleSubmit(onSubmit)}>
-              <FieldGroup>
-                <Field data-invalid={!!errors.repository || undefined}>
-                  <FieldLabel htmlFor="repository">Repository</FieldLabel>
-                  <Input
-                    id="repository"
-                    autoComplete="username"
-                    autoFocus
-                    aria-invalid={!!errors.repository || !!apiError}
-                    {...form.register("repository")}
-                  />
-                  <FieldDescription>
-                    The name you chose when you registered, such as
-                    ada.example.com.
-                  </FieldDescription>
-                  <FieldError errors={[errors.repository]} />
-                </Field>
-                <Field data-invalid={!!errors.password || undefined}>
-                  <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <Input
-                    id="password"
-                    type="password"
-                    autoComplete="current-password"
-                    aria-invalid={!!errors.password || !!apiError}
-                    {...form.register("password")}
-                  />
-                  <FieldError errors={[errors.password]} />
-                </Field>
-                {totpRequired && (
-                  <Field data-invalid={!!errors.code || undefined}>
-                    <FieldLabel htmlFor="code">One-time code</FieldLabel>
-                    <Input
-                      id="code"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={CODE_DIGITS + 2}
-                      placeholder="123456"
-                      className="data tracking-[0.25em]"
-                      aria-invalid={!!errors.code || !!apiError}
-                      {...form.register("code")}
-                    />
-                    <FieldDescription>
-                      The current {CODE_DIGITS}-digit code from your
-                      authenticator.
-                    </FieldDescription>
-                    <FieldError errors={[errors.code]} />
-                  </Field>
-                )}
-                {apiError && (
-                  <p
-                    role="alert"
-                    className="text-sm font-normal text-destructive"
-                  >
-                    {apiError}
-                  </p>
-                )}
-                <Field>
-                  <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting && <Spinner />}
-                    Sign in
-                  </Button>
-                </Field>
-              </FieldGroup>
-            </form>
-          </CardContent>
-        </Card>
-        <p className="text-center text-xs text-muted-foreground">
-          {inviteRequired ? "Have an invite code?" : "New here?"}{" "}
+    <DoorLayout
+      title="Sign in"
+      description={site ? `Welcome back to ${site.name}.` : "Welcome back."}
+      footer={
+        <>
+          {inviteRequired ? "Have an invite?" : "New here?"}{" "}
           <Link
             to="/register"
             search={{ redirect: returnTo }}
-            className="underline underline-offset-4 hover:text-foreground"
+            className={doorLinkClass}
           >
-            Register
-          </Link>{" "}
-          to choose your name.
-        </p>
-        <ShellServer />
-      </div>
-    </div>
+            Create an account
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        <FieldGroup>
+          <Field data-invalid={!!errors.repository || undefined}>
+            <FieldLabel htmlFor="repository">Your address</FieldLabel>
+            <Input
+              id="repository"
+              className="h-10"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              autoFocus
+              placeholder={host ? `you.${host}` : undefined}
+              aria-invalid={!!errors.repository || !!apiError}
+              {...form.register("repository")}
+            />
+            <FieldDescription>
+              The address you chose when you joined. Your name on its own works
+              too.
+            </FieldDescription>
+            <FieldError errors={[errors.repository]} />
+          </Field>
+          <Field data-invalid={!!errors.password || undefined}>
+            <FieldLabel htmlFor="password">Password</FieldLabel>
+            <Input
+              id="password"
+              type="password"
+              className="h-10"
+              autoComplete="current-password"
+              aria-invalid={!!errors.password || !!apiError}
+              {...form.register("password")}
+            />
+            <FieldError errors={[errors.password]} />
+          </Field>
+          {totpRequired && (
+            <Field data-invalid={!!errors.code || undefined}>
+              <FieldLabel htmlFor="code">One-time code</FieldLabel>
+              <Input
+                id="code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={CODE_DIGITS + 2}
+                placeholder="123456"
+                className="h-10 data text-base tracking-[0.25em]"
+                aria-invalid={!!errors.code || !!apiError}
+                {...form.register("code")}
+              />
+              <FieldDescription>
+                The {CODE_DIGITS}-digit code your authenticator app shows now.
+              </FieldDescription>
+              <FieldError errors={[errors.code]} />
+            </Field>
+          )}
+          {apiError && (
+            <p
+              role="alert"
+              className="rounded-lg bg-bad-soft px-3 py-2 text-sm text-destructive"
+            >
+              {apiError}
+            </p>
+          )}
+          <Field>
+            <Button
+              type="submit"
+              size="lg"
+              className="h-10"
+              disabled={isSubmitting}
+            >
+              {isSubmitting && <Spinner />}
+              Sign in
+            </Button>
+          </Field>
+        </FieldGroup>
+      </form>
+    </DoorLayout>
   )
 }

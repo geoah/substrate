@@ -65,6 +65,15 @@ vi.mock("@/lib/api/discovery", async (importOriginal) => {
   }
 })
 
+/** The deployment's site (lib/site.ts): none unless a case sets one. */
+const door = vi.hoisted(() => ({
+  site: null as null | { name: string; tagline?: string; logo?: string },
+}))
+vi.mock("@/lib/site", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/site")>()
+  return { ...real, useSite: () => door.site }
+})
+
 import { resetAuthPolicy } from "@/lib/api/discovery"
 
 import { RegisterPage } from "./register"
@@ -98,7 +107,7 @@ async function enroll() {
   fireEvent.change(screen.getByLabelText("Invite code"), {
     target: { value: "INV-1" },
   })
-  fireEvent.change(screen.getByLabelText("Repository"), {
+  fireEvent.change(screen.getByLabelText("Choose your address"), {
     target: { value: "geoah" },
   })
   fireEvent.change(screen.getByLabelText("Password"), {
@@ -121,6 +130,7 @@ describe("RegisterPage", () => {
     policy.inviteRequired = true
     policy.totpRequired = true
     policy.live = false
+    door.site = null
     registerSearch.redirect = undefined
   })
 
@@ -133,7 +143,7 @@ describe("RegisterPage", () => {
   it("collects the credentials first, and shows no one-time code until enrolled", () => {
     render(<RegisterPage />)
     expect(screen.getByLabelText("Invite code")).toBeTruthy()
-    expect(screen.getByLabelText("Repository")).toBeTruthy()
+    expect(screen.getByLabelText("Choose your address")).toBeTruthy()
     // Password is on the FIRST step now, so a manager saves the login before
     // any QR appears.
     expect(screen.getByLabelText("Password")).toBeTruthy()
@@ -143,13 +153,41 @@ describe("RegisterPage", () => {
     expect(screen.queryByText("SEED")).toBeNull()
   })
 
+  it("shows the full address the name becomes, as it is typed", () => {
+    render(<RegisterPage />)
+    const name = screen.getByLabelText("Choose your address")
+    expect(screen.getByText(/Your name becomes your address/)).toBeTruthy()
+    fireEvent.change(name, { target: { value: "Mum" } })
+    // jsdom serves the console from localhost, so a bare name lands there.
+    expect(screen.getByText("mum.localhost")).toBeTruthy()
+    expect(screen.getByText(".localhost")).toBeTruthy()
+    fireEvent.change(name, { target: { value: "ada.example.org" } })
+    expect(screen.getByText("ada.example.org")).toBeTruthy()
+    expect(screen.queryByText(".localhost")).toBeNull()
+  })
+
+  it("shows the deployment's brand, or the substrate's without a site", () => {
+    door.site = { name: "Crane", logo: "/site/logo.svg" }
+    render(<RegisterPage />)
+    expect(screen.getByText("Crane")).toBeTruthy()
+    expect(
+      screen.getByText("Choose your address on Crane and a password.")
+    ).toBeTruthy()
+    expect(document.querySelector('img[src="/site/logo.svg"]')).not.toBeNull()
+    cleanup()
+    door.site = null
+    render(<RegisterPage />)
+    expect(screen.getByText("substrate")).toBeTruthy()
+    expect(document.querySelector('img[src="/substrate.svg"]')).not.toBeNull()
+  })
+
   it("enrolls only after the password is set, then reveals the secret and the code step", async () => {
     render(<RegisterPage />)
     // With no password, Continue cannot enroll.
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
     })
-    fireEvent.change(screen.getByLabelText("Repository"), {
+    fireEvent.change(screen.getByLabelText("Choose your address"), {
       target: { value: "geoah" },
     })
     expect(
@@ -178,9 +216,7 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("One-time code"), {
       target: { value: "123 456" },
     })
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create my repository" })
-    )
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
 
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
     expect(getRepository()).toBe("geoah.localhost")
@@ -211,9 +247,7 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("One-time code"), {
       target: { value: "123456" },
     })
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create my repository" })
-    )
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
         to: "/authorize/AbC123",
@@ -234,9 +268,7 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("One-time code"), {
       target: { value: "123456" },
     })
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create my repository" })
-    )
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
     )
@@ -257,9 +289,7 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("One-time code"), {
       target: { value: "123456" },
     })
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create my repository" })
-    )
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
 
     // Logged in, but NOT navigated: the recovery key arrives only on this
     // response, and the page holds the reader until they carry it off.
@@ -283,7 +313,7 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
     })
-    fireEvent.change(screen.getByLabelText("Repository"), {
+    fireEvent.change(screen.getByLabelText("Choose your address"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -293,9 +323,7 @@ describe("RegisterPage", () => {
       target: { value: PASSWORD },
     })
     expect(screen.queryByLabelText("One-time code")).toBeNull()
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create my repository" })
-    )
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
 
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
     expect(fetchMock.mock.calls.length).toBe(1)
@@ -322,7 +350,7 @@ describe("RegisterPage", () => {
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
     render(<RegisterPage />)
     expect(screen.queryByLabelText("Invite code")).toBeNull()
-    fireEvent.change(screen.getByLabelText("Repository"), {
+    fireEvent.change(screen.getByLabelText("Choose your address"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -331,9 +359,7 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("Confirm password"), {
       target: { value: PASSWORD },
     })
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create my repository" })
-    )
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
 
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
     const [url, init] = fetchMock.mock.calls[0]
@@ -352,7 +378,7 @@ describe("RegisterPage", () => {
     render(<RegisterPage />)
     expect(
       screen.getByText(
-        /If you lose both, only whoever runs this substrate can reset them/
+        /If you lose it and your authenticator, only whoever runs this server can reset them/
       )
     ).toBeTruthy()
     cleanup()
@@ -363,10 +389,10 @@ describe("RegisterPage", () => {
     render(<RegisterPage />)
     expect(
       screen.getByText(
-        /If you lose it, only whoever runs this substrate can reset it/
+        /If you lose it, only whoever runs this server can reset it/
       )
     ).toBeTruthy()
-    expect(screen.queryByText(/lose both/)).toBeNull()
+    expect(screen.queryByText(/your authenticator/)).toBeNull()
   })
 
   it("still asks for the invite code where one is read, with the factor off", () => {
@@ -377,7 +403,7 @@ describe("RegisterPage", () => {
     expect(screen.getByLabelText("Invite code")).toBeTruthy()
     expect(
       screen
-        .getByRole("button", { name: "Create my repository" })
+        .getByRole("button", { name: "Create account" })
         .hasAttribute("disabled")
     ).toBe(true)
   })
@@ -423,7 +449,7 @@ describe("RegisterPage and the door's own answer", () => {
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
     })
-    fireEvent.change(screen.getByLabelText("Repository"), {
+    fireEvent.change(screen.getByLabelText("Choose your address"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -442,9 +468,7 @@ describe("RegisterPage and the door's own answer", () => {
     await waitFor(() => expect(screen.queryByText("SEED")).toBeNull())
     expect(screen.queryByLabelText("One-time code")).toBeNull()
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Create my repository" })
-    )
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
     const call = fetchMock.mock.calls.find(
       ([url]) => String(url) === "/register"
@@ -475,7 +499,7 @@ describe("RegisterPage and the door's own answer", () => {
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
     })
-    fireEvent.change(screen.getByLabelText("Repository"), {
+    fireEvent.change(screen.getByLabelText("Choose your address"), {
       target: { value: "geoah" },
     })
     fireEvent.change(screen.getByLabelText("Password"), {
