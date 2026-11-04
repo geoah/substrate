@@ -27,8 +27,8 @@ public class Connectivity(context: Context) {
     /**
      * The current path, then each change, until the collector stops. A
      * change is never dropped: one the queue of [capacity] has no room for
-     * ends the flow with an `overflow`, which Swift hears as the stream's
-     * error, and the callback is unregistered with it.
+     * ends the flow with an `overflow`, which Swift hears as the chunked
+     * answer's error, and the callback is unregistered with it.
      */
     public fun paths(capacity: Int = 64): Flow<NetworkPath> = callbackFlow {
         fun offer(path: NetworkPath) = sendOrOverflow(path, "network changes came faster than they were read")

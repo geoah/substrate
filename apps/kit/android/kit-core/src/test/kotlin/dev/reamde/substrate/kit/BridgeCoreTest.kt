@@ -111,7 +111,7 @@ class BridgeCoreTest {
     fun aStreamGoesOutInOrderThenEndsAndStopsWhenSwiftRefusesAChunk() = runTest {
         val swift = FakeSwift()
         val dispatcher = StandardTestDispatcher(testScheduler)
-        val core = core(swift) { DeviceAnswer.Stream(dispatcher, flow { repeat(5) { emit(JsonPrimitive(it)) } }) }
+        val core = core(swift) { DeviceAnswer.Chunks(dispatcher, flow { repeat(5) { emit(JsonPrimitive(it)) } }) }
         deliver(core, Envelope(1, Op.request, id = 1, body = request(DeviceRequest.ConnectivityWatch)))
         advanceUntilIdle()
         assertEquals(listOf(0L, 1L, 2L, 3L, 4L), swift.posted.filter { it.op == Op.chunk }.map { it.seq })
@@ -204,7 +204,7 @@ class BridgeCoreTest {
         val discarded = CopyOnWriteArrayList<JsonElement>()
         val core = core(swift) { request ->
             when (request) {
-                DeviceRequest.ConnectivityWatch -> DeviceAnswer.Stream(dispatcher, flow {
+                DeviceRequest.ConnectivityWatch -> DeviceAnswer.Chunks(dispatcher, flow {
                     emit(JsonPrimitive(1))
                     throw BridgeException(BridgeFailure(BridgeFailure.Code.overflow, "too fast"))
                 })

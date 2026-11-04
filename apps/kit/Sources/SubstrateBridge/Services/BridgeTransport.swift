@@ -67,7 +67,7 @@ public struct BridgeTransport: HTTPTransport {
         let wire = try wireRequest(request)
         // The body is sent before the head comes back.
         defer { Self.remove(wire.bodyFile) }
-        var iterator = channel.stream(.transportLines(request: wire), capacity: capacity).makeAsyncIterator()
+        var iterator = channel.chunks(.transportLines(request: wire), capacity: capacity).makeAsyncIterator()
         guard let first = try await iterator.next() else {
             throw URLError(.badServerResponse)
         }

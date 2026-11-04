@@ -31,8 +31,8 @@ Every message is one envelope, `{v, op, handle, id, seq, body}`, posted by
 Kotlin (`NativeBridge.post`) or delivered by Swift (`NativeBridge.deliver`,
 from a thread Swift attached, in a local frame, as UTF-16). Presentations
 are coalesced in Swift, keyed lists cross as `KeyedListDelta`s and are never
-coalesced, a device call is answered exactly once, a stream is ordered and
-bounded and ends once, closing a handle answers what it waits on
+coalesced, a device call is answered exactly once, a chunked answer is
+ordered and bounded and ends once, closing a handle answers what it waits on
 `cancelled`, a message Kotlin does not take fails what waited on it, and a
 body is recorded only where what it answers is known to carry no secret.
 Messages are read and written with `JSONValue`'s exact reader and writer,

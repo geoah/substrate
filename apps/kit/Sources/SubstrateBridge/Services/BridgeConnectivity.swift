@@ -23,11 +23,11 @@ public struct BridgeConnectivity: Connectivity {
     }
 
     /// Every path Kotlin sends, in order and none skipped: a device answer
-    /// is never coalesced. A reader `capacity` behind ends the stream, as
-    /// the bridge's own queue does, and its stream on Kotlin's side with it,
+    /// is never coalesced. A reader `capacity` behind ends the answer, as
+    /// the bridge's own queue does, and the call on Kotlin's side with it,
     /// rather than drop a change it would never learn of.
     public func paths(capacity: Int) -> AsyncStream<NetworkPath> {
-        let values = channel.stream(.connectivityWatch, capacity: capacity)
+        let values = channel.chunks(.connectivityWatch, capacity: capacity)
         let (paths, continuation) = AsyncStream<NetworkPath>.makeStream(bufferingPolicy: .bufferingOldest(capacity))
         let pump = Task {
             do {

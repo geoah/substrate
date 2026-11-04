@@ -33,7 +33,7 @@ public object KitDevice {
                 ) {
                     BridgeJson.encodeToJsonElement(TransportOutcome.Serializer, transport.fetch(request.request))
                 }
-                is DeviceRequest.TransportLines -> DeviceAnswer.Stream(
+                is DeviceRequest.TransportLines -> DeviceAnswer.Chunks(
                     values = transport.lines(request.request).map { BridgeJson.encodeToJsonElement(TransportChunk.Serializer, it) },
                 )
                 is DeviceRequest.SecureRead -> DeviceAnswer.Value {
@@ -51,7 +51,7 @@ public object KitDevice {
                 DeviceRequest.ConnectivityCurrent -> DeviceAnswer.Value {
                     BridgeJson.encodeToJsonElement(NetworkPath.serializer(), connectivity.current())
                 }
-                DeviceRequest.ConnectivityWatch -> DeviceAnswer.Stream(
+                DeviceRequest.ConnectivityWatch -> DeviceAnswer.Chunks(
                     values = connectivity.paths().map { BridgeJson.encodeToJsonElement(NetworkPath.serializer(), it) },
                 )
             }

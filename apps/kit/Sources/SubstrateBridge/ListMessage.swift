@@ -4,7 +4,7 @@ import SubstrateRuntime
 
 /// A keyed list as it crosses (docs/plans/app-kit.md §5.5): whole at a
 /// revision the first time and after a `resync`, then each change as a delta
-/// from the revision before it, so a streamed reply re-encodes one row, not
+/// from the revision before it, so a reply arriving in parts re-encodes one row, not
 /// the transcript. Kotlin applies deltas in revision order and asks for the
 /// list whole when one's base is not its revision.
 public enum ListMessage: Bridged, Equatable {

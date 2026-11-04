@@ -34,7 +34,7 @@ public sealed interface DeviceAnswer {
      * the failure a `BridgeException` carries (an `overflow`) or else a
      * `kotlinException`.
      */
-    public class Stream(
+    public class Chunks(
         public val dispatcher: CoroutineDispatcher = Dispatchers.IO,
         public val values: Flow<JsonElement>,
     ) : DeviceAnswer

@@ -228,9 +228,8 @@ struct RepositoryStatusTests {
         #expect(repository.approved?.until.value.hasPrefix("Nov 3, 2026 at 9:00") == true)
         #expect(repository.changeAccess == "Change Access…")
         #expect(repository.footer == "Sign Out: signs out on this device and revokes its access on ada.example.com.")
-        // The apps' own section keeps the word it had.
         #expect(RepositoryPresenter.present(session: session, manifest: nil, serverVersion: nil, unrevoked: [], offersChangeAccess: true,
-                                            title: "Account", locale: enUS, timeZone: utc).title == "Account")
+                                            locale: enUS, timeZone: utc).title == "Repository")
     }
 
     @Test func aPasswordSessionReachesEverything() {

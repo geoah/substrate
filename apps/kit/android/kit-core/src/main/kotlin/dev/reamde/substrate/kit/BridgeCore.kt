@@ -230,13 +230,13 @@ public class BridgeCore(
                 }
                 if (!once(Envelope(v = 1, op = Op.reply, handle = envelope.handle, id = id, body = body))) answer.discard(body)
             }
-            is DeviceAnswer.Stream -> launch(id) {
+            is DeviceAnswer.Chunks -> launch(id) {
                 var seq = 0L
                 try {
                     withContext(answer.dispatcher) {
                         answer.values.collect { value ->
                             val posted = send(Envelope(v = 1, op = Op.chunk, handle = envelope.handle, id = id, seq = seq++, body = value), call)
-                            // Swift refused it: the stream overflowed, or its reader went away.
+                            // Swift refused it: its queue overflowed, or its reader went away.
                             if (posted.isFailure) throw CancellationException("Swift refused the chunk")
                         }
                     }
@@ -266,7 +266,7 @@ public class BridgeCore(
     }
 
     /**
-     * A service's throw: the failure a `BridgeException` names (a stream's
+     * A service's throw: the failure a `BridgeException` names (a chunked answer's
      * `overflow`), else by type alone where its message might hold a secret.
      */
     private fun failureOf(failure: Exception, sensitive: Boolean) = (failure as? BridgeException)?.failure ?: BridgeFailure(
