@@ -98,10 +98,13 @@ func records(_ bundles: [String]) async throws {
 
 func profiles(_ dir: String, _ hashes: Set<String>, _ bundles: [String]) async throws {
     // The team's distribution certificate whose key this machine holds.
-    let certificates = rows(try await call("GET", "/v1/certificates", query: [
-        "filter[certificateType]": "DISTRIBUTION,IOS_DISTRIBUTION", "fields[certificates]": "certificateContent,displayName",
-        "limit": "200",
-    ]))
+    let certificates = rows(
+        try await call(
+            "GET", "/v1/certificates",
+            query: [
+                "filter[certificateType]": "DISTRIBUTION,IOS_DISTRIBUTION", "fields[certificates]": "certificateContent,displayName",
+                "limit": "200",
+            ]))
     let certificate = certificates.first { row in
         guard let content = attributes(row)["certificateContent"] as? String, let der = Data(base64Encoded: content) else { return false }
         let sha1 = Insecure.SHA1.hash(data: der).map { String(format: "%02X", $0) }.joined()
@@ -116,21 +119,27 @@ func profiles(_ dir: String, _ hashes: Set<String>, _ bundles: [String]) async t
             fail("\(bundle) is not registered with the team; a signed development build registers it")
         }
         let name = "\(bundle) App Store \(certificateID)"
-        let existing = rows(try await call("GET", "/v1/bundleIds/\(bundleID)/profiles", query: [
-            "fields[profiles]": "name,profileType,profileState,uuid,profileContent", "limit": "200",
-        ])).filter { attributes($0)["name"] as? String == name }
+        let existing = rows(
+            try await call(
+                "GET", "/v1/bundleIds/\(bundleID)/profiles",
+                query: [
+                    "fields[profiles]": "name,profileType,profileState,uuid,profileContent", "limit": "200",
+                ])
+        ).filter { attributes($0)["name"] as? String == name }
         var profile = existing.first { attributes($0)["profileState"] as? String == "ACTIVE" }
         if profile == nil {
             // An invalidated profile keeps its name, which a new one needs.
             for stale in existing { try await call("DELETE", "/v1/profiles/\(stale["id"] as! String)", expect: 204) }
-            let body: [String: Any] = ["data": [
-                "type": "profiles",
-                "attributes": ["name": name, "profileType": "IOS_APP_STORE"],
-                "relationships": [
-                    "bundleId": ["data": ["type": "bundleIds", "id": bundleID]],
-                    "certificates": ["data": [["type": "certificates", "id": certificateID]]],
-                ],
-            ]]
+            let body: [String: Any] = [
+                "data": [
+                    "type": "profiles",
+                    "attributes": ["name": name, "profileType": "IOS_APP_STORE"],
+                    "relationships": [
+                        "bundleId": ["data": ["type": "bundleIds", "id": bundleID]],
+                        "certificates": ["data": [["type": "certificates", "id": certificateID]]],
+                    ],
+                ]
+            ]
             profile = (try await call("POST", "/v1/profiles", body: body, expect: 201))["data"] as? [String: Any]
         }
         guard let profile, let uuid = attributes(profile)["uuid"] as? String,
