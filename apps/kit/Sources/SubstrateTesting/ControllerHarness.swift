@@ -128,6 +128,10 @@ public final class ControllerHarness<C: Controller>: @unchecked Sendable {
         }
     }
 
+    /// How late a turn of `until`'s wait may come back before the lateness is
+    /// the host's stall and not the runtime's quiet.
+    static var stall: Duration { .seconds(1) }
+
     /// How long `until` waits with nothing happening in the runtime before
     /// it gives up: a hang guard, never a pace. `SUBSTRATE_HARNESS_IDLE`
     /// (seconds) moves it for a whole run.
@@ -156,10 +160,22 @@ public final class ControllerHarness<C: Controller>: @unchecked Sendable {
 
     private func wait(idle: Duration, cap: Duration, _ condition: @Sendable (ControllerHarness<C>) async -> Bool) async throws {
         var seen = recorder.count
-        let started = ContinuousClock.now
+        var started = ContinuousClock.now
         var quietSince = started
+        var turned = started
         while await !condition(self) {
             let now = ContinuousClock.now
+            // A turn is a check and a poll of 20 milliseconds. One that took
+            // over a second ran on a host that gave this process no thread:
+            // the tests beside it held them all (Swift's pool is as wide as
+            // the cores), so the runtime could not move either, and neither
+            // bound counts the stall.
+            let stalled = now - turned - Self.stall
+            if stalled > .zero {
+                started += stalled
+                quietSince += stalled
+            }
+            turned = now
             let count = recorder.count
             if now - started > cap { throw HarnessTimedOut() }
             if count != seen {
