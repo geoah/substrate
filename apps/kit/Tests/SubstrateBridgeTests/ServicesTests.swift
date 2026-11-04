@@ -130,7 +130,10 @@ struct ServicesTests {
         // A reply Swift took whose body does not read still has its file deleted.
         let response = folder.appendingPathComponent("response-x")
         try Data("x".utf8).write(to: response)
-        let unreadable: JSONValue = ["response": ["bodyFile": .string(response.path), "status": "not a number"]]
+        let readable = TransportOutcome.response(response: TransportResponse(status: 200, url: "https://example.com/a", headers: [],
+                                                                             bodyFile: response.path))
+        #expect(try BridgeCodec.value(readable)["response"]?["response"]?["bodyFile"] == .string(response.path))
+        let unreadable: JSONValue = ["response": ["response": ["bodyFile": .string(response.path), "status": "not a number"]]]
         #expect(throws: BridgeFailure.self) { try BridgeTransport.answer(unreadable, for: upload) }
         #expect(!FileManager.default.fileExists(atPath: response.path))
     }

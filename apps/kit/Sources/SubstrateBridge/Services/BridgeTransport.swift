@@ -36,8 +36,10 @@ public struct BridgeTransport: HTTPTransport {
         do {
             outcome = try BridgeCodec.decode(TransportOutcome.self, from: value)
         } catch {
-            // Swift took the reply, so its file is Swift's to delete, read or not.
-            remove(value["response"]?["bodyFile"]?.string)
+            // Swift took the reply, so its file is Swift's to delete, read or
+            // not: `TransportOutcome.response(response:)` is the case's name,
+            // then its label's.
+            remove(value["response"]?["response"]?["bodyFile"]?.string)
             throw error
         }
         switch outcome {
