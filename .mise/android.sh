@@ -2,8 +2,9 @@
 # The Android build of the apps (docs/plans/app-kit.md §5.5, §8): one
 # subcommand per `android:*` task in .mise.toml.
 #
-#   sdk             install the pinned SDK packages and the Swift SDK for
-#                   Android, and link the bundle to the NDK
+#   sdk             install the pinned SDK packages, each at its pinned
+#                   revision, and the Swift SDK for Android, and link the
+#                   bundle to the NDK
 #   generate        write bridge.golden.json, the Kotlin and the fingerprint
 #   generate:check  fail when any of them is stale
 #   build           every module, debug and release, for SUBSTRATE_ABIS
@@ -34,12 +35,22 @@ swift_sdk_bundle=swift-${swift_version}-RELEASE_android.artifactbundle
 swift_sdk_url=https://download.swift.org/swift-${swift_version}-release/android-sdk/swift-${swift_version}-RELEASE/${swift_sdk_bundle}.tar.gz
 swift_sdk_checksum=4d6ad63ea74becd58e123ff58b1b48c3be5ec0db0dff0ea5abe37ac007dd3233
 ndk_version=30.0.16248370
+# What sdkmanager installs, each at the one revision sdk_revision names (its
+# source.properties' Pkg.Revision). sdkmanager installs a path's newest
+# revision and updates one already in, so a path at its pin is never handed
+# to it, and what it installs is held to the pin after: a path whose newest
+# revision moved past the pin fails here rather than build on another.
 sdk_packages=(
-  "platform-tools"
   "platforms;android-37.0"
   "build-tools;36.0.0"
   "ndk;${ndk_version}"
 )
+# platform-tools is one path for every revision and the repository offers
+# only its newest, so it is the archive of its pinned revision, by URL and
+# sha256 for each host the tasks run on, as the Swift SDK is.
+platform_tools_version=37.0.1
+platform_tools_sha256_darwin=ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d
+platform_tools_sha256_linux=d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1
 
 abis=${SUBSTRATE_ABIS:-arm64-v8a,x86_64}
 
@@ -86,6 +97,51 @@ gradle() {
   (cd apps/gradle && env "${scrub[@]}" ./gradlew --console=plain "-Psubstrate.abis=$abis" "$@")
 }
 
+# The revision each of sdk_packages is pinned to: a build-tools or NDK path
+# names its own.
+sdk_revision() {
+  case $1 in
+  "platforms;android-37.0") echo 2 ;;
+  "build-tools;"* | "ndk;"*) echo "${1#*;}" ;;
+  *) die "no revision is pinned for $1" ;;
+  esac
+}
+
+# The Pkg.Revision of what is installed at an SDK path, empty where nothing is.
+installed_revision() {
+  awk -F= '/^Pkg\.Revision *=/ { gsub(/[ \r]/, "", $2); print $2; exit }' "$ANDROID_HOME/${1//;//}/source.properties" 2>/dev/null || true
+}
+
+sha256() {
+  if command -v sha256sum >/dev/null; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+# platform-tools at its pin, unpacked from its archive in place of whatever
+# revision is there: the tasks run its adb by path, and the SDK's own tools
+# read the revision from its source.properties.
+install_platform_tools() {
+  [[ $(installed_revision platform-tools) != "$platform_tools_version" ]] || return 0
+  local host sum dir
+  case $(uname -s) in
+  Darwin) host=darwin sum=$platform_tools_sha256_darwin ;;
+  Linux) host=linux sum=$platform_tools_sha256_linux ;;
+  *) die "no platform-tools archive is pinned for $(uname -s)" ;;
+  esac
+  dir=$(mktemp -d)
+  curl -fsSL -o "$dir/platform-tools.zip" "https://dl.google.com/android/repository/platform-tools_r${platform_tools_version}-${host}.zip" ||
+    die "platform-tools ${platform_tools_version} did not download"
+  [[ $(sha256 "$dir/platform-tools.zip") == "$sum" ]] ||
+    die "the platform-tools ${platform_tools_version} archive for ${host} is not the one pinned"
+  unzip -q "$dir/platform-tools.zip" -d "$dir"
+  rm -rf "$ANDROID_HOME/platform-tools"
+  mv "$dir/platform-tools" "$ANDROID_HOME/platform-tools"
+  rm -rf "$dir"
+}
+
 sdkmanager_bin() {
   local candidate
   for candidate in "$ANDROID_HOME"/cmdline-tools/latest/bin/sdkmanager "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager; do
@@ -116,10 +172,19 @@ swift_sdks_dir() {
 cmd_sdk() {
   [[ -n ${ANDROID_HOME:-} ]] || die "set ANDROID_HOME to where the Android SDK goes"
   need_swift
-  local sdkmanager
+  local sdkmanager package revision missing=()
   sdkmanager=$(sdkmanager_bin)
   yes | "$sdkmanager" --licenses >/dev/null || true
-  "$sdkmanager" --install "${sdk_packages[@]}"
+  for package in "${sdk_packages[@]}"; do
+    [[ $(installed_revision "$package") == "$(sdk_revision "$package")" ]] || missing+=("$package")
+  done
+  if ((${#missing[@]} > 0)); then "$sdkmanager" --install "${missing[@]}"; fi
+  for package in "${sdk_packages[@]}"; do
+    revision=$(installed_revision "$package")
+    [[ $revision == "$(sdk_revision "$package")" ]] ||
+      die "$package is at revision ${revision:-none}, and this file pins $(sdk_revision "$package"); sdkmanager installs only a path's newest revision, so move the pin to the one it installed"
+  done
+  install_platform_tools
 
   if [[ -z $(swift_sdks_dir) ]]; then
     swift sdk install "$swift_sdk_url" --checksum "$swift_sdk_checksum"
