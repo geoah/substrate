@@ -369,6 +369,9 @@ interface SentenceCase {
 
 const APPLEHEALTH = "providers.substrate.reamde.dev/applehealth"
 
+/** A trait a trait scope names (decision 0225): a noun, as most are. */
+const LIFECYCLE = "substrate.reamde.dev/core/lifecycle"
+
 function labelled(
   identity: string,
   singular: string,
@@ -383,7 +386,8 @@ function labelled(
 }
 
 /** Every verb over every pattern shape: all, one authority's, one
- * package's and one kind or agent, with and without the kinds it reaches. */
+ * package's, one kind or agent, and a trait, with and without the kinds it
+ * reaches. */
 const SENTENCE_CASES: Omit<SentenceCase, "sentence">[] = [
   { scope: "read:*", kinds: [] },
   {
@@ -438,6 +442,29 @@ const SENTENCE_CASES: Omit<SentenceCase, "sentence">[] = [
         "internal"
       ),
     ],
+  },
+  {
+    scope: `read:implements(${LIFECYCLE})`,
+    kinds: [{ identity: "ada.example.com/tasks/task" }],
+  },
+  {
+    scope: `write:implements(${LIFECYCLE})`,
+    kinds: [
+      { identity: "ada.example.com/tasks/task" },
+      labelled("ada.example.com/tasks/project", "Project", "Projects"),
+      labelled(
+        "providers.substrate.reamde.dev/linear/issue",
+        "Issue",
+        "Issues"
+      ),
+      labelled(`${APPLE}/reminder`, "Reminder", "Reminders"),
+    ],
+  },
+  { scope: `read:implements(${LIFECYCLE})`, kinds: [] },
+  { scope: `write:implements(${LIFECYCLE})`, kinds: [] },
+  {
+    scope: "read:implements(ada.example.com/scheduling/dueDate)",
+    kinds: [],
   },
   { scope: "agents:*", kinds: [] },
   { scope: "agents:b.example.com/*", kinds: [] },
@@ -503,19 +530,17 @@ describe("the sentence fixture", () => {
 
 describe("a trait scope", () => {
   // Decision 0225: what `*` would reach among the kinds that bind the trait.
-  const COMPLETABLE = "substrate.reamde.dev/core/completable"
-
   it("is read off its pattern, and a kind pattern names no trait", () => {
-    expect(scopeTrait(`implements(${COMPLETABLE})`)).toBe(COMPLETABLE)
+    expect(scopeTrait(`implements(${LIFECYCLE})`)).toBe(LIFECYCLE)
     expect(scopeTrait("ada.example.com/tasks/*")).toBeUndefined()
     expect(scopeTrait("implements()")).toBeUndefined()
   })
 
-  it("says the meaning, the kinds that have it today, and that more may come", () => {
+  it("names the trait, the kinds that have it today, and that more may come", () => {
     const sentence = (verb: "read" | "write", kinds: AuthorizationKind[]) =>
       scopeSentence({
         verb,
-        pattern: `implements(${COMPLETABLE})`,
+        pattern: `implements(${LIFECYCLE})`,
         glob: true,
         kinds,
         agents: [],
@@ -530,10 +555,10 @@ describe("a trait scope", () => {
         },
       ])
     ).toBe(
-      "See, add, change and delete your records of every kind that is completable (today your tasks, and Linear issues), including kinds that become completable later, and search them by meaning, which spends your embedding budget"
+      "See, add, change and delete your records of every kind with the lifecycle trait (today your tasks, and Linear issues), including kinds that take it on later, and search them by meaning, which spends your embedding budget"
     )
     expect(sentence("read", [])).toBe(
-      "See your records of every kind that is completable (no kind is completable yet), including kinds that become completable later, and search them by meaning, which spends your embedding budget"
+      "See your records of every kind with the lifecycle trait (no kind has it yet), including kinds that take it on later, and search them by meaning, which spends your embedding budget"
     )
   })
 
@@ -541,12 +566,12 @@ describe("a trait scope", () => {
     expect(
       scopeSentence({
         verb: "read",
-        pattern: "implements(ada.example.com/scheduling/occurrenceLog)",
+        pattern: "implements(ada.example.com/scheduling/dueDate)",
         glob: true,
         kinds: [],
         agents: [],
         functions: [],
       })
-    ).toContain("every kind that is occurrence log")
+    ).toContain("every kind with the due date trait")
   })
 })

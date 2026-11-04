@@ -196,10 +196,10 @@ public struct ScopeKind: Hashable, Sendable {
 /// checkbox (web/console's app-scopes.ts, whose words this mirrors): what the
 /// app may do, over the kinds, agents or functions it reaches, by their
 /// labels. Every power stays in the words: a write may delete, a read
-/// searches by meaning at the owner's cost, a glob reaches what is added
-/// later, talking to an agent reaches whatever the agent may do and reads
-/// every chat with it, a decision may edit the change it applies, and a
-/// call runs the owner's code as far as the app already reaches.
+/// searches by meaning at the owner's cost, a glob or a trait reaches what is
+/// added later, talking to an agent reaches whatever the agent may do and
+/// reads every chat with it, a decision may edit the change it applies, and
+/// a call runs the owner's code as far as the app already reaches.
 public enum ScopeWords {
     /// How many kind labels one sentence names before it counts the rest.
     static let maxLabels = 6
@@ -211,9 +211,11 @@ public enum ScopeWords {
 
     /// The sentence for one scope. `kinds` are the kinds it reaches today,
     /// where the caller knows them; without them a pattern reads by its
-    /// shape. `agents` are the names of the agents an agent scope matches.
+    /// shape, and a trait scope says nothing of which kinds have the trait,
+    /// since an empty list says none does. `agents` are the names of the
+    /// agents an agent scope matches.
     public static func sentence(
-        _ scope: String, kinds: [ScopeKind] = [], agents: [String] = [],
+        _ scope: String, kinds: [ScopeKind]? = nil, agents: [String] = [],
         functions: [String] = [], packageName: String? = nil
     ) -> String {
         let (verb, pattern) = split(scope)
@@ -222,9 +224,13 @@ public enum ScopeWords {
         switch verb {
         case "read", "write":
             let action = verb == "read" ? "See" : "See, add, change and delete"
+            if let trait = trait(of: pattern) {
+                let today = kinds.map { $0.isEmpty ? " (no kind has it yet)" : " (today your \(kindsPhrase($0)))" } ?? ""
+                return "\(action) your records of every kind with the \(traitWord(trait)) trait\(today), including kinds that take it on later\(semanticClause)"
+            }
             let later = glob ? ", including kinds added later" : ""
             if case .all = shape { return "\(action) all your records\(later)\(semanticClause)" }
-            let what = kinds.isEmpty ? patternPhrase(shape) : kindsPhrase(kinds)
+            let what = kinds.flatMap { $0.isEmpty ? nil : kindsPhrase($0) } ?? patternPhrase(shape)
             return "\(action) your \(what)\(later)\(semanticClause)"
         case "call":
             let later = glob ? ", including functions added later" : ""
@@ -294,6 +300,23 @@ public enum ScopeWords {
         guard pattern.count > traitOpen.count + traitClose.count, pattern.hasPrefix(traitOpen), pattern.hasSuffix(traitClose)
         else { return nil }
         return String(pattern.dropFirst(traitOpen.count).dropLast(traitClose.count))
+    }
+
+    /// A trait by its name, as a sentence says it: `lifecycle`, and
+    /// `due date` for `dueDate`.
+    static func traitWord(_ trait: String) -> String {
+        let parts = trait.split(separator: "/", maxSplits: 2, omittingEmptySubsequences: false)
+        let name = parts.count == 3 ? parts[2] : Substring(trait)
+        var words = ""
+        var previous: Character?
+        for character in name {
+            if let previous, previous.isASCII, previous.isLowercase || previous.isNumber, character.isASCII, character.isUppercase {
+                words.append(" ")
+            }
+            words.append(character)
+            previous = character
+        }
+        return words.lowercased()
     }
 
     public static func split(_ scope: String) -> (verb: String, pattern: String) {

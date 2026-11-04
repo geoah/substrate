@@ -355,17 +355,29 @@ import FoundationNetworking
     @Test func everySentenceIsTheConsoles() throws {
         let entries = try JSONDecoder().decode([Entry].self, from: Data(contentsOf: Self.fixture))
         #expect(Set(entries.map { ScopeWords.split($0.scope).verb }) == ["read", "write", "agents", "decide", "call", "webhook"])
+        #expect(entries.contains { ScopeWords.trait(of: ScopeWords.split($0.scope).pattern) != nil })
         // A manifest that names nothing itself, so a webhook's package reads
         // by its id, as the console's packageName reads it.
         let manifest = AppManifest(appName: "App", clientID: "http://localhost/client.json", scopes: [])
         for entry in entries {
             let kinds = entry.kinds.map { ScopeKind(identity: $0.identity, plural: $0.label?.plural, purpose: $0.purpose) }
+            // The console's kinds are the server's, so none listed for a
+            // trait says no kind binds it, which a manifest cannot know.
             let words =
-                kinds.isEmpty
+                kinds.isEmpty && ScopeWords.trait(of: ScopeWords.split(entry.scope).pattern) == nil
                 ? manifest.scopeWords(entry.scope, package: entry.package)
                 : ScopeWords.sentence(entry.scope, kinds: kinds)
             #expect(words == entry.sentence, "\(entry.scope) \(entry.package ?? "")")
         }
+    }
+
+    /// Without the kinds a trait scope reaches, an app says nothing of
+    /// which have the trait: it cannot tell that none does.
+    @Test func aTraitScopeWhoseKindsAreNotKnownNamesNone() {
+        #expect(
+            Grants(["write:implements(substrate.reamde.dev/core/lifecycle)"]).words == [
+                "See, add, change and delete your records of every kind with the lifecycle trait, including kinds that take it on later, and search them by meaning, which spends your embedding budget"
+            ])
     }
 
     /// Rules the fixture's well-formed scopes do not reach.

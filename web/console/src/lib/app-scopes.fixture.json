@@ -173,6 +173,60 @@
     "sentence": "See, add, change and delete your Apple Health accounts, and search them by meaning, which spends your embedding budget"
   },
   {
+    "scope": "read:implements(substrate.reamde.dev/core/lifecycle)",
+    "kinds": [
+      {
+        "identity": "ada.example.com/tasks/task"
+      }
+    ],
+    "sentence": "See your records of every kind with the lifecycle trait (today your tasks), including kinds that take it on later, and search them by meaning, which spends your embedding budget"
+  },
+  {
+    "scope": "write:implements(substrate.reamde.dev/core/lifecycle)",
+    "kinds": [
+      {
+        "identity": "ada.example.com/tasks/task"
+      },
+      {
+        "identity": "ada.example.com/tasks/project",
+        "label": {
+          "singular": "Project",
+          "plural": "Projects"
+        }
+      },
+      {
+        "identity": "providers.substrate.reamde.dev/linear/issue",
+        "label": {
+          "singular": "Issue",
+          "plural": "Issues"
+        }
+      },
+      {
+        "identity": "providers.substrate.reamde.dev/apple/reminder",
+        "label": {
+          "singular": "Reminder",
+          "plural": "Reminders"
+        }
+      }
+    ],
+    "sentence": "See, add, change and delete your records of every kind with the lifecycle trait (today your tasks and projects, Linear issues, and Apple reminders), including kinds that take it on later, and search them by meaning, which spends your embedding budget"
+  },
+  {
+    "scope": "read:implements(substrate.reamde.dev/core/lifecycle)",
+    "kinds": [],
+    "sentence": "See your records of every kind with the lifecycle trait (no kind has it yet), including kinds that take it on later, and search them by meaning, which spends your embedding budget"
+  },
+  {
+    "scope": "write:implements(substrate.reamde.dev/core/lifecycle)",
+    "kinds": [],
+    "sentence": "See, add, change and delete your records of every kind with the lifecycle trait (no kind has it yet), including kinds that take it on later, and search them by meaning, which spends your embedding budget"
+  },
+  {
+    "scope": "read:implements(ada.example.com/scheduling/dueDate)",
+    "kinds": [],
+    "sentence": "See your records of every kind with the due date trait (no kind has it yet), including kinds that take it on later, and search them by meaning, which spends your embedding budget"
+  },
+  {
     "scope": "agents:*",
     "kinds": [],
     "sentence": "Talk to all your agents, including agents added later, and through a chat have them do anything they may do; read every chat with them, yours included, answer their questions, and rename or stop any of those chats"

@@ -396,7 +396,8 @@ does among the kinds that bind the trait, so `reads` and `writes` take a
 `GrantKind`, made from the kind's `KindDeclaration` where the app read it.
 A kind known by its reference alone binds no trait the kit knows of, and no
 trait scope reaches it here: the server, which reads the declaration, is the
-judge.
+judge. Without the kinds a trait reaches, its sentence names none, since
+only the server can say that none binds it.
 
 ## Tests
 
