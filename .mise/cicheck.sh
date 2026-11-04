@@ -1458,6 +1458,9 @@ toolchain fmt-swift 1 'fmt:swift runs swift 0.0.1, and the android:* tasks' .mis
   's/^tools = { swift = "[^"]*" }$/tools = { swift = "0.0.1" }/'
 toolchain fmt-kotlin 1 'fmt:kotlin runs java temurin-0.0.1, and the android:* tasks' .mise.toml \
   's/^tools = { java = "[^"]*" }$/tools = { java = "temurin-0.0.1" }/'
+# The android build job without the Swift the android:* tasks pin: CI
+# installs only what a job names, so its tasks would run the runner's own.
+toolchain android-install 1 'does not install swift@' .github/workflows/ci.yml '/install_args:/s/ swift@[^ ]*//'
 
 # The Gradle dependency verification against the locks: a locked module the
 # metadata does not list, an artifact with no sha256, a trusted one, metadata

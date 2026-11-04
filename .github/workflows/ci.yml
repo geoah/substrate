@@ -877,6 +877,9 @@ jobs:
   # runner's sdkmanager), the generator's check, the bridge's tests on the
   # host and in Kotlin with the round trip between them, and the kit
   # cross-compiled for arm64-v8a and x86_64 into kit-core and bridge-check.
+  # install_args names that Swift and JDK, as lint:toolchain holds it to:
+  # this workflow installs nothing a job does not name, and the runner image
+  # carries a Swift and a JDK of its own that every task would otherwise run.
   # Nothing here needs an emulator; `android:smoke` is a laptop's. Not
   # required, and gated on the `apps` answer as `apps linux` is.
   android:
@@ -894,7 +897,7 @@ jobs:
           experimental: true
           version: 2026.9.2
           cache_save: ${{ github.event_name == 'push' }}
-          install: false
+          install_args: swift@6.4.2 java@temurin-21.0.11+10.0.LTS
       - run: mise run ci:android
 
   # Builds the image from source and BOOTS it under compose.yaml, with fresh
