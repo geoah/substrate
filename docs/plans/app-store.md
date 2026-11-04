@@ -1,6 +1,7 @@
 # Plan: the iPhone apps on the public App Store
 
-Status: draft 2, 2026-11-04, revised after one review (record at the end).
+Status: draft 3, 2026-11-04: draft 2 revised after one review (record at the
+end), then the tool chosen (§4) and the review server stood up (§6.1).
 Builds on the TestFlight release (`mise run apps:testflight`,
 [apps/README.md](../../apps/README.md#testflight)).
 
@@ -51,54 +52,52 @@ except Workouts, so every listing but Workouts' needs an iPad set too.
 
 ## 4. The tool
 
-fastlane's `deliver` and `snapshot` are the incumbent: a folder of text files
-and screenshots per locale, uploaded; screenshots taken through UI tests. It
-is Ruby, which nothing in this tree runs, and it brings a second login (an
-Apple ID session) for what the API lacks, which is App Privacy, a one-time
-manual step anyway. The newer `asc` CLI claims the whole API; its screenshot
-commands are not documented where they could be checked.
+**`asc`** ([rorkai/App-Store-Connect-CLI](https://github.com/rorkai/App-Store-Connect-CLI),
+MIT, Go): one binary, pinned in `.mise.toml` through mise's GitHub backend
+(`github:rorkai/App-Store-Connect-CLI[rename_exe=asc]`, the release's asset
+is named per version), at a release at least two weeks old (5.16.0 when
+this was written; it releases almost daily). It was tried against the
+team's records with the release's API key: `ASC_KEY_ID`, `ASC_ISSUER_ID`,
+`ASC_PRIVATE_KEY_PATH` and `ASC_BYPASS_KEYCHAIN=1`, so it reads the same key
+`apps:testflight` does and stores nothing in a keychain; `metadata pull`
+wrote a listing as one JSON file per locale. What it covers that this plan
+needs:
 
-The choice: **extend `apps/xcode/scripts/appstoreconnect.swift`** with a
-`listing` command, and keep the listing in each app's folder. The API calls
-are plain; the key, the token and the error handling exist; nothing new is
-installed or pinned; and the listing is held by the checks that hold the
-rest of an app. The cost is owning a few hundred lines of Swift, most of
-them the age rating declaration's fields and the screenshot upload
-operations, against an API that versions its endpoints.
+- `asc metadata init|pull|plan|apply --dir`: the texts (name, subtitle,
+  privacy policy URL; description, keywords, promotional text, support and
+  marketing URLs, what's new) from files, with a dry run;
+- `asc screenshots upload --app --version --locale --device-type --path
+  --replace`;
+- `asc categories`, `asc age-rating`, `asc review` (contact, demo sign-in,
+  notes), `asc versions update --copyright`, `asc pricing`.
+
+Its telemetry is on by default: every call runs with `DO_NOT_TRACK=1`. Its
+`web` commands use an Apple web session and private endpoints; none is used.
+
+Considered and not used: fastlane's `deliver` and `snapshot` (Ruby, which
+nothing in this tree runs, and an Apple ID session for what the API lacks,
+which is App Privacy, by hand anyway); extending `appstoreconnect.swift`
+(a few hundred lines for the age rating's fields and the screenshot upload
+operations, which `asc` already has). `appstoreconnect.swift` keeps what it
+does for `apps:testflight`: the records check and the App Store profiles.
 
 ### 4.1 The listing, in the tree
 
-`apps/<app>/store/listing.json`, one file per app, English only for now:
-
-```json
-{
-  "subtitle": "…",
-  "description": "…",
-  "keywords": ["…"],
-  "promotionalText": "…",
-  "supportURL": "https://…",
-  "marketingURL": "https://…",
-  "category": "PRODUCTIVITY",
-  "copyright": "…",
-  "contentRights": "DOES_NOT_USE_THIRD_PARTY_CONTENT",
-  "ageRating": {"…": "NONE"},
-  "reviewNotes": "…",
-  "screenshots": {"iphone": ["…png"], "ipad": ["…png"]}
-}
-```
-
-The name comes from app.json, as everywhere else. JSON, not YAML, for the
-reason app.json is (decision 0224: every reader parses it without a
-dependency). `lint:apps` holds its shape and Apple's limits (subtitle 30
-characters, keywords 100 bytes joined, description 4000, promotional text
-170). Nothing in it names a deployment: the URLs are the site's, which a
-release reads from `SUBSTRATE_APPLE_SITE_URL`, written as `{site}/…`, and the
-review server's address and sign-in come from the environment (§6.1).
+`apps/<app>/store/`, in the layout `asc metadata pull` writes (one JSON file
+per locale for the app info and for the version), English only for now,
+beside `store/review.json` (category, content rights, copyright, age rating
+answers, review notes) and `store/screenshots/{iphone,ipad}/`. The name comes
+from app.json and is checked against the listing's. `lint:apps` holds the
+files' shape and Apple's limits (subtitle 30 characters, keywords 100 bytes,
+description 4000, promotional text 170). Nothing in them names a deployment:
+URLs are the site's, written as `{site}/…` and filled from
+`SUBSTRATE_APPLE_SITE_URL`, and the review server's address and sign-in come
+from the environment (§6.1).
 
 ### 4.2 The task
 
-`mise run apps:store <app>` makes App Store Connect's editable iOS version
-of one app match its listing, and says what it changed:
+`mise run apps:store <app>` runs `asc` to make App Store Connect's editable
+iOS version of one app match its listing, and says what it changed:
 
 1. writes the texts, URLs, category, content rights, copyright, age rating
    and review details where they differ;
@@ -167,7 +166,11 @@ server (2.1, 4.2); that the app is a client for a server its user runs; and
 that accounts live on the user's server and are never created in the app,
 so in-app account deletion (5.1.1(v)) does not apply.
 
-**Decision for the owner:** which public server is the review server.
+Decided 2026-11-04: a substrate of its own, fresh on every start and
+restarted nightly, with one review owner registered by the stack and no
+other data; a reviewer's sign-in installs the app's package through its
+approval. Its address, the owner's repository name and password are the
+release environment's (`SUBSTRATE_APPLE_REVIEW_*`), never this tree.
 
 ### 6.2 The privacy policy
 
@@ -209,8 +212,8 @@ release's (0.x); the store accepts them. A `--submit` flag is later work
 
 1. The privacy page in `apps:site`.
 2. The review server (§6.1), decided and seeded.
-3. `appstoreconnect.swift listing` and `apps:store` for the texts, review
-   details and `--build`; Tasks' listing.
+3. `asc` pinned in `.mise.toml`, and `apps:store` over it for the texts,
+   review details and `--build`; Tasks' listing.
 4. Screenshots: `apps:store:screenshots` and Tasks' `StoreScreenshots` UI
    test, iPhone and iPad; their upload in `apps:store`.
 5. By hand: App Privacy, the age rating checked, price and territories; then
@@ -252,6 +255,8 @@ After Tasks passes:
   so a version being fixed after a rejection keeps its build; CI, the
   weekly check and keeping the icon current wait until one app has passed
   (§4.2, §5, §8).
+- The tool (after the review): `asc`, tried against the team's records,
+  in place of extending `appstoreconnect.swift` (§4).
 - No deployment is named: the listing's URLs are the site's, read from the
   environment, and the review server comes from the environment (§4.1).
 - The review server's requirements: public, no second factor, synthetic
