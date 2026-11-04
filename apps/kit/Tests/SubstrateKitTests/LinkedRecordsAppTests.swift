@@ -149,7 +149,7 @@ struct LinkedRecordsAppTests {
         #expect(await harness.state.problem == "Not kept.")
         #expect(Shelf.Event.records(.relistNeeded).recordsEvent == .relistNeeded)
         #expect(Shelf.Event.problemDismissed.recordsEvent == nil)
-        #expect(shelf().key(of: .records(.read)) == "records.read")
+        #expect(shelf().key(of: .records(.read)) == "records.watch")
         #expect(shelf().key(of: .count(1)) == "count")
         #expect(shelf().report(of: .records(.watchEnded(.needsApproval, ""))) == .needsApproval)
         #expect(shelf().coalescing(of: .records(.changed("k", nil))) == .within(.milliseconds(100)))
@@ -227,12 +227,13 @@ struct StoppedReadTests {
 
     @Test func aReadThatStoppedAtItsLimitSaysSo() {
         var stepper = Stepper()
+        let cursor = WatchCursor(seq: 3, generation: "g")
         _ = stepper.step(.loaded([], cursor: nil, queue: []))
         _ = stepper.step(.linked(reachable))
-        _ = stepper.step(.listed([], cursor: nil))
-        _ = stepper.step(.readLimitReached(2))
+        let books = ["a", "b"].map { Record(id: $0, kind: shelfKind, properties: [:]) }
+        _ = stepper.step(.listed(books, cursor: cursor, more: true))
         #expect(stepper.records.notice(stepper.state)?.text == "Only the first 2 of your books are shown: Shelf reads no more.")
-        _ = stepper.step(.listed([], cursor: nil))
+        _ = stepper.step(.listed(books, cursor: cursor))
         #expect(stepper.records.notice(stepper.state) == nil)
     }
 
@@ -242,6 +243,7 @@ struct StoppedReadTests {
             let rows = ids.map { #"{"id":"\#($0)","kind":"\#(shelfKind)","properties":{},"version":1}"# }.joined(separator: ",")
             return #"{"records":[\#(rows)],"cursor":\#(cursor.map { "\"\($0)\"" } ?? "null"),"head":1,"generation":"g"}"#
         }
+        server.answer("GET", "/api/v1/changes", 200, #"{"bookmark":1,"generation":"g"}"#)
         server.on { ($0.query ?? "").contains("after=") ? (200, page(["c"], nil)) : (200, page(["a", "b"], "next")) }
         let client = SubstrateClient(server: URL(string: "https://ada.example.com")!, token: "substrate_tok_test", transport: server)
         var environment = AppEnvironment.testing()
@@ -250,12 +252,30 @@ struct StoppedReadTests {
         guard case let .sequence(make) = records.perform(.read, in: environment) else { throw Unexpected() }
         var events: [LinkedRecords.Event] = []
         for await event in make() { events.append(event) }
-        #expect(events.last == .readLimitReached(2))
-        guard case let .listed(listed, _) = events.first else { throw Unexpected() }
-        #expect(listed.map(\.id) == ["a", "b"])
+        guard case let .listed(listed, cursor, more) = events.last else { throw Unexpected() }
+        #expect(listed.map(\.id) == ["a", "b"] && more)
+        #expect(cursor == WatchCursor(seq: 1, generation: "g"))
         // The page after the limit is never asked for.
-        #expect(server.sent.count == 1)
-        #expect(!server.sent.contains { ($0.query ?? "").contains("after=") })
+        let lists = server.sent.filter { $0.path == "/api/v1/records" }
+        #expect(lists.count == 1)
+        #expect(!lists.contains { ($0.query ?? "").contains("after=") })
+    }
+
+    /// A watch that cannot open holds back neither the list nor why it was
+    /// refused: the list's 403 is the approval the token needs.
+    @Test func aReadWhoseWatchCannotOpenStillSaysWhyTheListWasRefused() async throws {
+        let server = ScriptedServer()
+        server.answer("GET", "/api/v1/changes", 404, #"{"error":{"code":"not_found","message":"unknown kind example.com/shelf/book"}}"#)
+        server.answer(
+            "GET", "/api/v1/records", 403, #"{"error":{"code":"forbidden","message":"not in scope"}}"#,
+            headers: ["WWW-Authenticate": #"Bearer error="insufficient_scope""#])
+        let client = SubstrateClient(server: URL(string: "https://ada.example.com")!, token: "substrate_tok_test", transport: server)
+        var environment = AppEnvironment.testing()
+        environment.client = ClientSource { client }
+        guard case let .sequence(make) = Stepper().records.perform(.read, in: environment) else { throw Unexpected() }
+        var events: [LinkedRecords.Event] = []
+        for await event in make() { events.append(event) }
+        guard events.count == 1, case .readFailed(_, .needsApproval) = events[0] else { throw Unexpected() }
     }
 }
 

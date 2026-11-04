@@ -11,6 +11,13 @@ import SubstrateRuntime
 /// Every write goes to the outbox, in the order made (`WriteLine`); the link
 /// sends them.
 ///
+/// The read opens the watch first and lists after its bookmark, and the
+/// watch is followed from that bookmark: an app token's lists carry no head
+/// (decision 0195), so a list read first leaves nothing to follow from but
+/// the live head, past whatever was written meanwhile. Each change written
+/// while the list was read comes again from the watch, and its record is
+/// read again after the list, so the newer copy is the one kept.
+///
 /// It is not a controller of its own: an app's root keeps its state
 /// (`LinkedRecordsState`) beside its own, wraps its events and effects in its
 /// own (`case records(LinkedRecords.Event)`), and asks it at each stage, so
@@ -19,18 +26,19 @@ import SubstrateRuntime
 /// how an event moved the phase, never from a flag the engine keeps.
 ///
 /// The first read takes at most `limit` records (`LinkedRecords.readLimit`
-/// unless the app names another); past it, `readLimitReached` says so, and
-/// `notice` puts it in the app's words, so a repository larger than the read
-/// is never shown as complete.
+/// unless the app names another); past it, the read says there are `more`,
+/// and `notice` puts it in the app's words, so a repository larger than the
+/// read is never shown as complete.
 public struct LinkedRecords: Equatable, Sendable {
     public enum Event: Codable, Equatable, Sendable {
         /// The app opened: the device's copy is read, and the outbox followed.
         case opened
         case linked(LinkSnapshot)
         case loaded([Record], cursor: WatchCursor?, queue: [OutboxEntry])
-        case listed([Record], cursor: WatchCursor?)
-        /// The read stopped at its limit with records left unread.
-        case readLimitReached(Int)
+        /// The kinds read whole: `cursor` is where the watch follows the read
+        /// from, nil while the watch could not open; `more` when the read
+        /// stopped at its limit with records left unread.
+        case listed([Record], cursor: WatchCursor?, more: Bool = false)
         case readFailed(String, LinkReport?)
         /// A record read again, or removed by the watch, by `kind/id`.
         case changed(String, Record?)
@@ -125,15 +133,17 @@ public struct LinkedRecords: Equatable, Sendable {
             next.loaded = true
             fold(&next)
             startOrStop(&next, restarting: { _ in false })
-        case let .listed(records, cursor):
+        case let .listed(records, cursor, more):
             next.server = keyed(records)
-            next.cursor = cursor ?? state.cursor
-            next.limitReached = nil
+            next.stale = []
+            next.limitReached = more ? records.count : nil
             fold(&next)
-            // A read that ends after a sign-out starts no watch.
-            if next.link?.signedIn == true, next.phase == .reading { next.phase = .following }
-        case let .readLimitReached(limit):
-            next.limitReached = limit
+            // Read without the watch's bookmark, it is shown and not followed
+            // from; a read that ends after a sign-out starts no watch.
+            if let cursor {
+                next.cursor = cursor
+                if next.link?.signedIn == true, next.phase.running { next.phase = .following }
+            }
         case let .readFailed(words, report):
             next.phase = .stopped(Self.stop(report), words)
         case let .changed(key, record):
@@ -244,10 +254,11 @@ public struct LinkedRecords: Equatable, Sendable {
     // MARK: The effects
 
     /// What an applied event asks for. The read and the watch follow the
-    /// phase it moved: to reading, a read; to following from anything but a
-    /// watch waiting to open again, a watch; from running to idle, the
-    /// watch stopped. A write goes to the outbox, and a record a write of
-    /// which left the queue, or whose read failed, is read again.
+    /// phase it moved: to reading, a read; to following, a watch, unless it
+    /// is the watch itself opened again; from running to idle, the watch
+    /// stopped. A relist reads again whatever the phase was. A write goes to
+    /// the outbox, and a record a write of which left the queue, or whose
+    /// read failed, is read again.
     public func effects(of event: Event, on state: State, from previous: State) -> [Effect] {
         var out: [Effect] = []
         switch event {
@@ -266,6 +277,8 @@ public struct LinkedRecords: Equatable, Sendable {
             if !state.stale.isEmpty { out.append(.reread(state.stale.sorted())) }
         case let .linked(link):
             if link.online == true, previous.link?.online != true, !state.stale.isEmpty { out.append(.reread(state.stale.sorted())) }
+        case .relistNeeded where previous.phase == .reading:
+            out.append(.read)
         default:
             break
         }
@@ -274,7 +287,7 @@ public struct LinkedRecords: Equatable, Sendable {
             case .reading:
                 out.append(.read)
             case .following:
-                if case .interrupted = previous.phase {} else { out.append(.follow(state.cursor)) }
+                if case .watchOpened = event {} else { out.append(.follow(state.cursor)) }
             case .idle where previous.phase.running:
                 out.append(.stopFollowing)
             default:
@@ -285,12 +298,13 @@ public struct LinkedRecords: Equatable, Sendable {
     }
 
     /// A write is never cancelled for another: the line keeps their order.
+    /// The read opens a watch of its own for the bookmark, so it is stopped
+    /// and replaced as the watch is.
     public func key(of effect: Effect) -> String? {
         switch effect {
         case .load: "records.load"
         case .followOutbox: "records.outbox"
-        case .read: "records.read"
-        case .follow, .stopFollowing: "records.watch"
+        case .read, .follow, .stopFollowing: "records.watch"
         case .clear: "records.clear"
         case .reread, .enqueue: nil
         }
@@ -333,16 +347,43 @@ public struct LinkedRecords: Equatable, Sendable {
             let limit = limit
             return .relay { continuation in
                 guard let client = await source.current() else { return }
-                do {
-                    let page = try await client.listAll(ListQuery(kinds: kinds, first: 200), limit: limit)
-                    await cache?.listed(page, kinds: kinds)
-                    try? await outbox?.saw(Dictionary(page.records.map { (RecordFold.key($0.kind, $0.id), $0.version) }) { a, _ in a })
-                    let cursor = page.generation.isEmpty ? nil : WatchCursor(seq: page.head, generation: page.generation)
-                    continuation.yield(.listed(page.records, cursor: await cache?.cursor ?? cursor))
-                    if page.cursor != nil { continuation.yield(.readLimitReached(page.records.count)) }
-                } catch {
-                    continuation.yield(.readFailed(explain(error, app: words.app, server: client.server), LinkReport(error)))
+                let list = { (bookmark: WatchCursor?) async -> Bool in
+                    await Self.list(
+                        kinds, limit: limit, from: bookmark, client: client, cache: cache, outbox: outbox, words: words,
+                        into: continuation)
                 }
+                // A watch that cannot open holds back neither the records nor
+                // why the list was refused, which says more than the watch's
+                // refusal: a kind out of reach is a 403 to the list and an
+                // unknown kind to the watch.
+                var bookmark: WatchCursor?
+                var listed = false
+                opening: for await event in WatchFollower(client: client, kinds: kinds, app: words.app).follow(from: nil) {
+                    switch event {
+                    case let .opened(cursor):
+                        bookmark = cursor
+                        break opening
+                    case let .interrupted(reason):
+                        if !listed {
+                            guard await list(nil) else { return }
+                            listed = true
+                        }
+                        continuation.yield(.watchInterrupted(reason))
+                    case let .ended(end):
+                        if !listed {
+                            guard await list(nil) else { return }
+                        }
+                        continuation.yield(Self.stopped(end, words: words))
+                        return
+                    case .relist:
+                        continuation.yield(.relistNeeded)
+                        return
+                    case .row:
+                        continue
+                    }
+                }
+                guard let bookmark else { return }
+                _ = await list(bookmark)
             }
         case let .follow(cursor):
             return .relay { continuation in
@@ -414,6 +455,26 @@ public struct LinkedRecords: Equatable, Sendable {
                 await cache?.clear()
                 return .cleared
             }
+        }
+    }
+
+    /// The kinds read whole and kept, with the watch's bookmark as where the
+    /// watch follows them from. Answers whether they were read.
+    private static func list(
+        _ kinds: [String], limit: Int, from bookmark: WatchCursor?, client: SubstrateClient, cache: RecordCache?,
+        outbox: Outbox?, words: StatusWords, into continuation: AsyncStream<Event>.Continuation
+    ) async -> Bool {
+        do {
+            let page = try await client.listAll(ListQuery(kinds: kinds, first: 200), limit: limit)
+            await cache?.listed(page, kinds: kinds, from: bookmark)
+            try? await outbox?.saw(Dictionary(page.records.map { (RecordFold.key($0.kind, $0.id), $0.version) }) { a, _ in a })
+            var cursor: WatchCursor?
+            if let bookmark { cursor = await cache?.cursor ?? bookmark }
+            continuation.yield(.listed(page.records, cursor: cursor, more: page.cursor != nil))
+            return true
+        } catch {
+            continuation.yield(.readFailed(explain(error, app: words.app, server: client.server), LinkReport(error)))
+            return false
         }
     }
 
