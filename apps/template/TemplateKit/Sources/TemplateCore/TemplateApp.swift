@@ -14,7 +14,10 @@ import SubstrateScreens
 /// beside it.
 public struct TemplateApp: LinkedRecordsApp {
     public enum Command: Codable, Equatable, Sendable {
-        case add(String)
+        /// What the add field holds, as typed.
+        case setDraft(String)
+        /// What the add field holds is added.
+        case add
         case delete(String)
         case refresh
         /// The app came to the front: what the system may have changed is
@@ -28,6 +31,9 @@ public struct TemplateApp: LinkedRecordsApp {
 
     public enum Event: Codable, Equatable, Sendable, LinkedRecordsEvent {
         case records(LinkedRecords.Event)
+        case drafted(String)
+        /// An add's write: its entries, on their way to the outbox.
+        case adding(Set<UUID>)
         case usage([AreaUsage])
         case offered(String?)
         case problemDismissed
@@ -48,6 +54,11 @@ public struct TemplateApp: LinkedRecordsApp {
 
     public struct State: Codable, Equatable, Sendable, LinkedRecordsHolding {
         public var linked = LinkedRecordsState()
+        /// What the add field holds: kept until the outbox has the item it
+        /// adds, so an add the device could not keep is there to send again.
+        public var draft = ""
+        /// The add's write, on its way to the outbox or not kept by it.
+        public var adding: Adding?
         /// Each area of the repository's folder and its size, nil until read.
         public var usage: [AreaUsage]?
         public var problem: String?
@@ -58,6 +69,19 @@ public struct TemplateApp: LinkedRecordsApp {
         public var revision = 0
 
         public init() {}
+    }
+
+    /// An add, as the root follows its write to the outbox.
+    public enum Adding: Codable, Equatable, Sendable {
+        /// The write's entries, on their way.
+        case sending(Set<UUID>)
+        /// The device could not keep the write, and why.
+        case notKept(String)
+
+        /// On its way, with one of `ids` among its entries.
+        func writes(_ ids: Set<UUID>) -> Bool {
+            if case let .sending(entries) = self { !entries.isDisjoint(with: ids) } else { false }
+        }
     }
 
     public static let appName = "Substrate Template"
@@ -84,10 +108,17 @@ public struct TemplateApp: LinkedRecordsApp {
     public func events(for command: Command, in context: Enrichment<TemplateApp>) -> [Event] {
         let writes = RecordWrites(mint: { context.mint() })
         switch command {
-        case let .add(name):
-            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        case let .setDraft(text):
+            return [.drafted(text)]
+        case .add:
+            // One add at a time: the field holds what the outbox has not answered for.
+            if case .sending = context.state.adding { return [] }
+            let name = context.state.draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return [] }
-            return [.records(.wrote(writes.create(TemplateKinds.item, writes.newID(), properties: ["name": .string(name)])))]
+            let write = writes.create(TemplateKinds.item, writes.newID(), properties: ["name": .string(name)])
+            // With no outbox, nothing will say the write was kept.
+            guard linked.outbox != nil else { return [.records(.wrote(write)), .drafted("")] }
+            return [.adding(Set(write.entries.map(\.id))), .records(.wrote(write))]
         case let .delete(id):
             guard let record = context.state.linked.records[RecordFold.key(TemplateKinds.item, id)] else { return [] }
             return [.records(.wrote(writes.delete(TemplateKinds.item, id, version: record.version > 0 ? record.version : nil)))]
@@ -101,14 +132,30 @@ public struct TemplateApp: LinkedRecordsApp {
 
     // MARK: The engine
 
-    /// After the records' own: `state.linked` has moved already.
+    /// After the records' own: `state.linked` has moved already. The add
+    /// field is cleared only once the outbox has the item it adds; an add
+    /// the device could not keep says why beside the field, and any other
+    /// write in the screen's problem.
     public func apply(_ event: Event, to state: State, from previous: State) throws -> State {
         var next = state
         switch event {
-        case let .records(.notQueued(_, words)):
-            next.problem = words
+        case let .records(.enqueued(ids, _, _)):
+            if state.adding?.writes(ids) == true {
+                next.draft = ""
+                next.adding = nil
+            }
+        case let .records(.notQueued(ids, words)):
+            if state.adding?.writes(ids) == true {
+                next.adding = .notKept(words)
+            } else {
+                next.problem = words
+            }
         case .records:
             break
+        case let .drafted(text):
+            next.draft = text
+        case let .adding(ids):
+            next.adding = .sending(ids)
         case let .usage(usage):
             next.usage = usage
         case let .offered(version):

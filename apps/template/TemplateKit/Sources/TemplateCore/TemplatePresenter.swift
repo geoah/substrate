@@ -9,8 +9,12 @@ public enum TemplatePresenter {
         let rows = state.linked.records(of: TemplateKinds.item)
             .map { ItemRow(id: $0.id, title: name($0), delete: "Delete") }
             .sorted { ($0.title.lowercased(), $0.id) < ($1.title.lowercased(), $1.id) }
+        let notKept: String? = if case let .notKept(words) = state.adding { words } else { nil }
+        let add = AddField(
+            prompt: "Add an item", text: state.draft,
+            notKept: notKept.map { ProblemPresentation(title: "A change was not kept", message: $0, fix: ProblemFix(title: "Retry", action: .tryAgain)) })
         return TemplatePresentation(
-            title: "Items", items: KeyedList(rows, revision: state.revision), add: "Add an item",
+            title: "Items", items: KeyedList(rows, revision: state.revision), add: add,
             empty: rows.isEmpty ? EmptyPresentation(title: "No items", message: "Add one below.") : nil,
             notices: linked.notice(state.linked).map { [$0] } ?? [],
             problem: state.problem.map { ProblemPresentation(title: "A change was not kept", message: $0) }, settings: [],
