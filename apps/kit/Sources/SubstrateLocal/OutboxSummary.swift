@@ -23,10 +23,13 @@ public struct OutboxSummary: Equatable, Sendable {
     public var saveProblem: String?
     /// The file that was there at open and could not be read, set aside.
     public var unreadable: SetAsideFile?
+    /// Why the file there could not be read, until a read again succeeds:
+    /// every change is refused meanwhile.
+    public var unavailable: String?
 
     public init(
         state: OutboxState = .idle, waiting: Int = 0, parked: [OutboxEntry] = [], sendable: Int = 0, flushing: Bool = false,
-        revision: Int = 0, saveProblem: String? = nil, unreadable: SetAsideFile? = nil
+        revision: Int = 0, saveProblem: String? = nil, unreadable: SetAsideFile? = nil, unavailable: String? = nil
     ) {
         self.state = state
         self.waiting = waiting
@@ -36,5 +39,6 @@ public struct OutboxSummary: Equatable, Sendable {
         self.revision = revision
         self.saveProblem = saveProblem
         self.unreadable = unreadable
+        self.unavailable = unavailable
     }
 }

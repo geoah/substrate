@@ -28,7 +28,9 @@ struct ControllerWalk {
         self.catalog = try catalog ?? ExampleFixtures.catalog()
         self.history = history
         self.directory = directory
-        journal = SessionJournalFile(folder: try RepositoryFolder(adopting: directory, writingOptions: .atomic)).file
+        journal = JournalFile(
+            folder: try RepositoryFolder(adopting: directory, writingOptions: .atomic), name: SessionJournalFile.fileName, area: .root,
+            format: SessionJournalFile.format)
     }
 
     var state: SessionState { get throws { try script.current } }

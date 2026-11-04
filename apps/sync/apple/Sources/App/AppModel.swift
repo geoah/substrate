@@ -296,7 +296,10 @@ final class AppModel: ObservableObject {
     /// Revokes the tokens kept for revocation, and keeps the ones still live
     /// to say so.
     func revokeReplaced() async {
-        unrevoked = await SessionStore.sync.revokePending(current: SessionStore.sync.load(), transport: Client.transport)
+        // A session or a queue that cannot be read leaves every token kept
+        // for the next try, and the notices as they were.
+        guard let live = try? await SessionStore.sync.revokePending(transport: Client.transport) else { return }
+        unrevoked = live
     }
 
     // MARK: - status

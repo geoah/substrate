@@ -33,6 +33,18 @@ private func entry(
     OutboxEntry(method: method, kind: kind, recordID: id, properties: properties, guarded: guarded, batch: batch)
 }
 
+/// Takes away the right to read `file`, answering whether a read now fails:
+/// a process as root reads it whatever its mode, and a test there cannot
+/// make the device fail a read this way.
+func refuseReads(of file: URL) -> Bool {
+    try? FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: file.path)
+    return (try? Data(contentsOf: file)) == nil
+}
+
+func allowReads(of file: URL) {
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+}
+
 private func edit(_ id: String, _ patch: JSONObject, base: Int) -> OutboxEntry {
     OutboxEntry(method: .patch, kind: noteKind, recordID: id, properties: patch, guarded: true, baseVersion: base)
 }
@@ -182,6 +194,53 @@ struct OutboxTests {
         #expect(await outbox.unreadable?.area == .outbox)
         #expect(await outbox.entries.isEmpty)
         #expect(folder.setAside.count == 1)
+    }
+
+    /// A file there that the device could not read (a lock, an I/O error)
+    /// is neither set aside nor written over: the queue refuses every
+    /// change, and says why, until a read again succeeds, and then every
+    /// write the file held is still there, with the new one after them.
+    @Test func aFileTheDeviceCannotReadIsNeverWrittenOver() async throws {
+        let root = temporaryFolder()
+        try await openOutbox(root).enqueue([entry(.put, entryKind, "a"), entry(.put, entryKind, "b")])
+        let folder = try RepositoryFolder(root: root)
+        let file = folder.url("outbox.json", in: .outbox)
+        let held = try Data(contentsOf: file)
+        guard refuseReads(of: file) else { return }
+
+        let outbox = Outbox(folder: folder)
+        #expect(await outbox.unavailable != nil)
+        #expect(await outbox.summary.unavailable != nil)
+        #expect(await outbox.unreadable == nil)
+        await #expect(throws: OutboxNotSaved.self) { try await outbox.enqueue([entry(.put, entryKind, "c")]) }
+        await #expect(throws: OutboxNotSaved.self) { try await outbox.saw(["\(entryKind)/a": 1]) }
+        #expect(await outbox.flush(writer(ScriptedServer())) == .idle)
+        #expect(folder.setAside.isEmpty)
+
+        allowReads(of: file)
+        #expect(try Data(contentsOf: file) == held)
+        try await outbox.enqueue([entry(.put, entryKind, "c")])
+        #expect(await outbox.unavailable == nil)
+        #expect(await outbox.entries.map(\.recordID) == ["a", "b", "c"])
+        #expect(await Outbox(folder: folder).entries.map(\.recordID) == ["a", "b", "c"])
+    }
+
+    /// A reset forgets the queue, and a file the device could not read is
+    /// set aside for a look first, never written over.
+    @Test func aResetSetsAsideAFileTheDeviceCannotRead() async throws {
+        let root = temporaryFolder()
+        try await openOutbox(root).enqueue([entry(.put, entryKind, "a")])
+        let folder = try RepositoryFolder(root: root)
+        let file = folder.url("outbox.json", in: .outbox)
+        let held = try Data(contentsOf: file)
+        guard refuseReads(of: file) else { return }
+        let outbox = Outbox(folder: folder)
+        try await outbox.reset()
+        let aside = try #require(await outbox.unreadable)
+        allowReads(of: folder.url(aside.name, in: .outbox))
+        #expect(try folder.read(aside.name, in: .outbox) == held)
+        try await outbox.enqueue([entry(.put, entryKind, "b")])
+        #expect(await Outbox(folder: folder).entries.map(\.recordID) == ["b"])
     }
 
     @Test func anEntryWorkoutsWroteReadsItsSessionAsItsBatch() throws {

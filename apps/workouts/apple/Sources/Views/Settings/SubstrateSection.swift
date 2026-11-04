@@ -32,11 +32,11 @@ struct SubstrateSection: View {
         if let repository = link.repository {
             RepositoryScreen(repository, onChangeAccess: { Task { await link.reauthorize() } }, onSignOut: link.signOut)
             if let problem = link.signOutProblem {
-                Section { ProblemView(problem) }
+                Section { ProblemView(problem) { _ in link.signOut() } }
             }
         } else {
             Section {
-                UnrevokedNotices(appName: link.manifest.appName, unrevoked: SessionStore.workouts.pendingRevocations())
+                UnrevokedNotices(appName: link.manifest.appName, unrevoked: (try? SessionStore.workouts.pendingRevocations()) ?? [])
             } footer: {
                 Text(
                     "Signing in asks your substrate to install the Training package and the workout coach and to let \(link.manifest.appName) write its sessions and sets. Sessions logged before you sign in are sent then."
@@ -55,7 +55,7 @@ struct SignInSheet: View {
 
     var body: some View {
         NavigationStack {
-            ConnectView(manifest: link.manifest, address: $address, unrevoked: SessionStore.workouts.pendingRevocations()) {
+            ConnectView(manifest: link.manifest, address: $address, unrevoked: (try? SessionStore.workouts.pendingRevocations()) ?? []) {
                 ConnectHeader(
                     appName: link.manifest.appName, tagline: "Your training sessions, in your substrate.",
                     icon: Image("AppMark"))

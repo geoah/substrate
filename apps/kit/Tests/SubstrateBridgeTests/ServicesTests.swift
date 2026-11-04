@@ -262,10 +262,10 @@ struct ServicesTests {
         #expect(throws: URLError.self) { try BridgeTransport.answer(try BridgeCodec.value(offline), for: request) }
     }
 
-    /// A secure store's caller blocks its thread, and Swift's executors are
-    /// few: with every one of them blocked on a read, the answers must still
-    /// arrive, so a read never waits on an executor to come free (which, on
-    /// a phone, left every read to run out its time).
+    /// Swift's executors are few, and a phone's callers read the session
+    /// from them: with more readers than executors at once, every answer
+    /// must still arrive, so a read never waits on an executor to come free
+    /// (which, on a phone, left every read to run out its time).
     @Test func aSecureStoreReadIsAnsweredWhileEverySwiftExecutorIsBlockedOnOne() async throws {
         let runtime = BridgeRuntime()
         let kotlin = AnsweringKotlin()
@@ -277,7 +277,7 @@ struct ServicesTests {
         let found = await withTaskGroup(of: Bool.self) { group in
             for n in 0 ..< readers {
                 group.addTask {
-                    guard case .found = store.read(account: "a\(n)") else { return false }
+                    guard case .found = await store.read(account: "a\(n)") else { return false }
                     return true
                 }
             }
@@ -285,6 +285,54 @@ struct ServicesTests {
         }
         #expect(found == readers)
         #expect(ContinuousClock.now - began < .seconds(5), "a read ran out its time")
+    }
+
+    /// A read that waits on Kotlin holds no thread while it waits: with
+    /// twice as many readers waiting as there are executors, each has asked
+    /// before any is answered, the executors still run other work, and
+    /// every read is answered once Kotlin answers. A read that blocked its
+    /// thread would leave the readers past the executors' count unable to
+    /// ask at all.
+    @Test func aSecureStoreReadHoldsNoThreadWhileItWaits() async throws {
+        let (runtime, outlet, _) = started()
+        let store = BridgeSecureStore(channel: try #require(runtime.device), store: "session", timeout: 60)
+        let readers = ProcessInfo.processInfo.activeProcessorCount * 2
+        let reads = Task {
+            await withTaskGroup(of: Bool.self) { group in
+                for n in 0 ..< readers {
+                    group.addTask {
+                        guard case .found = await store.read(account: "a\(n)") else { return false }
+                        return true
+                    }
+                }
+                return await group.reduce(0) { $0 + ($1 ? 1 : 0) }
+            }
+        }
+        var requests: [Envelope] = []
+        while requests.count < readers {
+            let asked = Set(requests.compactMap(\.id))
+            requests.append(try await outlet.next { $0.op == .request && !asked.contains($0.id ?? -1) })
+        }
+        #expect(await Task.detached { true }.value)
+        let found = try BridgeCodec.value(SecureItem.found(value: Data("s".utf8).base64EncodedString()))
+        for request in requests {
+            _ = try post(runtime, Envelope(op: .reply, id: request.id, body: found))
+        }
+        #expect(await reads.value == readers)
+    }
+
+    /// A store Kotlin does not answer reads as failed once its time is up,
+    /// and Kotlin is told to stop.
+    @Test func aSecureStoreThatDoesNotAnswerFailsInTime() async throws {
+        let (runtime, outlet, _) = started()
+        let store = BridgeSecureStore(channel: try #require(runtime.device), store: "session", timeout: 0.2)
+        guard case .failed(BridgeSecureStore.unavailableStatus) = await store.read(account: "a") else {
+            Issue.record("an unanswered read was not a failed one")
+            return
+        }
+        let request = try await outlet.next { $0.op == .request }
+        _ = try await outlet.next { $0.op == .cancel && $0.id == request.id }
+        await #expect(throws: SecureStoreNotRemoved.self) { try await store.delete(account: "a") }
     }
 }
 

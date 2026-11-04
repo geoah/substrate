@@ -38,6 +38,8 @@ public enum StatusPresenter {
         case .needsApproval: actions.append(ActionButton("Review Access…", .review))
         case .signedOut: actions.append(ActionButton("Sign In Again…", .signIn))
         case .accessEndsSoon: actions.append(ActionButton("Renew Access…", .renew))
+        // Nothing is sent before the session is read again.
+        case .unreadable: actions = [ActionButton("Try Again", .readAgain)]
         default: break
         }
         let lines = packages.map { package in
@@ -69,14 +71,16 @@ public enum StatusPresenter {
         let problem: ProblemPresentation? =
             switch status {
             case let .notKept(reason): ProblemPresentation(title: "Not kept on \(words.device)", message: reason)
+            case let .unreadable(reason): ProblemPresentation(title: "Sign-in not read on \(words.device)", message: reason)
             case let .refused(_, reason) where parked.isEmpty && !reason.isEmpty:
                 ProblemPresentation(title: "Refused by your substrate", message: reason, tone: .caution)
             default: nil
             }
-        let notice =
+        var notice =
             parked.isEmpty
             ? nil
             : NoticeLine(parked.count == 1 ? "1 change needs you" : "\(parked.count) changes need you", symbol: .warning, tone: .caution)
+        if case .unreadable = status { notice = NoticeLine("Your sign-in could not be read", symbol: .warning, tone: .critical) }
         return StatusPresentation(
             title: Self.title, symbol: symbol, tone: tone, sentence: sentence, problem: problem, packages: lines,
             actions: actions, busy: sending,

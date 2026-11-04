@@ -5,8 +5,9 @@ import SubstrateDevice
 
 /// The secure store on an Apple device: generic password items under one
 /// service, each account one item, in an access group the app's targets
-/// share where one is named.
-public struct KeychainStorage: SessionStorage {
+/// share where one is named. The Keychain answers on the calling thread, so
+/// every call is synchronous inside.
+public struct KeychainStorage: ImmediateSessionStorage {
     public let service: String
     /// The `keychain-access-groups` entry the app's targets share, in full
     /// (`<team>.dev.reamde.substrate.sync`); nil is the app's default group.
@@ -60,8 +61,11 @@ public struct KeychainStorage: SessionStorage {
         guard status == errSecSuccess else { throw SecureStoreRefused(status: status) }
     }
 
-    public func delete(account: String) {
-        SecItemDelete(query(account: account) as CFDictionary)
+    /// An item already gone is removed; any other status leaves the item
+    /// where it was, and says so.
+    public func delete(account: String) throws {
+        let status = SecItemDelete(query(account: account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw SecureStoreNotRemoved(status: status) }
     }
 
     func query(account: String) -> [String: Any] {

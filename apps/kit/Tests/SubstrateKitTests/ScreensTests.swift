@@ -491,12 +491,15 @@ struct LinkControllerTests {
             words: words)
     }
 
-    func signedIn() throws -> MemoryStorage {
-        let storage = MemoryStorage()
-        let session = Session(
+    var session: Session {
+        Session(
             server: server, repository: "ada.example.com", secret: secret, clientID: "https://tasks.example.com/client.json",
             scopes: ["read:*"])
-        try SessionStore(storage: storage).save(session)
+    }
+
+    func signedIn() throws -> MemoryStorage {
+        let storage = MemoryStorage()
+        try storage.write(JSONEncoder().encode(session), account: "session")
         return storage
     }
 
@@ -554,7 +557,7 @@ struct LinkControllerTests {
         try await harness.until { await $0.presentation.snapshot.phase == .signedOut }
         #expect(stub.sent("POST", "/oauth/revoke").count == 1)
         #expect(await harness.state.unrevoked.isEmpty)
-        #expect(SessionStore(storage: storage).pendingRevocations().isEmpty)
+        #expect(try await SessionStore(storage: storage).pendingRevocations().isEmpty)
 
         let refusing = try signedIn()
         let down = StubTransport().on("POST", "/oauth/revoke", status: 503)
@@ -563,7 +566,94 @@ struct LinkControllerTests {
         await other.send(.signOut)
         try await other.until { await $0.presentation.snapshot.phase == .signedOut }
         #expect(await other.state.unrevoked.map(\.repository) == ["ada.example.com"])
-        #expect(SessionStore(storage: refusing).pendingRevocations().count == 1)
+        #expect(try await SessionStore(storage: refusing).pendingRevocations().count == 1)
+    }
+
+    /// A sign-out whose removal the store refuses is no sign-out: the link
+    /// stays signed in, the token stays kept for revocation and is not
+    /// revoked as the one in use, the problem offers Try Again, and Settings
+    /// says it above Sign Out. Tried again once the store removes it, it
+    /// signs out and revokes the token.
+    @Test func aSignOutTheStoreCannotCompleteStaysSignedInAndOffersToTryAgain() async throws {
+        let storage = try signedIn()
+        storage.failDeletes(of: "session", with: MemoryStorage.locked)
+        let stub = StubTransport().on("POST", "/oauth/revoke")
+        let harness = ControllerHarness(link(storage), environment: environment(transport: stub))
+        try await harness.until { await $0.presentation.snapshot.phase == .signedIn }
+        await harness.send(.signOut)
+        try await harness.until { await $0.presentation.signOutProblem != nil }
+        let presented = await harness.presentation
+        #expect(presented.snapshot.phase == .signedIn)
+        #expect(presented.signOutProblem?.fix == ProblemFix(title: "Try Again", action: .tryAgain))
+        #expect(presented.signOutProblem?.message.contains("still signed in") == true)
+        #expect(await harness.state.signingOut == false)
+        #expect(stub.sent("POST", "/oauth/revoke").isEmpty)
+        let store = SessionStore(storage: storage)
+        #expect(await store.load() == session)
+        #expect(try await store.pendingRevocations() == [session])
+        let repository = try #require(presented.repository)
+        let rows = SettingsPresenter.repository(repository, signOutProblem: presented.signOutProblem)[0].rows.map(\.id)
+        #expect(rows.suffix(2) == [.repository(.signOutProblem), .repository(.signOut)])
+
+        storage.failDeletes(of: "session", with: nil)
+        await harness.send(.signOut)
+        try await harness.until { await $0.presentation.snapshot.phase == .signedOut }
+        #expect(stub.sent("POST", "/oauth/revoke").count == 1)
+        #expect(await harness.presentation.signOutProblem == nil)
+        #expect(try await store.pendingRevocations().isEmpty)
+    }
+
+    /// A session the store could not read is not signed out: the status
+    /// says so with Try Again, and no token kept for revocation is revoked
+    /// as though none were in use, here the one in use itself. Read again,
+    /// the link signs in, and the token in use is forgotten from the queue,
+    /// never revoked.
+    @Test func aSessionThatCannotBeReadIsNotSignedOutAndRevokesNothing() async throws {
+        let storage = try signedIn()
+        let store = SessionStore(storage: storage)
+        try await store.keepForRevocation(session)
+        storage.failReads(of: "session", with: MemoryStorage.locked)
+        let stub = StubTransport().on("POST", "/oauth/revoke")
+        let harness = ControllerHarness(link(storage), environment: environment(transport: stub))
+        try await harness.until { await $0.state.sessionProblem != nil }
+        let presented = await harness.presentation
+        #expect(presented.status.sentence == "Your sign-in could not be read on this iPhone. Tasks stay there until it is.")
+        #expect(presented.status.problem?.title == "Sign-in not read on this iPhone")
+        #expect(presented.status.actions == [ActionButton("Try Again", .readAgain)])
+        #expect(presented.status.notice?.text == "Your sign-in could not be read")
+        #expect(
+            SettingsRoute<NoApp>.route(.perform(row: .status(.action(.readAgain))), settings: { _ in nil }, clearSaved: nil)
+                == .link(.readAgain))
+        #expect(stub.requests.isEmpty)
+        #expect(try await store.pendingRevocations() == [session])
+
+        storage.failReads(of: "session", with: nil)
+        await harness.send(.readAgain)
+        try await harness.until { await $0.presentation.snapshot.phase == .signedIn }
+        #expect(await harness.state.sessionProblem == nil)
+        #expect(try await store.pendingRevocations().isEmpty)
+        #expect(stub.sent("POST", "/oauth/revoke").isEmpty)
+    }
+
+    /// A session read once and then not keeps what was read: the link stays
+    /// signed in, sends nothing meanwhile, and coming forward reads it again.
+    @Test func aSessionThatCannotBeReadAgainKeepsWhatWasLastRead() async throws {
+        let storage = try signedIn()
+        let harness = ControllerHarness(link(storage, packages: [:]), environment: environment())
+        try await harness.until { await $0.presentation.snapshot.phase == .signedIn }
+        storage.failReads(of: "session", with: MemoryStorage.locked)
+        await harness.send(.signedIn)
+        try await harness.until { await $0.state.sessionProblem != nil }
+        let state = await harness.state
+        #expect(state.session?.repository == "ada.example.com")
+        #expect(!state.canSend)
+        #expect(await harness.presentation.snapshot.phase == .signedIn)
+        await harness.send(.sendNow)
+        #expect(await harness.state.sending == false)
+        storage.failReads(of: "session", with: nil)
+        await harness.send(.refresh(force: false))
+        try await harness.until { await $0.state.sessionProblem == nil }
+        #expect(await harness.state.session?.repository == "ada.example.com")
     }
 
     @Test func aCheckRunsAtMostEveryIntervalUnlessForced() async throws {

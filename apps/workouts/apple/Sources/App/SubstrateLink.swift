@@ -65,7 +65,7 @@ final class SubstrateLink {
     /// replaces is revoked like any replaced one.
     func signIn(_ probe: ServerProbe.Result) async throws {
         guard let oauth = OAuthClient(manifest: manifest, probe: probe) else { throw URLError(.badServerResponse) }
-        let current = SessionStore.workouts.load()
+        let current = await SessionStore.workouts.load()
         let session = try await oauth.signIn(server: probe.origin, repository: probe.repository, keepingRejectedIn: .workouts)
         try await SessionStore.workouts.save(session, replacing: current)
         root?.send(.signedIn)
@@ -75,7 +75,7 @@ final class SubstrateLink {
     /// scope the owner left out. The old access works until the new one is
     /// kept.
     func reauthorize() async {
-        guard let old = SessionStore.workouts.load(), !authorizing else { return }
+        guard let old = await SessionStore.workouts.load(), !authorizing else { return }
         authorizing = true
         accessProblem = nil
         defer { authorizing = false }
@@ -124,6 +124,7 @@ final class SubstrateLink {
         case .signIn: break
         case let .retry(id): root?.send(.retry(id))
         case let .discard(id): root?.send(.discard(id))
+        case .readAgain: root?.send(.readAgain)
         }
     }
 

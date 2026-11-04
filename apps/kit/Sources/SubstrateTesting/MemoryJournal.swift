@@ -11,6 +11,7 @@ public final class MemoryJournal<Event: Codable & Sendable, State: Codable & Sen
     private var asideCount = 0
     private var readCount = 0
     private var failing: (any Error)?
+    private var failingReads: (any Error)?
 
     public init(events: [Event]? = nil, state: State? = nil) {
         stored = events.map { StoredJournal(events: $0, cachedState: state) }
@@ -51,6 +52,14 @@ public final class MemoryJournal<Event: Codable & Sendable, State: Codable & Sen
         lock.unlock()
     }
 
+    /// Every read throws `error` until it is set to nil: a journal the
+    /// device cannot read, such as `JournalUnavailable` for a lock.
+    public func failReads(with error: (any Error)?) {
+        lock.lock()
+        failingReads = error
+        lock.unlock()
+    }
+
     public func write(events: [Event], state: State) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -63,6 +72,7 @@ public final class MemoryJournal<Event: Codable & Sendable, State: Codable & Sen
         lock.lock()
         defer { lock.unlock() }
         readCount += 1
+        if let failingReads { throw failingReads }
         return stored
     }
 

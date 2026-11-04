@@ -43,7 +43,9 @@ final class ChatHost {
         // signed-in repository's, so `ChatStorage` keeps the link generation
         // in each and moves it as a sign-out retires the folder.
         var environment = AppEnvironment.apple(transport: transport, folders: folders)
-        environment.client = ClientSource { store.load().map { SubstrateClient(server: $0.server, token: $0.secret, transport: transport) } }
+        environment.client = ClientSource {
+            await store.load().map { SubstrateClient(server: $0.server, token: $0.secret, transport: transport) }
+        }
         environment.devices.notifications = ChatServices.notifications
         environment.devices.background = ChatServices.background
         #if os(iOS)

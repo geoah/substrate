@@ -110,6 +110,13 @@ public struct HistoryStore: Sendable {
         try decode(Data(contentsOf: url(for: id))).entry
     }
 
+    /// The session's file, nil where there is none. One that is there and
+    /// cannot be read or decoded throws: not the same as none.
+    public func find(_ id: SessionID) throws -> HistoryEntry? {
+        guard let data = try WorkoutsFiles.read(url(for: id)) else { return nil }
+        return try decode(data).entry
+    }
+
     /// Writes the session's file whole, at Finish and when the Health save returns.
     public func write(_ entry: HistoryEntry) throws {
         let file: JSONObject = try [

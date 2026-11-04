@@ -19,7 +19,11 @@ import SubstrateRuntime
 /// The link opens on its own: its event at open loads the session, then
 /// follows the network and the outbox, checks the status and reads the
 /// packages. The outbox's reports move the Status screen, and a write the
-/// app queues starts a flush wherever the link can send.
+/// app queues starts a flush wherever the link can send. A session the
+/// store could not read is neither signed in nor signed out: the facts last
+/// read stay, what needs the token waits, and the tokens kept for revocation
+/// stay kept until the session in use is known, so none is revoked in its
+/// place.
 public struct LinkController<App: LinkedApp>: Controller {
     public enum Command: Bridged, Equatable {
         /// A sign-in stored a new session: it is loaded again.
@@ -30,11 +34,18 @@ public struct LinkController<App: LinkedApp>: Controller {
         case retry(UUID)
         case discard(UUID)
         case signOut
+        /// The session read again, after a read that failed.
+        case readAgain
     }
 
     public enum Event: Codable, Equatable, Sendable {
         case loading
-        case loaded(session: SessionFacts?, unrevoked: [SessionFacts], generation: Int)
+        /// The session as read, with the tokens still waiting to be revoked;
+        /// nil `unrevoked` where the queue could not be read, which leaves
+        /// what was known of it.
+        case loaded(session: SessionFacts?, unrevoked: [SessionFacts]?, generation: Int)
+        /// The session could not be read, in words: not signed out.
+        case unreadable(String)
         case checkStarted
         case checked(AppStatus)
         case packagesRead([String: HeldPackage])
@@ -45,7 +56,8 @@ public struct LinkController<App: LinkedApp>: Controller {
         case discardAsked(UUID)
         case signOutStarted
         case signedOut(generation: Int, unrevoked: [SessionFacts])
-        case signOutFailed(String)
+        /// The session stays: the generation moved first where it moved.
+        case signOutFailed(String, generation: Int?)
         /// The app said something about the connection.
         case reported(LinkReport)
     }
@@ -126,14 +138,16 @@ public struct LinkController<App: LinkedApp>: Controller {
     public func events(for command: Command, in context: Enrichment<LinkController>) -> [Event] {
         let state = context.state
         switch command {
-        case .signedIn:
+        case .signedIn, .readAgain:
             return [.loading]
         case let .refresh(force):
+            // Coming forward reads again a session that could not be read.
+            if state.sessionProblem != nil { return [.loading] }
             guard state.session != nil, !state.checking else { return [] }
             if !force, let last = state.status?.checkedAt, context.now.timeIntervalSince(last) < checkInterval { return [] }
             return [.checkStarted]
         case .sendNow:
-            return state.session == nil || state.sending ? [] : [.sendStarted]
+            return state.session == nil || state.sessionProblem != nil || state.sending ? [] : [.sendStarted]
         case let .retry(id):
             return [.retryAsked(id)]
         case let .discard(id):
@@ -162,12 +176,16 @@ public struct LinkController<App: LinkedApp>: Controller {
                 next.packages = [:]
             }
             next.session = session
-            next.unrevoked = unrevoked
+            if let unrevoked { next.unrevoked = unrevoked }
             next.generation = generation
+            next.sessionProblem = nil
             // A token loaded again is a new one: what the old one was
             // refused no longer holds.
             next.tokenRefused = false
             next.scopeRefused = false
+        case let .unreadable(problem):
+            next.sessionProblem = problem
+            next.checking = false
         case .checkStarted:
             next.checking = true
         case let .checked(status):
@@ -196,9 +214,10 @@ public struct LinkController<App: LinkedApp>: Controller {
             next.seenRevision = state.seenRevision
             next.generation = generation
             next.unrevoked = unrevoked
-        case let .signOutFailed(problem):
+        case let .signOutFailed(problem, generation):
             next.signingOut = false
             next.signOutProblem = problem
+            if let generation { next.generation = generation }
         case .reported(.accessEnded):
             next.tokenRefused = true
         case .reported(.needsApproval):
@@ -230,7 +249,7 @@ public struct LinkController<App: LinkedApp>: Controller {
         case .checked:
             // The check carries the build's floors, and the server upgrades
             // a package behind them at once where it may: read them again.
-            return state.session == nil || packages.isEmpty ? [] : [.readPackages]
+            return state.session == nil || state.sessionProblem != nil || packages.isEmpty ? [] : [.readPackages]
         case let .network(path):
             // Back online: what waits goes.
             return path.online && state.canSend && state.outbox.sendable > 0 ? [.flush] : []
@@ -264,32 +283,57 @@ public struct LinkController<App: LinkedApp>: Controller {
     }
 
     public func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
-        let (sessions, manifest, packages) = (sessions, manifest, packages)
-        let outbox = outboxes.flatMap { find in sessions.load().flatMap { find(SessionFacts($0)) } } ?? outbox
+        let (sessions, manifest, packages, outboxes, fixed) = (sessions, manifest, packages, outboxes, outbox)
         let transport = environment.devices.transport
         let folder = environment.folder
         let now = environment.clock
         @Sendable func client(_ session: Session) -> SubstrateClient {
             SubstrateClient(server: session.server, token: session.secret, transport: transport)
         }
+        /// The outbox of the repository the stored session is signed in to,
+        /// found when the work runs: none while the session cannot be read.
+        @Sendable func current() async -> Outbox? {
+            guard let outboxes else { return fixed }
+            return await sessions.load().flatMap { outboxes(SessionFacts($0)) }
+        }
+        @Sendable func unreadable(_ status: Int32) -> Event {
+            .unreadable(SessionUnreadable(status: status).localizedDescription)
+        }
+        let keepsOutbox = outboxes != nil || fixed != nil
         switch effect {
         case .load:
             return .once {
-                let session = sessions.load()
-                // A revocation cut short at the last launch is tried again.
-                let left = await sessions.revokePending(current: session, transport: transport)
+                let session: Session?
+                switch await sessions.read() {
+                case let .found(found): session = found
+                case .missing: session = nil
+                case let .failed(status): return unreadable(status)
+                }
+                // A revocation cut short at the last launch is tried again,
+                // now that the session in use is known.
+                let left: [Session]?
+                do {
+                    left = try await sessions.revokePending(transport: transport)
+                } catch let error as SessionUnreadable {
+                    return unreadable(error.status)
+                } catch {
+                    left = nil
+                }
                 let generation = folder.map { LinkGeneration(folder: $0).current } ?? 0
-                return .loaded(session: session.map(SessionFacts.init), unrevoked: left.map(SessionFacts.init), generation: generation)
+                return .loaded(
+                    session: session.map(SessionFacts.init), unrevoked: left.map { $0.map(SessionFacts.init) }, generation: generation)
             }
         case .followNetwork:
             guard let connectivity = environment.devices.connectivity else { return .none }
             return .sequence { Self.relay(connectivity.paths(), as: Event.network) }
         case .followOutbox:
-            guard let outbox else { return .none }
+            guard keepsOutbox else { return .none }
             return .sequence {
                 let (stream, continuation) = AsyncStream<Event>.makeStream(bufferingPolicy: .bufferingNewest(1))
                 let task = Task {
-                    for await summary in await outbox.changes() { continuation.yield(.outboxChanged(OutboxFacts(summary))) }
+                    if let outbox = await current() {
+                        for await summary in await outbox.changes() { continuation.yield(.outboxChanged(OutboxFacts(summary))) }
+                    }
                     continuation.finish()
                 }
                 continuation.onTermination = { _ in task.cancel() }
@@ -297,13 +341,19 @@ public struct LinkController<App: LinkedApp>: Controller {
             }
         case .check:
             return .once {
-                guard let session = sessions.load() else { return .checked(AppStatus(checkedAt: now.now)) }
-                let check = AppStatusCheck(manifest: manifest, session: session, client: client(session), now: { now.now })
-                return .checked(await check.run())
+                switch await sessions.read() {
+                case let .found(session):
+                    let check = AppStatusCheck(manifest: manifest, session: session, client: client(session), now: { now.now })
+                    return .checked(await check.run())
+                case .missing:
+                    return .checked(AppStatus(checkedAt: now.now))
+                case let .failed(status):
+                    return unreadable(status)
+                }
             }
         case .readPackages:
             return .once {
-                guard let session = sessions.load() else { return nil }
+                guard let session = await sessions.load() else { return nil }
                 var held: [String: HeldPackage] = [:]
                 for (package, needed) in packages {
                     held[package] = try? await HeldPackage.read(package, needing: needed, from: client(session))
@@ -314,39 +364,55 @@ public struct LinkController<App: LinkedApp>: Controller {
             // The outbox reports what the flush did; the result is its
             // state once it ends, so a flush that found one running reads
             // that one's.
-            guard let outbox else { return .none }
+            guard keepsOutbox else { return .none }
             return .once {
-                if let session = sessions.load() { await outbox.flush(client(session)) }
+                guard let outbox = await current() else { return nil }
+                if let session = await sessions.load() { await outbox.flush(client(session)) }
                 return .outboxChanged(OutboxFacts(await outbox.summary))
             }
         case let .retry(id):
-            guard let outbox else { return .none }
+            guard keepsOutbox else { return .none }
             return .once {
+                guard let outbox = await current() else { return nil }
                 try? await outbox.retry(id)
-                if let session = sessions.load() { await outbox.flush(client(session)) }
+                if let session = await sessions.load() { await outbox.flush(client(session)) }
                 return .outboxChanged(OutboxFacts(await outbox.summary))
             }
         case let .discard(id):
-            guard let outbox else { return .none }
+            guard keepsOutbox else { return .none }
             return .once {
-                try? await outbox.discard(id)
+                try? await current()?.discard(id)
                 return nil
             }
         case .signOut:
             return .once {
-                guard let session = sessions.load() else { return .signedOut(generation: 0, unrevoked: []) }
+                let session: Session
+                switch await sessions.read() {
+                case let .found(found): session = found
+                case .missing: return .signedOut(generation: folder.map { LinkGeneration(folder: $0).current } ?? 0, unrevoked: [])
+                case let .failed(status):
+                    return .signOutFailed(SessionUnreadable(status: status).localizedDescription, generation: nil)
+                }
+                var generation: Int?
                 do {
                     // The generation moves first: work scheduled before this
                     // writes nothing from here on.
-                    let generation = try folder.map { try LinkGeneration(folder: $0).bump() } ?? 0
+                    generation = try folder.map { try LinkGeneration(folder: $0).bump() } ?? 0
                     try await sessions.signOut(session, transport: transport)
-                    // The sign-out only kept the token for revocation: it is
-                    // revoked now, and only one the server did not confirm waits.
-                    let left = await sessions.revokePending(current: sessions.load(), transport: transport)
-                    return .signedOut(generation: generation, unrevoked: left.map(SessionFacts.init))
                 } catch {
-                    return .signOutFailed(explain(error, app: manifest.appName, server: session.server))
+                    return .signOutFailed(explain(error, app: manifest.appName, server: session.server), generation: generation)
                 }
+                // The sign-out only kept the token for revocation: it is
+                // revoked now, and only one the server did not confirm waits.
+                // A queue or a session that cannot be read leaves them all
+                // for the next load.
+                var left: [Session] = []
+                if let live = try? await sessions.revokePending(transport: transport) {
+                    left = live
+                } else if let pending = try? await sessions.pendingRevocations() {
+                    left = pending
+                }
+                return .signedOut(generation: generation ?? 0, unrevoked: left.map(SessionFacts.init))
             }
         }
     }
@@ -402,7 +468,7 @@ public struct LinkController<App: LinkedApp>: Controller {
         let status = LinkStatus.derive(
             signedIn: state.session != nil, packages: standings, outbox: state.outbox.state,
             waiting: state.outbox.waiting, issues: standing,
-            notKept: state.outbox.problem ?? input.journalProblem ?? input.childJournalProblem)
+            notKept: state.outbox.problem ?? input.journalProblem ?? input.childJournalProblem, unreadable: state.sessionProblem)
         let statusPresentation = StatusPresenter.present(
             status, words: words, host: host, packages: standings, sending: state.sending,
             waiting: state.outbox.waiting, parked: state.outbox.parked,
@@ -423,7 +489,9 @@ public struct LinkController<App: LinkedApp>: Controller {
             },
             ended: state.accessEnded ? AccessPresenter.ended(appName: manifest.appName, host: host ?? "Your server") : nil,
             status: statusPresentation,
-            signOutProblem: state.signOutProblem.map { ProblemPresentation(title: "Couldn't sign out", message: $0) },
+            signOutProblem: state.signOutProblem.map {
+                ProblemPresentation(title: "Couldn't sign out", message: $0, fix: ProblemFix(title: "Try Again", action: .tryAgain))
+            },
             app: input.children[Self.appKey])
     }
 }

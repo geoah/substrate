@@ -59,7 +59,7 @@ final class WorkoutsRoot {
         let settings = WorkoutsSettings.load()
         let folders = WorkoutsFolders(base: directory)
         var environment = AppEnvironment.apple()
-        environment.client = ClientSource { SessionStore.workouts.load().map { SubstrateClient($0) } }
+        environment.client = ClientSource { await SessionStore.workouts.load().map { SubstrateClient($0) } }
         let notifications = SystemNotifications()
         environment.devices.notifications = notifications
         environment.devices.activities = LiveActivities<WorkoutsActivityAttributes>(

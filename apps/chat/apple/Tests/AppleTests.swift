@@ -53,8 +53,8 @@ private struct LegacySession: Codable {
             grants: .init(scopes: ChatManifest.scopes), expiresAt: ends,
             revocation: URL(string: "https://s.example.com/oauth/revoke"))
         let scratch = SessionStore(account: "test-\(UUID().uuidString)", storage: store.storage)
-        defer { scratch.clear() }
-        try scratch.write(JSONEncoder().encode(app), account: scratch.account)
+        defer { try? keychain.delete(account: scratch.account) }
+        try keychain.write(JSONEncoder().encode(app), account: scratch.account)
         guard case let .found(session) = scratch.read() else {
             Issue.record("the kept session did not read")
             return

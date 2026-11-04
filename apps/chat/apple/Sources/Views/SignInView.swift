@@ -14,7 +14,7 @@ struct SignInView: View {
     @AppStorage("signin.server") private var address = ""
 
     var body: some View {
-        ConnectView(manifest: ChatManifest.manifest, address: $address, unrevoked: SessionStore.chat.pendingRevocations()) {
+        ConnectView(manifest: ChatManifest.manifest, address: $address, unrevoked: (try? SessionStore.chat.pendingRevocations()) ?? []) {
             // The app's own icon, drawn by scripts/icons.mjs like the AppIcon
             // set, light and dark.
             ConnectHeader(

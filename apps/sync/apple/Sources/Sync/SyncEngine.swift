@@ -344,7 +344,7 @@ actor SyncEngine {
     }
 
     private func run(_ only: Set<Source>?, budget: RunBudget) async {
-        guard let session = SessionStore.sync.load(), !Task.isCancelled else { return }
+        guard let session = await SessionStore.sync.load(), !Task.isCancelled else { return }
         do {
             _ = try InstallID.get()
         } catch {

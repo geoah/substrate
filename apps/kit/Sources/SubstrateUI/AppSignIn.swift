@@ -13,7 +13,7 @@ struct AppSignIn<App: LinkedApp>: View {
     let icon: Image?
 
     var body: some View {
-        ConnectView(manifest: shell.manifest, address: $address, unrevoked: shell.sessions.pendingRevocations()) {
+        ConnectView(manifest: shell.manifest, address: $address, unrevoked: (try? shell.sessions.pendingRevocations()) ?? []) {
             ConnectHeader(appName: shell.manifest.appName, tagline: tagline, icon: icon)
         } onSignIn: { probe in
             try await shell.signIn(probe)

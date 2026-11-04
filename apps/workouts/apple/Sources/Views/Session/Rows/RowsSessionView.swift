@@ -35,6 +35,9 @@ struct RowsSessionView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
+                    if session.historyUnread {
+                        HistoryUnreadBanner()
+                    }
                     if session.journalWriteFailed {
                         NotSavingBanner()
                     }

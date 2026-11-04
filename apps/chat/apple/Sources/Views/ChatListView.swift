@@ -206,7 +206,7 @@ struct ReviewSheet: View {
             }
         }
         .task {
-            guard let session = SessionStore.chat.load() else { return }
+            guard let session = await SessionStore.chat.load() else { return }
             let status = await host.model.runtime.state.status
             changes = ChatManifest.manifest.review(status, session: session)
         }

@@ -128,13 +128,13 @@ final class SessionKindTests: XCTestCase {
     /// A session every build before app access kept still signs in: a
     /// password one, full access, with its own token id; and written back,
     /// such a build still reads it.
-    func testAPasswordSessionKeptByAnEarlierBuildStillReads() throws {
+    func testAPasswordSessionKeptByAnEarlierBuildStillReads() async throws {
         let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
-        defer { store.clear() }
+        defer { forget(store) }
         // As the earlier build's JSONEncoder wrote its four fields.
         let earlier = #"{"server":"https:\/\/ada.example.com","repository":"ada.example.com","secret":"sub_x","tokenID":"tok_1"}"#
-        try store.write(Data(earlier.utf8), account: store.account)
-        guard case let .found(session) = store.read() else { return XCTFail("the earlier build's session did not read") }
+        try await store.write(Data(earlier.utf8), account: store.account)
+        guard case let .found(session) = await store.read() else { return XCTFail("the earlier build's session did not read") }
         XCTAssertFalse(session.isApp)
         XCTAssertNil(session.grants)
         XCTAssertEqual(session.server.absoluteString, "https://ada.example.com")
@@ -148,21 +148,21 @@ final class SessionKindTests: XCTestCase {
             let secret: String
             let tokenID: String
         }
-        try store.save(session)
-        guard case let .found(data) = store.data(account: store.account) else { return XCTFail("the session was not kept") }
+        try await store.save(session)
+        guard case let .found(data) = await store.data(account: store.account) else { return XCTFail("the session was not kept") }
         XCTAssertEqual(try JSONDecoder().decode(Earlier.self, from: data).tokenID, "tok_1")
     }
 
-    func testAnAppSessionKeepsWhatItWasApproved() throws {
+    func testAnAppSessionKeepsWhatItWasApproved() async throws {
         let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
-        defer { store.clear() }
+        defer { forget(store) }
         let session = Session(
             server: URL(string: "https://ada.example.com")!, repository: "ada.example.com", secret: "sub_app_x",
             clientID: SyncManifest.localClientID, scopes: SyncManifest.scopes + ["webhook:applehealth-webhook"],
             expiresAt: Date(timeIntervalSinceReferenceDate: 815_000_000),
             revocation: URL(string: "https://ada.example.com/oauth/revoke"))
-        try store.save(session)
-        guard case let .found(read) = store.read() else { return XCTFail("the app session did not read") }
+        try await store.save(session)
+        guard case let .found(read) = await store.read() else { return XCTFail("the app session did not read") }
         XCTAssertEqual(read, session)
         XCTAssertTrue(read.isApp)
         XCTAssertEqual(read.grants?.delivers(SyncEngine.trigger), true)
@@ -360,18 +360,20 @@ final class RevocationTests: XCTestCase {
 
     func testAReplacedTokenIsKeptUntilTheServerRevokesIt() async throws {
         let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
-        defer { for old in store.pendingRevocations() { store.revoked(old) } }
+        defer { forget(store) }
         let old = Session(server: server, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
         let current = Session(
             server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
             scopes: SyncManifest.scopes)
-        try store.keepForRevocation(old)
+        try await store.save(current)
+        try await store.keepForRevocation(old)
 
         let stub = StubTransport()
         stub.on("DELETE", "/tokens/tok_1", status: 503, json: #"{"error":{"code":"unavailable","message":"try later"}}"#)
-        var live = await store.revokePending(current: current, transport: stub)
+        var live = try await store.revokePending(transport: stub)
         XCTAssertEqual(live, [old])
-        XCTAssertEqual(store.pendingRevocations(), [old])
+        let pending = try await store.pendingRevocations()
+        XCTAssertEqual(pending, [old])
         XCTAssertEqual(stub.sent("DELETE", "/tokens/tok_1").first?.value(forHTTPHeaderField: "Authorization"), "Bearer sub_password")
         XCTAssertEqual(
             UnrevokedNotices.sentences(appName: SyncManifest.appName, unrevoked: live),
@@ -381,35 +383,34 @@ final class RevocationTests: XCTestCase {
             ])
 
         stub.on("DELETE", "/tokens/tok_1", status: 204, json: "")
-        live = await store.revokePending(current: current, transport: stub)
+        live = try await store.revokePending(transport: stub)
         XCTAssertEqual(live, [])
-        XCTAssertEqual(store.pendingRevocations(), [])
+        let none = try await store.pendingRevocations()
+        XCTAssertEqual(none, [])
     }
 
     /// A sign-out forgets the session once its token is kept, and keeps it
     /// until the server answers 200; a busy server's answer is no revocation.
     func testASignedOutTokenIsKeptUntilTheServerRevokesIt() async throws {
         let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
-        defer {
-            for old in store.pendingRevocations() { store.revoked(old) }
-            store.clear()
-        }
+        defer { forget(store) }
         let app = Session(
             server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
             scopes: SyncManifest.scopes)
-        try store.save(app)
+        try await store.save(app)
         let offline = StubTransport()
         try await store.signOut(app, transport: offline)
         XCTAssertTrue(offline.sent("POST", "/oauth/revoke").isEmpty)
-        XCTAssertNil(store.load())
+        let signedOut = await store.load()
+        XCTAssertNil(signedOut)
         let busy = StubTransport()
         busy.on("POST", "/oauth/revoke", status: 429, json: "")
-        let live = await store.revokePending(current: nil, transport: busy)
+        let live = try await store.revokePending(transport: busy)
         XCTAssertEqual(live, [app])
         XCTAssertTrue(UnrevokedNotices.sentences(appName: SyncManifest.appName, unrevoked: live)[0].hasSuffix("Settings, under Apps."))
         let ok = StubTransport()
         ok.on("POST", "/oauth/revoke", json: "")
-        let none = await store.revokePending(current: nil, transport: ok)
+        let none = try await store.revokePending(transport: ok)
         XCTAssertEqual(none, [])
         let body = String(decoding: try XCTUnwrap(ok.sent("POST", "/oauth/revoke").first?.httpBody), as: UTF8.self)
         XCTAssertEqual(body, "token=sub_app_x&client_id=http%3A%2F%2F127.0.0.1%2Fsubstrate-sync")
@@ -419,13 +420,22 @@ final class RevocationTests: XCTestCase {
     /// that one is forgotten from the list, never revoked.
     func testTheSessionInUseIsNeverRevoked() async throws {
         let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
-        defer { for old in store.pendingRevocations() { store.revoked(old) } }
+        defer { forget(store) }
         let current = Session(server: server, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
-        try store.keepForRevocation(current)
+        try await store.save(current)
+        try await store.keepForRevocation(current)
         let stub = StubTransport()
-        let live = await store.revokePending(current: current, transport: stub)
+        let live = try await store.revokePending(transport: stub)
         XCTAssertEqual(live, [])
         XCTAssertTrue(stub.sent("DELETE", "/tokens/tok_1").isEmpty)
-        XCTAssertEqual(store.pendingRevocations(), [])
+        let pending = try await store.pendingRevocations()
+        XCTAssertEqual(pending, [])
     }
+}
+
+/// A test's Keychain items gone: its session and the tokens kept beside it.
+private func forget(_ store: SessionStore) {
+    let keychain = store.storage as? KeychainStorage
+    try? keychain?.delete(account: store.account)
+    try? keychain?.delete(account: store.revocationsAccount)
 }

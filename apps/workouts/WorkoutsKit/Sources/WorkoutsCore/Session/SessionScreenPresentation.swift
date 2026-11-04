@@ -35,6 +35,10 @@ public struct SessionScreenPresentation: Codable, Equatable, Sendable {
     public var alerts: NotificationPermission?
     /// Journals that did not load, set aside (§2.3).
     public var setAside: [UnreadableRecord]
+    /// History holds a file for the session in progress that could not be
+    /// read: it may already be saved, so it cannot be changed until the
+    /// file reads.
+    public var historyProblem: String?
 
     public init(
         session: SessionPresentation? = nil, state: SessionState? = nil, starting: Bool = false, finishing: Bool = false,
@@ -42,7 +46,7 @@ public struct SessionScreenPresentation: Codable, Equatable, Sendable {
         finishProblem: String? = nil, finishOutcomes: [UUID: String?] = [:], journalProblem: String? = nil,
         cover: Signal<Bool> = Signal(), coverVisible: Bool = false, cue: Signal<SessionCue> = Signal(), finishFlow: Bool = false,
         startAfterFinish: StartRequest? = nil, undo: SessionEvent.RestoreSet? = nil, alerts: NotificationPermission? = nil,
-        setAside: [UnreadableRecord] = []
+        setAside: [UnreadableRecord] = [], historyProblem: String? = nil
     ) {
         self.session = session
         self.state = state
@@ -62,6 +66,7 @@ public struct SessionScreenPresentation: Codable, Equatable, Sendable {
         self.undo = undo
         self.alerts = alerts
         self.setAside = setAside
+        self.historyProblem = historyProblem
     }
 
     public var isActive: Bool { session != nil }

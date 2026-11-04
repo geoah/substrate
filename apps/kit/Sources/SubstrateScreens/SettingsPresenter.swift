@@ -7,8 +7,9 @@ import SubstrateRuntime
 /// about. Each fact is a row of its own, with an id that names it.
 public enum SettingsPresenter {
     /// The repository's section, then its approved access as a section of
-    /// its own, one row per scope.
-    public static func repository(_ repository: RepositoryPresentation) -> [SettingsSection] {
+    /// its own, one row per scope. A sign-out that failed says why above
+    /// Sign Out, which tries it again.
+    public static func repository(_ repository: RepositoryPresentation, signOutProblem: ProblemPresentation? = nil) -> [SettingsSection] {
         var rows = [
             SettingsRow(id: .repository(.server), label: repository.server.label, control: .value(repository.server.value, verbatim: false)),
             SettingsRow(
@@ -23,6 +24,9 @@ public enum SettingsPresenter {
         }
         for (index, notice) in repository.unrevoked.enumerated() {
             rows.append(SettingsRow(id: .repository(.unrevoked(index)), label: notice.title ?? "", control: .problem(notice)))
+        }
+        if let signOutProblem {
+            rows.append(SettingsRow(id: .repository(.signOutProblem), label: signOutProblem.title ?? "", control: .problem(signOutProblem)))
         }
         rows.append(
             SettingsRow(
@@ -111,7 +115,7 @@ public enum SettingsPresenter {
     ) -> SettingsPresentation {
         var all = sections
         all += status(link.status)
-        if let repository = link.repository { all += self.repository(repository) }
+        if let repository = link.repository { all += self.repository(repository, signOutProblem: link.signOutProblem) }
         if let storage { all.append(storage) }
         all.append(self.about(about))
         return SettingsPresentation(sections: all)

@@ -49,6 +49,8 @@ public enum StatusAction: Bridged, Hashable, Sendable {
     case renew
     case retry(UUID)
     case discard(UUID)
+    /// The session read again, after a read that failed.
+    case readAgain
 }
 
 /// The writes the server refused, listed for the owner.

@@ -115,6 +115,50 @@ struct RuntimeLoopTests {
         #expect(steps(harness.trace) == ["set aside []", "presented"])
     }
 
+    /// A journal the device could not read (a lock, an I/O error) is never
+    /// written over: what it would keep is refused, after a read again each
+    /// time, and once a read succeeds its events are folded as at open and
+    /// the session goes on from them.
+    @Test func aJournalThatCannotBeReadIsNeverWrittenOver() async throws {
+        let id = UUID()
+        let held: [Training.Event] = [.started(id: id, at: Date(timeIntervalSince1970: 0)), .logged("a")]
+        let stored = MemoryJournal<Training.Event, Training.State>(events: held)
+        stored.failReads(with: JournalUnavailable(reason: "the device is locked"))
+        let harness = ControllerHarness(Training(store: stored, shelf: shelf, resumes: true), performsEffects: false)
+        #expect(await harness.state == Training.State())
+        await harness.send(.start)
+        #expect(await harness.presentation.refusal?.contains("the device is locked") == true)
+        await harness.send(.log("b"))
+        #expect(await harness.state == Training.State())
+        #expect(stored.writes.isEmpty)
+        #expect(stored.events == held)
+        #expect(stored.setAsideCount == 0)
+        #expect(stored.reads == 3)
+
+        stored.failReads(with: nil)
+        await harness.send(.log("b"))
+        #expect(await harness.state == Training.State(id: id, sets: ["a", "b"]))
+        #expect(stored.events == held + [.logged("b")])
+        // The open's event runs for the session read late, as it would have
+        // at open.
+        #expect(harness.effects.contains(.restoreActivity(sets: 1)))
+    }
+
+    /// A reset forgets the session, and a journal that could not be read is
+    /// set aside for a look, never removed.
+    @Test func aResetSetsAsideAJournalThatCannotBeRead() async throws {
+        let stored = MemoryJournal<Training.Event, Training.State>(events: [.started(id: UUID(), at: Date(timeIntervalSince1970: 0))])
+        stored.failReads(with: JournalUnavailable(reason: "the device is locked"))
+        let harness = ControllerHarness(Training(store: stored, shelf: shelf), performsEffects: false)
+        _ = await harness.state
+        await harness.runtime.reset()
+        #expect(stored.setAsideCount == 1)
+        stored.failReads(with: nil)
+        await harness.send(.start)
+        #expect(await harness.presentation.open)
+        #expect(stored.events?.count == 1)
+    }
+
     @Test func aFinishThatCrashesBeforeItsHistoryIsWrittenReplaysToAnOpenSession() async throws {
         // The first launch: started, two sets, then Finish, whose history
         // write never comes back: the process dies.

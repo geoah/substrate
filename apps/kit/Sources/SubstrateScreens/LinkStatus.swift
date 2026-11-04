@@ -10,6 +10,10 @@ public enum LinkStatus: Codable, Hashable, Sendable {
     case local
     /// Signed in; these packages, by name, are being checked.
     case preparing([String])
+    /// The session on the device could not be read: not signed out, and
+    /// nothing that needs its token goes until it is read again. The reason
+    /// is the system's words, said apart from the sentence.
+    case unreadable(String)
     /// The token was refused or its access ended: sign in again.
     case signedOut
     /// The token lacks a scope the app needs, or a package it needs waits
@@ -37,10 +41,12 @@ public enum LinkStatus: Codable, Hashable, Sendable {
     ///     stands with it; none for an app that writes no package's kinds.
     ///   - notKept: why a change, or the outbox, could not be kept on the
     ///     device: the outbox's save problem, or a journal's.
+    ///   - unreadable: why the session on the device could not be read.
     public static func derive(
         signedIn: Bool, packages: [PackageStanding], outbox: OutboxState, waiting: Int, issues: [AppIssue] = [],
-        notKept: String? = nil
+        notKept: String? = nil, unreadable: String? = nil
     ) -> LinkStatus {
+        if let unreadable { return .unreadable(unreadable) }
         guard signedIn else { return .local }
         if issues.contains(.accessEnded) { return .signedOut }
         switch outbox {
@@ -148,6 +154,8 @@ public struct StatusWords: Codable, Hashable, Sendable {
         switch status {
         case .local:
             return local ?? "Not signed in. \(kept.capitalizedFirst) stay on \(device)."
+        case .unreadable:
+            return "Your sign-in could not be read on \(device). \(kept.capitalizedFirst) stay there until it is."
         case let .preparing(names):
             return "Checking the \(joinWords(names)) package\(names.count == 1 ? "" : "s") on your substrate."
         case .signedOut:

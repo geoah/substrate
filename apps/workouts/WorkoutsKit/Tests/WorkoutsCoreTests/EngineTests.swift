@@ -1163,7 +1163,9 @@ struct EngineJournalTests {
         let directory = try TemporaryDirectory()
         defer { directory.remove() }
         let replay = try ExampleReplay.run(EngineFixtures.session("sessions", EngineFixtures.fullyBody), finish: false)
-        let journal = SessionJournalFile(folder: try RepositoryFolder(adopting: directory.url, writingOptions: .atomic)).file
+        let journal = JournalFile<EventEnvelope, SessionState>(
+            folder: try RepositoryFolder(adopting: directory.url, writingOptions: .atomic), name: SessionJournalFile.fileName, area: .root,
+            format: SessionJournalFile.format)
         let state = try replay.script.current
         try journal.write(events: replay.script.events, state: state)
         let loaded = try #require(try journal.read())

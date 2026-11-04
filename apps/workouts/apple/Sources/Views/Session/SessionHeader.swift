@@ -74,6 +74,21 @@ struct NotSavingBanner: View {
     }
 }
 
+struct HistoryUnreadBanner: View {
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            Text("This session may already be saved, but its file in History couldn't be read. It can't be changed until it can.")
+                .font(.footnote)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(12)
+        .cardBackground(cornerRadius: 12)
+    }
+}
+
 struct AlertsOffBanner: View {
     @Environment(\.openURL) private var openURL
 

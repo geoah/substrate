@@ -33,6 +33,10 @@ public struct LinkState: Codable, Equatable, Sendable {
     public var generation = 0
     public var signingOut = false
     public var signOutProblem: String?
+    /// Why the session could not be read, until it is read again: not
+    /// signed out, so the facts last read stay and nothing that needs the
+    /// token runs meanwhile.
+    public var sessionProblem: String?
 
     public init() {}
 
@@ -44,7 +48,7 @@ public struct LinkState: Codable, Equatable, Sendable {
     /// Writes may go now: signed in with access, not known to be offline,
     /// no flush running, and the last one not stopped by the token.
     public var canSend: Bool {
-        guard session != nil, !accessEnded, !sending, network?.online != false else { return false }
+        guard session != nil, sessionProblem == nil, !accessEnded, !sending, network?.online != false else { return false }
         return outbox.state != .needsApproval
     }
 }
@@ -59,8 +63,8 @@ public struct OutboxFacts: Codable, Hashable, Sendable {
     public var parked: [ParkedWrite]
     public var flushing: Bool
     public var revision: Int
-    /// Why the outbox could not be saved, or the file it could not read and
-    /// set aside.
+    /// Why the outbox could not be read or saved, or the file it could not
+    /// decode and set aside.
     public var problem: String?
 
     public init(
@@ -80,6 +84,7 @@ public struct OutboxFacts: Codable, Hashable, Sendable {
         self.init(
             state: summary.state, waiting: summary.waiting, sendable: summary.sendable, parked: summary.parked.map(ParkedWrite.init),
             flushing: summary.flushing, revision: summary.revision,
-            problem: summary.saveProblem ?? summary.unreadable.map { "The queue could not be read and was kept aside as \($0.name)." })
+            problem: summary.unavailable ?? summary.saveProblem
+                ?? summary.unreadable.map { "The queue could not be read and was kept aside as \($0.name)." })
     }
 }

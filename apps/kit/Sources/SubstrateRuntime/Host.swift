@@ -22,6 +22,10 @@ final class Host<C: Controller>: @unchecked Sendable {
     /// dropped, whatever its key.
     private(set) var generation = 0
     private(set) var journalProblem: String?
+    /// Why the journal there could not be read: nothing is written over it,
+    /// so each event it would keep is refused, after a read again, until a
+    /// read succeeds or `reset` sets it aside.
+    private var unread: JournalUnavailable?
     /// A child's applied event and its state after it, offered to its
     /// parent to fold.
     var offerUp: ((C.Event, C.State) -> Void)?
@@ -70,10 +74,11 @@ final class Host<C: Controller>: @unchecked Sendable {
         do {
             guard let read = try journal.read() else { return false }
             stored = read
-        } catch is JournalUnavailable {
+        } catch let unavailable as JournalUnavailable {
             // The device could not read it (a lock, an I/O error): it stays
-            // where it is for the next launch.
-            journalProblem = "The journal could not be read."
+            // where it is, unwritten over, for a read again or the next launch.
+            unread = unavailable
+            journalProblem = "\(unavailable)"
             return false
         } catch {
             setAside(journal, because: error)
@@ -120,18 +125,22 @@ final class Host<C: Controller>: @unchecked Sendable {
 
     /// Each event in turn: the engine, the journal, the transient state, the
     /// presentation and effects requested for after, the link and the
-    /// children, then the parent's fold. The first refusal stops the rest.
+    /// children, then the parent's fold. The first refusal stops the rest. An
+    /// event the journal would keep, while the journal could not be read, is
+    /// refused unless a read again succeeds: written, it would replace what
+    /// the journal holds.
     func step(_ events: [C.Event]) {
         for event in events {
             guard !closed else { return }
+            if unread != nil, controller.journaling(of: event) != .skip, !readAgain(), let unread {
+                refuse(event, because: unread)
+                return
+            }
             let next: C.State
             do {
                 next = try controller.apply(event, to: state)
             } catch {
-                transient = controller.transient(afterRefusing: event, because: error, from: transient)
-                dirty = true
-                loop.trace(.refused(path: path, event: event, reason: String(describing: error)))
-                loop.requestPresent(.now)
+                refuse(event, because: error)
                 return
             }
             record(event, state: next)
@@ -149,6 +158,31 @@ final class Host<C: Controller>: @unchecked Sendable {
             follow(next)
             offerUp?(event, next)
         }
+    }
+
+    private func refuse(_ event: C.Event, because error: any Error) {
+        transient = controller.transient(afterRefusing: event, because: error, from: transient)
+        dirty = true
+        loop.trace(.refused(path: path, event: event, reason: String(describing: error)))
+        loop.requestPresent(.now)
+    }
+
+    /// The journal read again, where it could not be read: folded as at open
+    /// (the state it rebuilds replaces the one started without it, and the
+    /// event at open applies again for a journal that held events), so the
+    /// event that asked comes after what it holds. Answers whether the
+    /// journal can be written now.
+    private func readAgain() -> Bool {
+        guard unread != nil, let journal else { return true }
+        unread = nil
+        journalProblem = nil
+        let replayed = replay(journal)
+        guard unread == nil else { return false }
+        dirty = true
+        loop.requestPresent(.now)
+        follow(state)
+        if replayed, let event = controller.event(atOpen: true) { step([event]) }
+        return true
     }
 
     /// The link and the children after a state moved: a new snapshot goes
@@ -475,15 +509,25 @@ final class Host<C: Controller>: @unchecked Sendable {
     }
 
     /// Back to the initial state with no journal: every effect cancelled,
-    /// every result still on its way dropped, every child closed.
+    /// every result still on its way dropped, every child closed. A journal
+    /// that could not be read is set aside rather than removed, and one that
+    /// cannot be set aside either stays where it is, unwritten over.
     func reset() {
         generation += 1
         cancelAll()
         state = controller.initialState
         transient = controller.initialTransient
         journaled = []
-        try? journal?.delete()
-        journalProblem = nil
+        if unread != nil, let journal {
+            if let place = try? journal.setAside(at: loop.environment.clock.now) {
+                unread = nil
+                journalProblem = nil
+                loop.trace(.setAside(path: path, place: place))
+            }
+        } else {
+            try? journal?.delete()
+            journalProblem = nil
+        }
         dirty = true
         loop.requestPresent(.now)
         follow(state)
