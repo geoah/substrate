@@ -483,10 +483,17 @@ tagged commit on a macOS runner, with the key and the site from the
 `testflight` environment (the workflow's header names each). A pre-release
 goes from a Mac.
 
-The App Store Connect key signs, provisions and uploads: it needs the Admin
-role, as above, and with it Xcode makes and keeps the team's Apple
-Distribution certificate in the cloud, so the machine that runs it needs no
-certificate of its own. App Store Connect refuses a build number it already
+The App Store Connect key provisions and uploads; it needs the Admin role,
+as above. It signs nothing itself: an API key may not use the team's
+cloud-managed distribution certificate, so an automatic App Store export is
+refused. The export signs by hand instead, with the team's Apple
+Distribution certificate from the keychain and, for the app and every
+extension in its archive, an App Store profile the API makes (or reuses,
+named `<bundle id> App Store <certificate id>`) and installs where Xcode
+reads profiles (`appstoreconnect.swift profiles`). The machine that runs it
+needs that certificate's identity in its keychain: kept with the release's
+secrets as a `.p12`, and imported by the CI job into a keychain of its own.
+App Store Connect refuses a build number it already
 has, and the build number is the UTC time, so a rerun builds again rather
 than resume; an upload that failed partway leaves the apps before it sent.
 
