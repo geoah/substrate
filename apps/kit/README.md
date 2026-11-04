@@ -116,7 +116,8 @@ all, so a runtime that keeps moving and never gets there (a livelock) ends;
 `until(timeout:)` bounds the whole wait by its timeout. `untilIdle(since:)`
 waits until every effect started after a mark (`effectsStarted`) has ended
 and none waits for a presentation (`Runtime.activity`), moving the
-`TestClock` no further than `advancing:` for work that sleeps on it, so a
+`TestClock` to each sleep that ends within `advancing:` for work that
+sleeps on it (`until(advancing:)` does the same for any condition), so a
 test asserts what did not happen once nothing that could do it is still at
 work.
 

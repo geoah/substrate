@@ -109,15 +109,17 @@ public final class ControllerHarness<C: Controller>: @unchecked Sendable {
     /// `until`, for work that waits on the clock (a coalesced save, a
     /// presentation's window, a check a second later): while `condition`
     /// does not hold, the clock moves to the earliest sleep already
-    /// waiting, never more than `window` seconds past now, so a sleep that
-    /// begins late is not stepped over and a longer one is never woken.
+    /// waiting where that sleep ends within `window` seconds of the clock's
+    /// now. A sleep that begins late is not stepped over, since the clock
+    /// only ever moves to a sleep's end, and a sleep longer than the window
+    /// is never the one stepped to.
     public func until(advancing window: TimeInterval, idle: Duration = ControllerHarness.idleBound,
                       _ condition: @Sendable (ControllerHarness<C>) async -> Bool) async throws
     {
-        let limit = clock.now.addingTimeInterval(window)
         try await until(idle: idle) { harness in
             if await condition(harness) { return true }
-            if let due = harness.clock.deadlines.first, due <= limit { harness.clock.advance(to: due) }
+            let clock = harness.clock
+            if let due = clock.deadlines.first, due <= clock.now.addingTimeInterval(window) { clock.advance(to: due) }
             return false
         }
     }
