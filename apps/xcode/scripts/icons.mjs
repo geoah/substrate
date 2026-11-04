@@ -52,7 +52,8 @@ const rect = (x, y, w, h, rr) => `M${x + rr},${y} H${x + w - rr} A${rr},${rr} 0 
 const circle = (cx, cy, rr) => `M${cx - rr},${cy} A${rr},${rr} 0 1 0 ${cx + rr},${cy} A${rr},${rr} 0 1 0 ${cx - rr},${cy} Z`;
 const spark = (cx, cy, s) => `M${cx},${cy - s} C${cx + s * 0.12},${cy - s * 0.12} ${cx + s * 0.12},${cy - s * 0.12} ${cx + s},${cy} C${cx + s * 0.12},${cy + s * 0.12} ${cx + s * 0.12},${cy + s * 0.12} ${cx},${cy + s} C${cx - s * 0.12},${cy + s * 0.12} ${cx - s * 0.12},${cy + s * 0.12} ${cx - s},${cy} C${cx - s * 0.12},${cy - s * 0.12} ${cx - s * 0.12},${cy - s * 0.12} ${cx},${cy - s} Z`;
 // Parts: [level, path] fills, or [level, path, strokeWidth] strokes. Level
-// "spark" is a small mark drawn on top in a contrasting colour.
+// "spark" is a small mark drawn on top in a contrasting colour, filled or
+// stroked.
 const GLYPHS = {
   // Three layers: the substrate.
   strata: () => [['back', rhombus(560)], ['mid', rhombus(440)], ['front', rhombus(320)]],
@@ -71,10 +72,13 @@ const GLYPHS = {
   chat: () => [['back', rect(392, 236, 370, 260, 110)],
     ['front', 'M358,278 L638,278 C710,278 758,326 758,398 L758,518 C758,590 710,638 638,638 L456,638 L352,712 L374,638 L358,638 C286,638 238,590 238,518 L238,398 C238,326 286,278 358,278 Z'],
     ['spark', spark(484, 458, 104)], ['spark', spark(604, 382, 42)]],
-  // A card of three lines, the first ticked: the list of things to do.
+  // A card of three rows, the first ticked: the list of things to do. Each
+  // row's mark sits clear of its line, and the tick is a spark, so it still
+  // reads as ticked at 29 px.
   checklist: () => [['back', rect(252, 214, 520, 520, 104)],
-    ['mid', rect(500, 316, 196, 60, 30)], ['mid', rect(500, 446, 196, 60, 30)], ['mid', rect(328, 576, 368, 60, 30)],
-    ['front', 'M306,428 L370,492 L470,360', 70]],
+    ['front', rect(510, 330, 202, 60, 30)], ['front', rect(510, 462, 202, 60, 30)], ['front', rect(510, 594, 202, 60, 30)],
+    ['front', circle(386, 492, 32)], ['front', circle(386, 624, 32)],
+    ['spark', 'M332,364 L370,402 L440,322', 70]],
 };
 
 function drawGlyph(name, mode, p, id) {
@@ -87,7 +91,7 @@ function drawGlyph(name, mode, p, id) {
   for (const lv of ['front', 'mid', 'back']) defs += `<linearGradient id="${id}${lv}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${shades[lv][0]}"/><stop offset="1" stop-color="${shades[lv][1]}"/></linearGradient>`;
   defs += `<filter id="${id}sh" x="-30%" y="-30%" width="160%" height="170%"><feGaussianBlur in="SourceAlpha" stdDeviation="24"/><feOffset dy="20" result="b"/><feFlood flood-color="${mode === 'light' ? p.lo : '#000000'}" flood-opacity="${mode === 'light' ? 0.13 : 0.4}"/><feComposite in2="b" operator="in" result="s"/><feMerge><feMergeNode in="s"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
   for (const [lv, d, w] of GLYPHS[name]()) {
-    if (lv === 'spark') { body += `<path d="${d}" fill="${shades.spark}"/>`; continue; }
+    if (lv === 'spark') { body += w ? `<path d="${d}" fill="none" stroke="${shades.spark}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>` : `<path d="${d}" fill="${shades.spark}"/>`; continue; }
     const op = 1;
     if (w) { body += `<path d="${d}" fill="none" stroke="url(#${id}${lv})" stroke-width="${w}" stroke-linecap="round" opacity="${op}"/>`; continue; }
     body += `<path d="${d}" fill="url(#${id}${lv})" stroke="url(#${id}${lv})" stroke-width="10" stroke-linejoin="round" opacity="${op}"/>` +
