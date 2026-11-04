@@ -14,7 +14,7 @@ extension RowsSession {
     }
 }
 
-@Suite("Rows island: parts and order")
+@Suite("Rows island: parts and order", .timeLimit(.minutes(10)))
 struct RowsIslandTests {
     @Test("the parts: rest only while resting, next only while its editor is out of view, after whenever there is one")
     func partSelection() {

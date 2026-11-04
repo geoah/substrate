@@ -29,7 +29,7 @@ private func decision(_ slot: RestSlot?, _ seconds: Seconds, _ source: RestSourc
     RestDecision(slot: slot, seconds: seconds, source: source)
 }
 
-@Suite("Rest rules: the lines of §4.7")
+@Suite("Rest rules: the lines of §4.7", .timeLimit(.minutes(10)))
 struct RestLineTests {
     @Test("line 0: after the last set no timer runs")
     func lineZero() throws {
@@ -264,7 +264,7 @@ struct RestLineTests {
 
 // MARK: - The examples, replayed
 
-@Suite("Rest rules: the example sessions")
+@Suite("Rest rules: the example sessions", .timeLimit(.minutes(10)))
 struct RestReplayTests {
     static let sessions = [
         ("sessions", EngineFixtures.day1First),
@@ -360,7 +360,7 @@ struct RestReplayTests {
 
 // MARK: - Rest measurement
 
-@Suite("Rest measurement (§4.8)")
+@Suite("Rest measurement (§4.8)", .timeLimit(.minutes(10)))
 struct RestMeasurementTests {
     @Test("22 October iso-lateral set 3: Skip at 1:38 of 2:00 is a skipped rest of 1:38")
     func skipped() throws {

@@ -6,7 +6,7 @@ import Testing
 /// written by hand in the export's shape (a quoted description over two
 /// lines, CRLF, warm-up, failure and drop rows, a superset, an exercise
 /// done twice, a timed and a distance set, two rows that do not read).
-@Suite("Hevy import")
+@Suite("Hevy import", .timeLimit(.minutes(10)))
 struct HevyImportTests {
     let london = TimeZone(identifier: "Europe/London")!
     let adapter = "substrate-workouts@test"

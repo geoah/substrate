@@ -84,14 +84,14 @@ The decisions that shape the server, rather than this app, are decision records 
 ### N1. Spotter
 
 - **Decided by** the lead, 2026-10-30.
-- **What:** the first build was called Spotter, with the bundle id `dev.rxtx.spotter`.
+- **What:** the first build was called Spotter, with the bundle id `org.example.spotter`.
 - **Why:** the lead flagged its pick to the owner so that it could change early: "Renaming
   means a new bundle id, so better decided early".
-- **Source:** the lead's report to the owner, 2026-10-31. Also geoah/rxtx.dev#112.
+- **Source:** the lead's report to the owner, 2026-10-31. Also the private repository's #112.
 
 ### N2. Substrate Spotter, with Spotter on the home screen
 
-- **Decided** 2026-11-01, in rxtx.dev commit `11acaa78`.
+- **Decided** 2026-11-01, in commit `11acaa78` of the private repository.
 - **Why:** "Every substrate app carries the family's prefix in its full name; the home
   screen keeps the short word, which iOS would otherwise squeeze." The commit does not say
   who asked for it.
@@ -115,7 +115,7 @@ The options, with their screens and rationales, are in [design/](design/README.m
   a tick), as Hevy and Strong lay them out ([design/table.md](design/table.md)).
 - **Why:** it is the layout of the owner's reference app, built from the teardown of the
   owner's Hevy screenshots ([research 06](research/06-app-teardown.md)).
-- **Source:** [DESIGN.md §7.6](../DESIGN.md#76-the-session-cover), geoah/rxtx.dev#112.
+- **Source:** [DESIGN.md §7.6](../DESIGN.md#76-the-session-cover), the private repository's #112.
 
 ### U2. Fix what Codex Astra's UI review found
 
@@ -126,7 +126,7 @@ The options, with their screens and rationales, are in [design/](design/README.m
   There were also larger RPE steppers, VoiceOver labels and two-row layouts at large text
   sizes.
 - **Source:** [reviews/ui-2026-10-31-astra.md](reviews/ui-2026-10-31-astra.md),
-  geoah/rxtx.dev#113.
+  the private repository's #113.
 
 ### U3. Stop copying Hevy
 
@@ -157,7 +157,7 @@ The options, with their screens and rationales, are in [design/](design/README.m
   list). Each set is one line, and the set to do now opens in place with steppers, an RPE
   strip and a Log button that says what it saves. It is the default layout; the Table stays
   as the second one (Settings > Session > Layout), a choice the lead made in
-  geoah/rxtx.dev#118.
+  the private repository's #118.
 - **Why:** Rows had the fastest single changes, the clearest "do this now", and supersets
   that read top to bottom in the order they are done
   ([design/rows/](design/rows/README.md)). The owner said: "let's get fable and astra to
@@ -327,7 +327,7 @@ exercise must never reinterpret history (Astra).
 `session.slots[].sets[]`: the planned sets as resolved at Start, written at Finish (Astra).
 A slot with no set done is still dropped at Finish, so its plan goes with it. The Rows-build
 review left that open ([reviews/rows-build-2026-10-31.md](reviews/rows-build-2026-10-31.md)),
-and it is a known gap of geoah/rxtx.dev#118.
+and it is a known gap of the private repository's #118.
 
 ### D9. The effort scale stated
 
@@ -388,7 +388,7 @@ the rest.
 - **Decided by** the owner, 2026-11-01.
 - **What:** "move this project into a pr on the substrate repo, move to option c, and
   integrate with substrate's new auth system, and rename the app to Substrate Workouts,
-  let's get a build working, deploy it on rxtx apps, open pr with screenshots, and the run
+  let's get a build working, deploy it on the release feed, open pr with screenshots, and the run
   reviews with astra and fable to start fixing issues."
 - **How:** the app signs in through SubstrateKit's app authorization
   ([0194](../../../docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
@@ -617,7 +617,7 @@ Two more, from the owner's first sessions with #1110's build, besides closing O1
 - **Nothing it does not show is lost (A2):** the editor changes typed fields only, so every
   field the app does not know (the coach's, a later package's, the owner's at any level) is
   written back as read. `RoutineEditTests` reads `floor-first-full-body` (the owner's words
-  replaced, since this repository is public) and `sample-every-feature` as geoah.me answered,
+  replaced, since this repository is public) and `sample-every-feature` as ada.example.com answered,
   writes unknown fields at every level, edits, encodes and diffs: only the edited field moves.
   `WORKOUTS_REAL_ROUTINES` runs it on the real records.
 - **Sessions:** a session copies its routine at Start (the journal keeps it), so an edit never

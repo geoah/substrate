@@ -990,6 +990,7 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 		if info.Scopes, derr = decodeScopes(scopes); derr != nil && !errors.Is(derr, scope.ErrRetired) {
 			return nil, fmt.Errorf("%w: token %s: %w", substrate.ErrCorrupt, info.ID, derr)
 		}
+		info.Retired = errors.Is(derr, scope.ErrRetired)
 		if err := readAppBuild(build, &info); err != nil {
 			return nil, err
 		}
@@ -1057,6 +1058,29 @@ func hashToken(secret string) string {
 // repository in the URL and none in the secret; a deleted record or an
 // expired stamp is simply no match, which is why revoking is a delete.
 func (s *service) Authenticate(ctx context.Context, tokenSecret string) (substrate.Dataset, substrate.TokenInfo, error) {
+	return s.resolveToken(ctx, tokenSecret, false)
+}
+
+// RevokeToken never hands a retired grant's dataset back to a caller.
+func (s *service) RevokeToken(ctx context.Context, tokenSecret, clientID string) error {
+	ds, info, err := s.resolveToken(ctx, tokenSecret, true)
+	if errors.Is(err, substrate.ErrAuth) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if clientID != "" && clientID != info.ClientID {
+		return nil
+	}
+	_, err = ds.Delete(ctx, substrate.ActorAPI, kindToken, info.ID, substrate.DeleteInput{})
+	if errors.Is(err, substrate.ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+func (s *service) resolveToken(ctx context.Context, tokenSecret string, revoking bool) (substrate.Dataset, substrate.TokenInfo, error) {
 	var zero substrate.TokenInfo
 	rest, ok := strings.CutPrefix(tokenSecret, tokenPrefix)
 	if !ok || rest == "" {
@@ -1068,6 +1092,9 @@ func (s *service) Authenticate(ctx context.Context, tokenSecret string) (substra
 	repo, info, err := s.tokenByHash(ctx, hashToken(tokenSecret))
 	if err != nil {
 		return nil, zero, err
+	}
+	if info.Retired && !revoking {
+		return nil, zero, fmt.Errorf("%w: retired token grant", substrate.ErrAuth)
 	}
 	ds, err := s.open(ctx, repo)
 	if err != nil {
@@ -1119,9 +1146,10 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, sub
 	info.ClientID, info.ClientName, info.AppAuthority = clientID.String, clientName.String, appAuthority.String
 	// A grant that cannot be read fails closed: reading it as absent would
 	// hand an app's token full access.
-	if info.Scopes, err = decodeScopes(scopes); err != nil {
+	if info.Scopes, err = decodeScopes(scopes); err != nil && !errors.Is(err, scope.ErrRetired) {
 		return Repository{}, zero, fmt.Errorf("%w: %w", substrate.ErrAuth, err)
 	}
+	info.Retired = errors.Is(err, scope.ErrRetired)
 	if err := readAppBuild(build, &info); err != nil {
 		return Repository{}, zero, err
 	}

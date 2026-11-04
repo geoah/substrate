@@ -3,14 +3,14 @@ import SubstrateLocal
 import WorkoutsCore
 import SubstrateCore
 
-/// The session controller's sync seam (`SessionSyncSink`) over the outbox: a
+/// The session controller's sync seam (`SessionWriteSink`) over the outbox: a
 /// finished session, a Health link, a new exercise, a discard and a delete
 /// each become queued writes, kept on disk before the call returns, and
 /// `onQueued` asks for a flush. A change the outbox could not keep goes to
 /// `onProblem` instead. A session in progress is not written: the phone
 /// resumes it from its journal, and its records go at Finish with the plan
 /// snapshot.
-public struct OutboxSink<Event: Sendable, State: Sendable>: SessionSyncSink {
+public struct OutboxSink<Event: Sendable, State: Sendable>: SessionWriteSink {
     public let outbox: Outbox
     public let codec: RecordCodec
     public let onQueued: @Sendable () async -> Void

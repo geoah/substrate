@@ -1,14 +1,14 @@
 # Spotter: suggesting the next set
 
-> **Where this came from.** Written on 2026-10-30 in rxtx.dev, as `research/workouts/`, for
+> **Where this came from.** Written on 2026-10-30 in the owner's private repository, as `research/workouts/`, for
 > the app then called Spotter (Substrate Workouts now); the version here is the one the
-> app's second build used (geoah/rxtx.dev#118). It was carried into this repository on
+> app's second build used (the private repository's #118). It was carried into this repository on
 > 2026-11-02 as written, with two changes. The links resolve inside this repository. The
-> draft kind paths `mneme.rxtx.dev/training/<kind>` now read as the app-owned
+> draft kind paths `mneme.example.org/training/<kind>` now read as the app-owned
 > `~/training/<kind>` they became (decision record [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)). Where the
-> text names the package home it recommended, a Mneme package `mneme.rxtx.dev/training`,
+> text names the package home it recommended, a Mneme package `mneme.example.org/training`,
 > that name is left as written: the home changed later, and the reasons are in
-> [decisions.md](../decisions.md). Mentions of Mneme, rxtx.dev paths or
+> [decisions.md](../decisions.md). Mentions of Mneme, private repository paths or
 > `apps/apple/spotter` describe the plan at the time. The package now lives in
 > [`Package/`](../../package/README.md), and the app's spec is [DESIGN.md](../../DESIGN.md).
 

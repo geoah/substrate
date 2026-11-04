@@ -115,7 +115,7 @@ private func events(_ count: Int) -> [TallyEvent] {
     }
 }
 
-@Suite("Session journal")
+@Suite("Session journal", .timeLimit(.minutes(10)))
 struct JournalTests {
     @Test("a write reloads exactly: events, decimals and instants")
     func writeAndReload() throws {
@@ -188,6 +188,37 @@ struct JournalTests {
         #expect(contents.cachedState == nil)
         #expect(await opened(journal).state == fold(log))
         #expect(try journal.read()?.cachedState == fold(log))
+    }
+
+    /// `Fixtures/journal/active-session.json` is a session's journal as this
+    /// build writes it (a start and one logged set, its instants as seconds
+    /// since 2001), standing for the file on phones today.
+    @Test("a journal a phone holds today reads, folds to its cached state and is written back as it was")
+    func todaysFile() async throws {
+        let directory = try TemporaryDirectory()
+        defer { directory.remove() }
+        let fixture = try #require(Bundle.module.url(forResource: "active-session", withExtension: "json", subdirectory: "Fixtures/journal"))
+        let bytes = try Data(contentsOf: fixture)
+        let url = directory.url.appendingPathComponent(SessionJournalFile.fileName)
+        try bytes.write(to: url)
+        let file = try SessionJournalFile(folder: RepositoryFolder(adopting: directory.url, writingOptions: .atomic))
+        let stored = try #require(try file.read())
+        #expect(stored.events.count == 2)
+        let cached = try #require(stored.cachedState)
+        let first = try #require(try JSONValue(data: bytes).objectValue?["events"]?.arrayValue?.first?.objectValue?["at"])
+        #expect(first == .number(815_389_200))
+        #expect(stored.events.first.flatMap { if case let .engine(envelope) = $0 { envelope.at } else { nil } }
+            == Date(timeIntervalSinceReferenceDate: 815_389_200))
+        // Written back, the events are the same text; the state's
+        // dictionaries are keyed by values and written in hash order, so it
+        // is held as what it decodes to.
+        try file.write(events: stored.events, state: cached)
+        let rewritten = try Data(contentsOf: url)
+        #expect(try JSONValue(data: rewritten).objectValue?["events"] == JSONValue(data: bytes).objectValue?["events"])
+        #expect(try file.read()?.cachedState == cached)
+        // The session opens on it: the events fold to the state it caches.
+        let rig = try SessionControllerTests.Rig(directory: directory.url, performsEffects: false)
+        #expect(await rig.harness.state.session == cached.session)
     }
 
     @Test("the file carries format 1; another format is refused")

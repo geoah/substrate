@@ -13,6 +13,10 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
     var link: LinkSnapshot?
     var root: Host<Root>!
     private(set) var counters = RuntimeCounters()
+    /// The effects started so far, in every host, and those of them still
+    /// running, by the number each started under.
+    private(set) var effectsStarted = 0
+    private(set) var effectsRunning: Set<Int> = []
     private(set) var published: Root.Presentation?
 
     private var presentNow = false
@@ -62,6 +66,20 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
         case nil: break
         }
     }
+
+    func effectStarted() -> Int {
+        effectsStarted += 1
+        effectsRunning.insert(effectsStarted)
+        return effectsStarted
+    }
+
+    func effectEnded(_ serial: Int) {
+        effectsRunning.remove(serial)
+    }
+
+    /// Effects decided and not yet started: they wait for the presentation
+    /// of the events that asked for them.
+    var effectsWaiting: Int { pending.count }
 
     /// Ends a step: presents now when an event asked to, and otherwise wakes
     /// at the deadline the coalesced events share, moved earlier when an

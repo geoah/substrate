@@ -5,7 +5,7 @@ import Testing
 /// A migration from Hevy keeps what the account holds: each workout,
 /// routine and exercise by Hevy's own id, every value Hevy records, and the
 /// owner's records untouched.
-@Suite("Hevy migration")
+@Suite("Hevy migration", .timeLimit(.minutes(10)))
 struct HevyMigrationTests {
     let london = TimeZone(identifier: "Europe/London")!
 

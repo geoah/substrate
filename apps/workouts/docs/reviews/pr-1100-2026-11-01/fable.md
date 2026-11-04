@@ -5,7 +5,7 @@
 > fixed before the merge; [fixes.md](fixes.md) goes finding by finding. Line numbers
 > refer to `f9eeb332`, not to `main`.
 
-Reviewer: Fable. Checkout `/Users/geoah/src/github.com/geoah/substrate-wt-workouts`, head `f9eeb332`, base `b001925b`. Review only; nothing was edited, committed or posted.
+Reviewer: Fable. Checkout a worktree of this repository, head `f9eeb332`, base `b001925b`. Review only; nothing was edited, committed or posted.
 
 What ran:
 

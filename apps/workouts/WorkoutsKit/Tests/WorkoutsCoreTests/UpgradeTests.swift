@@ -9,7 +9,7 @@ import SubstrateCore
 /// load finds nothing to respell. `Fixtures/legacy/history-session.json`
 /// is a history file as that build wrote it at Finish, with the recorded
 /// session and its 20 sets.
-@Suite("Upgrading from the ~/training spelling")
+@Suite("Upgrading from the ~/training spelling", .timeLimit(.minutes(10)))
 struct UpgradeTests {
     let codec = RecordCodec()
     let legacyPrefix = "~/training/"

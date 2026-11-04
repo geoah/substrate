@@ -44,8 +44,14 @@ APPS_DIR="$ROOT/apps"
 WORK="$ROOT/build/apps"
 DRY="${SUBSTRATE_APPS_RELEASE_DRY_RUN:-}"
 if [ -n "$DRY" ]; then
-	# A dry run carries no credential, so no path through it can use one.
-	unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY SUBSTRATE_APPLE_ASC_KEY_PATH
+	# A dry run carries no credential, so no path through it can use one:
+	# not the bucket's key, not App Store Connect's, and not the Android
+	# release key or the certificates it is checked against, which a dry run
+	# replaces with a key of its own (android_dry_key).
+	unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN \
+		SUBSTRATE_APPLE_ASC_KEY_PATH SUBSTRATE_APPLE_ASC_KEY_ID SUBSTRATE_APPLE_ASC_ISSUER_ID \
+		SUBSTRATE_ANDROID_KEYSTORE SUBSTRATE_ANDROID_KEYSTORE_PASSWORD SUBSTRATE_ANDROID_KEY_ALIAS \
+		SUBSTRATE_ANDROID_KEY_PASSWORD SUBSTRATE_ANDROID_CERT_SHA256 SUBSTRATE_ANDROID_PREVIOUS_CERT_SHA256
 fi
 # This invocation's own working directory (run_begin).
 RUN=""
@@ -166,50 +172,17 @@ stamp() {
 
 # --- where things go -------------------------------------------------------
 
-# The URL of an app's client ID metadata document, for the app named in $1.
-# Its host heads the owner's approval page and names the app's actor
-# (`app:<host>`), so it is a host the publisher alone serves: the site's
-# `/apps/<app>/client.json` when SUBSTRATE_APPLE_SITE_URL is set (see
-# site_build), else SUBSTRATE_APPLE_CLIENT_URL, an https folder there the
-# same key may write (a custom domain, or a virtual-hosted bucket), else the
-# release folder. Every app published under one host shares that actor. A
-# shared endpoint, where anyone may publish a document under the same host,
-# is refused.
+# The URL of an app's client ID metadata document, for the app named in $1:
+# the site's `/apps/<app>/client.json` (see site_build). Its host heads the
+# owner's approval page and, for an app no authority document lists, names
+# the app's actor (`app:<host>`; a verified app writes as
+# `app:<authority>` and a loopback build as `app:local`, decision 0209), so
+# it is the site, a host the publisher alone serves, and every app
+# published there shares that actor.
 client_url() {
-	local app="$1"
-	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then
-		local site
-		site="$(site_url)" || return 1
-		echo "$site/apps/$app/client.json"
-		return
-	fi
-	local base
-	base="$(client_base)" || return 1
-	echo "$base/$app/client.json"
-}
-
-# The folder the client documents go under when there is no site.
-client_base() {
-	local base="${SUBSTRATE_APPLE_CLIENT_URL:-$SUBSTRATE_APPLE_RELEASE_URL}"
-	base="${base%/}"
-	case "$base" in
-	https://*) ;;
-	*)
-		echo "apps: the client documents' folder is https: $base" >&2
-		return 1
-		;;
-	esac
-	local host="${base#https://}"
-	host="${host%%/*}"
-	host="${host%%:*}"
-	host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
-	# A fully qualified spelling (`host.`) names the same host.
-	host="${host%.}"
-	if shared_host "$host"; then
-		echo "apps: $host is a shared endpoint, where anyone may publish a client document the approval page would head with the same name; set SUBSTRATE_APPLE_CLIENT_URL to a folder on a host of your own" >&2
-		return 1
-	fi
-	echo "$base"
+	local site
+	site="$(site_url)" || return 1
+	echo "$site/apps/$1/client.json"
 }
 
 # A host anyone may publish under at a path of their own: a path-style
@@ -231,7 +204,8 @@ shared_host() {
 # from `https://<host>/.well-known/assetlinks.json`, and from nowhere else.
 # A shared endpoint is refused as client_url refuses it.
 site_url() {
-	local site="${SUBSTRATE_APPLE_SITE_URL%/}"
+	local site="${SUBSTRATE_APPLE_SITE_URL:-}"
+	site="${site%/}"
 	case "$site" in
 	https://*) ;;
 	*)
@@ -272,45 +246,36 @@ release_page() {
 	fi
 }
 
-# The client ID metadata document of the app named in $1, on stdout. With a
-# site, its redirects are the https callbacks each platform it ships claims
-# there and it names the authority that speaks for it
-# (`substrate_authority`); without one, a loopback redirect (RFC 8252),
-# which any program on the device may also use, so the approval page cannot
+# The client ID metadata document of the app named in $1, on stdout: its
+# redirects are the https callbacks each platform it ships claims on the
+# site, and it names the authority that speaks for it
+# (`substrate_authority`). Never a loopback redirect (RFC 8252), which any
+# program on the device may also listen on, so the approval page could not
 # tell the app from another.
 client_document() {
-	local app="$1" client page name
+	local app="$1" client page name site redirects="[]"
 	client="$(client_url "$app")" || return 1
 	page="$(release_page "$app")" || return 1
 	name="$(app_get "$app" .name)"
-	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then
-		local site redirects="[]"
-		site="$(site_url)" || return 1
-		if app_has_apple "$app"; then
-			redirects="$(jq -c --arg uri "$(apple_callback "$app")" '. + [$uri]' <<<"$redirects")"
-		fi
-		if app_has "$app" android; then
-			redirects="$(jq -c --arg uri "$(android_callback "$app")" '. + [$uri]' <<<"$redirects")"
-		fi
-		jq -n --arg id "$client" --arg name "$name" --arg uri "$page" --argjson redirects "$redirects" \
-			--arg authority "${SUBSTRATE_APPLE_SITE_AUTHORITY:-${site#https://}}" '{
-			client_id: $id, client_name: $name, client_uri: $uri, redirect_uris: $redirects,
-			token_endpoint_auth_method: "none", substrate_authority: $authority
-		}'
-	else
-		jq -n --arg id "$client" --arg name "$name" --arg uri "$page" '{
-			client_id: $id, client_name: $name, client_uri: $uri,
-			redirect_uris: ["http://127.0.0.1/oauth/callback"], token_endpoint_auth_method: "none"
-		}'
+	site="$(site_url)" || return 1
+	if app_has_apple "$app"; then
+		redirects="$(jq -c --arg uri "$(apple_callback "$app")" '. + [$uri]' <<<"$redirects")"
 	fi
+	if app_has "$app" android; then
+		redirects="$(jq -c --arg uri "$(android_callback "$app")" '. + [$uri]' <<<"$redirects")"
+	fi
+	jq -n --arg id "$client" --arg name "$name" --arg uri "$page" --argjson redirects "$redirects" \
+		--arg authority "${SUBSTRATE_APPLE_SITE_AUTHORITY:-${site#https://}}" '{
+		client_id: $id, client_name: $name, client_uri: $uri, redirect_uris: $redirects,
+		token_endpoint_auth_method: "none", substrate_authority: $authority
+	}'
 }
 
 # --- the stores ------------------------------------------------------------
 #
-# Three places are written: the release folder (SUBSTRATE_APPLE_RELEASE_URL,
-# every feed and the lease), the site (SUBSTRATE_APPLE_SITE_UPLOAD_URL, else
-# the site itself) and, with no site, the client documents' folder. Each is
-# a store, read and written by key; in a dry run each is a directory under
+# Two places are written: the release folder (SUBSTRATE_APPLE_RELEASE_URL,
+# every feed and the lease) and the site (SUBSTRATE_APPLE_SITE_UPLOAD_URL,
+# else the site itself). Each is a store, read and written by key; in a dry run each is a directory under
 # build/apps/dry-run that keeps an S3 bucket's conditional semantics, so the
 # lease and the immutable keys behave there as they do on the bucket.
 # Every function sets STATUS (the HTTP status, or the simulated one) and
@@ -330,7 +295,6 @@ store_base() {
 		local target="${SUBSTRATE_APPLE_SITE_UPLOAD_URL:-$(site_url)}"
 		echo "${target%/}"
 		;;
-	client) client_base ;;
 	esac
 }
 
@@ -433,27 +397,29 @@ store_sha() {
 	fi
 }
 
-# store_write <store> <key> <file> <cache> <create | match:<etag>>: one
-# conditional write: `create` only where the key is absent
+# store_write <store> <key> <file> <cache> <create | match:<etag>> [sha]:
+# one conditional write: `create` only where the key is absent
 # (If-None-Match: *), `match:` only where it still holds that ETag
 # (If-Match), and given up at WRITE_DEADLINE. STATUS 200, 412 where the
-# condition failed, 000 where the deadline came first. The lease's own
-# writes come straight here; everything else goes through store_put.
+# condition failed, 000 where the deadline came first, and `late` where too
+# little of it was left once the file was hashed for the write to start.
+# The lease's own writes come straight here; everything else goes through
+# store_put.
 store_write() {
-	local store="$1" key="$2" file="$3" cache="$4" condition="${5:-}"
+	local store="$1" key="$2" file="$3" cache="$4" condition="${5:-}" sha="${6:-}"
 	case "$condition" in
 	create | match:?*) ;;
 	*) die "an unconditional write of $store/$key: every write names the version it replaces" ;;
 	esac
+	# The digest the bucket stores beside the file. Hashing an artifact
+	# takes as long as reading it, so the time the write may take is read
+	# after it, never before.
+	[ -n "$sha" ] || sha="$(file_sha "$file")"
+	write_time "$store" "$key" || return 0
 	if [ -n "$DRY" ]; then
 		local path held
 		path="$(dry_path "$store" "$key")"
 		mkdir -p "$(dirname "$path")"
-		# The deadline as curl's --max-time keeps it on a bucket.
-		if [ "$(date +%s)" -ge "$WRITE_DEADLINE" ]; then
-			STATUS=000
-			return 0
-		fi
 		dry_suspend "$store" "$key"
 		dry_lock
 		held=""
@@ -474,7 +440,34 @@ store_write() {
 		esac
 		return 0
 	fi
-	upload "$file" "$(store_base "$store")/$key" "$cache" "$condition"
+	upload "$file" "$(store_base "$store")/$key" "$cache" "$condition" "$sha" "$WRITE_LEFT"
+}
+
+# A file's sha256. SUBSTRATE_APPS_RELEASE_SLOW_HASH=<seconds>:<key suffix>
+# makes a dry run's hash of a file whose name ends so take that much longer,
+# as a large artifact's does, to try the deadline it must leave time for.
+file_sha() {
+	local slow="${SUBSTRATE_APPS_RELEASE_SLOW_HASH:-}"
+	if [ -n "$DRY" ] && [ -n "$slow" ] && [ "${1%"${slow#*:}"}" != "$1" ]; then
+		echo "apps: dry run: hashing ${1##*/} takes ${slow%%:*}s longer, as SUBSTRATE_APPS_RELEASE_SLOW_HASH asks" >&2
+		sleep "${slow%%:*}"
+	fi
+	shasum -a 256 "$1" | cut -d' ' -f1
+}
+
+# The seconds a write about to start may take, in WRITE_LEFT: what is left
+# of WRITE_DEADLINE now, read at the last moment before the request. Below
+# LEASE_WRITE_MIN the write is not started at all (STATUS `late`), since
+# whatever lease_check found was spent on the way here.
+WRITE_LEFT=0
+write_time() {
+	WRITE_LEFT=$((WRITE_DEADLINE - $(date +%s)))
+	if [ "$WRITE_LEFT" -lt "$LEASE_WRITE_MIN" ]; then
+		echo "apps: $1/$2 is not written: ${WRITE_LEFT}s are left before its deadline, and a write is given at least ${LEASE_WRITE_MIN}s" >&2
+		STATUS=late
+		ETAG=""
+		return 1
+	fi
 }
 
 # SUBSTRATE_APPS_RELEASE_SUSPEND_AT=<store>/<key> stops a dry run as a
@@ -512,6 +505,7 @@ store_put() {
 	200) ;;
 	412) die "$1/$2 changed under this release (a conditional write answered 412); nothing more is written, and a rerun reads it again" ;;
 	000) die "writing $1/$2 did not finish in the time the release lease had left; nothing more is written, and a rerun reads it again" ;;
+	late) die "the release lease had too little time left for $1/$2 once it was hashed; nothing was sent, nothing more is written, and a rerun reads it again" ;;
 	*) die "writing $1/$2 answered $STATUS" ;;
 	esac
 }
@@ -582,9 +576,9 @@ put_mutable() {
 # over what the last run wrote, and anything else is refused.
 put_immutable() {
 	local store="$1" key="$2" file="$3" cache="$4" sha
-	sha="$(shasum -a 256 "$file" | cut -d' ' -f1)"
+	sha="$(file_sha "$file")"
 	lease_check
-	store_write "$store" "$key" "$file" "$cache" create
+	store_write "$store" "$key" "$file" "$cache" create "$sha"
 	case "$STATUS" in
 	200) ;;
 	412)
@@ -595,6 +589,7 @@ put_immutable() {
 		say "already published: $key"
 		;;
 	000) die "writing $store/$key did not finish in the time the release lease had left; a rerun passes over it if it landed" ;;
+	late) die "the release lease had too little time left for $store/$key once it was hashed; nothing was sent, and a rerun writes it" ;;
 	*) die "writing $store/$key answered $STATUS" ;;
 	esac
 }
@@ -610,16 +605,19 @@ s3() {
 		curl -sS -K - --aws-sigv4 "aws:amz:${SUBSTRATE_APPLE_RELEASE_REGION:-us-east-1}:s3" "$@"
 }
 
-# The one function that writes to a bucket. It refuses a dry run outright,
-# whatever called it, and stores the file's sha256 beside it, which is how
-# an immutable key is compared without reading it back. Every write is
-# conditional and given up at WRITE_DEADLINE (store_write).
+# The one function that writes to a bucket, called by store_write with the
+# file's sha256 and the seconds the write may take, read after the hash. It
+# refuses a dry run outright, whatever called it, and stores the sha256
+# beside the file, which is how an immutable key is compared without
+# reading it back. Every write is conditional and given up when those
+# seconds are spent (curl's --max-time).
 upload() {
-	local file="$1" url="$2" cache="$3" condition="${4:-}" type sha headers left
+	local file="$1" url="$2" cache="$3" condition="${4:-}" sha="${5:-}" left="${6:-}" type headers
 	if [ -n "$DRY" ]; then
 		echo "apps: a dry run uploads nothing, and something asked to upload $url" >&2
 		exit 70
 	fi
+	[ -n "$sha" ] && [ -n "$left" ] || die "an upload of $url with no digest or no time bound"
 	case "$file" in
 	*.html | */callback) type="text/html; charset=utf-8" ;;
 	*.json | */apple-app-site-association) type="application/json" ;;
@@ -630,12 +628,6 @@ upload() {
 	*.yaml) type="application/yaml" ;;
 	*) type="application/octet-stream" ;;
 	esac
-	left=$((WRITE_DEADLINE - $(date +%s)))
-	if [ "$left" -le 0 ]; then
-		STATUS=000
-		return 0
-	fi
-	sha="$(shasum -a 256 "$file" | cut -d' ' -f1)"
 	local args=(-o /dev/null -w '%{http_code}' --max-time "$left" -H "Content-Type: $type" -H "Cache-Control: $cache"
 		-H "x-amz-meta-sha256: $sha" -T "$file")
 	case "$condition" in
@@ -731,9 +723,9 @@ local_unlock() {
 # that answers conditional writes as if they were plain ones is refused,
 # never raced.
 #
-# A bucket compares no token, so the lease alone cannot fence a publisher
-# that stalls (a sleeping laptop, a stopped process) after its last check
-# and writes once it wakes. The fence is at the write instead, on three
+# An S3-compatible bucket compares no token, so nothing at the store fences
+# a publisher that stalls (a sleeping laptop, a stopped process) after its
+# last check and writes once it wakes. The fence is this side's, on three
 # legs:
 #
 #   - every write is conditional: an immutable key is created only where it
@@ -741,20 +733,31 @@ local_unlock() {
 #     version this run read under its lease (put_mutable), so a late write
 #     over anything the next holder wrote answers 412, and the next holder's
 #     write over a late one does too, and it stops rather than lose either;
-#   - every write is bounded: lease_check lets a write start only with at
-#     least LEASE_MARGIN + LEASE_WRITE_MIN seconds of the lease left, and the
-#     write is given up LEASE_MARGIN seconds before the lease expires
-#     (curl's --max-time), so a write that started under the lease ends
-#     before anyone may take it over, even on a machine whose clock runs up
-#     to LEASE_MARGIN seconds ahead of this one's;
+#   - every write is bounded in time: lease_check lets a write start only
+#     with at least LEASE_MARGIN + LEASE_WRITE_MIN seconds of the lease left,
+#     and the time the write may take is read again after its file is hashed,
+#     at the last moment before the request (write_time): it is refused below
+#     LEASE_WRITE_MIN, and otherwise curl gives it up (--max-time)
+#     LEASE_MARGIN seconds before the lease expires;
 #   - the renewer renews only a lease that has not expired, under its own
 #     token, conditionally, and once it cannot, every later write stops.
 #
-# What none of the three covers is a write whose request a stalled process
-# had already handed to the network and the bucket applies late, over a
-# key that holds exactly the version it read: identical bytes written back
-# by a later holder. A version that repeats is a feed or a document that did
-# not change, so that write puts back what the stalled run read.
+# What that guarantees: no write of this run replaces a version of a key
+# it did not read, or a file it did not write, whenever it lands; and a
+# write whose request this process starts and whose clock agrees with the
+# next holder's to within LEASE_MARGIN ends, by curl's clock, before anyone
+# may take the lease over. What it does not: --max-time stops this side,
+# and a request the bucket has already received may still be applied after
+# the lease expired (a process stopped mid-upload, a bucket that applies a
+# request late); so may one from a machine whose clock is more than
+# LEASE_MARGIN behind. Such a late write is still conditional, so it lands
+# only over the version this run read: where the next holder wrote that key
+# since, it answers 412 and nothing is lost; where the next holder has not
+# reached it yet, it lands, and the next holder's own write of the key then
+# answers 412 and stops that run, which a rerun reads again. The one late
+# write that lands unseen is over a key whose version repeats (the next
+# holder wrote back the very bytes this run read, so the ETag is the same),
+# and it puts there what this run would have written under its lease.
 readonly LEASE_KEY=".apps-release-lease.json"
 readonly LEASE_TTL="${SUBSTRATE_APPS_RELEASE_LEASE_TTL:-900}"
 readonly LEASE_RENEW="${SUBSTRATE_APPS_RELEASE_LEASE_RENEW:-120}"
@@ -1394,12 +1397,12 @@ build_all() {
 	reserve_version_codes
 	local_lock builds wait "this checkout's builds"
 	if apple_needed; then apple_prepare; fi
+	if [ -n "$DRY" ] && android_needed; then android_dry_key; fi
 	for app in "${RELEASE_APPS[@]}"; do
 		prefix="$(feed_prefix "$app")"
 		dir="$STAGE/${prefix}releases/$build"
 		scratch="$REL_DIR/work/$app"
 		mkdir -p "$dir" "$scratch"
-		client_url "$app" >/dev/null || exit 1
 		platforms="$(app_platforms "$app" | paste -sd, - | sed 's/,/, /g')"
 		say "building $app ($platforms) $version"
 		echo '{}' >"$scratch/apple.json"
@@ -1428,7 +1431,7 @@ build_all() {
 			} + $apple[0] + $android[0]' >"$dir/release.json"
 	done
 	build_closures "$REL_DIR/packages"
-	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then site_build "$REL_DIR/packages"; fi
+	site_build "$REL_DIR/packages"
 	stage_freeze
 }
 
@@ -1446,22 +1449,23 @@ stage_root() {
 # checked against. A rerun resumes a stage only where every one of them is
 # what the stage was made for.
 stage_identity() {
-	local site="" upload="" clients="" authority="" android=""
-	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then
-		site="$(site_url)" || exit 1
-		upload="$(store_base site)"
-		authority="${SUBSTRATE_APPLE_SITE_AUTHORITY:-${site#https://}}"
-	else
-		clients="$(client_base)" || exit 1
+	local site upload authority android=""
+	site="$(site_url)" || exit 1
+	upload="$(store_base site)"
+	authority="${SUBSTRATE_APPLE_SITE_AUTHORITY:-${site#https://}}"
+	if [ -n "$DRY" ]; then
+		# A dry run signs with a key of its own, made for each build.
+		android=dry-run
+	elif [ -n "${SUBSTRATE_ANDROID_CERT_SHA256:-}" ]; then
+		android="$(colon_hex "$(printf '%s' "$SUBSTRATE_ANDROID_CERT_SHA256" | tr -d ':')")"
 	fi
-	[ -z "${SUBSTRATE_ANDROID_CERT_SHA256:-}" ] || android="$(colon_hex "$(printf '%s' "$SUBSTRATE_ANDROID_CERT_SHA256" | tr -d ':')")"
 	jq -n --arg mode "$([ -n "$DRY" ] && echo dry-run || echo release)" \
-		--arg release "${SUBSTRATE_APPLE_RELEASE_URL%/}" --arg site "$site" --arg upload "$upload" --arg clients "$clients" \
+		--arg release "${SUBSTRATE_APPLE_RELEASE_URL%/}" --arg site "$site" --arg upload "$upload" \
 		--arg authority "$authority" --arg team "${SUBSTRATE_APPLE_TEAM_ID:-}" \
 		--arg apple "$([ -n "$DRY" ] && echo unsigned || echo "ios:${SUBSTRATE_APPLE_EXPORT_IOS:-debugging} macos:${SUBSTRATE_APPLE_EXPORT_MACOS:-debugging}")" \
 		--arg android "$android" '{
 			mode: $mode,
-			destinations: {release: $release, site: $site, siteUpload: $upload, clients: $clients, authority: $authority},
+			destinations: {release: $release, site: $site, siteUpload: $upload, authority: $authority},
 			signing: {appleTeam: $team, apple: $apple, androidCertificate: $android}
 		}'
 }
@@ -1577,18 +1581,6 @@ activate() {
 	say "activated $(app_get "$app" .name) $version: $base/index.html"
 }
 
-# With no site, each app's client document goes to the client documents'
-# folder alone, as releases before the site did.
-publish_clients() {
-	local app client base
-	base="$(client_base)" || exit 1
-	for app in "${RELEASE_APPS[@]}"; do
-		client_document "$app" >"$RUN/$app-client.json"
-		client="$(client_url "$app")"
-		put_mutable client "${client#"$base"/}" "$RUN/$app-client.json" no-cache
-	done
-}
-
 # SUBSTRATE_APPS_RELEASE_STOP_AFTER=stage|site|<app> stops a dry run there,
 # as a failure would, to try the rerun that resumes it.
 stop_point() {
@@ -1609,6 +1601,7 @@ dry_only() {
 	[ -z "${SUBSTRATE_APPS_RELEASE_STOP_AFTER:-}" ] || die "SUBSTRATE_APPS_RELEASE_STOP_AFTER is a dry run's"
 	[ -z "${SUBSTRATE_APPS_RELEASE_SUSPEND_AT:-}" ] || die "SUBSTRATE_APPS_RELEASE_SUSPEND_AT is a dry run's"
 	[ -z "${SUBSTRATE_APPS_RELEASE_LEASE_MARGIN:-}" ] || die "SUBSTRATE_APPS_RELEASE_LEASE_MARGIN is a dry run's"
+	[ -z "${SUBSTRATE_APPS_RELEASE_SLOW_HASH:-}" ] || die "SUBSTRATE_APPS_RELEASE_SLOW_HASH is a dry run's"
 }
 
 release_env() {
@@ -1622,7 +1615,12 @@ release_env() {
 		: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID to a key that may write the bucket}"
 		: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"
 	fi
-	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then site_url >/dev/null || exit 1; fi
+	# Every app a release publishes signs in through the https callback it
+	# claims on the site, which the site's association files give it alone.
+	# Without one it would sign in through a loopback port, which any
+	# program on the device may listen on.
+	: "${SUBSTRATE_APPLE_SITE_URL:?set SUBSTRATE_APPLE_SITE_URL to the https origin of the site: every released app signs in through the callback it claims there, and never through a loopback port}"
+	site_url >/dev/null || exit 1
 }
 
 release() {
@@ -1656,10 +1654,6 @@ release() {
 		for app in "${RELEASE_APPS[@]}"; do
 			[ -f "$(app_json "$app")" ] || die "$app is no app: apps/$app/app.json is not there"
 			[ -n "$(app_platforms "$app")" ] || die "$app has no UI on any platform its app.json names, so there is nothing of it to release"
-			if app_has "$app" android && [ -z "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then
-				die "$app ships on Android, whose sign-in callback and links the site verifies; set SUBSTRATE_APPLE_SITE_URL"
-			fi
-			client_url "$app" >/dev/null || exit 1
 		done
 		stamp "$channel"
 		REL_DIR="$(stage_root)/$build"
@@ -1669,26 +1663,20 @@ release() {
 	fi
 	say "releasing ${RELEASE_APPS[*]} as $version ($channel)${DRY:+, a dry run}"
 
-	local stores=()
-	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then stores=(site); else stores=(client); fi
-	lease_take "$version" "${stores[@]}"
+	lease_take "$version" site
 	[ -n "$resume" ] || mkdir -p "$STAGE" "$REL_DIR/work"
 	for app in "${RELEASE_APPS[@]}"; do read_published "$app"; done
 	if [ -z "$resume" ]; then
 		build_all
 	else
 		version_codes_held
-		if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then site_build "$REL_DIR/packages"; fi
+		site_build "$REL_DIR/packages"
 	fi
 	[ "$(git -C "$ROOT" rev-parse HEAD)" = "$commit_full" ] || die "HEAD moved while $version was built; nothing is published"
 
 	stage_upload
 	stop_point stage
-	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then
-		site_publish
-	else
-		publish_clients
-	fi
+	site_publish
 	stop_point site
 	for app in "${RELEASE_APPS[@]}"; do
 		activate "$app"

@@ -34,3 +34,35 @@ func TestChatCoverageFollowsAnAgentsFunctionTool(t *testing.T) {
 		}
 	}
 }
+
+func TestCallAndChatGlobsRespectInternalKinds(t *testing.T) {
+	const hidden = "other.example.com/tools/hidden"
+	for _, pattern := range []string{"*", "substrate.reamde.dev/llm/*", "other.example.com/tools/*"} {
+		e, calls := newCallEnv(t)
+		base := e.svc.datasets[fakeRepository]
+		base.types = append(base.types, substrate.KindInfo{Identity: hidden, Definition: map[string]any{"purpose": vocabulary.PurposeInternal}})
+		perms := map[string]any{"reads": map[string]any{"kinds": []any{pattern}}}
+		e.seed(substrate.Record{Kind: kindFunction, ID: summarizeFn, Properties: map[string]any{"permissions": perms}}, nil)
+		e.seed(substrate.Record{Kind: kindAgent, ID: talkedAgent, Properties: map[string]any{"tools": []any{map[string]any{"function": summarizeFn}}}}, nil)
+		for _, exact := range []bool{false, true} {
+			scopes := []string{"call:" + summarizeFn, "agents:" + talkedAgent, "read:*"}
+			if exact {
+				scopes = append(scopes, "read:"+hidden)
+			}
+			grant, err := scope.NewGrant(scopes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ds := newScopedDataset(&callDataset{mintingDataset: &mintingDataset{fakeDataset: base, svc: e.svc}, rec: calls}, grant, substrate.ActorAPI)
+			want := exact && pattern == "other.example.com/tools/*"
+			_, _, err = ds.CallFunction(context.Background(), substrate.ActorAPI, summarizeFn, nil)
+			if (err == nil) != want {
+				t.Fatalf("call %s exact %v: %v", pattern, exact, err)
+			}
+			got, err := ds.coversAgentReads(context.Background(), talkedAgent)
+			if err != nil || got != want {
+				t.Fatalf("chat %s exact %v: %v %v", pattern, exact, got, err)
+			}
+		}
+	}
+}

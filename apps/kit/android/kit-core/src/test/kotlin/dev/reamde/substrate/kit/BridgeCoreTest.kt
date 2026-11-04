@@ -111,7 +111,7 @@ class BridgeCoreTest {
     fun aStreamGoesOutInOrderThenEndsAndStopsWhenSwiftRefusesAChunk() = runTest {
         val swift = FakeSwift()
         val dispatcher = StandardTestDispatcher(testScheduler)
-        val core = core(swift) { DeviceAnswer.Stream(dispatcher, flow { repeat(5) { emit(JsonPrimitive(it)) } }) }
+        val core = core(swift) { DeviceAnswer.Chunks(dispatcher, flow { repeat(5) { emit(JsonPrimitive(it)) } }) }
         deliver(core, Envelope(1, Op.request, id = 1, body = request(DeviceRequest.ConnectivityWatch)))
         advanceUntilIdle()
         assertEquals(listOf(0L, 1L, 2L, 3L, 4L), swift.posted.filter { it.op == Op.chunk }.map { it.seq })
@@ -204,7 +204,7 @@ class BridgeCoreTest {
         val discarded = CopyOnWriteArrayList<JsonElement>()
         val core = core(swift) { request ->
             when (request) {
-                DeviceRequest.ConnectivityWatch -> DeviceAnswer.Stream(dispatcher, flow {
+                DeviceRequest.ConnectivityWatch -> DeviceAnswer.Chunks(dispatcher, flow {
                     emit(JsonPrimitive(1))
                     throw BridgeException(BridgeFailure(BridgeFailure.Code.overflow, "too fast"))
                 })
@@ -229,22 +229,19 @@ class BridgeCoreTest {
         val swift = FakeSwift()
         val dispatcher = StandardTestDispatcher(testScheduler)
         val discarded = CopyOnWriteArrayList<JsonElement>()
-        val made = CompletableDeferred<Unit>()
-        val core = core(swift) {
+        lateinit var core: BridgeCore
+        core = core(swift) {
             DeviceAnswer.Value(dispatcher, discard = { discarded += it }) {
-                made.complete(Unit)
+                // Cancelled while the block makes its value: the block
+                // returns it, and the call ends before the reply.
+                deliver(core, Envelope(1, Op.cancel, id = 5))
                 JsonPrimitive("made")
             }
         }
         deliver(core, Envelope(1, Op.request, id = 5, body = request(DeviceRequest.ConnectivityCurrent)))
-        // Cancelled between the block's return and the reply.
-        testScheduler.runCurrent()
-        deliver(core, Envelope(1, Op.cancel, id = 5))
         advanceUntilIdle()
-        assertTrue(made.isCompleted)
-        if (swift.posted.none { it.id == 5L && it.op == Op.reply }) {
-            assertEquals(listOf<JsonElement>(JsonPrimitive("made")), discarded.toList())
-        }
+        assertTrue(swift.posted.none { it.id == 5L && it.op == Op.reply })
+        assertEquals(listOf<JsonElement>(JsonPrimitive("made")), discarded.toList())
         assertEquals(0, core.runningCalls)
     }
 

@@ -1,14 +1,14 @@
 # Spotter on iOS 27: which platform features to use
 
-> **Where this came from.** Written on 2026-10-30 in rxtx.dev, as `research/workouts/`, for
+> **Where this came from.** Written on 2026-10-30 in the owner's private repository, as `research/workouts/`, for
 > the app then called Spotter (Substrate Workouts now); the version here is the one the
-> app's second build used (geoah/rxtx.dev#118). It was carried into this repository on
+> app's second build used (the private repository's #118). It was carried into this repository on
 > 2026-11-02 as written, with two changes. The links resolve inside this repository. The
-> draft kind paths `mneme.rxtx.dev/training/<kind>` now read as the app-owned
+> draft kind paths `mneme.example.org/training/<kind>` now read as the app-owned
 > `~/training/<kind>` they became (decision record [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)). Where the
-> text names the package home it recommended, a Mneme package `mneme.rxtx.dev/training`,
+> text names the package home it recommended, a Mneme package `mneme.example.org/training`,
 > that name is left as written: the home changed later, and the reasons are in
-> [decisions.md](../decisions.md). Mentions of Mneme, rxtx.dev paths or
+> [decisions.md](../decisions.md). Mentions of Mneme, private repository paths or
 > `apps/apple/spotter` describe the plan at the time. The package now lives in
 > [`Package/`](../../package/README.md), and the app's spec is [DESIGN.md](../../DESIGN.md).
 
@@ -20,7 +20,7 @@ How to read the evidence markers:
 
 - **[web]** Checked today on the web or in a primary artefact: Apple's documentation JSON, the Human Interface Guidelines, a WWDC session page, or Apple sample code downloaded today.
 - **[sdk]** Checked today in the Xcode 27.2 SDK (iPhoneOS27.2.sdk, WatchOS27.2.sdk): the `.swiftinterface` files and the Objective-C headers.
-- **[src]** Checked today in source code on this machine: the rxtx.dev worktree, or the substrate export at `/tmp/spotter-substrate-main`.
+- **[src]** Checked today in source code on this machine: the private repository's worktree, or the substrate export at `/tmp/spotter-substrate-main`.
 - **[recalled]** From memory, not re-checked today.
 - **[unverified]** I tried and could not confirm it, or the only source is secondary.
 
@@ -1022,7 +1022,7 @@ let package = Package(
 
 ## 6. Signing and release through apps/apple/release.sh
 
-What `release.sh` does today [src]: `xcodegen generate`, then `xcodebuild ... archive -allowProvisioningUpdates` with `-authenticationKeyPath`, `-authenticationKeyID` and `-authenticationKeyIssuerID` from the rxtx secrets `apple_asc_api_key`, `apple_asc_key_id` and `apple_asc_issuer_id`. It exports with `method` = `debugging` (development signing) and `signingStyle` = `automatic`. It passes `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` on the command line, and checks `CFBundleVersion` in the main app's `Info.plist` only (`find ... -maxdepth 2`).
+What `release.sh` does today [src]: `xcodegen generate`, then `xcodebuild ... archive -allowProvisioningUpdates` with `-authenticationKeyPath`, `-authenticationKeyID` and `-authenticationKeyIssuerID` from the owner's secret store. It exports with `method` = `debugging` (development signing) and `signingStyle` = `automatic`. It passes `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` on the command line, and checks `CFBundleVersion` in the main app's `Info.plist` only (`find ... -maxdepth 2`).
 
 | Item                                                                                                    | Target           | Kind        | Needed for                                  |
 | ------------------------------------------------------------------------------------------------------- | ---------------- | ----------- | ------------------------------------------- |
@@ -1034,17 +1034,17 @@ What `release.sh` does today [src]: `xcodegen generate`, then `xcodebuild ... ar
 | `NSAlarmKitUsageDescription`                                                                            | App              | Info.plist  | Only if the opt-in alarm ships [web]        |
 | `NSExtension` / `NSExtensionPointIdentifier` = `com.apple.widgetkit-extension`                          | Widget extension | Info.plist  | The Live Activity UI                        |
 | `CFBundleVersion` = `$(CURRENT_PROJECT_VERSION)`, `CFBundleShortVersionString` = `$(MARKETING_VERSION)` | Both             | Info.plist  | Release stamping                            |
-| `RXTXVersion`, `RXTXChannel`, `RXTXCommit`, `RXTXUpdates`, `SUPublicEDKey`                              | App              | Info.plist  | The shared updater (`apps/apple/README.md`) |
+| `SpotterVersion`, `SpotterChannel`, `SpotterCommit`, `SpotterUpdates`, `SUPublicEDKey`                  | App              | Info.plist  | The shared updater (`apps/apple/README.md`) |
 
 Points to check:
 
-- **HealthKit on a new app id**: the substrate release script notes that the App Store Connect key "needs the Admin role to register an app id's capabilities (HealthKit)" [src, `/tmp/spotter-substrate-main/.mise/apple.sh`]. Confirm the role of the rxtx key before the first release, or the archive fails at provisioning.
-- **Time-sensitive capability**: it is not among the App Store Connect API's public `CapabilityType` values [web], and Apple's entitlement index has no page for it [web]. Xcode's automatic signing enables it on the app id [recalled]; whether it does so with the API key and no Apple ID signed in is [unverified]. Run `RXTX_APPS_DRY_RUN=1 mise run apple:release apps/apple/spotter` once to find out. If it fails, ship with `.active` notifications and add the capability once by hand in the developer portal.
+- **HealthKit on a new app id**: the substrate release script notes that the App Store Connect key "needs the Admin role to register an app id's capabilities (HealthKit)" [src, `/tmp/spotter-substrate-main/.mise/apple.sh`]. Confirm the role of the owner's key before the first release, or the archive fails at provisioning.
+- **Time-sensitive capability**: it is not among the App Store Connect API's public `CapabilityType` values [web], and Apple's entitlement index has no page for it [web]. Xcode's automatic signing enables it on the app id [recalled]; whether it does so with the API key and no Apple ID signed in is [unverified]. Run `APPS_DRY_RUN=1 mise run apple:release apps/apple/spotter` once to find out. If it fails, ship with `.active` notifications and add the capability once by hand in the developer portal.
 - **AlarmKit and ActivityKit** need no entitlement [web: neither appears in Apple's entitlement index]. No `aps-environment`: Spotter sends no pushes.
-- **The widget extension** gets its own bundle id (`dev.rxtx.spotter.widgets`), registered by `-allowProvisioningUpdates` like the app's. Substrate releases an app with an embedded extension through the same flags today [src, `SubstrateShare` in `apps/apple/project.yml`]. Its version keys must use the same two variables as the app: Xcode warns when an extension's version differs from its parent's, and Apple's developer support says the two must match [web, Apple Developer Forums thread 730234]; whether a mismatch blocks a development install is [unverified]. `release.sh` does not check the extension's plist, so a hardcoded value there would go unnoticed.
+- **The widget extension** gets its own bundle id (`org.example.spotter.widgets`), registered by `-allowProvisioningUpdates` like the app's. Substrate releases an app with an embedded extension through the same flags today [src, `SubstrateShare` in `apps/apple/project.yml`]. Its version keys must use the same two variables as the app: Xcode warns when an extension's version differs from its parent's, and Apple's developer support says the two must match [web, Apple Developer Forums thread 730234]; whether a mismatch blocks a development install is [unverified]. `release.sh` does not check the extension's plist, so a hardcoded value there would go unnoticed.
 - **No App Group needed.** The widget reads everything from the Live Activity's content state, and its buttons run in the app's process. This saves registering a group.
 - **Development signing**: all of the above work in a development profile; the installing device must be registered and in Developer Mode (`apps/apple/README.md`) [src]. A watch app later needs the watch registered too [recalled].
-- **release.env**: `PLATFORMS="iOS"`, `MIN_IOS=27.0`, `BUNDLE_ID=dev.rxtx.spotter`, and an entry in `apps/apple/apps.json`, as `AGENTS.md` requires [src].
+- **release.env**: `PLATFORMS="iOS"`, `MIN_IOS=27.0`, `BUNDLE_ID=org.example.spotter`, and an entry in `apps/apple/apps.json`, as `AGENTS.md` requires [src].
 
 ## Design implications for Spotter
 

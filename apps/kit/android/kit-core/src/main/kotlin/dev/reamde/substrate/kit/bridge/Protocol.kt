@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "65a8afb26052d9c26dd3b0d2c8a9f1d30e5a92c8c94a6a521d3e964269a87344"
+    public const val VALUE: String = "dbd49d6218748de1e757354dfdb94832aac1b37107bd3c77d5acddcdce5c4485"
 }
 
 /**
@@ -521,8 +521,8 @@ public data class ConnectPresentation(
 
     @Serializable
     public data class Footer(
-        val found: String? = null,
-        val repository: String? = null,
+        val found: LabeledValue? = null,
+        val repository: LabeledValue? = null,
         val note: String,
     )
 }
@@ -1027,7 +1027,8 @@ public data class RefusedWrite(
     val id: String,
     val label: String,
     val status: String,
-    val recordID: String,
+    val kind: LabeledValue,
+    val record: LabeledValue,
     val words: String? = null,
     val retry: ActionButton<StatusAction>,
     val discard: ActionButton<StatusAction>,
@@ -1450,6 +1451,16 @@ public sealed interface SettingsRowID {
             @SerialName("_0") val value: String,
         ) : StatusRow
 
+        @Serializable
+        public data class RefusedKind(
+            @SerialName("_0") val value: String,
+        ) : StatusRow
+
+        @Serializable
+        public data class RefusedRecord(
+            @SerialName("_0") val value: String,
+        ) : StatusRow
+
         public object Serializer : KSerializer<SettingsRowID.StatusRow> by SwiftEnumSerializer(
             "SettingsRowID.StatusRow",
             listOf(
@@ -1459,6 +1470,8 @@ public sealed interface SettingsRowID {
                 SwiftEnumSerializer.Case("action", Action::class, Action.serializer()),
                 SwiftEnumSerializer.Case("refused", Refused::class, Refused.serializer()),
                 SwiftEnumSerializer.Case("refusedStatus", RefusedStatus::class, RefusedStatus.serializer()),
+                SwiftEnumSerializer.Case("refusedKind", RefusedKind::class, RefusedKind.serializer()),
+                SwiftEnumSerializer.Case("refusedRecord", RefusedRecord::class, RefusedRecord.serializer()),
             ),
         )
     }

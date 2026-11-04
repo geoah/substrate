@@ -360,7 +360,7 @@ func recordDifferences(_ ours: FlatRecord, _ theirs: FlatRecord, ignoring: Set<S
 
 // MARK: - Start and the plan
 
-@Suite("Engine: start")
+@Suite("Engine: start", .timeLimit(.minutes(10)))
 struct EngineStartTests {
     @Test("start builds the header, slots, groups and rows from the routine, at revision 1")
     func startFromRoutine() throws {
@@ -432,7 +432,7 @@ struct EngineStartTests {
 
 // MARK: - Sets
 
-@Suite("Engine: sets")
+@Suite("Engine: sets", .timeLimit(.minutes(10)))
 struct EngineSetTests {
     private func pressSession(sets: Int = 3) throws -> EngineScript {
         var script = EngineScript(at: engineEpoch)
@@ -704,7 +704,7 @@ struct EngineSetTests {
 
 // MARK: - Exercises and groups
 
-@Suite("Engine: exercises and groups")
+@Suite("Engine: exercises and groups", .timeLimit(.minutes(10)))
 struct EngineStructureTests {
     private func threeSlots() throws -> EngineScript {
         var script = EngineScript(at: engineEpoch)
@@ -838,7 +838,7 @@ struct EngineStructureTests {
 
 // MARK: - Clocks and timers
 
-@Suite("Engine: clocks and countdowns")
+@Suite("Engine: clocks and countdowns", .timeLimit(.minutes(10)))
 struct EngineClockTests {
     private func session() throws -> EngineScript {
         var script = EngineScript(at: engineEpoch)
@@ -959,7 +959,7 @@ struct EngineClockTests {
 
 // MARK: - Finish and discard
 
-@Suite("Engine: finish")
+@Suite("Engine: finish", .timeLimit(.minutes(10)))
 struct EngineFinishTests {
     private func session() throws -> EngineScript {
         var script = EngineScript(at: engineEpoch)
@@ -1041,7 +1041,7 @@ struct EngineFinishTests {
 
 // MARK: - Counting
 
-@Suite("Engine: counting")
+@Suite("Engine: counting", .timeLimit(.minutes(10)))
 struct EngineCountingTests {
     @Test("sets count working chain heads once; volume follows load basis, body mass and the warm-up switch")
     func counting() throws {
@@ -1085,7 +1085,7 @@ struct EngineCountingTests {
 
 // MARK: - The journal
 
-@Suite("Engine: journal")
+@Suite("Engine: journal", .timeLimit(.minutes(10)))
 struct EngineJournalTests {
     @Test("the engine's events and state go through the session journal and fold back to the same state")
     func journalRoundTrip() async throws {
@@ -1112,7 +1112,7 @@ struct EngineJournalTests {
     @Test("the V1 sync sink takes the engine's events and state")
     func syncSink() async throws {
         let replay = try ExampleReplay.run(EngineFixtures.session("sessions", EngineFixtures.fullyBody))
-        let sink: any SessionSyncSink<EventEnvelope, SessionState> = NoSync()
+        let sink: any SessionWriteSink<EventEnvelope, SessionState> = NoWrites()
         let state = try replay.script.current
         await sink.applied(try #require(replay.script.events.last), state: state)
         await sink.finished(SessionEngine.records(state, adapter: "substrate-workouts@0.1.0"))
@@ -1121,7 +1121,7 @@ struct EngineJournalTests {
 
 // MARK: - Finish to records, against the examples
 
-@Suite("Engine: records from the examples")
+@Suite("Engine: records from the examples", .timeLimit(.minutes(10)))
 struct EngineRecordTests {
     private let codec = RecordCodec()
 

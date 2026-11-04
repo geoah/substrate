@@ -332,7 +332,7 @@ commands (`WorkoutsApp.Command`) are the tabs' changes, a sheet that waits namin
 `WorkoutsPresentation.outcomes`. A sync step names the `AccountRef` it ran for, and one for an account no longer
 signed in changes nothing. What an event changed (an account that moved, a package that became writable, a conflict
 the outbox did not hold) is read in `effects(of:on:from:presented:)` from the state before and after, never kept as a
-flag in the state. `syncing` is set only where a sync runs (a writable package), so `until { !syncing }` ends. The
+flag in the state. `flushing` is set only where a sync runs (a writable package), so `until { !flushing }` ends. The
 session's events reach the app only where they are handed off: `finished`, `discard`, and an engine event that adds
 an exercise made on the phone.
 
@@ -345,9 +345,10 @@ Two shapes here are on their way out, and new code does not copy them:
   presentation.
 - `SessionScreenPresentation.state` carries the engine's `SessionState` out to the views, for
   `FinishPresenter.summary` to work the Finish sheet's numbers out as its draft moves. A presentation carries what a
-  view draws; the summary belongs in the presenter, with the draft as a command. Each account's files are a `WorkoutsAccount` from `WorkoutsAccounts` (in the environment,
+  view draws; the summary belongs in the presenter, with the draft as a command. Each account's files are a `WorkoutsFolder` from `WorkoutsFolders` (in the environment,
 so the link flushes the same `Outbox` the app queues into): `Outbox.workouts(directory:)`, the kit's outbox over
-`outbox.json` with `Outbox.workoutsUpgrade` for a format 1 file and the routine and session helpers in
+`outbox.json` with `Outbox.workoutsUpgrade` for a format 1 file (respelled, with nothing it knew about `~/training`
+kept: no version, chain or guard, and no session write, which the history exchange derives again) and the routine and session helpers in
 `WorkoutsOutbox.swift`.
 
 ## Finish sheet (§7.7)

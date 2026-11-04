@@ -6,7 +6,7 @@ import Testing
 import SubstrateDeviceApple
 #endif
 
-@Suite("Device services")
+@Suite("Device services", .timeLimit(.minutes(10)))
 struct DeviceServiceTests {
     @Test func scriptedConnectivityAnswersNowThenEachChange() async {
         let connectivity = ScriptedConnectivity()

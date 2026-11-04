@@ -112,7 +112,7 @@ struct KotlinOutlet: BridgeOutlet {
               let call = jni.CallStaticVoidMethodA
         else { return BridgeFailure(.jniFailure, "the JNI function table is incomplete") }
         // Each local reference made on an attached native thread lives until
-        // it detaches; a stream would fill the table without a frame.
+        // it detaches; a long run of deliveries would fill the table without a frame.
         guard pushLocalFrame(env, 4) == 0 else {
             clearException(env)
             return BridgeFailure(.jniFailure, "no local frame for a delivery")

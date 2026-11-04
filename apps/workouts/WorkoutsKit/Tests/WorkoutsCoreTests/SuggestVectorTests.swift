@@ -68,7 +68,7 @@ private func repsAt(_ load: Double, _ e1RM: Double, _ rpe: Double) -> Int {
 
 // MARK: V1 to V19
 
-@Suite("Suggestion vectors, research 03 §14")
+@Suite("Suggestion vectors, research 03 §14", .timeLimit(.minutes(10)))
 struct SuggestVectorTests {
     // Chest press (machine), stack kg; the owner's screenshot session.
     private let chestSet1 = set(load: 35, reps: 15, target: range(10, 15, rpe: 9.5), ordinal: 1, start: daysAgo(7))
@@ -532,7 +532,7 @@ struct SuggestVectorTests {
 
 // MARK: The curve, the grid and rounding
 
-@Suite("Suggestion building blocks, research 03 §10")
+@Suite("Suggestion building blocks, research 03 §10", .timeLimit(.minutes(10)))
 struct SuggestBlockTests {
     @Test("p and pInv at every published point")
     func publishedPoints() {
@@ -643,7 +643,7 @@ struct SuggestBlockTests {
 
 // MARK: the app's rules around 03 (DESIGN §5.3) and the edges 03 §13 names
 
-@Suite("the app's suggestion rules, DESIGN §5.3")
+@Suite("the app's suggestion rules, DESIGN §5.3", .timeLimit(.minutes(10)))
 struct SuggestWorkoutsRuleTests {
     // Leg press (machine), stack kg, as in the coverage session.
     private let legPress = ExerciseConfig(unit: .kg, base: 0, step: 5)
@@ -978,7 +978,7 @@ struct SuggestWorkoutsRuleTests {
 
 // MARK: 03 §11 branches the vectors leave out
 
-@Suite("Suggestion rules the vectors do not reach, research 03 §11")
+@Suite("Suggestion rules the vectors do not reach, research 03 §11", .timeLimit(.minutes(10)))
 struct SuggestBranchTests {
     private let target = range(8, 12, rpe: 8)
 

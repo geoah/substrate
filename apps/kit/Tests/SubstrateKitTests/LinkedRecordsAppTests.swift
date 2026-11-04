@@ -29,11 +29,19 @@ private struct Shelf: LinkedRecordsApp {
         case editing(ChildKey)
         case closed(ChildKey)
         case problemDismissed
+
+        var recordsEvent: LinkedRecords.Event? {
+            if case let .records(event) = self { event } else { nil }
+        }
     }
 
     enum Effect: Equatable, Sendable, LinkedRecordsEffect {
         case records(LinkedRecords.Effect)
         case count(Int)
+
+        var recordsEffect: LinkedRecords.Effect? {
+            if case let .records(effect) = self { effect } else { nil }
+        }
     }
 
     struct State: Codable, Equatable, Sendable, LinkedRecordsHolding {
@@ -116,7 +124,7 @@ private func shelf() -> Shelf {
     Shelf(linked: LinkedRecords(kinds: [shelfKind], cache: nil, outbox: nil, words: StatusWords(app: "Shelf", device: "this iPhone", kept: "books")))
 }
 
-@Suite("An app over linked records")
+@Suite("An app over linked records", .timeLimit(.minutes(10)))
 struct LinkedRecordsAppTests {
     @Test func theRecordsStagesAreTheKitsAndTheAppWritesItsOwnAlone() async throws {
         let harness = ControllerHarness(shelf(), performsEffects: false)
@@ -161,7 +169,7 @@ struct LinkedRecordsAppTests {
     }
 }
 
-@Suite("A stopped read")
+@Suite("A stopped read", .timeLimit(.minutes(10)))
 struct StoppedReadTests {
     private struct Stepper {
         let records = LinkedRecords(kinds: [shelfKind], cache: nil, outbox: nil, words: StatusWords(app: "Shelf", device: "this iPhone", kept: "books"),
@@ -243,10 +251,13 @@ struct StoppedReadTests {
         #expect(events.last == .readLimitReached(2))
         guard case let .listed(listed, _) = events.first else { throw Unexpected() }
         #expect(listed.map(\.id) == ["a", "b"])
+        // The page after the limit is never asked for.
+        #expect(server.sent.count == 1)
+        #expect(!server.sent.contains { ($0.query ?? "").contains("after=") })
     }
 }
 
-@Suite("The harness's bounds")
+@Suite("The harness's bounds", .timeLimit(.minutes(10)))
 struct HarnessBoundsTests {
     @Test func aWaitIsBoundedInAllEvenWhileTheRuntimeKeepsMoving() async throws {
         let harness = ControllerHarness(shelf(), performsEffects: false)

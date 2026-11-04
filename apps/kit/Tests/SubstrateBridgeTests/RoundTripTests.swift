@@ -164,7 +164,7 @@ struct RoundTripTests {
 /// The last leg: what Kotlin wrote back, read by Swift. `android:test` sets
 /// SUBSTRATE_ROUNDTRIP_KOTLIN to the file kit-core's test wrote; without it
 /// there is nothing to read.
-@Suite("KotlinRoundTrip")
+@Suite("KotlinRoundTrip", .timeLimit(.minutes(10)))
 struct KotlinRoundTrip {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATE_ROUNDTRIP_KOTLIN"] != nil))
     func swiftDecodesWhatKotlinWrote() throws {

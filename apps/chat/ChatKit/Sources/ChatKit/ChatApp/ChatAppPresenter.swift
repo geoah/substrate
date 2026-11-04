@@ -146,8 +146,10 @@ extension ChatApp {
             status.append(ConversationNote(kind: .deleted, title: "This chat was deleted",
                                            message: "It is no longer on the server. What you typed stays below, to copy."))
         }
-        var technical: [String]?
-        if state.preferences.technicalDetails, let row { technical = ["\(Kinds.thread)/\(row.id)", row.tally.joined(separator: " · ")] }
+        var technical: [LabeledValue]?
+        if state.preferences.technicalDetails, let row {
+            technical = [LabeledValue("Thread", "\(Kinds.thread)/\(row.id)", verbatim: true)] + row.tally
+        }
         let keyless = state.keyless(live.agent)
         let callout = keyless.map {
             KeylessCallout(provider: $0.id, title: "Add an API key for \($0.name)",

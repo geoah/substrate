@@ -228,11 +228,11 @@ exercise). The next save writes the file as format 2.
 > section is the first build's design.
 
 In this repository the bundled and fixture JSON are the source, and `apps/workouts/scripts/workouts-package.py` writes
-only the package's manifests and `kinds.json`; the generator below is the first build's, and stayed in rxtx.dev. The
+only the package's manifests and `kinds.json`; the generator below is the first build's, and stayed in the owner's private repository. The
 YAML it read is in [`docs/examples/`](docs/examples/README.md), rehomed to `substrate.reamde.dev/training` and checked equal to the JSON
 record for record; that page says how the two relate.
 
-The examples in rxtx.dev's `research/workouts/substrate/examples/` (now [`docs/examples/`](docs/examples/README.md)) are YAML in `substratectl apply -f` form. The app bundles them
+The examples in the private repository's `research/workouts/substrate/examples/` (now [`docs/examples/`](docs/examples/README.md)) are YAML in `substratectl apply -f` form. The app bundles them
 as JSON in the shape substrate's REST API speaks, the flat record:
 
 ```json
@@ -293,8 +293,8 @@ public protocol CatalogSource: Sendable {
 }
 
 /// Told about every change the session controller applies, in order.
-/// V1: `NoSync`, which does nothing. V2: the write planner, which turns each into outbox entries.
-public protocol SessionSyncSink: Sendable {
+/// V1: `NoWrites`, which does nothing. V2: the write planner, which turns each into outbox entries.
+public protocol SessionWriteSink: Sendable {
     func applied(_ event: SessionEvent, state: SessionState) async
     func finished(_ records: SessionRecords) async
     func discarded(_ sessionID: SessionID) async
@@ -336,7 +336,7 @@ apps/apple/
                     the command, event, effect, state, transient and presentation types, one per file
       Settings/     WorkoutsSettings.swift SessionLayout.swift
       Store/        HistoryStore.swift HistoryIndex.swift HealthQueueFile.swift LocalExercises.swift
-      Seams/        CatalogSource.swift SessionSyncSink.swift HistorySource.swift BundledCatalog.swift
+      Seams/        CatalogSource.swift SessionWriteSink.swift HistorySource.swift BundledCatalog.swift
       Resources/Bundled/  exercises.json routines.json          (generated)
     Tests/WorkoutsCoreTests/
       Fixtures/examples/*.json  Fixtures/kinds.json             (generated)

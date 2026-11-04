@@ -8,7 +8,7 @@ import SubstrateCore
 
 private func d(_ text: String) -> Decimal { Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))! }
 
-@Suite("Formatting, DESIGN §4.13 and 03 §12")
+@Suite("Formatting, DESIGN §4.13 and 03 §12", .timeLimit(.minutes(10)))
 struct FormatTests {
     @Test("Durations: m:ss under an hour, h:mm:ss from an hour, Off for a rest of 0")
     func durations() {
@@ -121,7 +121,7 @@ struct FormatTests {
     }
 }
 
-@Suite("Labels and grid headers")
+@Suite("Labels and grid headers", .timeLimit(.minutes(10)))
 struct LabelTests {
     @Test("Grid columns per measurement (§7.6): SET and PREVIOUS first, the tick last, RPE on rep sets")
     func columns() {

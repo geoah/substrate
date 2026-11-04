@@ -34,6 +34,12 @@ public final class TestClock: RuntimeClock, @unchecked Sendable {
         return sleepers.count
     }
 
+    /// When each task waiting on this clock wakes, earliest first: a test
+    /// that moves the clock past a sleep waits for the sleep to be here.
+    public var deadlines: [Date] {
+        lock.withLock { sleepers.map(\.deadline).sorted() }
+    }
+
     public func sleep(until deadline: Date) async throws {
         let (id, due) = lock.withLock {
             nextID += 1

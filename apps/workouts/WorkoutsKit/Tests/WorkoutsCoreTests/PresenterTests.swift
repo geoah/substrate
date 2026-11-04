@@ -65,7 +65,7 @@ private func pastSession(_ id: String, at date: Date, exercise: ExerciseID, sets
                           sets: records)
 }
 
-@Suite("Session presenter: the grid")
+@Suite("Session presenter: the grid", .timeLimit(.minutes(10)))
 struct PresenterGridTests {
     @Test("Before anything is done: the chest press card's columns, labels, PREVIOUS and ghost values")
     func chestPressCard() throws {
@@ -238,7 +238,7 @@ struct PresenterGridTests {
     }
 }
 
-@Suite("Session presenter: header, groups, Up next")
+@Suite("Session presenter: header, groups, Up next", .timeLimit(.minutes(10)))
 struct PresenterSessionTests {
     @Test("The header, the superset block, Up next and the Live Activity before anything is done")
     func start() throws {
@@ -322,7 +322,7 @@ struct PresenterSessionTests {
     }
 }
 
-@Suite("Session presenter: rests, timers and the Live Activity")
+@Suite("Session presenter: rests, timers and the Live Activity", .timeLimit(.minutes(10)))
 struct PresenterRestTests {
     @Test("A warm-up rest: counting, then Rest over for ten seconds, then the Up next chip")
     func restForms() throws {
@@ -466,7 +466,7 @@ struct PresenterRestTests {
     }
 }
 
-@Suite("Finish, the entry check, and what the controller reads")
+@Suite("Finish, the entry check, and what the controller reads", .timeLimit(.minutes(10)))
 struct PresenterControllerTests {
     @Test("Finish: the unticked rows' shown values, the summary rows, the dialog's title")
     func finish() throws {
@@ -633,7 +633,7 @@ struct PresenterControllerTests {
     }
 }
 
-@Suite("History, Routines and Exercises screens")
+@Suite("History, Routines and Exercises screens", .timeLimit(.minutes(10)))
 struct PresenterScreenTests {
     static func entries() throws -> [HistoryEntry] {
         try ExampleFixtures.sessions("sessions").map {

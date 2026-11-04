@@ -32,7 +32,7 @@ public enum Tasks {
         TasksShell.Configuration(
             manifest: TasksManifest.current, keychainService: "dev.reamde.substrate.tasks", folder: "SubstrateTasks",
             packages: TasksManifest.packages, words: TasksApp.words(device:),
-            app: { TasksApp(cache: $0.cache, outbox: $0.outbox, device: $0.device, build: $0.build) },
+            app: { TasksApp(cache: $0.cache, outbox: $0.outbox, words: $0.words, device: $0.device, build: $0.build) },
             refresh: .foreground, respond: Reminders.command(for:), settings: { .settings($0) }, clearSaved: .clearSaved,
             settingsScreen: TasksSettings.screen)
     }

@@ -16,7 +16,7 @@ private let coverage = SessionID("01a181f3-c900-74e4-b0e2-345e3defd3cf")
 private let hotelGym = SessionID("01a188d6-2ce0-7bbd-84a8-a52f602ab29c")
 private let hevy = SessionID("hevy-3f1c9a2e-8b47-4d0e-9a61-2c7d5e8f4b10")
 
-@Suite("History store")
+@Suite("History store", .timeLimit(.minutes(10)))
 struct HistoryStoreTests {
     @Test("written sessions load back equal, newest first, with a pending Health status")
     func writeAndLoad() throws {
@@ -145,7 +145,7 @@ struct HistoryStoreTests {
     }
 }
 
-@Suite("History index")
+@Suite("History index", .timeLimit(.minutes(10)))
 struct HistoryIndexTests {
     @Test("an exercise's history is newest first, its sets in display order")
     func byExercise() throws {
@@ -203,7 +203,7 @@ struct HistoryIndexTests {
     }
 }
 
-@Suite("Health queue file")
+@Suite("Health queue file", .timeLimit(.minutes(10)))
 struct HealthQueueFileTests {
     @Test("enqueue once, record failures, remove")
     func lifecycle() throws {
@@ -261,7 +261,7 @@ struct HealthQueueFileTests {
     }
 }
 
-@Suite("Local exercises")
+@Suite("Local exercises", .timeLimit(.minutes(10)))
 struct LocalExercisesTests {
     @Test("an added exercise loads back marked as local; adding its id again replaces it")
     func addAndLoad() throws {
@@ -300,7 +300,7 @@ struct LocalExercisesTests {
     }
 }
 
-@Suite("Bundled catalogue")
+@Suite("Bundled catalogue", .timeLimit(.minutes(10)))
 struct BundledCatalogTests {
     @Test("the bundle is the sample routine and the thirteen exercises it names, all readable")
     func bundled() throws {

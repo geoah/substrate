@@ -1,0 +1,82 @@
+{
+ "format": 1,
+ "entries": [
+  {
+   "id": "00000000-0000-4000-8000-000000000101",
+   "method": "PUT",
+   "kind": "~/training/exercise",
+   "recordID": "chest-press-machine",
+   "properties": {
+    "equipment": "machine",
+    "laterality": "bilateral",
+    "loadBasis": "total",
+    "loadStep": {
+     "unit": "kg",
+     "value": "5"
+    },
+    "measurement": "weightreps",
+    "movement": {
+     "ref": "~/training/movement/chest-press"
+    },
+    "name": "Chest Press (Machine)",
+    "primaryMuscles": [
+     "chest"
+    ],
+    "restClass": "compound",
+    "secondaryMuscles": [
+     "shoulders",
+     "triceps"
+    ],
+    "title": "Chest Press (Machine)"
+   },
+   "guarded": false,
+   "attempts": 0,
+   "parked": false,
+   "conflict": false
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000102",
+   "method": "PATCH",
+   "kind": "~/training/routine",
+   "recordID": "day-1-strength-foundation",
+   "properties": {
+    "notes": "Edited on the phone before the update"
+   },
+   "guarded": true,
+   "attempts": 0,
+   "parked": false,
+   "baseVersion": 2,
+   "conflict": false
+  }
+ ],
+ "versions": {
+  "~/training/exercise/leg-press-machine": 2,
+  "~/training/routine/day-1-strength-foundation": 1,
+  "~/training/session/01a16363-cf80-73ed-85fd-704f6ce38d73": 3,
+  "~/training/set/01a16365-cb50-77df-a3b0-674947da373f": 1,
+  "~/training/set/01a16366-f048-7d25-8ece-ab06c4283a1b": 1,
+  "~/training/set/01a16369-0770-7d84-b8fb-2bdec3590e78": 1,
+  "~/training/set/01a1636c-0510-75ad-9ce4-51528dc18dc7": 1,
+  "~/training/set/01a1636e-e370-7a30-a66f-2b0ab3ff8d25": 1,
+  "~/training/set/01a16372-2b48-710a-b6f1-c7c308eae613": 1,
+  "~/training/set/01a16374-9478-745b-8557-4da0a0b3f28a": 1,
+  "~/training/set/01a16376-78d8-741d-8b7f-3e01a0258499": 1,
+  "~/training/set/01a16379-3be0-76ae-ab20-15657eb9eaba": 1,
+  "~/training/set/01a1637b-a128-7cf6-bb24-98e53f8706ac": 1,
+  "~/training/set/01a1637e-19f8-7e3f-b121-d89b167c37e0": 1,
+  "~/training/set/01a16380-c590-7593-bbda-70c3efa9c660": 1,
+  "~/training/set/01a16382-c548-71ac-a569-ac1b45b1dada": 1,
+  "~/training/set/01a16383-26f0-7c10-a755-ebce0af42ce6": 1,
+  "~/training/set/01a16383-8c80-72b6-a1b4-cecab1ae7059": 1,
+  "~/training/set/01a16383-ee28-7a87-86f6-dde468e24116": 1,
+  "~/training/set/01a16384-53b8-7ed4-9acc-b7d0fd226ca2": 1,
+  "~/training/set/01a16387-39e8-7cad-b710-a7f8b93e58d2": 1,
+  "~/training/set/01a1638a-0c90-7f2f-a99d-261db05c9348": 1,
+  "~/training/set/01a1638c-cbb0-7e5e-a151-93be43a614f1": 1
+ },
+ "chains": {
+  "~/training/routine/day-1-strength-foundation": {
+   "1": 2
+  }
+ }
+}

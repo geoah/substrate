@@ -9,7 +9,7 @@ You are reviewing, not fixing. Do not edit files, commit, push, or comment on Gi
 
 ## What to review
 
-The checkout is `/Users/geoah/src/github.com/geoah/substrate-wt-workouts`, branch `feat/apple-workouts`, head
+The checkout is a worktree of this repository, branch `feat/apple-workouts`, head
 `f9eeb332`. Its base is `b001925b` (origin/main). See the PR with `gh pr view 1100 --repo geoah/substrate`, and
 the diff with `git -C <checkout> diff b001925b..HEAD`.
 

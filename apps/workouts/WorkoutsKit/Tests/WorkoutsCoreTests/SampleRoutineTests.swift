@@ -6,7 +6,7 @@ import Testing
 // it must hold every method the app runs, and a session through it must
 // reach Finish the way the controller drives one.
 
-@Suite("The sample routine")
+@Suite("The sample routine", .timeLimit(.minutes(10)))
 struct SampleRoutineTests {
     static func sample() throws -> (Routine, Catalog) {
         let catalog = try BundledCatalog().loadNow()

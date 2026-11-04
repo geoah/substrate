@@ -40,9 +40,11 @@ public fun StatusScreen(presentation: StatusPresentation, perform: (StatusAction
                 KitRowDivider()
                 ProblemBox(it, Modifier.kitRowPadding())
             }
+            // The package by its name, and under it its full reference: two
+            // packages may share a name, never a reference.
             for (line in presentation.packages) {
                 KitRowDivider()
-                KitValueRow(line.row.label, line.row.value, verbatim = line.row.verbatim)
+                KitRow(line.row.label, supporting = line.id, trailing = { KitValueText(line.row.value, line.row.verbatim) })
             }
             for (button in presentation.actions) {
                 KitRowDivider()
@@ -64,9 +66,13 @@ public fun StatusScreen(presentation: StatusPresentation, perform: (StatusAction
                             Icon(ScreenSymbol.warning.icon, contentDescription = null, tint = ScreenTone.caution.tint, modifier = Modifier.size(16.dp))
                             Text(row.status, style = KitText.footnote.style, color = ScreenTone.caution.tint)
                         }
-                        SelectionContainer {
-                            Text(row.recordID, style = KitText.identifier.style, fontFamily = FontFamily.Monospace,
-                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        for (fact in listOf(row.kind, row.record)) {
+                            Column {
+                                Text(fact.label, style = KitText.footnote.style, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                SelectionContainer {
+                                    Text(fact.value, style = KitText.identifier.style, fontFamily = FontFamily.Monospace)
+                                }
+                            }
                         }
                         row.words?.let { Text(it, style = KitText.footnote.style, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         Row(horizontalArrangement = Arrangement.spacedBy(KitSpacing.content)) {

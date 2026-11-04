@@ -13,7 +13,7 @@ private let now = ScreenFixtures.now
 private let enUS = Locale(identifier: "en_US")
 private let utc = TimeZone(identifier: "UTC")!
 
-@Suite("The Access screen")
+@Suite("The Access screen", .timeLimit(.minutes(10)))
 struct AccessScreenTests {
     func banner(_ issues: [AppIssue], offers: Set<AccessAction.Offer> = Set(AccessAction.Offer.allCases),
                 locale: Locale = enUS) -> AccessBanner?
@@ -89,7 +89,7 @@ struct AccessScreenTests {
     }
 }
 
-@Suite("The Connect screen")
+@Suite("The Connect screen", .timeLimit(.minutes(10)))
 struct ConnectScreenTests {
     let probe = ScreenFixtures.all.compactMap { fixture -> ServerProbe.Result? in
         if case let .connect(presentation) = fixture.presentation, fixture.name == "connect-found" { return presentation.found }
@@ -117,8 +117,8 @@ struct ConnectScreenTests {
         #expect(presented.door == .browser)
         #expect(presented.field.text == "ada.example.com")
         #expect(presented.button?.title == "Sign In with Your Substrate")
-        #expect(presented.footer?.found == "Server found: ada.example.com")
-        #expect(presented.footer?.repository == "Repository: ada.example.com")
+        #expect(presented.footer?.found == LabeledValue("Server found", "ada.example.com", verbatim: true))
+        #expect(presented.footer?.repository == LabeledValue("Repository", "ada.example.com", verbatim: true))
     }
 
     @Test func writingTheCheckedNameBackIsNotANewAddressButTypingIs() async throws {
@@ -207,7 +207,7 @@ struct ConnectScreenTests {
     }
 }
 
-@Suite("The Repository and Status screens")
+@Suite("The Repository and Status screens", .timeLimit(.minutes(10)))
 struct RepositoryStatusTests {
     let words = StatusWords(app: "Tasks", device: "this iPhone", kept: "tasks")
 
@@ -228,9 +228,8 @@ struct RepositoryStatusTests {
         #expect(repository.approved?.until.value.hasPrefix("Nov 3, 2026 at 9:00") == true)
         #expect(repository.changeAccess == "Change Access…")
         #expect(repository.footer == "Sign Out: signs out on this device and revokes its access on ada.example.com.")
-        // The apps' own section keeps the word it had.
         #expect(RepositoryPresenter.present(session: session, manifest: nil, serverVersion: nil, unrevoked: [], offersChangeAccess: true,
-                                            title: "Account", locale: enUS, timeZone: utc).title == "Account")
+                                            locale: enUS, timeZone: utc).title == "Repository")
     }
 
     @Test func aPasswordSessionReachesEverything() {
@@ -332,9 +331,12 @@ struct RepositoryStatusTests {
         #expect(settings.sections.map(\.id) == [.app("tasks"), .status, .refused, .repository, .approvedAccess, .storage, .about])
         let refused = try #require(settings.sections.first { $0.id == .refused })
         let write = ScreenFixtures.refusedWrite
-        #expect(refused.rows.map(\.id) == [.status(.refused(write.id)), .status(.refusedStatus(write.id)), .status(.action(.retry(write.id))),
+        #expect(refused.rows.map(\.id) == [.status(.refused(write.id)), .status(.refusedStatus(write.id)), .status(.refusedKind(write.id)),
+                                            .status(.refusedRecord(write.id)), .status(.action(.retry(write.id))),
                                             .status(.action(.discard(write.id)))])
         #expect(refused.rows[0].detail == write.words)
+        #expect(refused.rows[2].label == "Kind" && refused.rows[2].control == .value(write.kind, verbatim: true))
+        #expect(refused.rows[3].label == "Record ID" && refused.rows[3].control == .value(write.recordID, verbatim: true))
         let approved = try #require(settings.sections.first { $0.id == .approvedAccess })
         #expect(approved.rows.map(\.id) == ScreenFixtures.manifest.scopes.map { .repository(.scope($0)) } + [.repository(.until), .repository(.changeAccess)])
         #expect(approved.rows.allSatisfy { !$0.label.contains("\n") })
@@ -398,7 +400,7 @@ struct RepositoryStatusTests {
     }
 }
 
-@Suite("The link")
+@Suite("The link", .timeLimit(.minutes(10)))
 struct LinkControllerTests {
     let secret = "sub_app_never_shown_9f1e"
     let server = URL(string: "https://ada.example.com")!
@@ -631,7 +633,7 @@ struct Notes: LinkedApp {
     func journal(in environment: AppEnvironment) -> (any JournalStore<Event, State>)? { journal }
 }
 
-@Suite("The link and its app, one tree")
+@Suite("The link and its app, one tree", .timeLimit(.minutes(10)))
 struct LinkTreeTests {
     let server = URL(string: "https://ada.example.com")!
     let words = StatusWords(app: "Substrate Tasks", device: "this iPhone", kept: "notes")
@@ -706,7 +708,7 @@ struct LinkTreeTests {
     }
 }
 
-@Suite("The fixtures")
+@Suite("The fixtures", .timeLimit(.minutes(10)))
 struct ScreenFixtureTests {
     @Test func everyScreenHasAFixtureAndEveryNameIsUnique() {
         let fixtures = ScreenFixtures.all

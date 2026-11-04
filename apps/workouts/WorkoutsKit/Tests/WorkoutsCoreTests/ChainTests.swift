@@ -30,7 +30,7 @@ private func singleSlot(_ exercise: Exercise, _ sets: [PlannedSet], sideOrder: S
     return script
 }
 
-@Suite("Chains: drops")
+@Suite("Chains: drops", .timeLimit(.minutes(10)))
 struct DropChainTests {
     @Test("drop rows come with the head, locked until it is ticked, with dropReps as their target")
     func created() throws {
@@ -72,7 +72,7 @@ struct DropChainTests {
     }
 }
 
-@Suite("Chains: myo-reps")
+@Suite("Chains: myo-reps", .timeLimit(.minutes(10)))
 struct MyoChainTests {
     private let raise = EngineCatalog.raise
 
@@ -171,7 +171,7 @@ struct MyoChainTests {
     }
 }
 
-@Suite("Chains: myo-rep match, rest-pause and clusters")
+@Suite("Chains: myo-rep match, rest-pause and clusters", .timeLimit(.minutes(10)))
 struct MatchPauseClusterTests {
     @Test("a myo-rep match resolves its total from the slot's previous working set at the head's tick (28 October)")
     func matchFromPrevious() throws {
@@ -238,7 +238,7 @@ struct MatchPauseClusterTests {
     }
 }
 
-@Suite("Chains: one side at a time")
+@Suite("Chains: one side at a time", .timeLimit(.minutes(10)))
 struct SideChainTests {
     @Test("the first side by sideOrder: left by default, right, or the weaker side the controller found")
     func sideOrder() throws {

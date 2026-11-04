@@ -66,7 +66,14 @@ public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
             VStack(spacing: 28) {
                 header.padding(.top, 48)
 
-                addressField
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(presentation.field.label)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 4)
+                        .accessibilityHidden(true)
+                    addressField
+                }
 
                 if let tooOld = presentation.tooOld {
                     ServerTooOldScreen(tooOld, onTryAgain: { send(.checkAgain) }, onChangeServer: {
@@ -146,17 +153,25 @@ public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
         .accessibilityLabel(presentation.field.label)
     }
 
+    /// A label and its value, the value as the identifier it is.
+    private func fact(_ fact: LabeledValue) -> some View {
+        HStack(spacing: 6) {
+            Text(fact.label).fontWeight(.semibold)
+            Text(fact.value).monospaced().textSelection(.enabled)
+        }
+    }
+
     @ViewBuilder private func footerView(_ footer: ConnectPresentation.Footer) -> some View {
         VStack(spacing: 6) {
             if let found = footer.found {
                 Label {
-                    Text(found)
+                    fact(found)
                 } icon: {
                     Image(systemName: ScreenSymbol.found.systemName).foregroundStyle(.green)
                 }
             }
             if let repository = footer.repository {
-                Text(repository)
+                fact(repository)
             }
             Text(footer.note)
         }

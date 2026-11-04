@@ -6,7 +6,7 @@ import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
 
-@Suite struct MarkdownBlocks {
+@Suite(.timeLimit(.minutes(10))) struct MarkdownBlocks {
     @Test func paragraphsHeadingsAndRules() {
         let blocks = Markdown.parse("# Title\n\nOne line\nnext line\n\n---\n\nAfter")
         #expect(blocks == [
@@ -77,7 +77,7 @@ import SubstrateDevice
     }
 }
 
-@Suite struct Previews {
+@Suite(.timeLimit(.minutes(10))) struct Previews {
     @Test func markdownReadsAsOneLine() {
         let text = "Here is **bold**:\n\n## Head\n\n- one\n- [x] two\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```swift\nlet x = 1\n```\n> quoted `code`"
         #expect(plainText(markdown: text) == "Here is bold: Head one two a, b 1, 2 let x = 1 quoted code")
@@ -89,7 +89,7 @@ import SubstrateDevice
     }
 }
 
-@Suite struct RecordLinks {
+@Suite(.timeLimit(.minutes(10))) struct RecordLinks {
     let kind = "ada.example.com/tasks/task"
 
     @Test func bothSpellingsNameTheRecord() {

@@ -36,7 +36,7 @@ private func edit(_ id: String, _ patch: JSONObject, base: Int) -> OutboxEntry {
     OutboxEntry(method: .patch, kind: noteKind, recordID: id, properties: patch, guarded: true, baseVersion: base)
 }
 
-@Suite("The outbox")
+@Suite("The outbox", .timeLimit(.minutes(10)))
 struct OutboxTests {
     @Test func aConflictOnAGuardedPatchReadsTheRecordAndSendsTheChangeAgainOnTop() async throws {
         let server = ScriptedServer()
@@ -113,9 +113,11 @@ struct OutboxTests {
         let server = ScriptedServer()
         server.on { _ in (401, #"{"error":{"code":"auth","message":"invalid token"}}"#) }
         let outbox = try openOutbox()
-        try await outbox.enqueue([entry(.put, entryKind, "a")])
+        try await outbox.enqueue([entry(.put, entryKind, "a"), entry(.put, entryKind, "b"), entry(.put, entryKind, "c")])
         #expect(await outbox.flush(writer(server)) == .signedOut)
-        #expect(await outbox.entries.count == 1)
+        // The first refused, the rest are never sent, and all three wait.
+        #expect(server.methodsAndPaths == ["PUT \(path(entryKind, "a"))"])
+        #expect(await outbox.entries.map(\.recordID) == ["a", "b", "c"])
     }
 
     @Test func aDiscardDropsTheBatchAndABatchTheServerHoldsIsPurgedAtItsVersion() async throws {
@@ -176,7 +178,7 @@ struct OutboxTests {
     }
 }
 
-@Suite("The outbox while a write is in flight")
+@Suite("The outbox while a write is in flight", .timeLimit(.minutes(10)))
 struct OutboxInFlightTests {
     @Test func aBatchPurgedWhileAnothersCreateIsInFlightLosesNoneOfTheOthersWrites() async throws {
         let server = ScriptedServer()
@@ -234,7 +236,7 @@ struct OutboxInFlightTests {
     }
 }
 
-@Suite("Guarded edits in the outbox")
+@Suite("Guarded edits in the outbox", .timeLimit(.minutes(10)))
 struct OutboxEditTests {
     let notePath = path(noteKind, "day-1")
 
@@ -382,9 +384,11 @@ struct OutboxEditTests {
 
 /// Workouts' format 1 spelling, as its `LegacyKinds` respells it: the
 /// package was `~/training` on the device.
-private let legacy = OutboxUpgrade(
-    respell: { $0.hasPrefix("~/training") ? "substrate.reamde.dev/training" + $0.dropFirst("~/training".count) : $0 },
-    respellProperties: { respellObject($0) })
+private let legacy = OutboxUpgrade(respell: respellKind, respellProperties: respellObject)
+
+private func respellKind(_ text: String) -> String {
+    text.hasPrefix("~/training") ? "substrate.reamde.dev/training" + text.dropFirst("~/training".count) : text
+}
 
 private func respellObject(_ object: JSONObject) -> JSONObject {
     var out = JSONObject()
@@ -394,14 +398,14 @@ private func respellObject(_ object: JSONObject) -> JSONObject {
 
 private func respellValue(_ value: JSONValue) -> JSONValue {
     switch value {
-    case let .string(text): .string(text.hasPrefix("~/training") ? "substrate.reamde.dev/training" + text.dropFirst("~/training".count) : text)
+    case let .string(text): .string(respellKind(text))
     case let .array(items): .array(items.map(respellValue))
     case let .object(object): .object(respellObject(object))
     default: value
     }
 }
 
-@Suite("The outbox's files and reports")
+@Suite("The outbox's files and reports", .timeLimit(.minutes(10)))
 struct OutboxFileTests {
     let session = "01a16363-cf80-73ed-85fd-704f6ce38d73"
 
@@ -421,12 +425,16 @@ struct OutboxFileTests {
         #expect(entries.first?.kind == "substrate.reamde.dev/training/session" && entries.first?.recordID == session)
         // Workouts' `session` is the batch.
         #expect(entries.dropFirst().dropLast().allSatisfy { $0.kind == "substrate.reamde.dev/training/set" && $0.batch == session })
-        #expect(await outbox.version(of: "substrate.reamde.dev/training/exercise", "leg-press-machine") == 2)
-        #expect(await outbox.versions.keys.allSatisfy { $0.hasPrefix("substrate.reamde.dev/training/") })
+        // What the old build knew of `~/training` is not known of the moved
+        // kinds: Finish goes without its guard, and no version or chain stays.
+        #expect(entries.last?.method == .patch && entries.last?.guarded == false && entries.last?.baseVersion == nil)
+        #expect(await outbox.versions.isEmpty)
+        #expect(await outbox.version(of: "substrate.reamde.dev/training/exercise", "leg-press-machine") == nil)
 
         let rewritten = String(decoding: try #require(try folder.read("outbox.json", in: .outbox)), as: UTF8.self)
         #expect(rewritten.contains(#""format":2"#))
         #expect(!rewritten.contains("~/"))
+        #expect(rewritten.contains(#""versions":{}"#) && rewritten.contains(#""chains":{}"#))
         // Written with both names, so a build of Workouts from before the
         // kit's outbox reads its sessions back.
         #expect(rewritten.contains(#""batch":"\#(session)""#) && rewritten.contains(#""session":"\#(session)""#))
@@ -434,6 +442,37 @@ struct OutboxFileTests {
         let again = Outbox(folder: folder, upgrade: legacy)
         #expect(await again.entries == entries)
         #expect(String(decoding: try #require(try folder.read("outbox.json", in: .outbox)), as: UTF8.self) == rewritten)
+    }
+
+    @Test func aMovedRecordsWritesTheAppDerivesAgainAreDroppedAndTheRestIsLeftAlone() async throws {
+        let folder = try RepositoryFolder(root: temporaryFolder())
+        let file = #"""
+        {"entries": [
+          {"id": "00000000-0000-0000-0000-000000000001", "method": "PUT", "kind": "~/training/session", "recordID": "s", "session": "s"},
+          {"id": "00000000-0000-0000-0000-000000000002", "method": "DELETE", "kind": "~/training/session", "recordID": "t", "session": "t"},
+          {"id": "00000000-0000-0000-0000-000000000003", "method": "PATCH", "kind": "~/training/routine", "recordID": "r",
+           "properties": {"notes": "kept"}, "guarded": true, "baseVersion": 3},
+          {"id": "00000000-0000-0000-0000-000000000004", "method": "PATCH", "kind": "substrate.reamde.dev/training/routine", "recordID": "q",
+           "guarded": true, "baseVersion": 4}
+        ],
+        "versions": {"~/training/routine/r": 3, "substrate.reamde.dev/training/routine/q": 4},
+        "chains": {"~/training/routine/r": {"3": 4}, "substrate.reamde.dev/training/routine/q": {"4": 5}}}
+        """#
+        try folder.write(Data(file.utf8), to: "outbox.json", in: .outbox)
+        let upgrade = OutboxUpgrade(respell: respellKind, respellProperties: respellObject,
+                                    rederives: { $0.batch != nil && $0.method != OutboxEntry.Method.purge })
+        let outbox = Outbox(folder: folder, upgrade: upgrade)
+
+        let entries = await outbox.entries
+        // The session's write goes, its purge stays.
+        #expect(entries.map(\OutboxEntry.recordID) == ["t", "r", "q"])
+        #expect(entries[0].kind == "substrate.reamde.dev/training/session" && entries[0].method == .purge)
+        #expect(entries[1].kind == "substrate.reamde.dev/training/routine" && !entries[1].guarded && entries[1].baseVersion == nil)
+        #expect(entries[1].properties == ["notes": .string("kept")])
+        // A record already in this build's spelling keeps everything.
+        #expect(entries[2].guarded && entries[2].baseVersion == 4)
+        #expect(await outbox.versions == ["substrate.reamde.dev/training/routine/q": 4])
+        #expect(await outbox.version(of: "substrate.reamde.dev/training/routine", "r") == nil)
     }
 
     @Test func aFormatOneFileWithoutAnUpgradeIsSetAsideNeverDropped() async throws {

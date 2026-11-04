@@ -9,13 +9,22 @@ import WorkoutsCore
 /// the account's folder: an entry's batch is written under `session` as
 /// well, so a build from before the kit reads it back. A format 1 file, from
 /// a build that spelled the package `~/training` on the phone, is read
-/// through `LegacyKinds` and written back once at format 2. What follows are
-/// the routine and session helpers over it.
+/// through `LegacyKinds` and written back once at format 2, and nothing it
+/// knew about that package carries over (`workoutsUpgrade`). What follows
+/// are the routine and session helpers over it.
 public extension Outbox {
     static let fileName = "outbox.json"
 
-    /// Respells a format 1 file's kinds, paths and version keys.
-    static let workoutsUpgrade = OutboxUpgrade(respell: LegacyKinds.respell, respellProperties: LegacyKinds.respell)
+    /// Respells a format 1 file's kinds and paths, and drops what the old
+    /// build knew about `~/training`: its versions, its chains and its
+    /// guards go, since a version carried over reads a session the published
+    /// package lacks as deleted on the server and `HistoryExchange` then
+    /// deletes the phone's history. A session's writes go altogether: the
+    /// exchange derives them again from the history and the tombstones, the
+    /// one path that writes a session the package lacks whole and leaves one
+    /// it holds alone. A purge stays, since the server takes one of nothing.
+    static let workoutsUpgrade = OutboxUpgrade(respell: LegacyKinds.respell, respellProperties: LegacyKinds.respell,
+                                               rederives: { $0.session != nil && $0.method != .purge })
 
     /// The account folder's outbox.
     static func workouts(directory: URL, writingOptions: Data.WritingOptions = WorkoutsFiles.protectedWriting,

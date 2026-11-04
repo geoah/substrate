@@ -13,7 +13,7 @@ import SubstrateCore
 /// any device; a failed write never stops the sync; a routine's delete goes
 /// through the outbox and leaves the cache at once; a session logged signed
 /// out on the sample finds its exercises on the server.
-@Suite("Sample routine and routine deletes")
+@Suite("Sample routine and routine deletes", .timeLimit(.minutes(10)))
 struct SampleInstallTests {
     let codec = RecordCodec()
 

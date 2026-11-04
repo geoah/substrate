@@ -8,7 +8,7 @@ import Testing
 /// The refresh job, as the system runs it: scheduled with the repository
 /// and the link generation, checked against both before it writes, and
 /// stopped when the system takes the run back or its budget runs out.
-@Suite("Background work")
+@Suite("Background work", .timeLimit(.minutes(10)))
 struct BackgroundRefresh {
     let threads = #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3))]}"#
 

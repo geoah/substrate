@@ -857,7 +857,7 @@ description = "Run Substrate Chat's tests on the Mac: ChatKit's, then the app ta
 run = ".mise/apple.sh test:chat"
 
 [tasks."apps:gallery"]
-description = "Draw every shared screen's fixtures with SwiftUI and with Compose, to build/gallery/apple and build/gallery/android, with build/gallery/index.html beside each other, and the kit's views as the apps call them and Substrate Tasks' screens under build/gallery/apple"
+description = "Draw every shared screen's fixtures with SwiftUI and with Compose, to build/gallery/apple and build/gallery/android, with build/gallery/index.html beside each other, and the kit's views as the apps call them and every app's own screens under build/gallery/apple"
 # The gallery is a check as well as a picture (docs/plans/app-kit.md, §7.4):
 # a fixture whose screen has no renderer on either system fails the run,
 # which `mise run apple:test:kit` and `mise run android:test` also hold
@@ -880,13 +880,11 @@ description = "Build the console and the iOS app, and run it on a simulator"
 depends = ["console:build"]
 run = ".mise/apple.sh sim"
 
-# SUBSTRATE_APPLE_RELEASE_URL (a public S3 folder, path-style), the AWS_*
-# key that may write it, and SUBSTRATE_APPLE_CLIENT_URL (the folder on a host
-# of the publisher's own the apps' client documents go under, when the
-# release folder's host is a shared endpoint) come from the environment,
-# never from this file. So do SUBSTRATE_APPLE_SITE_URL (the https origin the
-# site is served at, which every release then claims its sign-in callback
-# on), SUBSTRATE_APPLE_SITE_UPLOAD_URL, SUBSTRATE_APPLE_SITE_AUTHORITY,
+# SUBSTRATE_APPLE_RELEASE_URL (a public S3 folder, path-style) and the AWS_*
+# key that may write it come from the environment, never from this file. So
+# do SUBSTRATE_APPLE_SITE_URL (the https origin the site is served at, which
+# every release requires and claims its sign-in callback on),
+# SUBSTRATE_APPLE_SITE_UPLOAD_URL, SUBSTRATE_APPLE_SITE_AUTHORITY,
 # SUBSTRATE_APPLE_TEAM_ID, and the Android release key's
 # SUBSTRATE_ANDROID_KEYSTORE, _KEYSTORE_PASSWORD, _KEY_ALIAS, _KEY_PASSWORD
 # and _CERT_SHA256 (apps/README.md). The names keep their APPLE_ prefix
@@ -1026,7 +1024,7 @@ tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
 run = ".mise/android.sh smoke"
 
 [tasks."android:lock"]
-description = "Rewrite the Gradle dependency locks after a change to gradle/libs.versions.toml"
+description = "Rewrite the Gradle dependency locks and the dependency verification metadata (every artifact's sha256) after a change to gradle/libs.versions.toml"
 tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
 run = ".mise/android.sh lock"
 

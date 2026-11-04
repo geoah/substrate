@@ -10,12 +10,10 @@ public enum RepositoryPresenter {
     /// to revoke it by hand.
     ///
     /// - Parameters:
-    ///   - title: the section's heading; an app that called it Account
-    ///     before the kit (`AccountSection`) keeps its word.
     ///   - signOutMessage: what else signing out gives up on the device, in
     ///     the app's words (`StatusWords.signOut`), after the kit's own.
     public static func present(session: SessionFacts, manifest: AppManifest?, serverVersion: String?, unrevoked: [SessionFacts],
-                               offersChangeAccess: Bool, title: String = "Repository", signOutMessage: String? = nil, locale: Locale,
+                               offersChangeAccess: Bool, signOutMessage: String? = nil, locale: Locale,
                                timeZone: TimeZone) -> RepositoryPresentation
     {
         let host = ServerAddress.display(session.server)
@@ -23,7 +21,7 @@ public enum RepositoryPresenter {
         let app = session.scopes != nil
         let until = LabeledValue("Until", session.expiresAt.map { DateWords.moment($0, locale: locale, timeZone: timeZone) } ?? "You revoke it")
         return RepositoryPresentation(
-            title: title, server: LabeledValue("Server", host), repository: LabeledValue("Repository", session.repository),
+            title: "Repository", server: LabeledValue("Server", host), repository: LabeledValue("Repository", session.repository),
             serverVersion: serverVersion.map { LabeledValue("Server version", ServerVersion.display($0).capitalizedFirst) },
             approved: session.scopes.map { scopes in
                 ApprovedAccess(title: "Approved access", scopes: scopes.map { ApprovedScope(scope: $0, words: words($0)) }, until: until)

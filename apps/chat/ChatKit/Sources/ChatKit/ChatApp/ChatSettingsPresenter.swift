@@ -13,7 +13,8 @@ extension ChatApp {
             let provider = agent.providerID.flatMap { state.providers[$0] }.map(Provider.init(record:))
             return AssistantRow(
                 id: agent.id, name: agent.name, description: agent.description,
-                runsOn: [provider?.name ?? agent.providerID.map(providerName), agent.model].compactMap { $0 }.joined(separator: " · "),
+                runsOn: [(provider?.name ?? agent.providerID.map(providerName)).map { LabeledValue("Provider", $0) },
+                         agent.model.map { LabeledValue("Model", $0, verbatim: true) }].compactMap { $0 },
                 offered: state.preferences.offers(agent, defaults: defaults),
                 keyless: provider.flatMap { $0.hasKey ? nil : KeylessProvider(id: $0.id, name: $0.name, action: "No API key: Add") })
         }

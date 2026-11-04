@@ -1,5 +1,6 @@
 import Foundation
 import SubstrateCore
+import SubstrateScreens
 
 /// The modes a person reads as a conversation: every run of a root agent.
 /// A sub-agent's thread and a judge's verdict are parts of another run.
@@ -30,20 +31,22 @@ struct ChatThread: Hashable, Sendable, Identifiable {
 
     func title(opening: String?) -> String { threadTitle(subject: subject, opening: opening) }
 
-    var tally: [String] {
+    /// The run's figures, each a labelled fact: its status, turns, tool
+    /// calls, tokens and cost, where the row holds them.
+    var tally: [LabeledValue] {
         let p = record.properties
-        var out: [String] = []
-        if !status.isEmpty { out.append(reason.map { "\(status) (\($0))" } ?? status) }
-        if let n = p["turns"]?.int { out.append(plural(n, "turn")) }
-        if let n = p["toolCalls"]?.int { out.append(plural(n, "tool call")) }
+        var out: [LabeledValue] = []
+        if !status.isEmpty { out.append(LabeledValue("Status", reason.map { "\(status) (\($0))" } ?? status)) }
+        if let n = p["turns"]?.int { out.append(LabeledValue("Turns", n.formatted())) }
+        if let n = p["toolCalls"]?.int { out.append(LabeledValue("Tool calls", n.formatted())) }
         if let n = p["totalTokens"]?.int {
-            var words = plural(n, "token")
+            var words = n.formatted()
             if let i = p["promptTokens"]?.int, let o = p["completionTokens"]?.int {
                 words += " (\(i.formatted()) in, \(o.formatted()) out)"
             }
-            out.append(words)
+            out.append(LabeledValue("Tokens", words))
         }
-        if let cost = p["costUSD"]?.number { out.append(String(format: "$%.4f", cost)) }
+        if let cost = p["costUSD"]?.number { out.append(LabeledValue("Cost", String(format: "$%.4f", cost))) }
         return out
     }
 }

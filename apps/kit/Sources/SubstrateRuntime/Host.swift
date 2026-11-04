@@ -205,6 +205,8 @@ final class Host<C: Controller>: @unchecked Sendable {
         var key: String?
         var epoch: Int
         var generation: Int
+        /// The runtime's number for the effect, in the order work started.
+        var serial: Int
     }
 
     /// Starts an effect's work. Under a key, the one running there is
@@ -217,8 +219,13 @@ final class Host<C: Controller>: @unchecked Sendable {
             epochs[key, default: 0] += 1
         }
         let work = controller.perform(effect, in: loop.environment)
+        switch work {
+        case .none, .cancel: return
+        case .once, .sequence: break
+        }
         nextTicket += 1
-        let ticket = Ticket(id: nextTicket, key: key, epoch: key.flatMap { epochs[$0] } ?? 0, generation: generation)
+        let ticket = Ticket(id: nextTicket, key: key, epoch: key.flatMap { epochs[$0] } ?? 0, generation: generation,
+                            serial: loop.effectStarted())
         let hop = loop.hop
         // Held until the work ends, so a result for a controller closed
         // meanwhile still reaches it, to be counted and dropped.
@@ -246,6 +253,7 @@ final class Host<C: Controller>: @unchecked Sendable {
     }
 
     private func finish(_ ticket: Ticket, delivering event: C.Event?) {
+        loop.effectEnded(ticket.serial)
         running[ticket.id] = nil
         if let key = ticket.key, runningKeys[key] == ticket.id { runningKeys[key] = nil }
         if let event { receive(event, ticket) }

@@ -30,8 +30,8 @@ public struct AssistantRow: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var name: String
     public var description: String?
-    /// Provider · model.
-    public var runsOn: String
+    /// What it runs on: "Provider" and "Model", where the agent names them.
+    public var runsOn: [LabeledValue]
     public var offered: Bool
     /// The provider without a key, by id and name.
     public var keyless: KeylessProvider?

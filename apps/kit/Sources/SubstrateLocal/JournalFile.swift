@@ -51,8 +51,13 @@ public struct JournalFile<Event: Codable & Sendable, State: Codable & Sendable>:
         try folder.setAside(name, in: area, at: instant).name
     }
 
-    // Dates stay `deferredToDate` (a Double), so a stored instant reloads
-    // exactly and the fold equals the cached state after a reload.
+    // The file is Foundation's coders' own, not `ValueCoding`'s, because it
+    // is a format on devices: Workouts' `active-session.json` has been
+    // written so by every build, its instants as `deferredToDate` seconds
+    // (a Double, which also reloads an instant exactly, so the fold equals
+    // the cached state), and a phone holding one must read it after an
+    // upgrade. A journal never crosses to Android, so nothing needs it in
+    // the bridge's coding.
     private static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

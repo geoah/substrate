@@ -1,14 +1,17 @@
 import Foundation
 @testable import ChatKit
+import SubstrateAPI
+import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
 import SubstrateRuntime
+import SubstrateScreens
 import SubstrateTesting
 import Testing
 
 /// DESIGN.md's seven rules ("The store and its concurrency rules"), one
 /// test each by its number, against a scripted server on the kit's runtime.
-@Suite("The seven rules")
+@Suite("The seven rules", .timeLimit(.minutes(10)))
 struct SevenRules {
     @Test func rule1_aConversationIsKeyedByItsClientIDAndTheThreadEventBindsIt() async throws {
         let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream))])
@@ -40,9 +43,11 @@ struct SevenRules {
         try await rig.send(.send, to: key)
         try await rig.harness.until { await $0.state.conversations[key]?.thread == "t1" }
         // Opening the chat the app streams, in another window, opens nothing.
+        let mark = await rig.harness.effectsStarted
         await rig.harness.send(.show(thread: "t1", scene: "other"))
         try await rig.send(.open, to: key)
-        await rig.harness.settle()
+        // Past the folder's coalesced saves, which wait on the clock.
+        try await rig.harness.untilIdle(since: mark, advancing: 1)
         #expect(rig.server.count("/events") == 0)
         #expect(rig.server.count("/chat") == 1)
         rig.server.release()
@@ -57,8 +62,9 @@ struct SevenRules {
         try await rig.send(.send, to: key)
         try await rig.harness.until { _ in await rig.live(key)?.overlay.turns.contains { $0.role == .assistant } == true }
         // An ordinary read of the thread while it streams: refused outright.
+        let mark = await rig.harness.effectsStarted
         await rig.harness.send(.show(thread: "t1", scene: "other"))
-        await rig.harness.settle()
+        try await rig.harness.untilIdle(since: mark, advancing: 1)
         #expect(rig.server.count("/api/v1/records", query: "llm/message") == 0)
         #expect(await rig.harness.state.transcripts["t1"] == nil)
         rig.server.release()
@@ -102,6 +108,8 @@ struct SevenRules {
                                         settles: 0, named: nil, read: nil, draft: nil, sent: false, failure: nil)
         state = try app.apply(.init(.conversation(key, report)), to: state)
         #expect(state.readEpochs["t1"] == 1)
+        // The move cancels the read in flight, by its key.
+        #expect(state.asks.contains(.cancel("read:t1")))
         var settled = report
         (settled.owns, settled.active, settled.streaming, settled.settles) = (false, false, false, 1)
         state = try app.apply(.init(.conversation(key, settled)), to: state)
@@ -120,15 +128,19 @@ struct SevenRules {
         try await rig.signIn()
         // The attach's first read is held on the wire.
         rig.server.hold("/llm/thread/t1")
+        let first = await rig.harness.effectsStarted
         await rig.harness.send(.show(thread: "t1", scene: "s"))
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         try await rig.harness.until { _ in rig.server.count("/llm/thread/t1") == 1 }
+        let second = await rig.harness.effectsStarted
         // Back in front: the conversation attaches again, a run of its own.
         await rig.harness.send(.phase(.active))
         try await rig.harness.until { _ in rig.server.count("/llm/thread/t1") == 2 }
         rig.server.letGo("/llm/thread/t1")
         try await rig.harness.until { _ in await rig.live(key)?.phase == .background }
-        await rig.harness.settle()
+        // Everything the first attach started has ended, its held read with
+        // it, the saves it asked for once the clock passes them.
+        try await rig.harness.untilIdle(since: first, through: second, advancing: 1)
         // The older run's read came back too, and did nothing: had it landed,
         // it would have attached a second stream.
         #expect(rig.server.count("/events") == 1)
@@ -155,6 +167,28 @@ struct SevenRules {
         #expect(rig.notifications.calls.contains(.cancelAll))
     }
 
+    /// Rule 6's last leg is the link's: the session leaves the Keychain.
+    @Test func rule6_aSignOutDeletesTheKeychainItem() async throws {
+        let storage = MemoryStorage()
+        let sessions = SessionStore(storage: storage)
+        let manifest = ChatManifest.manifest
+        try sessions.save(Session(server: origin, repository: repository, secret: "secret", clientID: manifest.clientID,
+                                  scopes: manifest.scopes))
+        let server = ChatServer(baseRoutes() + [.init(method: "POST", path: "/oauth/revoke", answer: .json(200, "{}"))])
+        var environment = AppEnvironment.testing(transport: server,
+                                                 client: .fixed(SubstrateClient(server: origin, token: "secret", transport: server)))
+        environment.devices.notifications = RecordedNotifications()
+        let app = ChatApp(storage: ChatStorage(base: temporaryFolder("chat")), preferences: MemoryPreferenceStore(), platform: .macos)
+        let link = LinkController(app: app, manifest: manifest, sessions: sessions,
+                                  words: StatusWords(app: ChatManifest.appName, device: "this Mac", kept: "saved chats"))
+        let harness = ControllerHarness(link, environment: environment)
+        try await harness.until { await $0.presentation.snapshot.phase == .signedIn }
+        await harness.send(.signOut)
+        try await harness.until { await $0.presentation.snapshot.phase == .signedOut }
+        #expect(sessions.load() == nil)
+        #expect(server.count("/oauth/revoke") == 1)
+    }
+
     @Test func rule7_cachedRowsAreCurrentOnlyWhileTheirThreadIsSettledAndUnmoved() {
         var state = ChatAppState()
         let thread = Record(id: "t1", kind: Kinds.thread, properties: ["mode": "chat", "status": "ok"], version: 3)
@@ -175,7 +209,7 @@ struct SevenRules {
     }
 }
 
-@Suite("The conversation's run")
+@Suite("The conversation's run", .timeLimit(.minutes(10)))
 struct ConversationRuns {
     @Test func aSendStreamsThenHandsOverInOneStepWithoutDoubling() async throws {
         let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream))])
@@ -228,11 +262,10 @@ struct ConversationRuns {
         try await rig.send(.draft("Hi"), to: key)
         try await rig.send(.send, to: key)
         try await rig.harness.until { _ in await rig.live(key)?.checking == true }
-        // The check reads a second later.
-        try await rig.harness.until { harness in
-            await harness.advance(by: 1)
-            return await rig.live(key)?.outcomes.contains { $0.kind == .unknown } == true
-        }
+        // The check reads a second later: the clock moves to each sleep as
+        // it begins, its presentation's window and then the check's, and no
+        // further than two seconds on.
+        try await rig.harness.until(advancing: 2) { _ in await rig.live(key)?.outcomes.contains { $0.kind == .unknown } == true }
         #expect(await rig.live(key)?.outcomes.contains { $0.kind == .refused } == false)
         // Nothing is sent again on its own.
         #expect(rig.server.count("/chat") == 1)
@@ -249,7 +282,7 @@ struct ConversationRuns {
     }
 }
 
-@Suite("The list")
+@Suite("The list", .timeLimit(.minutes(10)))
 struct ListRules {
     @Test func olderRowsNeverReplaceNewerOnes() throws {
         let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)

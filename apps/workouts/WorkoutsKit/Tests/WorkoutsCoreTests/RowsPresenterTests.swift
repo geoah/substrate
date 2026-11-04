@@ -111,7 +111,7 @@ extension RowsLayout {
     func block(_ id: String) -> RowsBlock? { blocks.first { $0.id == id } }
 }
 
-@Suite("Rows layout: the open set")
+@Suite("Rows layout: the open set", .timeLimit(.minutes(10)))
 struct RowsOpenSetTests {
     @Test("Leg press set 2 open: warm-ups folded, set 1 done with its change, set 2's editor with RPE 8 pre-filled")
     func setTwoOpen() throws {
@@ -367,7 +367,7 @@ struct RowsOpenSetTests {
     }
 }
 
-@Suite("Rows layout: rests, fixes and order")
+@Suite("Rows layout: rests, fixes and order", .timeLimit(.minutes(10)))
 struct RowsFlowTests {
     /// Day 1 after both warm-ups, set 1 at 400 s and set 2 at 600 s (each logged as shown).
     func afterSetTwo() throws -> RowsSession {
@@ -490,7 +490,7 @@ struct RowsFlowTests {
     }
 }
 
-@Suite("Rows layout: groups, chains and timed sets")
+@Suite("Rows layout: groups, chains and timed sets", .timeLimit(.minutes(10)))
 struct RowsStructureTests {
     @Test("The superset mid-round: rounds in the order done, no rest lines in the block, Bird Dog next in the island")
     func supersetMidRound() throws {
@@ -726,7 +726,7 @@ struct RowsStructureTests {
     }
 }
 
-@Suite("Rows layout: a rirstop set's open editor")
+@Suite("Rows layout: a rirstop set's open editor", .timeLimit(.minutes(10)))
 struct RowsRirstopEditorTests {
     @Test("The open push-up pre-fills its planned reps as a suggestion, not as typed, and Log commits them")
     func pushUpPrefill() throws {
@@ -750,7 +750,7 @@ struct RowsRirstopEditorTests {
     }
 }
 
-@Suite("Rows layout: words")
+@Suite("Rows layout: words", .timeLimit(.minutes(10)))
 struct RowsWordsTests {
     @Test("Every line starts with its own label, one shape: W for a warm-up, else its number; no caption repeats it")
     func setLabels() throws {

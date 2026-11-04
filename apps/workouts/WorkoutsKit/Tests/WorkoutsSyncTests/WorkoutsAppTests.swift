@@ -10,7 +10,7 @@ import WorkoutsCore
 /// Workouts' root under the link: what the link's snapshot starts, what a
 /// sync step for another account changes (nothing), and what the session
 /// hands the outbox.
-@Suite("Workouts app under the link")
+@Suite("Workouts app under the link", .timeLimit(.minutes(10)))
 struct WorkoutsAppTests {
     static let server = URL(string: "http://127.0.0.1:8092")!
     static let account = AccountRef(server: server, repository: "ada")
@@ -22,7 +22,7 @@ struct WorkoutsAppTests {
 
     static func harness(directory: URL?, performsEffects: Bool = false) -> ControllerHarness<WorkoutsApp> {
         var environment = AppEnvironment.testing()
-        environment.accounts = WorkoutsAccounts(base: directory)
+        environment.folders = WorkoutsFolders(base: directory)
         let app = WorkoutsApp(directory: directory, adapter: "substrate-workouts@test", settings: WorkoutsSettings())
         return ControllerHarness(app, environment: environment, performsEffects: performsEffects)
     }
@@ -56,19 +56,19 @@ struct WorkoutsAppTests {
         #expect(reason.contains("version \(WorkoutsManifest.trainingVersion) or later"))
     }
 
-    @Test("a sync asked while the package is behind starts none and says it is not syncing, so a wait on its end ends")
+    @Test("a sync asked while the package is behind starts none and says it is not flushing, so a wait on its end ends")
     func syncWhileBehind() async throws {
         let harness = Self.harness(directory: nil)
         await harness.runtime.linkChanged(Self.snapshot(training: WorkoutsManifest.trainingVersion - 1))
         harness.clearTrace()
         await harness.send(.sync)
         #expect(!Self.names(harness.effects).contains("sync"))
-        #expect(await !harness.presentation.syncing)
+        #expect(await !harness.presentation.flushing)
         // Writable, the same command syncs, and says so until it ends.
         await harness.runtime.linkChanged(Self.snapshot())
         await harness.send(.sync)
         #expect(Self.names(harness.effects).contains("sync"))
-        #expect(await harness.presentation.syncing)
+        #expect(await harness.presentation.flushing)
     }
 
     @Test("an outbox read reads again the routines of the conflicts it did not hold before, and only those")
@@ -144,7 +144,7 @@ struct WorkoutsAppTests {
         try await harness.until(timeout: .seconds(60)) { await $0.presentation.history.contains { $0.id == id } }
         #expect(await harness.presentation.finished == 1)
         // The app's own outbox for the account: one actor per file.
-        let outbox = try #require(harness.environment.accounts?.account(Self.account)?.outbox)
+        let outbox = try #require(harness.environment.folders?.folder(Self.account)?.outbox)
         try await harness.until(timeout: .seconds(60)) { _ in await outbox.entries.contains { $0.batch == id.rawValue } }
         let batch = await outbox.entries.filter { $0.batch == id.rawValue }
         #expect(batch.first?.method == .put)
@@ -173,6 +173,6 @@ struct WorkoutsAppTests {
         #expect(await harness.presentation.outcomes[receipt] == .some(nil))
         #expect(await harness.presentation.history.isEmpty)
         #expect(await harness.presentation.hiddenSessions.contains("s1"))
-        #expect(WorkoutsAccounts(base: directory).account(Self.account)?.tombstones.all == ["s1"])
+        #expect(WorkoutsFolders(base: directory).folder(Self.account)?.tombstones.all == ["s1"])
     }
 }

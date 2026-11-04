@@ -57,9 +57,12 @@ public enum SettingsPresenter {
         if let refused = status.refused {
             var writes: [SettingsRow] = []
             for write in refused.rows {
-                writes.append(SettingsRow(id: .status(.refused(write.id)), label: write.label, detail: write.words,
-                                          control: .value(write.recordID, verbatim: true)))
+                writes.append(SettingsRow(id: .status(.refused(write.id)), label: write.label, detail: write.words, control: .note(.supporting)))
                 writes.append(SettingsRow(id: .status(.refusedStatus(write.id)), label: write.status, control: .note(.caution)))
+                writes.append(SettingsRow(id: .status(.refusedKind(write.id)), label: write.kind.label,
+                                          control: .value(write.kind.value, verbatim: write.kind.verbatim)))
+                writes.append(SettingsRow(id: .status(.refusedRecord(write.id)), label: write.record.label,
+                                          control: .value(write.record.value, verbatim: write.record.verbatim)))
                 writes.append(SettingsRow(id: .status(.action(write.retry.action)), label: write.retry.title,
                                           control: .action(destructive: false, enabled: !status.busy)))
                 writes.append(SettingsRow(id: .status(.action(write.discard.action)), label: write.discard.title,

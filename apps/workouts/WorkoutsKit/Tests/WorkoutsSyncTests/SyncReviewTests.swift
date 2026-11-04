@@ -17,7 +17,7 @@ private func entry(_ method: OutboxEntry.Method, _ kind: String, _ id: String, s
 
 /// The outbox while a write is on the network (PR #1100 review): the actor
 /// takes other calls at every await, so the queue changes under a flush.
-@Suite("Outbox in flight")
+@Suite("Outbox in flight", .timeLimit(.minutes(10)))
 struct OutboxInFlightTests {
     @Test("a session deleted while another's create is in flight loses none of the other's writes")
     func dropWhileSending() async throws {
@@ -108,7 +108,7 @@ struct OutboxInFlightTests {
 /// The outbox's disk (PR #1100 review): a change it cannot keep is said,
 /// never swallowed, and a file it cannot read is set aside, never replaced
 /// by an empty queue.
-@Suite("Outbox on disk")
+@Suite("Outbox on disk", .timeLimit(.minutes(10)))
 struct OutboxDiskTests {
     @Test("a change that cannot be saved is refused and leaves the queue as it was")
     func saveFails() async throws {
@@ -155,7 +155,7 @@ struct OutboxDiskTests {
 
 /// A write the server refuses for itself (PR #1100 review): parked with its
 /// words, holding only its session, until the owner retries or discards it.
-@Suite("Parked writes")
+@Suite("Parked writes", .timeLimit(.minutes(10)))
 struct ParkedTests {
     @Test("a Finish for a session purged on the server is parked, retried on request, and discarded with its session")
     func purgedOnTheServer() async throws {
@@ -188,7 +188,7 @@ struct ParkedTests {
 /// The history exchange (PR #1100 review): a session this phone uploaded and
 /// the server no longer holds is the owner's delete; a session deleted on the
 /// phone is never imported again; a server edit reaches the phone.
-@Suite("History exchange")
+@Suite("History exchange", .timeLimit(.minutes(10)))
 struct HistoryExchangeTests {
     func finished() throws -> SessionRecords {
         func records(_ name: String) throws -> [FlatRecord] {
@@ -293,7 +293,7 @@ struct HistoryExchangeTests {
     }
 }
 
-@Suite("Tombstones")
+@Suite("Tombstones", .timeLimit(.minutes(10)))
 struct TombstoneTests {
     @Test("a delete is kept across a relaunch, and an unreadable list is set aside")
     func kept() throws {

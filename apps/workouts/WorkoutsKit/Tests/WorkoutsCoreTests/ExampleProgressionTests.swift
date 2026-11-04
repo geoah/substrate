@@ -81,7 +81,7 @@ enum Progression {
     }
 }
 
-@Suite("Example progression, DESIGN §10.3")
+@Suite("Example progression, DESIGN §10.3", .timeLimit(.minutes(10)))
 struct ExampleProgressionTests {
     @Test("Thu 22 Oct, no history: cold starts, then in-session changes and the myo stop")
     func firstDayOne() throws {

@@ -58,7 +58,7 @@ final class TransportBox: @unchecked Sendable {
     init(_ transport: any HTTPTransport) { self.transport = transport }
 }
 
-@Suite struct Status {
+@Suite(.timeLimit(.minutes(10))) struct Status {
     static let now = Date(timeIntervalSince1970: 1_800_000_000)
     let server = URL(string: "https://ada.example.com")!
 
@@ -265,6 +265,17 @@ final class TransportBox: @unchecked Sendable {
         #expect(await status(approved: Self.now.addingTimeInterval(-22 * 86400), lifetime: month).isClear)
         let monthLate = Self.now.addingTimeInterval(-24 * 86400)
         #expect(await status(approved: monthLate, lifetime: month).issues == [.accessEndsSoon(monthLate.addingTimeInterval(month))])
+    }
+
+    /// An installed package the approval still binds (its agents' AI
+    /// provider) is set up, in the console's words, not installed again.
+    @Test func anEnableRowIsSetUp() async {
+        let bound = server(check: #"""
+        {"scopes":{"missing":[]},"setup":\#(rows(["enable", "none", "none", "none"]))}
+        """#)
+        let status = await run(bound, session: appSession())
+        #expect(status.changes == [Change(kind: .install, words: "Set up Apple")])
+        #expect(status.isClear == false)
     }
 
     /// A blocked row makes the approval page refuse: the server's sentence
@@ -493,7 +504,7 @@ final class TransportBox: @unchecked Sendable {
 #if canImport(SwiftUI)
 /// What a device says of the tokens it stopped using: each server and
 /// repository in its own words, never the session in use's.
-@Suite struct Unrevoked {
+@Suite(.timeLimit(.minutes(10))) struct Unrevoked {
     @Test func eachServerAndRepositoryIsSaidOnce() throws {
         let ada = try #require(URL(string: "https://ada.example.com"))
         let other = try #require(URL(string: "https://substrate.example.org"))
@@ -517,7 +528,7 @@ final class TransportBox: @unchecked Sendable {
 
 #if canImport(SwiftUI)
 /// Change Access names only the controls the approval page will show.
-@MainActor @Suite struct ChangeAccess {
+@MainActor @Suite(.timeLimit(.minutes(10))) struct ChangeAccess {
     let server = URL(string: "https://ada.example.com")!
 
     func sheet(_ manifest: AppManifest, clientID: String? = nil) -> ReviewChangesSheet {

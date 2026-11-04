@@ -13,7 +13,7 @@ import SubstrateCore
 /// sets, a chain's head before its members, Finish under `ifVersion` raising
 /// `revision`, a conflict read and sent again, a stale revision dropped, the
 /// network waited out and a refusal held with its session.
-@Suite("Outbox")
+@Suite("Outbox", .timeLimit(.minutes(10)))
 struct OutboxTests {
     let codec = RecordCodec()
 
@@ -200,7 +200,7 @@ struct OutboxTests {
     }
 }
 
-@Suite("The package")
+@Suite("The package", .timeLimit(.minutes(10)))
 struct PackageTests {
     @Test("a repository without the package, or whose row the token cannot see, is missing; nothing is applied")
     func missing() async throws {
@@ -255,13 +255,10 @@ struct PackageTests {
         let still = try await PackageCheck(api: api(waiting), manifest: manifest).ensure { asked.value += 1 }
         #expect(still == .behind(held: manifest.version - 1) && asked.value == 1)
         #expect(!waiting.sent.contains { $0.method != "GET" })
-        let status = SyncStatus.derive(signedIn: true, package: still, outbox: .sent, waiting: 2, known: manifest.version)
-        #expect(status == .packageBehind(held: manifest.version - 1, known: manifest.version))
-        #expect(status.sentence.contains("waits for your approval on your substrate"))
     }
 }
 
-@Suite("Sign-in")
+@Suite("Sign-in", .timeLimit(.minutes(10)))
 struct SignInTests {
     @Test("the request asks for the published packages at this build's versions, the writes, the reads and the coach")
     func theRequest() throws {
@@ -306,19 +303,6 @@ struct SignInTests {
         #expect(manifest.requirement.verdict(version: "dev", metadata: fine).isCompatible)
         #expect(manifest.door(for: ServerProbe.Result(origin: URL(string: "http://localhost:8080")!, discovery: Discovery(server: .init(version: "dev")),
                                                       metadata: noAgents, verdict: manifest.requirement.verdict(version: "dev", metadata: noAgents))) == .tooOld)
-    }
-
-    @Test("the status says what the owner can do, in order of what blocks most")
-    func status() {
-        #expect(SyncStatus.derive(signedIn: false, package: nil, outbox: .idle, waiting: 3, known: 1) == .local)
-        #expect(SyncStatus.derive(signedIn: true, package: nil, outbox: .idle, waiting: 0, known: 1) == .preparing)
-        #expect(SyncStatus.derive(signedIn: true, package: .current(held: 1), outbox: .signedOut, waiting: 2, known: 1) == .signedOut)
-        #expect(SyncStatus.derive(signedIn: true, package: .missing, outbox: .needsApproval, waiting: 0, known: 1) == .needsApproval)
-        #expect(SyncStatus.derive(signedIn: true, package: .behind(held: 1), outbox: .sent, waiting: 5, known: 2) == .packageBehind(held: 1, known: 2))
-        #expect(SyncStatus.derive(signedIn: true, package: .missing, outbox: .sent, waiting: 5, known: 2) == .preparing)
-        #expect(SyncStatus.derive(signedIn: true, package: .current(held: 1), outbox: .sent, waiting: 0, known: 1) == .ready(waiting: 0))
-        #expect(SyncStatus.derive(signedIn: true, package: .current(held: 2), outbox: .sent, waiting: 0, known: 1) == .ready(waiting: 0))
-        #expect(SyncStatus.derive(signedIn: true, package: .current(held: 1), outbox: .offline("x"), waiting: 4, known: 1) == .offline(waiting: 4, reason: "x"))
     }
 }
 

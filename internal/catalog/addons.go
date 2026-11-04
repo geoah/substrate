@@ -10,8 +10,9 @@ import (
 )
 
 // AddonPlanner checks a waiting package under the live token's approval.
-// Catalog owns the install walk; appsetup owns the approval policy.
-type AddonPlanner func(context.Context, substrate.Dataset, substrate.TokenInfo, substrate.AppAddon) *substrate.AuthorizationBlock
+// Success must carry every checked candidate; installation may not resolve
+// different code under that approval. Consent is still rechecked at write time.
+type AddonPlanner func(context.Context, substrate.Dataset, substrate.TokenInfo, substrate.AppAddon) (InstallExpectations, *substrate.AuthorizationBlock)
 
 // SetAddonPlanner wires the approval planner before this catalog is served.
 func (c *Catalog) SetAddonPlanner(plan AddonPlanner) { c.addonPlanner = plan }
@@ -46,24 +47,34 @@ func (c *Catalog) installAddons(ctx context.Context, ds substrate.Dataset, provi
 	}
 	var out []substrate.AddonInstallResult
 	for _, token := range tokens {
-		if token.ExpiresAt != nil && !token.ExpiresAt.After(time.Now()) {
+		if token.Retired || (token.ExpiresAt != nil && !token.ExpiresAt.After(time.Now())) {
 			continue
 		}
 		for _, addon := range token.AppAddons {
-			if !held[addon.AddonFor] || installed[addon.Package] >= addon.Version {
+			if !held[addon.AddonFor] {
 				continue
 			}
 			result := substrate.AddonInstallResult{Package: addon.Package, TokenID: token.ID, State: substrate.SetupWait}
-			if blocked := c.addonPlanner(ctx, ds, token, addon); blocked != nil {
-				result.Problem = blocked.Problem
-			} else if _, _, err := c.Install(ctx, substrate.ActorConsole, addon.Package, &addonConsentDataset{Dataset: ds, tokenID: token.ID}); err != nil {
-				result.Problem = "The add-on could not be installed. Open its package page to resolve it."
-				if errors.Is(err, substrate.ErrForbidden) {
-					result.Problem = "The add-on's approval is no longer live. Approve the app again."
-				}
-			} else {
+			if installed[addon.Package] >= addon.Version {
 				result.State = "installed"
-				installed[addon.Package] = addon.Version
+			} else {
+				expect, blocked := c.addonPlanner(ctx, ds, token, addon)
+				if blocked != nil {
+					result.Problem = blocked.Problem
+				} else if _, _, err := c.InstallApproved(ctx, substrate.ActorConsole, addon.Package, &addonConsentDataset{Dataset: ds, tokenID: token.ID}, expect); err != nil {
+					result.Problem = "The add-on could not be installed. Open its package page to resolve it."
+					if errors.Is(err, substrate.ErrForbidden) {
+						result.Problem = "The add-on's approval is no longer live. Approve the app again."
+					}
+				} else {
+					result.State = "installed"
+					installed[addon.Package] = addon.Version
+				}
+			}
+			if result.State == "installed" {
+				if err := ds.CompleteAppAddon(ctx, token.ID, addon.Package); err != nil {
+					result.Problem = "The add-on is installed, but its waiting approval could not be cleared. Install the provider again to retry."
+				}
 			}
 			out = append(out, result)
 		}
@@ -84,7 +95,7 @@ func (d *addonConsentDataset) InstallBundleClosure(ctx context.Context, actor su
 		return nil, err
 	}
 	for _, token := range tokens {
-		if token.ID == d.tokenID && (token.ExpiresAt == nil || token.ExpiresAt.After(time.Now())) {
+		if !token.Retired && token.ID == d.tokenID && (token.ExpiresAt == nil || token.ExpiresAt.After(time.Now())) {
 			opts.ApprovalTokenID = token.ID
 			return d.Dataset.InstallBundleClosure(ctx, actor, docs, data, opts)
 		}

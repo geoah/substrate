@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -29,14 +30,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.reamde.substrate.kit.bridge.ConnectController
 import dev.reamde.substrate.kit.bridge.ConnectPresentation
+import dev.reamde.substrate.kit.bridge.LabeledValue
 import dev.reamde.substrate.kit.bridge.ScreenSymbol
 import dev.reamde.substrate.kit.bridge.ScreenTone
 import kotlinx.serialization.json.JsonElement
@@ -128,6 +133,15 @@ public fun ConnectScreen(
     }
 }
 
+/** A label and its value, the value as the identifier it is. */
+@Composable
+private fun ConnectFact(fact: LabeledValue, color: Color) {
+    Row(horizontalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
+        Text(fact.label, style = KitText.footnote.style, color = color, fontWeight = FontWeight.SemiBold)
+        SelectionContainer { Text(fact.value, style = KitText.footnote.style, color = color, fontFamily = FontFamily.Monospace) }
+    }
+}
+
 @Composable
 private fun ConnectFooter(footer: ConnectPresentation.Footer) {
     val words = MaterialTheme.colorScheme.onSurfaceVariant
@@ -135,10 +149,10 @@ private fun ConnectFooter(footer: ConnectPresentation.Footer) {
         footer.found?.let { found ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
                 Icon(ScreenSymbol.found.icon, contentDescription = null, tint = ScreenTone.positive.tint, modifier = Modifier.size(16.dp))
-                Text(found, style = KitText.footnote.style, color = words)
+                ConnectFact(found, words)
             }
         }
-        footer.repository?.let { Text(it, style = KitText.footnote.style, color = words) }
+        footer.repository?.let { ConnectFact(it, words) }
         Text(footer.note, style = KitText.footnote.style, color = words, textAlign = TextAlign.Center)
     }
 }

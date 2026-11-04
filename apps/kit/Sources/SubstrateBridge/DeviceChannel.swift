@@ -40,17 +40,18 @@ public final class DeviceChannel: Sendable {
         }
     }
 
-    /// A stream of values, in order, until Kotlin ends it. At most `capacity`
-    /// wait to be read: past that the stream fails with `overflow` and Kotlin
-    /// is told to stop, never a value silently dropped. Ending the iteration
-    /// early cancels it on Kotlin's side.
-    public func stream(_ request: DeviceRequest, capacity: Int = 256) -> AsyncThrowingStream<JSONValue, Error> {
+    /// A chunked answer: values in order, one `chunk` each, until Kotlin
+    /// ends it. At most `capacity` wait to be read: past that the answer
+    /// fails with `overflow` and Kotlin is told to stop, never a value
+    /// silently dropped. Ending the iteration early cancels it on Kotlin's
+    /// side.
+    public func chunks(_ request: DeviceRequest, capacity: Int = 256) -> AsyncThrowingStream<JSONValue, Error> {
         let id = calls.nextID()
-        let (stream, continuation) = AsyncThrowingStream<JSONValue, Error>.makeStream(bufferingPolicy: .bufferingOldest(capacity))
+        let (chunks, continuation) = AsyncThrowingStream<JSONValue, Error>.makeStream(bufferingPolicy: .bufferingOldest(capacity))
         continuation.onTermination = { [weak self] termination in
             if case .cancelled = termination { self?.cancel(id, "the reader stopped") }
         }
-        calls.waitStream(id, handle: handle, service: request.service, continuation)
+        calls.waitChunks(id, handle: handle, service: request.service, continuation)
         do {
             let message = try BridgeCodec.encode(op: .request, handle: handle, id: id, body: request)
             if !outbox.enqueue(message, onFailure: { [calls] in _ = calls.finish(id, failure: $0) }) {
@@ -59,7 +60,7 @@ public final class DeviceChannel: Sendable {
         } catch {
             _ = calls.finish(id, failure: BridgeFailure(.swiftFailure, "a request did not encode: \(BridgeCodec.describe(error))"))
         }
-        return stream
+        return chunks
     }
 
     /// Answers the call `cancelled` and, when it was still waiting, tells Kotlin.

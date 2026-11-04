@@ -44,7 +44,7 @@ private enum Stats {
     }
 }
 
-@Suite("Stats presenter")
+@Suite("Stats presenter", .timeLimit(.minutes(10)))
 struct StatsPresenterTests {
     @Test("Each period is whole days to the end of today; the period before is as many days")
     func windows() {

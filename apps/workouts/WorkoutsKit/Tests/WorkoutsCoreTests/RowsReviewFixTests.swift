@@ -28,7 +28,7 @@ private func presented(_ script: EngineScript, prefills: Bool = false) throws ->
     return SessionPresenter.present(try script.current, history: HistoryIndex([]), settings: settings, now: script.now)
 }
 
-@Suite("Rows review fixes: effort provenance")
+@Suite("Rows review fixes: effort provenance", .timeLimit(.minutes(10)))
 struct RowsReviewEffortTests {
     @Test("the Table's RPE sheet rates what Done confirms: a copied or pre-filled value becomes entered, an entered one sends nothing")
     func sheetPatch() throws {
@@ -116,7 +116,7 @@ struct RowsReviewEffortTests {
     }
 }
 
-@Suite("Rows review fixes: what the records carry")
+@Suite("Rows review fixes: what the records carry", .timeLimit(.minutes(10)))
 struct RowsReviewRecordTests {
     @Test("a planned set's unknown fields reach the session's plan snapshot, never set.target")
     func targetKeepsDeclaredFieldsOnly() throws {
@@ -228,7 +228,7 @@ struct RowsReviewRecordTests {
     }
 }
 
-@Suite("Rows review fixes: the Rows layout")
+@Suite("Rows review fixes: the Rows layout", .timeLimit(.minutes(10)))
 struct RowsReviewLayoutTests {
     @Test("a per-set rest on A1 is the island's rest, as the countdown runs it")
     func restHonoursOverride() throws {

@@ -12,7 +12,7 @@ import FoundationNetworking
 @testable import SubstrateUI
 import SubstrateTesting
 
-@Suite struct Proofs {
+@Suite(.timeLimit(.minutes(10))) struct Proofs {
     /// RFC 7636, appendix B.
     @Test func theChallengeIsTheVerifiersSHA256() {
         let pkce = PKCE(verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
@@ -28,7 +28,7 @@ import SubstrateTesting
     }
 }
 
-@Suite struct Authorization {
+@Suite(.timeLimit(.minutes(10))) struct Authorization {
     func client(details: [String] = ["package", "account", "webhook"], iss: Bool = true) throws -> OAuthClient {
         var meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(metadataJSON(details: details).utf8))
         meta.authorizationResponseISSParameterSupported = iss
@@ -234,7 +234,7 @@ import SubstrateTesting
 /// The sign-in reaches the browser through the device service: the route
 /// made ready, the page opened on its redirect, and the route let go of once
 /// the callback is in, whatever it came to.
-@MainActor @Suite struct BrowserSignIns {
+@MainActor @Suite(.timeLimit(.minutes(10))) struct BrowserSignIns {
     let server = URL(string: "https://ada.example.com")!
 
     func oauth(_ stub: StubTransport, _ manifest: AppManifest = syncManifest()) throws -> OAuthClient {
@@ -256,10 +256,18 @@ import SubstrateTesting
         return stub
     }
 
+    /// A local build: a loopback client id, which no document lists a
+    /// claimed callback for.
+    func localManifest() -> AppManifest {
+        var manifest = syncManifest()
+        manifest.clientID = "http://127.0.0.1/substrate-sync"
+        return manifest
+    }
+
     @Test func aLocalBuildSignsInThroughTheLoopbackRedirect() async throws {
         let stub = tokens()
         let browser = approving()
-        let session = try await oauth(stub).signIn(server: server, browser: browser)
+        let session = try await oauth(stub, localManifest()).signIn(server: server, browser: browser)
         #expect(session.secret == "sub_app")
         let redirect = try #require(browser.prepared.first)
         #expect(redirect.route == .loopback(appName: "Substrate Sync", path: syncManifest().loopbackPath))
@@ -279,10 +287,46 @@ import SubstrateTesting
         #expect(browser.finished == browser.prepared)
     }
 
+    /// A release (an https client id) whose claimed callback is missing or
+    /// is not an https one never falls back to a loopback port, where any
+    /// program on the device could take the code: it is refused before the
+    /// browser opens, and nothing is sent.
+    @Test func aReleaseWithoutAClaimedRedirectIsRefusedNotSentToLoopback() async throws {
+        var unstamped = syncManifest()
+        unstamped.claimedRedirect = nil
+        var http = syncManifest()
+        http.claimedRedirect = URL(string: "http://substrate.example.org/apps/sync/callback")
+        var bare = syncManifest()
+        bare.claimedRedirect = URL(string: "https://substrate.example.org")
+        for manifest in [unstamped, http, bare] {
+            let stub = tokens()
+            let browser = approving()
+            await #expect(throws: UnclaimedRedirect(appName: "Substrate Sync"), "\(String(describing: manifest.claimedRedirect))") {
+                try await oauth(stub, manifest).signIn(server: server, browser: browser)
+            }
+            #expect(browser.prepared.isEmpty)
+            #expect(browser.opened.isEmpty)
+            #expect(stub.requests.isEmpty)
+        }
+    }
+
+    @Test func eachBuildsRouteIsItsClientIDs() throws {
+        let claimed = try #require(URL(string: "https://substrate.example.org/apps/sync/callback"))
+        var release = syncManifest()
+        release.claimedRedirect = claimed
+        #expect(try OAuthClient.route(for: release) == .claimed(claimed))
+        // A local build keeps the loopback receiver, whatever it was stamped with.
+        var local = localManifest()
+        #expect(try OAuthClient.route(for: local) == .loopback(appName: "Substrate Sync", path: local.loopbackPath))
+        local.claimedRedirect = claimed
+        #expect(try OAuthClient.route(for: local) == .loopback(appName: "Substrate Sync", path: local.loopbackPath))
+        #expect(throws: UnclaimedRedirect.self) { try OAuthClient.route(for: syncManifest()) }
+    }
+
     @Test func aClosedPageIsACancelledSignInThatSpendsNothing() async throws {
         let stub = StubTransport()
         let browser = ScriptedBrowser()
-        await #expect(throws: SignInCancelled.self) { try await oauth(stub).signIn(server: server, browser: browser) }
+        await #expect(throws: SignInCancelled.self) { try await oauth(stub, localManifest()).signIn(server: server, browser: browser) }
         #expect(browser.finished.count == 1)
         #expect(stub.requests.isEmpty)
     }
@@ -290,7 +334,7 @@ import SubstrateTesting
 
 /// Revoking is one thing for both kinds of session, and it is done only once
 /// the server says so.
-@Suite struct Revocation {
+@Suite(.timeLimit(.minutes(10))) struct Revocation {
     let server = URL(string: "https://ada.example.com")!
 
     func app(clientID: String? = "http://127.0.0.1/substrate-sync", revocation: URL? = nil) -> Session {
@@ -395,7 +439,7 @@ import SubstrateTesting
 /// A token stops being used on this device only once it is kept to revoke
 /// later or the server revoked it: one that is neither stays where it was,
 /// never dropped.
-@Suite struct Retention {
+@Suite(.timeLimit(.minutes(10))) struct Retention {
     let server = URL(string: "https://ada.example.com")!
 
     func app(_ secret: String) -> Session {
@@ -501,13 +545,17 @@ extension Retention {
         ok.on("POST", "/oauth/revoke", json: "")
         let replacing = Task { try await store.save(new, replacing: old, transport: ok) }
         // Room for the replacement to run ahead of the sign-out, as it would
-        // if nothing held it back: it revokes the old token through `ok`.
+        // if nothing held it back: it would revoke the old token through `ok`.
         for _ in 0 ..< 50 where revoked(ok).isEmpty {
             try await Task.sleep(for: .milliseconds(10))
         }
+        #expect(revoked(ok).isEmpty, "the replacement ran while the sign-out waited on the server")
         await paused.release()
         try await signingOut.value
         try await replacing.value
+        // Once the sign-out is done, the replacement runs and revokes the
+        // token it replaced.
+        #expect(revoked(ok).map { $0.hasPrefix("token=sub_app_old&") } == [true])
         #expect(store.load() == new)
     }
 
@@ -554,7 +602,7 @@ actor PausedTransport: HTTPTransport {
     }
 }
 
-@Suite struct Sessions {
+@Suite(.timeLimit(.minutes(10))) struct Sessions {
     @Test func syncsSessionStillDecodes() throws {
         let old = #"{"server":"https://ada.example.com","repository":"ada.example.com","secret":"sub_x","tokenID":"tok_1"}"#
         let session = try JSONDecoder().decode(Session.self, from: Data(old.utf8))

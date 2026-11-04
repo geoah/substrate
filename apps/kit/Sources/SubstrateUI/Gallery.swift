@@ -52,9 +52,7 @@ public enum Gallery {
         },
         .menu: { presentation in
             guard case let .menu(menu) = presentation else { return nil }
-            // A Mac draws no tab bar, so the gallery, drawn on one, shows the
-            // sidebar; an iPhone shows the tabs.
-            return AnyView(AppMenuView(menu, title: ScreenFixtures.manifest.appName, layout: .sidebar, select: { _ in }) { section in
+            return AnyView(AppMenuView(menu, select: { _ in }) { section in
                 DestinationStandIn(section: section)
             })
         },

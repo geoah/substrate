@@ -11,9 +11,9 @@ public struct Envelope: Bridged, Equatable {
     public var op: Op
     /// The root a message is about, where it is about one.
     public var handle: Handle?
-    /// A request's id, or a stream's: unique among the calls outstanding.
+    /// A request's id: unique among the calls outstanding.
     public var id: Int?
-    /// A stream chunk's place, from 0.
+    /// A chunk's place in its answer, from 0.
     public var seq: Int?
     public var body: JSONValue?
 
@@ -47,7 +47,7 @@ public enum Op: String, Bridged, Equatable {
     /// A call by id, answered exactly once by `reply` or `error`.
     case request
     case reply
-    /// A stream's values by id and `seq`, ended once by `end`, `error` or `cancel`.
+    /// A chunked answer's values by id and `seq`, ended once by `end`, `error` or `cancel`.
     case chunk
     case end
     case error
@@ -97,7 +97,7 @@ public struct BridgeFailure: Bridged, Error, Equatable {
         case unknownCall
         /// The call was cancelled: its handle closed, or its caller gave up.
         case cancelled
-        /// A stream's queue was full; the stream was cancelled.
+        /// A chunked answer's queue was full; the call was cancelled.
         case overflow
         /// Swift code failed (a root refused a command, an encoding failed).
         case swiftFailure

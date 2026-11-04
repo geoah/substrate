@@ -53,7 +53,7 @@ public struct BridgeNotifications: Notifications {
     /// Each answer once, in order; a stream that fails or overflows ends,
     /// and the next reader asks Kotlin again, which kept what nobody read.
     public func responses() -> AsyncStream<NotificationResponse> {
-        let values = channel.stream(.notificationsResponses, capacity: 64)
+        let values = channel.chunks(.notificationsResponses, capacity: 64)
         let (responses, continuation) = AsyncStream<NotificationResponse>.makeStream(bufferingPolicy: .bufferingOldest(64))
         let pump = Task {
             do {

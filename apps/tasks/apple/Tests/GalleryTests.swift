@@ -10,7 +10,7 @@ import Testing
 
 /// Substrate Tasks' screens drawn from TasksKit's fixtures by the views the
 /// app draws them with: each fixture must have its view, and with
-/// SUBSTRATE_TASKS_GALLERY naming a folder (`mise run apps:gallery`), each
+/// SUBSTRATE_GALLERY naming a folder (`mise run apps:gallery`), each
 /// is written there as a PNG at an iPhone's size, and the split layout
 /// in a Mac window, in light mode (the kit's `OffscreenDrawing`). A system
 /// dialog (the delete-list question) has no offscreen drawing; its words are
@@ -53,9 +53,9 @@ import Testing
         }
     }
 
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATE_TASKS_GALLERY"] != nil))
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATE_GALLERY"] != nil))
     func everyFixtureDraws() async throws {
-        let directory = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SUBSTRATE_TASKS_GALLERY"] ?? NSTemporaryDirectory())
+        let directory = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SUBSTRATE_GALLERY"] ?? NSTemporaryDirectory())
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let link = try #require(link)
         let shell = TasksShell(drawing: Tasks.configuration)

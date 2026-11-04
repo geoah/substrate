@@ -10,7 +10,7 @@ import SubstrateTesting
 import Testing
 @testable import TasksCore
 
-@Suite("What became of a write")
+@Suite("What became of a write", .timeLimit(.minutes(10)))
 struct WrittenTests {
     @Test func aWriteThatLeftTheQueueWithoutLandingIsNotLaidOver() async throws {
         let rig = try Rig()
@@ -102,8 +102,14 @@ struct WrittenTests {
         guard case .stopped(.needsApproval, _) = app.linked.phase else { throw Unexpected() }
         // The network's first report is no new approval: the read is not
         // asked again, to be refused the same way.
+        let mark = await harness.effectsStarted
         try await harness.until { await $0.presentation.snapshot.online == true }
-        await harness.settle()
+        try await harness.untilIdle(since: mark)
+        // Asked for once, as every effect is traced in the step that asks.
+        let reads = harness.trace.count { entry in
+            if case let .effect(_, effect) = entry, (effect as? TasksApp.Effect) == .records(.read) { true } else { false }
+        }
+        #expect(reads == 1)
         #expect(rig.server.sent.count { $0.method == "GET" && $0.path == "/api/v1/records" } == 1)
         // The access stands: the token was not refused, the approval falls short.
         #expect(await harness.presentation.snapshot.phase == .signedIn)

@@ -56,9 +56,7 @@ it("says what it installs, who publishes it, and that it stays after a revoke", 
   mount(row)
   expect(screen.getByText("Install Training")).toBeTruthy()
   expect(
-    screen.getByText(
-      "Installs Training 3, published by Substrate (substrate.reamde.dev)"
-    )
+    screen.getByText("Version 3, published by Substrate (substrate.reamde.dev)")
   ).toBeTruthy()
   expect(
     screen.getByText(
@@ -74,14 +72,15 @@ it("says what it installs, who publishes it, and that it stays after a revoke", 
   expect(
     screen.getByText("Also installs Health, which runs code on your server.")
   ).toBeTruthy()
-  expect(screen.queryByText(/Version 3/)).toBeNull()
+  // The catalog row's own version line is not repeated under it.
+  expect(screen.queryByText("Version 3")).toBeNull()
 })
 
 it("names an update's versions with the publisher", () => {
   mount({ ...row, action: "upgrade", package: { ...row.package!, held: 2 } })
   expect(
     screen.getByText(
-      "Updates Training from version 2 to 3, published by Substrate (substrate.reamde.dev)"
+      "From version 2 to 3, published by Substrate (substrate.reamde.dev)"
     )
   ).toBeTruthy()
 })

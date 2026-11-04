@@ -12,7 +12,7 @@ import FoundationNetworking
 @testable import SubstrateUI
 import SubstrateTesting
 
-@Suite struct Requests {
+@Suite(.timeLimit(.minutes(10))) struct Requests {
     let server = URL(string: "https://ada.example.com")!
 
     func client(_ stub: StubTransport, token: String? = "sub_x") -> SubstrateClient {

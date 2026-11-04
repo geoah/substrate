@@ -1,7 +1,9 @@
 # An agent reads each pull request for what the changelog will owe its
 # readers: a `!` the title needs or does not, a BREAKING CHANGE footer whose
 # steps are missing or wrong, and a sentence in the agent-facing docs the
-# diff makes false. .github/review.md is the whole brief.
+# diff makes false; and, for a change to the apps, the contract no linter
+# reads (the layering, the security rules, logic in views, both renderers,
+# on-device formats, release safety). .github/review.md is the whole brief.
 #
 # Advice, not a gate. It posts one comment and never approves or blocks, and
 # no ruleset requires it: a model's judgement is not a merge condition. The

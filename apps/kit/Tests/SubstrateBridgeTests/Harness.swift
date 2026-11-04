@@ -77,7 +77,7 @@ final class Outlet: BridgeOutlet, @unchecked Sendable {
 
 /// A root a test drives with commands: `{"present": n}` presents n,
 /// `{"call": "dns"}` makes a device call and presents its answer or failure,
-/// `{"stream": capacity, "read": n}` reads a stream, `{"rows": [ids]}`
+/// `{"chunks": capacity, "pause": ms}` reads a chunked answer, `{"rows": [ids]}`
 /// publishes a keyed list.
 actor TestRoot: BridgeRoot {
     let context: BridgeContext
@@ -103,16 +103,16 @@ actor TestRoot: BridgeRoot {
                 context.present(["failure": .string(failure.code.rawValue)] as JSONValue)
             }
         }
-        if let capacity = command["stream"]?.int {
+        if let capacity = command["chunks"]?.int {
             var values: [JSONValue] = []
             do {
-                for try await value in context.device.stream(.connectivityWatch, capacity: capacity) {
+                for try await value in context.device.chunks(.connectivityWatch, capacity: capacity) {
                     values.append(value)
                     if let pause = command["pause"]?.int { try await Task.sleep(for: .milliseconds(pause)) }
                 }
-                context.present(["streamed": .array(values)] as JSONValue)
+                context.present(["read": .array(values)] as JSONValue)
             } catch let failure as BridgeFailure {
-                context.present(["streamFailure": .string(failure.code.rawValue), "streamed": .array(values)] as JSONValue)
+                context.present(["chunksFailure": .string(failure.code.rawValue), "read": .array(values)] as JSONValue)
             }
         }
         if let ids = command["rows"]?.array {

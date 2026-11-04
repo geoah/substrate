@@ -64,7 +64,8 @@ would work for one call and grow with every app.
 ### Confirmation
 
 The runtime's tests hold the order, replay, epochs, coalescing and
-composition by value (`RuntimeTests`, `RuntimeCompositionTests`).
+composition by value (the suites in `RuntimeTests.swift` and
+`RuntimeCompositionTests.swift` under `apps/kit/Tests/SubstrateKitTests`).
 `mise run android:generate:check` fails when the bridge's golden or Kotlin is
 stale, and the protocol fingerprint is checked at the bridge's start. The
 gallery fails a fixture that has no renderer on either platform.

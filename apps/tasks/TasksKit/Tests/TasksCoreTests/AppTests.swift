@@ -20,7 +20,7 @@ final class Network: @unchecked Sendable {
     }
 }
 
-@Suite("Substrate Tasks, live")
+@Suite("Substrate Tasks, live", .timeLimit(.minutes(10)))
 struct LiveAppTests {
     /// The server holds one list, Groceries, and one task in it.
     func serve(_ rig: Rig, network: Network = Network(), extra: [Record] = [], watch: Bool = true) {
@@ -166,7 +166,7 @@ struct LiveAppTests {
     }
 }
 
-@Suite("Substrate Tasks, by value")
+@Suite("Substrate Tasks, by value", .timeLimit(.minutes(10)))
 struct AppTests {
     func loaded(_ records: [Record], selection: ListSelection? = .inbox) async throws -> (Rig, ControllerHarness<TasksApp>) {
         let rig = try Rig()
@@ -375,16 +375,18 @@ struct AppTests {
         #expect(app.settings.map(\.title) == ["Reminders", "Lists"])
         #expect(app.settings[0].rows.map(\.label) == ["Remind Me When Tasks Are Due", "Tasks Due on a Day", "Reminders Set on This iPhone"])
         #expect(app.about.version == LabeledValue("Version", "0.1.0 (1)"))
-        #expect(TasksSettings.route(.toggle(row: .app(TasksSettings.remind), on: false))
+        // Routed as the shell routes them, with what TasksShell configures.
+        let route = { SettingsRoute<TasksApp>.route($0, settings: { .settings($0) }, clearSaved: .clearSaved) }
+        #expect(route(.toggle(row: .app(TasksSettings.remind), on: false))
             == .app(.settings(.toggle(row: .app(TasksSettings.remind), on: false))))
-        #expect(TasksSettings.route(.perform(row: .repository(.signOut))) == .link(.signOut))
-        #expect(TasksSettings.route(.perform(row: .storage(.clear))) == .app(.clearSaved))
-        #expect(TasksSettings.route(.perform(row: .repository(.changeAccess))) == .changeAccess)
-        #expect(TasksSettings.route(.perform(row: .about(.check))) == .checkForUpdates)
+        #expect(route(.perform(row: .repository(.signOut))) == .link(.signOut))
+        #expect(route(.perform(row: .storage(.clear))) == .app(.clearSaved))
+        #expect(route(.perform(row: .repository(.changeAccess))) == .changeAccess)
+        #expect(route(.perform(row: .about(.check))) == .checkForUpdates)
     }
 }
 
-@Suite("Substrate Tasks under the link")
+@Suite("Substrate Tasks under the link", .timeLimit(.minutes(10)))
 struct LinkedTests {
     @Test func aReadAnswered401EndsTheAccessOnTheLink() async throws {
         let rig = try Rig()

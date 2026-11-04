@@ -62,13 +62,24 @@ func uncoveredReach(g scope.Grant, reach functionReach, registry map[string]subs
 		return !vocabulary.IsTypeGlob(kind) && (!ok || internalKind(k))
 	}
 	for _, k := range reach.reads {
-		if !g.ReachCovered(scope.Read, k, internal(k)) {
+		if !g.ReachCovered(scope.Read, k, internal(k), internalKinds(registry)...) {
 			out = append(out, "read "+k)
 		}
 	}
 	for _, k := range reach.writes {
-		if !g.ReachCovered(scope.Write, k, internal(k)) {
+		if !g.ReachCovered(scope.Write, k, internal(k), internalKinds(registry)...) {
 			out = append(out, "write "+k)
+		}
+	}
+	return out
+}
+
+// internalKinds supplies the exceptions scope globs omit but code globs reach.
+func internalKinds(registry map[string]substrate.KindInfo) []string {
+	var out []string
+	for ref, k := range registry {
+		if internalKind(k) {
+			out = append(out, ref)
 		}
 	}
 	return out

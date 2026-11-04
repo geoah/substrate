@@ -62,7 +62,7 @@ struct ServicesTests {
             let late = try post(runtime, Envelope(op: .reply, id: request.id, body: found))
             #expect(try BridgeCodec.decode(BridgeFailure.self, from: late.body).code == .unknownCall)
         }
-        // A token endpoint's chunk and error for a stream already gone, likewise.
+        // A token endpoint's chunk and error for a call already gone, likewise.
         _ = try post(runtime, Envelope(op: .chunk, id: request.id, seq: 0, body: ["line": ["text": "access_token=s3cret"]]))
         _ = try post(runtime, Envelope(op: .error, id: request.id, body: ["code": "kotlinException", "message": "s3cret"]))
         let recorded = runtime.record.messages.joined(separator: "\n")
@@ -130,7 +130,10 @@ struct ServicesTests {
         // A reply Swift took whose body does not read still has its file deleted.
         let response = folder.appendingPathComponent("response-x")
         try Data("x".utf8).write(to: response)
-        let unreadable: JSONValue = ["response": ["bodyFile": .string(response.path), "status": "not a number"]]
+        let readable = TransportOutcome.response(response: TransportResponse(status: 200, url: "https://example.com/a", headers: [],
+                                                                             bodyFile: response.path))
+        #expect(try BridgeCodec.value(readable)["response"]?["response"]?["bodyFile"] == .string(response.path))
+        let unreadable: JSONValue = ["response": ["response": ["bodyFile": .string(response.path), "status": "not a number"]]]
         #expect(throws: BridgeFailure.self) { try BridgeTransport.answer(unreadable, for: upload) }
         #expect(!FileManager.default.fileExists(atPath: response.path))
     }

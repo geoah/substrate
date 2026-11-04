@@ -15,4 +15,8 @@ protocol LoopServices: AnyObject {
     func afterPresent(_ work: @escaping () -> Void)
     func trace(_ entry: RuntimeTrace)
     func count(delivered: Bool, drop: RuntimeCounters.Drop?)
+    /// An effect's work started, numbered in the order effects start in the
+    /// whole runtime, or ended (its last result handed back, or none coming).
+    func effectStarted() -> Int
+    func effectEnded(_ serial: Int)
 }

@@ -6,7 +6,7 @@ import Testing
 /// hand in the API's shape): exercises named by template id, a routine with
 /// a superset, rests and set types, a session linked to it, and an exercise
 /// of the account's own.
-@Suite("Hevy API import")
+@Suite("Hevy API import", .timeLimit(.minutes(10)))
 struct HevyAPITests {
     let london = TimeZone(identifier: "Europe/London")!
 

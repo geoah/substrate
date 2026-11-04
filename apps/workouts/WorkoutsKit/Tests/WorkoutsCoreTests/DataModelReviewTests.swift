@@ -70,7 +70,7 @@ private func encodeAny(_ codec: RecordCodec, _ record: FlatRecord) throws -> Fla
 
 // MARK: - Codec
 
-@Suite("Data-model review: the codec reads what substrate serves (A1, A2)")
+@Suite("Data-model review: the codec reads what substrate serves (A1, A2)", .timeLimit(.minutes(10)))
 struct ReviewCodecTests {
     let codec = RecordCodec()
 
@@ -301,7 +301,7 @@ private func provenanceSession() throws -> EngineScript {
     return script
 }
 
-@Suite("Data-model review: how each RPE got there (D1)")
+@Suite("Data-model review: how each RPE got there (D1)", .timeLimit(.minutes(10)))
 struct ReviewEffortTests {
     @Test("a pending row pre-fills the top of its plan's effort range; a drop, an added set and a done row do not")
     func prefill() throws {
@@ -457,7 +457,7 @@ struct ReviewEffortTests {
 
 // MARK: - Records
 
-@Suite("Data-model review: what each record says (D2 to D13)")
+@Suite("Data-model review: what each record says (D2 to D13)", .timeLimit(.minutes(10)))
 struct ReviewRecordTests {
     @Test("Finish's \"mark them done as shown\" writes bulk at the session's time, with the pre-fill as prefilled; a tick writes individual")
     func bulk() throws {
@@ -648,7 +648,7 @@ struct ReviewRecordTests {
 
 // MARK: - Suggestions
 
-@Suite("Data-model review: the suggestion reads ratings only, and the top of a range (D1, D3)")
+@Suite("Data-model review: the suggestion reads ratings only, and the top of a range (D1, D3)", .timeLimit(.minutes(10)))
 struct ReviewSuggestionTests {
     let config = ExerciseConfig(unit: .kg, base: 0, step: 5)
     let target = Target03(repsMin: 6, repsMax: 10, rpe: 8)
@@ -738,7 +738,7 @@ struct ReviewSuggestionTests {
 
 // MARK: - Apple Health and old history files
 
-@Suite("Data-model review: Apple Health's effort score and history written before the review (A3)")
+@Suite("Data-model review: Apple Health's effort score and history written before the review (A3)", .timeLimit(.minutes(10)))
 struct ReviewHealthAndHistoryTests {
     @Test("a session RPE of 0 is never sent as an effort score; 1 to 10 are")
     func effortScore() {

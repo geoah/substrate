@@ -40,7 +40,7 @@ public enum TasksSettings {
                 reminders.append(SettingsRow(id: .app("notificationsOff"), label: "Notifications are off for Substrate Tasks",
                                              detail: "Turn them on in the system's Settings to be reminded.", control: .note(.caution)))
             } else {
-                reminders.append(SettingsRow(id: .app("scheduled"), label: "Reminders Set on \(device.capitalizedFirstWord)",
+                reminders.append(SettingsRow(id: .app("scheduled"), label: "Reminders Set on \(device.capitalizedFirst)",
                                              control: .value(String(scheduled), verbatim: false)))
             }
         }
@@ -74,14 +74,4 @@ public enum TasksSettings {
     public static func screen(_ link: LinkPresentation<TasksPresentation>, _ app: TasksPresentation) -> SettingsPresentation {
         SettingsPresenter.screen(app.settings, link: link, storage: app.storage, about: app.about)
     }
-
-    /// Where a settings command goes: the app's own rows to the root.
-    public static func route(_ command: SettingsCommand) -> SettingsRoute<TasksApp> {
-        SettingsRoute.route(command, settings: { .settings($0) }, clearSaved: .clearSaved)
-    }
-}
-
-extension String {
-    /// "This iPhone" for "this iPhone".
-    var capitalizedFirstWord: String { prefix(1).uppercased() + dropFirst() }
 }

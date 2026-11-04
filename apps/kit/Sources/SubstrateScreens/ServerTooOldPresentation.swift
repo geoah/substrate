@@ -47,7 +47,3 @@ public struct ServerTooOldPresentation: Bridged, Hashable, Sendable {
                                         tryAgain: tryAgain ? "Try Again" : nil, changeServer: changeServer ? "Use Another Server" : nil)
     }
 }
-
-extension String {
-    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
-}

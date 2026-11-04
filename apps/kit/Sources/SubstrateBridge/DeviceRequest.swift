@@ -3,11 +3,11 @@ import SubstrateCore
 import SubstrateDevice
 
 /// A device-service call Swift asks Kotlin for (`request`), answered once by
-/// `reply` with the value its comment names, or by a stream of `chunk`s.
+/// `reply` with the value its comment names, or by `chunk`s, a chunked answer.
 public enum DeviceRequest: Bridged, Equatable {
     /// Answered by a `TransportOutcome`.
     case transportFetch(request: TransportRequest)
-    /// A stream of `TransportChunk`s: the head, then each line of the body.
+    /// `TransportChunk`s, chunk by chunk: the head, then each line of the body.
     case transportLines(request: TransportRequest)
     /// Answered by a `SecureItem`.
     case secureRead(store: String, account: String)
@@ -19,7 +19,7 @@ public enum DeviceRequest: Bridged, Equatable {
     case dnsTXT(name: String, timeoutMillis: Int)
     /// Answered by a `NetworkPath`.
     case connectivityCurrent
-    /// A stream of `NetworkPath`s, the current one first.
+    /// `NetworkPath`s, chunk by chunk, the current one first.
     case connectivityWatch
     /// Answered by a `BrowserPrepared`.
     case browserPrepare(route: BrowserRoute)
@@ -211,7 +211,7 @@ public struct BridgeStats: Bridged, Equatable {
     public var refused: Int = 0
     /// Presentations replaced before their turn.
     public var coalesced: Int = 0
-    /// Streams cancelled because their queue was full.
+    /// Chunked answers cancelled because their queue was full.
     public var overflowed: Int = 0
     /// Calls answered `cancelled`.
     public var cancelled: Int = 0

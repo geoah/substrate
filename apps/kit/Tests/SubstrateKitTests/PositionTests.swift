@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import SubstrateCore
 
-@Suite("Positions")
+@Suite("Positions", .timeLimit(.minutes(10)))
 struct PositionTests {
     @Test func aPositionIsTheShortestNumberBetweenItsNeighbours() {
         #expect(Position.between(1, 2) == Decimal(string: "1.5"))

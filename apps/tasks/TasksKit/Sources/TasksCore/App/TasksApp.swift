@@ -65,6 +65,10 @@ public struct TasksApp: LinkedRecordsApp {
         case usage([AreaUsage])
         case offered(String?)
         case problemDismissed
+
+        public var recordsEvent: LinkedRecords.Event? {
+            if case let .records(event) = self { event } else { nil }
+        }
     }
 
     public enum Effect: Equatable, Sendable, LinkedRecordsEffect {
@@ -75,6 +79,10 @@ public struct TasksApp: LinkedRecordsApp {
         case saveSettings(SettingsValues)
         case schedule([NotificationRequest])
         case readUsage
+
+        public var recordsEffect: LinkedRecords.Effect? {
+            if case let .records(effect) = self { effect } else { nil }
+        }
     }
 
     public typealias State = TasksState
@@ -90,8 +98,12 @@ public struct TasksApp: LinkedRecordsApp {
     public let device: String
     public let build: BuildFacts
 
-    public init(cache: RecordCache?, outbox: Outbox?, device: String, build: BuildFacts, line: WriteLine = WriteLine()) {
-        linked = LinkedRecords(kinds: TasksKinds.all, cache: cache, outbox: outbox, words: Self.words(device: device), line: line)
+    /// - Parameter words: the Status screen's words, as the shell made them
+    ///   (`AppShell.Parts.words`, from `words(device:)`).
+    public init(cache: RecordCache?, outbox: Outbox?, words: StatusWords, device: String, build: BuildFacts,
+                line: WriteLine = WriteLine())
+    {
+        linked = LinkedRecords(kinds: TasksKinds.all, cache: cache, outbox: outbox, words: words, line: line)
         self.device = device
         self.build = build
     }

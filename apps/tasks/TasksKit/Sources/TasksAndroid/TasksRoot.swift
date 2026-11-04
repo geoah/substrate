@@ -61,10 +61,11 @@ final class TasksRoot: BridgeRoot {
         environment.folder = folder
         let outbox = folder.map { Outbox(folder: $0) }
         let build = BuildFacts(version: opening.version, channel: opening.channel)
-        let app = TasksApp(cache: folder.map { RecordCache(folder: $0) }, outbox: outbox, device: opening.device, build: build)
+        let words = TasksApp.words(device: opening.device)
+        let app = TasksApp(cache: folder.map { RecordCache(folder: $0) }, outbox: outbox, words: words, device: opening.device, build: build)
         let packages = [TasksKinds.packageID: TasksOpening.packageVersion(in: context.environment)]
         let link = Link(app: app, manifest: opening.manifest(in: context.environment), sessions: sessions, outbox: outbox, packages: packages,
-                        words: TasksApp.words(device: opening.device))
+                        words: words)
         return (Runtime(link, environment: environment), session != nil)
     }
 
@@ -97,7 +98,7 @@ final class TasksRoot: BridgeRoot {
         case let .settings(row):
             // What only the UI can run (the browser, the updater, the
             // connect screen) Kotlin runs from the same row.
-            switch TasksSettings.route(row) {
+            switch SettingsRoute<TasksApp>.route(row, settings: { .settings($0) }, clearSaved: .clearSaved) {
             case let .app(command): try await runtime.send(command, to: Link.appPath)
             case let .link(command): await runtime.send(command)
             case .changeAccess, .checkForUpdates, .signIn, .none: break

@@ -243,7 +243,8 @@ public struct ConnectController: Controller {
                 "You sign in on \(found.host) itself and choose what \(app) may do there. "
                     + "Later, Change Access in this app asks again; to revoke, use \(found.host)'s Settings, under Apps."
             }
-            footer = .init(found: "Server found: \(found.host)", repository: found.repository.map { "Repository: \($0)" }, note: note)
+            footer = .init(found: LabeledValue("Server found", found.host, verbatim: true),
+                           repository: found.repository.map { LabeledValue("Repository", $0, verbatim: true) }, note: note)
         } else {
             footer = .init(found: nil, repository: nil,
                            note: "Your repository's name, such as ada.example.com, or your Substrate server's address. A name finds its server on its own.")

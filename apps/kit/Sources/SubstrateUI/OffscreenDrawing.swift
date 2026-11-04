@@ -28,6 +28,13 @@ public enum OffscreenDrawing {
     /// A Mac window big enough for three columns.
     public static let mac = CGSize(width: 1180, height: 760)
 
+    /// The accent SwiftUI draws a button, a picker's choice and a link in:
+    /// a test process has no app's accent and would draw them grey, as
+    /// though disabled. AppKit's own controls (a switch, a sidebar's
+    /// selection) read the application's activation, which an offscreen
+    /// drawing does not take, and are drawn as an inactive window's.
+    static let accent = Color(nsColor: .systemBlue)
+
     /// The PNG of `view` at `size`, in light mode, once it has settled.
     public static func png(_ view: some View, size: CGSize = phone, frame: Frame = .screen) async throws -> Data {
         _ = NSApplication.shared
@@ -38,6 +45,7 @@ public enum OffscreenDrawing {
             let hosting = NSHostingView(rootView: view
                 .frame(width: size.width, height: size.height)
                 .background(Color(nsColor: .windowBackgroundColor))
+                .tint(Self.accent)
                 .environment(\.colorScheme, .light)
                 .environment(\.controlActiveState, .key))
             hosting.frame = CGRect(origin: .zero, size: size)
@@ -47,7 +55,7 @@ public enum OffscreenDrawing {
         case .window:
             // A hosting controller, not a hosting view: it is what hands the
             // view's toolbar and titles to the window.
-            let controller = NSHostingController(rootView: view.environment(\.colorScheme, .light))
+            let controller = NSHostingController(rootView: view.tint(Self.accent).environment(\.colorScheme, .light))
             controller.sizingOptions = []
             window = NSWindow(contentRect: CGRect(origin: .zero, size: size),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered,

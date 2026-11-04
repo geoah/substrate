@@ -1,5 +1,6 @@
 import SubstrateCore
 import SubstrateRuntime
+import SubstrateScreens
 
 /// One chat as a window draws it: its stored rows and its run as turns,
 /// what became of the last send, and the composer.
@@ -23,7 +24,9 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     public var typing: Bool
     public var status: [ConversationNote]
     public var outcomes: [OutcomePresentation]
-    public var technical: [String]?
+    /// The thread's reference and the run's figures, each labelled, where
+    /// the owner asked for technical details.
+    public var technical: [LabeledValue]?
     public var cards: [String: CardPresentation]
     /// What the chat's tool results named each record, by `kind/id`.
     public var titles: [String: String]

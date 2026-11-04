@@ -36,8 +36,10 @@ public struct BridgeTransport: HTTPTransport {
         do {
             outcome = try BridgeCodec.decode(TransportOutcome.self, from: value)
         } catch {
-            // Swift took the reply, so its file is Swift's to delete, read or not.
-            remove(value["response"]?["bodyFile"]?.string)
+            // Swift took the reply, so its file is Swift's to delete, read or
+            // not: `TransportOutcome.response(response:)` is the case's name,
+            // then its label's.
+            remove(value["response"]?["response"]?["bodyFile"]?.string)
             throw error
         }
         switch outcome {
@@ -65,7 +67,7 @@ public struct BridgeTransport: HTTPTransport {
         let wire = try wireRequest(request)
         // The body is sent before the head comes back.
         defer { Self.remove(wire.bodyFile) }
-        var iterator = channel.stream(.transportLines(request: wire), capacity: capacity).makeAsyncIterator()
+        var iterator = channel.chunks(.transportLines(request: wire), capacity: capacity).makeAsyncIterator()
         guard let first = try await iterator.next() else {
             throw URLError(.badServerResponse)
         }

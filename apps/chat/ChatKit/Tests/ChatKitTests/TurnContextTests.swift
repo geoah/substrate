@@ -8,7 +8,7 @@ import SubstrateDevice
 
 /// The turn context (decision 0196): the chat body carries the device's zone
 /// and the records, and a user row's `contextRecords` reach its turn.
-@Suite struct TurnContext {
+@Suite(.timeLimit(.minutes(10))) struct TurnContext {
     @Test func theChatBodyCarriesTheZoneAndTheRecords() {
         let body = ChatAPI.chatBody(
             thread: nil, message: "what is due?",

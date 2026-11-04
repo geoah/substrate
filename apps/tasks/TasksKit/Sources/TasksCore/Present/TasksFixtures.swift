@@ -85,7 +85,7 @@ public enum TasksFixtures {
                                 build: build)
     }
 
-    static let app = TasksApp(cache: nil, outbox: nil, device: "this iPhone", build: build)
+    static let app = TasksApp(cache: nil, outbox: nil, words: TasksApp.words(device: "this iPhone"), device: "this iPhone", build: build)
 
     static func editor(_ seed: EditorSeed, in state: TasksState) -> TaskEditorPresentation? {
         let key = ChildKey("editor")

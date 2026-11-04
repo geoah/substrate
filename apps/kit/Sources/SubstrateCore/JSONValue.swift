@@ -132,13 +132,6 @@ public extension JSONValue {
         return Data(out.utf8)
     }
 
-    /// Decodes the value as `T` through `JSONDecoder` with ISO 8601 dates.
-    func decode<T: Decodable>(_ type: T.Type) throws -> T {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(type, from: data(pretty: false))
-    }
-
     /// Compact JSON text, keys in their order, for display and for query
     /// parameters; a string is its own text, unquoted.
     var jsonText: String {

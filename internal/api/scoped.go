@@ -1186,3 +1186,7 @@ func (s *scopedDataset) MarkDomainVerified(context.Context, string) (time.Time, 
 func (s *scopedDataset) RecordAppBuild(ctx context.Context, packages map[string]int64, softwareVersion string) error {
 	return s.inner.RecordAppBuild(ctx, packages, softwareVersion)
 }
+
+func (s *scopedDataset) CompleteAppAddon(context.Context, string, string) error {
+	return errScope("completing add-on approvals")
+}

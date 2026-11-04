@@ -7,7 +7,7 @@ import Testing
 // drop with no load grid, and the rest bar's and dialogs' copy. Each test
 // failed before its fix.
 
-@Suite("Review fixes: suggestions")
+@Suite("Review fixes: suggestions", .timeLimit(.minutes(10)))
 struct ReviewSuggestionFixTests {
     /// Coverage, 28 Oct: the hip thrust is planned as clusters of 3 at 80 kg
     /// (`miniSetReps: 3`, no rep range). The head is the first cluster.
@@ -85,7 +85,7 @@ struct ReviewSuggestionFixTests {
     }
 }
 
-@Suite("Review fixes: engine")
+@Suite("Review fixes: engine", .timeLimit(.minutes(10)))
 struct ReviewEngineFixTests {
     private func pressSession(sets: Int = 3) throws -> EngineScript {
         var script = EngineScript(at: engineEpoch)
@@ -205,7 +205,7 @@ struct ReviewEngineFixTests {
     }
 }
 
-@Suite("Review fixes: replacing in a group")
+@Suite("Review fixes: replacing in a group", .timeLimit(.minutes(10)))
 struct ReviewReplaceFixTests {
     /// A routine superset A (press) and B (row), three rounds. After A1, B1,
     /// A2, B2 the press is replaced by curl for its last set.
@@ -256,7 +256,7 @@ struct ReviewReplaceFixTests {
     }
 }
 
-@Suite("Review fixes: copy")
+@Suite("Review fixes: copy", .timeLimit(.minutes(10)))
 struct ReviewCopyFixTests {
     /// A superset whose second member has a warm-up the owner skipped: after
     /// the last working set only that warm-up (round 0) is left.

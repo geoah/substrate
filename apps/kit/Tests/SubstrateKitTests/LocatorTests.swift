@@ -14,7 +14,7 @@ import SubstrateTesting
 
 /// The cases internal/domains/record_test.go holds the server's parser to,
 /// so the app reads one record as the server does.
-@Suite struct DomainRecords {
+@Suite(.timeLimit(.minutes(10))) struct DomainRecords {
     @Test func readsTheKeysItKnowsAndKeepsTheRest() throws {
         let record = try #require(try DomainRecord.parse([
             "google-site-verification=abc",
@@ -27,6 +27,16 @@ import SubstrateTesting
         #expect(record.sha256 == "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
         #expect(record.other == ["future": "yes"])
         #expect(try DomainRecord.parse(["v=substrate1 server=https://a.example.org:8443"])?.server == "https://a.example.org:8443")
+    }
+
+    /// A record written with tabs or doubled spaces is still the record
+    /// (`TestARecordReadsWithAnyWhitespaceAndRendersWhatItCarries`).
+    @Test func readsWithAnyWhitespaceAfterTheVersion() throws {
+        let record = try #require(try DomainRecord.parse(["v=substrate1\tserver=https://substrate.example.net  proof=abc123\tlater=x"]))
+        #expect(record.server == "https://substrate.example.net")
+        #expect(record.proof == "abc123")
+        #expect(record.other == ["later": "x"])
+        #expect(try DomainRecord.parse(["v=substrate1\u{00A0}server=https://a.example"])?.server == "https://a.example")
     }
 
     @Test func findsNothingWithoutTheVersion() throws {
@@ -120,7 +130,7 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     }
 }
 
-@Suite struct Locating {
+@Suite(.timeLimit(.minutes(10))) struct Locating {
     let requirement = ServerRequirement()
 
     func locator(_ transport: HostTransport, _ resolver: TableResolver) -> ServerLocator {
@@ -324,7 +334,7 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     }
 }
 
-@Suite struct ClaimedCallback {
+@Suite(.timeLimit(.minutes(10))) struct ClaimedCallback {
     let redirect = URL(string: "https://substrate.example.org/apps/workouts/callback")!
 
     @Test func aReleaseClaimsItsRedirectAndALocalBuildDoesNot() {

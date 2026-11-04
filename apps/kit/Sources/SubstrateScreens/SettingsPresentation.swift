@@ -120,6 +120,10 @@ public enum SettingsRowID: Bridged, Hashable, Sendable {
         case refused(UUID)
         /// What the server refused of it.
         case refusedStatus(UUID)
+        /// The kind it was of, by its full reference.
+        case refusedKind(UUID)
+        /// Its record's id.
+        case refusedRecord(UUID)
     }
 
     public enum RepositoryRow: Bridged, Hashable, Sendable {

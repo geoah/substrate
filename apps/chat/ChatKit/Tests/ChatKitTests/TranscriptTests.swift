@@ -10,7 +10,7 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     Record(id: id, kind: Kinds.message, properties: props, createdAt: "2026-10-31T10:00:00Z")
 }
 
-@Suite struct TranscriptFold {
+@Suite(.timeLimit(.minutes(10))) struct TranscriptFold {
     @Test func toolRowsFoldIntoTheirCallsByID() {
         let rows = [
             message("u", ["role": "user", "content": "find it", "turn": 1]),
@@ -83,7 +83,7 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     }
 }
 
-@Suite struct LiveOverlayFold {
+@Suite(.timeLimit(.minutes(10))) struct LiveOverlayFold {
     @Test func deltasAppendAndAToolRoundClosesTheTurn() {
         var live = LiveOverlay()
         live.pushDelta("Hel", seq: 1)
@@ -135,7 +135,7 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     }
 }
 
-@Suite struct StreamLines {
+@Suite(.timeLimit(.minutes(10))) struct StreamLines {
     @Test func heartbeatsGarbageAndUnknownKindsReadAsNothing() {
         #expect(AgentEvent.parse("{}")?.kind == .heartbeat)
         #expect(AgentEvent.parse("{\"kind\":\"_heartbeat\"}") == nil)
@@ -166,7 +166,7 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     }
 }
 
-@Suite struct Words {
+@Suite(.timeLimit(.minutes(10))) struct Words {
     @Test func agentNames() {
         #expect(agentName("x.example.com/llmsample/researchAssistant") == "Research assistant")
         #expect(agentName("agent:x.example.com:pkg:task_triage") == "Task triage")
@@ -213,7 +213,7 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     }
 }
 
-@Suite struct ReplyMentions {
+@Suite(.timeLimit(.minutes(10))) struct ReplyMentions {
     @Test func aReplyRowCarriesWhatItLinks() {
         let kind = "ada.example.com/tasks/task"
         let turns = transcript(of: [

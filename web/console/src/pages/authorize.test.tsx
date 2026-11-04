@@ -372,7 +372,7 @@ describe("AuthorizePage", () => {
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "notes.example.com",
+        name: "Unverified app at notes.example.com",
       })
     ).toBeTruthy()
 
@@ -389,7 +389,7 @@ describe("AuthorizePage", () => {
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "notes.example.com",
+        name: "Unverified app at notes.example.com",
       })
     ).toBeTruthy()
     expect(screen.getByText(/An app wants to connect to/).textContent).toBe(
@@ -462,7 +462,7 @@ describe("AuthorizePage", () => {
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "notes.example.com",
+        name: "Unverified app at notes.example.com",
       })
     ).toBeTruthy()
     expect(
@@ -871,7 +871,10 @@ describe("AuthorizePage", () => {
   it("lists what it sets up: the package with its version, the code it runs and what it brings first, the account's values and the webhook with what it then allows", async () => {
     answers.GET = () => jsonResponse(200, SYNC)
     renderPage()
-    await screen.findByRole("heading", { level: 1, name: "sync.example.com" })
+    await screen.findByRole("heading", {
+      level: 1,
+      name: "Unverified app at sync.example.com",
+    })
     expect(screen.getByRole("checkbox", { name: ACCOUNTS_WORDS })).toBeTruthy()
     // The webhook's access is not a scope of its own.
     expect(screen.getAllByRole("checkbox")).toHaveLength(1)
@@ -1914,7 +1917,9 @@ describe("AuthorizePage", () => {
         expect(screen.getByText(/An app you approved asks/).textContent).toBe(
           "An app you approved asks ada.example.com again"
         )
-        expect(screen.getByText("notes.example.com")).toBeTruthy()
+        expect(
+          screen.getByText("Unverified app at notes.example.com")
+        ).toBeTruthy()
         expect(screen.getByText(/You approved it on 1 October/)).toBeTruthy()
         // The approval's date is said once, in the header.
         expect(screen.queryByText(/^Approved /)).toBeNull()
@@ -2229,7 +2234,10 @@ describe("AuthorizePage", () => {
 
   it("keeps the browser's own Ctrl+B: the page has no sidebar to fold", async () => {
     renderPage()
-    await screen.findByRole("heading", { level: 1, name: "notes.example.com" })
+    await screen.findByRole("heading", {
+      level: 1,
+      name: "Unverified app at notes.example.com",
+    })
     const key = new KeyboardEvent("keydown", {
       key: "b",
       ctrlKey: true,
@@ -2417,11 +2425,14 @@ describe("AuthorizePage", () => {
         },
       })
     renderPage({ technical: true })
-    await screen.findByRole("heading", { level: 1, name: "notes.example.com" })
+    await screen.findByRole("heading", {
+      level: 1,
+      name: "Unverified app at notes.example.com",
+    })
     expect(screen.getByText(/It calls itself/).textContent).toBe(
       "It calls itself Notes for Ada"
     )
-    expect(screen.getByText(/^Unverified/).parentElement?.textContent).toBe(
+    expect(screen.getByText(/^Unverified\.$/).parentElement?.textContent).toBe(
       "Unverified. Its access goes to https://notes.example.com"
     )
     expect(screen.getByText(/could not be confirmed/).textContent).toBe(
@@ -2433,8 +2444,11 @@ describe("AuthorizePage", () => {
 
   it("says a loopback app's access goes to an app on this device", async () => {
     renderPage()
-    await screen.findByRole("heading", { level: 1, name: "notes.example.com" })
-    expect(screen.getByText(/^Unverified/).parentElement?.textContent).toBe(
+    await screen.findByRole("heading", {
+      level: 1,
+      name: "Unverified app at notes.example.com",
+    })
+    expect(screen.getByText(/^Unverified\.$/).parentElement?.textContent).toBe(
       "Unverified. Its access goes to an app on this device"
     )
   })

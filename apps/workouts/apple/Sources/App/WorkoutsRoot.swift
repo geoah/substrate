@@ -57,7 +57,7 @@ final class WorkoutsRoot {
         let directory = AppModel.workoutsDirectory()
         self.directory = directory
         let settings = WorkoutsSettings.load()
-        let accounts = WorkoutsAccounts(base: directory)
+        let folders = WorkoutsFolders(base: directory)
         var environment = AppEnvironment.apple()
         environment.client = ClientSource { SessionStore.workouts.load().map { SubstrateClient($0) } }
         let notifications = SystemNotifications()
@@ -65,10 +65,10 @@ final class WorkoutsRoot {
         environment.devices.activities = LiveActivities<WorkoutsActivityAttributes>(
             content: WorkoutsActivityAttributes.contentState, dismissedKey: "workouts.liveActivity.dismissed")
         environment.workouts = WorkoutsPlatform()
-        environment.accounts = accounts
+        environment.folders = folders
         let root = Link(app: WorkoutsApp(directory: directory, adapter: Self.adapter, settings: settings), manifest: manifest,
                         sessions: .workouts,
-                        outboxes: { accounts.account(AccountRef(server: $0.server, repository: $0.repository))?.outbox },
+                        outboxes: { folders.folder(AccountRef(server: $0.server, repository: $0.repository))?.outbox },
                         packages: [WorkoutsKinds.packageID: WorkoutsManifest.trainingVersion, Coach.package: WorkoutsManifest.coachVersion],
                         words: Self.words)
         model = PresentationModel(root, environment: environment)

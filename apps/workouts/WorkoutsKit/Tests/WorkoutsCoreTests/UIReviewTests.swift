@@ -45,7 +45,7 @@ private func save(_ script: EngineScript, presentation: SessionPresentation, pol
     return (projection, SessionEngine.records(finished, adapter: "substrate-workouts@test"), finished)
 }
 
-@Suite("UI review: Finish projects the pending-set choice")
+@Suite("UI review: Finish projects the pending-set choice", .timeLimit(.minutes(10)))
 struct FinishProjectionTests {
     @Test("Fully Body, two sets ticked: each policy's summary is what Save writes")
     func bothPolicies() throws {
@@ -148,7 +148,7 @@ struct FinishProjectionTests {
     }
 }
 
-@Suite("UI review: timed sets, RPE everywhere, copy and VoiceOver")
+@Suite("UI review: timed sets, RPE everywhere, copy and VoiceOver", .timeLimit(.minutes(10)))
 struct UIReviewPresenterTests {
     @Test("Play on a plank with only a ghost duration counts down to it")
     func timedSetTarget() throws {

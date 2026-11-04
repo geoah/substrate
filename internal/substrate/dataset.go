@@ -301,6 +301,9 @@ type Dataset interface {
 	// each package it needs, its software version, and the time. A token
 	// with no app behind it records nothing.
 	RecordAppBuild(ctx context.Context, packages map[string]int64, softwareVersion string) error
+	// CompleteAppAddon removes a waiting approval after the catalog installs
+	// its package. Repeating it or completing a revoked token is a no-op.
+	CompleteAppAddon(ctx context.Context, tokenID, packageID string) error
 }
 
 // ReembedReport is what one Reembed enqueued: the pair every vector will name

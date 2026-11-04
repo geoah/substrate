@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 
 // The words the screens use for the model's values: the kind files' own
 // labels where they have one, and §7's copy elsewhere. `SetLabel` (W, 2, 2a,
@@ -334,12 +335,5 @@ public extension SetLabel {
             if let head = set.continues { result[set.id] = set.ordinal ?? result[head] }
         }
         return result
-    }
-}
-
-extension String {
-    /// The first letter upper-cased: "set 2" becomes "Set 2".
-    var capitalizedFirst: String {
-        prefix(1).uppercased() + dropFirst()
     }
 }

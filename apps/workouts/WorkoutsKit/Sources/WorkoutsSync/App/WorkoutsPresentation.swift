@@ -23,7 +23,7 @@ public struct WorkoutsPresentation: Codable, Equatable, Sendable {
     /// Whether a routine may be deleted: signed in, and a package the app
     /// may write or not checked yet.
     public var canDeleteRoutines: Bool
-    public var syncing: Bool
+    public var flushing: Bool
     public var problem: String?
     public var sampleState: SampleInstall.State?
     public var sampleProblem: String?

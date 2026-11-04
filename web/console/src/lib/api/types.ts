@@ -894,6 +894,9 @@ export interface TokenInfo {
   /** Add-ons the owner approved that wait for their provider (decision
    * 0216). */
   appAddons?: AppAddon[]
+  /** The grant holds a scope a later decision retired (`declare:`), so the
+   * token no longer authenticates and is only revoked. */
+  retired?: boolean
 }
 
 /** One add-on an approval left waiting for the provider it extends. */

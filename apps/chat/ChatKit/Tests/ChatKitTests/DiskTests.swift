@@ -8,7 +8,7 @@ import Testing
 
 /// What the build before ChatKit kept under `SubstrateChat/<hash>/` is read
 /// after the upgrade, where it is, and drawn before the server is asked.
-@Suite("The cache an earlier build wrote")
+@Suite("The cache an earlier build wrote", .timeLimit(.minutes(10)))
 struct LegacyCache {
     @Test func theListTheTranscriptsTheDraftsAndTheCursorReadAfterTheUpgrade() async throws {
         let fixture = try #require(Bundle.module.url(forResource: "Fixtures/legacy", withExtension: nil))
@@ -65,7 +65,7 @@ struct LegacyCache {
 
 /// A session reaches its repository's folder only through its lease, and a
 /// sign-out's retirement runs in order with the next sign-in's open.
-@Suite("The folder's lease")
+@Suite("The folder's lease", .timeLimit(.minutes(10)))
 struct FolderLease {
     @Test func aSaveStillOnItsWayAcrossASignOutWritesNothing() async throws {
         let base = temporaryFolder("chat")
@@ -136,7 +136,7 @@ struct FolderLease {
 }
 
 /// The transcripts a build before ChatKit kept in `messages/`.
-@Suite("Adopting the transcripts")
+@Suite("Adopting the transcripts", .timeLimit(.minutes(10)))
 struct TranscriptAdoption {
     @Test func aCollisionKeepsTheNewerCopyAndAFailedMoveKeepsTheOldFolder() throws {
         let root = temporaryFolder("chat").appendingPathComponent("repository")

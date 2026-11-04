@@ -4,7 +4,7 @@ import SubstrateCore
 import SubstrateLocal
 
 /// Where the app stands with its repository, most blocking first, in one
-/// sentence (Workouts' `SyncStatus`, for any app).
+/// sentence.
 public enum LinkStatus: Codable, Hashable, Sendable {
     /// No server: the app keeps everything on the device.
     case local

@@ -58,8 +58,9 @@ platform.
 ### Confirmation
 
 `mise run apps:test:linux` builds and tests the kit and every app's core on
-Linux in CI (the `apps linux` job), and the `android build` job cross-compiles
-them for Android. `lint:apps` refuses an Apple-only import in portable code.
+Linux in CI (the `apps linux` job; the template's core through
+`apps:new:check`), and the `android build` job cross-compiles the kit for
+Android. `lint:apps` refuses an Apple-only import in portable code.
 `lint:toolchain` holds the Swift pin, the Swift SDK for Android's version and
 Gradle's NDK equal.
 

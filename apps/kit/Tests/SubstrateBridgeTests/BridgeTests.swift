@@ -150,7 +150,7 @@ struct BridgeTests {
     @Test func aStreamTakesItsChunksInOrderAndEndsOnce() async throws {
         let (runtime, outlet, _) = started()
         let handle = try open(runtime)
-        _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["stream": 16]))
+        _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["chunks": 16]))
         let request = try await outlet.next { $0.op == .request }
         for seq in 0 ..< 5 {
             #expect(try post(runtime, Envelope(op: .chunk, id: request.id, seq: seq, body: JSONValue(integerLiteral: seq))).op == .accepted)
@@ -161,26 +161,26 @@ struct BridgeTests {
         let after = try post(runtime, Envelope(op: .chunk, id: request.id, seq: 5, body: 5))
         #expect(try BridgeCodec.decode(BridgeFailure.self, from: after.body).code == .unknownCall)
         let shown = try await outlet.next { $0.op == .presentation }
-        #expect(shown.body?["streamed"] == [0, 1, 2, 3, 4])
+        #expect(shown.body?["read"] == [0, 1, 2, 3, 4])
     }
 
     @Test func aChunkOutOfOrderFailsTheStream() async throws {
         let (runtime, outlet, _) = started()
         let handle = try open(runtime)
-        _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["stream": 16]))
+        _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["chunks": 16]))
         let request = try await outlet.next { $0.op == .request }
         _ = try post(runtime, Envelope(op: .chunk, id: request.id, seq: 0, body: 0))
         let skipped = try post(runtime, Envelope(op: .chunk, id: request.id, seq: 2, body: 2))
         #expect(try BridgeCodec.decode(BridgeFailure.self, from: skipped.body).code == .malformed)
         let shown = try await outlet.next { $0.op == .presentation }
-        #expect(shown.body?["streamFailure"] == "malformed")
+        #expect(shown.body?["chunksFailure"] == "malformed")
     }
 
     @Test func aFullStreamOverflowsCancelsAndTellsTheReader() async throws {
         let (runtime, outlet, _) = started()
         let handle = try open(runtime)
         // A reader that waits a long time per value, behind a queue of two.
-        _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["stream": 2, "pause": 300]))
+        _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["chunks": 2, "pause": 300]))
         let request = try await outlet.next { $0.op == .request }
         var overflowedAt: Int?
         for seq in 0 ..< 10 {
@@ -190,11 +190,11 @@ struct BridgeTests {
         let cancel = try await outlet.next { $0.op == .cancel && $0.id == request.id }
         #expect(cancel.id == request.id)
         #expect(runtime.stats.overflowed == 1)
-        // The chunk after the overflow is refused: the stream ended once.
+        // The chunk after the overflow is refused: the answer ended once.
         let next = try post(runtime, Envelope(op: .chunk, id: request.id, seq: (overflowedAt ?? 9) + 1, body: 0))
         #expect(next.op == .error)
         let shown = try await outlet.next { $0.op == .presentation }
-        #expect(shown.body?["streamFailure"] == "overflow")
+        #expect(shown.body?["chunksFailure"] == "overflow")
     }
 
     @Test func presentationsCoalesceWhileKotlinIsSlowAndTheNewestArrives() async throws {
@@ -202,7 +202,9 @@ struct BridgeTests {
         let handle = try open(runtime)
         outlet.hold()
         _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["present": 500]))
-        try await Task.sleep(for: .milliseconds(100))
+        // Released once all but two were replaced while Kotlin was held:
+        // one in its hands, at most one waiting, every other coalesced.
+        while runtime.stats.coalesced < 498 { try await Task.sleep(for: .milliseconds(1)) }
         outlet.release()
         let last = try await outlet.next { $0.op == .presentation && $0.body?["step"]?.int == 500 }
         #expect(last.body?["step"] == 500)
@@ -257,10 +259,10 @@ struct BridgeTests {
             try await channel.call(.connectivityCurrent)
         } throws: { ($0 as? BridgeFailure)?.code == .jniFailure }
         #expect(runtime.calls.outstanding == 0)
-        // A stream's request too: it ends with the failure.
+        // A chunked answer's request too: it ends with the failure.
         var failure: BridgeFailure?
         do {
-            for try await _ in channel.stream(.connectivityWatch) {}
+            for try await _ in channel.chunks(.connectivityWatch) {}
         } catch {
             failure = error as? BridgeFailure
         }

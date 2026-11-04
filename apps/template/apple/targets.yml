@@ -66,6 +66,7 @@ targets:
     supportedDestinations: [iOS, macOS]
     sources:
       - UI
+      - ../../xcode/Shared/CheckingForUpdates.swift
     dependencies:
       - package: TemplateKit
         product: TemplateCore
@@ -99,8 +100,8 @@ targets:
         SKIP_INSTALL: "YES"
   SubstrateTemplateTests:
     # The views drawn from TemplateKit's fixtures, on the Mac, with no host
-    # app: with SUBSTRATE_GALLERY naming a folder, each one is written there
-    # as a PNG.
+    # app: with SUBSTRATE_GALLERY naming a folder
+    # (`mise run apps:gallery`), each one is written there as a PNG.
     type: bundle.unit-test
     platform: auto
     supportedDestinations: [macOS, iOS]

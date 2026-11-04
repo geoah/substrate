@@ -5,7 +5,7 @@ import Testing
 /// The routine editor: rename, order (blocks, members, sets), groups made
 /// and undone, exercises and sets added and removed, keys never reused, the
 /// PATCH it asks for, the duplicate and the draft kept on disk.
-@Suite("Routine editor")
+@Suite("Routine editor", .timeLimit(.minutes(10)))
 struct RoutineEditorTests {
     let codec = RecordCodec()
 

@@ -10,7 +10,7 @@ import SubstrateCore
 /// The codec against what a substrate answers: records read back from a
 /// throwaway server built from this tree (Fixtures/), with their stamps,
 /// labels and property metadata, and references as `{ref}` objects.
-@Suite("Codec against the server's answers")
+@Suite("Codec against the server's answers", .timeLimit(.minutes(10)))
 struct ServerAnswerTests {
     let codec = RecordCodec()
 
@@ -78,7 +78,7 @@ struct ServerAnswerTests {
     }
 }
 
-@Suite("The published manifests")
+@Suite("The published manifests", .timeLimit(.minutes(10)))
 struct ManifestTests {
     @Test("the manifest labels every training kind as its declaration does, so a refused write says what it was")
     func trainingLabels() throws {

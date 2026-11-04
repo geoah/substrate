@@ -14,7 +14,7 @@ consider inovating a bit more." That started the redesign in [large-text.md](lar
 and then the four options in [README.md](README.md).
 
 These are screenshots of the running app on the iPhone 18 Pro Max simulator (iOS 27),
-taken for geoah/rxtx.dev#113 after its simulator and Codex Astra UI-review fixes
+taken for the private repository's #113 after its simulator and Codex Astra UI-review fixes
 ([the review](../reviews/ui-2026-10-31-astra.md)). Demo history comes from
 [`sessions.yaml`](../examples/sessions.yaml).
 

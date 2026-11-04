@@ -27,7 +27,7 @@ Dynamic Island.
 
 ```bash
 mise run apple:build:workouts     # the app for the simulator
-mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (577 tests, on the Mac)
+mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync (593 tests, on the Mac)
 mise run apps:release prerelease workouts   # archived, signed and published under workouts/
 uv run --with pyyaml apps/workouts/scripts/workouts-package.py   # the package's manifests into the app's JSON
 uv run --with pyyaml apps/workouts/scripts/exercise-library.py   # the exercise library into the app's JSON
@@ -101,11 +101,20 @@ nothing and respells nothing: the kinds are `substrate.reamde.dev/training/…`
 on the phone and on the wire. A phone updated from a build that spelled them
 `~/training/…` (decision [T3](docs/decisions.md#t3-the-package-is-the-apps-own-training))
 still holds that spelling in its files: each store reads a file from before
-its format moved through `LegacyKinds` once, every kind, reference path and
-version key, and writes it back in the published spelling (`history/*.json`
-at format 3, `outbox.json`, `catalog.json`, `local-exercises.json` and
+its format moved through `LegacyKinds` once, every kind and reference path,
+and writes it back in the published spelling (`history/*.json` at format 3,
+`outbox.json`, `catalog.json`, `local-exercises.json` and
 `routine-draft.json` at format 2), so nothing is parked on a path the
-server never had and nothing is set aside. The owner cannot edit a published package
+server never had and nothing is set aside. What the old build knew about
+`~/training` says nothing about the published package, which may be empty
+or hold the copies the owner made, so the outbox carries none of it over:
+the old package's record versions and edit chains go, a queued write of it
+goes without its `ifVersion`, and a session's queued writes go altogether,
+since the first sync's exchange derives them again from the history and the
+tombstones. A session the published package lacks is uploaded whole, one it
+holds is taken as the server has it and never sent again, and nothing is
+deleted on either side; a routine edit queued before the update lands on
+the copy, or waits parked with the server's words where there is none. The owner cannot edit a published package
 (the tier's ordinary rule), keeps the bundle's **Pause** and **Resume**, and
 may **Take over…** it, after which it stops upgrading and the app keeps
 writing records to it. A local build and a release build ask for the same
@@ -298,13 +307,13 @@ observations would ask every user for a new scope.
 
 `mise run apple:test:workouts` checks the generated JSON against its YAML,
 then runs both suites on the Mac (CI runs the check, in the `lint` job, and
-not the suites: no workflow builds the Apple apps): WorkoutsCore's 480 (the codec, the engine,
+not the suites: no workflow builds the Apple apps): WorkoutsCore's 489 (the codec, the engine,
 the suggestions against their vectors, the presenters, the stores, the sample
 routine's methods and a session through it to Finish, and the Hevy import
 against `Tests/WorkoutsCoreTests/Fixtures/hevy`, the API's shape included, and the exercise library, and the files the last release left in the `~/training`
 spelling read back once, and the session's controller on the kit's runtime: its journal
 order, the Finish that is two events and a crash on either side of its history file,
-the open, the ticks, the entry check and a refusal) and WorkoutsSync's 97:
+the open, the ticks, the entry check and a refusal) and WorkoutsSync's 104:
 the sample written once and never again after a delete, on a second phone or a
 reinstall, a refused sample write that stops nothing, a session logged signed
 out finding its exercises, a routine's delete through the outbox and during a
@@ -316,8 +325,9 @@ delete, a discard, a reset and a new write while a write is in flight, a
 failed save and an unreadable file, parked writes, the history exchange, the
 package check (missing, behind and asked through the set up check, current),
 the published manifests, the coach's closure and the scopes held to its reach
-(`CoachTests`), an account folder from the `~/training` spelling read, rewritten and
-sent to the published paths, the sign-in request and status, and the app's
+(`CoachTests`), an account folder from the `~/training` spelling read and rewritten, its
+history exchanged with an empty published package and with one holding the
+owner's copies, the sign-in request and status, and the app's
 root under the link (`WorkoutsAppTests`: what the link's snapshot starts, a
 sync step for another account, a finished session reaching the account's
 outbox as one batch, a delete's tombstone).
@@ -428,5 +438,5 @@ moments before.
 | ![Read only, before](docs/screenshots/review-before-plan-top.jpg) | ![Superset, before](docs/screenshots/review-before-plan-superset.jpg) | ![Editing, before](docs/screenshots/review-before-plan-editing.jpg) | ![Muscles, before](docs/screenshots/review-before-progress-muscles.jpg) |
 
 `docs/screenshots/rows-*.jpg` are the Rows layout from the app's build in
-rxtx.dev (Spotter, geoah/rxtx.dev#118), with example sessions loaded as history: drops, a past set being
+the owner's private repository (Spotter, its #118), with example sessions loaded as history: drops, a past set being
 fixed, a timed plank and dark mode.

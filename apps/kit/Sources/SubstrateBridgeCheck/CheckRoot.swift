@@ -162,7 +162,7 @@ public actor CheckRoot: BridgeRoot {
             let path = await BridgeConnectivity(channel: context.device).current()
             return ok("online \(path.online) expensive \(path.expensive)")
         case .hang:
-            for try await _ in context.device.stream(.connectivityWatch, capacity: 1_000_000) {}
+            for try await _ in context.device.chunks(.connectivityWatch, capacity: 1_000_000) {}
             return ok("ended")
         case .mainActor:
             let onMain = await MainActor.run { Thread.isMainThread }

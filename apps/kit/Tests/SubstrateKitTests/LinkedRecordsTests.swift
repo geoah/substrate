@@ -34,7 +34,7 @@ private struct Stepper {
     }
 }
 
-@Suite("The fold")
+@Suite("The fold", .timeLimit(.minutes(10)))
 struct FoldTests {
     @Test func waitingWritesLieOverTheServersCopyAndARefusedOneDoesNot() {
         let key = RecordFold.key(noteKind, "n1")
@@ -54,7 +54,7 @@ struct FoldTests {
     }
 }
 
-@Suite("Linked records")
+@Suite("Linked records", .timeLimit(.minutes(10)))
 struct LinkedRecordsTests {
     @Test func signedInItReadsThenFollowsAndSignedOutItStops() {
         var stepper = Stepper()
@@ -141,7 +141,7 @@ struct LinkedRecordsTests {
     }
 }
 
-@Suite("Settings, composed")
+@Suite("Settings, composed", .timeLimit(.minutes(10)))
 struct SettingsCompositionTests {
     @Test func aPackageRowNamesItsFullReference() {
         let status = StatusPresentation(title: "Substrate", symbol: .upToDate, tone: .positive, sentence: "Up to date.",
