@@ -5,7 +5,8 @@ import SubstrateCore
 /// once: a reply, an error, a cancel, or the close of its handle, whichever
 /// comes first; anything after that for the id is refused as unknown. A
 /// chunked answer takes its chunks in `seq` order into a bounded queue, and
-/// ends exactly once.
+/// ends exactly once. A call's request leaves only through `admit`, which
+/// orders it against the call's cancel.
 final class CallTable: @unchecked Sendable {
     typealias Chunks = AsyncThrowingStream<JSONValue, Error>
 
@@ -24,11 +25,21 @@ final class CallTable: @unchecked Sendable {
         var entry: Entry
         var handle: Handle?
         var service: DeviceService
+        /// The request was handed to the outbox: a cancel from here on is
+        /// Kotlin's to hear, after it.
+        var sent = false
     }
 
     private let lock = NSLock()
     private var waiting: [Int: Waiting] = [:]
     private var lastID = 0
+    /// Runs before each request is admitted, outside the lock: a test
+    /// pauses there, between a caller's cancellation check and its send.
+    private let beforeAdmitting: @Sendable (Int) -> Void
+
+    init(beforeAdmitting: @escaping @Sendable (Int) -> Void = { _ in }) {
+        self.beforeAdmitting = beforeAdmitting
+    }
 
     func nextID() -> Int {
         lock.withLock {
@@ -51,6 +62,33 @@ final class CallTable: @unchecked Sendable {
 
     func waitBlocking(_ id: Int, handle: Handle?, service: DeviceService, _ answer: @escaping Answer) {
         lock.withLock { waiting[id] = Waiting(entry: .blocking(answer), handle: handle, service: service) }
+    }
+
+    /// What admitting a call's request came to.
+    enum Admission: Equatable {
+        /// It left, and a cancel from here on follows it.
+        case sent
+        /// The call was answered first (cancelled, or its handle closed), so
+        /// nothing left.
+        case answered
+        /// The outbox refused it: the handle is closing.
+        case refused
+    }
+
+    /// Hands the call's request to `send` unless the call was answered
+    /// first. The check, the send and the mark are one step under the
+    /// table's lock, so a cancel either finds the request unsent and keeps
+    /// it from leaving, or finds it sent and goes after it. Kotlin drops a
+    /// cancel for a call it has not heard of, so one that overtook its
+    /// request would leave the request to start for a caller that is gone.
+    func admit(_ id: Int, _ send: () -> Bool) -> Admission {
+        beforeAdmitting(id)
+        return lock.withLock {
+            guard waiting[id] != nil else { return .answered }
+            guard send() else { return .refused }
+            waiting[id]?.sent = true
+            return .sent
+        }
     }
 
     /// A reply: the call's answer. A reply to a chunked answer is refused.
@@ -123,26 +161,32 @@ final class CallTable: @unchecked Sendable {
         return nil
     }
 
-    /// Answers the call `cancelled` if it is still waiting; true when it was,
-    /// so the caller tells Kotlin to stop.
-    @discardableResult
-    func cancel(_ id: Int, _ reason: String) -> Bool {
-        let entry: Entry? = lock.withLock { waiting.removeValue(forKey: id)?.entry }
-        let failure = BridgeFailure(.cancelled, reason)
-        switch entry {
-        case nil: return false
-        case let .call(continuation)?: continuation.resume(throwing: failure)
-        case let .blocking(answer)?: answer(.failure(failure))
-        case let .chunks(continuation, _)?: continuation.finish(throwing: failure)
-        }
-        return true
+    /// A call answered `cancelled`, by whether its request had left: Kotlin
+    /// is told to stop only what it was asked to start.
+    enum Cancelled: Equatable {
+        case unsent
+        case sent
     }
 
-    /// The calls a handle is waiting on, each answered `cancelled`: its ids,
-    /// for the caller to cancel on Kotlin's side.
-    func cancelAll(handle: Handle, _ reason: String) -> [Int] {
+    /// Answers the call `cancelled` if it is still waiting; nil when it was
+    /// not.
+    @discardableResult
+    func cancel(_ id: Int, _ reason: String) -> Cancelled? {
+        guard let removed = lock.withLock({ waiting.removeValue(forKey: id) }) else { return nil }
+        let failure = BridgeFailure(.cancelled, reason)
+        switch removed.entry {
+        case let .call(continuation): continuation.resume(throwing: failure)
+        case let .blocking(answer): answer(.failure(failure))
+        case let .chunks(continuation, _): continuation.finish(throwing: failure)
+        }
+        return removed.sent ? .sent : .unsent
+    }
+
+    /// The calls a handle is waiting on, each answered `cancelled`, in id
+    /// order, for the caller to cancel on Kotlin's side the ones it sent.
+    func cancelAll(handle: Handle, _ reason: String) -> [(id: Int, cancelled: Cancelled)] {
         let ids = lock.withLock { waiting.filter { $0.value.handle == handle }.keys.sorted() }
-        return ids.filter { cancel($0, reason) }
+        return ids.compactMap { id in cancel(id, reason).map { (id, $0) } }
     }
 
     var outstanding: Int { lock.withLock { waiting.count } }

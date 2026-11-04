@@ -36,11 +36,18 @@ public final class BridgeRuntime: @unchecked Sendable {
     /// The device's settings now: the start's, then each update's.
     private var current: BridgeEnvironment?
     private var handles = HandleTable<Open>()
-    let calls = CallTable()
+    let calls: CallTable
     public let record = BridgeRecord()
     private var globalOutbox: HandleOutbox?
 
-    public init() {}
+    public init() {
+        calls = CallTable()
+    }
+
+    /// A runtime whose calls are `calls`', for a test that pauses them.
+    init(calls: CallTable) {
+        self.calls = calls
+    }
 
     // MARK: start
 
@@ -161,7 +168,7 @@ public final class BridgeRuntime: @unchecked Sendable {
                 ?? BridgeFailure(.kotlinException, "Kotlin failed and said nothing readable")
             if let refused = calls.finish(try id(envelope), failure: failure) { throw refused }
         case .cancel:
-            if calls.cancel(try id(envelope), "Kotlin cancelled it") { record.count(\.cancelled) }
+            if calls.cancel(try id(envelope), "Kotlin cancelled it") != nil { record.count(\.cancelled) }
         case .request:
             try answer(id: id(envelope), BridgeCodec.decode(BridgeQuery.self, from: envelope.body))
         case .opened, .presentation, .list, .closed, .accepted:
@@ -287,8 +294,10 @@ public final class BridgeRuntime: @unchecked Sendable {
         if let notice { outbox.enqueue(notice, forced: true, onFailure: { _ in }) }
         open.inputs.finish()
         open.worker.cancel()
-        for id in calls.cancelAll(handle: handle, reason) {
+        for (id, cancelled) in calls.cancelAll(handle: handle, reason) {
             record.count(\.cancelled)
+            // A request that never left has nothing on Kotlin's side to stop.
+            guard cancelled == .sent else { continue }
             outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true, onFailure: { _ in })
         }
         let root = open.root

@@ -3,7 +3,9 @@ import SubstrateCore
 
 /// Device-service calls to Kotlin, for one handle or for none. A call is
 /// answered exactly once; cancelling the task that waits on it, or closing
-/// its handle, answers it `cancelled` and tells Kotlin to stop.
+/// its handle, answers it `cancelled` and tells Kotlin to stop. A request
+/// leaves through `CallTable.admit`, so a cancel either keeps it from
+/// leaving or follows it.
 public final class DeviceChannel: Sendable {
     let handle: Handle?
     private let calls: CallTable
@@ -29,10 +31,12 @@ public final class DeviceChannel: Sendable {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 calls.waitCall(id, handle: handle, service: request.service, continuation)
+                // A cancel that came before the call was waiting found nothing
+                // to answer; the flag it set first is read here.
                 if Task.isCancelled {
                     cancel(id, "the caller was cancelled")
-                } else if !outbox.enqueue(message, onFailure: { [calls] in _ = calls.finish(id, failure: $0) }) {
-                    calls.cancel(id, "the handle is closed")
+                } else {
+                    send(id, message)
                 }
             }
         } onCancel: {
@@ -57,9 +61,7 @@ public final class DeviceChannel: Sendable {
         }
         let box = AnswerBox()
         calls.waitBlocking(id, handle: handle, service: request.service) { box.set($0) }
-        if !outbox.enqueue(message, onFailure: { [calls] in _ = calls.finish(id, failure: $0) }) {
-            calls.cancel(id, "the handle is closed")
-        }
+        send(id, message)
         if !box.wait(timeout: timeout) {
             cancel(id, "the caller stopped waiting")
         }
@@ -79,22 +81,30 @@ public final class DeviceChannel: Sendable {
         }
         calls.waitChunks(id, handle: handle, service: request.service, continuation)
         do {
-            let message = try BridgeCodec.encode(op: .request, handle: handle, id: id, body: request)
-            if !outbox.enqueue(message, onFailure: { [calls] in _ = calls.finish(id, failure: $0) }) {
-                calls.cancel(id, "the handle is closed")
-            }
+            send(id, try BridgeCodec.encode(op: .request, handle: handle, id: id, body: request))
         } catch {
             _ = calls.finish(id, failure: BridgeFailure(.swiftFailure, "a request did not encode: \(BridgeCodec.describe(error))"))
         }
         return chunks
     }
 
-    /// Answers the call `cancelled` and, when it was still waiting, tells Kotlin.
+    /// Answers the call `cancelled` and, when its request had left, tells
+    /// Kotlin.
     func cancel(_ id: Int, _ reason: String) {
-        if calls.cancel(id, reason) {
-            record.count(\.cancelled)
-            // Kotlin may never hear it; the call is answered here either way.
-            outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true, onFailure: { _ in })
+        guard let cancelled = calls.cancel(id, reason) else { return }
+        record.count(\.cancelled)
+        // A request that never left has nothing on Kotlin's side to stop.
+        guard cancelled == .sent else { return }
+        // Kotlin may never hear it; the call is answered here either way.
+        outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true, onFailure: { _ in })
+    }
+
+    /// The call's request, unless the call was answered first.
+    private func send(_ id: Int, _ message: String) {
+        let calls = calls
+        let outbox = outbox
+        if calls.admit(id, { outbox.enqueue(message, onFailure: { _ = calls.finish(id, failure: $0) }) }) == .refused {
+            calls.cancel(id, "the handle is closed")
         }
     }
 }
