@@ -26,13 +26,16 @@ import kotlinx.serialization.json.JsonNull
  * Settings give the app's notifications.
  */
 public object KitDevice {
-    public fun services(context: Context, notificationChannel: String = "Notifications"): DeviceServices {
+    public fun services(context: Context, notificationChannel: String = "Notifications"): DeviceServices =
+        services(context, notificationChannel, BrowserSignIn(context.applicationContext))
+
+    /** The same over [browser]: a contract test's, which opens no browser. */
+    internal fun services(context: Context, notificationChannel: String, browser: BrowserSignIn): DeviceServices {
         val app = context.applicationContext
         val transport = Transport(app)
         val secure = SecureStore(app)
         val dns = Dns()
         val connectivity = Connectivity(app)
-        val browser = BrowserSignIn(app)
         val notifications = Notifications.get(app, notificationChannel)
         val done = { JsonNull }
         return DeviceServices { request ->
@@ -69,19 +72,27 @@ public object KitDevice {
                     }
                 DeviceRequest.ConnectivityWatch ->
                     DeviceAnswer.Chunks(values = connectivity.paths().map { BridgeJson.encodeToJsonElement(NetworkPath.serializer(), it) })
+                // A route Swift never took (its call cancelled, its handle
+                // closed) is let go of here: no `finish` will name it.
                 is DeviceRequest.BrowserPrepare ->
-                    DeviceAnswer.Value {
+                    DeviceAnswer.Value(
+                        discard = { answer ->
+                            val prepared = runCatching { BridgeJson.decodeFromJsonElement(BrowserPrepared.Serializer, answer) }.getOrNull()
+                            if (prepared is BrowserPrepared.Ready) browser.discard(prepared.redirect)
+                        }
+                    ) {
                         BridgeJson.encodeToJsonElement(BrowserPrepared.Serializer, browser.prepare(request.route))
                     }
                 is DeviceRequest.BrowserOpen ->
                     DeviceAnswer.Value {
                         BridgeJson.encodeToJsonElement(BrowserAnswer.Serializer, browser.open(request.page, request.redirect))
                     }
-                is DeviceRequest.BrowserFinish ->
-                    DeviceAnswer.Value {
-                        browser.finish(request.redirect)
-                        done()
-                    }
+                // Acted on as it arrives, in the order Swift sent it, never
+                // after a `prepare` Swift sent later on the same callback.
+                is DeviceRequest.BrowserFinish -> {
+                    browser.finish(request.redirect)
+                    DeviceAnswer.Value { done() }
+                }
                 DeviceRequest.NotificationsPermission ->
                     DeviceAnswer.Value {
                         BridgeJson.encodeToJsonElement(NotificationPermission.serializer(), notifications.permission())

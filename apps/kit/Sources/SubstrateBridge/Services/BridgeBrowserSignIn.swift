@@ -4,14 +4,16 @@ import SubstrateDevice
 
 /// The owner's browser on Android, through the bridge: their default browser
 /// on the sign-in page, and the callback taken by Kotlin. A local build's
-/// loopback route listens on `127.0.0.1` alone; what comes back is checked
-/// here (`OAuthClient`'s `state`, `iss` and PKCE), never in Kotlin. A
-/// release's claimed route is refused by Kotlin until the app takes its
-/// verified link, never answered through loopback instead (§5.4).
+/// loopback route listens on `127.0.0.1` alone; a release's claimed route
+/// is the App Link Android hands this app alone once the site's
+/// `assetlinks.json` names it, refused where Android has not verified it,
+/// never answered through loopback instead (§5.4). What comes back is
+/// checked here (`OAuthClient`'s `state`, `iss` and PKCE), never in Kotlin.
 ///
 /// The sign-in leaves the app for the browser, so the screen waiting on it
 /// offers its own Cancel (`opensBrowser`): cancelling the call stops Kotlin
-/// listening.
+/// waiting. Kotlin lets go of what an attempt holds however it ends, the
+/// handle's close among them.
 public struct BridgeBrowserSignIn: BrowserSignIn {
     public static let opensBrowser = true
 
@@ -48,6 +50,9 @@ public struct BridgeBrowserSignIn: BrowserSignIn {
         }
     }
 
+    /// Lets go of a route no `open` follows. One that `open` waited on was
+    /// let go of as it ended, and this message, sent through the handle,
+    /// never outlives its close.
     @MainActor
     public func finish(_ redirect: SignInRedirect) {
         let channel = channel

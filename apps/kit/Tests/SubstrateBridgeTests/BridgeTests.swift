@@ -143,6 +143,7 @@ struct BridgeTests {
         #expect(try BridgeCodec.decode(BridgeFailure.self, from: late.body).code == .unknownCall)
         #expect(runtime.stats.cancelled == 1)
         #expect(runtime.calls.outstanding == 0)
+        #expect(outlet.running.isEmpty)
     }
 
     @Test func cancellingTheCallerCancelsTheCall() async throws {
@@ -154,6 +155,77 @@ struct BridgeTests {
         await #expect(throws: BridgeFailure.self) { try await task.value }
         let cancel = try await outlet.next { $0.op == .cancel }
         #expect(cancel.id == request.id)
+        #expect(outlet.messages.firstIndex(of: request)! < outlet.messages.firstIndex(of: cancel)!)
+        #expect(outlet.running.isEmpty)
+    }
+
+    /// A cancel that lands after the caller found itself running and before
+    /// its request went out keeps the request from going at all. Kotlin
+    /// drops a cancel for a call it has not heard of, so a cancel that went
+    /// first would leave the request to start (a browser, a write) for a
+    /// caller that is gone.
+    @Test func aCancelBetweenTheCheckAndTheSendKeepsTheRequestFromLeaving() async throws {
+        let pause = Pause()
+        let (runtime, outlet, _) = started(calls: CallTable(beforeAdmitting: { pause.here($0) }))
+        let channel = try #require(runtime.device)
+        let task = Task { try await channel.call(.connectivityCurrent) }
+        let held = await pause.reached()
+        task.cancel()
+        pause.release()
+        await #expect { try await task.value } throws: { ($0 as? BridgeFailure)?.code == .cancelled }
+        // The next call leaves through the same queue, so anything the held
+        // one sent would be delivered before it.
+        let next = Task { try await channel.call(.connectivityCurrent) }
+        let request = try await outlet.next { $0.op == .request && $0.id != held }
+        #expect(!outlet.messages.contains { $0.id == held })
+        #expect(outlet.running == [try #require(request.id)])
+        _ = try post(runtime, Envelope(op: .reply, id: request.id, body: .null))
+        _ = try await next.value
+        #expect(runtime.calls.outstanding == 0)
+        #expect(runtime.stats.cancelled == 1)
+    }
+
+    /// The same where the handle closes there: the close answers the call,
+    /// and neither its request nor a cancel for it reaches Kotlin.
+    @Test func aHandleClosedBetweenTheCheckAndTheSendSendsNeitherTheRequestNorACancel() async throws {
+        let pause = Pause()
+        let (runtime, outlet, box) = started(calls: CallTable(beforeAdmitting: { pause.here($0) }))
+        let handle = try open(runtime)
+        _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["call": true]))
+        let held = await pause.reached()
+        _ = try post(runtime, Envelope(op: .close, handle: handle))
+        pause.release()
+        // Nothing for the handle goes out after `closed`.
+        _ = try await outlet.next { $0.op == .closed && $0.handle == handle }
+        #expect(!outlet.messages.contains { $0.id == held })
+        #expect(outlet.running.isEmpty)
+        #expect(runtime.calls.outstanding == 0)
+        #expect(runtime.stats.cancelled == 1)
+        #expect(await box.value?.closed == true)
+    }
+
+    /// The table holds a stream's call for as long as it waits, whatever
+    /// made it: a reader that stops after its channel is gone still cancels
+    /// it, here and on Kotlin's side.
+    @Test func aStreamsReaderStoppingAfterItsChannelIsGoneCancelsItOnBothSides() async throws {
+        let (runtime, outlet, _) = started()
+        weak var gone: DeviceChannel?
+        let stream = try { () throws -> AsyncThrowingStream<JSONValue, Error> in
+            let channel = try #require(runtime.device)
+            gone = channel
+            return channel.chunks(.connectivityWatch)
+        }()
+        #expect(gone == nil)
+        let reading = Task { for try await _ in stream {} }
+        let request = try await outlet.next { $0.op == .request }
+        #expect(outlet.running == [try #require(request.id)])
+        #expect(runtime.calls.outstanding == 1)
+        reading.cancel()
+        _ = try? await reading.value
+        // Answered as the reader stopped; Kotlin hears it after the request.
+        try #require(runtime.calls.outstanding == 0)
+        _ = try await outlet.next { $0.op == .cancel && $0.id == request.id }
+        #expect(outlet.running.isEmpty)
     }
 
     @Test func aStreamTakesItsChunksInOrderAndEndsOnce() async throws {

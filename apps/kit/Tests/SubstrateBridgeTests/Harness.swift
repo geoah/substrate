@@ -60,6 +60,22 @@ final class Outlet: BridgeOutlet, @unchecked Sendable {
 
     private var waiters: [Waiter] = []
 
+    /// The calls a Kotlin reading these messages in order would be running:
+    /// a request starts one, and a cancel stops it only when it comes after
+    /// it, as BridgeCore drops a cancel for a call it has not heard of.
+    var running: Set<Int> {
+        var running: Set<Int> = []
+        for message in messages {
+            guard let id = message.id else { continue }
+            switch message.op {
+            case .request: running.insert(id)
+            case .cancel: running.remove(id)
+            default: break
+            }
+        }
+        return running
+    }
+
     /// The first message after `index` that `matches`: one delivered already,
     /// or the one `deliver` hands over when it arrives. Nothing here reads a
     /// clock, so a loaded machine only makes it slower; a message that never
@@ -138,8 +154,8 @@ actor TestRoot: BridgeRoot {
 }
 
 /// A started runtime with `TestRoot` registered as "test", and its outlet.
-func started(fingerprint: String = "test") -> (BridgeRuntime, Outlet, Box<TestRoot>) {
-    let runtime = BridgeRuntime()
+func started(fingerprint: String = "test", calls: CallTable = CallTable()) -> (BridgeRuntime, Outlet, Box<TestRoot>) {
+    let runtime = BridgeRuntime(calls: calls)
     let outlet = Outlet()
     let box = Box<TestRoot>()
     CheckRoot.register(in: runtime.roots)
@@ -157,6 +173,43 @@ func config(fingerprint: String) -> StartConfig {
     StartConfig(
         fingerprint: fingerprint, locale: "en-GB", timeZone: "Europe/London", resources: "/tmp/resources", data: "/tmp/data",
         cache: "/tmp/cache", sdk: 36, debug: false)
+}
+
+/// Where `CallTable`'s admission waits, for the first call that reaches it:
+/// held there, on its own thread, until the test lets it go.
+final class Pause: @unchecked Sendable {
+    private let lock = NSLock()
+    private let gate = DispatchSemaphore(value: 0)
+    private var held: Int?
+    private var waiters: [CheckedContinuation<Int, Never>] = []
+
+    func here(_ id: Int) {
+        let waiting: [CheckedContinuation<Int, Never>]? = lock.withLock {
+            guard held == nil else { return nil }
+            held = id
+            defer { waiters = [] }
+            return waiters
+        }
+        guard let waiting else { return }
+        for waiter in waiting { waiter.resume(returning: id) }
+        gate.wait()
+    }
+
+    /// The id of the call held, once one is.
+    func reached() async -> Int {
+        await withCheckedContinuation { continuation in
+            let id: Int? = lock.withLock {
+                if let held { return held }
+                waiters.append(continuation)
+                return nil
+            }
+            if let id { continuation.resume(returning: id) }
+        }
+    }
+
+    func release() {
+        gate.signal()
+    }
 }
 
 final class Box<T>: @unchecked Sendable {

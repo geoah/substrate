@@ -25,7 +25,9 @@
 # with a key of its own instead (android_dry_key).
 # Everything after it is read back from the APK: the signature, the
 # certificate it was signed with (what assetlinks.json names), the package,
-# the versionCode and versionName, and the minimum SDK.
+# the versionCode and versionName, the minimum SDK, and the callback it
+# claims as a verified App Link (the one its client document lists, on the
+# host assetlinks.json is published on).
 
 # The minutes from 2026-01-01T00:00Z to a build number (YYYYMMDD.HHMMSS, UTC):
 # a versionCode's floor that rises with the build, on any machine.
@@ -190,8 +192,10 @@ android_release_build() {
 # verifies, made with the certificate SUBSTRATE_ANDROID_CERT_SHA256 names
 # (required for a release, so a debug key never ships; a dry run checks it
 # where it is set), the application id app.json names, the versionCode
-# allocated, the release's version, and not debuggable. Sets
-# ANDROID_CERTIFICATE, read from the signed APK itself, and ANDROID_MINIMUM.
+# allocated, the release's version, not debuggable, and its own callback
+# claimed as a verified App Link and no other, since a release signs in
+# through that alone. Sets ANDROID_CERTIFICATE, read from the signed APK
+# itself, and ANDROID_MINIMUM.
 android_check() {
 	local app="$1" apk="$2" code="$3" certs badging digest java
 	java="$(android_java_home)"
@@ -222,5 +226,9 @@ android_check() {
 	if printf '%s\n' "$badging" | grep -q '^application-debuggable'; then
 		die "$app's APK is debuggable, which a release never is"
 	fi
-	say "$app's APK: $package $got_code, signed with $ANDROID_CERTIFICATE"
+	local claimed
+	claimed="$("$ROOT/.mise/android.sh" claims "$apk")" || die "$app's APK's manifest did not read for the callback it claims"
+	[ "$claimed" = "$(android_callback "$app")" ] ||
+		die "$app's APK claims ${claimed:-no callback}, and the site publishes $(android_callback "$app") for it"
+	say "$app's APK: $package $got_code, signed with $ANDROID_CERTIFICATE, claiming $claimed"
 }

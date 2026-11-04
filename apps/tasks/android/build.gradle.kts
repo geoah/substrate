@@ -80,7 +80,8 @@ android {
 
 // A release signs in only through the https callback it claims, so one
 // built without an https client id and callback is refused here rather
-// than found out on a device.
+// than found out on a device, and a release's manifest claims that
+// callback as a verified App Link (kit-device's SignInCallback).
 requireReleaseSignIn(clientID = release("clientID"), redirect = release("redirect"))
 
 substrateSwift {

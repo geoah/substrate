@@ -115,10 +115,15 @@ whose revisions follow `TasksState.revision`. TasksKit needed nothing but
   and asked for again. The app brings itself forward once the callback is
   in where Android lets it, and the page the browser lands on links back
   to it either way.
-- **A release does not sign in yet.** Its claimed callback, an App Link
-  the site's `assetlinks.json` verifies, received through an Auth Tab, is
-  a follow-up; until then a release refuses to sign in rather than fall
-  back to loopback, which is the contract (docs/plans/app-kit.md §5.4).
+- **A release signs in through its claimed callback**, an App Link: the
+  stamped redirect (`/apps/tasks/android/callback` on the site) is
+  declared, with `autoVerify`, for kit-device's `SignInCallback` in a
+  release's manifest alone, and the site's `assetlinks.json` names the
+  app's package with the certificate its APK is signed with. The owner's
+  default browser follows the approval there, and Android hands the
+  callback to the app alone. Where Android has not verified the link for
+  the app, the sign-in is refused, never answered through loopback, which
+  is the contract (docs/plans/app-kit.md §5.4).
 - **Reminders** are kit-device's `Notifications`: each kept under
   `noBackupFilesDir` with an exact alarm (the app holds `USE_EXACT_ALARM`:
   an inexact one may come minutes late, after the app has stopped

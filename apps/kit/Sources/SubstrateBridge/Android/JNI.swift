@@ -41,22 +41,30 @@ public func JNI_OnLoad(_ vm: UnsafeMutablePointer<JavaVM?>, _: UnsafeMutableRawP
     var raw: UnsafeMutableRawPointer?
     guard getEnv(vm, &raw, jint(JNI_VERSION_1_6)) == JNI_OK, let env = raw?.assumingMemoryBound(to: JNIEnv?.self),
         let jni = env.pointee?.pointee,
-        let findClass = jni.FindClass, let newGlobalRef = jni.NewGlobalRef, let deleteLocalRef = jni.DeleteLocalRef,
-        let getStaticMethodID = jni.GetStaticMethodID, let exceptionCheck = jni.ExceptionCheck,
-        let exceptionClear = jni.ExceptionClear
+        let findClass = jni.FindClass, let newGlobalRef = jni.NewGlobalRef, let deleteGlobalRef = jni.DeleteGlobalRef,
+        let deleteLocalRef = jni.DeleteLocalRef, let getStaticMethodID = jni.GetStaticMethodID,
+        let exceptionCheck = jni.ExceptionCheck, let exceptionClear = jni.ExceptionClear
     else { return JNI_ERR }
     guard let local = findClass(env, bridgeClassName) else {
         if exceptionCheck(env) != 0 { exceptionClear(env) }
         return JNI_ERR
     }
     defer { deleteLocalRef(env, local) }
-    guard let global = newGlobalRef(env, local),
-        let deliver = getStaticMethodID(env, global, "deliver", "(Ljava/lang/String;)V")
-    else {
+    guard let global = newGlobalRef(env, local) else {
         if exceptionCheck(env) != 0 { exceptionClear(env) }
         return JNI_ERR
     }
-    guard pthread_key_create(&detachKey, { _ in detachCurrentThread() }) == 0 else { return JNI_ERR }
+    // A global reference outlives the load that failed: let go of it on
+    // every way out from here but the one that keeps it.
+    guard let deliver = getStaticMethodID(env, global, "deliver", "(Ljava/lang/String;)V") else {
+        if exceptionCheck(env) != 0 { exceptionClear(env) }
+        deleteGlobalRef(env, global)
+        return JNI_ERR
+    }
+    guard pthread_key_create(&detachKey, { _ in detachCurrentThread() }) == 0 else {
+        deleteGlobalRef(env, global)
+        return JNI_ERR
+    }
     loaded = Loaded(vm: vm, bridgeClass: global, deliver: deliver)
     return jint(JNI_VERSION_1_6)
 }

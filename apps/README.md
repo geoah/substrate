@@ -146,10 +146,10 @@ and each step holds what it says before the next starts:
    a Mac build's signature is verified, and every build must be signed with
    its associated domain. A build whose client id or redirect is not an
    https one is refused, so no release signs in through a loopback port. Each Android APK's signature is
-   verified and its certificate, package, versionCode, versionName and
-   minimum SDK are read back from it (below). The closures are built and
-   held to their locks, then checked as the server admits them, and the
-   site is built.
+   verified and its certificate, package, versionCode, versionName,
+   minimum SDK and claimed callback are read back from it (below). The
+   closures are built and held to their locks, then checked as the server
+   admits them, and the site is built.
 3. **Staged.** The build is sealed under `build/apps/releases/<build>/`
    (`staged.json` lists every file's sha256 and what the stage was made
    for: the mode, the release folder, the site, its upload address, the

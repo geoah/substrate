@@ -10,7 +10,7 @@ that are never published, built from the one Gradle root in
 | Module | What it holds |
 | --- | --- |
 | `kit-core` | `libSubstrateAndroid.so` (the kit's portable libraries, `SubstrateBridge` and `SubstrateBridgeCheck`, from `apps/kit/Package.swift`) with the Swift runtime and Foundation it loads, per ABI; the Swift packages' resource bundles as assets; `Bridge`, `BridgeCore`, `BridgeHandle`, `KeyedListState`, `DeviceServices`, `Redaction`; the values generated from `bridge.golden.json` (`bridge/Protocol.kt`) |
-| `kit-device` | the device services in Kotlin, the only kit module that touches an Android service: `Transport` (OkHttp), `SecureStore` (Tink and DataStore), `Dns` (`DnsResolver.rawQuery`), `Connectivity`, `BrowserSignIn` (the default browser, a loopback callback on `127.0.0.1`), `Notifications` (`NotificationManager`, alarms, the permission's question), `KitDevice.services(context)`; the backup and device-transfer rules |
+| `kit-device` | the device services in Kotlin, the only kit module that touches an Android service: `Transport` (OkHttp), `SecureStore` (Tink and DataStore), `Dns` (`DnsResolver.rawQuery`), `Connectivity`, `BrowserSignIn` (the default browser; a local build's loopback callback on `127.0.0.1`, a release's verified App Link through `SignInCallback`), `Notifications` (`NotificationManager`, alarms, the permission's question), `KitDevice.services(context)`; the backup and device-transfer rules |
 | `kit-ui` | the shared screens in Compose and Material 3, one composable per SubstrateUI view (`ConnectScreen`, `ServerTooOldScreen`, `AccessBannerView`, `AccessEndedScreen`, `ReviewScreen`, `RepositoryScreen`, `StatusScreen`, `SettingsScreen`, `AboutScreen`, `ProblemView`, `ChangeLineView`, `UnrevokedNotices`, `AppMenu`), the building blocks an app draws its own screens with (`KitTheme`, `KitCard`, `KitSection`, `KitRow`, `KitValueRow`, `KitNavigationRow`, `KitDestructiveRow`, `StatusBadge`, `ProblemBox`), the design tokens Swift writes (`KitTokens.kt`), and `KitGallery`, each screen's composable |
 | `bridge-check` | an app that starts the bridge from its `Application` and runs `BridgeChecks` (the runtime checks) against the Swift library; never published |
 | `gallery` | the Gallery app: every shared screen in every state, live, from the fixtures the `gallery` root presents through the bridge, drawn by kit-ui; never published |
@@ -57,18 +57,26 @@ command is read with the exact reader and decoded by `ValueCoding`, so a
 `JSONValue` in it keeps its digits, and a new locale or time zone has
 `Runtime.environmentChanged` present the whole tree again.
 
-**Signing in.** `BrowserSignIn` takes a local build's loopback route: it
-listens on `127.0.0.1` alone, on a port the system picks, for the one path
-Swift named, opens the owner's default browser on the approval page, and
-hands back the query of the request carrying the page's `state`;
-`OAuthClient` holds `state`, `iss` and PKCE in Swift. Every request is
-bounded in size and time, one it cannot read or with another `state` is
-refused without ending the attempt, and an attempt no callback reaches in
-ten minutes answers `expired`. The page the browser lands on links back to the
-app. A release's claimed route is refused until the app takes its
-verified App Link (the Auth Tab), never answered through loopback. The
-kit's `SignInController` is the Connect screen as a root of its own, with
-a count of finished sign-ins an app opens its link again on.
+**Signing in.** `BrowserSignIn` opens the owner's default browser on the
+approval page and hands back the query of the callback carrying the page's
+`state`; `OAuthClient` holds `state`, `iss` and PKCE in Swift. A local
+build's loopback route listens on `127.0.0.1` alone, on a port the system
+picks, for the one path Swift named: every request is bounded in size and
+time, one it cannot read or with another `state` is refused without ending
+the attempt, and the page the browser lands on links back to the app. A
+release's claimed route is its https callback as a verified App Link:
+build-logic's `requireReleaseSignIn` declares kit-device's `SignInCallback`
+for the stamped host and path, with `autoVerify`, in a release's manifest
+alone; Android verifies the host against the site's `assetlinks.json`; and
+the activity hands each callback to the attempt whose address and `state`
+it carries (`ClaimedCallbacks`), then brings the app forward. A claimed
+route Android has not verified for the app (from Android 12, which says)
+is refused, never answered through loopback. On either route an attempt
+no callback reaches in ten minutes answers `expired`, and an attempt lets
+go of its socket or its wait however it ends, a cancel and its handle's
+close among them. The kit's `SignInController` is the Connect screen as a
+root of its own, with a count of finished sign-ins an app opens its link
+again on.
 
 **Notifications.** `Notifications.get(context)` is the process's one
 instance: a request with a `fireAt` is kept in
@@ -181,8 +189,8 @@ opens one.
 ## Building and testing
 
 ```bash
-mise run android:sdk     # once: the SDK packages, NDK r30, the Swift SDK for Android
-mise run android:build   # every module, the Gallery app and every app's included, debug and release
+mise run android:sdk     # once: the SDK packages at their pinned revisions, NDK r30, the Swift SDK for Android
+mise run android:build   # every module, the Gallery app and every app's included, debug and release; each release claims its stamped callback
 mise run android:test    # the generator, the bridge on this host, the Kotlin tests, the round trip
 mise run android:smoke   # on a booted emulator: the release build's checks, cold starts, the APK's libraries, the contract tests (kit-device's: transport, secure store, DNS, browser sign-in, notifications)
 mise run android:lock    # after a change to gradle/libs.versions.toml: the locks and the verification metadata
