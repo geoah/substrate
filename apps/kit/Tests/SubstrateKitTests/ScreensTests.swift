@@ -117,8 +117,8 @@ struct ConnectScreenTests {
         #expect(presented.door == .browser)
         #expect(presented.field.text == "ada.example.com")
         #expect(presented.button?.title == "Sign In with Your Substrate")
-        #expect(presented.footer?.found == "Server found: ada.example.com")
-        #expect(presented.footer?.repository == "Repository: ada.example.com")
+        #expect(presented.footer?.found == LabeledValue("Server found", "ada.example.com", verbatim: true))
+        #expect(presented.footer?.repository == LabeledValue("Repository", "ada.example.com", verbatim: true))
     }
 
     @Test func writingTheCheckedNameBackIsNotANewAddressButTypingIs() async throws {
@@ -332,9 +332,12 @@ struct RepositoryStatusTests {
         #expect(settings.sections.map(\.id) == [.app("tasks"), .status, .refused, .repository, .approvedAccess, .storage, .about])
         let refused = try #require(settings.sections.first { $0.id == .refused })
         let write = ScreenFixtures.refusedWrite
-        #expect(refused.rows.map(\.id) == [.status(.refused(write.id)), .status(.refusedStatus(write.id)), .status(.action(.retry(write.id))),
+        #expect(refused.rows.map(\.id) == [.status(.refused(write.id)), .status(.refusedStatus(write.id)), .status(.refusedKind(write.id)),
+                                            .status(.refusedRecord(write.id)), .status(.action(.retry(write.id))),
                                             .status(.action(.discard(write.id)))])
         #expect(refused.rows[0].detail == write.words)
+        #expect(refused.rows[2].label == "Kind" && refused.rows[2].control == .value(write.kind, verbatim: true))
+        #expect(refused.rows[3].label == "Record ID" && refused.rows[3].control == .value(write.recordID, verbatim: true))
         let approved = try #require(settings.sections.first { $0.id == .approvedAccess })
         #expect(approved.rows.map(\.id) == ScreenFixtures.manifest.scopes.map { .repository(.scope($0)) } + [.repository(.until), .repository(.changeAccess)])
         #expect(approved.rows.allSatisfy { !$0.label.contains("\n") })

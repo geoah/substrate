@@ -50,7 +50,8 @@ public enum StatusPresenter {
             title: "Refused by Your Substrate",
             rows: parked.map { write in
                 RefusedWrite(id: write.id, label: kindLabels[write.kind] ?? kindDisplayName(write.kind), status: refusal(of: write),
-                             recordID: write.recordID, words: write.words,
+                             kind: LabeledValue("Kind", write.kind, verbatim: true),
+                             record: LabeledValue("Record ID", write.recordID, verbatim: true), words: write.words,
                              retry: ActionButton("Retry", .retry(write.id)), discard: ActionButton("Discard", .discard(write.id)))
             },
             footer: words.refusedFooter ?? "Retry sends the change again. Discard gives up the change and the changes waiting behind it; "

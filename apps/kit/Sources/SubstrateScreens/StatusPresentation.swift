@@ -71,18 +71,23 @@ public struct RefusedWrite: Bridged, Hashable, Sendable, Identifiable {
     public var label: String
     /// What was refused: "Write refused", "Change refused", "Delete refused".
     public var status: String
-    public var recordID: String
+    /// "Kind" and the kind's full reference: two kinds may share a word,
+    /// never a reference.
+    public var kind: LabeledValue
+    /// "Record ID" and the record's id.
+    public var record: LabeledValue
     public var words: String?
     public var retry: ActionButton<StatusAction>
     public var discard: ActionButton<StatusAction>
 
-    public init(id: UUID, label: String, status: String, recordID: String, words: String?, retry: ActionButton<StatusAction>,
-                discard: ActionButton<StatusAction>)
+    public init(id: UUID, label: String, status: String, kind: LabeledValue, record: LabeledValue, words: String?,
+                retry: ActionButton<StatusAction>, discard: ActionButton<StatusAction>)
     {
         self.id = id
         self.label = label
         self.status = status
-        self.recordID = recordID
+        self.kind = kind
+        self.record = record
         self.words = words
         self.retry = retry
         self.discard = discard

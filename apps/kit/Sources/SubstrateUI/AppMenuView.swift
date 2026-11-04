@@ -2,10 +2,11 @@
 import SwiftUI
 import SubstrateScreens
 
-/// The app's menu on a phone, as its presentation words it: a tab per
-/// section, the section shown under it. Choosing one is the app's to send;
-/// the menu keeps no state. A section's mark is its symbol's name in the
-/// design tokens. A wide window draws the app's own split view instead
+/// The app's menu as its presentation words it: a tab per section on a
+/// phone, the system's sidebar of them on a Mac, the section shown beside
+/// it. Choosing one is the app's to send; the menu keeps no state. A
+/// section's mark is its symbol's name in the design tokens. An app whose
+/// wide layout is a split view of its own draws that instead there
 /// (`AppMenuRoot`, `AppMenuSplit`).
 public struct AppMenuView<Content: View>: View {
     let menu: AppMenuPresentation
@@ -29,6 +30,7 @@ public struct AppMenuView<Content: View>: View {
                 .badge(section.badge ?? 0)
             }
         }
+        .tabViewStyle(.sidebarAdaptable)
     }
 }
 #endif

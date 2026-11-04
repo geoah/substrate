@@ -440,8 +440,8 @@
       "module": "SubstrateScreens",
       "kind": "struct",
       "fields": [
-        {"name": "found", "type": "String?"},
-        {"name": "repository", "type": "String?"},
+        {"name": "found", "type": "LabeledValue?"},
+        {"name": "repository", "type": "LabeledValue?"},
         {"name": "note", "type": "String"}
       ]
     },
@@ -996,7 +996,8 @@
         {"name": "id", "type": "UUID"},
         {"name": "label", "type": "String"},
         {"name": "status", "type": "String"},
-        {"name": "recordID", "type": "String"},
+        {"name": "kind", "type": "LabeledValue"},
+        {"name": "record", "type": "LabeledValue"},
         {"name": "words", "type": "String?"},
         {"name": "retry", "type": "ActionButton<StatusAction>"},
         {"name": "discard", "type": "ActionButton<StatusAction>"}
@@ -1453,6 +1454,18 @@
         },
         {
           "name": "refusedStatus",
+          "fields": [
+            {"name": "_0", "type": "UUID"}
+          ]
+        },
+        {
+          "name": "refusedKind",
+          "fields": [
+            {"name": "_0", "type": "UUID"}
+          ]
+        },
+        {
+          "name": "refusedRecord",
           "fields": [
             {"name": "_0", "type": "UUID"}
           ]

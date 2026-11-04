@@ -44,10 +44,15 @@ struct ConversationView: View {
                 }
                 ConversationStatus(screen: screen, key: key)
                 if let technical = screen.technical {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(technical, id: \.self) { Text($0).textSelection(.enabled) }
+                    Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 2) {
+                        ForEach(technical, id: \.self) { fact in
+                            GridRow {
+                                Text(fact.label).fontWeight(.semibold)
+                                Text(fact.value).monospaced(fact.verbatim).textSelection(.enabled)
+                            }
+                        }
                     }
-                    .font(.caption2.monospaced())
+                    .font(.caption2)
                     .foregroundStyle(.tertiary)
                 }
             }

@@ -173,9 +173,14 @@ private struct AssistantRowView: View {
                     Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
                 HStack(spacing: 6) {
-                    Text(row.runsOn)
+                    ForEach(row.runsOn, id: \.self) { fact in
+                        HStack(spacing: 3) {
+                            Text(fact.label).fontWeight(.semibold)
+                            Text(fact.value).monospaced(fact.verbatim)
+                        }
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                    }
                     if let keyless = row.keyless {
                         Button(keyless.action) { addKey(keyless.id) }
                             .font(.caption2.weight(.semibold))

@@ -24,7 +24,16 @@ public struct StatusScreen: View {
                     .foregroundStyle(presentation.tone == .quiet ? Color.primary : presentation.tone.color)
             }
             if let problem = presentation.problem { ProblemBox(problem) }
-            ForEach(presentation.packages) { LabeledContent($0.row.label, value: $0.row.value) }
+            // The package by its name, and under it its full reference: two
+            // packages may share a name, never a reference.
+            ForEach(presentation.packages) { line in
+                LabeledContent {
+                    Text(line.row.value)
+                } label: {
+                    Text(line.row.label)
+                    Text(line.id).monospaced()
+                }
+            }
             ForEach(presentation.actions, id: \.self) { button in
                 Button {
                     perform(button.action)
@@ -53,10 +62,12 @@ public struct StatusScreen: View {
                         Label(row.status, systemImage: ScreenSymbol.warning.systemName)
                             .font(.footnote)
                             .foregroundStyle(ScreenTone.caution.color)
-                        Text(row.recordID)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
+                        ForEach([row.kind, row.record], id: \.self) { fact in
+                            LabeledContent(fact.label) {
+                                Text(fact.value).font(.caption.monospaced()).textSelection(.enabled)
+                            }
+                            .font(.caption)
+                        }
                         if let words = row.words {
                             Text(words)
                                 .font(.footnote)

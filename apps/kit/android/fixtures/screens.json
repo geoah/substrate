@@ -70,9 +70,17 @@
             "text": "ada.example.com"
           },
           "footer": {
-            "found": "Server found: ada.example.com",
+            "found": {
+              "label": "Server found",
+              "value": "ada.example.com",
+              "verbatim": true
+            },
             "note": "You sign in on ada.example.com itself and choose what Substrate Tasks may do there. Later, Change Access in this app asks again; to revoke, use ada.example.com's Settings, under Apps.",
-            "repository": "Repository: ada.example.com"
+            "repository": {
+              "label": "Repository",
+              "value": "ada.example.com",
+              "verbatim": true
+            }
           },
           "found": {
             "discovery": {
@@ -181,9 +189,17 @@
             "text": "ada.example.com"
           },
           "footer": {
-            "found": "Server found: ada.example.com",
+            "found": {
+              "label": "Server found",
+              "value": "ada.example.com",
+              "verbatim": true
+            },
             "note": "You sign in on ada.example.com itself and choose what Substrate Tasks may do there. Later, Change Access in this app asks again; to revoke, use ada.example.com's Settings, under Apps.",
-            "repository": "Repository: ada.example.com"
+            "repository": {
+              "label": "Repository",
+              "value": "ada.example.com",
+              "verbatim": true
+            }
           },
           "found": {
             "discovery": {
@@ -324,9 +340,17 @@
             "text": "ada.example.com"
           },
           "footer": {
-            "found": "Server found: ada.example.com",
+            "found": {
+              "label": "Server found",
+              "value": "ada.example.com",
+              "verbatim": true
+            },
             "note": "You sign in on ada.example.com itself and choose what Substrate Tasks may do there. Later, Change Access in this app asks again; to revoke, use ada.example.com's Settings, under Apps.",
-            "repository": "Repository: ada.example.com"
+            "repository": {
+              "label": "Repository",
+              "value": "ada.example.com",
+              "verbatim": true
+            }
           },
           "found": {
             "discovery": {
@@ -562,9 +586,17 @@
             "text": "ada.example.com"
           },
           "footer": {
-            "found": "Server found: ada.example.com",
+            "found": {
+              "label": "Server found",
+              "value": "ada.example.com",
+              "verbatim": true
+            },
             "note": "This server can't give Substrate Tasks access of its own yet, so your password goes to it directly.",
-            "repository": "Repository: ada.example.com"
+            "repository": {
+              "label": "Repository",
+              "value": "ada.example.com",
+              "verbatim": true
+            }
           },
           "found": {
             "discovery": {
@@ -642,9 +674,17 @@
             "text": "ada.example.com"
           },
           "footer": {
-            "found": "Server found: ada.example.com",
+            "found": {
+              "label": "Server found",
+              "value": "ada.example.com",
+              "verbatim": true
+            },
             "note": "ada.example.com's sign-in page is open in your browser. Sign in there and choose what Substrate Tasks may do; this window comes back when you're done.",
-            "repository": "Repository: ada.example.com"
+            "repository": {
+              "label": "Repository",
+              "value": "ada.example.com",
+              "verbatim": true
+            }
           },
           "found": {
             "discovery": {
@@ -753,9 +793,17 @@
             "text": "ada.example.com"
           },
           "footer": {
-            "found": "Server found: ada.example.com",
+            "found": {
+              "label": "Server found",
+              "value": "ada.example.com",
+              "verbatim": true
+            },
             "note": "You sign in on ada.example.com itself and choose what Substrate Tasks may do there. Later, Change Access in this app asks again; to revoke, use ada.example.com's Settings, under Apps.",
-            "repository": "Repository: ada.example.com"
+            "repository": {
+              "label": "Repository",
+              "value": "ada.example.com",
+              "verbatim": true
+            }
           },
           "found": {
             "discovery": {
@@ -1594,8 +1642,17 @@
                   "title": "Discard"
                 },
                 "id": "00000000-0000-7000-8000-000000000001",
+                "kind": {
+                  "label": "Kind",
+                  "value": "substrate.reamde.dev/tasks/task",
+                  "verbatim": true
+                },
                 "label": "Task",
-                "recordID": "0196f7d2-buy-milk",
+                "record": {
+                  "label": "Record ID",
+                  "value": "0196f7d2-buy-milk",
+                  "verbatim": true
+                },
                 "retry": {
                   "action": {
                     "retry": {
@@ -2955,9 +3012,8 @@
               "rows": [
                 {
                   "control": {
-                    "value": {
-                      "_0": "0196f7d2-buy-milk",
-                      "verbatim": true
+                    "note": {
+                      "_0": "supporting"
                     }
                   },
                   "detail": "props.status: expected one of todo, doing, done",
@@ -2988,6 +3044,42 @@
                     }
                   },
                   "label": "Write refused"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "substrate.reamde.dev/tasks/task",
+                      "verbatim": true
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "refusedKind": {
+                          "_0": "00000000-0000-7000-8000-000000000001"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Kind"
+                },
+                {
+                  "control": {
+                    "value": {
+                      "_0": "0196f7d2-buy-milk",
+                      "verbatim": true
+                    }
+                  },
+                  "id": {
+                    "status": {
+                      "_0": {
+                        "refusedRecord": {
+                          "_0": "00000000-0000-7000-8000-000000000001"
+                        }
+                      }
+                    }
+                  },
+                  "label": "Record ID"
                 },
                 {
                   "control": {

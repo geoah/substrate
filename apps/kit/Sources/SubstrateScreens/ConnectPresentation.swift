@@ -46,13 +46,13 @@ public struct ConnectPresentation: Bridged, Equatable, Sendable {
     }
 
     public struct Footer: Bridged, Equatable, Sendable {
-        /// "Server found: ada.example.com", once one is.
-        public var found: String?
-        /// "Repository: ada.example.com", where it was found from a name.
-        public var repository: String?
+        /// "Server found" and its host, once one is.
+        public var found: LabeledValue?
+        /// "Repository" and its name, where it was found from a name.
+        public var repository: LabeledValue?
         public var note: String
 
-        public init(found: String?, repository: String?, note: String) {
+        public init(found: LabeledValue?, repository: LabeledValue?, note: String) {
             self.found = found
             self.repository = repository
             self.note = note
