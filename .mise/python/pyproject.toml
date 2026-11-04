@@ -1,0 +1,18 @@
+# The one environment the tree's own Python runs in (.mise/python.sh): the
+# apps' closures and generators, the release that publishes them, and the CI
+# scripts' tests. Not the function runner's: it shells out to whatever
+# python3 is on PATH (.mise.toml says why), and a function body's
+# dependencies are its own PEP 723 block's.
+#
+# Each dependency is pinned to one version here, and uv.lock beside it holds
+# every file of that version by sha256, which uv checks on every install. A
+# change is `uv lock --project .mise/python` in the same commit; every run
+# passes --locked, so a lock that no longer matches this file is refused
+# rather than resolved again.
+[project]
+name = "substrate-tools"
+version = "0"
+# tomllib, which lint:ci reads .mise.toml with, is 3.11's. A Mac's own
+# python3 is older, so uv takes a newer one it finds, or fetches one.
+requires-python = ">=3.11"
+dependencies = ["pyyaml==6.0.3"]

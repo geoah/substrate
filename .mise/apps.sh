@@ -8,7 +8,8 @@
 # them:
 #
 #   1. one publisher at a time: a lease, taken with a conditional write
-#      (lease_take), and the published state read after it;
+#      (lease_take), and the published state read after it, which stops a
+#      stable version another commit already published (stable_unpublished);
 #   2. every selected app built and checked on every platform it has a UI
 #      for, from one commit under one version (build_all); nothing goes up
 #      before all of them passed;
@@ -18,7 +19,10 @@
 #      server's own check admits them, closures before the authority
 #      document and the document last;
 #   5. each app activated last and alone (activate): its release.json, then
-#      the feeds installed apps read today, at the addresses they read.
+#      the feeds installed apps read today, at the addresses they read. A
+#      run that stops after its build started going up says which apps and
+#      feeds it made current and the command that resumes it
+#      (release_report).
 #
 # A rerun of a staged build (SUBSTRATE_APPS_RELEASE_BUILD=<build>) builds
 # nothing: it checks the staged files against their digests and carries on
@@ -32,6 +36,9 @@
 # build/apps/dry-run/staged, and a stage records the mode it was built in, so
 # a release never resumes one. The one function that writes to a bucket
 # (upload) and the one that signs a request (s3) refuse to run in a dry run.
+# SUBSTRATE_APPS_RELEASE_DRY_RUN=strict is a dry run in which nothing stands
+# in for a build: an Apple app that does not archive unsigned fails it,
+# where a dry run's =1 stands a placeholder in.
 #
 # Every invocation works in its own directory under build/apps/runs, removed
 # when it exits, so two invocations in one checkout share no working file;
@@ -142,8 +149,9 @@ app_upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
 # (the UTC time, YYYYMMDD.HHMMSS); a pre-release is the next patch after the
 # last released version, so it sorts after that one and before the next:
 # 0.113.1-pre.20261021.153012+ac85863e. A stable release is the released
-# version itself and needs a clean tree. Every app and platform of one
-# release carries the one version.
+# version itself, built from a clean tree at the commit release-please
+# tagged for it (stable_tagged). Every app and platform of one release
+# carries the one version.
 #
 # Sets the caller's `short`, `build`, `commit`, `commit_full` and `version`.
 stamp() {
@@ -162,12 +170,48 @@ stamp() {
 	commit_full="$(git -C "$ROOT" rev-parse HEAD)"
 	commit="${commit_full:0:8}$dirty"
 	if [ "$channel" = stable ]; then
+		stable_tagged "$released" "$commit_full"
 		short="$released"
 		version="$released"
 	else
 		short="$major.$minor.$((patch + 1))"
 		version="$short-pre.$build+$commit"
 	fi
+}
+
+# stable_tagged <version> <commit>: a stable version names one commit, the
+# one release-please tagged v<version> on main when it released it. So the
+# tag must be here, name <commit>, and be on main's history as origin/main
+# was last fetched; otherwise the version would go out for a commit after
+# the tag, a branch's, or a tag nobody merged.
+stable_tagged() {
+	local released="$1" head="$2" tag="v$1" tagged main
+	tagged="$(git -C "$ROOT" rev-parse -q --verify "refs/tags/$tag^{commit}")" ||
+		die "a stable release of $released is built from its release-please tag, $tag, and this checkout has none; fetch the tags (git fetch origin --tags) and check $tag out"
+	[ "$tagged" = "$head" ] ||
+		die "a stable release of $released is built from $tag, which is $tagged, and this tree is at $head; check $tag out"
+	main="$(git -C "$ROOT" rev-parse -q --verify refs/remotes/origin/main)" ||
+		die "a stable release is built from a commit on main's history, and this checkout has no origin/main; fetch it (git fetch origin main)"
+	git -C "$ROOT" merge-base --is-ancestor "$tagged" "$main" ||
+		die "$tag ($tagged) is not on main's history as origin/main was last fetched; a stable release is built from the commit release-please tagged on main"
+}
+
+# Under the lease, before anything is built: a stable version already
+# listed in any app's feed from another commit is refused, since one
+# version for two commits is two releases nobody could tell apart. A rerun
+# of the staged build finds its own entries, from its own commit, and
+# carries on, as does a release of the tagged commit again.
+stable_unpublished() {
+	[ "$channel" = stable ] || return 0
+	local app others
+	for app in $(ui_apps); do
+		[ -f "$RUN/published/$app.json" ] || read_published "$app"
+		others="$(jq -r --arg version "$version" --arg commit "$commit" \
+			'[.releases[]? | select(.version == $version and .commit != $commit) | .commit] | unique | join(", ")' \
+			"$RUN/published/$app.json")"
+		[ -z "$others" ] ||
+			die "$version is already published from commit $others in $app's feed ($(feed_url "$app")/index.json), and this release is commit $commit; a stable version names one commit, so nothing is built or published"
+	done
 }
 
 # --- where things go -------------------------------------------------------
@@ -663,6 +707,8 @@ run_begin() {
 run_end() {
 	local code=$?
 	trap - EXIT
+	# A report that fails must not keep the lease from being given up.
+	[ "$code" = 0 ] || release_report || true
 	lease_end
 	local holder
 	for holder in ${LOCK_HOLDERS[@]+"${LOCK_HOLDERS[@]}"}; do kill "$holder" 2>/dev/null || true; done
@@ -1282,7 +1328,7 @@ HTML
 build_closures() {
 	rm -rf "$1"
 	mkdir -p "$1"
-	(cd "$ROOT" && uv run --quiet --with pyyaml .mise/closures.py --out "$1" >/dev/null) || die "the closures did not build; nothing is published"
+	(cd "$ROOT" && .mise/python.sh .mise/closures.py --out "$1" >/dev/null) || die "the closures did not build; nothing is published"
 }
 
 # --- the release -----------------------------------------------------------
@@ -1560,13 +1606,17 @@ stage_upload() {
 # lease, so a writer that ignored the lease is refused, not overwritten, and
 # one that changed the index since this run first read it stops the
 # release. Per app: a release of three apps can stop with one activated,
-# and a rerun activates the rest.
+# and a rerun activates the rest. The feeds go one at a time, so a run that
+# stops among them leaves the app's platforms on two releases until a
+# rerun; what it has written is kept for release_report, which says so.
 activate() {
-	local app="$1" prefix out base staged
+	local app="$1" prefix out base staged feed
 	prefix="$(feed_prefix "$app")"
 	base="$(feed_url "$app")"
 	staged="$STAGE/${prefix}releases/$build/release.json"
 	out="$REL_DIR/feeds/$app"
+	ACTIVATING="$app"
+	FEEDS_WRITTEN=()
 	rm -rf "$out"
 	mkdir -p "$out"
 	read_published "$app"
@@ -1575,18 +1625,75 @@ activate() {
 	if [ -f "$out/releases/$build/manifest.plist" ]; then
 		put_immutable release "${prefix}releases/$build/manifest.plist" "$out/releases/$build/manifest.plist" "public, max-age=31536000, immutable"
 	fi
-	put_mutable release "${prefix}index.json" "$out/index.json" no-cache
-	put_mutable release "${prefix}appcast.xml" "$out/appcast.xml" no-cache
-	put_mutable release "${prefix}index.html" "$out/index.html" no-cache
+	for feed in "${FEEDS[@]}"; do
+		FEED_WRITING="$prefix$feed"
+		put_mutable release "$prefix$feed" "$out/$feed" no-cache
+		FEEDS_WRITTEN+=("$prefix$feed")
+	done
+	FEED_WRITING=""
+	ACTIVATING=""
+	ACTIVATED+=("$app")
 	say "activated $(app_get "$app" .name) $version: $base/index.html"
 }
 
+# The feeds an app's installed builds and its install page read, in the
+# order activate writes them: index.json (the iOS and Android apps),
+# appcast.xml (Sparkle, the Mac app), index.html (the install page).
+readonly FEEDS=(index.json appcast.xml index.html)
+# How far this run's publishing got, for release_report: PUBLISHING once
+# the staged build starts going up, the apps made current, the one being
+# made current, its feeds written, and the feed whose write is under way.
+PUBLISHING=""
+ACTIVATED=()
+ACTIVATING=""
+FEEDS_WRITTEN=()
+FEED_WRITING=""
+
+# Said when a run stops after its staged build started going up: which apps
+# it made current, which feeds of the app it was making current it wrote,
+# which one's write did not confirm and which it did not write, the apps it
+# did not reach, and the command that resumes it. stderr, last, so it is
+# what the person who started the run reads first.
+release_report() {
+	[ -n "$PUBLISHING" ] || return 0
+	local app feed key written="${FEEDS_WRITTEN[*]-}" unwritten="" rest=""
+	{
+		echo "apps: $version (build $build) stopped before every app was current; a rerun resumes it where it stopped"
+		echo "apps:   made current: ${ACTIVATED[*]:-none}"
+		if [ -n "$ACTIVATING" ]; then
+			for feed in "${FEEDS[@]}"; do
+				key="$(feed_prefix "$ACTIVATING")$feed"
+				case " $written $FEED_WRITING " in
+				*" $key "*) ;;
+				*) unwritten="$unwritten $key" ;;
+				esac
+			done
+			echo "apps:   stopped while making $ACTIVATING current, whose feeds (keys in the release folder) now list:"
+			echo "apps:     this release (written): ${written:-none}"
+			if [ -n "$FEED_WRITING" ]; then
+				echo "apps:     either release (not confirmed): $FEED_WRITING; its write stopped the run, as said above, and one that timed out may still land"
+			fi
+			echo "apps:     the release before (not written):${unwritten:- none}"
+		fi
+		for app in ${RELEASE_APPS[@]+"${RELEASE_APPS[@]}"}; do
+			case " ${ACTIVATED[*]-} $ACTIVATING " in
+			*" $app "*) ;;
+			*) rest="$rest $app" ;;
+			esac
+		done
+		echo "apps:   not reached:${rest:- none}"
+		echo "apps:   resume it from this checkout at ${commit_full:-the commit it built}, with this run's release folder, site and keys:"
+		echo "apps:     SUBSTRATE_APPS_RELEASE_BUILD=$build${DRY:+ SUBSTRATE_APPS_RELEASE_DRY_RUN=$DRY} mise run apps:release"
+	} >&2
+}
+
 # SUBSTRATE_APPS_RELEASE_STOP_AFTER=stage|site|<app> stops a dry run there,
-# as a failure would, to try the rerun that resumes it.
+# as a failure would, to try the rerun that resumes it, which the report
+# then names (release_report).
 stop_point() {
 	if [ "${SUBSTRATE_APPS_RELEASE_STOP_AFTER:-}" = "$1" ]; then
 		[ -n "$DRY" ] || die "SUBSTRATE_APPS_RELEASE_STOP_AFTER is a dry run's"
-		echo "apps: stopping after $1, as SUBSTRATE_APPS_RELEASE_STOP_AFTER asks; SUBSTRATE_APPS_RELEASE_BUILD=$build resumes it" >&2
+		echo "apps: stopping after $1, as SUBSTRATE_APPS_RELEASE_STOP_AFTER asks" >&2
 		exit 3
 	fi
 }
@@ -1611,6 +1718,12 @@ release_env() {
 	*) die "SUBSTRATE_APPLE_RELEASE_URL is an https address: $SUBSTRATE_APPLE_RELEASE_URL" ;;
 	esac
 	dry_only
+	# A strict dry run makes every build a release would, so nothing stands
+	# in for one: not the Apple placeholder (apple_archive), and not these.
+	if [ "$DRY" = strict ]; then
+		[ -z "${SUBSTRATE_APPS_RELEASE_PLACEHOLDERS:-}" ] || die "a strict dry run makes every build, and SUBSTRATE_APPS_RELEASE_PLACEHOLDERS stands placeholders in for them"
+		[ -z "${SUBSTRATE_APPS_RELEASE_ANDROID_BUILD:-}" ] || die "a strict dry run makes every build, and SUBSTRATE_APPS_RELEASE_ANDROID_BUILD stands another program in for android:release:build"
+	fi
 	if [ -z "$DRY" ]; then
 		: "${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID to a key that may write the bucket}"
 		: "${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY}"
@@ -1647,6 +1760,7 @@ release() {
 			die "build $build was staged for ${RELEASE_APPS[*]}, not ${asked[*]}; a rerun releases what was staged"
 		fi
 		[ "$(git -C "$ROOT" rev-parse HEAD)" = "$commit_full" ] || die "build $build was built from $commit_full, and this tree is at $(git -C "$ROOT" rev-parse HEAD); a rerun runs from the commit it built"
+		[ "$channel" != stable ] || stable_tagged "$short" "$commit_full"
 	else
 		if [ "${#RELEASE_APPS[@]}" -eq 0 ]; then
 			for app in $(ui_apps); do RELEASE_APPS+=("$app"); done
@@ -1664,8 +1778,9 @@ release() {
 	say "releasing ${RELEASE_APPS[*]} as $version ($channel)${DRY:+, a dry run}"
 
 	lease_take "$version" site
-	[ -n "$resume" ] || mkdir -p "$STAGE" "$REL_DIR/work"
 	for app in "${RELEASE_APPS[@]}"; do read_published "$app"; done
+	stable_unpublished
+	[ -n "$resume" ] || mkdir -p "$STAGE" "$REL_DIR/work"
 	if [ -z "$resume" ]; then
 		build_all
 	else
@@ -1674,6 +1789,7 @@ release() {
 	fi
 	[ "$(git -C "$ROOT" rev-parse HEAD)" = "$commit_full" ] || die "HEAD moved while $version was built; nothing is published"
 
+	PUBLISHING=1
 	stage_upload
 	stop_point stage
 	site_publish

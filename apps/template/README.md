@@ -87,6 +87,6 @@ the app unverified. Against a local substrate, the approval installs the
 package from an authority document written from this tree:
 
 ```bash
-uv run --with pyyaml .mise/closures.py --out .dev/authority --authority substrate.reamde.dev template
+.mise/python.sh .mise/closures.py --out .dev/authority --authority substrate.reamde.dev template
 SUBSTRATE_INSECURE_AUTHORITY_DOCS="substrate.reamde.dev=$PWD/.dev/authority/authority.json" mise run dev:up
 ```

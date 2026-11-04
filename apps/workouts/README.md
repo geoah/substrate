@@ -29,8 +29,8 @@ Dynamic Island.
 mise run apple:build:workouts     # the app for the simulator
 mise run apple:test:workouts      # WorkoutsKit: the model, both engines, the sync, on the Mac
 mise run apps:release prerelease workouts   # archived, signed and published under workouts/
-uv run --with pyyaml apps/workouts/scripts/workouts-package.py   # the package's manifests into the app's JSON
-uv run --with pyyaml apps/workouts/scripts/exercise-library.py   # the exercise library into the app's JSON
+.mise/python.sh apps/workouts/scripts/workouts-package.py   # the package's manifests into the app's JSON
+.mise/python.sh apps/workouts/scripts/exercise-library.py   # the exercise library into the app's JSON
 ```
 
 **A routine's page** opens on its folder, notes and what the plan holds, then Plan or

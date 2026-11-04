@@ -307,7 +307,9 @@ apple_release_build() {
 # One platform's archive and export, to $4/<platform>. A dry run archives
 # unsigned and takes the app out of the archive in place of an export
 # (UNSIGNED, unsigned_export), and one that cannot archive stands a
-# placeholder in.
+# placeholder in, unless the dry run is strict
+# (SUBSTRATE_APPS_RELEASE_DRY_RUN=strict), which fails there as a release
+# does, so it passes only where every build was made.
 apple_archive() {
 	local app="$1" scheme="$2" platform="$3" scratch="$4" method="$5"
 	if [ -n "${SUBSTRATE_APPS_RELEASE_PLACEHOLDERS:-}" ]; then
@@ -321,6 +323,7 @@ apple_archive() {
 			unsigned_export "$platform" "$scratch"; then
 			return 0
 		fi
+		[ "$DRY" != strict ] || die "strict dry run: $app did not archive unsigned for $platform, and a strict dry run stands no placeholder in for a build"
 		say "dry run: $app did not archive unsigned for $platform; a placeholder stands in for it"
 		apple_placeholder "$app" "$scheme" "$platform" "$scratch"
 		return
@@ -374,7 +377,7 @@ apple_placeholder() {
 	rm -rf "${scratch:?}/$platform" "$scratch/$platform-placeholder"
 	mkdir -p "$scratch/$platform"
 	touch "$scratch/$platform/.placeholder"
-	minimum="$(uv run --quiet --with pyyaml python3 - "$APPS_DIR/$app/apple/targets.yml" "$scheme" "$platform" \
+	minimum="$("$APPLE_ROOT/.mise/python.sh" - "$APPS_DIR/$app/apple/targets.yml" "$scheme" "$platform" \
 		"$APPS_DIR/xcode/project.yml" <<'PY'
 import sys
 
@@ -514,9 +517,9 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 		# WorkoutsKit is a Swift package too: the model, both engines and the
 		# sync, on the Mac. The package's manifests and their JSON must agree,
 		# and so must the exercise library and its sources.
-		uv run --quiet --with pyyaml ../workouts/scripts/workouts-package.py --check
-		uv run --quiet --with pyyaml ../workouts/scripts/exercise-library.py --check
-		uv run --quiet --with pyyaml ../../.mise/closures.py --check workouts
+		../../.mise/python.sh ../workouts/scripts/workouts-package.py --check
+		../../.mise/python.sh ../workouts/scripts/exercise-library.py --check
+		../../.mise/python.sh ../../.mise/closures.py --check workouts
 		swift test --package-path ../workouts/WorkoutsKit
 		;;
 	build:tasks)
@@ -526,7 +529,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 	test:tasks)
 		# TasksKit on the Mac, then the app's views over its fixtures. The
 		# closure the app carries must be the one the site publishes.
-		uv run --quiet --with pyyaml ../../.mise/closures.py --check --json ../tasks/TasksKit/Sources/TasksCore/Resources/Package tasks
+		../../.mise/python.sh ../../.mise/closures.py --check --json ../tasks/TasksKit/Sources/TasksCore/Resources/Package tasks
 		swift test --package-path ../tasks/TasksKit
 		project
 		tasks -destination 'platform=macOS' test -only-testing:SubstrateTasksTests

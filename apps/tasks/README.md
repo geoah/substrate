@@ -158,7 +158,7 @@ publisher's authority document, so a local server reads one written from
 this tree instead of `substrate.reamde.dev`'s:
 
 ```bash
-uv run --with pyyaml .mise/closures.py --out .dev/authority --authority substrate.reamde.dev tasks
+.mise/python.sh .mise/closures.py --out .dev/authority --authority substrate.reamde.dev tasks
 SUBSTRATE_INSECURE_AUTHORITY_DOCS="substrate.reamde.dev=$PWD/.dev/authority/authority.json" mise run dev:up
 mise run console:build && mise run dev:restart   # the approval page is the console's
 ```

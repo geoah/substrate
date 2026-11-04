@@ -22,8 +22,8 @@ An app whose package is partly generated keeps its generator at
 scripts/<app>-package.py (Workouts renders its coach's agent document): it
 runs with --check first, so a closure is never built from a stale file.
 
-    uv run --with pyyaml .mise/closures.py --check [app ...]
-    uv run --with pyyaml .mise/closures.py --out build/apps/site/packages [app ...]
+    .mise/python.sh .mise/closures.py --check [app ...]
+    .mise/python.sh .mise/closures.py --out build/apps/site/packages [app ...]
 
 --out writes DIR/<package>-<version>.yaml and prints `path sha256` for each.
 --authority NAME, beside --out, writes DIR/authority.json too: NAME's
@@ -37,7 +37,7 @@ its build knows the version it asks for; with --check beside it, a file that
 differs is named and nothing is written. With no app named, every app under
 apps/ that publishes one.
 
-    uv run --with pyyaml .mise/closures.py --json apps/tasks/TasksKit/Sources/TasksCore/Resources/Package tasks
+    .mise/python.sh .mise/closures.py --json apps/tasks/TasksKit/Sources/TasksCore/Resources/Package tasks
 """
 
 from __future__ import annotations

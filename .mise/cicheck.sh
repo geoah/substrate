@@ -2,6 +2,11 @@
 #
 # The CI scripts' own tests.
 #
+# .mise/appsgate.sh is the thirteenth: it is the one required check over the
+# apps' jobs, so a wrong pass is an app change merged with its build or its
+# tests red, or never run. Its verdicts run after the pipeline's rules, one
+# of which holds every job the `apps` answer gates to being one it holds.
+#
 # .mise/reposettings.sh is the twelfth: an admin runs it against the live
 # repository, so a wrong call is a setting nobody sees change. It runs
 # against a fake gh at the end, and the `release` environment must end with
@@ -77,6 +82,10 @@ imagemain="$PWD/.mise/imagemain.sh"
 releasegate="$PWD/.mise/releasegate.sh"
 cipostgres="$PWD/.mise/cipostgres.sh"
 toolchaincheck="$PWD/.mise/toolchaincheck.sh"
+appsgate="$PWD/.mise/appsgate.sh"
+# The checks below read .mise.toml with tomllib, which is Python 3.11's, and
+# a Mac's own python3 is older: they run in the tree's environment instead.
+python="$PWD/.mise/python.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -416,8 +425,9 @@ PATH="$fakebin:$PATH" FAKE_GH_LOG="$tmp/gh.log" GITHUB_SERVER_URL=https://exampl
 # CI splits `lint` and `fmt:check` across `ci:lint` and `ci:lint:go`, and
 # the apps' format checks, which want a Swift and a JDK, are steps of
 # `ci:android`. A linter added to the aggregate and to none of them would run
-# on a laptop and never on a pull request.
-missing="$(python3 - <<'PY'
+# on a laptop and never on a pull request. A run that fails says so, rather
+# than reading as nothing missing.
+if missing="$("$python" - 2>"$tmp/lint-jobs.err" <<'PY'
 import re, tomllib
 t = tomllib.load(open(".mise.toml", "rb"))["tasks"]
 want = set(t["lint"]["depends"]) | set(t["fmt:check"]["depends"])
@@ -425,20 +435,28 @@ have = set(t["ci:lint"]["depends"]) | set(t["ci:lint:go"]["depends"])
 have |= {m for step in t["ci:android"]["run"] for m in re.findall(r"mise run (\S+)", step)}
 print(" ".join(sorted(want - have)))
 PY
-)"
-[ -z "$missing" ] || flag "in lint or fmt:check but in none of ci:lint, ci:lint:go and ci:android: ${missing}"
+)"; then
+  [ -z "$missing" ] || flag "in lint or fmt:check but in none of ci:lint, ci:lint:go and ci:android: ${missing}"
+else
+  flag "the lint jobs' coverage was not checked: $(cat "$tmp/lint-jobs.err")"
+fi
 
 # --- the pipeline the ruleset and `mise run ci` describe --------------------
 
-# Two promises no workflow run checks. A required context in
+# Three promises no workflow run checks. A required context in
 # .github/rulesets/main.json that names no job, or two, is a check that stays
 # pending forever or passes on the wrong job, and renaming a job is all it
-# takes. And `mise run ci` is the whole pipeline only while every `ci:*` task
+# takes. A required job that needs others is a gate, and GitHub passes a
+# required check whose job was skipped, which a job is when one it needs
+# failed: so a gate runs `if: always()`, and a gate that reads an answer
+# (`needs.<job>.outputs.<name>`) needs every job that answer gates and
+# reads its result, or a job gated on it later runs with nothing holding
+# it. And `mise run ci` is the whole pipeline only while every `ci:*` task
 # a workflow runs is one of its dependencies, or is run inside one of them.
 #
-# Job names are read by indentation, which yamlfmt holds: a job is a
-# two-space key under `jobs:` and its name the four-space `name:` under it,
-# else its key, as GitHub names it.
+# Jobs are read by indentation, which yamlfmt holds: a job is a two-space
+# key under `jobs:`, its name the four-space `name:` under it, else its key,
+# as GitHub names it, and its `needs:` and `if:` four-space keys beside it.
 cat >"$tmp/pipeline.py" <<'PY'
 import json, pathlib, re, sys, tomllib
 
@@ -460,9 +478,12 @@ excluded = {"ci:llm"}
 findings = []
 jobs = {}
 runs = {}
+# By "<workflow>:<job>": what the job needs, its `if:` (with the lines it
+# wraps onto) and its text.
+needs, conditions, bodies = {}, {}, {}
 for wf in sorted(pathlib.Path(workflows).glob("*.yml")):
     text = wf.read_text()
-    names, job, in_jobs = {}, None, False
+    names, job, in_jobs, key = {}, None, False, None
     for line in text.splitlines():
         if re.match(r"\S", line):
             in_jobs, job = line.rstrip() == "jobs:", None
@@ -471,18 +492,34 @@ for wf in sorted(pathlib.Path(workflows).glob("*.yml")):
             continue
         m = re.match(r"  ([A-Za-z0-9_-]+):\s*$", line)
         if m:
-            job = m.group(1)
+            job, key = m.group(1), None
             names[job] = job
+            ref = f"{wf.name}:{job}"
+            needs[ref], conditions[ref], bodies[ref] = [], "", ""
             continue
-        m = re.match(r"    name:\s*(.+?)\s*$", line)
-        if m and job:
-            names[job] = m.group(1).strip("'\"")
+        if not job:
+            continue
+        bodies[ref] += line + "\n"
+        m = re.match(r"    ([a-z-]+):\s*(.*?)\s*$", line)
+        if m:
+            key, value = m.groups()
+            if key == "name" and value:
+                names[job] = value.strip("'\"")
+            elif key == "needs":
+                needs[ref] = re.findall(r"[A-Za-z0-9_-]+", value)
+            elif key == "if":
+                conditions[ref] = value
+        elif key == "if" and re.match(r"     ", line):
+            conditions[ref] += " " + line.strip()
+        elif key == "needs" and re.match(r"      - ", line):
+            needs[ref] += re.findall(r"[A-Za-z0-9_-]+", line)
     for job, name in names.items():
         jobs.setdefault(name, []).append(f"{wf.name}:{job}")
     for m in re.finditer(r'(?:mise run|task:)\s*"?(ci:[a-z0-9:]+)', text):
         runs.setdefault(m.group(1), wf.name)
 
 rules = json.load(open(ruleset))["rules"]
+required = []
 for rule in rules:
     if rule["type"] != "required_status_checks":
         continue
@@ -490,6 +527,22 @@ for rule in rules:
         found = jobs.get(check["context"], [])
         if len(found) != 1:
             findings.append(f"required check '{check['context']}' names {len(found)} jobs ({', '.join(found) or 'none'}), expected exactly one")
+        else:
+            required.append(found[0])
+
+for gate in required:
+    if not needs[gate]:
+        continue
+    if "always()" not in conditions[gate]:
+        findings.append(f"{gate} is a required check that needs {', '.join(needs[gate])} and does not run `if: always()`, so a skip of one passes it")
+    wf = gate.split(":", 1)[0]
+    for answer in sorted(set(re.findall(r"needs\.[A-Za-z0-9_-]+\.outputs\.[A-Za-z0-9_-]+", bodies[gate]))):
+        for ref, condition in sorted(conditions.items()):
+            if ref == gate or not ref.startswith(wf + ":") or not re.search(re.escape(answer) + r"\b", condition):
+                continue
+            other = ref.split(":", 1)[1]
+            if other not in needs[gate] or f"needs.{other}.result" not in bodies[gate]:
+                findings.append(f"{ref} runs on {answer}, and {gate}, the required check that reads it, does not both need it and read its result")
 
 for task, wf in sorted(runs.items()):
     if task not in tasks:
@@ -508,7 +561,7 @@ PY
 # that succeeded reports its findings on stdout.
 pipeline() {
   local out
-  if out="$(python3 "$tmp/pipeline.py" "$1" "$2" "$3" 2>"$tmp/pipeline.err")"; then
+  if out="$("$python" "$tmp/pipeline.py" "$1" "$2" "$3" 2>"$tmp/pipeline.err")"; then
     printf '%s' "$out"
   else
     printf '%s\n%s' "$out" "$(cat "$tmp/pipeline.err")"
@@ -538,6 +591,54 @@ case "$(pipeline "$tmp/mise-no-providers.toml" .github/workflows .github/ruleset
 *"runs ci:providers, which \`mise run ci\` neither"*) ;;
 *) flag "the pipeline: ci:providers missing from \`ci\` was not reported" ;;
 esac
+# And the gates: `apps gate` without `if: always()`, `android build` dropped
+# from what it needs, and two more jobs moved onto the apps answer with
+# nothing holding them.
+scratch "$tmp/wf-gate-skipped" '/^  apps-gate:$/,/^    if: always()$/{/^    if: always()$/d;}'
+case "$(pipeline .mise.toml "$tmp/wf-gate-skipped" .github/rulesets/main.json)" in
+*"ci.yml:apps-gate is a required check that needs changes, apps-linux, android and does not run"*) ;;
+*) flag "the pipeline: an \`apps gate\` a skip passes was not reported" ;;
+esac
+scratch "$tmp/wf-gate-unheld" 's/^    needs: \[changes, apps-linux, android\]$/    needs: [changes, apps-linux]/'
+case "$(pipeline .mise.toml "$tmp/wf-gate-unheld" .github/rulesets/main.json)" in
+*"ci.yml:android runs on needs.changes.outputs.apps, and ci.yml:apps-gate"*) ;;
+*) flag "the pipeline: \`android build\` outside what \`apps gate\` needs was not reported" ;;
+esac
+scratch "$tmp/wf-gate-third" 's/^\(    if: needs\.changes\.outputs\.\)go\( == .true.\)$/\1apps\2/'
+case "$(pipeline .mise.toml "$tmp/wf-gate-third" .github/rulesets/main.json)" in
+*"ci.yml:drill runs on needs.changes.outputs.apps, and ci.yml:apps-gate"*) ;;
+*) flag "the pipeline: a job gated on the apps answer that \`apps gate\` does not hold was not reported" ;;
+esac
+
+# --- the apps gate ------------------------------------------------------------
+
+# .mise/appsgate.sh is the one required check over the apps' jobs, so a wrong
+# pass is an app change merged with its build or its tests red, or never run.
+# apps_gate <name> <expected exit> <APPS, or - for unset> <job=result…>
+apps_gate() {
+  local name="$1" expected="$2" answer="$3" status
+  shift 3
+  if [ "$answer" = - ]; then
+    env -u APPS "$appsgate" "$@" >/dev/null 2>"$tmp/stderr"
+  else
+    APPS="$answer" "$appsgate" "$@" >/dev/null 2>"$tmp/stderr"
+  fi
+  status=$?
+  [ "$status" -eq "$expected" ] || flag "apps gate ${name}: exit ${status}, expected ${expected}: $(cat "$tmp/stderr")"
+}
+apps_gate built 0 true 'apps linux=success' 'android build=success'
+apps_gate one-red 1 true 'apps linux=success' 'android build=failure'
+apps_gate one-cancelled 1 true 'apps linux=cancelled' 'android build=success'
+apps_gate skipped-on-a-change 1 true 'apps linux=skipped' 'android build=success'
+apps_gate untouched 0 false 'apps linux=skipped' 'android build=skipped'
+apps_gate untouched-ran-anyway 0 false 'apps linux=success' 'android build=skipped'
+apps_gate untouched-red 1 false 'apps linux=failure' 'android build=skipped'
+apps_gate untouched-cancelled 1 false 'apps linux=skipped' 'android build=cancelled'
+apps_gate no-answer 1 '' 'apps linux=skipped' 'android build=skipped'
+apps_gate answer-unset 1 - 'apps linux=skipped' 'android build=skipped'
+apps_gate odd-answer 1 yes 'apps linux=success' 'android build=success'
+apps_gate no-result 1 true 'apps linux=success' 'android build='
+apps_gate no-jobs 2 true
 
 # --- the database slot --------------------------------------------------------
 
@@ -640,7 +741,7 @@ PY
 # stderr only when the run fails: a mise shim's version warning is not a finding.
 dbslot() {
   local out
-  if out="$(python3 "$tmp/dbslot.py" "$1" 2>"$tmp/dbslot.err")"; then
+  if out="$("$python" "$tmp/dbslot.py" "$1" 2>"$tmp/dbslot.err")"; then
     printf '%s' "$out"
   else
     printf '%s\n%s' "$out" "$(cat "$tmp/dbslot.err")"
@@ -1097,6 +1198,18 @@ decisions tie-bbb 1 '0004 is already 0004-aaa.md on tie-aaa, added first'
 # entries, one entry a `go run` executable's directory, two files and a fuzz
 # corpus at the top. `age`, then a stand-in for the run (touch what the go
 # command would read or write), then `prune`: only the untouched entries go.
+#
+# aged <minutes> <path…>: each path's mtime that many minutes back. `touch -d
+# '3 hours ago'` is GNU's alone and this runs on a Mac too, so the time goes
+# through -t, which both read, from the epoch either date prints, in UTC so
+# no clock change falls inside the span.
+aged() {
+  local at stamp
+  at=$(($(date +%s) - $1 * 60))
+  shift
+  stamp="$(TZ=UTC0 date -d "@$at" +%Y%m%d%H%M.%S 2>/dev/null || TZ=UTC0 date -r "$at" +%Y%m%d%H%M.%S)"
+  TZ=UTC0 touch -m -t "$stamp" "$@"
+}
 gc="$tmp/go-build"
 mkdir -p "$gc/aa" "$gc/bb/exe-d" "$gc/cc/used-exe-d" "$gc/fuzz/corpus"
 for f in aa/unused-a aa/read-a aa/read-d bb/exe-d/tool cc/used-exe-d/tool README trim.txt fuzz/corpus/seed; do
@@ -1104,7 +1217,7 @@ for f in aa/unused-a aa/read-a aa/read-d bb/exe-d/tool cc/used-exe-d/tool README
 done
 # Old before the run: what is not an entry must survive the cut by its place,
 # not by its age.
-touch -m -d '3 hours ago' "$gc/cc/used-exe-d/tool" "$gc/README" "$gc/trim.txt" "$gc/fuzz/corpus" "$gc/fuzz/corpus/seed"
+aged 180 "$gc/cc/used-exe-d/tool" "$gc/README" "$gc/trim.txt" "$gc/fuzz/corpus" "$gc/fuzz/corpus/seed"
 "$gocache" age "$gc" >/dev/null || flag "gocache age: exit $?"
 [ -n "$(find "$gc/aa/unused-a" -mmin +100)" ] || flag "gocache age: aa/unused-a is not older than 100 minutes"
 # The run reads two entries and an executable's directory, and writes one.
@@ -1117,10 +1230,10 @@ stale="de$(printf '%062d' 0)"
 mkdir -p "$gc/dd" "$gc/de" "$gc/ee" "$gc/ef"
 : >"$gc/dd/${shared}-d"
 : >"$gc/de/${stale}-d"
-touch -m -d '3 hours ago' "$gc/dd/${shared}-d" "$gc/de/${stale}-d"
+aged 180 "$gc/dd/${shared}-d" "$gc/de/${stale}-d"
 printf 'v1 ee%062d %s %20d %20d\n' 0 "$shared" 0 0 >"$gc/ee/fresh-a"
 printf 'v1 ef%062d %s %20d %20d\n' 0 "$stale" 0 0 >"$gc/ef/stale-a"
-touch -m -d '3 hours ago' "$gc/ef/stale-a"
+aged 180 "$gc/ef/stale-a"
 "$gocache" prune "$gc" >/dev/null || flag "gocache prune: exit $?"
 for gone in aa/unused-a bb/exe-d ef/stale-a "de/${stale}-d"; do
   [ ! -e "$gc/$gone" ] || flag "gocache prune kept ${gone}, which the run never touched"

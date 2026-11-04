@@ -593,11 +593,13 @@ apps/
   scripts, Python): id, display name, bundle id and Android
   application id, platforms, the Info.plist and manifest keys of its client
   id and redirect, the packages it publishes from `package/`, its scopes and
-  package details, its icon, its feed folder. It replaces
-  `apps/apple/scopes.json`: the server's first-party reach test reads the
-  scopes from it, and the app's Swift manifest is held to it by a test, as
-  `ReachTests` and `CoachTests` hold the manifests to `scopes.json` today. The
-  Apple project, the Gradle settings, the site and the release read it.
+  package details, its icon, its feed folder. It replaced the one scopes
+  file the Apple apps shared: the server's first-party reach test
+  (`internal/catalog/firstparty_reach_test.go`) reads the scopes from it,
+  and a Swift test holds each app's manifest to it (Sync's `ReachTests` and
+  Workouts' `CoachTests` among them; [the apps' README](../../apps/README.md#an-apps-appjson)
+  lists every one). The Apple project, the Gradle settings, the site and the
+  release read it.
 - **An app's core** is a Swift package of its controllers, engines,
   presenters and model, with no UI framework, in a folder named for it
   (`WorkoutsKit/`, `TasksKit/`). SwiftPM names a local package by its

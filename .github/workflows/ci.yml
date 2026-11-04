@@ -24,13 +24,16 @@
 # .github/zizmor.yml lists the findings it accepts, and why.
 #
 # Two tiers. The REQUIRED checks (.github/rulesets/main.json: `conventional
-# commits` in pr.yml, `lint`, `lint go`, `console`, `console test`, `go gate`)
-# are what a pull request waits for, so each job behind them has a budget of
-# about a minute on the runner, and one that grows past it is cut (more
-# shards, a split job), not left to slow every merge. Several are over it:
-# over the 29 pull request runs of 2026-10-10 to 2026-10-12 that ran the Go
-# suite, `console test` took a median 133 s, `db rest` 122 s and an engine
-# shard 76 s, and `go gate` went green a median 179 s after the push.
+# commits` in pr.yml, `lint`, `lint go`, `console`, `console test`, `go gate`,
+# `apps gate`) are what a pull request waits for, so each job behind them has
+# a budget of about a minute on the runner, and one that grows past it is cut
+# (more shards, a split job), not left to slow every merge. Several are over
+# it: over the 29 pull request runs of 2026-10-10 to 2026-10-12 that ran the
+# Go suite, `console test` took a median 133 s, `db rest` 122 s and an engine
+# shard 76 s, and `go gate` went green a median 179 s after the push. The
+# apps' two builds behind `apps gate` are far past it, by choice: only a
+# change to what they build runs them and waits, and every other pull
+# request passes the gate in seconds with both skipped.
 # `gh run view <id> --json createdAt,jobs` measures a run. Everything else
 # runs on the same pull request and on main and is not required: `providers
 # e2e` (228 to 325 s in those runs), `acceptance drill` (one serial
@@ -848,10 +851,10 @@ jobs:
   # The kit and every app's core, built and tested on Linux in the swift
   # container `ci:apps` pins, since what builds for Android builds here
   # first, then the core of an app `apps:new` makes from the template, so
-  # the template cannot rot. Not required, and gated on `changes`' `apps`
-  # answer: a change outside apps/ and this pipeline cannot move its
-  # result. mise is here for the task alone, which needs Docker and no
-  # tool, so it installs none.
+  # the template cannot rot. Gated on `changes`' `apps` answer, since a
+  # change outside apps/ and this pipeline cannot move its result, and
+  # required through `apps gate`. mise is here for the task alone, which
+  # needs Docker and no tool, so it installs none.
   apps-linux:
     name: apps linux
     needs: changes
@@ -884,8 +887,8 @@ jobs:
   # runs (26.04), and follows it when that moves: left to itself, mise
   # fetches the ubuntu24.04 build onto 26.04, whose swift-sdk cannot load
   # the libxml2.so.2 that 26.04 no longer ships.
-  # Nothing here needs an emulator; `android:smoke` is a laptop's. Not
-  # required, and gated on the `apps` answer as `apps linux` is.
+  # Nothing here needs an emulator; `android:smoke` is a laptop's. Gated on
+  # the `apps` answer and required through `apps gate`, as `apps linux` is.
   android:
     name: android build
     needs: changes
@@ -905,6 +908,31 @@ jobs:
           cache_save: ${{ github.event_name == 'push' }}
           install_args: swift@6.4.2 java@temurin-21.0.11+10.0.LTS
       - run: mise run ci:android
+
+  # `apps gate` is the ONE name the ruleset requires for the two jobs above.
+  # Theirs cannot be: each runs only on apps=true, and GitHub passes a
+  # required check whose job was skipped, so a `changes` that failed to
+  # answer (both then skipped) would merge an app change nothing built. The
+  # gate always runs and reads the answer itself (.mise/appsgate.sh, whose
+  # verdicts lint:ci holds): apps=true needs both to succeed, apps=false lets
+  # them pass skipped, and no answer, a failure, a cancellation or a skip on
+  # apps=true is red. lint:ci also holds every job the answer gates to being
+  # one this job needs and reads the result of.
+  apps-gate:
+    name: apps gate
+    needs: [changes, apps-linux, android]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      APPS: ${{ needs.changes.outputs.apps }}
+      LINUX: ${{ needs.apps-linux.result }}
+      ANDROID: ${{ needs.android.result }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: .mise/appsgate.sh "apps linux=$LINUX" "android build=$ANDROID"
 
   # Builds the image from source and BOOTS it under compose.yaml, with fresh
   # volumes and a throwaway Postgres. The release ships the same runtime stage

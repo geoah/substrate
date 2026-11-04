@@ -32,7 +32,8 @@ app id and the device profile with. CI builds no Apple app: its `apps linux`
 job builds and tests the kit and every app's core on Linux, then the core of
 an app `apps:new` makes, and its `android build` job builds the kit for
 Android ([Android](#android)); the SwiftUI side is a Mac's, through the
-`apple:test:*` tasks.
+`apple:test:*` tasks. The two run on a change to what they build, and a pull
+request waits for both through the required `apps gate` check.
 
 ## How the console runs in it
 
@@ -70,8 +71,9 @@ outside the sandbox, for the driver below.
 ## Releases and updates
 
 `mise run apps:release` (a pre-release; `apps:release stable` for a stable
-one, from a clean tree) releases every app with a UI, on every platform it
-has a UI for; `apps:release prerelease chat sync` releases those two alone.
+one, from a clean checkout of its release-please tag, below) releases every
+app with a UI, on every platform it has a UI for; `apps:release prerelease
+chat sync` releases those two alone.
 It publishes to `SUBSTRATE_APPLE_RELEASE_URL`: the path-style address of a
 folder on an S3 bucket that anyone may read and the key in
 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` may write, with its site at
@@ -156,7 +158,10 @@ and each step holds what it says before the next starts:
    and its files go up under each feed's `releases/<build>/`,
    where no feed names them yet. Those keys are immutable: a key already
    holding the same bytes is passed over, and one holding other bytes stops
-   the release.
+   the release. The stage is what a rerun resumes, so it stays until that
+   build's publication completes, its run ending with `released …`; only
+   then may it go (`chmod -R u+w build/apps/releases/<build> && rm -rf
+   build/apps/releases/<build>`), and never `build/apps` whole.
 4. **The site** (below), the closures first and the authority document last.
 5. **Each app made current, last and alone**: its `release.json`, naming
    every platform's build, after every file it names; then the feeds its
@@ -177,13 +182,40 @@ resumes a dry run's: it looks for stages where a dry run keeps none, and
 refuses one that says it was a dry run's or carries a dry run's update
 signature.
 
+**A release that stops part way says where.** An app's three feeds are
+written one at a time, `index.json` (the iOS and Android apps), then
+`appcast.xml` (the Mac app), then `index.html` (the install page), so a
+release that stops among them leaves that app's platforms on two releases:
+iPhones offered the new one while Macs are not, say. Any run that stops
+after its build started going up prints, last, which apps it made current,
+the feeds of the one it was on that list the new release (written), the one
+whose write stopped the run (not confirmed: a write that timed out may
+still land), the ones that still list the release before (not written), the
+apps it did not reach, and the command that resumes it:
+
+```bash
+SUBSTRATE_APPS_RELEASE_BUILD=<build> mise run apps:release   # with the dry run's SUBSTRATE_APPS_RELEASE_DRY_RUN for one
+```
+
+Run it from the same checkout at the same commit, with the release folder,
+site and keys the stopped run had, until it ends with `released …`; until
+then the split stays. It takes a new lease, reads every feed again, and
+rewrites each app's feeds from the index published now, so a feed already
+written is written again with the same release and the one not confirmed is
+read before it is replaced. A run that stops before its build started going
+up prints no report: a first run then has published nothing (release
+again), and a rerun's own message says why it stopped.
+
 **A dry run is every step against `build/apps`.**
 `SUBSTRATE_APPS_RELEASE_DRY_RUN=1` builds, stages (under
 `build/apps/dry-run/staged/<build>/`, apart from a release's), publishes and
 activates into `build/apps/dry-run/release` and `build/apps/dry-run/site`,
 simulated buckets with the same conditional writes and time bounds, so the
-lease, a rerun and a conflict can be tried there; they persist between dry
-runs (`chmod -R u+w build/apps && rm -rf build/apps` starts over). It unsets
+lease, a rerun and a conflict can be tried there. They persist between dry
+runs, and with no `apps:release` or `apps:site` running, `chmod -R u+w
+build/apps/dry-run && rm -rf build/apps/dry-run` starts them over; that
+leaves a release's stages under `build/apps/releases`, which a dry run
+never touches and a release in flight resumes from. It unsets
 the AWS key, the App Store Connect key and the Android release key's
 variables (`SUBSTRATE_ANDROID_KEYSTORE`, `_KEYSTORE_PASSWORD`, `_KEY_ALIAS`,
 `_KEY_PASSWORD`, `_CERT_SHA256` and `_PREVIOUS_CERT_SHA256`) before anything
@@ -197,8 +229,13 @@ and takes the app out of the archive in place of an export, which would
 sign it, so it reads no keychain, and checks that no build it made names a
 signing identity (an app that does not archive unsigned is a placeholder,
 and it says so); it writes no closures lock, and the one function that
-uploads and the one that signs a request refuse to run in it. Only in a dry
-run: `SUBSTRATE_APPS_RELEASE_PLACEHOLDERS=1` stands placeholders in for
+uploads and the one that signs a request refuse to run in it.
+`SUBSTRATE_APPS_RELEASE_DRY_RUN=strict` is a strict dry run, the one that
+says a release would build: nothing stands in for a build, so an app that
+does not archive unsigned fails it as a failed archive fails a release, and
+it refuses the two switches below that stand something in for one
+(`SUBSTRATE_APPS_RELEASE_PLACEHOLDERS` and
+`SUBSTRATE_APPS_RELEASE_ANDROID_BUILD`). Only in a dry run: `SUBSTRATE_APPS_RELEASE_PLACEHOLDERS=1` stands placeholders in for
 every build, `SUBSTRATE_APPS_RELEASE_ANDROID_BUILD=<program>` another
 program in for `android:release:build`,
 `SUBSTRATE_APPS_RELEASE_STOP_AFTER=stage`, `site` or an app's id stops there
@@ -312,7 +349,15 @@ The release builds stay in the release folder.
 The version is the next patch after the last released one, plus the build
 number and the commit, `0.113.1-pre.20261021.153012+ac85863e` (`.dirty`
 when the tree was); the build number is the UTC time, so it only rises, and
-it is what one release is compared to another by. The folder holds:
+it is what one release is compared to another by. A stable release is the
+released version itself (`.release-please-manifest.json`), and a stable
+version names one commit: it is built only from a clean tree whose `HEAD`
+is the commit release-please tagged `v<version>`, on main's history as
+`origin/main` was last fetched (`git fetch origin --tags` and check the tag
+out first), and a rerun of its stage is held to the same. Under the lease,
+before anything is built, it is refused if any app's feed already lists
+that version from another commit; a rerun of the staged build, or a
+release of the tagged commit again, finds only its own. The folder holds:
 
 | Path                | What                                                                    |
 | ------------------- | ----------------------------------------------------------------------- |
