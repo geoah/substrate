@@ -82,12 +82,12 @@ HEAD
   # Each app's own screens, by the names its two galleries give them: one
   # system's alone is drawn beside "not drawn".
   for folder in "$out"/apple/* "$out"/android/*; do
-    [[ -d $folder ]] && basename "$folder"
+    if [[ -d $folder ]]; then basename "$folder"; fi
   done | sort -u | while IFS= read -r app; do
     [[ $app == apps ]] && continue
     printf '<h1>%s</h1>\n' "$(html "$app")"
     for side in apple android; do
-      [[ -d $out/$side/$app ]] && find "$out/$side/$app" -maxdepth 1 -name '*.png' -exec basename {} .png \;
+      if [[ -d $out/$side/$app ]]; then find "$out/$side/$app" -maxdepth 1 -name '*.png' -exec basename {} .png \;; fi
     done | sort -u | while IFS= read -r name; do
       printf '<section class="fixture" id="%s-%s">\n<h2>%s</h2>\n<div class="pair">\n' "$(html "$app")" "$(html "$name")" "$(html "$name")"
       for side in apple android; do
