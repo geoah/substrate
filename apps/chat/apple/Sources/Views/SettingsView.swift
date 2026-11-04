@@ -75,6 +75,8 @@ struct SettingsView: View {
             host.signOut()
         case .perform(.repository(.changeAccess)): changingAccess = true
         case .perform(.about(.check)): updates.checkNow()
+        case .perform(.about(.privacyPolicy)):
+            if let url = updates.build.privacyPolicy.flatMap(URL.init(string:)) { openURL(url) }
         case let .perform(.status(.action(action))): perform(action)
         case .perform(.app("allowNotifications")): openNotificationSettings()
         default: host.send(.settings(command))

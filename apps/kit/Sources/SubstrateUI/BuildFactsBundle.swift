@@ -11,11 +11,14 @@ public extension BuildFacts {
         func value(_ key: String) -> String { (info[key] as? String)?.trimmingCharacters(in: .whitespaces) ?? "" }
         let stamped = value("SubstrateVersion")
         let channel = value("SubstrateChannel")
+        // Only an https address is a policy: anything else would be a row
+        // that opens nothing.
         let privacy = value("SubstratePrivacyPolicy")
+        let policy = URL(string: privacy).flatMap { $0.scheme == "https" && $0.host != nil ? privacy : nil }
         return BuildFacts(
             version: stamped.isEmpty ? "\(value("CFBundleShortVersionString")) (\(value("CFBundleVersion")))" : stamped,
             channel: channel.isEmpty ? nil : channel,
-            privacyPolicy: privacy.isEmpty ? nil : privacy)
+            privacyPolicy: policy)
     }
 }
 #endif

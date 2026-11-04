@@ -37,8 +37,10 @@ struct BuildInfo: Sendable {
         commit = value("SubstrateCommit")
         let base = value("SubstrateUpdates")
         updates = base.isEmpty ? nil : URL(string: base.hasSuffix("/") ? base : base + "/")
+        // Only an https address is a policy: anything else would be a row
+        // that opens nothing.
         let policy = value("SubstratePrivacyPolicy")
-        privacyPolicy = policy.isEmpty ? nil : policy
+        privacyPolicy = URL(string: policy).flatMap { $0.scheme == "https" && $0.host != nil ? policy : nil }
     }
 
     /// The app's full name (`Substrate Workouts`), not the home screen's

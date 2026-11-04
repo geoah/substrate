@@ -37,7 +37,7 @@ public fun AboutScreen(presentation: AboutPresentation, modifier: Modifier = Mod
         presentation.privacyPolicy?.let { policy ->
             val uris = LocalUriHandler.current
             KitRowDivider()
-            KitRow(policy.title, onClick = { uris.openUri(policy.url) })
+            KitRow(policy.title, onClick = { runCatching { uris.openUri(policy.url) } })
         }
     }
 }
