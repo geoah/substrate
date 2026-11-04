@@ -261,4 +261,44 @@ struct ServicesTests {
         let offline = TransportOutcome.failed(kind: .offline, message: "no route")
         #expect(throws: URLError.self) { try BridgeTransport.answer(try BridgeCodec.value(offline), for: request) }
     }
+
+    /// A secure store's caller blocks its thread, and Swift's executors are
+    /// few: with every one of them blocked on a read, the answers must still
+    /// arrive, so a read never waits on an executor to come free (which, on
+    /// a phone, left every read to run out its time).
+    @Test func aSecureStoreReadIsAnsweredWhileEverySwiftExecutorIsBlockedOnOne() async throws {
+        let runtime = BridgeRuntime()
+        let kotlin = AnsweringKotlin()
+        kotlin.runtime.value = runtime
+        #expect(runtime.start(config(fingerprint: "test"), outlet: kotlin, fingerprint: "test") == .started(fingerprint: "test"))
+        let store = BridgeSecureStore(channel: try #require(runtime.device), store: "session", timeout: 5)
+        let readers = ProcessInfo.processInfo.activeProcessorCount * 2
+        let began = ContinuousClock.now
+        let found = await withTaskGroup(of: Bool.self) { group in
+            for n in 0 ..< readers {
+                group.addTask {
+                    guard case .found = store.read(account: "a\(n)") else { return false }
+                    return true
+                }
+            }
+            return await group.reduce(0) { $0 + ($1 ? 1 : 0) }
+        }
+        #expect(found == readers)
+        #expect(ContinuousClock.now - began < .seconds(5), "a read ran out its time")
+    }
+}
+
+/// Kotlin answering each secure-store request as it is delivered, on the
+/// thread that delivers it, which is never one of Swift's executors.
+private final class AnsweringKotlin: BridgeOutlet, @unchecked Sendable {
+    let runtime = Box<BridgeRuntime>()
+
+    func deliver(_ message: String) -> BridgeFailure? {
+        guard let envelope = try? BridgeCodec.decodeEnvelope(message), envelope.op == .request, let id = envelope.id,
+            let runtime = runtime.value, let body = try? BridgeCodec.value(SecureItem.found(value: Data("s".utf8).base64EncodedString())),
+            let reply = try? BridgeCodec.text(Envelope(op: .reply, handle: envelope.handle, id: id, body: body))
+        else { return nil }
+        _ = runtime.post(reply)
+        return nil
+    }
 }

@@ -10,7 +10,9 @@ import SubstrateDevice
 ///
 /// `SessionStorage` is synchronous, so a call blocks its thread until Kotlin
 /// answers, which it does off the main thread: never call it on Android's
-/// main thread.
+/// main thread. The answer wakes it from the thread that delivers it
+/// (DeviceChannel.callBlocking), so callers blocked on Swift's executors
+/// never wait for one of those executors to come free.
 public struct BridgeSecureStore: SessionStorage {
     public let channel: DeviceChannel
     /// The store's name: one DataStore file and one keyset per name.
@@ -53,35 +55,8 @@ public struct BridgeSecureStore: SessionStorage {
     }
 
     private func wait<Answer: Decodable & Sendable>(_ request: DeviceRequest, as _: Answer.Type) -> Result<Answer, Error> {
-        let box = ResultBox<Answer>()
-        let task = Task.detached { [channel] in
-            do {
-                box.set(.success(try await channel.call(request, as: Answer.self)))
-            } catch {
-                box.set(.failure(error))
-            }
+        channel.callBlocking(request, timeout: timeout).flatMap { body in
+            Result { try BridgeCodec.decode(Answer.self, from: body) }
         }
-        guard box.wait(timeout: timeout) else {
-            task.cancel()
-            return .failure(BridgeFailure(.unavailable, "the secure store did not answer in time"))
-        }
-        return box.result ?? .failure(BridgeFailure(.unavailable, "the secure store did not answer"))
     }
-}
-
-private final class ResultBox<Value: Sendable>: @unchecked Sendable {
-    private let semaphore = DispatchSemaphore(value: 0)
-    private let lock = NSLock()
-    private var value: Result<Value, Error>?
-
-    func set(_ result: Result<Value, Error>) {
-        lock.withLock { value = result }
-        semaphore.signal()
-    }
-
-    func wait(timeout: TimeInterval) -> Bool {
-        semaphore.wait(timeout: .now() + timeout) == .success
-    }
-
-    var result: Result<Value, Error>? { lock.withLock { value } }
 }

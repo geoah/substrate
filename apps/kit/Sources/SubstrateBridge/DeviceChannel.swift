@@ -40,6 +40,32 @@ public final class DeviceChannel: Sendable {
         }
     }
 
+    /// One answer, waited for on the calling thread, for a caller that
+    /// cannot suspend (a `SessionStorage` is synchronous). The thread that
+    /// answers the call wakes the caller, and the request leaves on the
+    /// handle's own queue, so the wait needs no thread of Swift's executors:
+    /// a few callers blocked on those would otherwise leave none for the
+    /// answers, and every wait would run out its time. Past `timeout` the
+    /// call is cancelled on both sides.
+    public func callBlocking(_ request: DeviceRequest, timeout: TimeInterval) -> Result<JSONValue, Error> {
+        let id = calls.nextID()
+        let message: String
+        do {
+            message = try BridgeCodec.encode(op: .request, handle: handle, id: id, body: request)
+        } catch {
+            return .failure(error)
+        }
+        let box = AnswerBox()
+        calls.waitBlocking(id, handle: handle, service: request.service) { box.set($0) }
+        if !outbox.enqueue(message, onFailure: { [calls] in _ = calls.finish(id, failure: $0) }) {
+            calls.cancel(id, "the handle is closed")
+        }
+        if !box.wait(timeout: timeout) {
+            cancel(id, "the caller stopped waiting")
+        }
+        return box.result ?? .failure(BridgeFailure(.unavailable, "call \(id) was not answered in time"))
+    }
+
     /// A chunked answer: values in order, one `chunk` each, until Kotlin
     /// ends it. At most `capacity` wait to be read: past that the answer
     /// fails with `overflow` and Kotlin is told to stop, never a value
@@ -71,4 +97,27 @@ public final class DeviceChannel: Sendable {
             outbox.enqueue(BridgeCodec.encode(op: .cancel, handle: handle, id: id), forced: true, onFailure: { _ in })
         }
     }
+}
+
+/// The one answer a blocking call waits for, set from whichever thread
+/// answers it.
+private final class AnswerBox: @unchecked Sendable {
+    private let semaphore = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var value: Result<JSONValue, Error>?
+
+    func set(_ result: Result<JSONValue, Error>) {
+        let first = lock.withLock { () -> Bool in
+            guard value == nil else { return false }
+            value = result
+            return true
+        }
+        if first { semaphore.signal() }
+    }
+
+    func wait(timeout: TimeInterval) -> Bool {
+        semaphore.wait(timeout: .now() + timeout) == .success
+    }
+
+    var result: Result<JSONValue, Error>? { lock.withLock { value } }
 }

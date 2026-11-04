@@ -9,8 +9,14 @@ import SubstrateCore
 final class CallTable: @unchecked Sendable {
     typealias Chunks = AsyncThrowingStream<JSONValue, Error>
 
+    typealias Answer = @Sendable (Result<JSONValue, Error>) -> Void
+
     private enum Entry {
         case call(CheckedContinuation<JSONValue, Error>)
+        /// A caller blocked on its thread (DeviceChannel.callBlocking):
+        /// answered on whichever thread answers the call, so no task has to
+        /// run for it to wake.
+        case blocking(Answer)
         case chunks(Chunks.Continuation, next: Int)
     }
 
@@ -43,15 +49,25 @@ final class CallTable: @unchecked Sendable {
         lock.withLock { waiting[id] = Waiting(entry: .chunks(continuation, next: 0), handle: handle, service: service) }
     }
 
+    func waitBlocking(_ id: Int, handle: Handle?, service: DeviceService, _ answer: @escaping Answer) {
+        lock.withLock { waiting[id] = Waiting(entry: .blocking(answer), handle: handle, service: service) }
+    }
+
     /// A reply: the call's answer. A reply to a chunked answer is refused.
     func reply(_ id: Int, _ body: JSONValue?) -> BridgeFailure? {
-        let continuation: CheckedContinuation<JSONValue, Error>? = lock.withLock {
-            guard case let .call(continuation)? = waiting[id]?.entry else { return nil }
-            waiting[id] = nil
-            return continuation
+        let entry: Entry? = lock.withLock {
+            switch waiting[id]?.entry {
+            case .call?, .blocking?:
+                return waiting.removeValue(forKey: id)?.entry
+            case .chunks?, nil:
+                return nil
+            }
         }
-        guard let continuation else { return BridgeFailure(.unknownCall, "a reply for call \(id), which nothing waits on") }
-        continuation.resume(returning: body ?? .null)
+        switch entry {
+        case let .call(continuation)?: continuation.resume(returning: body ?? .null)
+        case let .blocking(answer)?: answer(.success(body ?? .null))
+        case .chunks?, nil: return BridgeFailure(.unknownCall, "a reply for call \(id), which nothing waits on")
+        }
         return nil
     }
 
@@ -99,6 +115,8 @@ final class CallTable: @unchecked Sendable {
             return BridgeFailure(.unknownCall, "an end for call \(id), which nothing waits on")
         case let .call(continuation)?:
             continuation.resume(throwing: failure ?? BridgeFailure(.malformed, "call \(id) was ended, not answered"))
+        case let .blocking(answer)?:
+            answer(.failure(failure ?? BridgeFailure(.malformed, "call \(id) was ended, not answered")))
         case let .chunks(continuation, _)?:
             if let failure { continuation.finish(throwing: failure) } else { continuation.finish() }
         }
@@ -114,6 +132,7 @@ final class CallTable: @unchecked Sendable {
         switch entry {
         case nil: return false
         case let .call(continuation)?: continuation.resume(throwing: failure)
+        case let .blocking(answer)?: answer(.failure(failure))
         case let .chunks(continuation, _)?: continuation.finish(throwing: failure)
         }
         return true
