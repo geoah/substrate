@@ -1,3 +1,4 @@
+import WorkoutsCore
 import SwiftUI
 import UIKit
 
