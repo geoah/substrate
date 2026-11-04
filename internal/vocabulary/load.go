@@ -1601,11 +1601,28 @@ func bindCapability(typeIdent, capName, variant, cols string, c *Trait) (*TraitB
 		}
 		props = v
 	default:
-		if variant != "" {
-			errf("%s: %s declares no variants", where, capName)
-			return nil, nil, problems
-		}
 		props = c.Properties
+		if variant != "" {
+			// A trait without variants reads `(prop: kindProp)` as a rename
+			// of the one contract property this kind meets under another name
+			// (decision 0226). The engine reads core's other traits by name,
+			// so those refuse it.
+			to := strings.TrimSpace(cols)
+			_, contracted := props[variant]
+			switch {
+			case KindPackage(c.Identity()) == PackageCore && c.Identity() != TraitStatefulCore:
+				errf("%s: %s declares no variants, and the engine reads its properties by name, so a binding renames none", where, capName)
+				return nil, nil, problems
+			case !contracted || isHot(variant):
+				errf("%s: %s contracts no property %q a binding renames", where, capName, variant)
+				return nil, nil, problems
+			case to == "" || strings.Contains(to, ",") || !ValidCamel(to):
+				errf("%s: %s(%s: <property>) names the one property of this kind that meets %s", where, capName, variant, variant)
+				return nil, nil, problems
+			}
+			b.Renames = map[string]string{variant: to}
+			cols = ""
+		}
 	}
 	// Hot properties map onto record columns; everything else must be an
 	// ordinary declared property of the same type.
@@ -1637,8 +1654,12 @@ func bindCapability(typeIdent, capName, variant, cols string, c *Trait) (*TraitB
 			continue
 		}
 		// Non-hot trait properties are a type contract on the type's
-		// own declarations.
-		contracts = append(contracts, pendingCapProp{typeIdent, capName, c.Identity(), pname, props[pname]})
+		// own declarations, under the binding's rename where it has one.
+		kindProp := pname
+		if to, renamed := b.Renames[pname]; renamed {
+			kindProp = to
+		}
+		contracts = append(contracts, pendingCapProp{typeIdent, capName, c.Identity(), pname, kindProp, props[pname]})
 	}
 	return b, contracts, problems
 }
@@ -1653,10 +1674,13 @@ func sortedNames(props map[string]Datatype) []string {
 }
 
 type pendingCapProp struct {
-	Kind     string // type identity
-	Cap      string
-	Trait    string // the trait's identity
-	Prop     string
+	Kind  string // type identity
+	Cap   string
+	Trait string // the trait's identity
+	Prop  string // the trait's contract property
+	// KindProp is the kind's property that meets Prop: Prop itself, unless
+	// the binding renamed it.
+	KindProp string
 	Datatype Datatype
 }
 
@@ -1716,6 +1740,8 @@ var machineKeys = map[string]bool{
 	// picker that stops offering a deprecated property stops offering it
 	// whether the property holds a value or a state.
 	"deprecated": true,
+	// The states that close a record (decision 0226), as on an enum.
+	"done": true, "dropped": true,
 }
 
 var transitionKeys = map[string]bool{
@@ -1795,6 +1821,67 @@ func (l *loader) parseMachine(where, name string, d map[string]any) *Machine {
 	return m
 }
 
+// parseClosing reads `done:` and `dropped:`, the values of an enum or the
+// states of a machine that close a record (decision 0226). declared is the
+// property's own values, nil where it holds none: there, either key is
+// refused. Each entry names a declared value, no value is listed twice, and
+// at least one is left open. The lists say when a RECORD is closed, so they
+// sit on one value of the record's own: a field, link data, a list or a map
+// would carry them where nothing reads them.
+func (l *loader) parseClosing(where string, d map[string]any, p *Property, declared []string, depth int) {
+	_, hasDone := d["done"]
+	_, hasDropped := d["dropped"]
+	if !hasDone && !hasDropped {
+		return
+	}
+	switch {
+	case declared == nil:
+		l.errf("%s: done and dropped name an enum's values or a state machine's states", where)
+		return
+	case depth > 1:
+		l.errf("%s: done and dropped close a record, so they sit on a kind's own property, never an object field or link data", where)
+		return
+	case p.Repeated || p.Keyed:
+		l.errf("%s: done and dropped close a record by its one status: drop repeated/keyed or drop the lists", where)
+		return
+	}
+	listedIn := map[string]string{}
+	read := func(key string, present bool) []string {
+		if !present {
+			return nil
+		}
+		raw, ok := d[key].([]any)
+		if !ok {
+			l.errf("%s.%s: a list of the property's own values", where, key)
+			return nil
+		}
+		var out []string
+		for _, v := range raw {
+			s := fmt.Sprint(v)
+			switch {
+			case !slices.Contains(declared, s):
+				l.errf("%s.%s: %q is not one of the property's values", where, key, s)
+			case listedIn[s] != "":
+				l.errf("%s.%s: %q is already listed in %s", where, key, s, listedIn[s])
+			default:
+				listedIn[s] = key
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	p.Done = read("done", hasDone)
+	p.Dropped = read("dropped", hasDropped)
+	if len(listedIn) >= len(declared) {
+		l.errf("%s: done and dropped leave no value open", where)
+	}
+	// A creation that names no state lands in the initial one, and a record
+	// nobody placed is not over before it starts.
+	if p.Machine != nil && listedIn[p.Machine.Initial] != "" {
+		l.errf("%s: the initial state %q is listed in %s: a record starts open", where, p.Machine.Initial, listedIn[p.Machine.Initial])
+	}
+}
+
 // propKeys is the closed key set of an ordinary property. `ref` is gone with
 // the kind it constrained: `type: reference` is the one way to point at
 // another record. `fields` is only meaningful on `type: object` and gets a
@@ -1802,6 +1889,9 @@ func (l *loader) parseMachine(where, name string, d map[string]any) *Machine {
 var propKeys = map[string]bool{
 	"type": true, "repeated": true, "embed": true, "fts": true, "values": true,
 	"pattern": true, "min": true, "max": true,
+	// An enum's values that close a record, done and dropped (decision 0226);
+	// refused on every other datatype (parseClosing).
+	"done": true, "dropped": true,
 	"description": true, "base": true,
 	"fields": true, "writer": true, "displayName": true,
 	// A quantity's own four (decision 0186): the anchor unit of the
@@ -2035,6 +2125,7 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 		if p.Machine == nil {
 			return nil
 		}
+		l.parseClosing(where, d, p, p.Machine.States, depth)
 		return p
 	}
 	// An object property declares its fields inline: its own key
@@ -2211,6 +2302,14 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	if p.Datatype == DatatypeEnum && len(p.Values) == 0 {
 		l.errf("%s: enum needs values", where)
 	}
+	var values []string
+	if p.Datatype == DatatypeEnum {
+		values = make([]string, 0, len(p.Values))
+		for _, v := range p.Values {
+			values = append(values, v.Value)
+		}
+	}
+	l.parseClosing(where, d, p, values, depth)
 	// A money value is an object, so a pattern would match nothing and a value
 	// set would name strings it never holds. `min`/`max` apply: they bound the
 	// amount the value denotes.
@@ -2964,15 +3063,24 @@ func (r *Registry) resolvePackage(g *Package) []string {
 			continue
 		}
 		where := DocKind + " " + p.Kind
-		prop, ok := t.Props[p.Prop]
+		kindProp := p.KindProp
+		if kindProp == "" {
+			kindProp = p.Prop
+		}
+		prop, ok := t.Props[kindProp]
 		if !ok {
-			problems = append(problems, fmt.Sprintf("%s: trait %s requires property %s: %s",
-				where, p.Cap, p.Prop, p.Datatype))
+			if kindProp != p.Prop {
+				problems = append(problems, fmt.Sprintf("%s: trait %s requires property %s, renamed to %s: %s",
+					where, p.Cap, p.Prop, kindProp, p.Datatype))
+			} else {
+				problems = append(problems, fmt.Sprintf("%s: trait %s requires property %s: %s",
+					where, p.Cap, p.Prop, p.Datatype))
+			}
 			continue
 		}
 		if !contractDatatypeMet(p.Datatype, prop.Datatype) {
 			problems = append(problems, fmt.Sprintf("%s: data.properties.%s: trait %s requires type %s, got %s",
-				where, p.Prop, p.Cap, p.Datatype, prop.Datatype))
+				where, kindProp, p.Cap, p.Datatype, prop.Datatype))
 		}
 		problems = append(problems, contractShapeProblems(where, p.Prop, p.Trait, prop)...)
 	}

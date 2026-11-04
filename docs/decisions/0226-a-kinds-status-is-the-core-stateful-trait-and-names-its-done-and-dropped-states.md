@@ -47,18 +47,38 @@ The rules this binds:
 
 - **The trait contracts `status: enum`, and a state machine meets it.** A
   state machine is an enum with moves, as an object meets a `json`
-  contract.
+  contract. The contract is about reading. The two are still written and
+  stored their own ways:
+  - An app moves a machine's state by a patch along one of its
+    transitions, never a put, so it reads the machine to offer the moves.
+  - An enum takes any of its values.
+  - A machine's state is stored apart from the record's other properties,
+    so a filter over several kinds reads each kind's status where that
+    kind stores it.
+- **One status property.** An app reads one value. A kind whose status
+  spans two properties has its sync fill one enum, and binds that. Two
+  examples: GitHub's `state` beside its `stateReason`, and Linear's
+  reference to a workflow state, whose type says what kind of state it is.
 - **A binding may rename the property it contracts**:
   `stateful(status: state)` binds a kind whose status is called `state`.
   One property, for a trait without variants that the engine does not read
   by name: core's other traits refuse it. The time properties' remap
-  (`temporal(point: dueAt)`) is unchanged.
+  (`temporal(point: dueAt)`) is unchanged. Both use one spelling. After the
+  colon is the kind's property that receives the trait's. Before it is a
+  variant where the trait has variants, and the contract property where it
+  has none, and the loader knows which from the trait.
 - **`done:` and `dropped:` on an enum or a state property** list its own
-  values or states. Each names a declared one, the two lists do not share
-  one, and at least one is left out of both. Every state in neither is
-  open. A kind that binds `stateful` lists at least one done state, so no
-  app guesses. The lists change no stored record, so editing them is not a
-  narrowing.
+  values or states. The rules:
+  - Each names a declared one, so a value renamed by `renamedFrom` is
+    listed under its new spelling.
+  - The two lists do not share one, and at least one is left out of both.
+  - A machine's initial state is in neither.
+  - They sit on a kind's own property that holds one value. A field, link
+    data, a list or a map refuses them.
+
+  Every state in neither list is open. A kind that binds `stateful` lists
+  at least one done state, so no app guesses. The lists change no stored
+  record, so editing them is not a narrowing.
 
 ### Consequences
 
@@ -71,8 +91,11 @@ The rules this binds:
   state's type.
 - Bad, because a renamed status is filtered under the kind's own name: a
   query across implementors reads each binding to find it.
+- Bad, because an app writes a machine and an enum differently, and a
+  machine's transitions may refuse a move the trait alone does not show.
 - Bad, because a status coarser than its reasons lists them coarse: a
-  GitHub issue closed as not planned reads as done.
+  GitHub issue closed as not planned reads as done until its sync fills a
+  finer status from `stateReason`.
 - Bad, because three dialect additions land at once, each an upgrade of
   every binary that reads the closures
   ([0020](0020-dialect-keys-are-reserved-not-tolerated.md)), and every
@@ -80,11 +103,16 @@ The rules this binds:
 
 ### Confirmation
 
-The vocabulary tests hold each rule: an enum and a state machine meet the
-contract, the rename and its refusals, `done:` and `dropped:` against their
-values, and a binding without a done state refused. `mise run kinds:check`
-holds the shipped bindings (the tasks sample, GitHub's issue) to their
-versions.
+The vocabulary tests hold each rule:
+
+- an enum and a state machine meet the contract;
+- the rename and its refusals;
+- `done:` and `dropped:` checked against their values and the initial
+  state, and refused on a field, link data or a list;
+- a binding without a done state is refused.
+
+`mise run kinds:check` holds the shipped bindings (the tasks sample,
+GitHub's issue) to their versions.
 
 ## More Information
 

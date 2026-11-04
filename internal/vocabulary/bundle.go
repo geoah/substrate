@@ -88,6 +88,18 @@ const (
 	TraitRevisedCore = PackageCore + "/" + TraitRevised
 )
 
+// The stateful trait (decision 0226): a kind whose status, an enum or a
+// state machine, names the values that close a record (`done` and
+// `dropped`); every other one is open. It is the one core trait a binding
+// may rename (`stateful(status: state)`), since no engine path reads its
+// property by name.
+const (
+	TraitStateful     = "stateful"
+	TraitStatefulCore = PackageCore + "/" + TraitStateful
+	// StatefulStatus is the property the trait contracts.
+	StatefulStatus = "status"
+)
+
 // The traits beside `observed` that contract what the engine and the console
 // read from the records an observed value points at, and from a lab result
 // (decision 0154): `metric` on the catalogue entry a value's `metric`

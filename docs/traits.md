@@ -92,7 +92,11 @@ Two refinements exist, both introduced by core's `temporal` and covered in
 (`temporal` is a `point` or a `range`, bound as `temporal(range)`), and a
 binding may **rename** where a property lands (`temporal(point: dueAt)` is
 how a task's moment is its due date while the task still answers every
-temporal query).
+temporal query). A trait without variants takes a rename of the one property
+it contracts, as [`stateful(status: state)`](#a-kinds-status-stateful) binds
+a kind whose status is called `state`; core's other traits refuse it, since
+the engine reads their properties by name
+([record 0226](decisions/0226-a-kinds-status-is-the-core-stateful-trait-and-names-its-done-and-dropped-states.md)).
 
 ## Declaring your own
 
@@ -313,3 +317,44 @@ opt into twice:
   ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).
   [Connections](bundles.md#connections) has the worked example and the
   migration from a bundle's own status strings.
+
+## A kind's status: `stateful`
+
+Core's `stateful` is for a kind whose records move through states (a task,
+an issue, a chore), so an app works over all of them at once
+([record 0226](decisions/0226-a-kinds-status-is-the-core-stateful-trait-and-names-its-done-and-dropped-states.md)).
+It contracts one property, `status: enum`, which an enum or a state machine
+meets, and the status lists the values that close a record in `done:` and
+`dropped:` ([the reserved keys](vocabulary.md#the-reserved-keys)); every
+other value is open. A binding whose status lists no done value is refused,
+so no app guesses.
+
+```yaml
+traits:
+  - "substrate.reamde.dev/core/stateful(status: state)"
+properties:
+  state:
+    type: enum
+    values: [open, closed]
+    done:
+      - closed
+```
+
+The status may go by another name: `stateful(status: state)` binds a kind
+whose status is `state`, as GitHub's issue does. To work over every
+implementor, an app:
+
+- reads each implementor's declaration for the property, its values and
+  the two lists;
+- reads a kind's open records as those whose status is in neither list;
+- filters each implementor on its own, under that kind's name for the
+  status. A renamed status is not called `status`, and a machine's state is
+  stored apart from an enum's value;
+- writes an enum's status as any of its values;
+- moves a machine's status only by a patch along one of its transitions,
+  which a put never makes, so it offers a record the moves its current
+  state has.
+
+An app's [trait scope](apps.md#scopes),
+`write:implements(substrate.reamde.dev/core/stateful)`, reaches every kind
+that binds it.

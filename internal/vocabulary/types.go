@@ -276,6 +276,13 @@ type Property struct {
 	// Machine is the state machine a `type: state` property declares; nil
 	// for every other kind.
 	Machine *Machine
+	// Done and Dropped are the values of an enum, or the states of a state
+	// property, that close a record: done when the work was done, dropped
+	// when it was not (decision 0226). Every other value is open. Each names
+	// a declared value, the two lists share none, and one value at least is
+	// in neither.
+	Done    []string
+	Dropped []string
 	// MustExist requires the referent RECORD to exist when the value is written
 	// (a tombstoned row counts as existing); a value naming no record is
 	// refused with the same not-found any addressed read gives. Absent, the
@@ -659,6 +666,10 @@ type TraitBinding struct {
 	// Columns maps the trait's property name to the declared hot
 	// property (`at`, `endsAt`, `dueAt`) it occupies on this type.
 	Columns map[string]string
+	// Renames maps the trait's contract property to the kind's own property
+	// that meets it, where the binding renamed it (`stateful(status: state)`,
+	// decision 0226). A contract property not here is met under its own name.
+	Renames map[string]string
 }
 
 // Kind is one declared kind of thing.
