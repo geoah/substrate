@@ -1,7 +1,8 @@
 ---
-status: accepted
+status: superseded
 date: 2026-09-10
 decision-makers: George Antoniadis
+superseded-by: 0227
 ---
 
 # 0075. v1 ships the `fs` blob backend alone, and `SUBSTRATE_BLOB_STORE` is gone

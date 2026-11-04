@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 
+	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -37,6 +38,12 @@ type Operator interface {
 	// ReindexObserved queues the background re-derivation of a repository's
 	// observed index (observedreindex.go).
 	ReindexObserved(ctx context.Context, repository string) (ReindexReport, error)
+	// MigrateBlobs copies a repository's blob bytes from one store to
+	// another, BlobStatus compares the two, and PruneBlobs deletes what the
+	// kept store is proven to hold from the one being left (blobmigrate.go).
+	MigrateBlobs(ctx context.Context, repository string, from, to blobbytes.Backend, opts BlobMigrateOptions) (BlobMigrateReport, error)
+	BlobStatus(ctx context.Context, repository string, from, to blobbytes.Backend, deep bool) (BlobStatusReport, error)
+	PruneBlobs(ctx context.Context, repository string, from, kept blobbytes.Backend, opts BlobPruneOptions) (BlobPruneReport, error)
 }
 
 var _ Operator = (*service)(nil)

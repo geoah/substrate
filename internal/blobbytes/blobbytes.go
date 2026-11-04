@@ -2,10 +2,12 @@
 // blob manifest is a record in Postgres and stays the truth; only the bytes
 // live here.
 //
-// There is one backend, `fs`: the bytes sit at
+// There are two backends. `fs`, the default, keeps the bytes at
 // <root>/repositories/<repository>/blobs/<digest>, inside the repository
 // directory that is the backup unit, so one copy of the directory is a whole
-// backup. Nothing selects anything else and there is no variable to set.
+// backup. `s3` keeps them in a bucket under the same relative path, for a
+// deployment whose attachments do not belong on its disk; the bucket is then
+// the backup's second half. SUBSTRATE_BLOB_STORE picks one.
 //
 // A Store is bound to ONE repository before a caller can reach it. The
 // repository is half of every key and no method takes one, so a caller holding
@@ -27,9 +29,13 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// BackendFS names the one backend. It is what a snapshot and an export record
-// in `snapshot.json` as the layout their blob bytes are written for.
+// BackendFS names the filesystem backend. It is also what a snapshot and an
+// export record in `snapshot.json` as the layout their blob bytes are written
+// for, whichever backend they were read out of: a copy is always fs-shaped.
 const BackendFS = "fs"
+
+// BackendS3 names the bucket backend.
+const BackendS3 = "s3"
 
 // ErrNotStored is what a read or an open reports when the store holds no bytes
 // under that digest. The engine maps it to a not-found.
@@ -110,9 +116,7 @@ type Store interface {
 }
 
 // Backend is the byte store before it is bound to a repository. One Backend
-// serves every repository the process opens. *FS is the only implementation;
-// the interface stays because the engine takes it as an option and a test
-// substitutes a store that refuses.
+// serves every repository the process opens: *FS or *S3.
 type Backend interface {
 	// Repository binds the backend to one repository.
 	Repository(repository string) (Store, error)

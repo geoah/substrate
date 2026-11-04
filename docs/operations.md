@@ -169,6 +169,15 @@ boot.
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration asks for no code) | Gates registration. **Set it before anyone else can reach the port.** See below.                            |
 | `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
+| `SUBSTRATE_BLOB_STORE`         | `fs`                                   | Where blob bytes live: `fs`, under the data root beside each repository's changelog, or `s3`, in the bucket the `SUBSTRATE_BLOB_S3_*` variables name. Any other value refuses the boot. See [the blob store](#the-blob-store) and [blobs in a bucket](#blobs-in-a-bucket). |
+| `SUBSTRATE_BLOB_S3_ENDPOINT`   | unset                                  | The S3 endpoint URL, scheme included: an S3-compatible server or a region endpoint (`https://s3.us-east-1.amazonaws.com`). Required when the store is `s3`, and read by `repository blobs` whichever store is live. |
+| `SUBSTRATE_BLOB_S3_BUCKET`     | unset                                  | The bucket. A general-purpose one, private, made beforehand: the server never creates it. Required with `s3`. |
+| `SUBSTRATE_BLOB_S3_REGION`     | `us-east-1`                            | The region requests are signed for. |
+| `SUBSTRATE_BLOB_S3_ACCESS_KEY_ID` | unset                               | The access key. It needs list, get, put and delete on the bucket under the prefix, and nothing else. Required with `s3`. |
+| `SUBSTRATE_BLOB_S3_SECRET_ACCESS_KEY` | unset                           | The access key's secret. Required with `s3`. |
+| `SUBSTRATE_BLOB_S3_SESSION_TOKEN` | unset                               | A session token, for temporary credentials only. |
+| `SUBSTRATE_BLOB_S3_PREFIX`     | unset                                  | A key prefix, for a bucket this substrate shares with something else: objects are `<prefix>/repositories/<authority>/blobs/<digest>`. Letters, digits, `_`, `.`, `-` and `/`. Never shared with another substrate. |
+| `SUBSTRATE_BLOB_S3_PATH_STYLE` | `true`                                 | Address the bucket as a path segment (`endpoint/bucket/key`), which self-hosted S3-compatible servers want and AWS accepts; `false` for the bucket-as-subdomain form. |
 | `SUBSTRATE_REPOSITORY_CONNECTIONS` | `16`                            | The Postgres connections every repository of the process shares, however many repositories it has opened. One repository takes at most half of them, and never more than eight, so two busy repositories cannot take the whole pool. A process holds at most this cap plus 12 more: 4 for the admin pool, 5 for the maintenance pool, 2 for repository migrations running at once (each dials a connection of its own) and 1 for a commit-time catch-up after a foreign writer. The default therefore holds a process to 16 + 12 = 28. Keep the cap plus 12, for every process on the database, under the cluster's `max_connections`. At least 4; a lower value refuses the boot, naming the variable. |
 | `SUBSTRATE_DIGEST_BYTES_PER_SECOND` | `8388608`                        | The most bytes per second the process hashes of its repositories' finished changelog segments behind their opens, over every repository together ([what happens at boot](#what-happens-at-boot)). Hashing is one core busy for as long as the bytes last, so the default, 8 MiB, keeps it under half a core on a four-core arm64 box, where a 27 GB history takes about an hour; the digests also pause while any function or agent runs, whatever the cap, for at most 30 s before each megabyte. `0` removes the cap; a negative value, or one above `0` and below `65536`, refuses the boot, naming the variable. |
 | `SUBSTRATE_CONVERSION_CEILING` | `10000`                                | The most live records one declaration change (a vocabulary apply, a provider upgrade, the boot upgrade) may rewrite in its transaction ([vocabulary evolution](vocabulary.md#backfilling-and-remapping)). A plan above it is refused and the previews list the refusal; `0` removes the ceiling. |
@@ -323,15 +332,12 @@ Three consequences an operator meets:
 
 A blob is two halves: a **manifest**, which is an ordinary record keyed by the
 content digest, and the **bytes**. The manifest is always in Postgres and is
-always the truth. The bytes are always at
+always the truth. By default (`SUBSTRATE_BLOB_STORE=fs`) the bytes are at
 `$SUBSTRATE_DATA_ROOT/repositories/<authority>/blobs/<digest>`, inside the
 repository directory beside the changelog, so one copy of the directory is a
-whole backup.
-
-There is nothing to configure: one store, no variable
-([0075](decisions/0075-v1-ships-the-fs-blob-backend-alone.md)). A host that
-still sets `SUBSTRATE_BLOB_STORE`, or any `SUBSTRATE_BLOB_S3_*` variable,
-boots and ignores it, because the server reads no such variable.
+whole backup. With `s3` they are in a bucket under the same relative path
+instead ([blobs in a bucket](#blobs-in-a-bucket),
+[0227](decisions/0227-blob-bytes-may-live-in-a-bucket-and-a-migration-moves-them.md)).
 
 **Isolation is not the database's job here.** The repository is half of every
 key, and it comes from the authenticated token's repository, never from the
@@ -346,8 +352,9 @@ keeps another local account out.
 properties; a blob object is stored exactly as it arrived, and no credential
 key is involved in reading it
 ([0031](decisions/0031-blob-bytes-outside-postgres-are-stored-plaintext.md)).
-Whoever holds the directory holds every attachment in the clear. For encryption
-at rest, put it under the store: disk encryption for the data root.
+Whoever holds the directory or the bucket holds every attachment in the
+clear. For encryption at rest, put it under the store: disk encryption for the
+data root, the bucket's own server-side encryption for `s3`.
 
 **An upload becomes two steps, and a crash between them is cheap.** Outside
 Postgres the bytes cannot commit with the manifest, so the manifest is written
@@ -368,12 +375,62 @@ same message ([the API](api.md#blobs)). `repository verify` finds every
 damaged blob without waiting for a read. The digest is the file name, so the
 repair is copying that one file back from a backup.
 
-**The bytes follow the data root.** A server pointed at a data root the bytes
-are not in serves a 404 for every blob, and a 404 reads like a deletion. Move
-`<data root>/repositories/` whole, with the server stopped.
+**The bytes follow the store.** A server pointed at a data root, or a bucket,
+the bytes are not in serves a 404 for every blob, and a 404 reads like a
+deletion. Move `<data root>/repositories/` whole, with the server stopped, and
+move bytes between the data root and a bucket only with `repository blobs`.
 
 The 64 MiB cap on one upload and the absence of range reads are the contract,
 not the store.
+
+### Blobs in a bucket
+
+`SUBSTRATE_BLOB_STORE=s3` keeps the bytes in an S3-compatible bucket, for a
+deployment whose attachments do not belong on the disk its data root is on.
+The object key is the fs path relative to the data root, under the optional
+prefix: `<prefix>/repositories/<authority>/blobs/<digest>`. The boot lists the
+bucket once and refuses, naming it, when it cannot.
+
+- **The bucket is private and general-purpose.** The orphan sweep and the
+  migration walk the listing in key order with a start-after cursor, which an
+  S3 directory bucket does not give. The key needs list, get, put and delete
+  under the prefix; without list, a read of an absent object answers 403 and
+  reads as an error rather than a missing blob.
+- **One prefix per substrate.** The orphan sweep deletes objects no manifest
+  of this substrate names, and `repository blobs prune` deletes what the other
+  store holds: two substrates under one prefix delete each other's bytes.
+- **The data root alone is no longer a backup.** The bucket is the second
+  half, and copies of the two taken at different moments disagree. A
+  [snapshot](#backups) still holds both: it reads every blob out of the bucket
+  into the copy, so it needs disk the size of the repository's attachments
+  wherever it is written.
+- **A repository directory on an `s3` host holds no bytes.** The boot refuses
+  while any directory's `blobs/` holds an object, and names every one: a
+  directory restored from a snapshot, or one never migrated, would otherwise
+  serve a `stored` manifest the bucket has no bytes for.
+
+**Moving a substrate onto a bucket**, or back, is `repository blobs`, with the
+server stopped. Both stores come from the server's own variables, so set
+`SUBSTRATE_BLOB_S3_*` before the switch:
+
+```
+substratectl repository blobs migrate --all --to s3        # copy, hash-checked both sides; re-runnable
+substratectl repository blobs status  --all --to s3        # exits 0 once every blob is there
+substratectl repository blobs prune   --all --from fs      # delete local copies the bucket is proven to hold
+# set SUBSTRATE_BLOB_STORE=s3 and start the server
+```
+
+`migrate` reads and hashes every source object, writes it, and reads and hashes
+it again at the destination. It leaves an object the destination already holds
+at the same size, so a second run resumes an interrupted one; `--deep` hashes
+those too and rewrites a damaged copy. It never deletes. `prune` deletes an
+object only after reading the other store's copy and hashing it, right before
+the delete: an object the other store lacks is kept and reported, a copy that
+does not hash stops the prune for that repository, and `--from` the live store
+is refused. Both take each repository's writer lease and lock, as a snapshot
+does, so they refuse beside a running server. `--to fs` and `--from s3` run
+it the other way. **Restoring a snapshot onto an `s3` host** is the same:
+copy it under the data root, then `migrate`, `prune` and start.
 
 ## The function sandbox
 
@@ -1223,7 +1280,10 @@ changelog, its sealed store and (on the `fs` blob store) its blob bytes
 database is needed to bring it back: the `changelog` table is an index of the
 files, the `records` table is their fold, and both are rebuilt on import. A
 copy of the directory and the key that opens its sealed files is a complete
-backup. A write is acknowledged only once its changelog lines and sealed files
+backup. On a bucket (`SUBSTRATE_BLOB_STORE=s3`) the bytes are not in the
+directory: the backup is the data root, the bucket and the key, and a
+[snapshot](#backups) is the one copy that holds all of a repository at one
+point ([blobs in a bucket](#blobs-in-a-bucket)). A write is acknowledged only once its changelog lines and sealed files
 are on disk, so a copy taken after a response holds every write the server
 acknowledged; a write the directory could not take is refused and rolled back
 ([0062](decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)).

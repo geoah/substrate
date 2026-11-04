@@ -70,8 +70,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -232,6 +234,9 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 		return fmt.Errorf("substrate/engine: boot check: a directory under %s/ is not named by a repository authority; move it out of the data root: %w",
 			changelogfile.RepositoriesDir, err)
 	}
+	if err := s.refuseLocalBlobs(ctx, dirs); err != nil {
+		return err
+	}
 	hasRow := make(map[string]bool, len(repos))
 	for _, repo := range repos {
 		hasRow[repo.ID] = true
@@ -267,6 +272,48 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 		s.logReconcile(out)
 	}
 	return nil
+}
+
+// ErrLocalBlobsBesideExternalStore is the boot check's refusal when the blob
+// store is a bucket and a repository directory still holds blob bytes of its
+// own: a directory restored from a snapshot, or one whose bytes were never
+// migrated. Serving it would answer a stored manifest from a store that does
+// not have the bytes.
+var ErrLocalBlobsBesideExternalStore = errors.New("substrate/engine: a repository directory holds blob bytes and the blob store is outside the data root")
+
+// refuseLocalBlobs is the boot check's first step under an external blob
+// store (WithBlobsOutsideDataRoot), before any row is imported or any lease
+// taken. It costs one listing of each directory's blobs/, which is empty or
+// absent on a migrated host. Every directory that holds bytes is named, so
+// one refusal is the whole list to migrate.
+func (s *service) refuseLocalBlobs(ctx context.Context, dirs []string) error {
+	if !s.blobsExternal || len(dirs) == 0 {
+		return nil
+	}
+	local, err := blobbytes.NewFS(s.dataRoot)
+	if err != nil {
+		return err
+	}
+	var holding []string
+	for _, id := range dirs {
+		store, err := local.Repository(id)
+		if err != nil {
+			return err
+		}
+		objects, err := store.List(ctx, "", 1)
+		if err != nil {
+			return fmt.Errorf("substrate/engine: boot check: list %s's local blobs: %w", id, err)
+		}
+		if len(objects) > 0 {
+			holding = append(holding, id)
+		}
+	}
+	if len(holding) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %s. With the server stopped, copy them into the bucket and remove the local copies: "+
+		"`substratectl repository blobs migrate --all --to s3`, then `substratectl repository blobs prune --all --from fs`",
+		ErrLocalBlobsBesideExternalStore, strings.Join(holding, ", "))
 }
 
 // reconcileInterrupted is the action a boot check cut short by its context

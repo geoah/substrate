@@ -63,6 +63,9 @@ type Config struct {
 	// Data is the data root every repository directory lives under. Its own
 	// type, because the operator hat loads it without the rest (LoadData).
 	Data Data
+	// Blobs is where blob bytes live: the data root (the default) or a
+	// bucket. Its own type for the same reason as Data (LoadBlobs).
+	Blobs Blobs
 	// InviteCode gates the ONE door into a fresh substrate: registering
 	// creates a repository and its user, and with a code set the door
 	// admits only a request that presents it. UNSET, THE DOOR READS NO CODE
@@ -230,6 +233,9 @@ func (c Config) Validate() error {
 		return fmt.Errorf("SUBSTRATE_OUTSIDE_CODE must be allow or refuse")
 	}
 	if err := c.Data.Validate(); err != nil {
+		return err
+	}
+	if err := c.Blobs.Validate(); err != nil {
 		return err
 	}
 	if c.RepositoryConnections < MinRepositoryConnections {

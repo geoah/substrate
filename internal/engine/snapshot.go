@@ -51,8 +51,8 @@ type SnapshotReport struct {
 	// under the DEK before the copy was taken and again in the copy.
 	SealedFiles int `json:"sealedFiles"`
 	// BlobStore is the layout the copy's blob bytes are written for, which is
-	// the one backend. Blobs and BlobBytes are the `stored` manifests' bytes
-	// copied into the directory.
+	// fs whichever store they were read out of. Blobs and BlobBytes are the
+	// `stored` manifests' bytes copied into the directory.
 	BlobStore string `json:"blobStore"`
 	Blobs     int    `json:"blobs"`
 	BlobBytes int64  `json:"blobBytes"`

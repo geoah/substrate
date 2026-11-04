@@ -53,6 +53,9 @@ type options struct {
 	oauthHTTP             *http.Client
 	credKey               string
 	dataRoot              string
+	// blobsExternal says the blob store is outside the data root
+	// (WithBlobsOutsideDataRoot).
+	blobsExternal bool
 	// segmentBytes is the changelog segment size (WithChangelogSegmentBytes).
 	segmentBytes int64
 	// repositoryConns caps the pool every repository shares
@@ -357,9 +360,17 @@ func WithDirectoryReadOnly() Option { return func(o *options) { o.dirReadOnly = 
 
 // WithBlobStore hands the engine the blob byte store to use, which is
 // otherwise built here: the fs backend under the data root
-// (<root>/repositories/<authority>/blobs). It exists so the operator hat and
-// the tests can pass a store rooted somewhere else.
+// (<root>/repositories/<authority>/blobs). The server and the operator hat
+// pass the configured one, a bucket included (WithBlobsOutsideDataRoot).
 func WithBlobStore(b blobbytes.Backend) Option { return func(o *options) { o.blobs = b } }
+
+// WithBlobsOutsideDataRoot says the blob store passed to WithBlobStore keeps
+// its bytes outside the data root (a bucket), so a repository directory must
+// hold none of its own. The boot check then refuses a directory whose blobs/
+// holds bytes (repodir.go): a directory restored from a snapshot, or one not
+// yet migrated, would otherwise serve a stored manifest whose bytes the
+// live store does not have. `repository blobs migrate` is the way out.
+func WithBlobsOutsideDataRoot() Option { return func(o *options) { o.blobsExternal = true } }
 
 // ErrNoDataRoot is Open's refusal when no data root was given, or the given
 // one is not an absolute path.
@@ -486,6 +497,9 @@ type service struct {
 	// dataRoot is the data root (WithDataRoot); <dataRoot>/repositories/<authority>
 	// is one repository's directory (repodir.go).
 	dataRoot string
+	// blobsExternal is WithBlobsOutsideDataRoot: the boot check refuses a
+	// repository directory that holds blob bytes.
+	blobsExternal bool
 	// instanceID names this server to a domain's `_substrate` record
 	// (instance.go, decision 0208).
 	instanceID string
@@ -820,17 +834,18 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		o.blobs = fsBlobs
 	}
 	s := &service{
-		dsn:          dsn,
-		admin:        admin,
-		base:         reg,
-		credKey:      credKey,
-		credKeyID:    hostKeyID(credKey),
-		dataRoot:     o.dataRoot,
-		instanceID:   instanceID,
-		segmentBytes: o.segmentBytes,
-		catchUpBatch: o.catchUpBatch,
-		valuesBudget: o.valuesBudget,
-		blobs:        o.blobs,
+		dsn:           dsn,
+		admin:         admin,
+		base:          reg,
+		credKey:       credKey,
+		credKeyID:     hostKeyID(credKey),
+		dataRoot:      o.dataRoot,
+		blobsExternal: o.blobsExternal,
+		instanceID:    instanceID,
+		segmentBytes:  o.segmentBytes,
+		catchUpBatch:  o.catchUpBatch,
+		valuesBudget:  o.valuesBudget,
+		blobs:         o.blobs,
 
 		searchMatchMax: o.searchMatchMax,
 		searchBudget:   o.searchBudget,
@@ -1017,8 +1032,6 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 			return nil, err
 		}
 	}
-	// A backend switch on a store that already holds bytes is refused here,
-	// before anything is served: half the blobs would 404 otherwise, and a
 	// Reclaim any repository-scoped rows a registration that crashed between its
 	// scoped commit and its control-plane insert left behind (createSeededRepository
 	// commits the repository's own rows FIRST and the control-plane row LAST, so

@@ -425,3 +425,30 @@ func TestTheDNSResolverIsHostAndPort(t *testing.T) {
 		}
 	}
 }
+
+// The blob store is fs or s3 and nothing else, and s3 refuses a bucket that
+// is half configured, naming the variables, rather than at the first upload.
+func TestBlobsValidate(t *testing.T) {
+	t.Parallel()
+	if err := (Blobs{Store: "fs"}).Validate(); err != nil {
+		t.Fatalf("fs: %v", err)
+	}
+	if err := (Blobs{Store: "S3"}).Validate(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_BLOB_STORE") {
+		t.Fatalf("an unknown store must be refused by name: %v", err)
+	}
+	full := Blobs{
+		Store: "s3", S3Endpoint: "http://127.0.0.1:9000", S3Bucket: "blobs", S3Region: "us-east-1",
+		S3AccessKeyID: "key", S3SecretKey: "secret", S3PathStyle: true,
+	}
+	if err := full.Validate(); err != nil {
+		t.Fatalf("a full s3 configuration: %v", err)
+	}
+	if !full.External() || (Blobs{Store: "fs"}).External() {
+		t.Fatal("only s3 is outside the data root")
+	}
+	half := full
+	half.S3Bucket = ""
+	if err := half.Validate(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_BLOB_S3_") {
+		t.Fatalf("an s3 store with no bucket must be refused naming the variables: %v", err)
+	}
+}
