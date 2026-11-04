@@ -496,7 +496,7 @@ app's bundle id up first and, for any with no record, stops before it
 builds and names what to make. In App Store Connect → Apps → New App: platform
 iOS (and macOS where the app has a Mac UI, for later), the app's `name`
 from app.json, its `apple.bundleID` (registered already by the first
-signed build, or by `mise run apple:build:device`), and its id as the SKU.
+signed build, or by `mise run apple:build:device`), and `substrate-<id>` as the SKU (unique in the account; nothing reads it).
 Then add it to the internal TestFlight group that takes every build.
 Everything else about a new app (its bundle id, capabilities, profiles and
 extensions) the key registers on its own.

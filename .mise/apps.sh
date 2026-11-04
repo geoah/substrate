@@ -1844,7 +1844,7 @@ testflight_records() {
 	for app in "${RELEASE_APPS[@]}"; do
 		grep -q "^$(app_get "$app" .apple.bundleID) " <<<"$found" && continue
 		missing="$missing
-  $(app_get "$app" .name): New App, platform iOS, bundle ID $(app_get "$app" .apple.bundleID), SKU $app"
+  $(app_get "$app" .name): New App, platform iOS, bundle ID $(app_get "$app" .apple.bundleID), SKU substrate-$app"
 	done
 	[ -z "$missing" ] || die "App Store Connect has no record for these apps, and its API cannot make one. In App Store Connect → Apps, make each once:$missing
 then add it to the internal TestFlight group that takes every build, and run this again"
