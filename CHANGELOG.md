@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.116.0](https://github.com/geoah/substrate/compare/v0.115.0...v0.116.0) (2026-11-04)
+
+
+### Added
+
+* **apple:** mark the app icons with three stacked layers, not an infinity ([#1184](https://github.com/geoah/substrate/issues/1184)) ([17890da](https://github.com/geoah/substrate/commit/17890da58c1843cac289bcbb5486f9669c0e3860))
+* **apps:** App Store listings in the tree, applied by mise run apps:store ([#1182](https://github.com/geoah/substrate/issues/1182)) ([aa1942c](https://github.com/geoah/substrate/commit/aa1942c961eb4f96ad8601c62b13f270d1754341))
+* **apps:** link the publisher's privacy policy from every app's About ([#1178](https://github.com/geoah/substrate/issues/1178)) ([7fee677](https://github.com/geoah/substrate/commit/7fee6771d4adc93e2959c2659475e90448620169))
+* **apps:** one app kit for every Substrate app, on Apple systems and Android ([#1169](https://github.com/geoah/substrate/issues/1169)) ([df67476](https://github.com/geoah/substrate/commit/df67476ae022946dde35f0956cb6c027e5c049fe))
+* **apps:** send the iPhone and iPad apps to TestFlight on every release ([#1171](https://github.com/geoah/substrate/issues/1171)) ([8d81981](https://github.com/geoah/substrate/commit/8d81981c200c653642a51d9b10a6133713315afe))
+* **console:** let signed-out visitors choose light, dark or system colors ([#1181](https://github.com/geoah/substrate/issues/1181)) ([c836cd0](https://github.com/geoah/substrate/commit/c836cd0e6bed6754ce9a5cfb527ff8322a90f0d2))
+* **console:** take the reader's own domain at registration as an advanced option ([#1185](https://github.com/geoah/substrate/issues/1185)) ([f8c3606](https://github.com/geoah/substrate/commit/f8c3606a942f6b37e652950e846edcbaeed8b06a))
+* let a deployment add a landing page and brand the sign-in pages ([#1173](https://github.com/geoah/substrate/issues/1173)) ([0bdd76d](https://github.com/geoah/substrate/commit/0bdd76d5f70c1c66fc1300b2a768b21f66df76ee))
+* **scope:** an app's scope may name a trait ([#1170](https://github.com/geoah/substrate/issues/1170)) ([116b652](https://github.com/geoah/substrate/commit/116b65224f1c7c89cf67c3a50d3c06feb202c961))
+* **vocabulary:** a kind's status binds core's lifecycle trait and names its done and dropped values ([#1176](https://github.com/geoah/substrate/issues/1176)) ([e7b4591](https://github.com/geoah/substrate/commit/e7b45912c53c454e9cfbafa099bf8ffba30c1578))
+
+
+### Fixed
+
+* **console:** register the render check's repository by label ([#1187](https://github.com/geoah/substrate/issues/1187)) ([dd42ca8](https://github.com/geoah/substrate/commit/dd42ca88c086a53c08bbeb83ccc11ffaa4456f1e))
+* **engine:** a filter or order on a name that is a reference on some kinds reads each kind's rows as that kind declares it ([#1183](https://github.com/geoah/substrate/issues/1183)) ([84d7960](https://github.com/geoah/substrate/commit/84d79602fa90a3fe682be1224ee22b5375cc1c2d))
+* **engine:** a filter or order on a name that is a state on some kinds reads each kind's own storage ([#1177](https://github.com/geoah/substrate/issues/1177)) ([73a6d31](https://github.com/geoah/substrate/commit/73a6d312c2ab2bf83b3e2b5febf783d560b3a24a))
+* **engine:** an exists filter on a money property no longer fails to plan ([#1179](https://github.com/geoah/substrate/issues/1179)) ([f3007e7](https://github.com/geoah/substrate/commit/f3007e7cedca37fd34e231afb0a993957af52ea5))
+
 ## [0.115.0](https://github.com/geoah/substrate/compare/v0.114.1...v0.115.0) (2026-11-03)
 
 
