@@ -2,10 +2,11 @@
 
 Every app built on a substrate has an icon in one shared frame. Each app gets
 its own glyph and colour. Every icon has the same band along the bottom with
-the substrate infinity mark, so on a home screen the apps read as one family
-and each one is still easy to find. This page holds the rules that keep it
-that way. [`apps/apple/scripts/icons.mjs`](../apps/apple/scripts/icons.mjs)
-draws every icon from code. Where this page and the script disagree, the
+the substrate mark, three stacked layers, so on a home screen the apps read
+as one family and each one is still easy to find. This page holds the rules
+that keep it that way.
+[`apps/apple/scripts/icons.mjs`](../apps/apple/scripts/icons.mjs) draws every
+icon from code. Where this page and the script disagree, the
 script is right and this page is the bug.
 
 ## The frame
@@ -18,10 +19,12 @@ On the 1024 px canvas, from top to bottom:
   thirds.
 - **Band:** from y = 690 down to the bottom of the canvas. Its colour is a deeper shade of
   the same background, not black and not a contrasting colour.
-- **Infinity:** centred in the band at (512, 845), about 190 px across, a
-  bold single stroke in the app's deep colour.
+- **Mark:** three stacked layers centred in the band at (512, 845), 180 px
+  across, in the app's deep colour. The top layer is solid, the two under it
+  are lighter, and each is cut away where the one above it sits, so the band
+  shows between them.
 
-The band and the infinity are identical in shape and position on every app.
+The band and the mark are identical in shape and position on every app.
 Only their shades follow the app's hue.
 
 ## Glyphs
@@ -50,10 +53,10 @@ appearance.
 
 | App | Glyph | Hue | Background (top, bottom) | Light, deep |
 | --- | --- | --- | --- | --- |
-| Substrate | three stacked layers | blue | `#f5f9ff`, `#d9e7ff` | `#86bbff`, `#2d5fe6` |
+| Substrate | a window of records | blue | `#f5f9ff`, `#d9e7ff` | `#86bbff`, `#2d5fe6` |
 | Substrate Sync | two arrows round a core | green | `#f2fcf8`, `#d3f2e5` | `#72e2bb`, `#0f936d` |
 | Substrate Chat | a speech bubble with a spark | purple | `#f8f5ff`, `#e4dcfd` | `#bba2ff`, `#6a3fe0` |
-| Spotter (geoah/rxtx.dev) | a dumbbell | orange | `#fff8f2`, `#ffdfcc` | `#ffab72`, `#e3471f` |
+| Substrate Workouts | a dumbbell | orange | `#fff8f2`, `#ffdfcc` | `#ffab72`, `#e3471f` |
 
 A new app takes a hue no other app uses, with a background pale enough that
 the glyph's deep shade reads on it.
@@ -72,7 +75,7 @@ because macOS does not mask icons. The console favicon
 (`web/console/public/substrate.svg`) is the light Substrate icon, rounded.
 
 Liquid Glass (iOS 26 and later) renders these as they are. For an Icon
-Composer `.icon` file, export the background, glyph, band and infinity as
+Composer `.icon` file, export the background, glyph, band and mark as
 separate layers. Leave out the frosting's rim and shadow, because the system
 adds its own.
 
@@ -89,9 +92,8 @@ adds its own.
    `node scripts/icons.mjs appiconset <app> <App>/Assets.xcassets/AppIcon.appiconset`
    (add `--mac` for a Mac app).
 
-An app in another repository copies `icons.mjs` and adds its own entry, as
-geoah/rxtx.dev does for Spotter. Frame changes are made here first, then
-copied.
+An app in another repository copies `icons.mjs` and adds its own entry.
+Frame changes are made here first, then copied.
 
 ## Directions that were rejected
 
@@ -105,4 +107,6 @@ they are not options:
 - plain white SF Symbols-style glyphs on a saturated gradient, which looked
   too basic;
 - a black band in light mode that flips to white in dark mode;
-- glyphs whose shades are far apart.
+- glyphs whose shades are far apart;
+- an infinity for the band's mark, which reads as Meta's logo. It was the
+  mark until 2026-11-04.
