@@ -63,6 +63,12 @@ public actor Runtime<Root: Controller> {
 
     public var counters: RuntimeCounters { loop.counters }
 
+    /// The effects at work now, in every controller, and those decided and
+    /// waiting for their presentation to go out first.
+    public var activity: RuntimeActivity {
+        RuntimeActivity(started: loop.effectsStarted, running: loop.effectsRunning, waiting: loop.effectsWaiting)
+    }
+
     /// The state of the child kept under `key`, nil when none is.
     public func state(of key: ChildKey) -> Root.Child.State? {
         open()

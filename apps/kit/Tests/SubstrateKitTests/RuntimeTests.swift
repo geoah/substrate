@@ -23,12 +23,22 @@ func steps(_ trace: [RuntimeTrace]) -> [String] {
     }
 }
 
-@Suite("The runtime's loop")
+@Suite("The runtime's loop", .timeLimit(.minutes(10)))
 struct RuntimeLoopTests {
     let journal = MemoryJournal<Training.Event, Training.State>()
     let shelf = HistoryShelf()
 
     var training: Training { Training(store: journal, shelf: shelf) }
+
+    @Test func untilIdleWaitsForEveryEffectsWorkToEnd() async throws {
+        let harness = ControllerHarness(training)
+        await harness.send(.start)
+        await harness.send(.log("100 kg × 5"))
+        await harness.send(.finish)
+        try await harness.untilIdle()
+        #expect(await harness.runtime.activity == RuntimeActivity(started: 1, running: [], waiting: 0))
+        #expect(await shelf.written == [["100 kg × 5"]])
+    }
 
     @Test func aStepJournalsThenPresentsThenAsksForItsEffects() async throws {
         let harness = ControllerHarness(training, performsEffects: false)
@@ -190,7 +200,7 @@ struct RuntimeLoopTests {
     }
 }
 
-@Suite("Effects, keys and generations")
+@Suite("Effects, keys and generations", .timeLimit(.minutes(10)))
 struct RuntimeEffectTests {
     let gates = Gates()
     let source = Source()
@@ -284,7 +294,7 @@ struct RuntimeEffectTests {
     }
 }
 
-@Suite("Children in one tree")
+@Suite("Children in one tree", .timeLimit(.minutes(10)))
 struct RuntimeChildTests {
     let gates = Gates()
 
@@ -405,7 +415,7 @@ struct RuntimeChildTests {
     }
 }
 
-@Suite("The bridge's presentations")
+@Suite("The bridge's presentations", .timeLimit(.minutes(10)))
 struct EncodedPresentationTests {
     @Test func aPresentationThatDoesNotEncodeArrivesAsItsFailureAndTheNextStillComes() async throws {
         let harness = ControllerHarness(Fragile())
@@ -421,7 +431,7 @@ struct EncodedPresentationTests {
     }
 }
 
-@Suite("Keyed lists")
+@Suite("Keyed lists", .timeLimit(.minutes(10)))
 struct KeyedListTests {
     struct Line: Codable, Equatable, Sendable, Identifiable {
         var id: String

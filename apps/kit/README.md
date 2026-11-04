@@ -113,7 +113,12 @@ order. Its `until` checks a condition each time the runtime moves, and
 fails after a minute with no move at all (`SUBSTRATE_HARNESS_IDLE`), so
 a loaded host slows a test and never fails it, or after ten times that in
 all, so a runtime that keeps moving and never gets there (a livelock) ends;
-`until(timeout:)` bounds the whole wait by its timeout.
+`until(timeout:)` bounds the whole wait by its timeout. `untilIdle(since:)`
+waits until every effect started after a mark (`effectsStarted`) has ended
+and none waits for a presentation (`Runtime.activity`), moving the
+`TestClock` no further than `advancing:` for work that sleeps on it, so a
+test asserts what did not happen once nothing that could do it is still at
+work.
 
 ## Linked records
 

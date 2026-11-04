@@ -85,6 +85,43 @@ public final class ControllerHarness<C: Controller>: @unchecked Sendable {
         }
     }
 
+    /// How many effects have started so far: the mark `untilIdle(since:)`
+    /// waits from.
+    public var effectsStarted: Int {
+        get async { await runtime.activity.started }
+    }
+
+    /// Waits until every effect started after `mark` (and up to `through`,
+    /// where given) has ended, and none waits for a presentation: what a
+    /// test then asserts did not happen cannot still be on its way, while
+    /// the long-lived work started before the mark (a watch, an answer the
+    /// server holds) runs on. Work that never ends fails it after `idle`,
+    /// as `until` does. `advancing` is `until(advancing:)`'s.
+    public func untilIdle(since mark: Int = 0, through last: Int = .max, advancing window: TimeInterval = 0,
+                          idle: Duration = ControllerHarness.idleBound) async throws
+    {
+        try await until(advancing: window, idle: idle) { harness in
+            let activity = await harness.runtime.activity
+            return activity.waiting == 0 && !activity.running.contains { $0 > mark && $0 <= last }
+        }
+    }
+
+    /// `until`, for work that waits on the clock (a coalesced save, a
+    /// presentation's window, a check a second later): while `condition`
+    /// does not hold, the clock moves to the earliest sleep already
+    /// waiting, never more than `window` seconds past now, so a sleep that
+    /// begins late is not stepped over and a longer one is never woken.
+    public func until(advancing window: TimeInterval, idle: Duration = ControllerHarness.idleBound,
+                      _ condition: @Sendable (ControllerHarness<C>) async -> Bool) async throws
+    {
+        let limit = clock.now.addingTimeInterval(window)
+        try await until(idle: idle) { harness in
+            if await condition(harness) { return true }
+            if let due = harness.clock.deadlines.first, due <= limit { harness.clock.advance(to: due) }
+            return false
+        }
+    }
+
     /// How long `until` waits with nothing happening in the runtime before
     /// it gives up: a hang guard, never a pace. `SUBSTRATE_HARNESS_IDLE`
     /// (seconds) moves it for a whole run.

@@ -38,6 +38,25 @@ public struct RuntimeCounters: Equatable, Sendable {
     public var dropped: Int { droppedByEpoch + droppedByGeneration }
 }
 
+/// The effects a runtime has at work: a test that asserts something did not
+/// happen waits for the work that might do it to end first.
+public struct RuntimeActivity: Equatable, Sendable {
+    /// How many effects have started since the runtime opened: each is
+    /// numbered by its place in that count, from 1.
+    public var started: Int
+    /// The effects whose work is running, by number: a request out, an
+    /// answer being read, a sleep on the clock.
+    public var running: Set<Int>
+    /// Effects decided and not yet started, waiting for a presentation.
+    public var waiting: Int
+
+    public init(started: Int, running: Set<Int>, waiting: Int) {
+        self.started = started
+        self.running = running
+        self.waiting = waiting
+    }
+}
+
 /// How a runtime runs.
 public struct RuntimeOptions: Sendable {
     /// False holds every effect as a value in the trace, unstarted, for a
