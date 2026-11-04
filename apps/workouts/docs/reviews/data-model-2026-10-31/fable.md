@@ -1,12 +1,12 @@
 # Spotter training package: data-model review
 
 > **Where this came from.** Part of the data-model review of 2026-10-31, kept verbatim
-> ([the index](../../README.md#reviews)). It reviewed the draft package `mneme.rxtx.dev/training`
-> in rxtx.dev's `research/workouts/substrate/training/`, the package that became the
+> ([the index](../../README.md#reviews)). It reviewed the draft package `mneme.example.org/training`
+> in the private repository's `research/workouts/substrate/training/`, the package that became the
 > app's own `~/training` in [`Package/`](../../../package/README.md). The worktree paths
 > and `/tmp` paths it cites were on the build Mac and are not in this repository.
 
-Reviewer: Fable 5.1, 2026-10-31. Tree: `/Users/geoah/.t3/worktrees/rxtx.dev/t3-9e79ae4f`
+Reviewer: Fable 5.1, 2026-10-31. Tree: a worktree of the owner's private repository
 (branch `feat/spotter-ui-review`). Substrate at production's commit:
 `/tmp/spotter-substrate-main`. Nothing in the repository was edited.
 
@@ -132,9 +132,9 @@ Recommended: a fifth, small kind, and `set.setup` a reference to it.
 ```yaml
 # setup.yaml (new)
 kind: substrate.reamde.dev/core/kind
-metadata: {id: mneme.rxtx.dev/training/setup}
+metadata: {id: mneme.example.org/training/setup}
 data:
-  authority: mneme.rxtx.dev
+  authority: mneme.example.org
   package: training
   description: one station an exercise is done on, such as a gym's chest press machine
   purpose: supporting
@@ -142,7 +142,7 @@ data:
   displayTemplate: "{name}"
   properties:
     name: {type: string, required: true}
-    exercise: {type: reference, kind: mneme.rxtx.dev/training/exercise, required: true, mustExist: true}
+    exercise: {type: reference, kind: mneme.example.org/training/exercise, required: true, mustExist: true}
     gym: {type: string, description: where it is, such as hotel-gym}
     loadBase: {type: quantity, unit: kg, units: [kg, lb], min: {value: "0", unit: kg}}
     loadStep: {type: quantity, unit: kg, units: [kg, lb], min: {value: "0", unit: kg}}
@@ -154,7 +154,7 @@ data:
 # set.yaml:126, after
 setup:
   type: reference
-  kind: mneme.rxtx.dev/training/setup
+  kind: mneme.example.org/training/setup
   mustExist: true
   description: the station it was done on; absent for free weights, which share history everywhere
 ```
@@ -375,7 +375,7 @@ empty and the id carries the key, which is what `clinical` does too
   specific and a declared index later touches no record.
 - **`requires: substrate.reamde.dev/health`** for the `workout` pin. A
   `kind: any` pin would avoid the dependency, but the health catalogue is
-  already on `geoah.me` (Apple Health rows land there) and the typed pin
+  already on `ada.example.com` (Apple Health rows land there) and the typed pin
   is worth more than the freedom.
 - **`sessionRPE` as CR10, named apart from the sets' `rpe`.** Right scale
   for Apple's effort score, FIT `workout_rpe` and Health Connect.

@@ -438,5 +438,5 @@ moments before.
 | ![Read only, before](docs/screenshots/review-before-plan-top.jpg) | ![Superset, before](docs/screenshots/review-before-plan-superset.jpg) | ![Editing, before](docs/screenshots/review-before-plan-editing.jpg) | ![Muscles, before](docs/screenshots/review-before-progress-muscles.jpg) |
 
 `docs/screenshots/rows-*.jpg` are the Rows layout from the app's build in
-rxtx.dev (Spotter, geoah/rxtx.dev#118), with example sessions loaded as history: drops, a past set being
+the owner's private repository (Spotter, its #118), with example sessions loaded as history: drops, a past set being
 fixed, a timed plank and dark mode.

@@ -5,7 +5,7 @@
 > fixed before the merge; [fixes.md](fixes.md) goes finding by finding. Line numbers
 > refer to `f9eeb332`, not to `main`.
 
-Reviewed head `f9eeb3327c177a5a25e643af7bcdabc798a2d544` against `b001925b` in `/Users/geoah/src/github.com/geoah/substrate-wt-workouts`. Findings below are code-path findings; no production writes or GitHub comments were made.
+Reviewed head `f9eeb3327c177a5a25e643af7bcdabc798a2d544` against `b001925b` in a worktree of this repository. Findings below are code-path findings; no production writes or GitHub comments were made.
 
 ## Findings
 

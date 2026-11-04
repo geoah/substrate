@@ -41,7 +41,7 @@ import SubstrateTesting
     /// The hues the console's hashHue answers for the same references.
     @Test func anUnknownNameTakesTheConsolesHashedHue() {
         let refs = ["a.example.com/commerce/category", "x.example.com/a/b", "x.example.com/a/c",
-                    "mneme.rxtx.dev/health/sleep", "ada.example.com/llm/widget"]
+                    "ada.example.com/health/sleep", "ada.example.com/llm/widget"]
         #expect(refs.map { KindHue.hash($0) } == [.green, .teal, .blue, .purple, .purple])
     }
 }

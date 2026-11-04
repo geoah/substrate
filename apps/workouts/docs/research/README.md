@@ -1,14 +1,14 @@
 # Spotter research: strength workouts on substrate
 
-> **Where this came from.** Written on 2026-10-30 in rxtx.dev, as `research/workouts/`, for
+> **Where this came from.** Written on 2026-10-30 in the owner's private repository, as `research/workouts/`, for
 > the app then called Spotter (Substrate Workouts now); the version here is the one the
-> app's second build used (geoah/rxtx.dev#118). It was carried into this repository on
+> app's second build used (the private repository's #118). It was carried into this repository on
 > 2026-11-02 as written, with two changes. The links resolve inside this repository. The
-> draft kind paths `mneme.rxtx.dev/training/<kind>` now read as the app-owned
+> draft kind paths `mneme.example.org/training/<kind>` now read as the app-owned
 > `~/training/<kind>` they became (decision record [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)). Where the
-> text names the package home it recommended, a Mneme package `mneme.rxtx.dev/training`,
+> text names the package home it recommended, a Mneme package `mneme.example.org/training`,
 > that name is left as written: the home changed later, and the reasons are in
-> [decisions.md](../decisions.md). Mentions of Mneme, rxtx.dev paths or
+> [decisions.md](../decisions.md). Mentions of Mneme, private repository paths or
 > `apps/apple/spotter` describe the plan at the time. The package now lives in
 > [`Package/`](../../package/README.md), and the app's spec is [DESIGN.md](../../DESIGN.md).
 
@@ -53,7 +53,7 @@ No. None of the standards evaluated here carries all of a strength session down 
   - planned and actual rest (wger, Terra);
   - the plan's targets copied onto each set (wger, openweight);
   - a `codes` list per exercise (01 §0, §8.1).
-- **Storage.** One substrate record per set, beside session, exercise and routine records. They go in a new Mneme package, `mneme.rxtx.dev/training`, shaped to the first-party conventions. A later move to a `substrate.reamde.dev` catalogue is then a row copy that keeps the ids (05 §3.5, §4).
+- **Storage.** One substrate record per set, beside session, exercise and routine records. They go in a new Mneme package, `mneme.example.org/training`, shaped to the first-party conventions. A later move to a `substrate.reamde.dev` catalogue is then a row copy that keeps the ids (05 §3.5, §4).
 - **Apple Health.** One `HKWorkout` per session, of type `traditionalStrengthTraining`, with the session id in `HKMetadataKeyExternalUUID`. It has no per-exercise detail and no energy estimate (01 §8.3; 04 §3; 05 §5.2).
 - **Imports and exports, later.**
   - Imports: Hevy (API or CSV), Strong CSV, FIT activity files and wger. Fitbod and FitNotes CSVs are lossy one-off imports.
@@ -67,7 +67,7 @@ Deduplicated across the six documents. Where the documents disagree, the require
 ### Data model
 
 1. Spotter owns its model. Every outside format is a mapping, not the basis (01 §8.1, DI 1).
-2. The kinds are exercise, routine (the plan), session and set, in `mneme.rxtx.dev/training` version 1. Plan and session are separate kinds, and the session references the plan it started from (05 §2.1 lesson #275, §3.5, §4.1).
+2. The kinds are exercise, routine (the plan), session and set, in `mneme.example.org/training` version 1. Plan and session are separate kinds, and the session references the plan it started from (05 §2.1 lesson #275, §3.5, §4.1).
 3. Each performed set is its own record. It has a required, cascading `session` reference (`mustExist`), an `exercise` reference, a slot key and an order, with indices `[exercise, at]` and `[session, at]`. Anything that is filtered or aggregated is a top-level property (05 §1.3, §1.4, §3.6).
 4. The session embeds its ordered slots: the exercise, the superset group key and notes. Reordering is then one patch. Group values (kind, round rest, rounds) are stored once per group, not on every member (05 §3.6; 02 §7 items 1 and 2).
 5. Load is a substrate `quantity` in the unit entered (`unit: kg`, `units: [kg, lb]`), never a float. Beside it go a load mode (external, bodyweight, bodyweight plus load, assisted) and the exercise's load basis (total, per implement or per side). Assistance is stored as a positive value of its own (01 DI 2; 02 §7 items 7, 20, 21; 03 §4; 05 §1.2). Each set copies what its load and reps meant (load basis, implements, body share, laterality, rep count basis) when it is logged, so an exercise edit never reinterprets history (data-model review, 2026-10-31).

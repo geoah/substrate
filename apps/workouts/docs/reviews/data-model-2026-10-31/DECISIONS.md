@@ -1,8 +1,8 @@
 # Data-model decisions after the Fable and Astra reviews (2026-10-31)
 
 > **Where this came from.** Part of the data-model review of 2026-10-31, kept verbatim
-> ([the index](../../README.md#reviews)). It reviewed the draft package `mneme.rxtx.dev/training`
-> in rxtx.dev's `research/workouts/substrate/training/`, the package that became the
+> ([the index](../../README.md#reviews)). It reviewed the draft package `mneme.example.org/training`
+> in the private repository's `research/workouts/substrate/training/`, the package that became the
 > app's own `~/training` in [`Package/`](../../../package/README.md). The worktree paths
 > and `/tmp` paths it cites were on the build Mac and are not in this repository.
 
@@ -26,7 +26,7 @@ D3. Effort targets as ranges (Fable A2; Astra §11 agrees ranges are needed). In
     and in set.target, replace `rpe`/`rir` with `rpeMin`/`rpeMax` and `rirMin`/`rirMax` (one value = min equals max),
     matching repsMin/repsMax. The suggestion engine reads the range's top (rpeMax) where it read rpe. Nested names are
     permanent, so decide now.
-D4. Setup identity (both). New fifth kind `mneme.rxtx.dev/training/setup` (Fable A3's shape: name, exercise reference
+D4. Setup identity (both). New fifth kind `mneme.example.org/training/setup` (Fable A3's shape: name, exercise reference
     mustExist, gym string, loadBase, loadStep, loadMax quantities kg/lb, notes; purpose supporting). `set.setup` becomes a
     reference to it (mustExist). Deleting a setup never cascades to sets. The exercise's load grid stays the default; a
     setup overrides it. Optional `resistanceLabel` string on the set for bands/levels that are not kilograms (Astra §6).

@@ -1,9 +1,9 @@
 # Proposal 087: Spotter, strength sessions in the gym on substrate
 
-> **A historical record.** This is proposal 087 as written for the rxtx.dev repository
+> **A historical record.** This is proposal 087 as written for the owner's private repository
 > (`proposals/087-spotter.md`, created 2026-10-30, as last revised on the branch of
-> geoah/rxtx.dev#118 on 2026-10-31), when the app was Spotter and its package a draft
-> Mneme package, `mneme.rxtx.dev/training`. It is superseded by this folder: the app is
+> the private repository's #118 on 2026-10-31), when the app was Spotter and its package a draft
+> Mneme package, `mneme.example.org/training`. It is superseded by this folder: the app is
 > Substrate Workouts, its package is its own `~/training` ([`Package/`](../../package/README.md),
 > decision record [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)),
 > and [decisions.md](../decisions.md) records what was decided since, including which of
@@ -22,7 +22,7 @@ Spotter is an iPhone app (iOS 27, Liquid Glass) that runs strength sessions in t
 their data on substrate. The substrate console's agent writes the routines; the app browses them,
 starts a session from one or from nothing, runs it, and saves one strength workout per session to
 Apple Health. This proposal is the entry point to the whole effort: the format verdict, the draft
-package `mneme.rxtx.dev/training` (five kinds, proven on a private substrate), the decisions taken
+package `mneme.example.org/training` (five kinds, proven on a private substrate), the decisions taken
 on the owner's behalf with their alternatives, the app's V1, V1.1 and V2, the rollout steps only
 the owner can approve, and the questions still open.
 
@@ -70,7 +70,7 @@ already land as `substrate.reamde.dev/health/workout`.
 
 ### The data model
 
-Package `mneme.rxtx.dev/training`, version 1, requires `substrate.reamde.dev/health` and installs
+Package `mneme.example.org/training`, version 1, requires `substrate.reamde.dev/health` and installs
 five kinds:
 
 ```text
@@ -124,12 +124,12 @@ set      (one performed set or one segment; UUIDv7) ──session (mustExist, ca
 Each may be overturned by the owner; "instead of" names the alternative set aside.
 
 1. **Package home.** A draft in `research/workouts/substrate/training/`, outside
-   `svc/mneme-v6/kinds/`, so no Mneme apply picks it up; nothing is applied to `geoah.me` or the
+   `svc/mneme-v6/kinds/`, so no Mneme apply picks it up; nothing is applied to `ada.example.com` or the
    shared dev server. _Instead of:_ Mneme's tree now, or a first-party `substrate.reamde.dev`
    catalogue, which stays possible later as a row copy that keeps the ids (05 §4.2).
 2. **Kinds and names.** `exercise`, `routine` ("Workout routine", the owner's and Hevy's word),
    `session` ("Training session") and `set`; full names keep the routine apart from
-   `mneme.rxtx.dev/health/routine`. A folder is a string on the routine plus a `position`.
+   `mneme.example.org/health/routine`. A folder is a string on the routine plus a `position`.
    _Instead of:_ `workouttemplate` (06 DI 10), a folder kind, or the package names `strength` or
    `gym`.
 3. **One record per performed set** (05 Shape B). The session embeds its ordered slots; group
@@ -272,7 +272,7 @@ suggestion, tap PREVIOUS to copy, RPE in half steps with the reps-in-reserve tex
 guard. One rest coordinator: an absolute end time, ±15 s and Skip, one time-sensitive
 notification naming the next set, a Live Activity that never shows a live 0:00. Finish with
 editable times, the optional session RPE and the Health save through a retry queue; Discard only
-from inside the session. Released through apps.internal.rxtx.dev.
+from inside the session. Released through the release feed.
 
 V1 runs on the bundled examples, on the device. The exercises and routines are fit to ship; the
 example sessions are test vectors with invented loads, so they are for tests and previews only,
@@ -309,11 +309,11 @@ updater. Agents build V1 to DESIGN.md and release it with `mise run apple:releas
 apps/apple/spotter`; none of that needs the owner. The steps that do:
 
 1. **Review this proposal.** Overturn any decision above; answer what you can below.
-2. **Try V1 on the phone.** Install it from apps.internal.rxtx.dev and help with the checks the
+2. **Try V1 on the phone.** Install it from the release feed and help with the checks the
    research README lists under "Still to check on a device", such as whether a stale Live
    Activity re-renders on time and whether a Spotter workout earns Exercise ring minutes.
 3. **Approve the move ticket.** An agent files it as the next free `T-nnn` in
-   svc/mneme-v6/docs/tickets/ (`svc/mneme-v6/docs/tickets/README.md` in rxtx.dev), in state `decision`
+   svc/mneme-v6/docs/tickets/ (`svc/mneme-v6/docs/tickets/README.md` in the owner's private repository), in state `decision`
    until the owner approves. Its steps are the package README's "Moving it into Mneme": amend
    `svc/mneme-v6/docs/plan.md`, whose V6.6 puts `workout`, `workoutset`, `workouttemplate` and
    `exercise` under `health/`, and the package-name list in `svc/mneme-v6/CLAUDE.md`; then copy
@@ -321,13 +321,13 @@ apps/apple/spotter`; none of that needs the owner. The steps that do:
 4. **Allow the scratch-repository apply.** With the owner's go-ahead, an agent applies
    `substrate.reamde.dev/health`, the package and the example records in a scratch repository of
    its own (`svc/mneme-v6/CLAUDE.md`, "A scratch repository"; the examples README), never the
-   owner's `mneme.rxtx.dev`. `coverage.yaml` stays away from the owner's history. If production
+   owner's `mneme.example.org`. `coverage.yaml` stays away from the owner's history. If production
    has moved past `ffd7b967`, the server-only checks are repeated.
 5. **Approve the console's training sub-agent.** Its `writes` name `training/exercise` and
    `training/routine`, and both join the Mneme assistant's `writes` (req 20). Its prompt: write
    an exercise before a routine names it; keep each planned set's `key` across edits and never
    reuse one; clear a property with a PATCH naming it `null`, since a PUT never clears.
-6. **Apply to production.** The owner applies the package to `geoah.me`, writes Spotter's
+6. **Apply to production.** The owner applies the package to `ada.example.com`, writes Spotter's
    `observations/source` record (class `app`), and issues Spotter's token: writes on the training
    kinds, reads on `providers.substrate.reamde.dev/applehealth/account` and
    `substrate.reamde.dev/health/workout`.
@@ -335,7 +335,7 @@ apps/apple/spotter`; none of that needs the owner. The steps that do:
    `HKMetadataKeyExternalUUID` (the key `HKExternalUUID`) and the source bundle id in each
    workout's metadata. The mirror already stores metadata as JSON, so no kind changes; a Mneme
    function could then link a session by its id, even after a re-save.
-8. **Turn on V2** against `geoah.me`, with the kind names read from one configuration point (req
+8. **Turn on V2** against `ada.example.com`, with the kind names read from one configuration point (req
    17).
 
 ## Open questions for the owner

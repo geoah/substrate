@@ -16,7 +16,7 @@ import SubstrateCore
 struct RoutineEditTests {
     let codec = RecordCodec()
 
-    /// The routines as geoah.me's server answered on 2026-11-02:
+    /// The routines as ada.example.com's server answered on 2026-11-02:
     /// `floor-first-full-body` with the owner's words replaced (this
     /// repository is public), and `sample-every-feature`. Set
     /// `WORKOUTS_REAL_ROUTINES` to a folder of server answers

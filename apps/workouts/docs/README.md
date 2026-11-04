@@ -69,7 +69,7 @@ for this repository; the text is as written.
   [C. Rows](design/rows/README.md), chosen; [D. Chips](design/chips/README.md);
   [E. Direct](design/direct/README.md); [F. Set list](design/codex/README.md).
 - `screenshots/`: the app as built. `signed-*.jpg` show the signed-in flow
-  against a substrate built from #1100. `rows-*.jpg` show the Rows layout from the rxtx.dev
+  against a substrate built from #1100. `rows-*.jpg` show the Rows layout from the private repository's
   build. The app's README shows them.
 
 ### Reviews
@@ -94,7 +94,7 @@ for this repository; the text is as written.
 ### History
 
 - [history/087-spotter-proposal.md](history/087-spotter-proposal.md): proposal 087, written
-  for rxtx.dev when the app was Spotter. It is kept as a record and superseded by this
+  for the owner's private repository when the app was Spotter. It is kept as a record and superseded by this
   folder.
 
 ## History
@@ -104,27 +104,27 @@ Dates are UTC.
 - **2026-10-30. The request.** The owner asked for research into a common format for workout
   data and for an iPhone app to run strength sessions on substrate. The routines would come
   from the console's agent, and the owner's Hevy screenshots served as inspiration. In
-  rxtx.dev the lead had the six research slices written, drafted the package
-  `mneme.rxtx.dev/training` with example records, wrote proposal 087 and the build spec, and
+  the owner's private repository the lead had the six research slices written, drafted the package
+  `mneme.example.org/training` with example records, wrote proposal 087 and the build spec, and
   built the first version. Its name was **Spotter**.
-- **2026-10-31. The first build.** geoah/rxtx.dev#112 merged Spotter V1: bundled routines,
+- **2026-10-31. The first build.** The private repository's #112 merged Spotter V1: bundled routines,
   sessions kept on the phone, and the Table layout. It was released as a pre-release on
-  apps.internal.rxtx.dev. The owner set Apple's own strength features aside.
-  geoah/rxtx.dev#113 fixed what the first simulator run and Codex Astra's UI/UX review found,
+  the release feed. The owner set Apple's own strength features aside.
+  The private repository's #113 fixed what the first simulator run and Codex Astra's UI/UX review found,
   and added screenshots.
 - **2026-10-31. The UI exploration.** The owner asked for something less like Hevy and
   rejected the large-text redesign. Four options came from the second round, and a
   comparison page was published for a friend. The owner chose **Rows**.
 - **2026-10-31. The data-model reviews.** Fable and Codex Astra reviewed the package, and the
-  lead took decisions D1 to D13 from their reports. geoah/rxtx.dev#118 built them and Rows,
+  lead took decisions D1 to D13 from their reports. The private repository's #118 built them and Rows,
   then fixed what a data reviewer and a UI reviewer found. #113 and #118 were left open in
-  rxtx.dev, since the app's work moved here.
+  the private repository, since the app's work moved here.
 - **2026-11-01. The move to substrate.** On the owner's request the app moved into this
   repository as **Substrate Workouts** (#1100). It signs in with the app authorization flow,
   and it owns its package: the owner ruled that the kinds are installed and managed by the
   app and do not ship with substrate. That needed one server change, the `declare:` scope
-  (decision 0203). A pre-release went to the internal catalogue, which rxtx.dev lists
-  (geoah/rxtx.dev#140).
+  (decision 0203). A pre-release went to the internal catalogue, which the private repository lists
+  (its #140).
 - **2026-11-01. The reviews of #1100.** Codex Astra and Fable reviewed #1100. Every major was
   fixed (`a7723525`, `50742b51`, `22b23a47`, `492044ec`), and four questions were left for
   the owner.

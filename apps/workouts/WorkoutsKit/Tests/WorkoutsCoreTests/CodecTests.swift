@@ -601,7 +601,7 @@ struct CodecRuleTests {
         #expect(throws: CodecError.wrongKind(expected: kinds.set, found: kinds.session, id: "x")) {
             try codec.decodeSet(record(kinds.session, setProperties()))
         }
-        #expect(throws: CodecError.self) { try codec.decode(record("mneme.rxtx.dev/health/routine", [:])) }
+        #expect(throws: CodecError.self) { try codec.decode(record("ada.example.com/health/routine", [:])) }
     }
 
     @Test("a routine keeps the record's server version")
