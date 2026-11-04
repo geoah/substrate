@@ -207,6 +207,13 @@ of `open`, anywhere" is one query over every kind that declares one.
 that bind a trait; their records are the `implements` filter above, which is
 how the console lists every provider's `accountconfig` accounts.
 
+**An app's trait scope.** An app may ask for every implementor at once,
+`read:implements(<trait>)` or `write:implements(<trait>)`: its token reaches
+what `*` would among the kinds that bind the trait when each request is
+checked, so a kind that binds it later is covered from then on
+([scopes](apps.md#scopes),
+[0225](decisions/0225-an-apps-scope-may-name-a-trait-and-covers-what-star-covers-among-the-kinds-that-bind-it.md)).
+
 ## Where traits do work beyond queries
 
 The trait-not-kind rule is what lets the host build behavior nothing has to

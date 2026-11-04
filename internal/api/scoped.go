@@ -98,6 +98,18 @@ func internalKind(k substrate.KindInfo) bool {
 	return p == vocabulary.PurposeInternal
 }
 
+// scopeKind is a kind as a grant reads it (scope.KindOf): as the registry
+// declares it now, whether internal and the traits it binds, or, for a kind
+// the registry does not hold yet, internal and binding nothing, so only its
+// exact scope reaches it.
+func scopeKind(kind string, registry map[string]substrate.KindInfo) scope.Kind {
+	k, held := registry[kind]
+	if !held {
+		return scope.Kind{Ref: kind, Internal: true}
+	}
+	return scope.KindOf(kind, k.Definition)
+}
+
 // reads reports whether the grant reads kind; a kind the registry does not
 // hold is never readable.
 func (s *scopedDataset) reads(ctx context.Context, kind string) (bool, error) {
@@ -106,7 +118,7 @@ func (s *scopedDataset) reads(ctx context.Context, kind string) (bool, error) {
 		return false, err
 	}
 	k, ok := reg[kind]
-	return ok && s.grant.Reads(kind, internalKind(k)), nil
+	return ok && s.grant.Reads(scope.KindOf(kind, k.Definition)), nil
 }
 
 func (s *scopedDataset) writes(ctx context.Context, kind string) (bool, error) {
@@ -115,7 +127,7 @@ func (s *scopedDataset) writes(ctx context.Context, kind string) (bool, error) {
 		return false, err
 	}
 	k, ok := reg[kind]
-	return ok && s.grant.Writes(kind, internalKind(k)), nil
+	return ok && s.grant.Writes(scope.KindOf(kind, k.Definition)), nil
 }
 
 // readable is the sorted list of every kind the grant reads today.
@@ -126,7 +138,7 @@ func (s *scopedDataset) readable(ctx context.Context) ([]string, error) {
 	}
 	var out []string
 	for id, k := range reg {
-		if s.grant.Reads(id, internalKind(k)) {
+		if s.grant.Reads(scope.KindOf(id, k.Definition)) {
 			out = append(out, id)
 		}
 	}
@@ -158,7 +170,7 @@ func (s *scopedDataset) cut(ctx context.Context, rec *substrate.Record) (*substr
 	}
 	allowKind := func(kind string) bool {
 		k, ok := reg[kind]
-		return ok && s.grant.Reads(kind, internalKind(k))
+		return ok && s.grant.Reads(scope.KindOf(kind, k.Definition))
 	}
 	cp := *rec
 	if len(rec.LinkedFrom) > 0 {
@@ -177,7 +189,7 @@ func (s *scopedDataset) cut(ctx context.Context, rec *substrate.Record) (*substr
 	if rec.Kind == kindTrigger {
 		withoutWebhookKeys(&cp)
 	}
-	if !s.grant.Reads(kindBlob, true) {
+	if !s.grant.Reads(scope.Kind{Ref: kindBlob, Internal: true}) {
 		withoutBlobManifests(&cp, reg[rec.Kind])
 	}
 	return &cp, nil
@@ -384,7 +396,7 @@ func (s *scopedDataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error)
 	}
 	out := make([]substrate.KindInfo, 0, len(all))
 	for _, k := range all {
-		if r, ok := reg[k.Identity]; ok && (s.grant.Reads(k.Identity, internalKind(r)) || s.rowKind(k.Identity)) {
+		if r, ok := reg[k.Identity]; ok && (s.grant.Reads(scope.KindOf(k.Identity, r.Definition)) || s.rowKind(k.Identity)) {
 			out = append(out, k)
 		}
 	}
@@ -1158,7 +1170,7 @@ func (s *scopedDataset) admitBlobs(ctx context.Context) error {
 		return err
 	}
 	for id, k := range reg {
-		if s.grant.Writes(id, internalKind(k)) && declaresBlobRef(k) {
+		if s.grant.Writes(scope.KindOf(id, k.Definition)) && declaresBlobRef(k) {
 			return nil
 		}
 	}

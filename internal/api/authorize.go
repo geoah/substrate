@@ -586,10 +586,13 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 			continue
 		}
 		seen[resolved.String()] = true
+		// A trait scope covers the kinds that bind the trait later as a glob
+		// covers the kinds it matches later (decision 0225).
+		_, trait := resolved.Trait()
 		row := substrate.AuthorizationScope{
 			Scope: resolved.String(), Requested: s.String(), Verb: string(resolved.Verb),
 			Write: resolved.Verb == scope.Write, Pattern: resolved.Pattern,
-			Glob: strings.HasSuffix(resolved.Pattern, "*"), Kinds: []substrate.AuthorizationKind{},
+			Glob: strings.HasSuffix(resolved.Pattern, "*") || trait, Kinds: []substrate.AuthorizationKind{},
 			Agents:    []*substrate.Record{},
 			Functions: []substrate.AuthorizationCallFunction{},
 			Allowed:   before.Covers(resolved, scopeInternal(resolved, registry)),
@@ -637,9 +640,10 @@ func reachedKinds(s scope.Scope, kinds []substrate.KindInfo) []substrate.Authori
 		return out
 	}
 	for _, k := range kinds {
-		ok := g.Reads(k.Identity, internalKind(k))
+		kind := scope.KindOf(k.Identity, k.Definition)
+		ok := g.Reads(kind)
 		if s.Verb == scope.Write {
-			ok = g.Writes(k.Identity, internalKind(k))
+			ok = g.Writes(kind)
 		}
 		if ok {
 			out = append(out, substrate.AuthorizationKind{Identity: k.Identity, Label: k.Label, Purpose: kindPurpose(k)})

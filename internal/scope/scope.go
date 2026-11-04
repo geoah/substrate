@@ -10,6 +10,12 @@
 // repository's own authority, which an app cannot know before the owner signs
 // in. The token stores the resolved form, never `~`.
 //
+// A read or write pattern may instead name a trait (decision 0225):
+// `read:implements(<trait>)` covers what `read:*` would among the kinds whose
+// declaration binds the trait when a request is checked, so a kind that binds
+// it later is covered from then on. The trait is named in full, `~` standing
+// for the authority as it does in a kind pattern.
+//
 // `agents:<pattern>` and `decide:<pattern>` (decision 0195) take the same
 // grammar over agent ids, which are `<authority>/<package>/<name>` like a kind
 // reference: the first talks to the matching agents and reads their threads,
@@ -102,6 +108,67 @@ const (
 // authority is. `.invalid` is reserved (RFC 2606) and never names a real one.
 const homeStandIn = "home.invalid"
 
+// A trait scope (decision 0225) names a trait rather than kinds, spelled as
+// the records filter spells one: `read:implements(<trait>)` covers what
+// `read:*` would among the kinds whose declaration binds the trait when a
+// request is checked, and `write:` the same.
+const (
+	traitOpen  = "implements("
+	traitClose = ")"
+)
+
+// TraitPattern is the pattern of the trait scope over trait.
+func TraitPattern(trait string) string { return traitOpen + trait + traitClose }
+
+// traitOf is the trait a pattern names, and whether it is a trait pattern.
+func traitOf(pattern string) (string, bool) {
+	if !strings.HasPrefix(pattern, traitOpen) || !strings.HasSuffix(pattern, traitClose) {
+		return "", false
+	}
+	return pattern[len(traitOpen) : len(pattern)-len(traitClose)], true
+}
+
+// Kind is one kind as a read or write scope is held to it: its reference,
+// whether its declared purpose is `internal`, which neither a glob nor a
+// trait scope reaches, and the traits its declaration binds, each by its
+// full identity (vocabulary.TraitBindingRef).
+type Kind struct {
+	Ref      string
+	Internal bool
+	Traits   []string
+}
+
+// KindOf is the kind ref as its declaration's data says it (a registry
+// kind's Definition, a closure's shipped data): whether its purpose is
+// `internal`, and the trait each of its `traits:` entries binds.
+func KindOf(ref string, definition map[string]any) Kind {
+	k := Kind{Ref: ref}
+	if purpose, _ := definition["purpose"].(string); purpose == vocabulary.PurposeInternal {
+		k.Internal = true
+	}
+	var entries []string
+	switch v := definition["traits"].(type) {
+	case []string:
+		entries = v
+	case []any:
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				entries = append(entries, s)
+			}
+		}
+	}
+	for _, e := range entries {
+		if trait, ok := vocabulary.TraitBindingRef(e); ok {
+			k.Traits = append(k.Traits, trait)
+		}
+	}
+	return k
+}
+
+// binds reports whether the kind's declaration binds trait, matched in its
+// canonical spelling, so no other casing stands for it.
+func (k Kind) binds(trait string) bool { return slices.Contains(k.Traits, trait) }
+
 // unwritable are the packages no scope writes, whatever it says: they hold
 // the machinery that runs code (functions, agents, triggers), spends the
 // owner's LLM budget (providers), decides for the owner (policies,
@@ -129,17 +196,36 @@ func RequestsFull(scopes []Scope) bool { return slices.Contains(scopes, FullScop
 // OverAgents reports whether the pattern names agent ids rather than kinds.
 func (s Scope) OverAgents() bool { return s.Verb == Agents || s.Verb == Decide }
 
-// HomeRelative reports whether the pattern still names `~` as its authority.
+// Trait is the trait a read or write scope names, in full, and whether it
+// names one rather than kinds.
+func (s Scope) Trait() (string, bool) {
+	if s.Verb != Read && s.Verb != Write {
+		return "", false
+	}
+	return traitOf(s.Pattern)
+}
+
+// HomeRelative reports whether the pattern still names `~` as its authority,
+// a trait scope's trait included.
 func (s Scope) HomeRelative() bool {
-	return s.Pattern == Home+"/*" || strings.HasPrefix(s.Pattern, Home+"/")
+	p := s.Pattern
+	if trait, ok := s.Trait(); ok {
+		p = trait
+	}
+	return p == Home+"/*" || strings.HasPrefix(p, Home+"/")
 }
 
 // Resolve completes `~` with the repository's authority. A scope that names
 // no `~` comes back unchanged.
 func (s Scope) Resolve(authority string) Scope {
-	if s.HomeRelative() {
-		s.Pattern = authority + s.Pattern[len(Home):]
+	if !s.HomeRelative() {
+		return s
 	}
+	if trait, ok := s.Trait(); ok {
+		s.Pattern = TraitPattern(authority + trait[len(Home):])
+		return s
+	}
+	s.Pattern = authority + s.Pattern[len(Home):]
 	return s
 }
 
@@ -207,6 +293,9 @@ func Parse(raw string) (Scope, error) {
 // patternProblem holds a pattern to the grammar and the rules every scope
 // keeps, returning "" when it is admissible.
 func patternProblem(s Scope) string {
+	if trait, ok := s.Trait(); ok {
+		return traitProblem(trait)
+	}
 	p := s.Pattern
 	if s.HomeRelative() {
 		p = homeStandIn + p[len(Home):]
@@ -230,6 +319,24 @@ func patternProblem(s Scope) string {
 	}
 	if s.Verb == Write && writesUnwritable(p) {
 		return "writes the core or llm package, which no scope writes"
+	}
+	return ""
+}
+
+// traitProblem holds a trait scope's trait to the grammar: one trait named in
+// full (decision 0101), `~` admitted for the authority. Any trait is
+// admissible for either verb, core's included: a trait scope reaches only
+// what `*` would, so the rules every glob keeps hold it already, and
+// `write:implements(substrate.reamde.dev/core/accountconfig)` writes nothing.
+// A trait nothing binds yet is admitted, as a glob that matches nothing is.
+func traitProblem(trait string) string {
+	if strings.HasPrefix(trait, Home+"/") {
+		trait = homeStandIn + trait[len(Home):]
+	}
+	authority, pkg, name := vocabulary.SplitKindRef(trait)
+	if authority == "" || strings.Contains(name, "/") || !vocabulary.ValidAuthority(authority) ||
+		!vocabulary.ValidPackage(pkg) || !vocabulary.ValidCamel(name) {
+		return "is not a trait pattern: `implements(<authority>/<package>/<name>)`, the trait named in full"
 	}
 	return ""
 }
@@ -422,13 +529,14 @@ func (g Grant) Scopes() []string {
 	return out
 }
 
-// Reads reports whether the grant reads records of kind. internal is the
-// kind's declared purpose being `internal`: a glob never reaches one, an
-// exact scope may. Only read and write scopes read a kind whole; what agents
-// and decide make readable is decided record by record (TalksTo, Decides).
-func (g Grant) Reads(kind string, internal bool) bool {
+// Reads reports whether the grant reads records of kind. A kind whose
+// declared purpose is `internal` is reached by an exact scope alone, never by
+// a glob or a trait scope. Only read and write scopes read a kind whole; what
+// agents and decide make readable is decided record by record (TalksTo,
+// Decides).
+func (g Grant) Reads(kind Kind) bool {
 	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
-		return (s.Verb == Read || s.Verb == Write) && matches(s.Pattern, kind, internal)
+		return (s.Verb == Read || s.Verb == Write) && matches(s.Pattern, kind)
 	})
 }
 
@@ -446,7 +554,8 @@ func (g Grant) Delivers(trigger string) bool {
 // function of it, exactly or by a glob that covers the package. It is what
 // decides whether a token may learn the versions of a package its app needs
 // set up: a package of agents alone, such as a coach, is named by the scope
-// that talks to them. `webhook:` names one trigger, never a package.
+// that talks to them. `webhook:` names one trigger, never a package, and a
+// trait scope names a meaning, which no package is.
 func (g Grant) NamesPackage(pkg string) bool {
 	if pkg == "" {
 		return false
@@ -455,6 +564,9 @@ func (g Grant) NamesPackage(pkg string) bool {
 		switch s.Verb {
 		case Read, Write, Agents, Decide, Call:
 		default:
+			return false
+		}
+		if _, ok := s.Trait(); ok {
 			return false
 		}
 		if vocabulary.IsTypeGlob(s.Pattern) {
@@ -501,6 +613,16 @@ func Covers(held, want Scope, internal bool) bool {
 	if held.Pattern == want.Pattern {
 		return true
 	}
+	if _, ok := want.Trait(); ok {
+		// What a trait scope reaches is `*`'s among the kinds that bind the
+		// trait, so only `*` holds it whole.
+		return held.Pattern == "*"
+	}
+	if _, ok := held.Trait(); ok {
+		// Which kinds bind a trait is the registry's to say and moves with
+		// it, so a trait scope covers no scope but itself.
+		return false
+	}
 	if want.Verb == Webhook || !vocabulary.IsTypeGlob(held.Pattern) {
 		return false
 	}
@@ -517,12 +639,24 @@ func Covers(held, want Scope, internal bool) bool {
 // `<authority>/` for `<authority>/*`, `<authority>/<package>/` for a package.
 func globPrefix(glob string) string { return strings.TrimSuffix(glob, "*") }
 
-// Writes reports whether the grant writes records of kind.
-func (g Grant) Writes(kind string, internal bool) bool {
-	if inUnwritable(kind) {
+// Writes reports whether the grant writes records of kind. A trait scope
+// never writes an account, a kind that binds `accountconfig`: the engine
+// refuses an app's token that write already, and ReachCovered reads Writes,
+// so neither does a trait scope cover code an approval installs that would
+// (decision 0225).
+func (g Grant) Writes(kind Kind) bool {
+	if inUnwritable(kind.Ref) {
 		return false
 	}
-	return slices.ContainsFunc(g.scopes, func(s Scope) bool { return s.Verb == Write && matches(s.Pattern, kind, internal) })
+	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
+		if s.Verb != Write {
+			return false
+		}
+		if _, ok := traitOf(s.Pattern); ok && kind.binds(vocabulary.TraitAccountConfigCore) {
+			return false
+		}
+		return matches(s.Pattern, kind)
+	})
 }
 
 // Calls reports whether the grant calls the function whose id is function,
@@ -545,20 +679,25 @@ func (g Grant) CallsAny() bool { return g.has(Call) }
 // can read internal kinds that scope globs exclude. Core and llm globs need
 // full access even before new kinds arrive; other globs need exact scopes
 // for every currently matched internal kind, supplied in internalKinds.
-// Callers must recheck against the live registry on every admission.
-func (g Grant) ReachCovered(verb Verb, pattern string, internal bool, internalKinds ...string) bool {
+// kind is the kind an exact pattern names, as the registry declares it now
+// (whether it is internal, the traits it binds), so a trait scope covers
+// the reach of an exact kind that binds the trait; it is unread for a glob,
+// which no trait scope covers. Callers must recheck against the live
+// registry on every admission.
+func (g Grant) ReachCovered(verb Verb, pattern string, kind Kind, internalKinds ...string) bool {
 	if !vocabulary.IsTypeGlob(pattern) {
+		kind.Ref = pattern
 		if verb == Write {
-			return g.Writes(pattern, internal)
+			return g.Writes(kind)
 		}
-		return g.Reads(pattern, internal)
+		return g.Reads(kind)
 	}
 	if globReachesUnwritable(pattern) {
 		return false
 	}
-	for _, kind := range internalKinds {
-		if vocabulary.MatchTypeGlob(pattern, kind) && !vocabulary.AuthKinds[kind] &&
-			!g.ReachCovered(verb, kind, true) {
+	for _, k := range internalKinds {
+		if vocabulary.MatchTypeGlob(pattern, k) && !vocabulary.AuthKinds[k] &&
+			!g.ReachCovered(verb, k, Kind{Internal: true}) {
 			return false
 		}
 	}
@@ -601,14 +740,17 @@ func (g Grant) matchesAgent(v Verb, agent string) bool {
 }
 
 // matches is one pattern against one kind, under the rules every scope
-// keeps: the auth kinds are never reached, and a glob never reaches an
-// internal kind.
-func matches(pattern, kind string, internal bool) bool {
-	if vocabulary.AuthKinds[kind] {
+// keeps: the auth kinds are never reached, and neither a glob nor a trait
+// scope reaches an internal kind.
+func matches(pattern string, kind Kind) bool {
+	if vocabulary.AuthKinds[kind.Ref] {
 		return false
 	}
-	if vocabulary.IsTypeGlob(pattern) {
-		return !internal && vocabulary.MatchTypeGlob(pattern, kind)
+	if trait, ok := traitOf(pattern); ok {
+		return !kind.Internal && kind.binds(trait)
 	}
-	return pattern == kind
+	if vocabulary.IsTypeGlob(pattern) {
+		return !kind.Internal && vocabulary.MatchTypeGlob(pattern, kind.Ref)
+	}
+	return pattern == kind.Ref
 }
