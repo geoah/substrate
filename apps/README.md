@@ -1003,6 +1003,29 @@ nothing takes, and holds the layering the rest of this page relies on
 | `org.robolectric` | Robolectric, which runs kit-ui's composables on the JVM with Android's own graphics, so the gallery check draws every fixture with no emulator; chosen over Paparazzi because it is a test library alone, with no Gradle plugin reaching into AGP's variants |
 | `io.github.takahirom.roborazzi` | Roborazzi, which writes what Robolectric drew as a PNG: kit-ui's half of `mise run apps:gallery` |
 
+**Every Android artifact is checked by its sha256.** The Gradle locks
+(`gradle.lockfile` beside each module, `settings-gradle.lockfile` and
+`build-logic/`'s) pin each module's version, and
+`gradle/gradle/verification-metadata.xml` pins its bytes: Gradle's
+dependency verification, in its strict default, refuses any artifact, POM
+or module file the file does not list with a matching sha256, plugins and
+`build-logic`'s classpath included. A dependency change (a version in
+`gradle/libs.versions.toml`, a new library, an AGP or Kotlin bump) is
+followed by `mise run android:lock`, which rewrites the locks and then the
+metadata from nothing, from what `android:build`, `android:test` and the
+device tests resolve here, plus aapt2 for Linux, macOS and Windows, since
+the Android plugin fetches the one for its host; commit both and read the
+metadata's diff as a lock's: a changed checksum for a version that did not
+change is a dependency that changed under its name. `mise run
+lint:toolchain` holds the metadata to the locks (every locked module
+listed, a sha256 for each of its files, metadata files verified, no
+`<trust>` entry, aapt2 for Linux and macOS), so a lock change without it
+fails the `lint` job before the `android build` one. Two downloads are not
+Gradle's and so not in it: the Gradle distribution, which the wrapper
+checks against `distributionSha256Sum`, and the `android-all` jars
+Robolectric downloads itself at test time for kit-ui's gallery check,
+outside Gradle's resolution and so outside this file.
+
 ## Layout
 
 ```text

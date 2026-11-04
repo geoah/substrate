@@ -27,6 +27,10 @@
 #             installs, the compile SDK and build tools against its package
 #             list, the JDK against the catalog's jvm; the Gradle wrapper
 #             names its distribution's checksum
+#   gradle    the dependency verification metadata against the locks: every
+#             locked module listed with a sha256 for each of its files,
+#             metadata files verified, nothing trusted unchecked, and aapt2
+#             for Linux and macOS
 #
 # Every comparison is exact. A FROM line names an exact tag plus a digest
 # (`node:26.11.1-alpine3.24@sha256:...`): the digest is cut off and the
@@ -335,6 +339,67 @@ if [ -f "$catalog" ] && [ -f "$android_sh" ]; then
     flag "${android_sh} installs the Swift SDK for Android without a sha256 checksum"
   grep -q '^distributionSha256Sum=[0-9a-f]\{64\}$' apps/gradle/gradle/wrapper/gradle-wrapper.properties ||
     flag "the Gradle wrapper names no distributionSha256Sum; a changed distribution would run unchecked"
+fi
+
+# --- the Gradle dependency verification, against the locks -------------
+#
+# The locks pin each module's version, and the verification metadata pins
+# the bytes: Gradle, in its strict default, refuses any artifact or metadata
+# file it does not list with a matching checksum. A module locked and not
+# listed fails the next fresh Android build (CI's); one listed without a
+# sha256, or a `<trust>` entry, is a module whose bytes nobody checks; aapt2
+# is fetched for the host the build runs on, so the file holds Linux's
+# (CI's) and macOS's. `mise run android:lock` writes both files together.
+metadata=apps/gradle/gradle/verification-metadata.xml
+locks="$(git ls-files --cached --others --exclude-standard '*gradle.lockfile')"
+if [ -n "$locks" ] || [ -f "$metadata" ]; then
+  if [ ! -f "$metadata" ]; then
+    flag "${metadata} is missing, so Gradle checks no artifact the locks name; run \`mise run android:lock\`"
+  else
+    # One line per component, `group:name:version`, then one per problem
+    # with a file, prefixed `!`.
+    listed="$(awk '
+      match($0, /<component group="[^"]*" name="[^"]*" version="[^"]*"/) {
+        split(substr($0, RSTART, RLENGTH), f, "\"")
+        component = f[2] ":" f[4] ":" f[6]
+        print component
+      }
+      match($0, /<artifact name="[^"]*"/) {
+        split(substr($0, RSTART, RLENGTH), f, "\"")
+        artifact = f[2]
+        checked = 0
+      }
+      /<sha256 value="[0-9a-f]+"/ {
+        match($0, /value="[0-9a-f]+"/)
+        if (RLENGTH == 72) checked = 1
+      }
+      /<\/artifact>/ && !checked { print "!" component "'"'"'s " artifact " has no sha256" }
+    ' "$metadata")"
+    problems="$(printf '%s\n' "$listed" | sed -n 's/^!//p')"
+    grep -Eq '<verify-metadata>[[:space:]]*true[[:space:]]*</verify-metadata>' "$metadata" ||
+      problems="${problems}"$'\n'"it does not verify metadata files (<verify-metadata>true</verify-metadata>)"
+    if grep -Eq '<trust[[:space:]>/]|<trusted-artifacts' "$metadata"; then
+      problems="${problems}"$'\n'"it trusts artifacts unchecked (a <trust> entry)"
+    fi
+    # shellcheck disable=SC2086 # one lock file per word, as git lists them
+    unlisted="$(printf '%s\n' "$listed" | grep -v '^!' | awk '
+      FNR == NR { listed[$0] = 1; next }
+      /^#/ || /^empty=/ || NF == 0 { next }
+      { coordinate = $0; sub(/=.*/, "", coordinate); if (!(coordinate in listed)) print coordinate ", locked in " FILENAME ", is not listed" }
+    ' - $locks)"
+    [ -z "$unlisted" ] || problems="${problems}"$'\n'"${unlisted}"
+    aapt2="$(printf '%s\n' "$listed" | sed -n 's/^com\.android\.tools\.build:aapt2://p')"
+    [ -n "$aapt2" ] || problems="${problems}"$'\n'"it lists no aapt2, which every Android build fetches"
+    for version in $aapt2; do
+      for host in linux osx; do
+        grep -qF "<artifact name=\"aapt2-${version}-${host}.jar\">" "$metadata" ||
+          problems="${problems}"$'\n'"aapt2 ${version} has no ${host} artifact, so a build on that host is refused"
+      done
+    done
+    while IFS= read -r problem; do
+      [ -z "$problem" ] || flag "${metadata}: ${problem}; run \`mise run android:lock\`"
+    done <<<"$problems"
+  fi
 fi
 
 exit "$fail"

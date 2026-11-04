@@ -1334,7 +1334,10 @@ mkdir -p "$tcseed"
 shopt -s nullglob
 {
   printf '%s\n' Dockerfile .mise.toml go.mod compose.yaml web/console/package.json \
-    .github/workflows/*.yml .github/workflows/*.yaml
+    .github/workflows/*.yml .github/workflows/*.yaml \
+    .mise/android.sh apps/gradle/gradle/libs.versions.toml apps/gradle/gradle/wrapper/gradle-wrapper.properties \
+    apps/gradle/gradle/verification-metadata.xml
+  git ls-files '*gradle.lockfile'
   git grep --untracked -I -l -F 'pgvector/pgvector:' -- ':!.mise/toolchaincheck.sh'
 } | sort -u | while IFS= read -r f; do
   mkdir -p "$tcseed/$(dirname "$f")"
@@ -1444,6 +1447,20 @@ toolchain mise-none 1 'no jdx/mise-action step' '.github/workflows/*.yml' '/jdx\
 # min_version moved alone, and missing.
 toolchain mise-min 1 "min_version is 2000.1.1" .mise.toml 's/soft = "[^"]*"/soft = "2000.1.1"/'
 toolchain mise-min-none 1 'sets no min_version' .mise.toml '/^min_version/d'
+
+# The Gradle dependency verification against the locks: a locked module the
+# metadata does not list, an artifact with no sha256, a trusted one, metadata
+# files left unverified, and aapt2 without Linux's (CI's) artifact.
+toolchain gradle-unlisted 1 'kit-core/gradle.lockfile, is not listed' apps/kit/android/kit-core/gradle.lockfile \
+  's/^\(org\.jetbrains\.kotlinx:kotlinx-serialization-json:\)[^=]*=/\10.0.0=/'
+toolchain gradle-no-sha256 1 'has no sha256' apps/gradle/gradle/verification-metadata.xml \
+  '/<artifact name="activity-[0-9.]*\.aar">/,/<sha256/s|<sha256 value="[0-9a-f]*"|<sha1 value="0"|'
+toolchain gradle-trust 1 'trusts artifacts unchecked' apps/gradle/gradle/verification-metadata.xml \
+  's|<verify-signatures>false</verify-signatures>|&<trusted-artifacts><trust group="com.example"/></trusted-artifacts>|'
+toolchain gradle-metadata 1 'does not verify metadata files' apps/gradle/gradle/verification-metadata.xml \
+  's|<verify-metadata>true</verify-metadata>|<verify-metadata>false</verify-metadata>|'
+toolchain gradle-aapt2-linux 1 'has no linux artifact' apps/gradle/gradle/verification-metadata.xml \
+  's|<artifact name="aapt2-\([^"]*\)-linux\.jar">|<artifact name="aapt2-\1-gone.jar">|'
 
 # --- the zizmor config -------------------------------------------------------
 

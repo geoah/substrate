@@ -1024,7 +1024,7 @@ tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
 run = ".mise/android.sh smoke"
 
 [tasks."android:lock"]
-description = "Rewrite the Gradle dependency locks after a change to gradle/libs.versions.toml"
+description = "Rewrite the Gradle dependency locks and the dependency verification metadata (every artifact's sha256) after a change to gradle/libs.versions.toml"
 tools = { swift = "6.4.2", java = "temurin-21.0.11+10.0.LTS" }
 run = ".mise/android.sh lock"
 
