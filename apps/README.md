@@ -1012,6 +1012,7 @@ app folder without one, or one missing a field below.
 | `asks` | the packages its approval asks to have set up, each `{"package": <id>, "atLeast": <version>}` as the manifest's `package` details send them, in the manifest's order: the floor is the version the build was written against |
 | `scopes` | the scopes it asks for, in the manifest's order |
 | `icon` | its 1024-pixel icon, relative to the app's folder |
+| `accent` | its accent, `{"light": "#RRGGBB", "dark": "#RRGGBB"}`, the colour its controls and links are drawn in: every `AccentColor` in its asset catalogs holds the same two values, and the Android build writes them as the app's `substrate_accent` (kit-ui's `KitTheme` draws its whole scheme from it). Required on Android; an app with no `AccentColor` and no Android has none and is drawn in the system's blue |
 | `feed` | the folder `.mise/apps.sh` publishes its releases and feeds under, relative to `SUBSTRATE_APPLE_RELEASE_URL`; empty is the root, where the console's are, and no two apps share one |
 
 An app publishes a package and asks for one apart: Workouts asks for

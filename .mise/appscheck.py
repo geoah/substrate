@@ -553,6 +553,7 @@ for app in apps:
 # the release reads each platform's ids from them; the scheme the release
 # archives is a target of the app's own apple/targets.yml; and two apps
 # never share a feed folder, where one's releases would replace the other's.
+# `accent` is optional here and held below, with the asset catalogs.
 
 FIELDS = {
     "id": str,
@@ -592,7 +593,7 @@ for app in apps:
     for key, kind in FIELDS.items():
         if not isinstance(doc.get(key), kind):
             flag(f"{rel(path)}: {key} is missing or not a {kind.__name__}")
-    for key in sorted(set(doc) - set(FIELDS) - set(PLATFORM_FIELDS)):
+    for key in sorted(set(doc) - set(FIELDS) - set(PLATFORM_FIELDS) - {"accent"}):
         flag(f"{rel(path)}: {key} is no app.json field (apps/README.md lists them)")
     if doc.get("id") != app:
         flag(f"{rel(path)}: id is {doc.get('id')!r}, and the app's folder is {app}")
@@ -658,6 +659,102 @@ for app in apps:
     has_ui = any(os.path.isdir(os.path.join(APPS, app, ui)) for ui in ("apple", "android"))
     if isinstance(icon, str) and has_ui and not os.path.isfile(os.path.join(APPS, app, icon)):
         flag(f"{rel(path)}: icon {icon} is not a file in apps/{app}")
+
+
+# --- an app's accent is named once, in app.json --------------------------
+#
+# The accent is the colour an app's controls and links are drawn in. Apple
+# reads it from an asset catalog's AccentColor, Android from the resource
+# build-logic writes out of app.json (kit-ui's `substrate_accent`), so the
+# two systems agree only while app.json and every AccentColor under the app
+# hold the same two values: light and dark, exact. An AccentColor without an
+# accent is a colour Android never draws, an accent without one a colour
+# Apple never draws, and an app on Android without one is drawn in kit-ui's
+# Substrate blue, which says another app.
+
+HEX = re.compile(r"#[0-9A-Fa-f]{6}")
+
+
+def colorset_value(color):
+    """A colorset entry's sRGB colour as #RRGGBB, or None for any other
+    spelling (another colour space, a system colour, a missing channel)."""
+    if not isinstance(color, dict) or color.get("color-space") != "srgb":
+        return None
+    components = color.get("components") or {}
+    out = []
+    for channel in ("red", "green", "blue"):
+        value = components.get(channel)
+        if isinstance(value, str) and value.lower().startswith("0x"):
+            byte = int(value, 16)
+        elif isinstance(value, (str, int, float)):
+            number = float(value)
+            byte = round(number * 255) if "." in str(value) else int(number)
+        else:
+            return None
+        if not 0 <= byte <= 255:
+            return None
+        out.append(byte)
+    return "#" + "".join(f"{b:02X}" for b in out)
+
+
+def colorset_accent(path):
+    """An AccentColor colorset as {"light", "dark"}, or the reason it is not one."""
+    try:
+        doc = json.loads(read(path))
+    except ValueError as e:
+        return f"is not JSON: {e}"
+    found = {}
+    for entry in doc.get("colors") or []:
+        appearances = entry.get("appearances") or []
+        if not appearances:
+            mode = "light"
+        elif appearances == [{"appearance": "luminosity", "value": "dark"}]:
+            mode = "dark"
+        else:
+            return f"has an entry for {appearances}, and an accent is a light and a dark colour"
+        value = colorset_value(entry.get("color"))
+        if value is None:
+            return f"spells its {mode} colour as other than sRGB channels"
+        if mode in found:
+            return f"has two {mode} colours"
+        found[mode] = value
+    if set(found) != {"light", "dark"}:
+        return f"has {sorted(found) or 'no colours'}, and an accent is a light and a dark colour"
+    return found
+
+
+for app in apps:
+    path = os.path.join(APPS, app, "app.json")
+    try:
+        doc = json.loads(read(path))
+    except (OSError, ValueError):
+        continue
+    if not isinstance(doc, dict):
+        continue
+    accent = doc.get("accent")
+    if "accent" in doc and (
+        not isinstance(accent, dict)
+        or set(accent) != {"light", "dark"}
+        or not all(isinstance(v, str) and HEX.fullmatch(v) for v in accent.values())
+    ):
+        flag(f'{rel(path)}: accent is {accent!r}, and it is {{"light": "#RRGGBB", "dark": "#RRGGBB"}}')
+        accent = None
+    platforms = doc.get("platforms") if isinstance(doc.get("platforms"), list) else []
+    if "android" in platforms and "accent" not in doc:
+        flag(f"{rel(path)}: platforms names android and there is no accent, which the Android build draws the app in")
+    colorsets = [p for p in walk(os.path.join(APPS, app)) if p.endswith(os.path.join("AccentColor.colorset", "Contents.json"))]
+    for colorset in colorsets:
+        read_back = colorset_accent(colorset)
+        if isinstance(read_back, str):
+            flag(f"{rel(colorset)} {read_back}")
+        elif "accent" not in doc:
+            flag(f"{rel(colorset)} is an accent ({read_back['light']}, dark {read_back['dark']}) that {rel(path)} does not name")
+        elif accent:
+            for mode in ("light", "dark"):
+                if read_back[mode] != accent[mode].upper():
+                    flag(f"{rel(colorset)}: the {mode} accent is {read_back[mode]}, and {rel(path)} names {accent[mode]}")
+    if "accent" in doc and not colorsets and {"ios", "macos"} & set(platforms):
+        flag(f"{rel(path)}: accent is there, and apps/{app} has no AccentColor in an asset catalog to draw it on Apple systems")
 
 
 # --- every third-party package is listed with its reason -----------------

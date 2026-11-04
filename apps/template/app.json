@@ -25,5 +25,9 @@
     "write:substrate.reamde.dev/template/*"
   ],
   "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "accent": {
+    "light": "#D92C58",
+    "dark": "#FF5E86"
+  },
   "feed": "template"
 }
