@@ -31,6 +31,7 @@ struct SubstrateTemplateApp: App {
             RootView()
                 .checkingForUpdates { updates.checkNow() }
                 .updateOffer(updates)
+                .onChange(of: updates.offer?.version, initial: true) { _, version in Template.updateOffered(version) }
                 #if os(macOS)
                 .frame(minWidth: 520, minHeight: 420)
                 #endif

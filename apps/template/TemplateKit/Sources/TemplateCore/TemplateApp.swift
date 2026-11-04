@@ -21,18 +21,29 @@ public struct TemplateApp: LinkedRecordsApp {
         /// read again.
         case foreground
         case clearSaved
+        /// The updater found a newer build, or none.
+        case offered(String?)
         case dismissProblem
     }
 
     public enum Event: Codable, Equatable, Sendable, LinkedRecordsEvent {
         case records(LinkedRecords.Event)
         case usage([AreaUsage])
+        case offered(String?)
         case problemDismissed
+
+        public var recordsEvent: LinkedRecords.Event? {
+            if case let .records(event) = self { event } else { nil }
+        }
     }
 
     public enum Effect: Equatable, Sendable, LinkedRecordsEffect {
         case records(LinkedRecords.Effect)
         case readUsage
+
+        public var recordsEffect: LinkedRecords.Effect? {
+            if case let .records(effect) = self { effect } else { nil }
+        }
     }
 
     public struct State: Codable, Equatable, Sendable, LinkedRecordsHolding {
@@ -40,6 +51,8 @@ public struct TemplateApp: LinkedRecordsApp {
         /// Each area of the repository's folder and its size, nil until read.
         public var usage: [AreaUsage]?
         public var problem: String?
+        /// The newer build the updater offers, which About shows.
+        public var offered: String?
         /// Moved each time the items may be drawn otherwise: the items'
         /// keyed list's revision, so the Android bridge sends a delta.
         public var revision = 0
@@ -81,6 +94,7 @@ public struct TemplateApp: LinkedRecordsApp {
         case .refresh: return [.records(.refreshAsked)]
         case .foreground: return [.records(.foregrounded)]
         case .clearSaved: return [.records(.clearAsked)]
+        case let .offered(version): return [.offered(version)]
         case .dismissProblem: return [.problemDismissed]
         }
     }
@@ -97,6 +111,8 @@ public struct TemplateApp: LinkedRecordsApp {
             break
         case let .usage(usage):
             next.usage = usage
+        case let .offered(version):
+            next.offered = version
         case .problemDismissed:
             next.problem = nil
         }

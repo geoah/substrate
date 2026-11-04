@@ -15,7 +15,7 @@ public enum TemplatePresenter {
             notices: linked.notice(state.linked).map { [$0] } ?? [],
             problem: state.problem.map { ProblemPresentation(title: "A change was not kept", message: $0) }, settings: [],
             storage: SettingsPresenter.storage(state.usage ?? [], budget: nil),
-            about: AboutPresentation.present(appName: TemplateApp.appName, version: build.version, channel: build.channel, offered: nil))
+            about: AboutPresentation.present(appName: TemplateApp.appName, version: build.version, channel: build.channel, offered: state.offered))
     }
 
     /// An item's name, as its record holds it.

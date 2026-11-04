@@ -857,7 +857,7 @@ description = "Run Substrate Chat's tests on the Mac: ChatKit's, then the app ta
 run = ".mise/apple.sh test:chat"
 
 [tasks."apps:gallery"]
-description = "Draw every shared screen's fixtures with SwiftUI and with Compose, to build/gallery/apple and build/gallery/android, with build/gallery/index.html beside each other, and the kit's views as the apps call them and Substrate Tasks' screens under build/gallery/apple"
+description = "Draw every shared screen's fixtures with SwiftUI and with Compose, to build/gallery/apple and build/gallery/android, with build/gallery/index.html beside each other, and the kit's views as the apps call them and every app's own screens under build/gallery/apple"
 # The gallery is a check as well as a picture (docs/plans/app-kit.md, §7.4):
 # a fixture whose screen has no renderer on either system fails the run,
 # which `mise run apple:test:kit` and `mise run android:test` also hold

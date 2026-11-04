@@ -14,7 +14,7 @@ struct TabRoot: View {
     let app: TasksPresentation
 
     var body: some View {
-        AppMenuView(app.menu, layout: .tabs, select: { shell.send(.select(section: $0)) }) { section in
+        AppMenuView(app.menu, select: { shell.send(.select(section: $0)) }) { section in
             content(section.id)
         }
     }

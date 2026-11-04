@@ -11,7 +11,8 @@ import Testing
 /// The app's screens drawn from TemplateKit's fixtures by the views the app
 /// draws them with, in its UI framework's tests, which run on the Mac with
 /// no host app: each fixture must draw, and with SUBSTRATE_GALLERY naming a
-/// folder, each is written there as a PNG at an iPhone's size.
+/// folder (`mise run apps:gallery`), each is written there as a PNG at an
+/// iPhone's size.
 @MainActor
 @Suite struct GalleryTests {
     var link: LinkPresentation<TemplatePresentation>? {

@@ -12,10 +12,3 @@ public struct SettingsView: View {
             .environment(Tasks.shell)
     }
 }
-
-public extension View {
-    /// About's Check for Updates runs `action`: the updater the scene holds.
-    func checkingForUpdates(_ action: @escaping @MainActor () -> Void) -> some View {
-        environment(\.checkForUpdates, action)
-    }
-}

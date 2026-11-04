@@ -25,6 +25,9 @@ public enum Template {
     /// The app came to the front.
     @MainActor public static func cameForward() { shell.cameForward() }
 
+    /// The updater found a newer build, or none.
+    @MainActor public static func updateOffered(_ version: String?) { shell.send(.offered(version)) }
+
     static var configuration: TemplateShell.Configuration {
         TemplateShell.Configuration(
             manifest: TemplateManifest.current, keychainService: "dev.reamde.substrate.template", folder: "SubstrateTemplate",

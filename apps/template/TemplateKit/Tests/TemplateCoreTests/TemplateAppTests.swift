@@ -90,4 +90,16 @@ struct TemplateRootTests {
         #expect(await harness.presentation.items.rows.isEmpty)
         #expect(await harness.presentation.items.revision > added)
     }
+
+    @Test func theUpdatersOfferIsShownInAbout() async throws {
+        let harness = ControllerHarness(TemplateApp(cache: nil, outbox: nil, words: TemplateApp.words(device: "this iPhone"),
+                                                    build: BuildFacts(version: "0.1.0 (1)")), performsEffects: false)
+        let before = await harness.presentation.about
+        await harness.send(.offered("0.2.0"))
+        let offered = await harness.presentation.about
+        #expect(offered != before)
+        #expect(offered == AboutPresentation.present(appName: TemplateApp.appName, version: "0.1.0 (1)", channel: nil, offered: "0.2.0"))
+        await harness.send(.offered(nil))
+        #expect(await harness.presentation.about == before)
+    }
 }
