@@ -1709,7 +1709,7 @@ settings() {
     return
   fi
   want="$rs_writes"
-  for env in release llm-live; do
+  for env in release llm-live testflight; do
     want="$want
 PUT $rs/environments/$env${tail:+
 ${tail//@env@/$env}}"
@@ -1732,7 +1732,7 @@ body() {
 body "PUT $rs/actions/permissions/workflow" \
   '. == {"default_workflow_permissions": "read", "can_approve_pull_request_reviews": false}'
 body "PUT $rs/actions/permissions" '.enabled == true and .sha_pinning_required == true'
-for env in release llm-live; do
+for env in release llm-live testflight; do
   body "PUT $rs/environments/$env" \
     '.deployment_branch_policy == {"protected_branches": false, "custom_branch_policies": true}'
   body "POST $rs/environments/$env/deployment-branch-policies" '. == {"name": "main", "type": "branch"}'

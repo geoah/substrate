@@ -12,7 +12,8 @@
 # `commits:check` (the `conventional commits` check) holds both. Dependabot
 # reports and patches vulnerable dependencies, the workflow token reads
 # unless a workflow asks for more, every action is pinned to a commit, and
-# the `release` and `llm-live` environments deploy from main alone.
+# the `release`, `llm-live` and `testflight` environments deploy from main
+# alone.
 #
 # A required check must exist on the head of every open pull request, so
 # apply this after the workflow that runs it has merged, and rebase the open
@@ -60,8 +61,10 @@ actions='{
 
 # The environments whose secrets only main's workflows may read: `release`
 # holds RELEASE_PLEASE_TOKEN (docs/releasing.md has the move from a
-# repository secret), and `llm-live` the key the weekly live suite spends.
-environments=(release llm-live)
+# repository secret), `llm-live` the key the weekly live suite spends, and
+# `testflight` the App Store Connect key that signs and uploads the iPhone
+# apps.
+environments=(release llm-live testflight)
 environment='{
   "deployment_branch_policy": {
     "protected_branches": false,
