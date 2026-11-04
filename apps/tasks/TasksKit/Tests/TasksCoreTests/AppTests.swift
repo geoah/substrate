@@ -375,6 +375,12 @@ struct AppTests {
         #expect(app.settings.map(\.title) == ["Reminders", "Lists"])
         #expect(app.settings[0].rows.map(\.label) == ["Remind Me When Tasks Are Due", "Tasks Due on a Day", "Reminders Set on This iPhone"])
         #expect(app.about.version == LabeledValue("Version", "0.1.0 (1)"))
+        // Android's device words are lowercase; the label is title case throughout.
+        for (device, label) in [("this phone", "Reminders Set on This Phone"), ("this tablet", "Reminders Set on This Tablet"),
+                                ("this iPad", "Reminders Set on This iPad"), ("this Mac", "Reminders Set on This Mac")] {
+            let sections = TasksSettings.sections(SettingsValues(), permission: .on, scheduled: 0, device: device, locale: Locale(identifier: "en_US"))
+            #expect(sections[0].rows.last?.label == label)
+        }
         // Routed as the shell routes them, with what TasksShell configures.
         let route = { SettingsRoute<TasksApp>.route($0, settings: { .settings($0) }, clearSaved: .clearSaved) }
         #expect(route(.toggle(row: .app(TasksSettings.remind), on: false))

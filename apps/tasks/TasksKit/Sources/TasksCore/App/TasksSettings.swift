@@ -40,7 +40,7 @@ public enum TasksSettings {
                 reminders.append(SettingsRow(id: .app("notificationsOff"), label: "Notifications are off for Substrate Tasks",
                                              detail: "Turn them on in the system's Settings to be reminded.", control: .note(.caution)))
             } else {
-                reminders.append(SettingsRow(id: .app("scheduled"), label: "Reminders Set on \(device.capitalizedFirst)",
+                reminders.append(SettingsRow(id: .app("scheduled"), label: "Reminders Set on \(titled(device))",
                                              control: .value(String(scheduled), verbatim: false)))
             }
         }
@@ -56,6 +56,15 @@ public enum TasksSettings {
                             footer: "A task due at a time reminds you then; a task due on a day, at the hour above."),
             SettingsSection(id: .app("lists"), title: "Lists", rows: lists),
         ]
+    }
+
+    /// The device's words in a title-case label: "this phone" is "This
+    /// Phone"; a word already carrying a capital ("iPhone") is kept as it
+    /// is spelled.
+    static func titled(_ device: String) -> String {
+        device.split(separator: " ", omittingEmptySubsequences: false)
+            .map { $0.contains(where: \.isUppercase) ? String($0) : String($0).capitalizedFirst }
+            .joined(separator: " ")
     }
 
     /// "9:00 AM", or "09:00", as the locale writes an hour.
