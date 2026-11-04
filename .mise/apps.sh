@@ -1839,7 +1839,7 @@ site() {
 testflight_records() {
 	local bundles=() app found missing=""
 	for app in "${RELEASE_APPS[@]}"; do bundles+=("$(app_get "$app" .apple.bundleID)"); done
-	found="$(xcrun swift "$APPS_DIR/xcode/scripts/appstoreconnect.swift" "${bundles[@]}")" ||
+	found="$(xcrun swift "$APPS_DIR/xcode/scripts/appstoreconnect.swift" records "${bundles[@]}")" ||
 		die "App Store Connect's records could not be read with the API key"
 	for app in "${RELEASE_APPS[@]}"; do
 		grep -q "^$(app_get "$app" .apple.bundleID) " <<<"$found" && continue

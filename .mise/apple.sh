@@ -482,11 +482,13 @@ export_archive() {
 	local platform="$1" method="$2" out="$3"
 	plutil -create xml1 "$out/$platform-export.plist"
 	plutil -insert method -string "$method" "$out/$platform-export.plist"
-	plutil -insert signingStyle -string automatic "$out/$platform-export.plist"
-	# An App Store Connect export may otherwise give the build a number of
-	# its own, and the build the checks and the upload hold is the stamped one.
 	if [ "$method" = app-store-connect ]; then
+		# An App Store Connect export may otherwise give the build a number of
+		# its own, and the build the checks and the upload hold is the stamped one.
 		plutil -insert manageAppVersionAndBuildNumber -bool NO "$out/$platform-export.plist"
+		store_profiles "$out/$platform.xcarchive" "$out/$platform-export.plist" || return 1
+	else
+		plutil -insert signingStyle -string automatic "$out/$platform-export.plist"
 	fi
 	xcodebuild -exportArchive -archivePath "$out/$platform.xcarchive" -exportPath "$out/$platform" \
 		-exportOptionsPlist "$out/$platform-export.plist" ${PROVISION[@]+"${PROVISION[@]}"} -quiet || return 1
@@ -494,6 +496,31 @@ export_archive() {
 	# associated domain in its signed entitlements, and a profile without
 	# the capability drops it: such a build could never receive a sign-in.
 	require_associated_domains "$out/$platform"
+}
+
+# An App Store export signed by hand, into the export plist $2, for every
+# bundle the archive $1 holds (the app and each extension inside it): the
+# keychain's Apple Distribution identity and an App Store profile each, made
+# or reused through the API (appstoreconnect.swift profiles) and installed
+# where Xcode reads profiles. Automatic signing would sign with the team's
+# cloud-managed certificate, which an API key may not use.
+store_profiles() {
+	local archive="$1" plist="$2" hashes bundle uuid bundles=() mapping='{}' dir lines
+	hashes="$(security find-identity -v -p codesigning | awk '/"Apple Distribution: / {print $2}' | paste -sd, -)"
+	[ -n "$hashes" ] || { echo "apple: no Apple Distribution identity is in the keychain; import the one in the release secrets" >&2; return 1; }
+	while IFS= read -r -d '' path; do
+		bundles+=("$(plutil -extract CFBundleIdentifier raw -o - "$path/Info.plist")")
+	done < <(find "$archive/Products/Applications" \( -name '*.app' -o -name '*.appex' \) -type d -print0)
+	dir="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+	mkdir -p "$dir"
+	lines="$(xcrun swift "$APPLE_ROOT/apps/xcode/scripts/appstoreconnect.swift" profiles "$dir" "$hashes" "${bundles[@]}")" || return 1
+	while read -r bundle uuid; do
+		mapping="$(jq -c --arg b "$bundle" --arg u "$uuid" '. + {($b): $u}' <<<"$mapping")"
+	done <<<"$lines"
+	plutil -insert signingStyle -string manual "$plist"
+	plutil -insert signingCertificate -string "Apple Distribution" "$plist"
+	plutil -insert teamID -string "${SUBSTRATE_APPLE_TEAM_ID:?set SUBSTRATE_APPLE_TEAM_ID}" "$plist"
+	plutil -insert provisioningProfiles -json "$mapping" "$plist"
 }
 
 # Refuses an exported app (an .ipa, or a Mac .app) whose signature carries no
