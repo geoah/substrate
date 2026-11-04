@@ -48,7 +48,10 @@ android {
             // the Swift runtime it loads; this app loads SubstrateTasks, which
             // holds the kit too, over the same runtime.
             excludes += "**/libSubstrateAndroid.so"
-            pickFirsts += "**/*.so"
+            // The runtime both libraries load, one copy; a catch-all here
+            // would win over the exclude above.
+            pickFirsts += listOf("**/libswift*.so", "**/libFoundation*.so", "**/lib_FoundationICU.so", "**/libdispatch.so",
+                                 "**/libBlocksRuntime.so", "**/libc++_shared.so")
         }
     }
     testOptions {
