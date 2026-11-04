@@ -158,7 +158,10 @@ and each step holds what it says before the next starts:
    and its files go up under each feed's `releases/<build>/`,
    where no feed names them yet. Those keys are immutable: a key already
    holding the same bytes is passed over, and one holding other bytes stops
-   the release.
+   the release. The stage is what a rerun resumes, so it stays until that
+   build's publication completes, its run ending with `released …`; only
+   then may it go (`chmod -R u+w build/apps/releases/<build> && rm -rf
+   build/apps/releases/<build>`), and never `build/apps` whole.
 4. **The site** (below), the closures first and the authority document last.
 5. **Each app made current, last and alone**: its `release.json`, naming
    every platform's build, after every file it names; then the feeds its
@@ -208,8 +211,11 @@ again), and a rerun's own message says why it stopped.
 `build/apps/dry-run/staged/<build>/`, apart from a release's), publishes and
 activates into `build/apps/dry-run/release` and `build/apps/dry-run/site`,
 simulated buckets with the same conditional writes and time bounds, so the
-lease, a rerun and a conflict can be tried there; they persist between dry
-runs (`chmod -R u+w build/apps && rm -rf build/apps` starts over). It unsets
+lease, a rerun and a conflict can be tried there. They persist between dry
+runs, and with no `apps:release` or `apps:site` running, `chmod -R u+w
+build/apps/dry-run && rm -rf build/apps/dry-run` starts them over; that
+leaves a release's stages under `build/apps/releases`, which a dry run
+never touches and a release in flight resumes from. It unsets
 the AWS key, the App Store Connect key and the Android release key's
 variables (`SUBSTRATE_ANDROID_KEYSTORE`, `_KEYSTORE_PASSWORD`, `_KEY_ALIAS`,
 `_KEY_PASSWORD`, `_CERT_SHA256` and `_PREVIOUS_CERT_SHA256`) before anything
