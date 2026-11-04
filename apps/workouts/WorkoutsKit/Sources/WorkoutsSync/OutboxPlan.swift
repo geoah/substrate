@@ -43,16 +43,18 @@ public enum OutboxPlan {
         }
         finish["status"] = .string(SessionStatus.finished.rawValue)
         finish["revision"] = .number(Decimal(revision))
-        return OutboxEntry(method: .patch, kind: session.kind, recordID: records.session.id.rawValue, properties: finish, guarded: true,
-                           batch: records.session.id.rawValue)
+        return OutboxEntry(
+            method: .patch, kind: session.kind, recordID: records.session.id.rawValue, properties: finish, guarded: true,
+            batch: records.session.id.rawValue)
     }
 
     /// The Health save's workout UUID on the session, a revision above
     /// Finish's.
     public static func healthLinked(_ session: SessionID, healthKitWorkout: String, revision: Int, codec: RecordCodec) -> OutboxEntry {
-        OutboxEntry(method: .patch, kind: codec.kinds.session, recordID: session.rawValue,
-                    properties: ["healthKitWorkout": .string(healthKitWorkout), "revision": .number(Decimal(revision + 2))],
-                    guarded: true, batch: session.rawValue)
+        OutboxEntry(
+            method: .patch, kind: codec.kinds.session, recordID: session.rawValue,
+            properties: ["healthKitWorkout": .string(healthKitWorkout), "revision": .number(Decimal(revision + 2))],
+            guarded: true, batch: session.rawValue)
     }
 
     public static func exerciseAdded(_ exercise: Exercise, codec: RecordCodec) -> OutboxEntry {
@@ -77,8 +79,9 @@ public enum OutboxPlan {
     /// changed (`RoutineEditor.patch`), as a PATCH under the version the
     /// owner edited.
     public static func routineEdited(_ routine: RoutineID, patch: JSONObject, baseVersion: Int?, codec: RecordCodec) -> OutboxEntry {
-        OutboxEntry(method: .patch, kind: codec.kinds.routine, recordID: routine.rawValue, properties: patch, guarded: true,
-                    baseVersion: baseVersion ?? 0)
+        OutboxEntry(
+            method: .patch, kind: codec.kinds.routine, recordID: routine.rawValue, properties: patch, guarded: true,
+            baseVersion: baseVersion ?? 0)
     }
 
     /// A new routine (a duplicate), written whole at an id nothing holds:
@@ -86,8 +89,9 @@ public enum OutboxPlan {
     /// is refused, never merged into.
     public static func routineCreated(_ routine: Routine, codec: RecordCodec) -> OutboxEntry {
         let record = codec.encode(routine)
-        return OutboxEntry(method: .put, kind: record.kind, recordID: record.id, properties: record.properties, guarded: true,
-                           baseVersion: 0)
+        return OutboxEntry(
+            method: .put, kind: record.kind, recordID: record.id, properties: record.properties, guarded: true,
+            baseVersion: 0)
     }
 
     /// The exercises the outbox must write before `uploads`: every one an
@@ -97,9 +101,10 @@ public enum OutboxPlan {
     /// sample's exercises, and a repository that never got the sample would
     /// refuse it: a session's and a set's exercise must exist. An id no
     /// catalogue knows is left to the server's refusal, parked with its words.
-    public static func exercisesFor(_ uploads: [SessionRecords], server: Set<String>, known: [ExerciseID: Exercise],
-                                    codec: RecordCodec) -> [OutboxEntry]
-    {
+    public static func exercisesFor(
+        _ uploads: [SessionRecords], server: Set<String>, known: [ExerciseID: Exercise],
+        codec: RecordCodec
+    ) -> [OutboxEntry] {
         var named = Set<ExerciseID>()
         for records in uploads {
             named.formUnion(records.session.slots.map(\.exercise))

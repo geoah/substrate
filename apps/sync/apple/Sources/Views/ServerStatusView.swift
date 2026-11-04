@@ -23,16 +23,18 @@ struct ServerStatusView: View {
             openFix: { path in
                 if let server = model.session?.server, let page = ServerAddress.page(server, path: path) { openURL(page) }
             },
-            signOut: { model.signOut() })
-            .sheet(isPresented: $reviewing) {
-                ReviewChangesSheet(appName: SyncManifest.appName, host: model.session.map { ServerAddress.display($0.server) } ?? "your server",
-                                   changes: model.reviewChanges, firstSignIn: false,
-                                   onContinue: {
-                                       reviewing = false
-                                       Task { await model.authorize() }
-                                   },
-                                   onCancel: { reviewing = false })
-            }
+            signOut: { model.signOut() }
+        )
+        .sheet(isPresented: $reviewing) {
+            ReviewChangesSheet(
+                appName: SyncManifest.appName, host: model.session.map { ServerAddress.display($0.server) } ?? "your server",
+                changes: model.reviewChanges, firstSignIn: false,
+                onContinue: {
+                    reviewing = false
+                    Task { await model.authorize() }
+                },
+                onCancel: { reviewing = false })
+        }
     }
 }
 
@@ -89,8 +91,9 @@ struct ServerStatusForm: View {
                 } else {
                     // The review is the screen's own button, below the banner.
                     Section {
-                        AppStatusBanner(issues: issues, appName: SyncManifest.appName, host: host,
-                                        actions: AppStatusActions(signInAgain: signInAgain, retry: checkAgain, openFix: openFix))
+                        AppStatusBanner(
+                            issues: issues, appName: SyncManifest.appName, host: host,
+                            actions: AppStatusActions(signInAgain: signInAgain, retry: checkAgain, openFix: openFix))
                     }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
@@ -107,9 +110,10 @@ struct ServerStatusForm: View {
             if reviewable {
                 Section {
                     Button(action: review) {
-                        WideLabel(title: changes.isEmpty ? "Renew Access" : status?.approvalBlocked == true ? "Review" : "Review and Approve",
-                                  systemImage: "checkmark.shield",
-                                  busy: authorizing)
+                        WideLabel(
+                            title: changes.isEmpty ? "Renew Access" : status?.approvalBlocked == true ? "Review" : "Review and Approve",
+                            systemImage: "checkmark.shield",
+                            busy: authorizing)
                     }
                     .primaryAction()
                     .disabled(authorizing)

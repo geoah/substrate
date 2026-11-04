@@ -1,7 +1,8 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
 import SubstrateCore
+import Testing
+
+@testable import WorkoutsCore
 
 /// SplitMix64: a seeded generator, so minted ids are reproducible in tests.
 struct SeededGenerator: RandomNumberGenerator {
@@ -96,13 +97,15 @@ struct UUIDv7Tests {
 
 @Suite("Exercise slugs", .timeLimit(.minutes(10)))
 struct ExerciseSlugTests {
-    @Test("a new exercise's id is its name's slug", arguments: [
-        ("Chest Press (Machine)", "chest-press-machine"),
-        ("Farmer's Carry (Dumbbell)", "farmer-s-carry-dumbbell"),
-        ("  Développé couché  ", "developpe-couche"),
-        ("21s — Curl", "21s-curl"),
-        ("***", "exercise"),
-    ])
+    @Test(
+        "a new exercise's id is its name's slug",
+        arguments: [
+            ("Chest Press (Machine)", "chest-press-machine"),
+            ("Farmer's Carry (Dumbbell)", "farmer-s-carry-dumbbell"),
+            ("  Développé couché  ", "developpe-couche"),
+            ("21s — Curl", "21s-curl"),
+            ("***", "exercise"),
+        ])
     func slug(name: String, id: String) {
         #expect(ExerciseID.slug(for: name) == ExerciseID(id))
     }

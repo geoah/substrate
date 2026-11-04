@@ -46,6 +46,5 @@ public struct WorkoutsPresentation: Codable, Equatable, Sendable {
 
     public var exercises: [ExerciseID: Exercise] { catalog?.exercises ?? [:] }
 
-    public static let conflictFirst
-        = "This routine has an edit waiting for your choice after a conflict. Choose Keep My Edit or Use Theirs on its page first."
+    public static let conflictFirst = "This routine has an edit waiting for your choice after a conflict. Choose Keep My Edit or Use Theirs on its page first."
 }

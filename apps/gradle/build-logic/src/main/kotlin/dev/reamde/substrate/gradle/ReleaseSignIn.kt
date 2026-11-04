@@ -11,19 +11,17 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.kotlin.dsl.register
 
 /**
- * Refuses a release-type build of an app that signs in unless it is
- * stamped with an https client id and the https callback it claims
- * (`-Psubstrate.release.clientID`, `-Psubstrate.release.redirect`): a
- * release signs in through that callback alone, never through loopback
- * (docs/plans/app-kit.md §5.4), so one built without them could not sign
- * in at all. Every release variant's `pre<Variant>Build` waits on the
- * check, so no task of the variant runs first.
+ * Refuses a release-type build of an app that signs in unless it is stamped with an https client id and the https callback it claims
+ * (`-Psubstrate.release.clientID`, `-Psubstrate.release.redirect`): a release signs in through that callback alone, never through loopback
+ * (docs/plans/app-kit.md §5.4), so one built without them could not sign in at all. Every release variant's `pre<Variant>Build` waits on the check, so no task
+ * of the variant runs first.
  */
 fun Project.requireReleaseSignIn(clientID: String, redirect: String) {
-    val check = tasks.register<CheckReleaseSignIn>("checkReleaseSignIn") {
-        this.clientID.set(clientID)
-        this.redirect.set(redirect)
-    }
+    val check =
+        tasks.register<CheckReleaseSignIn>("checkReleaseSignIn") {
+            this.clientID.set(clientID)
+            this.redirect.set(redirect)
+        }
     val components = extensions.getByType(AndroidComponentsExtension::class.java)
     components.onVariants(components.selector().withBuildType("release")) { variant ->
         val pre = "pre${variant.name.replaceFirstChar { it.uppercase() }}Build"
@@ -43,7 +41,8 @@ abstract class CheckReleaseSignIn : DefaultTask() {
         if (problems.isNotEmpty()) {
             throw GradleException(
                 "A release signs in only through its claimed https callback, so it is built with both halves of the stamp: " +
-                    problems.joinToString("; ") + ". `mise run android:release:build <app>` passes them; a local build is a debug one.",
+                    problems.joinToString("; ") +
+                    ". `mise run android:release:build <app>` passes them; a local build is a debug one."
             )
         }
     }
@@ -57,8 +56,13 @@ fun releaseSignInProblems(clientID: String, redirect: String): List<String> {
         problems += "substrate.release.clientID is not an https URL (\"$clientID\")"
     }
     val callback = runCatching { URI(redirect.trim()) }.getOrNull()
-    if (callback?.scheme?.lowercase() != "https" || callback.host.isNullOrEmpty() || (callback.path?.length ?: 0) <= 1 ||
-        callback.rawQuery != null || callback.rawFragment != null || callback.rawUserInfo != null
+    if (
+        callback?.scheme?.lowercase() != "https" ||
+            callback.host.isNullOrEmpty() ||
+            (callback.path?.length ?: 0) <= 1 ||
+            callback.rawQuery != null ||
+            callback.rawFragment != null ||
+            callback.rawUserInfo != null
     ) {
         problems += "substrate.release.redirect is not an https callback with a host and a path (\"$redirect\")"
     }

@@ -21,9 +21,10 @@ public struct AccountSection: View {
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
 
-    public init(session: Session, manifest: AppManifest? = nil, serverVersion: String? = nil, unrevoked: [Session] = [],
-                onChangeAccess: (() -> Void)? = nil, onSignOut: @escaping () -> Void)
-    {
+    public init(
+        session: Session, manifest: AppManifest? = nil, serverVersion: String? = nil, unrevoked: [Session] = [],
+        onChangeAccess: (() -> Void)? = nil, onSignOut: @escaping () -> Void
+    ) {
         self.session = session
         self.manifest = manifest
         self.serverVersion = serverVersion
@@ -33,10 +34,12 @@ public struct AccountSection: View {
     }
 
     public var body: some View {
-        RepositoryScreen(RepositoryPresenter.present(session: SessionFacts(session), manifest: manifest, serverVersion: serverVersion,
-                                                     unrevoked: unrevoked.map(SessionFacts.init), offersChangeAccess: onChangeAccess != nil,
-                                                     locale: locale, timeZone: timeZone),
-                         onChangeAccess: onChangeAccess, onSignOut: onSignOut)
+        RepositoryScreen(
+            RepositoryPresenter.present(
+                session: SessionFacts(session), manifest: manifest, serverVersion: serverVersion,
+                unrevoked: unrevoked.map(SessionFacts.init), offersChangeAccess: onChangeAccess != nil,
+                locale: locale, timeZone: timeZone),
+            onChangeAccess: onChangeAccess, onSignOut: onSignOut)
     }
 }
 #endif

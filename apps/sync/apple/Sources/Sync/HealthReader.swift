@@ -132,7 +132,8 @@ struct HealthReader: Sendable {
         await add("mindful_minutes", "min") {
             var minutes: [Date: (qty: Double, sources: [String])] = [:]
             for s in try await categorySamples(.mindfulSession, overlapping: day) {
-                let start = max(s.startDate, day.lowerBound), end = min(s.endDate, day.upperBound)
+                let start = max(s.startDate, day.lowerBound)
+                let end = min(s.endDate, day.upperBound)
                 guard end > start else { continue }
                 let minute = Date(timeIntervalSinceReferenceDate: (start.timeIntervalSinceReferenceDate / 60).rounded(.down) * 60)
                 minutes[minute, default: (0, [])].qty += end.timeIntervalSince(start) / 60
@@ -182,12 +183,13 @@ struct HealthReader: Sendable {
         let around = day.lowerBound.addingTimeInterval(-18 * 3600) ..< day.upperBound.addingTimeInterval(18 * 3600)
         do {
             let predicate = HKQuery.predicateForSamples(withStart: around.lowerBound, end: around.upperBound)
-            let sleep = try await noDataIsEmpty {
-                try await HKSampleQueryDescriptor(
-                    predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: predicate)],
-                    sortDescriptors: [SortDescriptor(\.startDate)]
-                ).result(for: store)
-            } ?? []
+            let sleep =
+                try await noDataIsEmpty {
+                    try await HKSampleQueryDescriptor(
+                        predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: predicate)],
+                        sortDescriptors: [SortDescriptor(\.startDate)]
+                    ).result(for: store)
+                } ?? []
             let segments = sleep.compactMap { s -> SleepSegment? in
                 guard let value = Self.sleepValue(s.value) else { return nil }
                 return SleepSegment(start: s.startDate, end: s.endDate, value: value, source: s.sourceRevision.source.name)
@@ -198,12 +200,13 @@ struct HealthReader: Sendable {
         }
 
         do {
-            let workouts = try await noDataIsEmpty {
-                try await HKSampleQueryDescriptor(
-                    predicates: [.workout(HKQuery.predicateForSamples(withStart: day.lowerBound, end: day.upperBound, options: .strictStartDate))],
-                    sortDescriptors: [SortDescriptor(\.startDate)]
-                ).result(for: store)
-            } ?? []
+            let workouts =
+                try await noDataIsEmpty {
+                    try await HKSampleQueryDescriptor(
+                        predicates: [.workout(HKQuery.predicateForSamples(withStart: day.lowerBound, end: day.upperBound, options: .strictStartDate))],
+                        sortDescriptors: [SortDescriptor(\.startDate)]
+                    ).result(for: store)
+                } ?? []
             for w in workouts {
                 do {
                     delivery.workouts.append(try await summary(w).json(rows))
@@ -220,10 +223,11 @@ struct HealthReader: Sendable {
         for (id, name) in CycleTracking.types {
             do {
                 for s in try await categorySamples(id, startingIn: day) {
-                    delivery.cycle.append(CycleTracking.entry(
-                        name: name, value: CycleTracking.value(id, s.value, s.metadata), start: s.startDate, end: s.endDate,
-                        cycleStart: id == .menstrualFlow ? (s.metadata?[HKMetadataKeyMenstrualCycleStart] as? NSNumber)?.boolValue : nil,
-                        source: s.sourceRevision.source.name, rows: rows))
+                    delivery.cycle.append(
+                        CycleTracking.entry(
+                            name: name, value: CycleTracking.value(id, s.value, s.metadata), start: s.startDate, end: s.endDate,
+                            cycleStart: id == .menstrualFlow ? (s.metadata?[HKMetadataKeyMenstrualCycleStart] as? NSNumber)?.boolValue : nil,
+                            source: s.sourceRevision.source.name, rows: rows))
                 }
             } catch {
                 delivery.skipped.append("\(name): \(error.localizedDescription)")
@@ -247,7 +251,8 @@ struct HealthReader: Sendable {
     private func summary(_ w: HKWorkout) async throws -> WorkoutSummary {
         let meta = w.metadata ?? [:]
         let indoor = (meta[HKMetadataKeyIndoorWorkout] as? NSNumber)?.boolValue ?? false
-        let openWater = (meta[HKMetadataKeySwimmingLocationType] as? NSNumber)?.intValue
+        let openWater =
+            (meta[HKMetadataKeySwimmingLocationType] as? NSNumber)?.intValue
             == HKWorkoutSwimmingLocationType.openWater.rawValue
         var s = WorkoutSummary(
             id: w.uuid, name: WorkoutNames.name(w.workoutActivityType, indoor: indoor, openWater: openWater),
@@ -260,18 +265,21 @@ struct HealthReader: Sendable {
             }
         }
         if let hr = w.statistics(for: HKQuantityType(.heartRate)), let mn = hr.minimumQuantity(),
-           let avg = hr.averageQuantity(), let mx = hr.maximumQuantity() {
+            let avg = hr.averageQuantity(), let mx = hr.maximumQuantity()
+        {
             s.heartRate = (mn.doubleValue(for: Self.perMinute), avg.doubleValue(for: Self.perMinute), mx.doubleValue(for: Self.perMinute))
         }
         s.elevationUpM = (meta[HKMetadataKeyElevationAscended] as? HKQuantity)?.doubleValue(for: .meter())
         s.timeZone = meta[HKMetadataKeyTimeZone] as? String
         let span = w.startDate ..< max(w.endDate, w.startDate.addingTimeInterval(1))
-        let minutes = try await collection(.heartRate, span, anchor: w.startDate,
-                                           options: [.discreteMin, .discreteAverage, .discreteMax, .separateBySource])
+        let minutes = try await collection(
+            .heartRate, span, anchor: w.startDate,
+            options: [.discreteMin, .discreteAverage, .discreteMax, .separateBySource])
         s.heartRateData = buckets(minutes, span).compactMap { b in
             guard let mn = b.minimumQuantity(), let avg = b.averageQuantity(), let mx = b.maximumQuantity() else { return nil }
-            return .init(at: b.startDate, min: mn.doubleValue(for: Self.perMinute), avg: avg.doubleValue(for: Self.perMinute),
-                         max: mx.doubleValue(for: Self.perMinute), sources: names(b.sources))
+            return .init(
+                at: b.startDate, min: mn.doubleValue(for: Self.perMinute), avg: avg.doubleValue(for: Self.perMinute),
+                max: mx.doubleValue(for: Self.perMinute), sources: names(b.sources))
         }
         s.route = WorkoutRoute.thinned(try await route(w))
         return s
@@ -279,12 +287,13 @@ struct HealthReader: Sendable {
 
     /// The workout's GPS track, every point of every route sample.
     private func route(_ w: HKWorkout) async throws -> [CLLocation] {
-        let routes = try await noDataIsEmpty {
-            try await HKSampleQueryDescriptor(
-                predicates: [.workoutRoute(HKQuery.predicateForObjects(from: w))],
-                sortDescriptors: [SortDescriptor(\.startDate)]
-            ).result(for: store)
-        } ?? []
+        let routes =
+            try await noDataIsEmpty {
+                try await HKSampleQueryDescriptor(
+                    predicates: [.workoutRoute(HKQuery.predicateForObjects(from: w))],
+                    sortDescriptors: [SortDescriptor(\.startDate)]
+                ).result(for: store)
+            } ?? []
         var points: [CLLocation] = []
         for r in routes {
             for try await location in HKWorkoutRouteQueryDescriptor(r).results(for: store) {
@@ -374,8 +383,10 @@ func noDataIsEmpty<T>(_ read: () async throws -> T) async throws -> T? {
         return try await read()
     } catch let error as HKError where HealthReader.readsAsEmpty.contains(error.code) {
         return nil
-    } catch let error as NSError where error.domain == HKErrorDomain
-        && HealthReader.readsAsEmpty.map(\.rawValue).contains(error.code) {
+    } catch let error as NSError
+        where error.domain == HKErrorDomain
+        && HealthReader.readsAsEmpty.map(\.rawValue).contains(error.code)
+    {
         return nil
     }
 }

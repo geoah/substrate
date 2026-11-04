@@ -1,12 +1,13 @@
 import Foundation
-import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
+import SubstrateLocal
 import Testing
 import WorkoutsCore
+
 @testable import WorkoutsSync
-import SubstrateCore
 
 /// The sample routine on a server (decision S1): written once, into a
 /// repository with no routines, never again once the owner deletes it, on
@@ -367,8 +368,10 @@ struct SampleInstallTests {
             try JSONDecoder().decode(WorkoutsAPI.Page.self, from: Fixtures.data(name)).records.map { try WorkoutsAPI.record($0) }
         }
         var session = try #require(codec.sessionRecords(from: records("list-sessions") + records("list-sets")).first)
-        let onto: [ExerciseID: ExerciseID] = ["romanian-deadlift-dumbbell": "bulgarian-split-squat-dumbbell",
-                                              "seated-row-machine": "triceps-pushdown"]
+        let onto: [ExerciseID: ExerciseID] = [
+            "romanian-deadlift-dumbbell": "bulgarian-split-squat-dumbbell",
+            "seated-row-machine": "triceps-pushdown",
+        ]
         for index in session.session.slots.indices {
             session.session.slots[index].exercise = onto[session.session.slots[index].exercise] ?? session.session.slots[index].exercise
         }
@@ -390,8 +393,9 @@ struct SampleInstallTests {
         let session = try sampleSession()
         let named = Set(session.sets.map(\.exercise.rawValue))
         #expect(named.isSubset(of: Set(try bundled().exercises.keys.map(\.rawValue))), "every exercise is the sample's")
-        let exercises = OutboxPlan.exercisesFor([session], server: Set(repository.ids(codec.kinds.exercise)),
-                                                known: try bundled().exercises, codec: codec)
+        let exercises = OutboxPlan.exercisesFor(
+            [session], server: Set(repository.ids(codec.kinds.exercise)),
+            known: try bundled().exercises, codec: codec)
         #expect(Set(exercises.map(\.recordID)) == named)
         let outbox = phone.outbox
         try await outbox.enqueue(exercises + OutboxPlan.finished(session, codec: codec))
@@ -414,8 +418,9 @@ struct SampleInstallTests {
     func exercisesForSkips() throws {
         let session = try sampleSession()
         let all = Set(session.sets.map(\.exercise.rawValue))
-        let entries = OutboxPlan.exercisesFor([session], server: ["leg-press-machine"], known: try bundled().exercises.filter { $0.key != "push-up" },
-                                              codec: codec)
+        let entries = OutboxPlan.exercisesFor(
+            [session], server: ["leg-press-machine"], known: try bundled().exercises.filter { $0.key != "push-up" },
+            codec: codec)
         #expect(Set(entries.map(\.recordID)) == all.subtracting(["leg-press-machine"]))
         #expect(entries.allSatisfy { $0.method == .put && $0.kind == codec.kinds.exercise })
     }

@@ -30,12 +30,13 @@ struct RecordChange: Codable, Hashable, Sendable {
     }
 
     init(op raw: String?, kind: String?, id: String?, title: String? = nil, values: [String: JSONValue] = [:]) {
-        let op: Op = switch raw {
-        case "create": .create
-        case "put": .put
-        case "delete": .delete
-        default: .patch
-        }
+        let op: Op =
+            switch raw {
+            case "create": .create
+            case "put": .put
+            case "delete": .delete
+            default: .patch
+            }
         self.init(op: op, kind: kind, id: id, title: title, values: values)
     }
 }
@@ -48,10 +49,11 @@ func writeChange(_ call: ToolCall) -> RecordChange? {
     // The input may arrive as an encoded object.
     if let s = input?.string { input = JSONValue.parse(s) }
     let record = JSONValue.parse(call.output)?["record"]
-    return RecordChange(op: args["op"]?.string, kind: record?["kind"]?.text ?? args["kind"]?.text,
-                        id: record?["id"]?.text ?? args["id"]?.text,
-                        title: recordTitle(record?["properties"]),
-                        values: input?["properties"]?.object ?? [:])
+    return RecordChange(
+        op: args["op"]?.string, kind: record?["kind"]?.text ?? args["kind"]?.text,
+        id: record?["id"]?.text ?? args["id"]?.text,
+        title: recordTitle(record?["properties"]),
+        values: input?["properties"]?.object ?? [:])
 }
 
 /// What a `propose` call asked for, and why.
@@ -61,8 +63,10 @@ func proposedChange(_ call: ToolCall) -> (change: RecordChange, rationale: Strin
     let id = op == "create" ? args["id"]?.text : (args["target"]?.text).map { $0.split(separator: "/").last.map(String.init) ?? $0 }
     var diff = args["diff"]
     if let s = diff?.string { diff = JSONValue.parse(s) }
-    return (RecordChange(op: op, kind: args["kind"]?.text, id: id, values: diff?["properties"]?.object ?? [:]),
-            args["rationale"]?.text)
+    return (
+        RecordChange(op: op, kind: args["kind"]?.text, id: id, values: diff?["properties"]?.object ?? [:]),
+        args["rationale"]?.text
+    )
 }
 
 /// The records a call's persisted row says it changed, other than the
@@ -79,7 +83,8 @@ func recordTitles(_ turns: [Turn]) -> [String: String] {
     var out: [String: String] = [:]
     func note(_ value: JSONValue?) {
         guard let kind = value?["kind"]?.text, let id = value?["id"]?.text,
-              let title = recordTitle(value?["properties"]) else { return }
+            let title = recordTitle(value?["properties"])
+        else { return }
         out["\(kind)/\(id)"] = title
     }
     for turn in turns {

@@ -14,8 +14,10 @@ struct CalendarPickerView: View {
                     Text(model.access[.calendars] == "Allowed" ? "This phone has no calendars." : "Allow Calendars access to choose which calendars to sync.")
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("A calendar turned off is not sent, and its copy on your server is removed at the next sync. The calendar on this phone stays as it is.")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                    Text(
+                        "A calendar turned off is not sent, and its copy on your server is removed at the next sync. The calendar on this phone stays as it is."
+                    )
+                    .font(.subheadline).foregroundStyle(.secondary)
                 }
             }
             ForEach(accounts.keys.sorted(), id: \.self) { account in

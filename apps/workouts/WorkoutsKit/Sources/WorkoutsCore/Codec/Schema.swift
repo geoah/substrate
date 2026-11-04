@@ -60,88 +60,100 @@ public struct KindSchema: Sendable, Hashable {
 
 extension RecordCodec {
     static func movementSchema(_ kinds: WorkoutsKinds) -> KindSchema {
-        KindSchema(kind: kinds.movement, traits: [], traitProperties: [], properties: [
-            .string("name", required: true),
-            .string("aliases", repeated: true),
-            .enumeration("force", Force.self),
-            .enumeration("mechanic", Mechanic.self),
-            musclesProperty,
-            .enumeration("primaryMuscles", Muscle.self, repeated: true),
-            .enumeration("secondaryMuscles", Muscle.self, repeated: true),
-            codesProperty,
-        ])
+        KindSchema(
+            kind: kinds.movement, traits: [], traitProperties: [],
+            properties: [
+                .string("name", required: true),
+                .string("aliases", repeated: true),
+                .enumeration("force", Force.self),
+                .enumeration("mechanic", Mechanic.self),
+                musclesProperty,
+                .enumeration("primaryMuscles", Muscle.self, repeated: true),
+                .enumeration("secondaryMuscles", Muscle.self, repeated: true),
+                codesProperty,
+            ])
     }
 
     static var musclesProperty: PropertySchema {
-        .object("muscles", repeated: true, fields: [
-            .enumeration("muscle", MuscleDetail.self, required: true),
-            PropertySchema(name: "involvement", type: .decimal, required: true),
-        ])
+        .object(
+            "muscles", repeated: true,
+            fields: [
+                .enumeration("muscle", MuscleDetail.self, required: true),
+                PropertySchema(name: "involvement", type: .decimal, required: true),
+            ])
     }
 
     static var codesProperty: PropertySchema {
-        .object("codes", repeated: true, fields: [
-            .string("system", required: true),
-            .string("code", required: true),
-            .string("version"),
-            .string("display"),
-        ])
+        .object(
+            "codes", repeated: true,
+            fields: [
+                .string("system", required: true),
+                .string("code", required: true),
+                .string("version"),
+                .string("display"),
+            ])
     }
 
     static func exerciseSchema(_ kinds: WorkoutsKinds) -> KindSchema {
-        KindSchema(kind: kinds.exercise, traits: [], traitProperties: [], properties: [
-            .string("name", required: true),
-            .string("aliases", repeated: true),
-            .enumeration("measurement", MeasurementType.self, required: true),
-            .enumeration("equipment", Equipment.self),
-            .enumeration("laterality", Laterality.self),
-            .enumeration("loadBasis", LoadBasis.self),
-            .int("implements"),
-            .enumeration("primaryMuscles", Muscle.self, repeated: true),
-            .enumeration("secondaryMuscles", Muscle.self, repeated: true),
-            musclesProperty,
-            .enumeration("restClass", RestClass.self),
-            .reference("variationOf", kind: kinds.exercise),
-            .reference("movement", kind: kinds.movement),
-            codesProperty,
-            .quantity("loadBase", .mass),
-            .quantity("loadStep", .mass),
-            .quantity("loadMax", .mass),
-            .decimal("bodyShare"),
-            .int("defaultRepsMin"),
-            .int("defaultRepsMax"),
-            .decimal("defaultRPE"),
-            .int("repGain"),
-            .decimal("dropPercent"),
-            .duration("timeStep"),
-            .enumeration("myoStopRule", MyoStopRule.self),
-            .int("myoMaxMiniSets"),
-        ])
+        KindSchema(
+            kind: kinds.exercise, traits: [], traitProperties: [],
+            properties: [
+                .string("name", required: true),
+                .string("aliases", repeated: true),
+                .enumeration("measurement", MeasurementType.self, required: true),
+                .enumeration("equipment", Equipment.self),
+                .enumeration("laterality", Laterality.self),
+                .enumeration("loadBasis", LoadBasis.self),
+                .int("implements"),
+                .enumeration("primaryMuscles", Muscle.self, repeated: true),
+                .enumeration("secondaryMuscles", Muscle.self, repeated: true),
+                musclesProperty,
+                .enumeration("restClass", RestClass.self),
+                .reference("variationOf", kind: kinds.exercise),
+                .reference("movement", kind: kinds.movement),
+                codesProperty,
+                .quantity("loadBase", .mass),
+                .quantity("loadStep", .mass),
+                .quantity("loadMax", .mass),
+                .decimal("bodyShare"),
+                .int("defaultRepsMin"),
+                .int("defaultRepsMax"),
+                .decimal("defaultRPE"),
+                .int("repGain"),
+                .decimal("dropPercent"),
+                .duration("timeStep"),
+                .enumeration("myoStopRule", MyoStopRule.self),
+                .int("myoMaxMiniSets"),
+            ])
     }
 
     static func routineSchema(_ kinds: WorkoutsKinds) -> KindSchema {
-        KindSchema(kind: kinds.routine, traits: [], traitProperties: [], properties: [
-            .string("name", required: true),
-            .string("folder"),
-            .int("position"),
-            .text("notes"),
-            .bool("deload"),
-            .enumeration("activityType", ActivityType.self),
-            .object("groups", repeated: true, fields: groupFields),
-            .object("slots", repeated: true, fields: [
-                .string("key", required: true),
-                .reference("exercise", kind: kinds.exercise, required: true),
-                .string("group"),
-                .duration("setRest"),
-                .duration("warmupRest"),
-                .duration("transition"),
-                .duration("sideSwitch"),
-                .enumeration("sideOrder", SideOrder.self),
-                .bool("sideMatch"),
+        KindSchema(
+            kind: kinds.routine, traits: [], traitProperties: [],
+            properties: [
+                .string("name", required: true),
+                .string("folder"),
+                .int("position"),
                 .text("notes"),
-                .object("sets", repeated: true, fields: plannedSetFields),
-            ]),
-        ])
+                .bool("deload"),
+                .enumeration("activityType", ActivityType.self),
+                .object("groups", repeated: true, fields: groupFields),
+                .object(
+                    "slots", repeated: true,
+                    fields: [
+                        .string("key", required: true),
+                        .reference("exercise", kind: kinds.exercise, required: true),
+                        .string("group"),
+                        .duration("setRest"),
+                        .duration("warmupRest"),
+                        .duration("transition"),
+                        .duration("sideSwitch"),
+                        .enumeration("sideOrder", SideOrder.self),
+                        .bool("sideMatch"),
+                        .text("notes"),
+                        .object("sets", repeated: true, fields: plannedSetFields),
+                    ]),
+            ])
     }
 
     static func sessionSchema(_ kinds: WorkoutsKinds) -> KindSchema {
@@ -158,23 +170,27 @@ extension RecordCodec {
                 .enumeration("sport", Sport.self),
                 .string("sportSource"),
                 .enumeration("activityType", ActivityType.self),
-                .object("slots", repeated: true, fields: [
-                    .string("key", required: true),
-                    .reference("exercise", kind: kinds.exercise, required: true),
-                    .string("group"),
-                    .string("routineSlot"),
-                    .text("notes"),
-                    .duration("setRest"),
-                    .duration("warmupRest"),
-                    .duration("transition"),
-                    .duration("sideSwitch"),
-                    .object("sets", repeated: true, fields: plannedSetFields),
-                ]),
+                .object(
+                    "slots", repeated: true,
+                    fields: [
+                        .string("key", required: true),
+                        .reference("exercise", kind: kinds.exercise, required: true),
+                        .string("group"),
+                        .string("routineSlot"),
+                        .text("notes"),
+                        .duration("setRest"),
+                        .duration("warmupRest"),
+                        .duration("transition"),
+                        .duration("sideSwitch"),
+                        .object("sets", repeated: true, fields: plannedSetFields),
+                    ]),
                 .object("groups", repeated: true, fields: groupFields),
-                .object("pauses", repeated: true, fields: [
-                    .datetime("start", required: true),
-                    .datetime("end"),
-                ]),
+                .object(
+                    "pauses", repeated: true,
+                    fields: [
+                        .datetime("start", required: true),
+                        .datetime("end"),
+                    ]),
                 .int("utcOffsetStart"),
                 .int("utcOffsetEnd"),
                 .timezone("timezone"),
@@ -238,35 +254,37 @@ extension RecordCodec {
                 .enumeration("restMethod", RestMethod.self),
                 .duration("restPlanned"),
                 .bool("restSkipped"),
-                .object("target", fields: [
-                    .string("plannedSet"),
-                    .enumeration("termination", Termination.self),
-                    .int("repsMin"),
-                    .int("repsMax"),
-                    .quantity("load", .mass),
-                    .decimal("loadPercent"),
-                    .enumeration("loadReference", LoadReference.self),
-                    .quantity("referenceLoad", .mass),
-                    .quantity("assistance", .mass),
-                    .decimal("rpeMin"),
-                    .decimal("rpeMax"),
-                    .decimal("rirMin"),
-                    .decimal("rirMax"),
-                    .duration("durationMin"),
-                    .duration("durationMax"),
-                    .enumeration("timerMode", TimerMode.self),
-                    .quantity("distance", .length),
-                    .string("tempo"),
-                    .int("miniSetReps"),
-                    .int("miniSets"),
-                    .enumeration("myoStopRule", MyoStopRule.self),
-                    .int("totalReps"),
-                    .int("drops"),
-                    .decimal("dropPercent"),
-                    .quantity("dropStep", .mass),
-                    .int("dropReps"),
-                    .duration("intraSetPause"),
-                ]),
+                .object(
+                    "target",
+                    fields: [
+                        .string("plannedSet"),
+                        .enumeration("termination", Termination.self),
+                        .int("repsMin"),
+                        .int("repsMax"),
+                        .quantity("load", .mass),
+                        .decimal("loadPercent"),
+                        .enumeration("loadReference", LoadReference.self),
+                        .quantity("referenceLoad", .mass),
+                        .quantity("assistance", .mass),
+                        .decimal("rpeMin"),
+                        .decimal("rpeMax"),
+                        .decimal("rirMin"),
+                        .decimal("rirMax"),
+                        .duration("durationMin"),
+                        .duration("durationMax"),
+                        .enumeration("timerMode", TimerMode.self),
+                        .quantity("distance", .length),
+                        .string("tempo"),
+                        .int("miniSetReps"),
+                        .int("miniSets"),
+                        .enumeration("myoStopRule", MyoStopRule.self),
+                        .int("totalReps"),
+                        .int("drops"),
+                        .decimal("dropPercent"),
+                        .quantity("dropStep", .mass),
+                        .int("dropReps"),
+                        .duration("intraSetPause"),
+                    ]),
                 .reference("origin", kind: "any"),
                 .int("revision"),
             ]
@@ -274,15 +292,17 @@ extension RecordCodec {
     }
 
     static func setupSchema(_ kinds: WorkoutsKinds) -> KindSchema {
-        KindSchema(kind: kinds.setup, traits: [], traitProperties: [], properties: [
-            .string("name", required: true),
-            .reference("exercise", kind: kinds.exercise, required: true),
-            .string("gym"),
-            .quantity("loadBase", .mass),
-            .quantity("loadStep", .mass),
-            .quantity("loadMax", .mass),
-            .text("notes"),
-        ])
+        KindSchema(
+            kind: kinds.setup, traits: [], traitProperties: [],
+            properties: [
+                .string("name", required: true),
+                .reference("exercise", kind: kinds.exercise, required: true),
+                .string("gym"),
+                .quantity("loadBase", .mass),
+                .quantity("loadStep", .mass),
+                .quantity("loadMax", .mass),
+                .text("notes"),
+            ])
     }
 
     /// A routine slot's planned sets and a session slot's snapshot of them

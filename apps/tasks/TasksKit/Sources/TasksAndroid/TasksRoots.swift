@@ -41,16 +41,18 @@ public enum TasksRoots {
         let sessions = SessionStore(storage: BridgeSecureStore(channel: context.device, store: secureStore))
         let browser = BridgeBrowserSignIn(channel: context.device)
         let locator = ServerLocator(probe: ServerProbe(transport: transport), resolver: BridgeTXTResolver(channel: context.device))
-        return SignInController(ConnectController(
-            manifest: manifest, address: opening.address ?? "", locator: locator, opensBrowser: BridgeBrowserSignIn.opensBrowser
-        ) { probe in
-            guard let oauth = OAuthClient(manifest: manifest, probe: probe, transport: transport) else { throw URLError(.badServerResponse) }
-            let session = try await oauth.signIn(server: probe.origin, repository: probe.repository, keepingRejectedIn: sessions,
-                                                 browser: browser)
-            // The store answers through the bridge and blocks while it does:
-            // never on the main thread, which Kotlin's answers may need.
-            let previous = await Task.detached { sessions.load() }.value
-            try await sessions.save(session, replacing: previous, transport: transport)
-        })
+        return SignInController(
+            ConnectController(
+                manifest: manifest, address: opening.address ?? "", locator: locator, opensBrowser: BridgeBrowserSignIn.opensBrowser
+            ) { probe in
+                guard let oauth = OAuthClient(manifest: manifest, probe: probe, transport: transport) else { throw URLError(.badServerResponse) }
+                let session = try await oauth.signIn(
+                    server: probe.origin, repository: probe.repository, keepingRejectedIn: sessions,
+                    browser: browser)
+                // The store answers through the bridge and blocks while it does:
+                // never on the main thread, which Kotlin's answers may need.
+                let previous = await Task.detached { sessions.load() }.value
+                try await sessions.save(session, replacing: previous, transport: transport)
+            })
     }
 }

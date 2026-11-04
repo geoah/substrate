@@ -27,9 +27,10 @@ public struct DomainRecord: Hashable, Sendable {
     /// the record.
     public var other: [String: String] = [:]
 
-    public init(server: String? = nil, proof: String? = nil, doc: String? = nil, sha256: String? = nil,
-                other: [String: String] = [:])
-    {
+    public init(
+        server: String? = nil, proof: String? = nil, doc: String? = nil, sha256: String? = nil,
+        other: [String: String] = [:]
+    ) {
         self.server = server
         self.proof = proof
         self.doc = doc
@@ -52,7 +53,7 @@ public struct DomainRecord: Hashable, Sendable {
         var host = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if host.hasSuffix(".") { host.removeLast() }
         guard !host.isEmpty, host.count <= 253, host.contains("."),
-              host.rangeOfCharacter(from: CharacterSet(charactersIn: "/:@ ")) == nil
+            host.rangeOfCharacter(from: CharacterSet(charactersIn: "/:@ ")) == nil
         else { return nil }
         return "\(label).\(host)"
     }
@@ -114,10 +115,10 @@ public struct DomainRecord: Hashable, Sendable {
     /// without a trailing slash, or nil when it carries more than an origin.
     static func httpsOrigin(_ value: String) -> String? {
         guard let parts = URLComponents(string: value), parts.scheme?.lowercased() == "https",
-              let host = parts.host, !host.isEmpty,
-              parts.user == nil, parts.password == nil,
-              (parts.query ?? "").isEmpty, (parts.fragment ?? "").isEmpty,
-              parts.path.isEmpty || parts.path == "/"
+            let host = parts.host, !host.isEmpty,
+            parts.user == nil, parts.password == nil,
+            (parts.query ?? "").isEmpty, (parts.fragment ?? "").isEmpty,
+            parts.path.isEmpty || parts.path == "/"
         else { return nil }
         let bracketed = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
         return "https://" + bracketed.lowercased() + (parts.port.map { ":\($0)" } ?? "")
@@ -125,7 +126,7 @@ public struct DomainRecord: Hashable, Sendable {
 
     static func isHTTPSURL(_ value: String) -> Bool {
         guard let parts = URLComponents(string: value), parts.scheme?.lowercased() == "https",
-              let host = parts.host, !host.isEmpty
+            let host = parts.host, !host.isEmpty
         else { return false }
         return parts.user == nil && parts.password == nil && (parts.fragment ?? "").isEmpty
     }

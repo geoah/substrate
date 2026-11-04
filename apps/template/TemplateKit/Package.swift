@@ -15,10 +15,10 @@ let package = Package(
     name: "TemplateKit",
     platforms: [.iOS("26.0"), .macOS("26.0")],
     products: [
-        .library(name: "TemplateCore", targets: ["TemplateCore"]),
+        .library(name: "TemplateCore", targets: ["TemplateCore"])
     ],
     dependencies: [
-        .package(path: "../../kit"),
+        .package(path: "../../kit")
     ],
     targets: [
         .target(name: "TemplateCore", dependencies: kit),

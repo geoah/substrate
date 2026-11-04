@@ -1,8 +1,9 @@
 import Foundation
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateDevice
 
 /// A scripted server for answers read line by line (the watch, a turn's
 /// stream): each request takes the next answer queued, whose lines arrive
@@ -74,8 +75,9 @@ public final class ScriptedLines: HTTPTransport, @unchecked Sendable {
                 open = continuation
             }
         }
-        let head = HTTPURLResponse(url: url, statusCode: answer.status, httpVersion: "HTTP/1.1",
-                                   headerFields: ["Content-Type": "application/x-ndjson"])!
+        let head = HTTPURLResponse(
+            url: url, statusCode: answer.status, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/x-ndjson"])!
         return LineStream(head: head, lines: lines)
     }
 }

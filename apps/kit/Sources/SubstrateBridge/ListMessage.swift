@@ -9,8 +9,9 @@ import SubstrateRuntime
 /// list whole when one's base is not its revision.
 public enum ListMessage: Bridged, Equatable {
     case whole(list: String, revision: Int, rows: [ListRow])
-    case delta(list: String, base: Int, revision: Int, inserted: [ListRow], changed: [ListRow], removed: [String],
-               order: [String])
+    case delta(
+        list: String, base: Int, revision: Int, inserted: [ListRow], changed: [ListRow], removed: [String],
+        order: [String])
 }
 
 /// One row: its id and its value as the row's own type encodes it.
@@ -56,8 +57,12 @@ final class KeyedLists: @unchecked Sendable {
     func publish<Row>(_ name: String, _ list: KeyedList<Row>) {
         let handle = handle
         let whole: () throws -> String = {
-            try BridgeCodec.encode(op: .list, handle: handle, body: Cased(whole: WholeOut(list: name, revision: list.revision,
-                                                                                            rows: list.rows.map { OutRow(id: $0.id, value: $0) })))
+            try BridgeCodec.encode(
+                op: .list, handle: handle,
+                body: Cased(
+                    whole: WholeOut(
+                        list: name, revision: list.revision,
+                        rows: list.rows.map { OutRow(id: $0.id, value: $0) })))
         }
         // Encoded and queued under the lock, so two publishes of one list
         // reach the queue in revision order.
@@ -68,14 +73,18 @@ final class KeyedLists: @unchecked Sendable {
             do {
                 if let previous = before?.list as? KeyedList<Row>, previous.revision < list.revision {
                     let delta = list.delta(from: previous)
-                    outbox.enqueue(try BridgeCodec.encode(op: .list, handle: handle,
-                                                          body: Cased(delta: DeltaOut(list: name, delta: delta))))
+                    outbox.enqueue(
+                        try BridgeCodec.encode(
+                            op: .list, handle: handle,
+                            body: Cased(delta: DeltaOut(list: name, delta: delta))))
                 } else {
                     outbox.enqueue(try whole())
                 }
             } catch {
-                outbox.enqueue(BridgeCodec.failure(BridgeFailure(.swiftFailure, "keyed list \(name) did not encode: \(BridgeCodec.describe(error))"),
-                                                   handle: handle))
+                outbox.enqueue(
+                    BridgeCodec.failure(
+                        BridgeFailure(.swiftFailure, "keyed list \(name) did not encode: \(BridgeCodec.describe(error))"),
+                        handle: handle))
             }
         }
     }

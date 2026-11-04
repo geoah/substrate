@@ -18,10 +18,8 @@ internal val Project.abis: List<String>
     get() = (findProperty("substrate.abis") as String? ?: "arm64-v8a,x86_64").split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
 /**
- * Every configuration resolves to what the module's gradle.lockfile names,
- * so a version range or a dependency's own new requirement cannot move a
- * build. `./gradlew … --write-locks` rewrites the files (`mise run
- * android:lock`).
+ * Every configuration resolves to what the module's gradle.lockfile names, so a version range or a dependency's own new requirement cannot move a build.
+ * `./gradlew … --write-locks` rewrites the files (`mise run android:lock`).
  */
 internal fun Project.lockDependencies() {
     dependencyLocking { lockAllConfigurations() }

@@ -18,12 +18,14 @@ enum MainLooper {
         }
         let fd = _dispatch_get_main_queue_handle_4CF()
         guard fd >= 0 else { return BridgeFailure(.swiftFailure, "libdispatch has no main queue handle") }
-        let added = ALooper_addFd(looper, fd, Int32(ALOOPER_POLL_CALLBACK), Int32(ALOOPER_EVENT_INPUT), { fd, _, _ in
-            var counter: UInt64 = 0
-            _ = read(fd, &counter, MemoryLayout<UInt64>.size)
-            _dispatch_main_queue_callback_4CF(nil)
-            return 1
-        }, nil)
+        let added = ALooper_addFd(
+            looper, fd, Int32(ALOOPER_POLL_CALLBACK), Int32(ALOOPER_EVENT_INPUT),
+            { fd, _, _ in
+                var counter: UInt64 = 0
+                _ = read(fd, &counter, MemoryLayout<UInt64>.size)
+                _dispatch_main_queue_callback_4CF(nil)
+                return 1
+            }, nil)
         return added == 1 ? nil : BridgeFailure(.swiftFailure, "the main Looper refused libdispatch's queue (ALooper_addFd \(added))")
     }
 }

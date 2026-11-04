@@ -48,7 +48,7 @@ struct HandleTable<Value> {
     mutating func remove(_ handle: Handle) -> Value? {
         let index = handle.id - 1
         guard slots.indices.contains(index), slots[index].generation == handle.generation,
-              let value = slots[index].value
+            let value = slots[index].value
         else { return nil }
         slots[index].value = nil
         free.append(index)

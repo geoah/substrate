@@ -5,7 +5,7 @@ import Foundation
 /// trapezius appear on both figures, each from the muscles that face it.
 public enum BodyRegion: String, CaseIterable, Sendable {
     case chest, abs, obliques, frontDelts, rearDelts, biceps, triceps, forearms, upperTraps, traps, lats, lowerBack, glutes,
-         quadriceps, hamstrings, adductors, calves, tibialis, neck
+        quadriceps, hamstrings, adductors, calves, tibialis, neck
 
     public enum Figure: Sendable { case front, back }
 
@@ -128,7 +128,8 @@ public enum BodyMap {
             for share in own { if let muscle = share.muscle { shares[muscle] = max(shares[muscle] ?? 0, share.involvement) } }
             let groups = exercise.groupShares
             for region in BodyRegion.allCases {
-                let share = shares.isEmpty
+                let share =
+                    shares.isEmpty
                     ? region.groups.compactMap { groups[$0] }.max() ?? 0
                     : region.muscles.compactMap { shares[$0] }.max() ?? 0
                 if share > 0 { out[region, default: 0] += share }

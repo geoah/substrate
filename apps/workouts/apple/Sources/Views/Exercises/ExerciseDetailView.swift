@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// One exercise (DESIGN.md §7.9): its facts stacked label over value, the
 /// estimated 1RM trend (or the longest hold, or the most reps), and every

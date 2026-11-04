@@ -18,8 +18,7 @@ struct ConsoleConnect: View {
     @State private var address = ""
 
     var body: some View {
-        ConnectView(manifest: ConsoleSignIn.manifest, address: $address, unrevoked: sessions.unrevoked)
-        {
+        ConnectView(manifest: ConsoleSignIn.manifest, address: $address, unrevoked: sessions.unrevoked) {
             ConnectHeader(appName: "Substrate", tagline: "Your substrate's console.", icon: Image("AppMark"))
         } onSignIn: { probe in
             try await sessions.signIn(probe)

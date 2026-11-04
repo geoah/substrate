@@ -136,9 +136,10 @@ public enum Format {
     /// with a load `20 kg for 40 m`; a distance and a time `500 m in 2:05`.
     /// With `rpe`, a logged RPE follows as ` @ 9.5` (PREVIOUS and history).
     /// `repsHint` writes the reps as a hint, `≈15` (a `rirstop` set, §5.3).
-    public static func set(_ values: SetValues, measurement: MeasurementType, rpe showRPE: Bool = false,
-                           repsHint: Bool = false) -> String
-    {
+    public static func set(
+        _ values: SetValues, measurement: MeasurementType, rpe showRPE: Bool = false,
+        repsHint: Bool = false
+    ) -> String {
         let load = load(values, mode: measurement.loadMode)
         // A plain "BW" before a time or a distance says nothing.
         let realLoad = load == "BW" ? nil : load
@@ -275,15 +276,17 @@ private final class DateFormatterCache: @unchecked Sendable {
     func string(from date: Date, pattern: String, zone: TimeZone) -> String {
         lock.withLock {
             let key = "\(pattern)|\(zone.identifier)"
-            let formatter = formatters[key] ?? {
-                let formatter = DateFormatter()
-                formatter.locale = Locale(identifier: "en_GB")
-                formatter.calendar = Calendar(identifier: .gregorian)
-                formatter.timeZone = zone
-                formatter.dateFormat = pattern
-                formatters[key] = formatter
-                return formatter
-            }()
+            let formatter =
+                formatters[key]
+                ?? {
+                    let formatter = DateFormatter()
+                    formatter.locale = Locale(identifier: "en_GB")
+                    formatter.calendar = Calendar(identifier: .gregorian)
+                    formatter.timeZone = zone
+                    formatter.dateFormat = pattern
+                    formatters[key] = formatter
+                    return formatter
+                }()
             return formatter.string(from: date)
         }
     }

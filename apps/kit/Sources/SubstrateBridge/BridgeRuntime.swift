@@ -48,9 +48,10 @@ public final class BridgeRuntime: @unchecked Sendable {
     /// before anything is kept (binding the main Looper, filling the roots);
     /// its failure is the answer, and the bridge stays unstarted. A second
     /// start answers what the first came to.
-    public func start(_ config: StartConfig, outlet: any BridgeOutlet, fingerprint: String = ProtocolFingerprint.value,
-                      log: (@Sendable (String) -> Void)? = nil, prepare: () -> BridgeFailure? = { nil }) -> StartAnswer
-    {
+    public func start(
+        _ config: StartConfig, outlet: any BridgeOutlet, fingerprint: String = ProtocolFingerprint.value,
+        log: (@Sendable (String) -> Void)? = nil, prepare: () -> BridgeFailure? = { nil }
+    ) -> StartAnswer {
         lock.lock()
         defer { lock.unlock() }
         switch phase {
@@ -59,8 +60,9 @@ public final class BridgeRuntime: @unchecked Sendable {
         case .idle: break
         }
         guard config.fingerprint == fingerprint else {
-            let failure = BridgeFailure(.protocolMismatch,
-                                        "Kotlin speaks protocol \(config.fingerprint) and Swift \(fingerprint): the app was built from two trees")
+            let failure = BridgeFailure(
+                .protocolMismatch,
+                "Kotlin speaks protocol \(config.fingerprint) and Swift \(fingerprint): the app was built from two trees")
             phase = .failed(failure)
             return .failed(failure: failure)
         }
@@ -154,7 +156,8 @@ public final class BridgeRuntime: @unchecked Sendable {
         case .end:
             if let failure = calls.finish(try id(envelope), failure: nil) { throw failure }
         case .error:
-            let failure = (try? BridgeCodec.decode(BridgeFailure.self, from: envelope.body))
+            let failure =
+                (try? BridgeCodec.decode(BridgeFailure.self, from: envelope.body))
                 ?? BridgeFailure(.kotlinException, "Kotlin failed and said nothing readable")
             if let refused = calls.finish(try id(envelope), failure: failure) { throw refused }
         case .cancel:
@@ -215,8 +218,10 @@ public final class BridgeRuntime: @unchecked Sendable {
                     do {
                         try await root.receive(command)
                     } catch {
-                        outbox.enqueue(BridgeCodec.failure(BridgeFailure(.swiftFailure, "the command failed: \(error.localizedDescription)"),
-                                                           handle: handle))
+                        outbox.enqueue(
+                            BridgeCodec.failure(
+                                BridgeFailure(.swiftFailure, "the command failed: \(error.localizedDescription)"),
+                                handle: handle))
                     }
                 case let .environment(environment):
                     await root.environmentChanged(environment)
@@ -318,7 +323,9 @@ public final class BridgeRuntime: @unchecked Sendable {
         guard let outlet else { return Self.stopped }
         // Swift replies only to Kotlin's queries; any other id is a device call's.
         let envelope = try? BridgeCodec.decodeEnvelope(message)
-        let call: Redaction.Call = envelope?.op == .reply ? .query
+        let call: Redaction.Call =
+            envelope?.op == .reply
+            ? .query
             : envelope?.id.flatMap(calls.service(of:)).map(Redaction.Call.device) ?? .unknown
         record.record("out", message, call: call)
         if let failure = outlet.deliver(message) {

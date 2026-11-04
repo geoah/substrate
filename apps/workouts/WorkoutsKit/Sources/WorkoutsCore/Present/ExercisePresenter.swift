@@ -50,9 +50,10 @@ public struct ExerciseDetailPresentation: Equatable, Sendable, Identifiable {
     /// Every session with the exercise, newest first.
     public var sessions: [ExerciseHistorySession]
 
-    public init(id: ExerciseID, name: String, facts: [LabelledValue], isLocal: Bool, trend: ExerciseTrend,
-                sessions: [ExerciseHistorySession])
-    {
+    public init(
+        id: ExerciseID, name: String, facts: [LabelledValue], isLocal: Bool, trend: ExerciseTrend,
+        sessions: [ExerciseHistorySession]
+    ) {
         self.id = id
         self.name = name
         self.facts = facts
@@ -173,9 +174,10 @@ public enum ExercisePresenter {
     public static let recentDays = 30
 
     /// The Exercises list: sections A to Z of the exercises matching `query`.
-    public static func list(_ exercises: [ExerciseID: Exercise], history: HistoryIndex, query: String = "",
-                            settings: PresenterSettings) -> [ExerciseSection]
-    {
+    public static func list(
+        _ exercises: [ExerciseID: Exercise], history: HistoryIndex, query: String = "",
+        settings: PresenterSettings
+    ) -> [ExerciseSection] {
         sections(exercises.values.filter { ExerciseSearch.matches($0, query: query) }, history: history, settings: settings)
     }
 
@@ -183,21 +185,24 @@ public enum ExercisePresenter {
     /// least once, in a routine, or not from the exercise library), since a
     /// seeded library holds hundreds nobody has done; a query searches them
     /// all.
-    public static func owned(_ exercises: [ExerciseID: Exercise], routines: [RoutineID: Routine], history: HistoryIndex, query: String = "",
-                             settings: PresenterSettings) -> [ExerciseSection]
-    {
+    public static func owned(
+        _ exercises: [ExerciseID: Exercise], routines: [RoutineID: Routine], history: HistoryIndex, query: String = "",
+        settings: PresenterSettings
+    ) -> [ExerciseSection] {
         guard query.trimmingCharacters(in: .whitespaces).isEmpty else {
             return list(exercises, history: history, query: query, settings: settings)
         }
         let done = history.exercises
         let planned = Set(routines.values.flatMap { $0.slots.map(\.exercise) })
-        return sections(exercises.values.filter { exercise in
-            done.contains(exercise.id) || planned.contains(exercise.id) || !exercise.isFromLibrary
-        }, history: history, settings: settings)
+        return sections(
+            exercises.values.filter { exercise in
+                done.contains(exercise.id) || planned.contains(exercise.id) || !exercise.isFromLibrary
+            }, history: history, settings: settings)
     }
 
     private static func sections(_ exercises: [Exercise], history: HistoryIndex, settings: PresenterSettings) -> [ExerciseSection] {
-        let rows = exercises
+        let rows =
+            exercises
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             .map { row($0, history: history, settings: settings) }
         var sections: [ExerciseSection] = []
@@ -214,14 +219,15 @@ public enum ExercisePresenter {
     }
 
     /// The picker: "Recent" (done in the last 30 days, newest first), then A to Z.
-    public static func picker(_ exercises: [ExerciseID: Exercise], history: HistoryIndex, query: String = "", now: Date,
-                              settings: PresenterSettings) -> [ExerciseSection]
-    {
+    public static func picker(
+        _ exercises: [ExerciseID: Exercise], history: HistoryIndex, query: String = "", now: Date,
+        settings: PresenterSettings
+    ) -> [ExerciseSection] {
         let all = list(exercises, history: history, query: query, settings: settings)
         let recent = exercises.values.filter { ExerciseSearch.matches($0, query: query) }
             .compactMap { exercise -> (Exercise, Date)? in
                 guard let date = history.lastDone(exercise.id),
-                      SuggestMath.days(from: date, to: now, calendar: settings.calendar) <= recentDays
+                    SuggestMath.days(from: date, to: now, calendar: settings.calendar) <= recentDays
                 else { return nil }
                 return (exercise, date)
             }
@@ -231,15 +237,17 @@ public enum ExercisePresenter {
     }
 
     static func row(_ exercise: Exercise, history: HistoryIndex, settings: PresenterSettings) -> ExerciseRow {
-        ExerciseRow(id: exercise.id, name: exercise.name, equipment: exercise.equipmentText,
-                    lastDone: history.lastDone(exercise.id).map { "Last done \(Format.day($0, in: settings.timeZone))" },
-                    isLocal: exercise.isLocal)
+        ExerciseRow(
+            id: exercise.id, name: exercise.name, equipment: exercise.equipmentText,
+            lastDone: history.lastDone(exercise.id).map { "Last done \(Format.day($0, in: settings.timeZone))" },
+            isLocal: exercise.isLocal)
     }
 
     /// The exercise detail: its facts, the trend and its history.
-    public static func detail(_ exercise: Exercise, history: HistoryIndex,
-                              settings: PresenterSettings) -> ExerciseDetailPresentation
-    {
+    public static func detail(
+        _ exercise: Exercise, history: HistoryIndex,
+        settings: PresenterSettings
+    ) -> ExerciseDetailPresentation {
         let config = SuggestionInputs.config(for: exercise, defaultUnit: settings.defaultUnit)
         var facts: [LabelledValue] = []
         if let equipment = exercise.equipmentText { facts.append(LabelledValue("Equipment", equipment)) }
@@ -249,9 +257,12 @@ public enum ExercisePresenter {
             .sorted { $0.1 > $1.1 }
         if !shares.isEmpty {
             // Each muscle on a line of its own with its share, largest first.
-            facts.append(LabelledValue("Muscles", shares.map { muscle, share in
-                "\(muscle.label) \(Format.number(share * 100, decimals: 0))%"
-            }.joined(separator: "\n")))
+            facts.append(
+                LabelledValue(
+                    "Muscles",
+                    shares.map { muscle, share in
+                        "\(muscle.label) \(Format.number(share * 100, decimals: 0))%"
+                    }.joined(separator: "\n")))
         } else {
             let primary = exercise.primaryMuscles.map(\.label).joined(separator: ", ")
             let secondary = exercise.secondaryMuscles.map(\.label).joined(separator: ", ")
@@ -343,15 +354,18 @@ public enum ExercisePresenter {
             }
             guard let value else { continue }
             let rounded = metric == .oneRepMax ? (value * 10).rounded() / 10 : value
-            points.append(TrendPoint(session: entry.session.id, date: entry.session.at, value: rounded, text: text(rounded),
-                                     hollow: entry.session.deload == true))
+            points.append(
+                TrendPoint(
+                    session: entry.session.id, date: entry.session.at, value: rounded, text: text(rounded),
+                    hollow: entry.session.deload == true))
         }
-        let title = switch metric {
-        case .oneRepMax: "Estimated 1RM"
-        case .longestHold: "Longest hold"
-        case .mostReps: "Most reps"
-        case .none: ""
-        }
+        let title =
+            switch metric {
+            case .oneRepMax: "Estimated 1RM"
+            case .longestHold: "Longest hold"
+            case .mostReps: "Most reps"
+            case .none: ""
+            }
         return ExerciseTrend(metric: metric, unit: config.unit, points: points, title: title)
     }
 

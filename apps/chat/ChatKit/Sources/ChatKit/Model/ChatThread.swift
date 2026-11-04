@@ -69,9 +69,10 @@ func threadTitle(subject: String?, opening: String?) -> String {
     if let delivery = deliveryNotice(Turn(id: "", role: .user, content: text)) {
         return "When \(delivery.title ?? kindDisplayName(delivery.kind)) changed"
     }
-    return cutTitle(text.split(separator: "\n", omittingEmptySubsequences: true).first.map {
-        $0.trimmingCharacters(in: .whitespaces)
-    } ?? text)
+    return cutTitle(
+        text.split(separator: "\n", omittingEmptySubsequences: true).first.map {
+            $0.trimmingCharacters(in: .whitespaces)
+        } ?? text)
 }
 
 /// Each thread's opening user message, from user messages in turn order.

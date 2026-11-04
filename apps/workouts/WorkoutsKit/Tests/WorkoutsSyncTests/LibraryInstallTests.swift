@@ -1,8 +1,9 @@
 import Foundation
+import SubstrateCore
 import Testing
 import WorkoutsCore
+
 @testable import WorkoutsSync
-import SubstrateCore
 
 /// The exercise library's seeding (`LibraryInstall`): the server's marker,
 /// what a run writes and what it never touches.
@@ -20,32 +21,46 @@ struct LibraryInstallTests {
     /// adds records that first appear in `version`.
     func library(version: Int = 1, extra: Bool = false) -> ExerciseLibrary {
         var records = [
-            FlatRecord(kind: "substrate.reamde.dev/training/movement", id: "chest-press", properties: [
-                "name": .string("Chest Press"), "codes": .array([code("chest-press", since: 1)]),
-            ]),
-            FlatRecord(kind: "substrate.reamde.dev/training/movement", id: "row", properties: [
-                "name": .string("Row"), "codes": .array([code("row", since: 1)]),
-            ]),
-            FlatRecord(kind: "substrate.reamde.dev/training/exercise", id: "chest-press-machine", properties: [
-                "name": .string("Chest Press (Machine)"), "measurement": .string("weightreps"), "equipment": .string("machine"),
-                "movement": .string("substrate.reamde.dev/training/movement/chest-press"),
-                "codes": .array([code("chest-press-machine", since: 1), .object(["system": .string("hevy"), "code": .string("7EB3F7C3")])]),
-            ]),
-            FlatRecord(kind: "substrate.reamde.dev/training/exercise", id: "chest-press-dumbbell", properties: [
-                "name": .string("Chest Press (Dumbbell)"), "measurement": .string("weightreps"), "loadBasis": .string("perimplement"),
-                "implements": .number(2), "movement": .string("substrate.reamde.dev/training/movement/chest-press"),
-                "codes": .array([code("chest-press-dumbbell", since: 1)]),
-            ]),
-            FlatRecord(kind: "substrate.reamde.dev/training/exercise", id: "row-cable", properties: [
-                "name": .string("Row (Cable)"), "measurement": .string("weightreps"), "movement": .string("substrate.reamde.dev/training/movement/row"),
-                "codes": .array([code("row-cable", since: 1)]),
-            ]),
+            FlatRecord(
+                kind: "substrate.reamde.dev/training/movement", id: "chest-press",
+                properties: [
+                    "name": .string("Chest Press"), "codes": .array([code("chest-press", since: 1)]),
+                ]),
+            FlatRecord(
+                kind: "substrate.reamde.dev/training/movement", id: "row",
+                properties: [
+                    "name": .string("Row"), "codes": .array([code("row", since: 1)]),
+                ]),
+            FlatRecord(
+                kind: "substrate.reamde.dev/training/exercise", id: "chest-press-machine",
+                properties: [
+                    "name": .string("Chest Press (Machine)"), "measurement": .string("weightreps"), "equipment": .string("machine"),
+                    "movement": .string("substrate.reamde.dev/training/movement/chest-press"),
+                    "codes": .array([code("chest-press-machine", since: 1), .object(["system": .string("hevy"), "code": .string("7EB3F7C3")])]),
+                ]),
+            FlatRecord(
+                kind: "substrate.reamde.dev/training/exercise", id: "chest-press-dumbbell",
+                properties: [
+                    "name": .string("Chest Press (Dumbbell)"), "measurement": .string("weightreps"), "loadBasis": .string("perimplement"),
+                    "implements": .number(2), "movement": .string("substrate.reamde.dev/training/movement/chest-press"),
+                    "codes": .array([code("chest-press-dumbbell", since: 1)]),
+                ]),
+            FlatRecord(
+                kind: "substrate.reamde.dev/training/exercise", id: "row-cable",
+                properties: [
+                    "name": .string("Row (Cable)"), "measurement": .string("weightreps"), "movement": .string("substrate.reamde.dev/training/movement/row"),
+                    "codes": .array([code("row-cable", since: 1)]),
+                ]),
         ]
         if extra {
-            records.append(FlatRecord(kind: "substrate.reamde.dev/training/exercise", id: "row-machine", properties: [
-                "name": .string("Row (Machine)"), "measurement": .string("weightreps"), "movement": .string("substrate.reamde.dev/training/movement/row"),
-                "codes": .array([code("row-machine", since: version)]),
-            ]))
+            records.append(
+                FlatRecord(
+                    kind: "substrate.reamde.dev/training/exercise", id: "row-machine",
+                    properties: [
+                        "name": .string("Row (Machine)"), "measurement": .string("weightreps"),
+                        "movement": .string("substrate.reamde.dev/training/movement/row"),
+                        "codes": .array([code("row-machine", since: version)]),
+                    ]))
         }
         return ExerciseLibrary(version: version, records: records)
     }
@@ -76,8 +91,12 @@ struct LibraryInstallTests {
     @Test("an import's library exercise on the server before any seeding holds nothing back")
     func importFirst() async throws {
         let memory = MemoryRecords()
-        memory.put(exercise, "chest-press-machine", ["name": .string("Chest Press (Machine)"), "measurement": .string("weightreps"),
-                                                     "codes": .array([code("chest-press-machine", since: 1)])])
+        memory.put(
+            exercise, "chest-press-machine",
+            [
+                "name": .string("Chest Press (Machine)"), "measurement": .string("weightreps"),
+                "codes": .array([code("chest-press-machine", since: 1)]),
+            ])
         let outcome = try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic).ensure(memory.api, library: library())
         #expect(outcome.written == 4)
         #expect(memory.all(exercise).count == 3 && memory.all(movement).count == 2)

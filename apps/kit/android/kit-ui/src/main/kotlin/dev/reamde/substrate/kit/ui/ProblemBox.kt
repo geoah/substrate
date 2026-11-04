@@ -12,16 +12,15 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.reamde.substrate.kit.bridge.ProblemFix
 import dev.reamde.substrate.kit.bridge.ProblemPresentation
 
 /**
- * A problem in a sentence, where a status would be: its mark, a short
- * title and the server's or the system's own words, which a person may
- * copy. It sits in a card of its own or inside one, never as a box in a box.
+ * A problem in a sentence, where a status would be: its mark, a short title and the server's or the system's own words, which a person may copy. It sits in a
+ * card of its own or inside one, never as a box in a box.
  */
 @Composable
 public fun ProblemBox(problem: ProblemPresentation, modifier: Modifier = Modifier) {

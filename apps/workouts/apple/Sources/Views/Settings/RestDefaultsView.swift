@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The rest between sets by exercise class, and for an exercise with none
 /// (DESIGN.md §4.7, §7.10). Each value uses the session's rest presets.

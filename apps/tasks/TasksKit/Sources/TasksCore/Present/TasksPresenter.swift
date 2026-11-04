@@ -19,8 +19,9 @@ public enum TasksPresenter {
         let revision = state.revision + Int(input.now.timeIntervalSince1970 / 60)
         let dueToday = model.tasks(in: .today, today: today).count
 
-        let plan = Reminders.plan(model, settings: state.settings, permission: state.permission, now: input.now, calendar: calendar,
-                                  locale: input.locale)
+        let plan = Reminders.plan(
+            model, settings: state.settings, permission: state.permission, now: input.now, calendar: calendar,
+            locale: input.locale)
         let midnight = today.adding(days: 1, in: calendar).start(in: calendar)
         let nextDue = model.tasks.values.compactMap { $0.isOpen ? $0.due?.instant : nil }.filter { $0 > input.now }.min()
 
@@ -31,11 +32,13 @@ public enum TasksPresenter {
             detail: state.openTask.flatMap { model.tasks[$0] }.map { detail($0, model: model, words: words) },
             editors: input.children,
             confirmation: state.confirmation.flatMap { confirmation($0, model: model) },
-            settings: TasksSettings.sections(state.settings, permission: state.permission, scheduled: state.scheduled?.count ?? 0,
-                                             device: device, locale: input.locale),
+            settings: TasksSettings.sections(
+                state.settings, permission: state.permission, scheduled: state.scheduled?.count ?? 0,
+                device: device, locale: input.locale),
             storage: SettingsPresenter.storage(state.usage ?? [], budget: nil),
-            about: AboutPresentation.present(appName: TasksApp.appName, version: build.version, channel: build.channel,
-                                             offered: state.offered),
+            about: AboutPresentation.present(
+                appName: TasksApp.appName, version: build.version, channel: build.channel,
+                offered: state.offered),
             notices: linked.notice(state.linked).map { [$0] } ?? [],
             problem: state.problem.map { ProblemPresentation(title: "A change was not kept", message: $0) },
             reminders: plan,
@@ -49,11 +52,13 @@ public enum TasksPresenter {
             -> SidebarRow
         {
             let open = model.tasks(in: selection, today: today).filter(\.isOpen).count
-            return SidebarRow(id: id, selection: selection, title: title, symbol: symbol, open: open,
-                              openWords: open == 1 ? "1 open task" : "\(open) open tasks", actions: actions)
+            return SidebarRow(
+                id: id, selection: selection, title: title, symbol: symbol, open: open,
+                openWords: open == 1 ? "1 open task" : "\(open) open tasks", actions: actions)
         }
         let lists = model.arrangedLists.map { list in
-            row(list.id, .list(list.id), list.name.isEmpty ? "Untitled list" : list.name, "list",
+            row(
+                list.id, .list(list.id), list.name.isEmpty ? "Untitled list" : list.name, "list",
                 actions: [ActionButton("Rename…", .rename(list.id)), ActionButton("Delete…", .delete(list.id))])
         }
         return SidebarPresentation(
@@ -82,16 +87,18 @@ public enum TasksPresenter {
             title = model.lists[id].map { $0.name.isEmpty ? "Untitled list" : $0.name } ?? "List"
             actions = [ActionButton("Rename List…", .rename(id)), ActionButton("Delete List…", .delete(id))]
         }
-        let empty: EmptyPresentation? = if !open.isEmpty { nil } else {
-            switch selection {
-            case .today: EmptyPresentation(title: "Nothing due today", message: "Tasks due today or earlier show here.")
-            case .inbox: EmptyPresentation(title: "No tasks", message: "Tasks in no list show here. Add one below.")
-            case .list: EmptyPresentation(title: "No open tasks", message: "Add a task below.")
+        let empty: EmptyPresentation? =
+            if !open.isEmpty { nil } else {
+                switch selection {
+                case .today: EmptyPresentation(title: "Nothing due today", message: "Tasks due today or earlier show here.")
+                case .inbox: EmptyPresentation(title: "No tasks", message: "Tasks in no list show here. Add one below.")
+                case .list: EmptyPresentation(title: "No open tasks", message: "Add a task below.")
+                }
             }
-        }
         let named = selection == .today ? "for today" : selection == .inbox ? "" : "to \(title)"
-        let menu = TaskMenuWords(complete: "Mark as Done", abandon: "Won't Do", reopen: "Reopen", edit: "Edit", priority: TaskField.priority.label,
-                                 priorities: priorities, move: "Move to List", delete: "Delete Task", swipeDelete: "Delete")
+        let menu = TaskMenuWords(
+            complete: "Mark as Done", abandon: "Won't Do", reopen: "Reopen", edit: "Edit", priority: TaskField.priority.label,
+            priorities: priorities, move: "Move to List", delete: "Delete Task", swipeDelete: "Delete")
         return ListPresentation(
             selection: selection, title: title,
             open: KeyedList(open.map { row($0, words: words, mixed: selection == .today) }, revision: revision),
@@ -114,8 +121,9 @@ public enum TasksPresenter {
         if let due { spoken.append("due \(due.text)") }
         if let priority { spoken.append("priority \(priority.text)") }
         if let listName { spoken.append("in \(listName)") }
-        return TaskRow(id: task.id, title: title, status: task.status, toggle: task.isOpen ? "Mark as Done" : "Reopen", due: due,
-                       priority: priority, listName: listName, hasNotes: task.notes != nil, spoken: spoken.joined(separator: ", "))
+        return TaskRow(
+            id: task.id, title: title, status: task.status, toggle: task.isOpen ? "Mark as Done" : "Reopen", due: due,
+            priority: priority, listName: listName, hasNotes: task.notes != nil, spoken: spoken.joined(separator: ", "))
     }
 
     // MARK: The open task
@@ -124,30 +132,40 @@ public enum TasksPresenter {
         var fields = [DetailField(field: .status, label: TaskField.status.label, value: task.status.words)]
         let listName = task.list.flatMap { model.lists[$0]?.name } ?? InboxWords.title
         let lists = [EditorOption(id: "", title: InboxWords.title)] + model.arrangedLists.map { EditorOption(id: $0.id, title: $0.name) }
-        fields.append(DetailField(field: .list, label: TaskField.list.label, value: listName,
-                                  choice: EditorChoice(label: TaskField.list.label, selected: task.list ?? "", options: lists)))
+        fields.append(
+            DetailField(
+                field: .list, label: TaskField.list.label, value: listName,
+                choice: EditorChoice(label: TaskField.list.label, selected: task.list ?? "", options: lists)))
         if let due = task.due {
             let badge = words.due(due)
-            fields.append(DetailField(field: .due, label: TaskField.due.label, value: DueWords.full(due, calendar: words.calendar, locale: words.locale),
-                                      tone: badge.tone))
+            fields.append(
+                DetailField(
+                    field: .due, label: TaskField.due.label, value: DueWords.full(due, calendar: words.calendar, locale: words.locale),
+                    tone: badge.tone))
         } else {
             fields.append(DetailField(field: .due, label: TaskField.due.label, value: "No due date"))
         }
-        fields.append(DetailField(field: .priority, label: TaskField.priority.label, value: task.priority.words,
-                                  choice: EditorChoice(label: TaskField.priority.label, selected: task.priority.rawValue, options: priorities)))
+        fields.append(
+            DetailField(
+                field: .priority, label: TaskField.priority.label, value: task.priority.words,
+                choice: EditorChoice(label: TaskField.priority.label, selected: task.priority.rawValue, options: priorities)))
         if let notes = task.notes { fields.append(DetailField(field: .notes, label: TaskField.notes.label, value: notes)) }
         if let url = task.url { fields.append(DetailField(field: .link, label: TaskField.link.label, value: url, url: url)) }
         if task.status == .done, let completed = task.completedAt {
-            fields.append(DetailField(field: .completed, label: TaskField.completed.label,
-                                      value: DueWords.full(.at(completed, in: words.calendar), calendar: words.calendar, locale: words.locale)))
+            fields.append(
+                DetailField(
+                    field: .completed, label: TaskField.completed.label,
+                    value: DueWords.full(.at(completed, in: words.calendar), calendar: words.calendar, locale: words.locale)))
         }
-        var actions: [ActionButton<TaskAction>] = switch task.status {
-        case .open: [ActionButton("Mark as Done", .complete), ActionButton("Won't Do", .abandon)]
-        case .done, .abandoned: [ActionButton("Reopen", .reopen)]
-        }
+        var actions: [ActionButton<TaskAction>] =
+            switch task.status {
+            case .open: [ActionButton("Mark as Done", .complete), ActionButton("Won't Do", .abandon)]
+            case .done, .abandoned: [ActionButton("Reopen", .reopen)]
+            }
         actions.append(ActionButton("Delete Task", .delete))
-        return TaskDetailPresentation(id: task.id, title: task.name.isEmpty ? "Untitled task" : task.name, status: task.status, fields: fields,
-                                      actions: actions, edit: "Edit")
+        return TaskDetailPresentation(
+            id: task.id, title: task.name.isEmpty ? "Untitled task" : task.name, status: task.status, fields: fields,
+            actions: actions, edit: "Edit")
     }
 
     /// Every priority, as the detail and the editor choose among them.
@@ -166,14 +184,16 @@ public enum TasksPresenter {
             // No promise of a restore: the server's next sweep, within
             // minutes, purges the list and the tasks it owns, and no
             // console page brings a deleted record back.
-            let message = switch count {
-            case 0: "The list has no tasks."
-            case 1: "Its 1 task is deleted with it."
-            default: "Its \(count) tasks are deleted with it."
-            }
-            return ConfirmationPresentation(question: confirmation, title: "Delete \(name)?", message: message,
-                                            confirm: count == 0 ? "Delete List" : count == 1 ? "Delete List and 1 Task" : "Delete List and \(count) Tasks",
-                                            cancel: "Cancel")
+            let message =
+                switch count {
+                case 0: "The list has no tasks."
+                case 1: "Its 1 task is deleted with it."
+                default: "Its \(count) tasks are deleted with it."
+                }
+            return ConfirmationPresentation(
+                question: confirmation, title: "Delete \(name)?", message: message,
+                confirm: count == 0 ? "Delete List" : count == 1 ? "Delete List and 1 Task" : "Delete List and \(count) Tasks",
+                cancel: "Cancel")
         }
     }
 

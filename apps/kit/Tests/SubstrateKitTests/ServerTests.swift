@@ -1,8 +1,7 @@
 import Foundation
+import SubstrateTesting
 import Testing
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
+
 @testable import SubstrateAPI
 @testable import SubstrateAuth
 @testable import SubstrateCore
@@ -10,7 +9,10 @@ import FoundationNetworking
 @testable import SubstrateDeviceApple
 @testable import SubstrateKit
 @testable import SubstrateUI
-import SubstrateTesting
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 @Suite(.timeLimit(.minutes(10))) struct Addresses {
     @Test(arguments: [
@@ -85,10 +87,13 @@ import SubstrateTesting
         #expect(meta.revocationEndpoint?.absoluteString == "https://ada.example.com/oauth/revoke")
         #expect(meta.authorizationResponseISSParameterSupported)
         // A server from before the details lists none.
-        let older = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"""
-        {"issuer":"https://ada.example.com","authorization_endpoint":"https://ada.example.com/oauth/authorize",
-         "token_endpoint":"https://ada.example.com/oauth/token","scopes_supported":["read:*","write:*"]}
-        """#.utf8))
+        let older = try JSONDecoder().decode(
+            AuthorizationServerMetadata.self,
+            from: Data(
+                #"""
+                {"issuer":"https://ada.example.com","authorization_endpoint":"https://ada.example.com/oauth/authorize",
+                 "token_endpoint":"https://ada.example.com/oauth/token","scopes_supported":["read:*","write:*"]}
+                """#.utf8))
         #expect(older.authorizationDetailsTypesSupported.isEmpty)
         #expect(!older.authorizationResponseISSParameterSupported)
         #expect(older.revocation.absoluteString == "https://ada.example.com/oauth/revoke")
@@ -115,9 +120,11 @@ import SubstrateTesting
     }
 
     @Test func versionsOrderAsReleasesDo() throws {
-        let order = ["0.112.9", "0.113.0-rc.1", "0.113.0", "0.113.0-4-gabc1234", "0.113.0-12-gdef5678",
-                     "0.113.1-0.20261031120000-abcdef123456", "0.113.1", "0.114.0-pre", "0.114.0-pre.2",
-                     "0.114.0-pre.10", "0.114.0-rc.1", "0.114.0", "1.0.0"]
+        let order = [
+            "0.112.9", "0.113.0-rc.1", "0.113.0", "0.113.0-4-gabc1234", "0.113.0-12-gdef5678",
+            "0.113.1-0.20261031120000-abcdef123456", "0.113.1", "0.114.0-pre", "0.114.0-pre.2",
+            "0.114.0-pre.10", "0.114.0-rc.1", "0.114.0", "1.0.0",
+        ]
         let parsed = try order.map { try #require(ServerVersion($0)) }
         for (a, b) in zip(parsed, parsed.dropFirst()) {
             #expect(a < b, "\(a) < \(b)")
@@ -146,22 +153,28 @@ import SubstrateTesting
         #expect(chat.verdict(version: "dev", metadata: try meta()) == .compatible)
         #expect(chat.verdict(version: "v0.113.0-4-gabc1234", metadata: try meta()) == .compatible)
         #expect(sync.verdict(version: "0.114.0-pre.1", metadata: try meta()) == .compatible)
-        #expect(chat.verdict(version: "dev", metadata: try meta(verbs: ["read", "write", "agents"]))
-            == .tooOld(running: "dev", needed: "0.114.0", missing: ["let apps apply what your agents suggest"]))
+        #expect(
+            chat.verdict(version: "dev", metadata: try meta(verbs: ["read", "write", "agents"]))
+                == .tooOld(running: "dev", needed: "0.114.0", missing: ["let apps apply what your agents suggest"]))
     }
 
     @Test func aReleaseBelowTheMinimumIsTooOldEvenWithTheCapabilities() throws {
-        #expect(chat.verdict(version: "v0.113.0", metadata: try meta())
-            == .tooOld(running: "v0.113.0", needed: "0.114.0", missing: []))
+        #expect(
+            chat.verdict(version: "v0.113.0", metadata: try meta())
+                == .tooOld(running: "v0.113.0", needed: "0.114.0", missing: []))
     }
 
     @Test func whatTheServerLacksIsNamed() throws {
-        #expect(sync.verdict(version: "v0.114.0", metadata: try meta(details: ["package"]))
-            == .tooOld(running: "v0.114.0", needed: "0.114.0", missing: [
-                "create an app's account when you approve it", "turn on an app's webhook when you approve it",
-            ]))
-        #expect(chat.verdict(version: "v0.112.0", metadata: nil)
-            == .tooOld(running: "v0.112.0", needed: "0.114.0", missing: ["give apps access of their own"]))
+        #expect(
+            sync.verdict(version: "v0.114.0", metadata: try meta(details: ["package"]))
+                == .tooOld(
+                    running: "v0.114.0", needed: "0.114.0",
+                    missing: [
+                        "create an app's account when you approve it", "turn on an app's webhook when you approve it",
+                    ]))
+        #expect(
+            chat.verdict(version: "v0.112.0", metadata: nil)
+                == .tooOld(running: "v0.112.0", needed: "0.114.0", missing: ["give apps access of their own"]))
         #expect(ServerRequirement().verdict(version: nil, metadata: try meta()) == .compatible)
     }
 

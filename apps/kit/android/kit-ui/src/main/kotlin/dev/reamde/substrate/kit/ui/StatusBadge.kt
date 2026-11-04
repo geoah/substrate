@@ -9,10 +9,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 
-/**
- * A short state word in a capsule: the colour darkened (lightened in dark
- * mode) on its own pale tint, so it reads on it.
- */
+/** A short state word in a capsule: the colour darkened (lightened in dark mode) on its own pale tint, so it reads on it. */
 @Composable
 public fun StatusBadge(text: String, color: Color, modifier: Modifier = Modifier) {
     val dark = isKitDark

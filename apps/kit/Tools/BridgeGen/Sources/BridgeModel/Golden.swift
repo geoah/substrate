@@ -21,7 +21,9 @@ public enum Golden {
             case .struct:
                 out += ",\n      \"fields\": \(fields(declaration.fields, indent: 6))\n"
             case .stringEnum:
-                out += ",\n      \"cases\": [" + declaration.cases.map { "\n        {\"name\": \(quote($0.name)), \"value\": \(quote($0.rawValue ?? $0.name))}" }
+                out +=
+                    ",\n      \"cases\": ["
+                    + declaration.cases.map { "\n        {\"name\": \(quote($0.name)), \"value\": \(quote($0.rawValue ?? $0.name))}" }
                     .joined(separator: ",") + (declaration.cases.isEmpty ? "]\n" : "\n      ]\n")
             case .enum:
                 out += ",\n      \"cases\": ["

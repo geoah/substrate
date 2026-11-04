@@ -1,6 +1,7 @@
 import Foundation
-@testable import WorkoutsCore
 import Testing
+
+@testable import WorkoutsCore
 
 // Up next (DESIGN §4.6): the plan sequence, the rule, and ticking in any
 // order (§10.5).
@@ -23,11 +24,16 @@ struct UpNextTests {
     @Test("plain slots contribute their rows in display order, each head followed by its segments")
     func plainSlots() throws {
         var script = EngineScript(at: engineEpoch)
-        let state = try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("p", EngineCatalog.press, [PlannedSet(key: "w1", role: .warmup), PlannedSet(key: "s1"),
-                                                           PlannedSet(key: "s2", structure: .drop, drops: 2)]),
-            EngineCatalog.slot("l", EngineCatalog.lunge, EngineCatalog.sets(2)),
-        ]), exercises: EngineCatalog.all)
+        let state = try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot(
+                    "p", EngineCatalog.press,
+                    [
+                        PlannedSet(key: "w1", role: .warmup), PlannedSet(key: "s1"),
+                        PlannedSet(key: "s2", structure: .drop, drops: 2),
+                    ]),
+                EngineCatalog.slot("l", EngineCatalog.lunge, EngineCatalog.sets(2)),
+            ]), exercises: EngineCatalog.all)
         #expect(sequence(state) == ["pw1", "p1", "p2", "p2.2", "p2.3", "l1", "l1.2", "l2", "l2.2"])
         #expect(state.upNext == state.slot("p")?.rows.first)
     }
@@ -35,13 +41,15 @@ struct UpNextTests {
     @Test("a group is one block: members with fewer sets drop out of later rounds (A 4, B 3, C 2)")
     func unevenGroup() throws {
         var script = EngineScript(at: engineEpoch)
-        let state = try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("x", EngineCatalog.curl, EngineCatalog.sets(1)),
-            EngineCatalog.slot("a", EngineCatalog.press, EngineCatalog.sets(4), group: "g"),
-            EngineCatalog.slot("b", EngineCatalog.row, EngineCatalog.sets(3), group: "g"),
-            EngineCatalog.slot("c", EngineCatalog.raise, EngineCatalog.sets(2), group: "g"),
-            EngineCatalog.slot("y", EngineCatalog.pushUp, EngineCatalog.sets(1)),
-        ], groups: [RoutineGroup(key: "g", groupKind: .giantset)]), exercises: EngineCatalog.all)
+        let state = try script.start(
+            EngineCatalog.routine(
+                [
+                    EngineCatalog.slot("x", EngineCatalog.curl, EngineCatalog.sets(1)),
+                    EngineCatalog.slot("a", EngineCatalog.press, EngineCatalog.sets(4), group: "g"),
+                    EngineCatalog.slot("b", EngineCatalog.row, EngineCatalog.sets(3), group: "g"),
+                    EngineCatalog.slot("c", EngineCatalog.raise, EngineCatalog.sets(2), group: "g"),
+                    EngineCatalog.slot("y", EngineCatalog.pushUp, EngineCatalog.sets(1)),
+                ], groups: [RoutineGroup(key: "g", groupKind: .giantset)]), exercises: EngineCatalog.all)
         #expect(sequence(state) == ["x1", "a1", "b1", "c1", "a2", "b2", "c2", "a3", "b3", "a4", "y1"])
         #expect(UpNext.round(of: try script.row("b", 2), in: state) == 3)
     }
@@ -49,11 +57,17 @@ struct UpNextTests {
     @Test("every member's warm-ups come before round 1, and a round holds each head's segments")
     func warmupsAndChains() throws {
         var script = EngineScript(at: engineEpoch)
-        let state = try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("a", EngineCatalog.press, [PlannedSet(key: "w1", role: .warmup), PlannedSet(key: "s1", structure: .drop),
-                                                           PlannedSet(key: "s2")], group: "g"),
-            EngineCatalog.slot("b", EngineCatalog.lunge, [PlannedSet(key: "w1", role: .warmup), PlannedSet(key: "s1")], group: "g"),
-        ], groups: [RoutineGroup(key: "g", groupKind: .paired)]), exercises: EngineCatalog.all)
+        let state = try script.start(
+            EngineCatalog.routine(
+                [
+                    EngineCatalog.slot(
+                        "a", EngineCatalog.press,
+                        [
+                            PlannedSet(key: "w1", role: .warmup), PlannedSet(key: "s1", structure: .drop),
+                            PlannedSet(key: "s2"),
+                        ], group: "g"),
+                    EngineCatalog.slot("b", EngineCatalog.lunge, [PlannedSet(key: "w1", role: .warmup), PlannedSet(key: "s1")], group: "g"),
+                ], groups: [RoutineGroup(key: "g", groupKind: .paired)]), exercises: EngineCatalog.all)
         #expect(sequence(state) == ["aw1", "bw1", "bw1.2", "a1", "a1.2", "b1", "b1.2", "a2"])
         #expect(UpNext.round(of: try script.row("a", 0), in: state) == 0)
         #expect(UpNext.round(of: try script.row("a", 2), in: state) == 1)
@@ -62,10 +76,11 @@ struct UpNextTests {
     @Test("the next pending row after the last completed one, wrapping around; a locked segment is skipped")
     func wrapAround() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("a", EngineCatalog.press, [PlannedSet(key: "s1"), PlannedSet(key: "s2", structure: .drop)]),
-            EngineCatalog.slot("b", EngineCatalog.row, EngineCatalog.sets(2)),
-        ]), exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot("a", EngineCatalog.press, [PlannedSet(key: "s1"), PlannedSet(key: "s2", structure: .drop)]),
+                EngineCatalog.slot("b", EngineCatalog.row, EngineCatalog.sets(2)),
+            ]), exercises: EngineCatalog.all)
         let (a1, a2, drop) = try (script.row("a", 0), script.row("a", 1), script.row("a", 2))
         let (b1, b2) = try (script.row("b", 0), script.row("b", 1))
         var state = try script.tick(b2, kgReps(40, 10))
@@ -87,10 +102,11 @@ struct UpNextTests {
     @Test("a touched pending row is Up next until the next tick; a locked one cannot be")
     func focus() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("a", EngineCatalog.press, [PlannedSet(key: "s1", structure: .drop), PlannedSet(key: "s2")]),
-            EngineCatalog.slot("b", EngineCatalog.row, EngineCatalog.sets(2)),
-        ]), exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot("a", EngineCatalog.press, [PlannedSet(key: "s1", structure: .drop), PlannedSet(key: "s2")]),
+                EngineCatalog.slot("b", EngineCatalog.row, EngineCatalog.sets(2)),
+            ]), exercises: EngineCatalog.all)
         let (a1, drop, a2) = try (script.row("a", 0), script.row("a", 1), script.row("a", 2))
         let b2 = try script.row("b", 1)
         var state = try script.send(.touchRow(row: drop))
@@ -106,11 +122,12 @@ struct UpNextTests {
     @Test("ticking in any order: Up next and the rest follow the plan sequence from the set just done")
     func anyOrder() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("a", EngineCatalog.press, EngineCatalog.sets(2), setRest: 100),
-            EngineCatalog.slot("b", EngineCatalog.row, EngineCatalog.sets(2), setRest: 80),
-            EngineCatalog.slot("c", EngineCatalog.curl, EngineCatalog.sets(1), setRest: 60),
-        ]), exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot("a", EngineCatalog.press, EngineCatalog.sets(2), setRest: 100),
+                EngineCatalog.slot("b", EngineCatalog.row, EngineCatalog.sets(2), setRest: 80),
+                EngineCatalog.slot("c", EngineCatalog.curl, EngineCatalog.sets(1), setRest: 60),
+            ]), exercises: EngineCatalog.all)
         let (a1, a2, b1, b2, c1) = try (script.row("a", 0), script.row("a", 1), script.row("b", 0), script.row("b", 1), script.row("c", 0))
         // The second exercise first.
         var state = try script.tick(b1, kgReps(40, 10))
@@ -130,11 +147,16 @@ struct UpNextTests {
     @Test("ordinals count every row during the session, a chain once; Finish counts performed rows only")
     func ordinals() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("a", EngineCatalog.press, [PlannedSet(key: "w1", role: .warmup), PlannedSet(key: "w2", role: .warmup),
-                                                           PlannedSet(key: "s1"), PlannedSet(key: "s2", structure: .drop, drops: 2),
-                                                           PlannedSet(key: "s3")]),
-        ]), exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot(
+                    "a", EngineCatalog.press,
+                    [
+                        PlannedSet(key: "w1", role: .warmup), PlannedSet(key: "w2", role: .warmup),
+                        PlannedSet(key: "s1"), PlannedSet(key: "s2", structure: .drop, drops: 2),
+                        PlannedSet(key: "s3"),
+                    ])
+            ]), exercises: EngineCatalog.all)
         let state = try script.current
         let rows = state.orderedRows(inSlot: "a")
         #expect(rows.map { state.ordinal(of: $0.id) } == [1, 2, 1, 2, 2, 2, 3])
@@ -150,25 +172,31 @@ struct UpNextTests {
     @Test("labels: W, 2, 2a, M and 1L, short and spoken, with the failure badge and Top or Back-off")
     func labels() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("a", EngineCatalog.press, [
-                PlannedSet(key: "w1", role: .warmup, repsMin: 10, repsMax: 10), PlannedSet(key: "w2", role: .warmup, repsMin: 5, repsMax: 5),
-                PlannedSet(key: "s1", roleLabel: .top, repsMin: 5, repsMax: 5),
-                PlannedSet(key: "s2", roleLabel: .backoff, structure: .drop, drops: 2),
-                PlannedSet(key: "s3", structure: .restpause, load: .kg(30)),
-                PlannedSet(key: "s4", structure: .cluster, miniSets: 1),
-                PlannedSet(key: "s5", structure: .myo, load: .kg(30)),
-                PlannedSet(key: "s6", termination: .failure),
-            ]),
-            EngineCatalog.slot("b", EngineCatalog.lunge, [PlannedSet(key: "w1", role: .warmup), PlannedSet(key: "s1", termination: .amrap, repsMin: 8)]),
-        ]), exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot(
+                    "a", EngineCatalog.press,
+                    [
+                        PlannedSet(key: "w1", role: .warmup, repsMin: 10, repsMax: 10), PlannedSet(key: "w2", role: .warmup, repsMin: 5, repsMax: 5),
+                        PlannedSet(key: "s1", roleLabel: .top, repsMin: 5, repsMax: 5),
+                        PlannedSet(key: "s2", roleLabel: .backoff, structure: .drop, drops: 2),
+                        PlannedSet(key: "s3", structure: .restpause, load: .kg(30)),
+                        PlannedSet(key: "s4", structure: .cluster, miniSets: 1),
+                        PlannedSet(key: "s5", structure: .myo, load: .kg(30)),
+                        PlannedSet(key: "s6", termination: .failure),
+                    ]),
+                EngineCatalog.slot("b", EngineCatalog.lunge, [PlannedSet(key: "w1", role: .warmup), PlannedSet(key: "s1", termination: .amrap, repsMin: 8)]),
+            ]), exercises: EngineCatalog.all)
         try script.tick(script.row("a", 6), kgReps(30, 12))
         try script.tick(script.row("a", 10), kgReps(30, 16))
         let state = try script.current
         let labels = state.orderedRows(inSlot: "a").map { SetLabel.make($0.id, in: state) }
         #expect(labels.map { $0?.short } == ["W", "W", "1", "2", "2a", "2b", "3", "3a", "4", "4a", "5", "M", "6"])
-        #expect(labels.map { $0?.spoken } == ["warm-up 1", "warm-up 2", "set 1", "set 2", "set 2, drop 1", "set 2, drop 2", "set 3",
-                                              "set 3, mini-set 1", "set 4", "set 4, cluster 2", "set 5", "set 5, mini-set 1", "set 6"])
+        #expect(
+            labels.map { $0?.spoken } == [
+                "warm-up 1", "warm-up 2", "set 1", "set 2", "set 2, drop 1", "set 2, drop 2", "set 3",
+                "set 3, mini-set 1", "set 4", "set 4, cluster 2", "set 5", "set 5, mini-set 1", "set 6",
+            ])
         #expect(labels.map { $0?.roleText } == [nil, nil, "Top", "Back-off", nil, nil, nil, nil, nil, nil, nil, nil, nil])
         #expect(labels.map { $0?.failureBadge } == [false, false, false, false, false, false, false, false, false, false, false, false, true])
         let sides = state.orderedRows(inSlot: "b").map { SetLabel.make($0.id, in: state) }

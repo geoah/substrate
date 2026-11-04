@@ -52,9 +52,10 @@ final class ConsoleController: NSObject, ObservableObject {
         config.dataDetectorTypes = []
         #endif
         let content = WKUserContentController()
-        content.addUserScript(WKUserScript(
-            source: Self.shellScript(server: server, session: session), injectionTime: .atDocumentStart,
-            forMainFrameOnly: true))
+        content.addUserScript(
+            WKUserScript(
+                source: Self.shellScript(server: server, session: session), injectionTime: .atDocumentStart,
+                forMainFrameOnly: true))
         config.userContentController = content
 
         webView = WKWebView(frame: .zero, configuration: config)

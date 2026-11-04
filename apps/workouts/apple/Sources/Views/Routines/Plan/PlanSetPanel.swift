@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// A planned set open in place on the routine page: the panel a session
 /// opens on its set (DESIGN.md §7.6a), for the plan's targets. The header
@@ -105,8 +105,9 @@ struct PlanSetPanel<MenuItems: View>: View {
                 .foregroundStyle(.secondary)
             Spacer(minLength: 4)
             Menu {
-                RestPresetItems(current: editor.rest, defaultText: "Default (\(Format.rest(editor.restDefault)))",
-                                select: { apply(.rest($0)) }, custom: customRest)
+                RestPresetItems(
+                    current: editor.rest, defaultText: "Default (\(Format.rest(editor.restDefault)))",
+                    select: { apply(.rest($0)) }, custom: customRest)
             } label: {
                 HStack(spacing: 4) {
                     Text(editor.restText)
@@ -145,7 +146,8 @@ private struct PlanFieldRow: View {
     @ScaledMetric(relativeTo: .title) private var valueSize: CGFloat = 26
 
     var body: some View {
-        let layout = typeSize.isAccessibilitySize
+        let layout =
+            typeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
             : AnyLayout(HStackLayout(alignment: .center, spacing: 8))
         layout {

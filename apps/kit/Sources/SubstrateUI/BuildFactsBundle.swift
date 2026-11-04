@@ -11,8 +11,9 @@ public extension BuildFacts {
         func value(_ key: String) -> String { (info[key] as? String)?.trimmingCharacters(in: .whitespaces) ?? "" }
         let stamped = value("SubstrateVersion")
         let channel = value("SubstrateChannel")
-        return BuildFacts(version: stamped.isEmpty ? "\(value("CFBundleShortVersionString")) (\(value("CFBundleVersion")))" : stamped,
-                          channel: channel.isEmpty ? nil : channel)
+        return BuildFacts(
+            version: stamped.isEmpty ? "\(value("CFBundleShortVersionString")) (\(value("CFBundleVersion")))" : stamped,
+            channel: channel.isEmpty ? nil : channel)
     }
 }
 #endif

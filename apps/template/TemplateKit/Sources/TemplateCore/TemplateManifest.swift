@@ -37,7 +37,8 @@ public enum TemplateManifest {
     /// This build's manifest: a release's stamped client id and claimed
     /// redirect, else the local client id and the loopback receiver.
     public static var current: AppManifest {
-        manifest(clientID: AppManifest.clientID(infoKey: clientIDKey, localDefault: localClientID),
-                 claimedRedirect: AppManifest.claimedRedirect(infoKey: redirectKey))
+        manifest(
+            clientID: AppManifest.clientID(infoKey: clientIDKey, localDefault: localClientID),
+            claimedRedirect: AppManifest.claimedRedirect(infoKey: redirectKey))
     }
 }

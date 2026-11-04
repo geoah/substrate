@@ -22,10 +22,11 @@ public struct StatusPresentation: Bridged, Hashable, Sendable {
     /// so it is seen outside Settings: "1 change needs you".
     public var notice: NoticeLine?
 
-    public init(title: String, symbol: ScreenSymbol, tone: ScreenTone, sentence: String, problem: ProblemPresentation? = nil,
-                packages: [PackageLine], actions: [ActionButton<StatusAction>], busy: Bool, footer: String?, refused: RefusedWrites?,
-                notice: NoticeLine? = nil)
-    {
+    public init(
+        title: String, symbol: ScreenSymbol, tone: ScreenTone, sentence: String, problem: ProblemPresentation? = nil,
+        packages: [PackageLine], actions: [ActionButton<StatusAction>], busy: Bool, footer: String?, refused: RefusedWrites?,
+        notice: NoticeLine? = nil
+    ) {
         self.notice = notice
         self.title = title
         self.symbol = symbol
@@ -80,9 +81,10 @@ public struct RefusedWrite: Bridged, Hashable, Sendable, Identifiable {
     public var retry: ActionButton<StatusAction>
     public var discard: ActionButton<StatusAction>
 
-    public init(id: UUID, label: String, status: String, kind: LabeledValue, record: LabeledValue, words: String?,
-                retry: ActionButton<StatusAction>, discard: ActionButton<StatusAction>)
-    {
+    public init(
+        id: UUID, label: String, status: String, kind: LabeledValue, record: LabeledValue, words: String?,
+        retry: ActionButton<StatusAction>, discard: ActionButton<StatusAction>
+    ) {
         self.id = id
         self.label = label
         self.status = status

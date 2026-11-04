@@ -1,8 +1,8 @@
 package dev.reamde.substrate.kit.device
 
 import android.Manifest
-import android.app.NotificationManager
 import android.app.ActivityOptions
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -29,13 +29,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * SubstrateDevice's `Notifications` contract on Android: a request with no
- * `fireAt` shows at once, one whose instant passed is dropped, one to come
- * is pending (across instances: the store is a file under no_backup/) with
- * its alarm set until it fires or is cancelled, a request replaces one of
- * its id, `pending(prefix)` lists only that prefix, and a tap is a response,
- * kept until something reads it, made only from what reached the app's own
- * unexported `NotificationOpened`, never from an intent another app built.
+ * SubstrateDevice's `Notifications` contract on Android: a request with no `fireAt` shows at once, one whose instant passed is dropped, one to come is pending
+ * (across instances: the store is a file under no_backup/) with its alarm set until it fires or is cancelled, a request replaces one of its id,
+ * `pending(prefix)` lists only that prefix, and a tap is a response, kept until something reads it, made only from what reached the app's own unexported
+ * `NotificationOpened`, never from an intent another app built.
  */
 @RunWith(AndroidJUnit4::class)
 class NotificationsContractTest {
@@ -55,17 +52,23 @@ class NotificationsContractTest {
         notifications.cancelAll()
     }
 
-    private fun request(id: String, fireAt: Instant?) = NotificationRequest(
-        id = prefix + id, title = "Call the plumber", body = "Due at 3:00 PM, in Home", fireAt = fireAt?.toString(), thread = "tasks",
-        category = "tasks.reminder", timeSensitive = false, showsWhileActive = true, userInfo = mapOf("task" to id),
-    )
+    private fun request(id: String, fireAt: Instant?) =
+        NotificationRequest(
+            id = prefix + id,
+            title = "Call the plumber",
+            body = "Due at 3:00 PM, in Home",
+            fireAt = fireAt?.toString(),
+            thread = "tasks",
+            category = "tasks.reminder",
+            timeSensitive = false,
+            showsWhileActive = true,
+            userInfo = mapOf("task" to id),
+        )
 
     private fun isShown(id: String) = manager.activeNotifications.any { it.tag == prefix + id }
 
     /**
-     * Whether [id] is shown, given the moment `notify` and `cancel` take to
-     * reach the system: seconds on an emulator still starting the activity
-     * a tap opened.
+     * Whether [id] is shown, given the moment `notify` and `cancel` take to reach the system: seconds on an emulator still starting the activity a tap opened.
      */
     private fun shown(id: String, expected: Boolean = true): Boolean {
         val until = System.currentTimeMillis() + 15_000
@@ -133,24 +136,32 @@ class NotificationsContractTest {
         assertTrue(file.readText().contains(prefix + "kept"))
     }
 
-    private fun tap(component: ComponentName, id: String) = Intent().setComponent(component)
-        .putExtra(Notifications.EXTRA_ID, prefix + id)
-        .putExtra(Notifications.EXTRA_CATEGORY, "tasks.reminder")
-        .putExtra(Notifications.EXTRA_INFO, android.os.Bundle().apply { putString("task", id) })
+    private fun tap(component: ComponentName, id: String) =
+        Intent()
+            .setComponent(component)
+            .putExtra(Notifications.EXTRA_ID, prefix + id)
+            .putExtra(Notifications.EXTRA_CATEGORY, "tasks.reminder")
+            .putExtra(Notifications.EXTRA_INFO, android.os.Bundle().apply { putString("task", id) })
 
     @Test
     fun aTapIsAResponseKeptForTheFirstReader() = runBlocking {
         assertTrue(notifications.handle(tap(ComponentName(context, NotificationOpened::class.java), "tapped")))
         assertFalse(notifications.handle(Intent(context, NotificationOpened::class.java)))
         val response = withTimeout(5_000) { notifications.responses().first() }
-        assertEquals(NotificationResponse(id = prefix + "tapped", category = "tasks.reminder", action = NotificationResponse.Action.Open,
-                                          userInfo = mapOf("task" to "tapped")), response)
+        assertEquals(
+            NotificationResponse(
+                id = prefix + "tapped",
+                category = "tasks.reminder",
+                action = NotificationResponse.Action.Open,
+                userInfo = mapOf("task" to "tapped"),
+            ),
+            response,
+        )
     }
 
     /**
-     * An app's launcher activity is exported, so any app may start it with
-     * any extras: what reaches it, or any component but the one the
-     * notifications' own intents name, is no response.
+     * An app's launcher activity is exported, so any app may start it with any extras: what reaches it, or any component but the one the notifications' own
+     * intents name, is no response.
      */
     @Test
     fun aTapForgedThroughTheLauncherIsNoResponse() = runBlocking {
@@ -174,15 +185,23 @@ class NotificationsContractTest {
         shared.schedule(request("shown", null))
         assertTrue(shown("shown"))
         val notification = manager.activeNotifications.first { it.tag == prefix + "shown" }.notification
-        val options = if (Build.VERSION.SDK_INT >= 34) {
-            ActivityOptions.makeBasic().setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle()
-        } else {
-            null
-        }
+        val options =
+            if (Build.VERSION.SDK_INT >= 34) {
+                ActivityOptions.makeBasic().setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle()
+            } else {
+                null
+            }
         notification.contentIntent.send(context, 0, null, null, null, null, options)
         val response = withTimeout(30_000) { shared.responses().first() }
-        assertEquals(NotificationResponse(id = prefix + "shown", category = "tasks.reminder", action = NotificationResponse.Action.Open,
-                                          userInfo = mapOf("task" to "shown")), response)
+        assertEquals(
+            NotificationResponse(
+                id = prefix + "shown",
+                category = "tasks.reminder",
+                action = NotificationResponse.Action.Open,
+                userInfo = mapOf("task" to "shown"),
+            ),
+            response,
+        )
         shared.cancel(prefix + "shown")
     }
 }

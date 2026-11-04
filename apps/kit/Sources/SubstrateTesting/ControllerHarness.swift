@@ -20,9 +20,10 @@ public final class ControllerHarness<C: Controller>: @unchecked Sendable {
 
     /// - Parameter performsEffects: false holds every effect as a value in
     ///   the trace for the test to answer with `deliver(_:)`.
-    public init(_ controller: C, clock: TestClock = TestClock(), environment: AppEnvironment? = nil,
-                performsEffects: Bool = true)
-    {
+    public init(
+        _ controller: C, clock: TestClock = TestClock(), environment: AppEnvironment? = nil,
+        performsEffects: Bool = true
+    ) {
         let ids = SequentialIDs()
         let server = StubTransport()
         let environment = environment ?? AppEnvironment.testing(clock: clock, ids: ids, transport: server)
@@ -32,8 +33,9 @@ public final class ControllerHarness<C: Controller>: @unchecked Sendable {
         self.server = server
         self.environment = environment
         self.recorder = recorder
-        runtime = Runtime(controller, environment: environment,
-                          options: RuntimeOptions(performsEffects: performsEffects, trace: { recorder.append($0) }))
+        runtime = Runtime(
+            controller, environment: environment,
+            options: RuntimeOptions(performsEffects: performsEffects, trace: { recorder.append($0) }))
     }
 
     public var trace: [RuntimeTrace] { recorder.entries }
@@ -97,9 +99,10 @@ public final class ControllerHarness<C: Controller>: @unchecked Sendable {
     /// the long-lived work started before the mark (a watch, an answer the
     /// server holds) runs on. Work that never ends fails it after `idle`,
     /// as `until` does. `advancing` is `until(advancing:)`'s.
-    public func untilIdle(since mark: Int = 0, through last: Int = .max, advancing window: TimeInterval = 0,
-                          idle: Duration = ControllerHarness.idleBound) async throws
-    {
+    public func untilIdle(
+        since mark: Int = 0, through last: Int = .max, advancing window: TimeInterval = 0,
+        idle: Duration = ControllerHarness.idleBound
+    ) async throws {
         try await until(advancing: window, idle: idle) { harness in
             let activity = await harness.runtime.activity
             return activity.waiting == 0 && !activity.running.contains { $0 > mark && $0 <= last }
@@ -113,9 +116,10 @@ public final class ControllerHarness<C: Controller>: @unchecked Sendable {
     /// now. A sleep that begins late is not stepped over, since the clock
     /// only ever moves to a sleep's end, and a sleep longer than the window
     /// is never the one stepped to.
-    public func until(advancing window: TimeInterval, idle: Duration = ControllerHarness.idleBound,
-                      _ condition: @Sendable (ControllerHarness<C>) async -> Bool) async throws
-    {
+    public func until(
+        advancing window: TimeInterval, idle: Duration = ControllerHarness.idleBound,
+        _ condition: @Sendable (ControllerHarness<C>) async -> Bool
+    ) async throws {
         try await until(idle: idle) { harness in
             if await condition(harness) { return true }
             let clock = harness.clock
@@ -240,10 +244,12 @@ private final class TraceRecorder: @unchecked Sendable {
 public extension AppEnvironment {
     /// The environment a test runs a controller in: the clock and ids given,
     /// English (US) in UTC, the scripted server as the transport, no client.
-    static func testing(clock: any RuntimeClock = TestClock(), ids: any IDSource = SequentialIDs(),
-                        transport: any HTTPTransport = StubTransport(), client: ClientSource = .none) -> AppEnvironment
-    {
-        AppEnvironment(clock: clock, ids: ids, locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!,
-                       client: client, devices: DeviceServices(transport: transport))
+    static func testing(
+        clock: any RuntimeClock = TestClock(), ids: any IDSource = SequentialIDs(),
+        transport: any HTTPTransport = StubTransport(), client: ClientSource = .none
+    ) -> AppEnvironment {
+        AppEnvironment(
+            clock: clock, ids: ids, locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!,
+            client: client, devices: DeviceServices(transport: transport))
     }
 }

@@ -13,11 +13,9 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonElement
 
 /**
- * What a handle shows now: its newest presentation as it crossed, each
- * keyed list with every delta so far applied and its revision, whether it
- * is closed, and the last failure Swift reported for it. `tree` is the
- * presentation with its lists' rows put back (`KeyedListTree`), as of the
- * last time the lists agreed with it: what a screen draws.
+ * What a handle shows now: its newest presentation as it crossed, each keyed list with every delta so far applied and its revision, whether it is closed, and
+ * the last failure Swift reported for it. `tree` is the presentation with its lists' rows put back (`KeyedListTree`), as of the last time the lists agreed with
+ * it: what a screen draws.
  */
 public data class HandleSnapshot(
     val presentation: JsonElement? = null,
@@ -35,7 +33,8 @@ public data class HandleSnapshot(
 }
 
 /** One open root. Its state is a StateFlow: a slow collector sees the newest. */
-public class BridgeHandle internal constructor(
+public class BridgeHandle
+internal constructor(
     public val handle: Handle,
     public val state: StateFlow<HandleSnapshot>,
     private val core: BridgeCore,
@@ -43,8 +42,7 @@ public class BridgeHandle internal constructor(
     /** Sends a command, in order with every other sent through this handle. */
     public fun send(command: JsonElement): Result<Unit> = core.command(handle, command)
 
-    public fun <T> send(serializer: KSerializer<T>, command: T): Result<Unit> =
-        send(BridgeJson.encodeToJsonElement(serializer, command))
+    public fun <T> send(serializer: KSerializer<T>, command: T): Result<Unit> = send(BridgeJson.encodeToJsonElement(serializer, command))
 
     /** Idempotent. Swift answers what this handle still waits on `cancelled`. */
     public fun close(): Result<Unit> = core.close(handle)

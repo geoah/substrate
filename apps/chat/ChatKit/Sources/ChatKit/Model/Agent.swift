@@ -56,8 +56,9 @@ struct Agent: Hashable, Sendable, Identifiable {
             let prefix = "\(Kinds.core)/function/"
             let fn = held.hasPrefix(prefix) ? String(held.dropFirst(prefix.count)) : held
             let alias = entry["name"]?.text
-            return AgentTool(function: fn, name: alias ?? (fn.split(separator: "/").last.map(String.init) ?? fn),
-                             description: entry["description"]?.text)
+            return AgentTool(
+                function: fn, name: alias ?? (fn.split(separator: "/").last.map(String.init) ?? fn),
+                description: entry["description"]?.text)
         }
     }
 

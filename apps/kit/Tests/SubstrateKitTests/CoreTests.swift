@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import SubstrateCore
 
 /// The one JSON value both the kit's callers and WorkoutsCore read: a
@@ -102,8 +103,9 @@ import Testing
         let read = try JSONDecoder().decode(JSONValue.self, from: Data(#"[9007199254740993,1e200,1e-200]"#.utf8))
         #expect(read == .array([.number(JSONNumber("9007199254740993")!), .number(JSONNumber("1e200")!), .number(JSONNumber("1e-200")!)]))
         #expect(throws: DecodingError.self) { try JSONDecoder().decode(JSONValue.self, from: Data("[1e400]".utf8)) }
-        #expect(try JSONDecoder().decode(JSONValue.self, from: Data("1234567890123456789012345678901234567".utf8))
-            == .number(JSONNumber("1234567890123456789012345678901234567")!))
+        #expect(
+            try JSONDecoder().decode(JSONValue.self, from: Data("1234567890123456789012345678901234567".utf8))
+                == .number(JSONNumber("1234567890123456789012345678901234567")!))
         #expect(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(read)) == read)
         let written = String(decoding: try JSONEncoder().encode(read), as: UTF8.self)
         #expect(written.hasPrefix("[9007199254740993,"))

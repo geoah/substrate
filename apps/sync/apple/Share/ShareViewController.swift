@@ -12,11 +12,14 @@ final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         let items = extensionContext?.inputItems.compactMap { $0 as? NSExtensionItem } ?? []
-        let model = ShareModel(items: items, done: { [weak self] in
-            self?.extensionContext?.completeRequest(returningItems: nil)
-        }, cancel: { [weak self] in
-            self?.extensionContext?.cancelRequest(withError: CocoaError(.userCancelled))
-        })
+        let model = ShareModel(
+            items: items,
+            done: { [weak self] in
+                self?.extensionContext?.completeRequest(returningItems: nil)
+            },
+            cancel: { [weak self] in
+                self?.extensionContext?.cancelRequest(withError: CocoaError(.userCancelled))
+            })
         let host = UIHostingController(rootView: ShareView(model: model))
         addChild(host)
         host.view.frame = view.bounds
@@ -113,9 +116,12 @@ final class ShareModel: ObservableObject {
                         unsupported += 1
                     }
                 } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-                    if let t = try? await withTimeout(Self.readTimeout, {
-                        try await provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String
-                    }), !t.isEmpty {
+                    if let t = try? await withTimeout(
+                        Self.readTimeout,
+                        {
+                            try await provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String
+                        }), !t.isEmpty
+                    {
                         text = text.map { $0 == t ? $0 : $0 + "\n\n" + t } ?? t
                     } else {
                         unreadable += 1
@@ -200,7 +206,7 @@ final class ShareModel: ObservableObject {
             try Task.checkCancellation()
             try await client.put(Self.kind, id, props)
             done()
-        } catch where stopping || error is CancellationError || (error as? URLError)?.code == .cancelled {
+        } catch  where stopping || error is CancellationError || (error as? URLError)?.code == .cancelled {
             // Undone outside the cancelled task, whose requests would fail
             // at once; a link's row may be an earlier share, and stays.
             if wrote, url == nil {
@@ -223,7 +229,10 @@ struct ShareView: View {
                         ProblemBox(title: "Not signed in", message: "Open Substrate Sync and sign in first; this sheet uses its sign-in.")
                     }
                 } else if model.loading {
-                    HStack(spacing: 10) { ProgressView(); Text("Reading what was shared…").foregroundStyle(.secondary) }
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Reading what was shared…").foregroundStyle(.secondary)
+                    }
                 } else if model.isEmpty {
                     Section {
                         ProblemBox(title: "Nothing to send", message: "This app shared nothing Substrate keeps: a link, text or an image.")

@@ -54,7 +54,7 @@ public enum Previous {
     /// The same, with last time's session of the row's exercise already found.
     static func find(for id: RowID, in state: SessionState, last: ExerciseHistory?) -> PreviousSet? {
         guard let row = state.rows[id], let head = state.rows[row.headID], let slot = state.slot(row.slot),
-              let exercise = state.exercises[slot.exercise], let last, let ordinal = state.ordinal(of: id)
+            let exercise = state.exercises[slot.exercise], let last, let ordinal = state.ordinal(of: id)
         else { return nil }
         let sameExercise = state.slots.filter { $0.exercise == slot.exercise }.map(\.key)
         guard let n = sameExercise.firstIndex(of: slot.key), n < last.slots.count else { return nil }
@@ -70,12 +70,14 @@ public enum Previous {
         guard let match else { return nil }
         let rated = match.ratedRPE
         let method: EffortMethod? = rated == nil ? nil : (match.rpe == rated ? match.rpeMethod : match.rirMethod) ?? .entered
-        let values = SetValues(load: match.load, assistance: match.assistance, reps: match.reps, duration: match.duration,
-                               distance: match.distance, rpe: rated, rpeMethod: method,
-                               reachedFailure: match.reachedFailure, failedRepAttempted: match.failedRepAttempted)
-        return PreviousSet(session: last.session.id, date: last.session.at, record: match.id, values: values,
-                           text: Format.set(values, measurement: exercise.measurement, rpe: true),
-                           deload: last.session.deload == true)
+        let values = SetValues(
+            load: match.load, assistance: match.assistance, reps: match.reps, duration: match.duration,
+            distance: match.distance, rpe: rated, rpeMethod: method,
+            reachedFailure: match.reachedFailure, failedRepAttempted: match.failedRepAttempted)
+        return PreviousSet(
+            session: last.session.id, date: last.session.at, record: match.id, values: values,
+            text: Format.set(values, measurement: exercise.measurement, rpe: true),
+            deload: last.session.deload == true)
     }
 
     /// The weaker side of a one-side-at-a-time exercise last time, for
@@ -83,8 +85,9 @@ public enum Previous {
     /// the side with fewer working reps (or less time) in the newest session
     /// with sided sets; nil when level or never done, which starts on the left.
     public static func weakerSide(of exercise: ExerciseID, history: HistoryIndex, excluding active: SessionID? = nil) -> Side? {
-        guard let last = history.history(of: exercise, setup: nil, excluding: active)
-            .first(where: { $0.sets.contains { $0.side != nil } })
+        guard
+            let last = history.history(of: exercise, setup: nil, excluding: active)
+                .first(where: { $0.sets.contains { $0.side != nil } })
         else { return nil }
         var totals: [Side: Int] = [:]
         for set in last.sets where set.role == .working {
@@ -99,17 +102,19 @@ public enum Previous {
     /// An added exercise's shape from last time (§4.2 `addExercise`): one
     /// head per set, warm-ups first, and the slot's rests from the session
     /// record; one working set and no rests when it was never done.
-    public static func lastShape(of exercise: ExerciseID, history: HistoryIndex,
-                                 excluding active: SessionID? = nil) -> (roles: [Role], rests: SlotRests)
-    {
+    public static func lastShape(
+        of exercise: ExerciseID, history: HistoryIndex,
+        excluding active: SessionID? = nil
+    ) -> (roles: [Role], rests: SlotRests) {
         guard let last = history.last(exercise, setup: nil, excluding: active), let key = last.slots.first else {
             return ([.working], SlotRests())
         }
         let heads = last.sets(inSlot: key).filter { $0.continues == nil }
         let roles = heads.filter { $0.role == .warmup }.map(\.role) + heads.filter { $0.role == .working }.map(\.role)
         let slot = last.session.slots.first { $0.key == key }
-        let rests = SlotRests(setRest: slot?.setRest, warmupRest: slot?.warmupRest, transition: slot?.transition,
-                              sideSwitch: slot?.sideSwitch)
+        let rests = SlotRests(
+            setRest: slot?.setRest, warmupRest: slot?.warmupRest, transition: slot?.transition,
+            sideSwitch: slot?.sideSwitch)
         return (roles.isEmpty ? [.working] : roles, rests)
     }
 }

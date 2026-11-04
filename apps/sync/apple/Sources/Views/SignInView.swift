@@ -55,19 +55,22 @@ struct SignInView: View {
             }
 
             if let probe, door == .app {
-                ReviewChangesSections(appName: SyncManifest.appName, host: probe.host, heading: .firstSignIn,
-                                      changes: (try? model.manifest())?.plannedChanges() ?? [])
+                ReviewChangesSections(
+                    appName: SyncManifest.appName, host: probe.host, heading: .firstSignIn,
+                    changes: (try? model.manifest())?.plannedChanges() ?? [])
                 Section {
                     Button(action: signInWithApp) {
-                        WideLabel(title: busy ? "Waiting for Your Browser…" : "Sign In with Your Substrate",
-                                  systemImage: "person.badge.key", busy: busy)
+                        WideLabel(
+                            title: busy ? "Waiting for Your Browser…" : "Sign In with Your Substrate",
+                            systemImage: "person.badge.key", busy: busy)
                     }
                     .primaryAction()
                     .disabled(busy)
                     .buttonRow()
                 } footer: {
-                    Text("You sign in on \(probe.host) itself, and approve this there. "
-                        + ReviewChangesSections.choosing(host: probe.host, setsUp: true))
+                    Text(
+                        "You sign in on \(probe.host) itself, and approve this there. "
+                            + ReviewChangesSections.choosing(host: probe.host, setsUp: true))
                 }
             } else if probe != nil {
                 Section("Your repository") {
@@ -180,7 +183,7 @@ struct SignInView: View {
             defer { busy = false }
             do {
                 try await model.signIn(probe: probe)
-            } catch where error is WebAuthenticator.Cancelled || isStop(error) {
+            } catch  where error is WebAuthenticator.Cancelled || isStop(error) {
                 // The person closed the sheet: nothing to say.
             } catch {
                 problem = explain(error, server: probe.origin)

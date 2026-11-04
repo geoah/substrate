@@ -83,7 +83,8 @@ public struct SetLabel: Codable, Equatable, Sendable {
         guard let row = state.rows[id], let head = state.rows[row.headID], let ordinal = state.ordinal(of: id) else { return nil }
         let warmup = head.role == .warmup
         let number = warmup ? "W" : "\(ordinal)"
-        let spokenSet = warmup
+        let spokenSet =
+            warmup
             ? (Ordinals.warmupCount(inSlot: row.slot, of: state) > 1 ? "warm-up \(ordinal)" : "warm-up")
             : "set \(ordinal)"
         let badge = row.isHead && (head.termination == .failure || head.termination == .amrap)

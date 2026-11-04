@@ -57,7 +57,7 @@ public enum RestRules {
         }
         // Line 0: nothing left.
         guard let nID = UpNext.expectedNext(after: row, in: state), let n = state.rows[nID],
-              let nSlot = state.slot(n.slot)
+            let nSlot = state.slot(n.slot)
         else {
             return RestDecision(slot: nil, seconds: 0, source: .none)
         }

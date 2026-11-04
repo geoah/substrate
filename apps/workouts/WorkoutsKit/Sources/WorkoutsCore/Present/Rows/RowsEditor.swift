@@ -59,10 +59,11 @@ public struct RowsEditor: Codable, Equatable, Sendable {
     /// `Cancel`, when fixing: drop the draft, send nothing.
     public var cancelTitle: String?
 
-    public init(row: RowID, mode: Mode, tint: Tint, title: String, setLabel: String, caption: String?, note: RowsNote?, trailingNote: String?,
-                reason: String?, fields: [RowsField], rpe: RowsRPEStrip?, timer: RowsTimer?, primary: RowsButton,
-                secondary: RowsButton?, delete: RowsButton?, cancelTitle: String?)
-    {
+    public init(
+        row: RowID, mode: Mode, tint: Tint, title: String, setLabel: String, caption: String?, note: RowsNote?, trailingNote: String?,
+        reason: String?, fields: [RowsField], rpe: RowsRPEStrip?, timer: RowsTimer?, primary: RowsButton,
+        secondary: RowsButton?, delete: RowsButton?, cancelTitle: String?
+    ) {
         self.row = row
         self.mode = mode
         self.tint = tint
@@ -140,10 +141,11 @@ public struct RowsField: Codable, Equatable, Sendable, Identifiable {
     /// `110, suggested`, `105, changed from 110`, `to failure, empty`.
     public var accessibilityValue: String
 
-    public init(field: ValueField, value: String?, placeholder: String?, unit: String?, last: String?, isChanged: Bool,
-                reset: RowsReset?, isMissing: Bool, minus: RowsStep?, plus: RowsStep?, keypad: RowsKeypad,
-                accessibilityLabel: String, accessibilityValue: String)
-    {
+    public init(
+        field: ValueField, value: String?, placeholder: String?, unit: String?, last: String?, isChanged: Bool,
+        reset: RowsReset?, isMissing: Bool, minus: RowsStep?, plus: RowsStep?, keypad: RowsKeypad,
+        accessibilityLabel: String, accessibilityValue: String
+    ) {
         self.field = field
         self.value = value
         self.placeholder = placeholder
@@ -209,9 +211,10 @@ public struct RowsKeypad: Codable, Equatable, Sendable {
     public var allowsDecimal: Bool
     let unit: MassUnit
 
-    public init(field: ValueField, title: String, chipsTitle: String?, chips: [RowsKeypadChip], allowsDecimal: Bool,
-                unit: MassUnit)
-    {
+    public init(
+        field: ValueField, title: String, chipsTitle: String?, chips: [RowsKeypadChip], allowsDecimal: Bool,
+        unit: MassUnit
+    ) {
         self.field = field
         self.title = title
         self.chipsTitle = chipsTitle
@@ -297,9 +300,10 @@ public struct RowsRPEStrip: Codable, Equatable, Sendable {
     /// `8, planned, not rated yet`, `8.5`, `9, copied from last time`, `not rated`.
     public var accessibilityValue: String
 
-    public init(cells: [RowsRPECell], half: RowsRPEHalf, shown: Decimal?, isRated: Bool, isCollapsed: Bool, addTitle: String,
-                accessibilityLabel: String, accessibilityValue: String)
-    {
+    public init(
+        cells: [RowsRPECell], half: RowsRPEHalf, shown: Decimal?, isRated: Bool, isCollapsed: Bool, addTitle: String,
+        accessibilityLabel: String, accessibilityValue: String
+    ) {
         self.cells = cells
         self.half = half
         self.shown = shown
@@ -446,9 +450,10 @@ public struct RowsFix: Codable, Equatable, Sendable {
     public func editor(draft: SetValues) -> RowsEditor {
         let missing = source.measurement.missing(in: draft)
         let save = save(draft)
-        var editor = source.editor(values: draft, rpe: draft.rpe.map { .value($0, draft.rpeMethod ?? .entered) } ?? .none,
-                                   commit: missing.isEmpty ? draft : nil, canCommit: missing.isEmpty && save != nil,
-                                   isMissing: missing)
+        var editor = source.editor(
+            values: draft, rpe: draft.rpe.map { .value($0, draft.rpeMethod ?? .entered) } ?? .none,
+            commit: missing.isEmpty ? draft : nil, canCommit: missing.isEmpty && save != nil,
+            isMissing: missing)
         if let save { editor.primary.action = save }
         return editor
     }
@@ -536,37 +541,42 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
         // A mini-set's editor holds its reps alone; its load is the activation's.
         let repsAlone = fields == [.reps] && measurement.loadMode != nil && measurement.loadMode != .bodyweight
         func text(_ values: SetValues) -> String {
-            repsAlone ? RowsText.values(SetValues(reps: values.reps), measurement: .repsonly, perSide: perSide)
+            repsAlone
+                ? RowsText.values(SetValues(reps: values.reps), measurement: .repsonly, perSide: perSide)
                 : RowsText.values(values, measurement: measurement, perSide: perSide)
         }
         switch mode {
         case .fix:
             let text = text(commit ?? shown)
-            primary = RowsButton(title: "Save" + (text.isEmpty ? "" : " \(text)") + RowsText.effortSuffix(effort),
-                                 action: .edit(row, SetValuesPatch()), isEnabled: canCommit)
+            primary = RowsButton(
+                title: "Save" + (text.isEmpty ? "" : " \(text)") + RowsText.effortSuffix(effort),
+                action: .edit(row, SetValuesPatch()), isEnabled: canCommit)
             delete = RowsButton(title: "Delete set", accessibilityLabel: "Delete \(spoken)", action: .removeSet(row))
         case .log:
             let text = text(commit ?? shown)
             let logTitle = RowsText.logTitle(prefix: logPrefix, values: text, rpe: effort)
             if timer != nil, measurement.hasTimer {
                 if isRunning {
-                    primary = RowsButton(title: "Stop and log", accessibilityLabel: "Stop and log \(spoken)",
-                                         action: .stopTimedSet(row), isEnabled: canCommit)
+                    primary = RowsButton(
+                        title: "Stop and log", accessibilityLabel: "Stop and log \(spoken)",
+                        action: .stopTimedSet(row), isEnabled: canCommit)
                     secondary = RowsButton(title: "Cancel", accessibilityLabel: "Cancel the timer", action: .cancelTimedSet(row))
                 } else {
                     let goal = timer?.goal.map { ", goal \(Format.duration($0))" } ?? ""
-                    primary = RowsButton(title: "Start", accessibilityLabel: "Start \(spoken)\(goal)",
-                                         action: .startTimedSet(row), isEnabled: canStart)
+                    primary = RowsButton(
+                        title: "Start", accessibilityLabel: "Start \(spoken)\(goal)",
+                        action: .startTimedSet(row), isEnabled: canStart)
                     secondary = RowsButton(title: logTitle, action: .tick(row), isEnabled: canCommit)
                 }
             } else {
                 primary = RowsButton(title: logTitle, action: .tick(row), isEnabled: canCommit)
             }
         }
-        return RowsEditor(row: row, mode: mode, tint: tint, title: title, setLabel: setLabel, caption: caption, note: note,
-                          trailingNote: trailingNote, reason: reason, fields: fieldPresentations, rpe: strip, timer: timer,
-                          primary: primary,
-                          secondary: secondary, delete: delete, cancelTitle: mode == .fix ? "Cancel" : nil)
+        return RowsEditor(
+            row: row, mode: mode, tint: tint, title: title, setLabel: setLabel, caption: caption, note: note,
+            trailingNote: trailingNote, reason: reason, fields: fieldPresentations, rpe: strip, timer: timer,
+            primary: primary,
+            secondary: secondary, delete: delete, cancelTitle: mode == .fix ? "Cancel" : nil)
     }
 
     /// The values the editor shows: typed over the suggestion (`log`), the draft (`fix`).
@@ -600,10 +610,15 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
         case .fix:
             isChanged = FieldAccess.differs(field, values, baseline)
             if isChanged {
-                let text = base.map { RowsText.fieldText(field, $0, unit: FieldAccess.unit(field, baseline) ?? unit,
-                                                         withUnit: false) } ?? "empty"
-                reset = RowsReset(text: "was \(text)", accessibilityLabel: "Back to \(text), as logged",
-                                  patch: FieldAccess.restoring(field, from: baseline))
+                let text =
+                    base.map {
+                        RowsText.fieldText(
+                            field, $0, unit: FieldAccess.unit(field, baseline) ?? unit,
+                            withUnit: false)
+                    } ?? "empty"
+                reset = RowsReset(
+                    text: "was \(text)", accessibilityLabel: "Back to \(text), as logged",
+                    patch: FieldAccess.restoring(field, from: baseline))
             }
         }
         // Words (`to failure`) do not show in the empty field: a field holds
@@ -671,16 +686,23 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
         // With no value and nothing to start from, + sets one step and − is off.
         guard let value else {
             let first = max(step, floor)
-            return (nil, RowsStep(title: "+" + title, accessibilityLabel: spoken.more,
-                                  patch: FieldAccess.setting(field, to: first, unit: unit)))
+            return (
+                nil,
+                RowsStep(
+                    title: "+" + title, accessibilityLabel: spoken.more,
+                    patch: FieldAccess.setting(field, to: first, unit: unit))
+            )
         }
         let lower = value - step
-        let minus = lower >= floor
-            ? RowsStep(title: "\u{2212}" + title, accessibilityLabel: spoken.less,
-                       patch: FieldAccess.setting(field, to: lower, unit: unit))
+        let minus =
+            lower >= floor
+            ? RowsStep(
+                title: "\u{2212}" + title, accessibilityLabel: spoken.less,
+                patch: FieldAccess.setting(field, to: lower, unit: unit))
             : nil
-        let plus = RowsStep(title: "+" + title, accessibilityLabel: spoken.more,
-                            patch: FieldAccess.setting(field, to: value + step, unit: unit))
+        let plus = RowsStep(
+            title: "+" + title, accessibilityLabel: spoken.more,
+            patch: FieldAccess.setting(field, to: value + step, unit: unit))
         return (minus, plus)
     }
 
@@ -691,21 +713,24 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
             let points = grid.points(around: current.map(\.double))
             chips = points.map { point in
                 let mass = Mass(suggested: point, unit: unit)
-                return RowsKeypadChip(text: Format.number(mass.value),
-                                      isCurrent: current.map { abs($0.double - point) < 1e-6 } ?? false,
-                                      patch: FieldAccess.setting(field, to: mass.value, unit: unit))
+                return RowsKeypadChip(
+                    text: Format.number(mass.value),
+                    isCurrent: current.map { abs($0.double - point) < 1e-6 } ?? false,
+                    patch: FieldAccess.setting(field, to: mass.value, unit: unit))
             }
             chipsTitle = "\(Format.mass(Mass(suggested: grid.step, unit: unit))) steps, tap one to set it"
         }
-        let title = switch field {
-        case .load: "Load in \(unit.rawValue)"
-        case .assistance: "Assistance in \(unit.rawValue)"
-        case .reps: "Reps"
-        case .duration: "Time, minutes and seconds"
-        case .distance: "Distance in m"
-        }
-        return RowsKeypad(field: field, title: title, chipsTitle: chips.isEmpty ? nil : chipsTitle, chips: chips,
-                          allowsDecimal: field == .load || field == .assistance || field == .distance, unit: unit)
+        let title =
+            switch field {
+            case .load: "Load in \(unit.rawValue)"
+            case .assistance: "Assistance in \(unit.rawValue)"
+            case .reps: "Reps"
+            case .duration: "Time, minutes and seconds"
+            case .distance: "Distance in m"
+            }
+        return RowsKeypad(
+            field: field, title: title, chipsTitle: chips.isEmpty ? nil : chipsTitle, chips: chips,
+            allowsDecimal: field == .load || field == .assistance || field == .distance, unit: unit)
     }
 
     func rpeStrip(_ rpe: RowRPE) -> RowsRPEStrip {
@@ -720,26 +745,30 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
             let holds = shown.map { $0 >= whole && $0 < whole + 1 } ?? false
             let value = holds ? shown ?? whole : whole
             let style: RowsRPECell.Style = holds ? (isRated ? .filled : .outlined) : .plain
-            return RowsRPECell(value: value, text: Format.rpe(value), isHalf: value != value.roundedTo(0), style: style,
-                               patch: style == .filled ? .clearingRPE : .enteringRPE(value), meaning: meaning(value))
+            return RowsRPECell(
+                value: value, text: Format.rpe(value), isHalf: value != value.roundedTo(0), style: style,
+                patch: style == .filled ? .clearingRPE : .enteringRPE(value), meaning: meaning(value))
         }
         let isOn = shown.map { $0 != $0.roundedTo(0) } ?? false
         let toggled: Decimal? = shown.flatMap { value in
             let next = isOn ? value - Decimal(5) / 10 : value + Decimal(5) / 10
             return RPEScaleText.values.contains(value) && RPEScaleText.values.contains(next) ? next : nil
         }
-        let half = RowsRPEHalf(text: "\u{00BD}", isOn: isOn, patch: toggled.map(SetValuesPatch.enteringRPE),
-                               meaning: toggled.map(meaning),
-                               accessibilityLabel: isOn ? "Take off the half point" : "Add half a point")
-        let value: String = switch rpe {
-        case .none: "not rated"
-        case let .prefill(x): "\(Format.rpe(x)), planned, not rated yet"
-        case let .value(x, .copied): "\(Format.rpe(x)), copied from last time, not rated yet"
-        case let .value(x, .prefilled): "\(Format.rpe(x)), as planned, not rated"
-        case let .value(x, _): Format.rpe(x)
-        }
-        return RowsRPEStrip(cells: cells, half: half, shown: shown, isRated: isRated, isCollapsed: shown == nil && !rpeOpen,
-                            addTitle: RowsRPEStrip.addTitle, accessibilityLabel: "\(spoken), RPE", accessibilityValue: value)
+        let half = RowsRPEHalf(
+            text: "\u{00BD}", isOn: isOn, patch: toggled.map(SetValuesPatch.enteringRPE),
+            meaning: toggled.map(meaning),
+            accessibilityLabel: isOn ? "Take off the half point" : "Add half a point")
+        let value: String =
+            switch rpe {
+            case .none: "not rated"
+            case let .prefill(x): "\(Format.rpe(x)), planned, not rated yet"
+            case let .value(x, .copied): "\(Format.rpe(x)), copied from last time, not rated yet"
+            case let .value(x, .prefilled): "\(Format.rpe(x)), as planned, not rated"
+            case let .value(x, _): Format.rpe(x)
+            }
+        return RowsRPEStrip(
+            cells: cells, half: half, shown: shown, isRated: isRated, isCollapsed: shown == nil && !rpeOpen,
+            addTitle: RowsRPEStrip.addTitle, accessibilityLabel: "\(spoken), RPE", accessibilityValue: value)
     }
 }
 

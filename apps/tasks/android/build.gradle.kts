@@ -15,10 +15,10 @@ plugins {
 }
 
 apply(plugin = "org.jetbrains.kotlin.plugin.compose")
+
 apply(plugin = "org.jetbrains.kotlin.plugin.serialization")
 
-@Suppress("UNCHECKED_CAST")
-val app = JsonSlurper().parse(file("../app.json")) as Map<String, Any?>
+@Suppress("UNCHECKED_CAST") val app = JsonSlurper().parse(file("../app.json")) as Map<String, Any?>
 val applicationID = (app["android"] as Map<String, Any?>)["applicationID"] as String
 
 /** A release's stamp, empty in a local build. */
@@ -62,8 +62,15 @@ android {
             excludes += "**/libSubstrateAndroid.so"
             // The runtime both libraries load, one copy; a catch-all here
             // would win over the exclude above.
-            pickFirsts += listOf("**/libswift*.so", "**/libFoundation*.so", "**/lib_FoundationICU.so", "**/libdispatch.so",
-                                 "**/libBlocksRuntime.so", "**/libc++_shared.so")
+            pickFirsts +=
+                listOf(
+                    "**/libswift*.so",
+                    "**/libFoundation*.so",
+                    "**/lib_FoundationICU.so",
+                    "**/libdispatch.so",
+                    "**/libBlocksRuntime.so",
+                    "**/libc++_shared.so",
+                )
         }
     }
     testOptions {

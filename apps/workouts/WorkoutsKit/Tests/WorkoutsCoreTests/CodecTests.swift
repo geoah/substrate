@@ -1,7 +1,8 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
 import SubstrateCore
+import Testing
+
+@testable import WorkoutsCore
 
 /// The generated example records (`Fixtures/examples/*.json`) and
 /// `Fixtures/kinds.json`, from `apps/workouts/scripts/workouts-package.py`.
@@ -192,9 +193,10 @@ struct CodecExampleTests {
     @Test("sessions group with their sets in file order")
     func sessionRecords() throws {
         let sessions = try ExampleFixtures.sessions("sessions")
-        #expect(sessions.map(\.session.id.rawValue) == [
-            "01a16363-cf80-73ed-85fd-704f6ce38d73", "01a17831-8a38-7502-a232-81e9c175d65e", "01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
-        ])
+        #expect(
+            sessions.map(\.session.id.rawValue) == [
+                "01a16363-cf80-73ed-85fd-704f6ce38d73", "01a17831-8a38-7502-a232-81e9c175d65e", "01a17d8d-afc0-7a2b-bc4d-5e6f70819203",
+            ])
         #expect(sessions.map(\.sets.count).reduce(0, +) == 65)
         for records in sessions {
             #expect(records.sets.allSatisfy { $0.session == records.session.id })
@@ -284,7 +286,9 @@ struct CodecDriftTests {
             let original = record(schema.kind, "sample", properties)
             let (encoded, extra) = try roundTrip(codec, original)
             #expect(extra.isEmpty, "\(schema.kind) left \(extra.keys.sorted()) unread")
-            #expect(normalizedProperties(encoded.properties, schema.allProperties) == normalizedProperties(original.properties, schema.allProperties), "\(schema.kind)")
+            #expect(
+                normalizedProperties(encoded.properties, schema.allProperties) == normalizedProperties(original.properties, schema.allProperties),
+                "\(schema.kind)")
         }
     }
 
@@ -292,21 +296,24 @@ struct CodecDriftTests {
     private func sample(_ schema: [PropertySchema]) -> JSONObject {
         var out = JSONObject()
         for property in schema {
-            let value: JSONValue = switch property.type {
-            case .string, .text: .string("text \(property.name)")
-            case .timezone: .string("Europe/London")
-            case .int: .number(3)
-            case .decimal: .string("7.5")
-            case .bool: .bool(true)
-            case .duration: .string("PT1M30S")
-            case .datetime: .string("2026-10-27T13:30:00Z")
-            case .quantity: property.dimension == .length
-                ? .object(["value": .string("40"), "unit": .string("m")])
-                : .object(["value": .string("92.5"), "unit": .string("lb")])
-            case .enumeration, .state: .string(property.values.last { $0 != property.defaultValue && $0 != "active" } ?? "")
-            case .reference: .string(property.referenceKind == "any" ? "substrate.reamde.dev/core/person/owner" : "\(property.referenceKind!)/ref-\(property.name)")
-            case .object: .object(sample(property.fields))
-            }
+            let value: JSONValue =
+                switch property.type {
+                case .string, .text: .string("text \(property.name)")
+                case .timezone: .string("Europe/London")
+                case .int: .number(3)
+                case .decimal: .string("7.5")
+                case .bool: .bool(true)
+                case .duration: .string("PT1M30S")
+                case .datetime: .string("2026-10-27T13:30:00Z")
+                case .quantity:
+                    property.dimension == .length
+                        ? .object(["value": .string("40"), "unit": .string("m")])
+                        : .object(["value": .string("92.5"), "unit": .string("lb")])
+                case .enumeration, .state: .string(property.values.last { $0 != property.defaultValue && $0 != "active" } ?? "")
+                case .reference:
+                    .string(property.referenceKind == "any" ? "substrate.reamde.dev/core/person/owner" : "\(property.referenceKind!)/ref-\(property.name)")
+                case .object: .object(sample(property.fields))
+                }
             out[property.name] = property.repeated ? .array([value]) : value
         }
         return out
@@ -331,10 +338,12 @@ struct CodecTypeTests {
         #expect(codec.encode(set).properties["rpe"] == .string("9.5"))
     }
 
-    @Test("decimal text is strict and shortest", arguments: [
-        ("9.50", "9.5"), ("100", "100"), ("0.000", "0"), ("-0", "0"), ("-0.5", "-0.5"), ("0.45359237", "0.45359237"),
-        ("83.9146", "83.9146"), ("007", "7"),
-    ])
+    @Test(
+        "decimal text is strict and shortest",
+        arguments: [
+            ("9.50", "9.5"), ("100", "100"), ("0.000", "0"), ("-0", "0"), ("-0.5", "-0.5"), ("0.45359237", "0.45359237"),
+            ("83.9146", "83.9146"), ("007", "7"),
+        ])
     func decimalText(input: String, output: String) throws {
         let value = try #require(DecimalText.parse(input))
         #expect(DecimalText.format(value) == output)
@@ -351,19 +360,23 @@ struct CodecTypeTests {
         #expect(throws: CodecError.self) { try codec.decodeSet(record(kinds.set, setProperties(["reps": .string("10")]))) }
     }
 
-    @Test("durations decode ISO 8601 and encode substrate's spelling", arguments: [
-        ("PT90S", 90, "PT1M30S"), ("PT36H", 129_600, "P1DT12H"), ("PT0S", 0, "PT0S"), ("P0D", 0, "PT0S"),
-        ("PT1M30S", 90, "PT1M30S"), ("P1W", 604_800, "P7D"), ("P1DT1S", 86401, "P1DT1S"), ("PT1.5S", 2, "PT2S"),
-        ("PT0.4S", 0, "PT0S"), ("PT2H", 7200, "PT2H"), ("PT1H0M5S", 3605, "PT1H5S"),
-    ])
+    @Test(
+        "durations decode ISO 8601 and encode substrate's spelling",
+        arguments: [
+            ("PT90S", 90, "PT1M30S"), ("PT36H", 129_600, "P1DT12H"), ("PT0S", 0, "PT0S"), ("P0D", 0, "PT0S"),
+            ("PT1M30S", 90, "PT1M30S"), ("P1W", 604_800, "P7D"), ("P1DT1S", 86401, "P1DT1S"), ("PT1.5S", 2, "PT2S"),
+            ("PT0.4S", 0, "PT0S"), ("PT2H", 7200, "PT2H"), ("PT1H0M5S", 3605, "PT1H5S"),
+        ])
     func durations(input: String, seconds: Int, output: String) {
         #expect(ISODuration.parse(input) == seconds)
         #expect(ISODuration.format(seconds) == output)
     }
 
-    @Test("durations refuse what is not P[nW][nD][T[nH][nM][nS]]", arguments: [
-        "", "P", "PT", "P1M", "P1Y", "-PT5S", "PT-5S", "PT5", "T5S", "PT1S5M", "PT1.5M", "P1DT", "pt5s", "PT 5S", "PT5S ",
-    ])
+    @Test(
+        "durations refuse what is not P[nW][nD][T[nH][nM][nS]]",
+        arguments: [
+            "", "P", "PT", "P1M", "P1Y", "-PT5S", "PT-5S", "PT5", "T5S", "PT1S5M", "PT1.5M", "P1DT", "pt5s", "PT 5S", "PT5S ",
+        ])
     func durationsRefuse(input: String) {
         #expect(ISODuration.parse(input) == nil)
     }
@@ -379,9 +392,12 @@ struct CodecTypeTests {
 
     @Test("datetimes decode any offset to the instant and encode UTC with Z and whole seconds")
     func datetimes() throws {
-        let set = try codec.decodeSet(record(kinds.set, setProperties([
-            "at": .string("2026-10-27T14:30:00+01:00"), "startedAt": .string("2026-10-27T13:28:59.750Z"),
-        ])))
+        let set = try codec.decodeSet(
+            record(
+                kinds.set,
+                setProperties([
+                    "at": .string("2026-10-27T14:30:00+01:00"), "startedAt": .string("2026-10-27T13:28:59.750Z"),
+                ])))
         #expect(set.at == Timestamp.parse("2026-10-27T13:30:00Z"))
         #expect(set.startedAt?.timeIntervalSince1970 == 1_793_107_739.75)
         let encoded = codec.encode(set).properties
@@ -389,18 +405,22 @@ struct CodecTypeTests {
         #expect(encoded["startedAt"] == .string("2026-10-27T13:28:59Z"))
     }
 
-    @Test("datetime text", arguments: [
-        ("2026-10-27T13:30:00Z", 1_793_107_800.0), ("2026-10-25T00:59:59-01:00", 1_792_893_599.0),
-        ("1970-01-01T00:00:00Z", 0.0), ("2024-02-29T12:00:00+05:30", 1_709_188_200.0), ("2026-10-27t13:30:00z", 1_793_107_800.0),
-    ])
+    @Test(
+        "datetime text",
+        arguments: [
+            ("2026-10-27T13:30:00Z", 1_793_107_800.0), ("2026-10-25T00:59:59-01:00", 1_792_893_599.0),
+            ("1970-01-01T00:00:00Z", 0.0), ("2024-02-29T12:00:00+05:30", 1_709_188_200.0), ("2026-10-27t13:30:00z", 1_793_107_800.0),
+        ])
     func datetimeText(input: String, seconds: Double) {
         #expect(Timestamp.parse(input)?.timeIntervalSince1970 == seconds)
     }
 
-    @Test("datetime text refuses what is not RFC 3339", arguments: [
-        "2026-10-27", "2026-10-27T13:30:00", "2026-10-27 13:30:00Z", "2026-13-01T00:00:00Z", "2025-02-29T00:00:00Z",
-        "2026-10-27T24:00:00Z", "2026-10-27T13:30:00+0100", "2026-10-27T13:30:00.Z", "2026-10-27T13:30:00Zjunk",
-    ])
+    @Test(
+        "datetime text refuses what is not RFC 3339",
+        arguments: [
+            "2026-10-27", "2026-10-27T13:30:00", "2026-10-27 13:30:00Z", "2026-13-01T00:00:00Z", "2025-02-29T00:00:00Z",
+            "2026-10-27T24:00:00Z", "2026-10-27T13:30:00+0100", "2026-10-27T13:30:00.Z", "2026-10-27T13:30:00Zjunk",
+        ])
     func datetimeRefuses(input: String) {
         #expect(Timestamp.parse(input) == nil)
     }
@@ -425,11 +445,14 @@ struct CodecTypeTests {
     @Test("the workout reference keeps the / in its id; kind any splits at the third /")
     func recordRefs() throws {
         let workout = "\(kinds.healthWorkout)/applehealth/substrate-sync-5e2b9c41/F1DB07FB-4FAF-4334-922C-B0B3F5A970EA"
-        let session = try codec.decodeSession(record(kinds.session, [
-            "at": .string("2026-10-27T13:30:00Z"),
-            "workout": .string(workout),
-            "about": .string("substrate.reamde.dev/core/person/owner/extra"),
-        ]))
+        let session = try codec.decodeSession(
+            record(
+                kinds.session,
+                [
+                    "at": .string("2026-10-27T13:30:00Z"),
+                    "workout": .string(workout),
+                    "about": .string("substrate.reamde.dev/core/person/owner/extra"),
+                ]))
         #expect(session.workout == RecordRef(kind: kinds.healthWorkout, id: "applehealth/substrate-sync-5e2b9c41/F1DB07FB-4FAF-4334-922C-B0B3F5A970EA"))
         #expect(session.about == RecordRef(kind: "substrate.reamde.dev/core/person", id: "owner/extra"))
         let encoded = codec.encode(session).properties
@@ -450,10 +473,13 @@ struct CodecTypeTests {
 
     @Test("quantities take kg and lb for mass, m for length, and nothing else")
     func quantities() throws {
-        let set = try codec.decodeSet(record(kinds.set, setProperties([
-            "load": .object(["value": .string("190"), "unit": .string("lb")]),
-            "distance": .object(["value": .string("40"), "unit": .string("m")]),
-        ])))
+        let set = try codec.decodeSet(
+            record(
+                kinds.set,
+                setProperties([
+                    "load": .object(["value": .string("190"), "unit": .string("lb")]),
+                    "distance": .object(["value": .string("40"), "unit": .string("m")]),
+                ])))
         #expect(set.load == .lb(190))
         #expect(set.distance == Length(metres: 40))
         for bad: (String, JSONValue) in [
@@ -493,9 +519,11 @@ struct CodecRuleTests {
 
     @Test("a planned set's declared defaults are not encoded either")
     func plannedDefaults() throws {
-        let routine = Routine(id: "r", name: "R", slots: [
-            RoutineSlot(key: "a", exercise: "leg-press-machine", sets: [PlannedSet(key: "s1"), PlannedSet(key: "s2", role: .warmup, structure: .drop)]),
-        ])
+        let routine = Routine(
+            id: "r", name: "R",
+            slots: [
+                RoutineSlot(key: "a", exercise: "leg-press-machine", sets: [PlannedSet(key: "s1"), PlannedSet(key: "s2", role: .warmup, structure: .drop)])
+            ])
         let sets = try #require(codec.encode(routine).properties["slots"]?.arrayValue?.first?.objectValue?["sets"]?.arrayValue)
         #expect(sets[0] == .object(["key": .string("s1")]))
         #expect(sets[1] == .object(["key": .string("s2"), "role": .string("warmup"), "structure": .string("drop")]))
@@ -560,10 +588,13 @@ struct CodecRuleTests {
 
     @Test("an unknown member of a repeated enum survives while the known ones are unchanged")
     func unknownRepeatedEnum() throws {
-        var exercise = try codec.decodeExercise(record(kinds.exercise, [
-            "name": .string("Pec Deck"), "measurement": .string("weightreps"),
-            "primaryMuscles": .array([.string("chest"), .string("pecminor")]),
-        ]))
+        var exercise = try codec.decodeExercise(
+            record(
+                kinds.exercise,
+                [
+                    "name": .string("Pec Deck"), "measurement": .string("weightreps"),
+                    "primaryMuscles": .array([.string("chest"), .string("pecminor")]),
+                ]))
         #expect(exercise.primaryMuscles == [.chest])
         #expect(codec.encode(exercise).properties["primaryMuscles"] == .array([.string("chest"), .string("pecminor")]))
         exercise.primaryMuscles = [.chest, .shoulders]
@@ -583,7 +614,8 @@ struct CodecRuleTests {
             try codec.decodeExercise(record(kinds.exercise, ["measurement": .string("weightreps")]))
         }
         #expect(throws: CodecError.unsupported(kind: kinds.routine, id: "x", property: "groups[0].groupKind", value: "dropset")) {
-            try codec.decodeRoutine(record(kinds.routine, ["name": .string("R"), "groups": .array([.object(["key": .string("a"), "groupKind": .string("dropset")])])]))
+            try codec.decodeRoutine(
+                record(kinds.routine, ["name": .string("R"), "groups": .array([.object(["key": .string("a"), "groupKind": .string("dropset")])])]))
         }
         #expect(throws: CodecError.unsupported(kind: kinds.routine, id: "x", property: "slots[0].exercise", value: nil)) {
             try codec.decodeRoutine(record(kinds.routine, ["name": .string("R"), "slots": .array([.object(["key": .string("a")])])]))
@@ -623,9 +655,12 @@ struct CodecRuleTests {
         var names = WorkoutsKinds.v1
         names.exercise = "example.dev/catalogue/exercise"
         let codec = RecordCodec(kinds: names)
-        let exercise = try codec.decodeExercise(record(names.exercise, [
-            "name": .string("Squat"), "measurement": .string("weightreps"), "variationOf": .string("example.dev/catalogue/exercise/lunge"),
-        ]))
+        let exercise = try codec.decodeExercise(
+            record(
+                names.exercise,
+                [
+                    "name": .string("Squat"), "measurement": .string("weightreps"), "variationOf": .string("example.dev/catalogue/exercise/lunge"),
+                ]))
         #expect(exercise.variationOf == "lunge")
         #expect(codec.encode(exercise).kind == names.exercise)
         #expect(throws: CodecError.self) { try RecordCodec().decodeExercise(codec.encode(exercise)) }

@@ -1,8 +1,8 @@
 import Foundation
 import Observation
-import os
 import WorkoutsCore
 import WorkoutsSync
+import os
 
 /// The five tabs (DESIGN.md §7.1).
 enum AppTab: Hashable {

@@ -32,7 +32,8 @@ public enum ChatNotifications {
             let n = record["questions"]?.array?.count ?? 1
             body = n == 1 ? "Has a question for you." : "Has \(n) questions for you."
         }
-        return NotificationRequest(id: (thread.map(prefix) ?? "") + "card|\(record.id)", title: agent, body: body, thread: thread,
-                                   timeSensitive: true, userInfo: thread.map { [threadKey: $0] } ?? [:], subtitle: title)
+        return NotificationRequest(
+            id: (thread.map(prefix) ?? "") + "card|\(record.id)", title: agent, body: body, thread: thread,
+            timeSensitive: true, userInfo: thread.map { [threadKey: $0] } ?? [:], subtitle: title)
     }
 }

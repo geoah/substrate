@@ -24,10 +24,8 @@ import dev.reamde.substrate.kit.bridge.RepositoryPresentation
 import dev.reamde.substrate.kit.bridge.ScreenTone
 
 /**
- * The Repository screen as a section of a settings screen, as its
- * presentation words it: the server, the repository and the server's
- * version, what the app was approved to do and until when, Change Access,
- * the tokens not revoked yet, and Sign Out.
+ * The Repository screen as a section of a settings screen, as its presentation words it: the server, the repository and the server's version, what the app was
+ * approved to do and until when, Change Access, the tokens not revoked yet, and Sign Out.
  */
 @Composable
 public fun RepositoryScreen(
@@ -75,9 +73,8 @@ public fun RepositoryScreen(
 }
 
 /**
- * A row whose action gives something up, in the scheme's error colour. With
- * a `confirmation`, a tap asks it first, in a menu anchored to the row, so
- * the question stands by what it asks about.
+ * A row whose action gives something up, in the scheme's error colour. With a `confirmation`, a tap asks it first, in a menu anchored to the row, so the
+ * question stands by what it asks about.
  */
 @Composable
 public fun KitDestructiveRow(

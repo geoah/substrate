@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import WorkoutsCore
 
 /// Hevy's workout export read into sessions and sets: `Fixtures/hevy/`,
@@ -18,8 +19,9 @@ struct HevyImportTests {
 
     func importPlan(_ name: String = "workout_data", history: [SessionRecords] = [], deleted: Set<String> = []) throws -> HevyImport.Plan {
         let file = try HevyCSV.read(text(name))
-        return HevyImport.plan(file, exercises: try ExampleFixtures.catalog().exercises, history: history, deleted: deleted,
-                               timeZone: london, adapter: adapter)
+        return HevyImport.plan(
+            file, exercises: try ExampleFixtures.catalog().exercises, history: history, deleted: deleted,
+            timeZone: london, adapter: adapter)
     }
 
     @Test("quoted fields, line breaks inside them, CRLF and a byte-order mark")
@@ -62,8 +64,11 @@ struct HevyImportTests {
     func slots() throws {
         let push = try #require(try importPlan().sessions.first).session
         #expect(push.slots.map(\.key) == ["bench-press-barbell", "chest-press-machine", "lat-pulldown-cable", "plank", "bench-press-barbell-2"])
-        #expect(push.slots.map(\.exercise.rawValue) == ["bench-press-barbell", "chest-press-machine", "lat-pulldown-cable", "plank",
-                                                         "bench-press-barbell"])
+        #expect(
+            push.slots.map(\.exercise.rawValue) == [
+                "bench-press-barbell", "chest-press-machine", "lat-pulldown-cable", "plank",
+                "bench-press-barbell",
+            ])
         #expect(push.slots[0].notes == "Pause at the chest")
         #expect(push.slots.map(\.group) == [nil, "superset-1", "superset-1", nil, nil])
         #expect(push.groups == [SessionGroup(key: "superset-1", groupKind: .superset)])
@@ -140,14 +145,16 @@ struct HevyImportTests {
 
     @Test("a weight the matched exercise does not record is counted, never silently lost")
     func weightsNotRecorded() throws {
-        let file = try HevyCSV.read("""
-        title,start_time,end_time,description,exercise_title,superset_id,exercise_notes,set_index,set_type,weight_kg,reps,distance_km,duration_seconds,rpe
-        "Core","1 Nov 2026, 09:00","1 Nov 2026, 09:30","","Glute Bridge",,"",0,"normal",20,12,,,
-        "Core","1 Nov 2026, 09:00","1 Nov 2026, 09:30","","Glute Bridge",,"",1,"normal",,12,,,
-        "Core","1 Nov 2026, 09:00","1 Nov 2026, 09:30","","Chest Press (Machine)",,"",0,"normal",50,10,,,
-        """)
-        let plan = HevyImport.plan(file, exercises: try ExampleFixtures.catalog().exercises, history: [], deleted: [], timeZone: london,
-                                   adapter: adapter)
+        let file = try HevyCSV.read(
+            """
+            title,start_time,end_time,description,exercise_title,superset_id,exercise_notes,set_index,set_type,weight_kg,reps,distance_km,duration_seconds,rpe
+            "Core","1 Nov 2026, 09:00","1 Nov 2026, 09:30","","Glute Bridge",,"",0,"normal",20,12,,,
+            "Core","1 Nov 2026, 09:00","1 Nov 2026, 09:30","","Glute Bridge",,"",1,"normal",,12,,,
+            "Core","1 Nov 2026, 09:00","1 Nov 2026, 09:30","","Chest Press (Machine)",,"",0,"normal",50,10,,,
+            """)
+        let plan = HevyImport.plan(
+            file, exercises: try ExampleFixtures.catalog().exercises, history: [], deleted: [], timeZone: london,
+            adapter: adapter)
         #expect(plan.matched["Glute Bridge"] == "glute-bridge")
         #expect(plan.weightsNotRecorded == ["Glute Bridge": 1])
     }
@@ -187,8 +194,9 @@ struct HevyImportTests {
     func ownersExport() throws {
         let path = try #require(ProcessInfo.processInfo.environment["WORKOUTS_HEVY_CSV"])
         let file = try HevyCSV.read(String(contentsOfFile: path, encoding: .utf8))
-        let plan = HevyImport.plan(file, exercises: try ExampleFixtures.catalog().exercises, history: [], deleted: [], timeZone: london,
-                                   adapter: adapter)
+        let plan = HevyImport.plan(
+            file, exercises: try ExampleFixtures.catalog().exercises, history: [], deleted: [], timeZone: london,
+            adapter: adapter)
         #expect(plan.problems.isEmpty, "\(plan.problems)")
         #expect(plan.weightsNotRecorded.isEmpty, "\(plan.weightsNotRecorded)")
         #expect(plan.setCount == file.rows.count)
@@ -196,7 +204,8 @@ struct HevyImportTests {
         for records in plan.sessions {
             #expect(try codec.sessionRecords(from: codec.encode(records)) == [records])
         }
-        print("owner's export: \(plan.sessions.count) sessions, \(plan.setCount) sets, \(plan.exercises.count) new exercises, "
-            + "\(plan.matched.count) matched, \(plan.skipped.count) skipped")
+        print(
+            "owner's export: \(plan.sessions.count) sessions, \(plan.setCount) sets, \(plan.exercises.count) new exercises, "
+                + "\(plan.matched.count) matched, \(plan.skipped.count) skipped")
     }
 }

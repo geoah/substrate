@@ -27,9 +27,10 @@ public enum Reminders {
         return .reminderTapped(task)
     }
 
-    public static func plan(_ model: TasksModel, settings: SettingsValues, permission: NotificationPermission?, now: Date,
-                            calendar: Calendar, locale: Locale) -> [NotificationRequest]
-    {
+    public static func plan(
+        _ model: TasksModel, settings: SettingsValues, permission: NotificationPermission?, now: Date,
+        calendar: Calendar, locale: Locale
+    ) -> [NotificationRequest] {
         guard TasksSettings.reminds(settings), permission == .on || permission == .notTimeSensitive else { return [] }
         var out: [NotificationRequest] = []
         for task in model.tasks.values where task.isOpen {
@@ -38,9 +39,11 @@ public enum Reminders {
             guard at > now else { continue }
             let list = task.list.flatMap { model.lists[$0]?.name }
             let when = due.instant.map { "Due at \(DueWords.time($0, calendar: calendar, locale: locale))" } ?? "Due today"
-            out.append(NotificationRequest(id: id(task.id), title: task.name.isEmpty ? "Untitled task" : task.name,
-                                           body: list.map { "\(when), in \($0)" } ?? when, fireAt: at, thread: "tasks",
-                                           category: category, userInfo: ["task": task.id]))
+            out.append(
+                NotificationRequest(
+                    id: id(task.id), title: task.name.isEmpty ? "Untitled task" : task.name,
+                    body: list.map { "\(when), in \($0)" } ?? when, fireAt: at, thread: "tasks",
+                    category: category, userInfo: ["task": task.id]))
         }
         // A reminder is planned only for a time to come, so every request here
         // carries one; nil (shown at once) would sort first.

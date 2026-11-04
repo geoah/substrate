@@ -56,8 +56,8 @@ public struct ServerVersion: Comparable, Hashable, Sendable, CustomStringConvert
         if suffix == "dirty" { return 0 }
         let parts = suffix.split(separator: "-")
         guard parts.count == 2 || (parts.count == 3 && parts[2] == "dirty"),
-              let commits = Int(parts[0]), parts[1].hasPrefix("g"), parts[1].count > 1,
-              parts[1].dropFirst().allSatisfy(\.isHexDigit)
+            let commits = Int(parts[0]), parts[1].hasPrefix("g"), parts[1].count > 1,
+            parts[1].dropFirst().allSatisfy(\.isHexDigit)
         else { return nil }
         return commits
     }
@@ -98,7 +98,8 @@ public struct ServerVersion: Comparable, Hashable, Sendable, CustomStringConvert
     /// value and below words, a shorter list first when one prefixes the
     /// other.
     private static func prereleaseOrder(_ a: String, _ b: String) -> Bool {
-        let x = a.split(separator: "."), y = b.split(separator: ".")
+        let x = a.split(separator: ".")
+        let y = b.split(separator: ".")
         for (p, q) in zip(x, y) where p != q {
             switch (Int(p), Int(q)) {
             case let (m?, n?): return m < n

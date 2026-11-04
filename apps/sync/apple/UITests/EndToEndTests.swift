@@ -19,7 +19,7 @@ final class EndToEndTests: XCTestCase {
     func testSignInSetUpAndSync() throws {
         let env = ProcessInfo.processInfo.environment
         guard let server = env["SYNC_E2E_SERVER"], let repository = env["SYNC_E2E_REPOSITORY"],
-              let password = env["SYNC_E2E_PASSWORD"]
+            let password = env["SYNC_E2E_PASSWORD"]
         else { throw XCTSkip("SYNC_E2E_SERVER, SYNC_E2E_REPOSITORY and SYNC_E2E_PASSWORD name the server") }
 
         let app = XCUIApplication()

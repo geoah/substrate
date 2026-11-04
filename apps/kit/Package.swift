@@ -25,13 +25,16 @@ let package = Package(
         .library(name: "SubstrateDeviceApple", targets: ["SubstrateDeviceApple"]),
         .library(name: "SubstrateUI", targets: ["SubstrateUI"]),
         .library(name: "SubstrateBridge", targets: ["SubstrateBridge"]),
-        .library(name: "SubstrateAndroid", type: .dynamic,
-                 targets: ["SubstrateBridge", "SubstrateBridgeCheck", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime",
-                           "SubstrateLocal", "SubstrateScreens"]),
+        .library(
+            name: "SubstrateAndroid", type: .dynamic,
+            targets: [
+                "SubstrateBridge", "SubstrateBridgeCheck", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime",
+                "SubstrateLocal", "SubstrateScreens",
+            ]),
     ],
     dependencies: [
         // SHA-256 for PKCE where CryptoKit is not: Linux and Android.
-        .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1"),
+        .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1")
     ],
     targets: [
         // The JSON value, the record and its flat wire form, kind references
@@ -43,10 +46,12 @@ let package = Package(
         // The client, discovery, versions, the requirement and the locator.
         .target(name: "SubstrateAPI", dependencies: ["SubstrateCore", "SubstrateDevice"]),
         // The manifest, the sign-in, the session and the status check.
-        .target(name: "SubstrateAuth", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateAPI",
-            .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .android])),
-        ]),
+        .target(
+            name: "SubstrateAuth",
+            dependencies: [
+                "SubstrateCore", "SubstrateDevice", "SubstrateAPI",
+                .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .android])),
+            ]),
         // The loop every screen runs: command, controller, engine, journal,
         // presenter, effects; keyed children, epochs, coalescing.
         .target(name: "SubstrateRuntime", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateAPI"]),
@@ -55,47 +60,64 @@ let package = Package(
         .target(name: "SubstrateLocal", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateRuntime"]),
         // The shared screens: the link, and each screen's engine, presenter and
         // fixtures.
-        .target(name: "SubstrateScreens", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal",
-        ]),
+        .target(
+            name: "SubstrateScreens",
+            dependencies: [
+                "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal",
+            ]),
         // The scripted server, the fake device services and the harness tests use.
-        .target(name: "SubstrateTesting", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal",
-        ]),
+        .target(
+            name: "SubstrateTesting",
+            dependencies: [
+                "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal",
+            ]),
         // The plain resolver's verdict on a TXT query, which tells a SERVFAIL
         // from a name without the record where DNS-SD cannot.
         .target(name: "SubstrateResolv", linkerSettings: [.linkedLibrary("resolv", .when(platforms: [.macOS, .iOS]))]),
         // The device services on Apple frameworks.
         .target(name: "SubstrateDeviceApple", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateResolv"]),
         // The SwiftUI screens and record views.
-        .target(name: "SubstrateUI", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal", "SubstrateScreens",
-            "SubstrateDeviceApple",
-        ]),
+        .target(
+            name: "SubstrateUI",
+            dependencies: [
+                "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateLocal", "SubstrateScreens",
+                "SubstrateDeviceApple",
+            ]),
         // jni.h, the Looper and the log from the NDK; empty off Android.
-        .target(name: "SubstrateJNI", linkerSettings: [
-            .linkedLibrary("android", .when(platforms: [.android])),
-            .linkedLibrary("log", .when(platforms: [.android])),
-        ]),
+        .target(
+            name: "SubstrateJNI",
+            linkerSettings: [
+                .linkedLibrary("android", .when(platforms: [.android])),
+                .linkedLibrary("log", .when(platforms: [.android])),
+            ]),
         // The Android bridge: the envelope, handles, calls and keyed lists,
         // which run anywhere, and the JNI surface, which is Android's alone.
         .target(name: "SubstrateBridge", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateRuntime", "SubstrateJNI"]),
         // The roots the bridge's runtime checks drive (bridge-check), and the
         // shared screens' fixtures the Gallery app draws.
-        .target(name: "SubstrateBridgeCheck", dependencies: ["SubstrateCore", "SubstrateDevice", "SubstrateRuntime", "SubstrateScreens",
-                                                             "SubstrateBridge"],
-                resources: [.copy("Resources/check.txt")]),
-        .target(name: "SubstrateKit", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateScreens",
-            "SubstrateDeviceApple", "SubstrateUI",
-        ]),
+        .target(
+            name: "SubstrateBridgeCheck",
+            dependencies: [
+                "SubstrateCore", "SubstrateDevice", "SubstrateRuntime", "SubstrateScreens",
+                "SubstrateBridge",
+            ],
+            resources: [.copy("Resources/check.txt")]),
+        .target(
+            name: "SubstrateKit",
+            dependencies: [
+                "SubstrateCore", "SubstrateDevice", "SubstrateAPI", "SubstrateAuth", "SubstrateRuntime", "SubstrateScreens",
+                "SubstrateDeviceApple", "SubstrateUI",
+            ]),
         // Resources: files an older build wrote, read back (Workouts' format 1
         // outbox).
-        .testTarget(name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateLocal", "SubstrateScreens", "SubstrateTesting"],
-                    resources: [.copy("Resources")]),
-        .testTarget(name: "SubstrateBridgeTests", dependencies: [
-            "SubstrateCore", "SubstrateDevice", "SubstrateRuntime", "SubstrateScreens", "SubstrateBridge", "SubstrateBridgeCheck",
-        ]),
+        .testTarget(
+            name: "SubstrateKitTests", dependencies: ["SubstrateKit", "SubstrateLocal", "SubstrateScreens", "SubstrateTesting"],
+            resources: [.copy("Resources")]),
+        .testTarget(
+            name: "SubstrateBridgeTests",
+            dependencies: [
+                "SubstrateCore", "SubstrateDevice", "SubstrateRuntime", "SubstrateScreens", "SubstrateBridge", "SubstrateBridgeCheck",
+            ]),
     ],
     swiftLanguageModes: [.v6]
 )

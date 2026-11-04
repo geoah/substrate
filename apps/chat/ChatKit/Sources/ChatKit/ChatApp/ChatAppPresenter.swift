@@ -28,17 +28,19 @@ extension ChatApp {
                 }
                 found = Self.sections(matches.map { row(state, $0, input) }, matches, now: input.now, calendar: calendar)
             }
-            scenes[id] = ScenePresentation(current: scene.current, query: scene.query, found: found,
-                                           nothingFound: found?.isEmpty == true ? "No chat on this device matches “\(scene.query)”." : nil)
+            scenes[id] = ScenePresentation(
+                current: scene.current, query: scene.query, found: found,
+                nothingFound: found?.isEmpty == true ? "No chat on this device matches “\(scene.query)”." : nil)
         }
         let offered = state.offered
         var empty: EmptyList?
         if state.threads.isEmpty, state.loaded {
-            empty = EmptyList(title: "No chats yet",
-                              message: offered.isEmpty
-                                  ? "There is no assistant to chat with yet. Install a package that ships one from the console's Providers page."
-                                  : "Start one with \(state.defaultAgent?.name ?? "an assistant").",
-                              action: offered.isEmpty ? nil : "New Chat")
+            empty = EmptyList(
+                title: "No chats yet",
+                message: offered.isEmpty
+                    ? "There is no assistant to chat with yet. Install a package that ships one from the console's Providers page."
+                    : "Start one with \(state.defaultAgent?.name ?? "an assistant").",
+                action: offered.isEmpty ? nil : "New Chat")
         }
         let list = ChatListPresentation(
             title: "Chats", sections: sections, offline: state.online ? nil : "Offline. Showing saved chats.",
@@ -68,10 +70,11 @@ extension ChatApp {
     private func row(_ state: State, _ thread: ChatThread, _ input: PresenterInput<ChatApp>) -> ThreadRow {
         let unread = state.unread(thread)
         let mark: ThreadRow.Mark? = state.attention(thread.id) > 0 ? .attention : thread.status == "error" ? .failed : unread ? .unread : nil
-        return ThreadRow(id: thread.id, title: state.title(thread), subject: thread.subject ?? state.title(thread),
-                         stamp: Self.stamp(thread.activeAt, input), agent: thread.agentID, agentName: agentName(thread.agentID ?? ""),
-                         preview: thread.running ? "Working…" : thread.preview ?? "", mode: thread.automated ? thread.mode : nil,
-                         unread: unread, mark: mark)
+        return ThreadRow(
+            id: thread.id, title: state.title(thread), subject: thread.subject ?? state.title(thread),
+            stamp: Self.stamp(thread.activeAt, input), agent: thread.agentID, agentName: agentName(thread.agentID ?? ""),
+            preview: thread.running ? "Working…" : thread.preview ?? "", mode: thread.automated ? thread.mode : nil,
+            unread: unread, mark: mark)
     }
 
     static func sections(_ rows: [ThreadRow], _ threads: [ChatThread], now: Date, calendar: Calendar) -> [DaySection] {
@@ -112,9 +115,11 @@ extension ChatApp {
         var titles = made.titles
         titles.merge(recordTitles(live.turns)) { held, _ in held }
         let decided = Set(stored.compactMap { decisionNotice($0)?.requestID })
-        let turns = made.turns + live.turns.map {
-            TurnPresenter.present($0, agent: agent, live: $0.id == live.liveKey, decided: decided, titles: titles)
-        }
+        let turns =
+            made.turns
+            + live.turns.map {
+                TurnPresenter.present($0, agent: agent, live: $0.id == live.liveKey, decided: decided, titles: titles)
+            }
         let all = stored + live.turns
         let working = live.phase == .streaming || live.phase == .background
         var hero: NewChatHero?
@@ -122,20 +127,25 @@ extension ChatApp {
             if let agent {
                 hero = NewChatHero(title: agent.name, description: agent.description, prompts: agent.examplePrompts, empty: nil)
             } else {
-                hero = NewChatHero(title: "No assistant", description: nil, prompts: [],
-                                   empty: state.offered.isEmpty
-                                       ? "There is no assistant to chat with yet. Choose which agents are offered in Settings → Agents."
-                                       : "Choose who to chat with below.")
+                hero = NewChatHero(
+                    title: "No assistant", description: nil, prompts: [],
+                    empty: state.offered.isEmpty
+                        ? "There is no assistant to chat with yet. Choose which agents are offered in Settings → Agents."
+                        : "Choose who to chat with below.")
             }
         }
         var status: [ConversationNote] = []
         if live.incomplete, live.phase == .streaming {
-            status.append(ConversationNote(kind: .partial, title: nil,
-                                           message: "Part of this answer arrived before you opened the chat; it shows in full when it finishes."))
+            status.append(
+                ConversationNote(
+                    kind: .partial, title: nil,
+                    message: "Part of this answer arrived before you opened the chat; it shows in full when it finishes."))
         }
         if live.phase == .background {
-            status.append(ConversationNote(kind: .background, title: nil,
-                                           message: "\(live.name) is working on this chat in the background. Its answer shows here when it finishes."))
+            status.append(
+                ConversationNote(
+                    kind: .background, title: nil,
+                    message: "\(live.name) is working on this chat in the background. Its answer shows here when it finishes."))
         }
         // A run that failed before this conversation was opened left its
         // words on the thread alone; the list marks it failed, so the chat says why.
@@ -143,8 +153,10 @@ extension ChatApp {
         if let failure { status.append(TurnFailureWords.note(failure, agent: live.name, provider: state.provider(of: live.agent)?.name)) }
         if let failed = live.reloadFailed { status.append(ConversationNote(kind: .reloadFailed, title: nil, message: failed, action: "Try Again")) }
         if live.deleted {
-            status.append(ConversationNote(kind: .deleted, title: "This chat was deleted",
-                                           message: "It is no longer on the server. What you typed stays below, to copy."))
+            status.append(
+                ConversationNote(
+                    kind: .deleted, title: "This chat was deleted",
+                    message: "It is no longer on the server. What you typed stays below, to copy."))
         }
         var technical: [LabeledValue]?
         if state.preferences.technicalDetails, let row {
@@ -152,8 +164,9 @@ extension ChatApp {
         }
         let keyless = state.keyless(live.agent)
         let callout = keyless.map {
-            KeylessCallout(provider: $0.id, title: "Add an API key for \($0.name)",
-                           message: "Agents run on your own key, sealed on the provider's record.", action: "Add Key")
+            KeylessCallout(
+                provider: $0.id, title: "Add an API key for \($0.name)",
+                message: "Agents run on your own key, sealed on the provider's record.", action: "Add Key")
         }
         // A new chat says it above its openers; the composer, over the rest.
         if hero?.empty == nil { hero?.keyless = callout }
@@ -188,16 +201,20 @@ extension ChatApp {
     static func outcome(_ outcome: Outcome) -> OutcomePresentation {
         switch outcome.kind {
         case .refused:
-            OutcomePresentation(id: outcome.id.uuidString, kind: .refused, title: "Your message wasn't sent",
-                                message: "The server said: \(outcome.reason)" + (outcome.restored ? "\nIt's back in the box below." : ""),
-                                text: outcome.message)
+            OutcomePresentation(
+                id: outcome.id.uuidString, kind: .refused, title: "Your message wasn't sent",
+                message: "The server said: \(outcome.reason)" + (outcome.restored ? "\nIt's back in the box below." : ""),
+                text: outcome.message)
         case .checking:
-            OutcomePresentation(id: outcome.id.uuidString, kind: .checking, title: nil,
-                                message: "The connection dropped before the server confirmed your message. Checking whether it arrived…", text: nil)
+            OutcomePresentation(
+                id: outcome.id.uuidString, kind: .checking, title: nil,
+                message: "The connection dropped before the server confirmed your message. Checking whether it arrived…", text: nil)
         case .unknown:
-            OutcomePresentation(id: outcome.id.uuidString, kind: .unknown, title: "It may not have arrived",
-                                message: "The connection dropped before the server confirmed your message (\(outcome.reason)). Look for it in this chat, or for a new chat in the list, before sending it again.",
-                                text: outcome.message)
+            OutcomePresentation(
+                id: outcome.id.uuidString, kind: .unknown, title: "It may not have arrived",
+                message:
+                    "The connection dropped before the server confirmed your message (\(outcome.reason)). Look for it in this chat, or for a new chat in the list, before sending it again.",
+                text: outcome.message)
         }
     }
 
@@ -214,9 +231,10 @@ extension ChatApp {
             }
         }
         for id in Set(proposals.keys).union(decisions.keys) {
-            out[id] = CardPresentation(suggestion: CardPresenter.suggestion(
-                id, card: state.cards[id], pending: state.requests.first { $0.id == id }, call: proposals[id], outcome: decisions[id],
-                session: state.session, titles: titles))
+            out[id] = CardPresentation(
+                suggestion: CardPresenter.suggestion(
+                    id, card: state.cards[id], pending: state.requests.first { $0.id == id }, call: proposals[id], outcome: decisions[id],
+                    session: state.session, titles: titles))
         }
         return out
     }

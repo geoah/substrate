@@ -52,7 +52,7 @@ public struct Routine: Codable, Hashable, Sendable, Identifiable {
 /// means traditional strength training.
 public enum ActivityType: String, Codable, Sendable, CaseIterable {
     case traditionalstrengthtraining, functionalstrengthtraining,
-         coretraining, highintensityintervaltraining
+        coretraining, highintensityintervaltraining
 }
 
 /// A superset, circuit or paired sets of a routine; its slots name its key.
@@ -65,9 +65,10 @@ public struct RoutineGroup: Codable, Hashable, Sendable {
     /// Unknown fields, kept for round trips (§3.4 rule 7).
     @UnknownFields public var extra: [String: JSONValue]
 
-    public init(key: String, groupKind: GroupKind, pairing: Pairing? = nil, rounds: Int? = nil, roundRest: Seconds? = nil,
-                extra: [String: JSONValue] = [:])
-    {
+    public init(
+        key: String, groupKind: GroupKind, pairing: Pairing? = nil, rounds: Int? = nil, roundRest: Seconds? = nil,
+        extra: [String: JSONValue] = [:]
+    ) {
         self.key = key
         self.groupKind = groupKind
         self.pairing = pairing

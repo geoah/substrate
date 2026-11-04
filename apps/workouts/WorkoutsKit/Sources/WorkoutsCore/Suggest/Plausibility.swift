@@ -56,11 +56,13 @@ public func checkPlausibility(
     now: Date,
     calendar: Calendar
 ) -> PlausibilityCheck {
-    let evidence = SuggestEvidence(exercise: exercise, history: SuggestEvidence.newestFirst(history),
-                            bodyMass: exercise.bodyMassInUnit(bodyMass), now: now, calendar: calendar)
+    let evidence = SuggestEvidence(
+        exercise: exercise, history: SuggestEvidence.newestFirst(history),
+        bodyMass: exercise.bodyMassInUnit(bodyMass), now: now, calendar: calendar)
     let plausibility = SuggestPlausibility(evidence: evidence)
-    return PlausibilityCheck(e1RM: exercise.oneRepMax(of: set, bodyMass: evidence.bodyMass)?.value,
-                             median: plausibility.median(excluding: nil))
+    return PlausibilityCheck(
+        e1RM: exercise.oneRepMax(of: set, bodyMass: evidence.bodyMass)?.value,
+        median: plausibility.median(excluding: nil))
 }
 
 /// 03 §10.7's plausibility over one history: a working set in session `S` is
@@ -99,7 +101,7 @@ struct SuggestPlausibility: Sendable {
     func accepts(_ set: DoneSet, inSessionAt index: Int) -> Bool {
         let bodyMass = evidence.bodyMass(of: evidence.history[index])
         guard let e1RM = evidence.exercise.oneRepMax(of: set, bodyMass: bodyMass)?.value,
-              let median = median(excluding: index)
+            let median = median(excluding: index)
         else { return true }
         return e1RM >= 0.5 * median && e1RM <= 1.5 * median
     }

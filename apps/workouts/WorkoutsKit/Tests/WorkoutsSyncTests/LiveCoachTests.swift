@@ -1,14 +1,16 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
 import Testing
 import WorkoutsCore
+
 @testable import WorkoutsSync
-import SubstrateCore
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// The workout coach's install against a real substrate, skipped unless
 /// `WORKOUTS_E2E_COACH_SERVER` names one and `WORKOUTS_E2E_OWNER_TOKEN` holds
@@ -65,8 +67,10 @@ struct LiveCoachTests {
         if let inputs = fields["inputs"] { approval["inputs"] = inputs }
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
-        var answer = try await owner.send("POST", "api/v1/authorizations/\(id)", body: .json(encoder.encode(JSONValue.object(approval))),
-                                          timeout: SubstrateClient.Timeout.serverWork).data
+        var answer = try await owner.send(
+            "POST", "api/v1/authorizations/\(id)", body: .json(encoder.encode(JSONValue.object(approval))),
+            timeout: SubstrateClient.Timeout.serverWork
+        ).data
         var next = redirectOf(answer)
         for _ in 0 ..< 120 where next == nil {
             try await Task.sleep(for: .milliseconds(500))
@@ -82,8 +86,11 @@ struct LiveCoachTests {
         let training = try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state()
         #expect(training.writable, "training: \(training)")
 
-        let row = try JSONDecoder().decode(JSONValue.self, from: try await owner.send(
-            "GET", SubstrateClient.recordPath(Coach.agentKind, Coach.agent)).data)
+        let row = try JSONDecoder().decode(
+            JSONValue.self,
+            from: try await owner.send(
+                "GET", SubstrateClient.recordPath(Coach.agentKind, Coach.agent)
+            ).data)
         guard case let .object(record) = row, case let .object(properties)? = record["properties"] else {
             Issue.record("no agent row")
             return

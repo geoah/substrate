@@ -1,6 +1,6 @@
-import WorkoutsCore
 import SwiftUI
 import UIKit
+import WorkoutsCore
 
 /// The cover's header (DESIGN.md §7.6): three labelled stats, Duration,
 /// Volume and Working sets (warm-ups never move it, so the label says so).

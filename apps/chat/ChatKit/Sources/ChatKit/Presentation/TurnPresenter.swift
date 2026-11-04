@@ -16,23 +16,35 @@ enum TurnPresenter {
             if let delivery = deliveryNotice(turn) {
                 return TurnPresentation(id: turn.id, body: .trigger("When \(delivery.title ?? kindDisplayName(delivery.kind)) changed"))
             }
-            return TurnPresentation(id: turn.id, body: .user(UserTurn(text: turn.content, pending: turn.pending,
-                                                                      about: turn.contextRecords ?? [], aboutLabel: "About")))
+            return TurnPresentation(
+                id: turn.id,
+                body: .user(
+                    UserTurn(
+                        text: turn.content, pending: turn.pending,
+                        about: turn.contextRecords ?? [], aboutLabel: "About")))
         case .assistant:
             return TurnPresentation(id: turn.id, body: .assistant(assistant(turn, agent: agent, live: live, decided: decided, titles: titles)))
         case .summary:
             return TurnPresentation(id: turn.id, body: .summary(SummaryTurn(label: "Earlier messages were summarized", content: turn.content)))
         case .system:
             if let decision = decisionNotice(turn) {
-                let text = decision.accepted
+                let text =
+                    decision.accepted
                     ? (decision.adjusted ? "You applied the suggestion, with your changes" : "You applied the suggestion")
                     : "You dismissed the suggestion"
-                return TurnPresentation(id: turn.id, body: .decision(OutcomeLine(text: text, done: decision.accepted),
-                                                                     suggestion: decision.requestID))
+                return TurnPresentation(
+                    id: turn.id,
+                    body: .decision(
+                        OutcomeLine(text: text, done: decision.accepted),
+                        suggestion: decision.requestID))
             }
             if let answer = interactionNotice(turn) {
-                return TurnPresentation(id: turn.id, body: .answer(OutcomeLine(text: answer.answered ? "You answered" : "You dismissed the questions",
-                                                                               done: answer.answered)))
+                return TurnPresentation(
+                    id: turn.id,
+                    body: .answer(
+                        OutcomeLine(
+                            text: answer.answered ? "You answered" : "You dismissed the questions",
+                            done: answer.answered)))
             }
             return TurnPresentation(id: turn.id, body: .system(turn.content))
         }
@@ -68,8 +80,9 @@ enum TurnPresenter {
             case .changed, .wrote: return nil
             case let .failed(reason): return .failed(reason ?? "It failed.")
             case let .found(records, total):
-                return .found(total == 0 ? "Found nothing." : "Found \(plural(total, "record")).",
-                              records.map { RecordReference(kind: $0.kind, id: $0.id) })
+                return .found(
+                    total == 0 ? "Found nothing." : "Found \(plural(total, "record")).",
+                    records.map { RecordReference(kind: $0.kind, id: $0.id) })
             case let .reply(agent, text): return .reply(heading: "\(agentName(agent)) said", text: text)
             case let .output(raw): return .output(raw)
             }
@@ -90,12 +103,15 @@ enum TurnPresenter {
                 $0.records > 0 ? wroteSentence(records: $0.records, kinds: $0.kinds, moreKinds: $0.moreKinds) : nil
             }
             if !stamped.isEmpty || wrote != nil {
-                attachment = .changes(ChangeListPresentation(headings: stamped.prefix(8).map { heading($0.titled(titles), tense: .done) },
-                                                             more: stamped.count > 8 ? "and \(stamped.count - 8) more" : nil, wrote: wrote))
+                attachment = .changes(
+                    ChangeListPresentation(
+                        headings: stamped.prefix(8).map { heading($0.titled(titles), tense: .done) },
+                        more: stamped.count > 8 ? "and \(stamped.count - 8) more" : nil, wrote: wrote))
             }
         }
-        return ToolRowPresentation(id: id, status: call.ok == nil ? .running : call.ok == true ? .done : .failed,
-                                   summary: toolSummary(call, resolved), details: details, raw: raw, attachment: attachment)
+        return ToolRowPresentation(
+            id: id, status: call.ok == nil ? .running : call.ok == true ? .done : .failed,
+            summary: toolSummary(call, resolved), details: details, raw: raw, attachment: attachment)
     }
 
     private static func pretty(_ text: String) -> String {
@@ -113,39 +129,44 @@ enum TurnPresenter {
         // Nothing to open before a suggested record exists, nor after a
         // delete: those say the kind instead.
         let pill = change.op != .delete && !(change.op == .create && tense != .done) ? change.reference : nil
-        let symbol: ChangeHeading.Symbol = switch change.op {
-        case .delete: .delete
-        case .create: .create
-        case .put, .patch: .edit
-        }
-        let verb: String = switch tense {
-        case .done:
+        let symbol: ChangeHeading.Symbol =
             switch change.op {
-            case .create: "Added"
-            case .put: "Saved"
-            case .patch: "Changed"
-            case .delete: "Deleted"
+            case .delete: .delete
+            case .create: .create
+            case .put, .patch: .edit
             }
-        case .suggests, .suggested:
-            (tense == .suggests ? "Suggests " : "Suggested ") + {
+        let verb: String =
+            switch tense {
+            case .done:
                 switch change.op {
-                case .create: "adding"
-                case .put: "saving"
-                case .patch: "changing"
-                case .delete: "deleting"
+                case .create: "Added"
+                case .put: "Saved"
+                case .patch: "Changed"
+                case .delete: "Deleted"
                 }
-            }()
-        }
-        return ChangeHeading(symbol: symbol, verb: verb, record: pill, recordTitle: change.title, words: words, badge: badge,
-                             badgeLabel: badge.map { $0 == .applied ? "Applied" : "Dismissed" })
+            case .suggests, .suggested:
+                (tense == .suggests ? "Suggests " : "Suggested ")
+                    + {
+                        switch change.op {
+                        case .create: "adding"
+                        case .put: "saving"
+                        case .patch: "changing"
+                        case .delete: "deleting"
+                        }
+                    }()
+            }
+        return ChangeHeading(
+            symbol: symbol, verb: verb, record: pill, recordTitle: change.title, words: words, badge: badge,
+            badgeLabel: badge.map { $0 == .applied ? "Applied" : "Dismissed" })
     }
 
     /// Past this many values a panel says how many more there are.
     static let shownValues = 8
 
-    static func panel(_ change: RecordChange, titles: [String: String], tense: Tense = .done, badge: ChangeHeading.Badge? = nil,
-                      note: String? = nil, struck: Bool = false, tint: ChangePanelPresentation.Tint = .plain) -> ChangePanelPresentation
-    {
+    static func panel(
+        _ change: RecordChange, titles: [String: String], tense: Tense = .done, badge: ChangeHeading.Badge? = nil,
+        note: String? = nil, struck: Bool = false, tint: ChangePanelPresentation.Tint = .plain
+    ) -> ChangePanelPresentation {
         let change = change.titled(titles)
         // The heading already names the record.
         let keys = change.values.keys.sorted().filter { key in

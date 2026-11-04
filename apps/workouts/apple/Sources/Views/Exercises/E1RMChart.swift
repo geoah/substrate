@@ -1,6 +1,6 @@
 import Charts
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The trend (DESIGN.md §7.9): a point per session joined by straight
 /// segments, a deload's point hollow. Straight, not smoothed: a curve would

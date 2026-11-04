@@ -1,7 +1,6 @@
-import SubstrateRuntime
-
 import Foundation
 import SubstrateLocal
+import SubstrateRuntime
 
 /// The sections every app's settings have, as rows: the status and the
 /// writes refused, the repository and its approved access, the storage and
@@ -12,8 +11,9 @@ public enum SettingsPresenter {
     public static func repository(_ repository: RepositoryPresentation) -> [SettingsSection] {
         var rows = [
             SettingsRow(id: .repository(.server), label: repository.server.label, control: .value(repository.server.value, verbatim: false)),
-            SettingsRow(id: .repository(.repository), label: repository.repository.label,
-                        control: .value(repository.repository.value, verbatim: repository.repository.verbatim)),
+            SettingsRow(
+                id: .repository(.repository), label: repository.repository.label,
+                control: .value(repository.repository.value, verbatim: repository.repository.verbatim)),
         ]
         if let version = repository.serverVersion {
             rows.append(SettingsRow(id: .repository(.serverVersion), label: version.label, control: .value(version.value, verbatim: false)))
@@ -24,8 +24,10 @@ public enum SettingsPresenter {
         for (index, notice) in repository.unrevoked.enumerated() {
             rows.append(SettingsRow(id: .repository(.unrevoked(index)), label: notice.title ?? "", control: .problem(notice)))
         }
-        rows.append(SettingsRow(id: .repository(.signOut), label: repository.signOut, control: .action(destructive: true, enabled: true),
-                                confirmation: repository.signOutConfirmation))
+        rows.append(
+            SettingsRow(
+                id: .repository(.signOut), label: repository.signOut, control: .action(destructive: true, enabled: true),
+                confirmation: repository.signOutConfirmation))
         var sections = [SettingsSection(id: .repository, title: repository.title, rows: rows, footer: repository.footer)]
         if let approved = repository.approved {
             var access = approved.scopes.map { SettingsRow(id: .repository(.scope($0.scope)), label: $0.words, control: .note(.positive)) }
@@ -59,14 +61,22 @@ public enum SettingsPresenter {
             for write in refused.rows {
                 writes.append(SettingsRow(id: .status(.refused(write.id)), label: write.label, detail: write.words, control: .note(.supporting)))
                 writes.append(SettingsRow(id: .status(.refusedStatus(write.id)), label: write.status, control: .note(.caution)))
-                writes.append(SettingsRow(id: .status(.refusedKind(write.id)), label: write.kind.label,
-                                          control: .value(write.kind.value, verbatim: write.kind.verbatim)))
-                writes.append(SettingsRow(id: .status(.refusedRecord(write.id)), label: write.record.label,
-                                          control: .value(write.record.value, verbatim: write.record.verbatim)))
-                writes.append(SettingsRow(id: .status(.action(write.retry.action)), label: write.retry.title,
-                                          control: .action(destructive: false, enabled: !status.busy)))
-                writes.append(SettingsRow(id: .status(.action(write.discard.action)), label: write.discard.title,
-                                          control: .action(destructive: true, enabled: !status.busy)))
+                writes.append(
+                    SettingsRow(
+                        id: .status(.refusedKind(write.id)), label: write.kind.label,
+                        control: .value(write.kind.value, verbatim: write.kind.verbatim)))
+                writes.append(
+                    SettingsRow(
+                        id: .status(.refusedRecord(write.id)), label: write.record.label,
+                        control: .value(write.record.value, verbatim: write.record.verbatim)))
+                writes.append(
+                    SettingsRow(
+                        id: .status(.action(write.retry.action)), label: write.retry.title,
+                        control: .action(destructive: false, enabled: !status.busy)))
+                writes.append(
+                    SettingsRow(
+                        id: .status(.action(write.discard.action)), label: write.discard.title,
+                        control: .action(destructive: true, enabled: !status.busy)))
             }
             sections.append(SettingsSection(id: .refused, title: refused.title, rows: writes, footer: refused.footer))
         }
@@ -87,16 +97,18 @@ public enum SettingsPresenter {
         }
         let clearable = usage.contains { ($0.area == .cache || $0.area == .records) && $0.bytes > 0 }
         rows.append(SettingsRow(id: .storage(.clear), label: "Clear Saved Copies", control: .action(destructive: true, enabled: clearable)))
-        return SettingsSection(id: .storage, title: "Storage", rows: rows,
-                               footer: "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.")
+        return SettingsSection(
+            id: .storage, title: "Storage", rows: rows,
+            footer: "Saved copies are read again from your substrate when needed. Changes waiting to be sent are never cleared.")
     }
 
     /// An app's Settings as one screen: its own sections, then the link's
     /// status and repository, then storage and about, every app's in the
     /// same order.
-    public static func screen<App>(_ sections: [SettingsSection], link: LinkPresentation<App>, storage: SettingsSection?,
-                                   about: AboutPresentation) -> SettingsPresentation
-    {
+    public static func screen<App>(
+        _ sections: [SettingsSection], link: LinkPresentation<App>, storage: SettingsSection?,
+        about: AboutPresentation
+    ) -> SettingsPresentation {
         var all = sections
         all += status(link.status)
         if let repository = link.repository { all += self.repository(repository) }

@@ -55,9 +55,10 @@ public struct SettingsRow: Bridged, Hashable, Sendable, Identifiable {
     /// (Sign Out); nil sends it at once.
     public var confirmation: ConfirmationPresentation<SettingsRowID>?
 
-    public init(id: SettingsRowID, label: String, detail: String? = nil, control: Control,
-                confirmation: ConfirmationPresentation<SettingsRowID>? = nil)
-    {
+    public init(
+        id: SettingsRowID, label: String, detail: String? = nil, control: Control,
+        confirmation: ConfirmationPresentation<SettingsRowID>? = nil
+    ) {
         self.id = id
         self.label = label
         self.detail = detail

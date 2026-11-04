@@ -28,27 +28,37 @@ public struct RecordWrites {
     public func newID() -> String { mint().uuidString.lowercased() }
 
     public func create(_ kind: String, _ id: String, properties: JSONObject) -> LocalWrite {
-        LocalWrite(entries: [OutboxEntry(id: mint(), method: .put, kind: kind, recordID: id, properties: properties,
-                                         batch: LocalWrite.batch(kind, id))])
+        LocalWrite(entries: [
+            OutboxEntry(
+                id: mint(), method: .put, kind: kind, recordID: id, properties: properties,
+                batch: LocalWrite.batch(kind, id))
+        ])
     }
 
     /// Nothing, where nothing changed.
     public func change(_ kind: String, _ id: String, properties: JSONObject, version: Int?) -> LocalWrite {
         guard !properties.isEmpty else { return LocalWrite(entries: []) }
-        return LocalWrite(entries: [OutboxEntry(id: mint(), method: .patch, kind: kind, recordID: id, properties: properties,
-                                                guarded: version != nil, batch: LocalWrite.batch(kind, id))])
+        return LocalWrite(entries: [
+            OutboxEntry(
+                id: mint(), method: .patch, kind: kind, recordID: id, properties: properties,
+                guarded: version != nil, batch: LocalWrite.batch(kind, id))
+        ])
     }
 
     /// Nothing, where nothing changed.
     public func edit(_ kind: String, _ id: String, properties: JSONObject, seen version: Int?) -> LocalWrite {
         guard !properties.isEmpty else { return LocalWrite(entries: []) }
-        return LocalWrite(entries: [OutboxEntry(id: mint(), method: .patch, kind: kind, recordID: id, properties: properties,
-                                                batch: LocalWrite.batch(kind, id), baseVersion: version)])
+        return LocalWrite(entries: [
+            OutboxEntry(
+                id: mint(), method: .patch, kind: kind, recordID: id, properties: properties,
+                batch: LocalWrite.batch(kind, id), baseVersion: version)
+        ])
     }
 
     public func delete(_ kind: String, _ id: String, version: Int?) -> LocalWrite {
         let batch = LocalWrite.batch(kind, id)
-        return LocalWrite(entries: [OutboxEntry(id: mint(), method: .delete, kind: kind, recordID: id, guarded: version != nil, batch: batch)],
-                          replacing: batch)
+        return LocalWrite(
+            entries: [OutboxEntry(id: mint(), method: .delete, kind: kind, recordID: id, guarded: version != nil, batch: batch)],
+            replacing: batch)
     }
 }

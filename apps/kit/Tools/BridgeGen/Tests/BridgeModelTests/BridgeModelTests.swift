@@ -12,23 +12,24 @@ struct BridgeModelTests {
     }
 
     @Test func readsStructsStringEnumsAndPayloadEnums() throws {
-        let (model, errors) = model("""
-        public struct Outer: Bridged, Equatable {
-            public var name: String
-            public let count: Int
-            public var ratio: Double?
-            public var tags: [String]
-            public var extra: [String: JSONValue]
-            public var kind: Kind
-            public static let shared = 1
-            public var computed: Int { 1 }
-            public enum Kind: String, Bridged { case a, b = "bee" }
-        }
-        enum Answer: Bridged {
-            case found(value: String, at: Outer.Kind)
-            case missing
-        }
-        """)
+        let (model, errors) = model(
+            """
+            public struct Outer: Bridged, Equatable {
+                public var name: String
+                public let count: Int
+                public var ratio: Double?
+                public var tags: [String]
+                public var extra: [String: JSONValue]
+                public var kind: Kind
+                public static let shared = 1
+                public var computed: Int { 1 }
+                public enum Kind: String, Bridged { case a, b = "bee" }
+            }
+            enum Answer: Bridged {
+                case found(value: String, at: Outer.Kind)
+                case missing
+            }
+            """)
         #expect(errors.isEmpty, "\(errors)")
         let outer = try #require(model?.declaration("Outer"))
         #expect(outer.fields.map(\.name) == ["name", "count", "ratio", "tags", "extra", "kind"])
@@ -58,7 +59,10 @@ struct BridgeModelTests {
             ("struct A: Bridged { var a: Int }\nextension A { func encode(to encoder: Encoder) throws {} }", "encode(to:) in an extension"),
             ("struct A: Bridged { var a: Int }\nextension A { init(from decoder: Decoder) throws { a = 1 } }", "init(from:) in an extension"),
             ("struct A: Bridged { var a: Int }\nextension A { enum CodingKeys: String, CodingKey { case a = \"b\" } }", "CodingKeys in an extension"),
-            ("struct O { enum E: Bridged { case one } }\nextension O.E { init(from decoder: Decoder) throws { self = .one } }", "O.E writes its own init(from:)"),
+            (
+                "struct O { enum E: Bridged { case one } }\nextension O.E { init(from decoder: Decoder) throws { self = .one } }",
+                "O.E writes its own init(from:)"
+            ),
             ("struct A: Bridged { var a: Int }\nextension M.A { func encode(to encoder: Encoder) throws {} }", "A writes its own encode(to:)"),
             ("extension Bridged { func encode(to encoder: Encoder) throws {} }", "every bridged value"),
             ("struct A: Bridged { typealias CodingKeys = K; var a: Int }", "CodingKeys"),
@@ -119,11 +123,12 @@ struct BridgeModelTests {
     }
 
     @Test func aGenericStructIsAGenericDataClass() throws {
-        let (model, errors) = model("""
-        struct Button<Action: Codable & Sendable>: Bridged { var title: String; var action: Action }
-        enum Go: String, Bridged { case on }
-        struct Screen<App: Codable>: Bridged { var go: Button<Go>?; var app: App?; var all: [Button<Go>] }
-        """)
+        let (model, errors) = model(
+            """
+            struct Button<Action: Codable & Sendable>: Bridged { var title: String; var action: Action }
+            enum Go: String, Bridged { case on }
+            struct Screen<App: Codable>: Bridged { var go: Button<Go>?; var app: App?; var all: [Button<Go>] }
+            """)
         #expect(errors.isEmpty, "\(errors)")
         #expect(model?.declaration("Button")?.parameters == ["Action"])
         #expect(model?.declaration("Screen")?.fields.map(\.type.spelling) == ["Button<Go>?", "App?", "[Button<Go>]"])
@@ -137,10 +142,11 @@ struct BridgeModelTests {
 
     @Test func aKeyedListAndAnOpaqueTypeAreKnownByName() throws {
         var reader = Reader(opaque: ["Probe.Result"])
-        reader.read(source: """
-        struct Row: Bridged { var id: String }
-        struct A: Bridged { var rows: KeyedList<Row>; var found: Probe.Result? }
-        """, module: "M", path: "M.swift")
+        reader.read(
+            source: """
+                struct Row: Bridged { var id: String }
+                struct A: Bridged { var rows: KeyedList<Row>; var found: Probe.Result? }
+                """, module: "M", path: "M.swift")
         let read = reader.model()
         let model = try #require(read, "\(reader.errors)")
         #expect(model.declaration("A")?.fields.map(\.type.spelling) == ["KeyedList<Row>", "JSON(Probe.Result)?"])
@@ -150,8 +156,9 @@ struct BridgeModelTests {
 
     @Test func aConfigurationThatUsesAnotherGeneratesOnlyItsOwnAndImportsTheRest() throws {
         var reader = Reader()
-        reader.read(source: "struct Kit { enum Tone: String, Bridged { case calm } }\nstruct Button<A: Codable>: Bridged { var action: A }",
-                    module: "Kit", path: "Kit.swift", external: true)
+        reader.read(
+            source: "struct Kit { enum Tone: String, Bridged { case calm } }\nstruct Button<A: Codable>: Bridged { var action: A }",
+            module: "Kit", path: "Kit.swift", external: true)
         reader.read(source: "struct Mine: Bridged { var tone: Kit.Tone; var button: Button<Kit.Tone> }", module: "App", path: "App.swift")
         let read = reader.model()
         let model = try #require(read, "\(reader.errors)")
@@ -195,8 +202,9 @@ struct BridgeModelTests {
     /// `mise run android:generate`; never edit them by hand.
     @Test func theGeneratedFilesAreNotStale() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../..").standardizedFileURL
-        let configuration = try JSONDecoder().decode(Configuration.self,
-                                                     from: Data(contentsOf: root.appendingPathComponent("apps/kit/android/bridge.json")))
+        let configuration = try JSONDecoder().decode(
+            Configuration.self,
+            from: Data(contentsOf: root.appendingPathComponent("apps/kit/android/bridge.json")))
         let generation = try Generation.run(configuration, root: root)
         #expect(generation.stale(root: root).isEmpty, "stale: run `mise run android:generate`")
     }

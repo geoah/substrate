@@ -24,9 +24,10 @@ public struct OutboxSummary: Equatable, Sendable {
     /// The file that was there at open and could not be read, set aside.
     public var unreadable: SetAsideFile?
 
-    public init(state: OutboxState = .idle, waiting: Int = 0, parked: [OutboxEntry] = [], sendable: Int = 0, flushing: Bool = false,
-                revision: Int = 0, saveProblem: String? = nil, unreadable: SetAsideFile? = nil)
-    {
+    public init(
+        state: OutboxState = .idle, waiting: Int = 0, parked: [OutboxEntry] = [], sendable: Int = 0, flushing: Bool = false,
+        revision: Int = 0, saveProblem: String? = nil, unreadable: SetAsideFile? = nil
+    ) {
         self.state = state
         self.waiting = waiting
         self.parked = parked

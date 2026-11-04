@@ -251,8 +251,12 @@ extension JSONValue: Codable {
             } else if let double = value.double, JSONNumber(exactly: double) == value {
                 try container.encode(double)
             } else {
-                throw EncodingError.invalidValue(value, .init(codingPath: encoder.codingPath, debugDescription:
-                    "\(value) is neither a Decimal nor a Double, which is all an Encoder writes; JSONValue.data(pretty:) writes every digit"))
+                throw EncodingError.invalidValue(
+                    value,
+                    .init(
+                        codingPath: encoder.codingPath,
+                        debugDescription:
+                            "\(value) is neither a Decimal nor a Double, which is all an Encoder writes; JSONValue.data(pretty:) writes every digit"))
             }
         case let .string(value): try container.encode(value)
         case let .array(value): try container.encode(value)
@@ -286,7 +290,10 @@ private struct JSONWriter {
         case let .number(number): out.append(number.description)
         case let .string(text): writeString(text, into: &out)
         case let .array(items):
-            guard !items.isEmpty else { out.append("[]"); return }
+            guard !items.isEmpty else {
+                out.append("[]")
+                return
+            }
             out.append("[")
             for (index, item) in items.enumerated() {
                 if index > 0 { out.append(",") }
@@ -296,7 +303,10 @@ private struct JSONWriter {
             newline(into: &out, depth: depth)
             out.append("]")
         case let .object(object):
-            guard !object.isEmpty else { out.append("{}"); return }
+            guard !object.isEmpty else {
+                out.append("{}")
+                return
+            }
             out.append("{")
             for (index, (key, item)) in object.enumerated() {
                 if index > 0 { out.append(",") }

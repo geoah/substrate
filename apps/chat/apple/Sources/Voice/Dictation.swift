@@ -222,23 +222,33 @@ final class Dictation {
 
     private static func module(for wanted: Locale) async throws -> Module {
         if SpeechTranscriber.isAvailable,
-           let locale = await supported(wanted, all: { await SpeechTranscriber.supportedLocales },
-                                        equivalent: { await SpeechTranscriber.supportedLocale(equivalentTo: $0) }) {
-            let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [],
-                                                reportingOptions: [.volatileResults], attributeOptions: [])
+            let locale = await supported(
+                wanted, all: { await SpeechTranscriber.supportedLocales },
+                equivalent: { await SpeechTranscriber.supportedLocale(equivalentTo: $0) })
+        {
+            let transcriber = SpeechTranscriber(
+                locale: locale, transcriptionOptions: [],
+                reportingOptions: [.volatileResults], attributeOptions: [])
             return Module(speech: transcriber, results: map(transcriber.results) { (String($0.text.characters), $0.isFinal) })
         }
-        if let locale = await supported(wanted, all: { await DictationTranscriber.supportedLocales },
-                                        equivalent: { await DictationTranscriber.supportedLocale(equivalentTo: $0) }) {
+        if let locale = await supported(
+            wanted, all: { await DictationTranscriber.supportedLocales },
+            equivalent: { await DictationTranscriber.supportedLocale(equivalentTo: $0) })
+        {
             let transcriber = DictationTranscriber(locale: locale, preset: .progressiveLongDictation)
             return Module(speech: transcriber, results: map(transcriber.results) { (String($0.text.characters), $0.isFinal) })
         }
-        throw Problem(text: "Speech recognition doesn't support \(wanted.localizedString(forIdentifier: wanted.identifier) ?? wanted.identifier) on this device. Pick another language in Settings → Voice.")
+        throw Problem(
+            text:
+                "Speech recognition doesn't support \(wanted.localizedString(forIdentifier: wanted.identifier) ?? wanted.identifier) on this device. Pick another language in Settings → Voice."
+        )
     }
 
     /// The locale itself, else one of the same language.
-    private static func supported(_ wanted: Locale, all: () async -> [Locale],
-                                  equivalent: (Locale) async -> Locale?) async -> Locale? {
+    private static func supported(
+        _ wanted: Locale, all: () async -> [Locale],
+        equivalent: (Locale) async -> Locale?
+    ) async -> Locale? {
         if let match = await equivalent(wanted) { return match }
         let language = wanted.language.languageCode
         return await all().first { $0.language.languageCode == language }
@@ -279,8 +289,10 @@ final class Dictation {
         return max(0, min(1, (db + 50) / 40))
     }
 
-    nonisolated private static func convert(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter?,
-                                            to format: AVAudioFormat) -> AVAudioPCMBuffer? {
+    nonisolated private static func convert(
+        _ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter?,
+        to format: AVAudioFormat
+    ) -> AVAudioPCMBuffer? {
         guard let converter else { return buffer }
         let ratio = format.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up)) + 16

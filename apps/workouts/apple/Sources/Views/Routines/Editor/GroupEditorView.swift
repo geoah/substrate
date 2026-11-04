@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// A group of the routine: its kind, rounds and round rest, and its members
 /// to reorder, open, take out or add to.
@@ -56,25 +56,41 @@ struct GroupEditorView: View {
 
     private func values(_ group: RoutineGroup) -> some View {
         Section {
-            Picker("Kind", selection: Binding { group.groupKind } set: { kind in
-                model.change { $0.updateGroup(groupKey) { $0.groupKind = kind } }
-            }) {
+            Picker(
+                "Kind",
+                selection: Binding {
+                    group.groupKind
+                } set: { kind in
+                    model.change { $0.updateGroup(groupKey) { $0.groupKind = kind } }
+                }
+            ) {
                 ForEach(GroupKind.allCases, id: \.self) { Text($0.label).tag($0) }
             }
-            Picker("Pairing", selection: Binding { group.pairing } set: { pairing in
-                model.change { $0.updateGroup(groupKey) { $0.pairing = pairing } }
-            }) {
+            Picker(
+                "Pairing",
+                selection: Binding {
+                    group.pairing
+                } set: { pairing in
+                    model.change { $0.updateGroup(groupKey) { $0.pairing = pairing } }
+                }
+            ) {
                 Text("None").tag(Pairing?.none)
                 ForEach(Pairing.allCases, id: \.self) { Text($0.label).tag(Pairing?.some($0)) }
             }
-            Stepper(value: Binding { group.rounds ?? maxWorkingSets } set: { rounds in
-                model.change { $0.updateGroup(groupKey) { $0.rounds = rounds } }
-            }, in: 1 ... 20) {
+            Stepper(
+                value: Binding {
+                    group.rounds ?? maxWorkingSets
+                } set: { rounds in
+                    model.change { $0.updateGroup(groupKey) { $0.rounds = rounds } }
+                }, in: 1 ... 20
+            ) {
                 LabeledContent("Rounds", value: group.rounds.map(String.init) ?? "One per set")
             }
-            RestMenuRow(title: "Rest after each round", current: group.roundRest, select: { seconds in
-                model.change { $0.updateGroup(groupKey) { $0.roundRest = seconds } }
-            }, custom: { customRest = true })
+            RestMenuRow(
+                title: "Rest after each round", current: group.roundRest,
+                select: { seconds in
+                    model.change { $0.updateGroup(groupKey) { $0.roundRest = seconds } }
+                }, custom: { customRest = true })
         }
     }
 

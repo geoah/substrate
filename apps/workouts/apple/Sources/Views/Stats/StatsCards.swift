@@ -1,6 +1,6 @@
 import Charts
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// Progress over a period, for one routine or every session (the routine
 /// page's Progress and the Stats tab show this one view, so one number never
@@ -24,8 +24,9 @@ struct StatsProgressView: View {
     @State private var shown: StatsMemo.Entry?
 
     var body: some View {
-        let key = StatsMemo.Key(scope: scope, period: period, revision: app.dataRevision, settings: app.presenterSettings,
-                                day: app.presenterSettings.calendar.startOfDay(for: .now))
+        let key = StatsMemo.Key(
+            scope: scope, period: period, revision: app.dataRevision, settings: app.presenterSettings,
+            day: app.presenterSettings.calendar.startOfDay(for: .now))
         let stats = StatsMemo.shared.presentation(for: key) ?? shown?.stats
         VStack(alignment: .leading, spacing: 12) {
             Picker("Period", selection: $period) {
@@ -151,11 +152,12 @@ struct StatsCards: View {
     }
 
     private var volumeTitle: String {
-        let per = switch stats.period.bar {
-        case .day: "day"
-        case .week: "week"
-        case .month: "month"
-        }
+        let per =
+            switch stats.period.bar {
+            case .day: "day"
+            case .week: "week"
+            case .month: "month"
+            }
         return "Volume per \(per), \(stats.volumeUnit.rawValue)"
     }
 }
@@ -296,7 +298,8 @@ private struct ConsistencyCard: View {
 
     var body: some View {
         StatsCard(title: "Consistency") {
-            let layout = typeSize.isAccessibilitySize
+            let layout =
+                typeSize.isAccessibilitySize
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
                 : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
             layout {
@@ -311,12 +314,14 @@ private struct ConsistencyCard: View {
             .accessibilityValue(consistency.sentence)
             let most = max(1, weeks.map(\.sessions).max() ?? 1)
             Chart(weeks) { week in
-                BarMark(x: .value("Week", week.start, unit: .weekOfYear),
-                        y: .value("Sessions", week.sessions == 0 ? Double(most) * 0.04 : Double(week.sessions)))
-                    .foregroundStyle(week.sessions == 0 ? AnyShapeStyle(Color(.tertiarySystemFill)) : AnyShapeStyle(Color.accentColor.gradient))
-                    .cornerRadius(2)
-                    .accessibilityLabel(week.label)
-                    .accessibilityValue(week.text)
+                BarMark(
+                    x: .value("Week", week.start, unit: .weekOfYear),
+                    y: .value("Sessions", week.sessions == 0 ? Double(most) * 0.04 : Double(week.sessions))
+                )
+                .foregroundStyle(week.sessions == 0 ? AnyShapeStyle(Color(.tertiarySystemFill)) : AnyShapeStyle(Color.accentColor.gradient))
+                .cornerRadius(2)
+                .accessibilityLabel(week.label)
+                .accessibilityValue(week.text)
             }
             .chartYScale(domain: 0 ... Double(most))
             .chartYAxis {
@@ -424,7 +429,8 @@ private struct LastSessionCard: View {
     var body: some View {
         NavigationLink(value: comparison.session) {
             StatsCard(title: "Last session", detail: "\(comparison.title). \(comparison.against)") {
-                let layout = typeSize.isAccessibilitySize
+                let layout =
+                    typeSize.isAccessibilitySize
                     ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
                     : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
                 layout {
@@ -523,7 +529,8 @@ private struct ExerciseProgressRow: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        let layout = typeSize.isAccessibilitySize
+        let layout =
+            typeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
         layout {
@@ -608,8 +615,11 @@ struct StatsSparkline: View {
         let pad = max((high - low) * 0.15, 0.5)
         Chart(points) { point in
             AreaMark(x: .value("Date", point.date), yStart: .value("Low", low - pad), yEnd: .value("Value", point.value))
-                .foregroundStyle(LinearGradient(colors: [Color.accentColor.opacity(0.25), Color.accentColor.opacity(0)],
-                                                startPoint: .top, endPoint: .bottom))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.accentColor.opacity(0.25), Color.accentColor.opacity(0)],
+                        startPoint: .top, endPoint: .bottom)
+                )
                 .interpolationMethod(.linear)
             LineMark(x: .value("Date", point.date), y: .value("Value", point.value))
                 .foregroundStyle(Color.accentColor)
@@ -673,7 +683,8 @@ private struct RecordRow: View {
                 .foregroundStyle(.tint)
                 .frame(width: 24)
                 .accessibilityHidden(true)
-            let layout = typeSize.isAccessibilitySize
+            let layout =
+                typeSize.isAccessibilitySize
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
                 : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
             layout {
@@ -997,8 +1008,9 @@ struct StatsSessionsView: View {
     private var subtitle: String {
         switch scope {
         case .all: StatsPresentation.allRoutines
-        case let .routine(id): app.catalog?.routines[id]?.name
-            ?? StatsPresenter.entries(app.history, scope: scope).first.map { HistoryPresenter.routineTitle(of: $0.records.session) } ?? ""
+        case let .routine(id):
+            app.catalog?.routines[id]?.name
+                ?? StatsPresenter.entries(app.history, scope: scope).first.map { HistoryPresenter.routineTitle(of: $0.records.session) } ?? ""
         }
     }
 }

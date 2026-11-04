@@ -19,8 +19,7 @@ import SubstrateRuntime
 /// drawn within their window (`coalescing(of:)`). An app that answers one of
 /// those itself writes it whole.
 public protocol LinkedRecordsApp: LinkedApp
-    where Event: LinkedRecordsEvent, Effect: LinkedRecordsEffect, State: LinkedRecordsHolding
-{
+where Event: LinkedRecordsEvent, Effect: LinkedRecordsEffect, State: LinkedRecordsHolding {
     var linked: LinkedRecords { get }
 
     /// The app's engine for every event, after the records': `state` is

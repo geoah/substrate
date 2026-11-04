@@ -1,11 +1,12 @@
 import Foundation
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
 import Testing
 import WorkoutsCore
+
 @testable import WorkoutsSync
-import SubstrateCore
 
 /// The codec against what a substrate answers: records read back from a
 /// throwaway server built from this tree (Fixtures/), with their stamps,
@@ -69,8 +70,11 @@ struct ServerAnswerTests {
     func thePackageRow() throws {
         let value = try JSONDecoder().decode(JSONValue.self, from: Fixtures.data("get-package"))
         guard case let .object(object) = value, case let .object(properties)? = object["properties"],
-              case let .number(version)? = properties["version"]
-        else { Issue.record("no version in the package row"); return }
+            case let .number(version)? = properties["version"]
+        else {
+            Issue.record("no version in the package row")
+            return
+        }
         // The recorded repository held version 2; a build written against
         // version 1 reads it as current, one against 3 as behind.
         #expect(PackageState.of(held: version.int ?? 0, needed: 1) == .current(held: 2))
@@ -111,7 +115,8 @@ struct ManifestTests {
         #expect(kinds.prefix(2) == ["substrate.reamde.dev/core/package", "substrate.reamde.dev/core/bundle"])
         let declared = Set(manifest.documents(ofKind: "substrate.reamde.dev/core/kind").map(\.id))
         let codec = RecordCodec()
-        #expect(declared.isSuperset(of: [codec.kinds.movement, codec.kinds.exercise, codec.kinds.setup, codec.kinds.routine, codec.kinds.session, codec.kinds.set]))
+        #expect(
+            declared.isSuperset(of: [codec.kinds.movement, codec.kinds.exercise, codec.kinds.setup, codec.kinds.routine, codec.kinds.session, codec.kinds.set]))
         let header = try #require(manifest.documents(ofKind: "substrate.reamde.dev/core/package").first)
         #expect(header.id == manifest.package && header.data["version"] == .number(Decimal(manifest.version)))
     }

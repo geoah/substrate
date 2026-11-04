@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The Rows layout's colours, sizes and small shared pieces (DESIGN.md
 /// §7.6a). Content is opaque: cards and editors use flat fills; only the
@@ -23,10 +23,11 @@ enum RowsStyle {
     static func doneFill(_ contrast: ColorSchemeContrast) -> Color {
         let strong = contrast == .increased
         // Dark cards need more of the green to show at all.
-        return Color(UIColor { traits in
-            let alpha: CGFloat = traits.userInterfaceStyle == .dark ? (strong ? 0.24 : 0.14) : (strong ? 0.16 : 0.08)
-            return UIColor.systemGreen.withAlphaComponent(alpha)
-        })
+        return Color(
+            UIColor { traits in
+                let alpha: CGFloat = traits.userInterfaceStyle == .dark ? (strong ? 0.24 : 0.14) : (strong ? 0.16 : 0.08)
+                return UIColor.systemGreen.withAlphaComponent(alpha)
+            })
     }
 
     /// The colour of an editor's controls: the accent, or orange for a warm-up or a drop.

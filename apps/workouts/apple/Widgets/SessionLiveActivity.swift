@@ -128,7 +128,7 @@ struct SessionPhase {
     /// `ClosedRange` traps and would blank the activity.
     var countdownRange: ClosedRange<Date>? {
         guard mode == .counting, let countdown, let end = countdown.endsAt else { return nil }
-        return countdown.startedAt...max(countdown.startedAt, end)
+        return countdown.startedAt ... max(countdown.startedAt, end)
     }
 }
 
@@ -148,10 +148,10 @@ struct CountdownText: View {
     var body: some View {
         if let countdown = phase.countdown {
             if phase.mode != .targetReached, let end = countdown.endsAt {
-                Text(timerInterval: countdown.startedAt...max(countdown.startedAt, end), countsDown: true)
+                Text(timerInterval: countdown.startedAt ... max(countdown.startedAt, end), countsDown: true)
                     .monospacedDigit()
             } else {
-                Text(timerInterval: countdown.startedAt...Date.distantFuture, countsDown: false)
+                Text(timerInterval: countdown.startedAt ... Date.distantFuture, countsDown: false)
                     .monospacedDigit()
             }
         }
@@ -164,7 +164,7 @@ struct SessionClock: View {
 
     var body: some View {
         Text(
-            timerInterval: state.clockStart...Date.distantFuture,
+            timerInterval: state.clockStart ... Date.distantFuture,
             pauseTime: state.clockPausedAt,
             countsDown: false
         )

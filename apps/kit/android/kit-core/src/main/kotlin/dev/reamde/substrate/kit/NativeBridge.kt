@@ -1,9 +1,8 @@
 package dev.reamde.substrate.kit
 
 /**
- * The JNI surface (docs/plans/app-kit.md §5.5): two natives into Swift and
- * the one method Swift calls back. The names are the contract with
- * SubstrateBridge's `Android/JNI.swift`; consumer-rules.pro keeps them.
+ * The JNI surface (docs/plans/app-kit.md §5.5): two natives into Swift and the one method Swift calls back. The names are the contract with SubstrateBridge's
+ * `Android/JNI.swift`; consumer-rules.pro keeps them.
  */
 internal object NativeBridge {
     @JvmStatic external fun start(config: String): String?

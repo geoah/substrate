@@ -22,34 +22,39 @@ import dev.reamde.substrate.tasks.bridge.TaskStatus
 
 /** Tasks' own marks, as the Apple app's `TasksSymbols` draws them in SF Symbols. */
 object TasksMarks {
-    fun icon(priority: TaskPriority): ImageVector = when (priority) {
-        TaskPriority.none -> Icons.Rounded.Remove
-        TaskPriority.low -> Icons.Rounded.KeyboardArrowDown
-        TaskPriority.medium -> Icons.Rounded.PriorityHigh
-        TaskPriority.high -> Icons.Rounded.Flag
-        TaskPriority.urgent -> Icons.Rounded.KeyboardDoubleArrowUp
-    }
+    fun icon(priority: TaskPriority): ImageVector =
+        when (priority) {
+            TaskPriority.none -> Icons.Rounded.Remove
+            TaskPriority.low -> Icons.Rounded.KeyboardArrowDown
+            TaskPriority.medium -> Icons.Rounded.PriorityHigh
+            TaskPriority.high -> Icons.Rounded.Flag
+            TaskPriority.urgent -> Icons.Rounded.KeyboardDoubleArrowUp
+        }
 
     @Composable
     @ReadOnlyComposable
-    fun color(priority: TaskPriority): Color = when (priority) {
-        TaskPriority.none, TaskPriority.low -> MaterialTheme.colorScheme.onSurfaceVariant
-        TaskPriority.medium -> Color(0xFFC79200)
-        TaskPriority.high -> ScreenTone.caution.tint
-        TaskPriority.urgent -> ScreenTone.critical.tint
-    }
+    fun color(priority: TaskPriority): Color =
+        when (priority) {
+            TaskPriority.none,
+            TaskPriority.low -> MaterialTheme.colorScheme.onSurfaceVariant
+            TaskPriority.medium -> Color(0xFFC79200)
+            TaskPriority.high -> ScreenTone.caution.tint
+            TaskPriority.urgent -> ScreenTone.critical.tint
+        }
 
     @Composable
     @ReadOnlyComposable
-    fun color(tone: DueWords.Tone): Color = when (tone) {
-        DueWords.Tone.quiet -> MaterialTheme.colorScheme.onSurfaceVariant
-        DueWords.Tone.soon -> ScreenTone.caution.tint
-        DueWords.Tone.overdue -> ScreenTone.critical.tint
-    }
+    fun color(tone: DueWords.Tone): Color =
+        when (tone) {
+            DueWords.Tone.quiet -> MaterialTheme.colorScheme.onSurfaceVariant
+            DueWords.Tone.soon -> ScreenTone.caution.tint
+            DueWords.Tone.overdue -> ScreenTone.critical.tint
+        }
 
-    fun mark(status: TaskStatus): ImageVector = when (status) {
-        TaskStatus.open -> Icons.Rounded.RadioButtonUnchecked
-        TaskStatus.done -> Icons.Rounded.CheckCircle
-        TaskStatus.abandoned -> Icons.Rounded.HighlightOff
-    }
+    fun mark(status: TaskStatus): ImageVector =
+        when (status) {
+            TaskStatus.open -> Icons.Rounded.RadioButtonUnchecked
+            TaskStatus.done -> Icons.Rounded.CheckCircle
+            TaskStatus.abandoned -> Icons.Rounded.HighlightOff
+        }
 }

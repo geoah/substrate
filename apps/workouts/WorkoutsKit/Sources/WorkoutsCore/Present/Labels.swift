@@ -294,13 +294,16 @@ public extension SetLabel {
             let spokenSet = warmup ? (warmups > 1 ? "warm-up \(ordinal)" : "warm-up") : "set \(ordinal)"
             let isHead = set.continues == nil
             // A set switched to Failure in the gym says so with reachedFailure (§5.2).
-            let failure = isHead && (set.target?.termination == .failure || set.target?.termination == .amrap
-                || set.reachedFailure == true)
+            let failure =
+                isHead
+                && (set.target?.termination == .failure || set.target?.termination == .amrap
+                    || set.reachedFailure == true)
             let roleText = isHead ? head.roleLabel.map { $0 == .top ? "Top" : "Back-off" } : nil
             if let side = set.side {
                 let letter = side == .left ? "L" : "R"
-                result[set.id] = SetLabel(short: number + letter, spoken: "\(spokenSet), \(side.rawValue) side",
-                                          failureBadge: failure, roleText: roleText)
+                result[set.id] = SetLabel(
+                    short: number + letter, spoken: "\(spokenSet), \(side.rawValue) side",
+                    failureBadge: failure, roleText: roleText)
                 continue
             }
             guard let headID = set.continues else {
@@ -310,13 +313,14 @@ public extension SetLabel {
             let index = (segmentIndex[headID] ?? 0) + 1
             segmentIndex[headID] = index
             let letter = String(UnicodeScalar(UInt8(ascii: "a") + UInt8(min(index - 1, 25))))
-            result[set.id] = switch head.structure {
-            case .drop: SetLabel(short: number + letter, spoken: "\(spokenSet), drop \(index)")
-            case .restpause: SetLabel(short: number + letter, spoken: "\(spokenSet), mini-set \(index)")
-            case .cluster: SetLabel(short: number + letter, spoken: "\(spokenSet), cluster \(index + 1)")
-            case .myo, .myomatch: SetLabel(short: "M", spoken: "\(spokenSet), mini-set \(index)")
-            case .straight: SetLabel(short: number + letter, spoken: spokenSet)
-            }
+            result[set.id] =
+                switch head.structure {
+                case .drop: SetLabel(short: number + letter, spoken: "\(spokenSet), drop \(index)")
+                case .restpause: SetLabel(short: number + letter, spoken: "\(spokenSet), mini-set \(index)")
+                case .cluster: SetLabel(short: number + letter, spoken: "\(spokenSet), cluster \(index + 1)")
+                case .myo, .myomatch: SetLabel(short: "M", spoken: "\(spokenSet), mini-set \(index)")
+                case .straight: SetLabel(short: number + letter, spoken: spokenSet)
+                }
         }
         return result
     }

@@ -28,7 +28,9 @@ public extension AppManifest {
     private func labelledKinds(reachedBy verb: String, _ pattern: String) -> [ScopeKind] {
         let grants = Grants(["\(verb):\(pattern)"])
         return kindLabels.compactMap { identity, label -> ScopeKind? in
-            let reached = verb == "write" ? grants.writes(identity, purpose: label.purpose ?? "primary")
+            let reached =
+                verb == "write"
+                ? grants.writes(identity, purpose: label.purpose ?? "primary")
                 : grants.reads(identity, purpose: label.purpose ?? "primary")
             return reached ? ScopeKind(identity: identity, plural: label.plural, purpose: label.purpose) : nil
         }
@@ -68,7 +70,8 @@ public extension AppManifest {
         if let grants = session?.grants {
             changes += details.compactMap { detail in
                 guard detail.type == AuthorizationDetail.Types.webhook, let trigger = detail.trigger,
-                      !grants.delivers(trigger) else { return nil }
+                    !grants.delivers(trigger)
+                else { return nil }
                 return Change(kind: .scope, words: scopeWords("webhook:\(trigger)", package: delivering[trigger]))
             }
         }
@@ -79,10 +82,13 @@ public extension AppManifest {
                 if block.reason == AuthorizationSetup.Block.Reasons.serverUpdate, let package = row.package {
                     let name = packageName(package.id)
                     let upgrade = row.action == AuthorizationSetup.Actions.upgrade
-                    serverBlocked.append(Change(kind: upgrade ? .upgrade : .install,
-                                                words: upgrade ? "Update \(name) to version \(package.required) or later"
-                                                    : "Install \(name) version \(package.required) or later",
-                                                detail: block.problem.isEmpty ? nil : block.problem, block: block))
+                    serverBlocked.append(
+                        Change(
+                            kind: upgrade ? .upgrade : .install,
+                            words: upgrade
+                                ? "Update \(name) to version \(package.required) or later"
+                                : "Install \(name) version \(package.required) or later",
+                            detail: block.problem.isEmpty ? nil : block.problem, block: block))
                 } else if var change = setupChange(detail, row: row) {
                     change.detail = block.problem.isEmpty ? change.detail : block.problem
                     change.block = block
@@ -132,8 +138,9 @@ public extension AppManifest {
                 guard let value = properties[key], value != .null else { return nil }
                 return "\(propertyLabel(key)): \(value.text ?? value.jsonText)"
             }
-            return Change(kind: .account, words: "Create the \(accountWords(kind: kind)) “\(name)”",
-                          detail: rest.isEmpty ? nil : rest.joined(separator: ", "))
+            return Change(
+                kind: .account, words: "Create the \(accountWords(kind: kind)) “\(name)”",
+                detail: rest.isEmpty ? nil : rest.joined(separator: ", "))
         case AuthorizationDetail.Types.webhook:
             guard let trigger = detail.trigger ?? row?.webhook?.trigger else { return nil }
             let what = webhookWords(trigger: trigger, package: row?.webhook?.package)

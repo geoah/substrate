@@ -19,10 +19,11 @@ public struct PresenterInput<C: Controller> {
     /// the link says as a change it could not keep.
     public var childJournalProblem: String?
 
-    public init(state: C.State, transient: C.Transient, children: [ChildKey: C.Child.Presentation] = [:], now: Date,
-                locale: Locale = Locale(identifier: "en_US_POSIX"), timeZone: TimeZone = TimeZone(identifier: "UTC")!,
-                link: LinkSnapshot? = nil, journalProblem: String? = nil, childJournalProblem: String? = nil)
-    {
+    public init(
+        state: C.State, transient: C.Transient, children: [ChildKey: C.Child.Presentation] = [:], now: Date,
+        locale: Locale = Locale(identifier: "en_US_POSIX"), timeZone: TimeZone = TimeZone(identifier: "UTC")!,
+        link: LinkSnapshot? = nil, journalProblem: String? = nil, childJournalProblem: String? = nil
+    ) {
         self.state = state
         self.transient = transient
         self.children = children
@@ -45,11 +46,13 @@ public struct PresenterInput<C: Controller> {
 }
 
 public extension PresenterInput where C.Transient == NoTransient {
-    init(state: C.State, children: [ChildKey: C.Child.Presentation] = [:], now: Date,
-         locale: Locale = Locale(identifier: "en_US_POSIX"), timeZone: TimeZone = TimeZone(identifier: "UTC")!,
-         link: LinkSnapshot? = nil, journalProblem: String? = nil, childJournalProblem: String? = nil)
-    {
-        self.init(state: state, transient: NoTransient(), children: children, now: now, locale: locale, timeZone: timeZone,
-                  link: link, journalProblem: journalProblem, childJournalProblem: childJournalProblem)
+    init(
+        state: C.State, children: [ChildKey: C.Child.Presentation] = [:], now: Date,
+        locale: Locale = Locale(identifier: "en_US_POSIX"), timeZone: TimeZone = TimeZone(identifier: "UTC")!,
+        link: LinkSnapshot? = nil, journalProblem: String? = nil, childJournalProblem: String? = nil
+    ) {
+        self.init(
+            state: state, transient: NoTransient(), children: children, now: now, locale: locale, timeZone: timeZone,
+            link: link, journalProblem: journalProblem, childJournalProblem: childJournalProblem)
     }
 }

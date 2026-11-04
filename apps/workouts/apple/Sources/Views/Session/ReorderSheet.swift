@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// Reorder exercises (DESIGN.md §7.6): a `List` in edit mode, names only.
 /// A group shows as a "Superset A" row with its members indented under it;
@@ -15,7 +15,10 @@ struct ReorderSheet: View {
 
     /// A row of the list: a group's header, or an exercise (a member when `group` is set).
     struct Item: Identifiable, Equatable {
-        enum Kind: Equatable { case group(String, title: String, color: Int), slot(String, name: String, group: String?) }
+        enum Kind: Equatable {
+            case group(String, title: String, color: Int)
+            case slot(String, name: String, group: String?)
+        }
         var kind: Kind
 
         var id: String {
@@ -88,7 +91,7 @@ struct ReorderSheet: View {
     /// The range of a group's header and members.
     private func range(ofGroup key: String, in list: [Item]) -> Range<Int>? {
         guard let first = list.firstIndex(where: { $0.groupKey == key }),
-              let last = list.lastIndex(where: { $0.groupKey == key })
+            let last = list.lastIndex(where: { $0.groupKey == key })
         else { return nil }
         return first ..< last + 1
     }
@@ -111,7 +114,7 @@ struct ReorderSheet: View {
             var target = destination > block.lowerBound ? destination - block.count : destination
             target = min(max(target, 0), list.count)
             if target < list.count, let inside = list[target].groupKey, case .slot = list[target].kind,
-               let range = range(ofGroup: inside, in: list)
+                let range = range(ofGroup: inside, in: list)
             {
                 target = range.lowerBound
             }

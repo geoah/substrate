@@ -70,11 +70,12 @@ public struct AppManifest: Sendable {
         case belowRequirement
     }
 
-    public init(appName: String, clientID: String, scopes: [String], details: [AuthorizationDetail] = [],
-                requirement: ServerRequirement = ServerRequirement(), loopbackPath: String = "/oauth/callback",
-                claimedRedirect: URL? = nil, passwordFallback: PasswordFallback = .never, names: [String: String] = [:],
-                kindLabels: [String: KindLabel] = [:], softwareVersion: String = AppManifest.softwareVersion())
-    {
+    public init(
+        appName: String, clientID: String, scopes: [String], details: [AuthorizationDetail] = [],
+        requirement: ServerRequirement = ServerRequirement(), loopbackPath: String = "/oauth/callback",
+        claimedRedirect: URL? = nil, passwordFallback: PasswordFallback = .never, names: [String: String] = [:],
+        kindLabels: [String: KindLabel] = [:], softwareVersion: String = AppManifest.softwareVersion()
+    ) {
         self.appName = appName
         self.clientID = clientID
         self.scopes = scopes
@@ -133,9 +134,9 @@ public struct AppManifest: Sendable {
     /// a host and a path, and no query, fragment or user.
     public static func claimedRedirect(_ text: String) -> URL? {
         guard let url = URL(string: text), url.scheme?.lowercased() == "https",
-              let host = url.host(percentEncoded: false), !host.isEmpty,
-              url.path(percentEncoded: false).count > 1, url.query(percentEncoded: true) == nil,
-              url.fragment(percentEncoded: true) == nil, url.user(percentEncoded: true) == nil
+            let host = url.host(percentEncoded: false), !host.isEmpty,
+            url.path(percentEncoded: false).count > 1, url.query(percentEncoded: true) == nil,
+            url.fragment(percentEncoded: true) == nil, url.user(percentEncoded: true) == nil
         else { return nil }
         return url
     }
@@ -191,8 +192,9 @@ public struct AppManifest: Sendable {
     /// build's version. A scope a later build adds is asked about.
     public func check(for session: Session, metadata: AuthorizationServerMetadata? = nil) -> AuthorizationCheck {
         let leftOut = Set(leftOut(by: session))
-        return AuthorizationCheck(scopes: scopes.filter { !leftOut.contains($0) }, details: details(for: metadata),
-                                  softwareVersion: softwareVersion)
+        return AuthorizationCheck(
+            scopes: scopes.filter { !leftOut.contains($0) }, details: details(for: metadata),
+            softwareVersion: softwareVersion)
     }
 
     /// How the app signs in to a server it probed.

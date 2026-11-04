@@ -21,10 +21,11 @@ public struct TaskItem: Codable, Hashable, Sendable, Identifiable {
     public var version: Int?
     public var createdAt: Date?
 
-    public init(id: String, name: String, notes: String? = nil, url: String? = nil, list: String? = nil, position: Decimal? = nil,
-                due: Due? = nil, priority: TaskPriority = .none, status: TaskStatus = .open, completedAt: Date? = nil,
-                version: Int? = nil, createdAt: Date? = nil)
-    {
+    public init(
+        id: String, name: String, notes: String? = nil, url: String? = nil, list: String? = nil, position: Decimal? = nil,
+        due: Due? = nil, priority: TaskPriority = .none, status: TaskStatus = .open, completedAt: Date? = nil,
+        version: Int? = nil, createdAt: Date? = nil
+    ) {
         self.id = id
         self.name = name
         self.notes = notes

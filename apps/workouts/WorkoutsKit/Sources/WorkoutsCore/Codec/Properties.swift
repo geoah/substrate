@@ -134,8 +134,8 @@ struct PropertyReader {
     private mutating func quantity(_ name: String, units: [String]) throws(CodecError) -> (Decimal, String)? {
         guard let value = take(name) else { return nil }
         guard case let .object(fields) = value, fields.count == 2,
-              case let .string(text)? = fields["value"], let number = DecimalText.parse(text),
-              case let .string(unit)? = fields["unit"], units.contains(unit)
+            case let .string(text)? = fields["value"], let number = DecimalText.parse(text),
+            case let .string(unit)? = fields["unit"], units.contains(unit)
         else { throw invalid(name, value) }
         return (number, unit)
     }
@@ -366,7 +366,7 @@ struct PropertyWriter {
         let typed = value.map { JSONValue.string($0.rawValue) }
         // The raw list holds unknown members; write it back while its known part is what the model holds.
         if case let .array(raw)? = extra[name],
-           raw.filter({ $0.stringValue.flatMap(E.init(rawValue:)) != nil }) == typed
+            raw.filter({ $0.stringValue.flatMap(E.init(rawValue:)) != nil }) == typed
         {
             put(name, nil)
             return

@@ -22,9 +22,8 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonNull
 
 /**
- * The device services SubstrateBridge calls, on Android: hand
- * `KitDevice.services(context)` to `Bridge.start`. [notificationChannel] is
- * the name the system's Settings give the app's notifications.
+ * The device services SubstrateBridge calls, on Android: hand `KitDevice.services(context)` to `Bridge.start`. [notificationChannel] is the name the system's
+ * Settings give the app's notifications.
  */
 public object KitDevice {
     public fun services(context: Context, notificationChannel: String = "Notifications"): DeviceServices {
@@ -38,80 +37,94 @@ public object KitDevice {
         val done = { JsonNull }
         return DeviceServices { request ->
             when (request) {
-                is DeviceRequest.TransportFetch -> DeviceAnswer.Value(
-                    discard = { answer ->
-                        runCatching { BridgeJson.decodeFromJsonElement(TransportOutcome.Serializer, answer) }.getOrNull()?.let(transport::discard)
-                    },
-                ) {
-                    BridgeJson.encodeToJsonElement(TransportOutcome.Serializer, transport.fetch(request.request))
-                }
-                is DeviceRequest.TransportLines -> DeviceAnswer.Chunks(
-                    values = transport.lines(request.request).map { BridgeJson.encodeToJsonElement(TransportChunk.Serializer, it) },
-                )
-                is DeviceRequest.SecureRead -> DeviceAnswer.Value {
-                    BridgeJson.encodeToJsonElement(SecureItem.Serializer, secure.read(request.store, request.account))
-                }
-                is DeviceRequest.SecureWrite -> DeviceAnswer.Value {
-                    BridgeJson.encodeToJsonElement(SecureOutcome.Serializer, secure.write(request.store, request.account, request.value))
-                }
-                is DeviceRequest.SecureDelete -> DeviceAnswer.Value {
-                    BridgeJson.encodeToJsonElement(SecureOutcome.Serializer, secure.delete(request.store, request.account))
-                }
-                is DeviceRequest.DnsTXT -> DeviceAnswer.Value {
-                    BridgeJson.encodeToJsonElement(DNSAnswer.Serializer, dns.txt(request.name, request.timeoutMillis))
-                }
-                DeviceRequest.ConnectivityCurrent -> DeviceAnswer.Value {
-                    BridgeJson.encodeToJsonElement(NetworkPath.serializer(), connectivity.current())
-                }
-                DeviceRequest.ConnectivityWatch -> DeviceAnswer.Chunks(
-                    values = connectivity.paths().map { BridgeJson.encodeToJsonElement(NetworkPath.serializer(), it) },
-                )
-                is DeviceRequest.BrowserPrepare -> DeviceAnswer.Value {
-                    BridgeJson.encodeToJsonElement(BrowserPrepared.Serializer, browser.prepare(request.route))
-                }
-                is DeviceRequest.BrowserOpen -> DeviceAnswer.Value {
-                    BridgeJson.encodeToJsonElement(BrowserAnswer.Serializer, browser.open(request.page, request.redirect))
-                }
-                is DeviceRequest.BrowserFinish -> DeviceAnswer.Value {
-                    browser.finish(request.redirect)
-                    done()
-                }
-                DeviceRequest.NotificationsPermission -> DeviceAnswer.Value {
-                    BridgeJson.encodeToJsonElement(NotificationPermission.serializer(), notifications.permission())
-                }
+                is DeviceRequest.TransportFetch ->
+                    DeviceAnswer.Value(
+                        discard = { answer ->
+                            runCatching { BridgeJson.decodeFromJsonElement(TransportOutcome.Serializer, answer) }.getOrNull()?.let(transport::discard)
+                        }
+                    ) {
+                        BridgeJson.encodeToJsonElement(TransportOutcome.Serializer, transport.fetch(request.request))
+                    }
+                is DeviceRequest.TransportLines ->
+                    DeviceAnswer.Chunks(values = transport.lines(request.request).map { BridgeJson.encodeToJsonElement(TransportChunk.Serializer, it) })
+                is DeviceRequest.SecureRead ->
+                    DeviceAnswer.Value {
+                        BridgeJson.encodeToJsonElement(SecureItem.Serializer, secure.read(request.store, request.account))
+                    }
+                is DeviceRequest.SecureWrite ->
+                    DeviceAnswer.Value {
+                        BridgeJson.encodeToJsonElement(SecureOutcome.Serializer, secure.write(request.store, request.account, request.value))
+                    }
+                is DeviceRequest.SecureDelete ->
+                    DeviceAnswer.Value {
+                        BridgeJson.encodeToJsonElement(SecureOutcome.Serializer, secure.delete(request.store, request.account))
+                    }
+                is DeviceRequest.DnsTXT ->
+                    DeviceAnswer.Value {
+                        BridgeJson.encodeToJsonElement(DNSAnswer.Serializer, dns.txt(request.name, request.timeoutMillis))
+                    }
+                DeviceRequest.ConnectivityCurrent ->
+                    DeviceAnswer.Value {
+                        BridgeJson.encodeToJsonElement(NetworkPath.serializer(), connectivity.current())
+                    }
+                DeviceRequest.ConnectivityWatch ->
+                    DeviceAnswer.Chunks(values = connectivity.paths().map { BridgeJson.encodeToJsonElement(NetworkPath.serializer(), it) })
+                is DeviceRequest.BrowserPrepare ->
+                    DeviceAnswer.Value {
+                        BridgeJson.encodeToJsonElement(BrowserPrepared.Serializer, browser.prepare(request.route))
+                    }
+                is DeviceRequest.BrowserOpen ->
+                    DeviceAnswer.Value {
+                        BridgeJson.encodeToJsonElement(BrowserAnswer.Serializer, browser.open(request.page, request.redirect))
+                    }
+                is DeviceRequest.BrowserFinish ->
+                    DeviceAnswer.Value {
+                        browser.finish(request.redirect)
+                        done()
+                    }
+                DeviceRequest.NotificationsPermission ->
+                    DeviceAnswer.Value {
+                        BridgeJson.encodeToJsonElement(NotificationPermission.serializer(), notifications.permission())
+                    }
                 // The system's question is asked from the activity in front.
-                DeviceRequest.NotificationsRequestPermission -> DeviceAnswer.Value(dispatcher = Dispatchers.Main) {
-                    BridgeJson.encodeToJsonElement(NotificationPermission.serializer(), notifications.requestPermission())
-                }
-                is DeviceRequest.NotificationsRegister -> DeviceAnswer.Value {
-                    notifications.register(request.categories)
-                    done()
-                }
-                is DeviceRequest.NotificationsSchedule -> DeviceAnswer.Value {
-                    notifications.schedule(request.request)
-                    done()
-                }
-                is DeviceRequest.NotificationsCancel -> DeviceAnswer.Value {
-                    notifications.cancel(request.id)
-                    done()
-                }
-                is DeviceRequest.NotificationsCancelThread -> DeviceAnswer.Value {
-                    notifications.cancelThread(request.thread)
-                    done()
-                }
-                DeviceRequest.NotificationsCancelAll -> DeviceAnswer.Value {
-                    notifications.cancelAll()
-                    done()
-                }
+                DeviceRequest.NotificationsRequestPermission ->
+                    DeviceAnswer.Value(dispatcher = Dispatchers.Main) {
+                        BridgeJson.encodeToJsonElement(NotificationPermission.serializer(), notifications.requestPermission())
+                    }
+                is DeviceRequest.NotificationsRegister ->
+                    DeviceAnswer.Value {
+                        notifications.register(request.categories)
+                        done()
+                    }
+                is DeviceRequest.NotificationsSchedule ->
+                    DeviceAnswer.Value {
+                        notifications.schedule(request.request)
+                        done()
+                    }
+                is DeviceRequest.NotificationsCancel ->
+                    DeviceAnswer.Value {
+                        notifications.cancel(request.id)
+                        done()
+                    }
+                is DeviceRequest.NotificationsCancelThread ->
+                    DeviceAnswer.Value {
+                        notifications.cancelThread(request.thread)
+                        done()
+                    }
+                DeviceRequest.NotificationsCancelAll ->
+                    DeviceAnswer.Value {
+                        notifications.cancelAll()
+                        done()
+                    }
                 // Android draws no number on an app's icon: a launcher shows a
                 // dot for the notifications themselves.
                 is DeviceRequest.NotificationsBadge -> DeviceAnswer.Value { done() }
-                is DeviceRequest.NotificationsPending -> DeviceAnswer.Value {
-                    BridgeJson.encodeToJsonElement(ListSerializer(String.serializer()), notifications.pending(request.prefix))
-                }
-                DeviceRequest.NotificationsResponses -> DeviceAnswer.Chunks(
-                    values = notifications.responses().map { BridgeJson.encodeToJsonElement(NotificationResponse.serializer(), it) },
-                )
+                is DeviceRequest.NotificationsPending ->
+                    DeviceAnswer.Value {
+                        BridgeJson.encodeToJsonElement(ListSerializer(String.serializer()), notifications.pending(request.prefix))
+                    }
+                DeviceRequest.NotificationsResponses ->
+                    DeviceAnswer.Chunks(values = notifications.responses().map { BridgeJson.encodeToJsonElement(NotificationResponse.serializer(), it) })
             }
         }
     }

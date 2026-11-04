@@ -1,6 +1,7 @@
 import Foundation
-@testable import WorkoutsCore
 import Testing
+
+@testable import WorkoutsCore
 
 // Fixes from the simulator review of 31 October (the 03 to 19 screenshots):
 // Finish's summary now projects the pending-set choice, a timed set's target
@@ -17,8 +18,9 @@ private struct Written: Equatable {
     init(_ records: SessionRecords, state: SessionState) {
         sets = records.sets.count
         workingSets = Counting.workingSets(records.sets)
-        volume = Counting.volume(records.sets, exercises: state.exercises, bodyMass: state.session.bodyMass,
-                                 unit: state.settings.defaultUnit, includeWarmups: state.settings.countWarmupsInVolume)
+        volume = Counting.volume(
+            records.sets, exercises: state.exercises, bodyMass: state.session.bodyMass,
+            unit: state.settings.defaultUnit, includeWarmups: state.settings.countWarmupsInVolume)
         exercises = Set(records.sets.map(\.slot)).count
     }
 
@@ -32,9 +34,10 @@ private struct Written: Equatable {
 
 /// Finishes a copy of `script`'s session the way Save does: the projection
 /// for `policy`, its event, the engine, the records.
-private func save(_ script: EngineScript, presentation: SessionPresentation, policy: PendingSetPolicy,
-                  at end: Date) throws -> (FinishProjection, SessionRecords, SessionState)
-{
+private func save(
+    _ script: EngineScript, presentation: SessionPresentation, policy: PendingSetPolicy,
+    at end: Date
+) throws -> (FinishProjection, SessionRecords, SessionState) {
     var copy = script
     var minted = 0
     let projection = FinishPresenter.projection(try copy.current, presentation: presentation, policy: policy, end: end) { _ in
@@ -79,9 +82,12 @@ struct FinishProjectionTests {
 
         // The sheet's rows are the projection's, for the policy chosen in the dialog.
         let sheet = FinishPresenter.summary(state, presentation: presentation, policy: .markDone, end: end, healthAllowed: true)
-        #expect(sheet.rows == [LabelledValue("Working sets", "\(marked.workingSets)"),
-                               LabelledValue("Volume", Format.volume(marked.volume)),
-                               LabelledValue("Exercises", "\(marked.exercises) of 21")])
+        #expect(
+            sheet.rows == [
+                LabelledValue("Working sets", "\(marked.workingSets)"),
+                LabelledValue("Volume", Format.volume(marked.volume)),
+                LabelledValue("Exercises", "\(marked.exercises) of 21"),
+            ])
         #expect(sheet.untickedTitle == "53 sets are not ticked")
         #expect(sheet.pendingText == "\(marked.markedSets) unticked sets are saved as shown; 1 is left out, a value is missing.")
         #expect(sheet.untickedMessage == "1 has a value missing and is left out either way.")
@@ -104,8 +110,9 @@ struct FinishProjectionTests {
         var script = EngineScript(at: engineEpoch)
         try script.start(routine, exercises: [EngineCatalog.press, cable, lunge])
         try script.tick(try script.row("p", 0), kgReps(50, 10))
-        let presentation = SessionPresenter.present(try script.current, history: HistoryIndex(), settings: Progression.settings,
-                                                    now: script.now)
+        let presentation = SessionPresenter.present(
+            try script.current, history: HistoryIndex(), settings: Progression.settings,
+            now: script.now)
         #expect(presentation.row(try script.row("c", 0))?.missing == [.load])
         let end = engineEpoch.addingTimeInterval(1800)
 
@@ -121,8 +128,9 @@ struct FinishProjectionTests {
         #expect(Written(dropped) == Written(droppedRecords, state: droppedState))
         #expect(dropped.markedSets == 0 && dropped.incompleteSets == 3 && dropped.savedSets == 1 && dropped.workingSets == 1)
 
-        let sheet = FinishPresenter.summary(try script.current, presentation: presentation, policy: .markDone, end: end,
-                                            healthAllowed: false)
+        let sheet = FinishPresenter.summary(
+            try script.current, presentation: presentation, policy: .markDone, end: end,
+            healthAllowed: false)
         #expect(sheet.pendingText == "1 unticked set is saved as shown; 3 are left out, a value is missing.")
         #expect(sheet.untickedMessage == "3 have a value missing and are left out either way.")
         #expect(sheet.rows.last == LabelledValue("Exercises", "1 of 3"))
@@ -131,17 +139,23 @@ struct FinishProjectionTests {
     @Test("Every row ticked: nothing to ask, and both policies write the same")
     func nothingPending() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([EngineCatalog.slot("p", EngineCatalog.press, EngineCatalog.sets(1))]),
-                         exercises: [EngineCatalog.press])
+        try script.start(
+            EngineCatalog.routine([EngineCatalog.slot("p", EngineCatalog.press, EngineCatalog.sets(1))]),
+            exercises: [EngineCatalog.press])
         try script.tick(try script.row("p", 0), kgReps(50, 10))
-        let presentation = SessionPresenter.present(try script.current, history: HistoryIndex(), settings: Progression.settings,
-                                                    now: script.now)
+        let presentation = SessionPresenter.present(
+            try script.current, history: HistoryIndex(), settings: Progression.settings,
+            now: script.now)
         let end = engineEpoch.addingTimeInterval(600)
-        let summary = FinishPresenter.summary(try script.current, presentation: presentation, policy: .markDone, end: end,
-                                              healthAllowed: true)
+        let summary = FinishPresenter.summary(
+            try script.current, presentation: presentation, policy: .markDone, end: end,
+            healthAllowed: true)
         #expect(summary.untickedTitle == nil && summary.untickedMessage == nil && summary.pendingText == nil)
-        #expect(summary.rows == [LabelledValue("Working sets", "1"), LabelledValue("Volume", "500 kg"),
-                                 LabelledValue("Exercises", "1 of 1")])
+        #expect(
+            summary.rows == [
+                LabelledValue("Working sets", "1"), LabelledValue("Volume", "500 kg"),
+                LabelledValue("Exercises", "1 of 1"),
+            ])
         let (drop, _, _) = try save(script, presentation: presentation, policy: .drop, at: end)
         let (mark, _, _) = try save(script, presentation: presentation, policy: .markDone, at: end)
         #expect(Written(drop) == Written(mark))
@@ -175,18 +189,21 @@ struct UIReviewPresenterTests {
         try session.send(.editSet(.init(row: plank, values: SetValuesPatch(duration: .set(90)))), at: 21)
         #expect(try session.present(at: 22).row(plank)?.timer == .ready(target: 90))
         var bare = EngineScript(at: engineEpoch)
-        try bare.start(EngineCatalog.routine([EngineCatalog.slot("k", EngineCatalog.plank, [PlannedSet(key: "s1")])]),
-                       exercises: [EngineCatalog.plank])
+        try bare.start(
+            EngineCatalog.routine([EngineCatalog.slot("k", EngineCatalog.plank, [PlannedSet(key: "s1")])]),
+            exercises: [EngineCatalog.plank])
         let row = try bare.row("k", 0)
-        let stopwatch = SessionPresenter.present(try bare.current, history: HistoryIndex(), settings: Progression.settings,
-                                                 now: engineEpoch)
+        let stopwatch = SessionPresenter.present(
+            try bare.current, history: HistoryIndex(), settings: Progression.settings,
+            now: engineEpoch)
         #expect(stopwatch.row(row)?.timer == .ready(target: nil))
     }
 
     @Test("RPE on a timed set: rated from the menu, carried by Stop, shown under the row, saved")
     func rpeOnTimedSets() throws {
-        let sidePlank = EngineCatalog.exercise("side-plank", .duration, laterality: .unilateral, restClass: .timed,
-                                               equipment: Equipment.none)
+        let sidePlank = EngineCatalog.exercise(
+            "side-plank", .duration, laterality: .unilateral, restClass: .timed,
+            equipment: Equipment.none)
         let routine = EngineCatalog.routine([
             EngineCatalog.slot("k", EngineCatalog.plank, [PlannedSet(key: "s1", durationMin: 45), PlannedSet(key: "s2", durationMin: 45)]),
             EngineCatalog.slot("s", sidePlank, [PlannedSet(key: "s1", durationMin: 30)]),
@@ -240,8 +257,9 @@ struct UIReviewPresenterTests {
         try script.start(routine, exercises: [EngineCatalog.carry])
         let row = try script.row("c", 0)
         try script.send(.editSet(.init(row: row, values: SetValuesPatch(distance: .set(Length(metres: 40)), rpe: .set(7)))))
-        let presentation = SessionPresenter.present(try script.current, history: HistoryIndex(), settings: Progression.settings,
-                                                    now: script.now)
+        let presentation = SessionPresenter.present(
+            try script.current, history: HistoryIndex(), settings: Progression.settings,
+            now: script.now)
         let shown = try #require(presentation.row(row))
         #expect(shown.canRateEffort && shown.effortText == "RPE 7")
         let values = try #require(shown.commitValues)
@@ -275,8 +293,9 @@ struct UIReviewPresenterTests {
         #expect(try facts("assisted-pull-up-machine").last == LabelledValue("Assistance", "10 lb steps"))
         #expect(try facts("push-up").allSatisfy { !["Load", "Added load", "Assistance"].contains($0.label) })
         let dip = Exercise(id: "dip", name: "Dip", measurement: .weightedbodyweightreps, equipment: .plate)
-        #expect(ExercisePresenter.loadSteps(SuggestionInputs.config(for: dip, defaultUnit: .kg))
-            == LabelledValue("Added load", "2.5 kg steps"))
+        #expect(
+            ExercisePresenter.loadSteps(SuggestionInputs.config(for: dip, defaultUnit: .kg))
+                == LabelledValue("Added load", "2.5 kg steps"))
         #expect(dip.equipmentText == "Plate")
         #expect(Exercise(id: "x", name: "X", measurement: .bodyweightassistedreps).equipmentText == "Bodyweight")
     }
@@ -305,8 +324,9 @@ struct UIReviewPresenterTests {
         #expect(drop.accessibilityValue() == "to failure, a hint")
         // Done: the value itself; typed: what was typed.
         try session.tick("chest-press", 1, kgReps(40, 11, rpe: 9), at: 60)
-        try session.send(.editSet(.init(row: try session.row("chest-press", 2), values: SetValuesPatch(load: .set(.kg(45))))),
-                         at: 70)
+        try session.send(
+            .editSet(.init(row: try session.row("chest-press", 2), values: SetValuesPatch(load: .set(.kg(45))))),
+            at: 70)
         let after = try session.present(at: 71)
         #expect(after.row(try session.row("chest-press", 1))?.cell(.load)?.accessibilityValue() == "40")
         #expect(after.row(try session.row("chest-press", 1))?.rpeAccessibilityValue == "9")
@@ -322,10 +342,13 @@ struct UIReviewPresenterTests {
         // Required with nothing to show.
         let cable = EngineCatalog.exercise("cable", restClass: .isolation, equipment: .cable)
         var bare = EngineScript(at: engineEpoch)
-        try bare.start(EngineCatalog.routine([EngineCatalog.slot("c", cable, EngineCatalog.sets(1, load: nil))]),
-                       exercises: [cable])
-        let empty = SessionPresenter.present(try bare.current, history: HistoryIndex(), settings: Progression.settings,
-                                             now: engineEpoch).row(try bare.row("c", 0))?.cell(.load)
+        try bare.start(
+            EngineCatalog.routine([EngineCatalog.slot("c", cable, EngineCatalog.sets(1, load: nil))]),
+            exercises: [cable])
+        let empty = SessionPresenter.present(
+            try bare.current, history: HistoryIndex(), settings: Progression.settings,
+            now: engineEpoch
+        ).row(try bare.row("c", 0))?.cell(.load)
         #expect(empty?.accessibilityLabel == "Cable, set 1, load in kilograms")
         #expect(empty?.accessibilityValue() == "required, empty")
         #expect(GridColumn.addedLoad.spokenName(unit: .lb) == "added load in pounds")

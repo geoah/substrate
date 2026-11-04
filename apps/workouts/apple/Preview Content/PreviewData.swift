@@ -114,7 +114,7 @@ enum PreviewData {
         switch moment {
         case .fixing:
             guard let set1 = state.slot("leg-press")?.rows[1], let item = layout.item(set1), let fix = item.fix,
-                  let plus = fix.editor(draft: fix.logged).field(.reps)?.plus
+                let plus = fix.editor(draft: fix.logged).field(.reps)?.plus
             else { return RowsScreenModel() }
             return RowsScreenModel(fixing: .init(row: set1, draft: fix.logged.applying(plus.patch)))
         case .keypad:
@@ -276,9 +276,12 @@ enum PreviewData {
                 apply(.startTimedSet(row: row, target: target), at: seconds - held)
                 guard let values = present(at: seconds)?.row(row)?.stopValues else { return }
                 let at = date(seconds)
-                apply(.stopTimedSet(SessionEvent.CompleteSet(row: row, recordID: SetID(UUIDv7.make(at: at)), values: values,
-                                                             segmentRowIDs: [RowID(UUIDv7.make(at: at))])),
-                      at: seconds)
+                apply(
+                    .stopTimedSet(
+                        SessionEvent.CompleteSet(
+                            row: row, recordID: SetID(UUIDv7.make(at: at)), values: values,
+                            segmentRowIDs: [RowID(UUIDv7.make(at: at))])),
+                    at: seconds)
                 return
             }
             if present(at: seconds)?.row(row)?.commitValues == nil {
@@ -286,9 +289,12 @@ enum PreviewData {
             }
             guard let values = present(at: seconds)?.row(row)?.commitValues else { return }
             let at = date(seconds)
-            apply(.completeSet(SessionEvent.CompleteSet(row: row, recordID: SetID(UUIDv7.make(at: at)), values: values,
-                                                        segmentRowIDs: [RowID(UUIDv7.make(at: at))])),
-                  at: seconds)
+            apply(
+                .completeSet(
+                    SessionEvent.CompleteSet(
+                        row: row, recordID: SetID(UUIDv7.make(at: at)), values: values,
+                        segmentRowIDs: [RowID(UUIDv7.make(at: at))])),
+                at: seconds)
         }
 
         /// Logs every pending set of a slot in order, `step` seconds apart;
@@ -297,7 +303,7 @@ enum PreviewData {
             var at = seconds
             var guardCount = 0
             while guardCount < 20, let rows = state?.slot(slot)?.rows,
-                  let index = rows.firstIndex(where: { state?.rows[$0]?.isPending == true })
+                let index = rows.firstIndex(where: { state?.rows[$0]?.isPending == true })
             {
                 let before = state?.rows[rows[index]]?.isPending
                 log(slot, index, at: at)
@@ -320,8 +326,11 @@ enum PreviewData {
 
         /// Finish at `seconds`, unticked sets dropped: the records History keeps.
         mutating func finish(at seconds: Int) -> SessionRecords? {
-            apply(.finish(.init(start: started, end: date(seconds), sessionRPE: 7,
-                                utcOffset: TimeZone.current.secondsFromGMT(for: started) / 60)), at: seconds)
+            apply(
+                .finish(
+                    .init(
+                        start: started, end: date(seconds), sessionRPE: 7,
+                        utcOffset: TimeZone.current.secondsFromGMT(for: started) / 60)), at: seconds)
             guard let state, state.phase == .finished else { return nil }
             return SessionEngine.records(state, adapter: "substrate-workouts@0.1.0")
         }
@@ -333,7 +342,7 @@ enum PreviewData {
 
         mutating func startTimed(_ slot: String, _ index: Int, at seconds: Int) {
             guard let row = row(slot: slot, index: index),
-                  case let .ready(target)? = present(at: seconds)?.row(row)?.timer
+                case let .ready(target)? = present(at: seconds)?.row(row)?.timer
             else { return }
             apply(.startTimedSet(row: row, target: target), at: seconds)
         }
@@ -344,8 +353,9 @@ enum PreviewData {
 
         func present(at seconds: Int) -> SessionPresentation? {
             state.map {
-                SessionPresenter.present($0, catalog: catalog, history: app.historyIndex,
-                                         settings: app.sessionPresenterSettings, now: date(seconds))
+                SessionPresenter.present(
+                    $0, catalog: catalog, history: app.historyIndex,
+                    settings: app.sessionPresenterSettings, now: date(seconds))
             }
         }
 

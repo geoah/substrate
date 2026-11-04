@@ -1,7 +1,7 @@
 package dev.reamde.substrate.tasks.ui
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -62,11 +62,15 @@ internal fun ListNamingDialog(naming: ListNaming, dismiss: () -> Unit, actions: 
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val id = naming.id
-                actions.send(if (id == null) TasksApp.Command.CreateList(name) else TasksApp.Command.RenameList(id, name))
-                dismiss()
-            }) { Text(if (add) "Add" else "Rename") }
+            TextButton(
+                onClick = {
+                    val id = naming.id
+                    actions.send(if (id == null) TasksApp.Command.CreateList(name) else TasksApp.Command.RenameList(id, name))
+                    dismiss()
+                }
+            ) {
+                Text(if (add) "Add" else "Rename")
+            }
         },
         dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } },
     )

@@ -1,6 +1,6 @@
 import Foundation
-import WorkoutsCore
 import SubstrateCore
+import WorkoutsCore
 
 /// The exercises, routines and setups of one repository, cached on the
 /// phone so the gym needs no signal: the cache draws at launch, and a refresh
@@ -22,9 +22,10 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     public static let fileName = "catalog.json"
 
     /// - Parameter directory: the folder of one server and repository.
-    public init(directory: URL, localExercises: LocalExercises? = nil, codec: RecordCodec = RecordCodec(),
-                writingOptions: Data.WritingOptions = WorkoutsFiles.protectedWriting)
-    {
+    public init(
+        directory: URL, localExercises: LocalExercises? = nil, codec: RecordCodec = RecordCodec(),
+        writingOptions: Data.WritingOptions = WorkoutsFiles.protectedWriting
+    ) {
         cacheURL = directory.appendingPathComponent(Self.fileName)
         self.localExercises = localExercises
         self.codec = codec
@@ -76,9 +77,10 @@ public final class RemoteCatalog: CatalogSource, @unchecked Sendable {
     /// made offline shows until it lands; the cache keeps the server's
     /// version, the one the edit asserts.
     @discardableResult
-    public func refresh(_ api: WorkoutsAPI, hiding: @Sendable () async -> Set<String> = { [] },
-                        waiting: @Sendable () async -> [String: (creates: Bool, properties: JSONObject)] = { [:] }) async throws -> Catalog
-    {
+    public func refresh(
+        _ api: WorkoutsAPI, hiding: @Sendable () async -> Set<String> = { [] },
+        waiting: @Sendable () async -> [String: (creates: Bool, properties: JSONObject)] = { [:] }
+    ) async throws -> Catalog {
         let kinds = codec.kinds
         // Asked before the read too: an edit that lands while the list is on
         // the wire is in neither the list nor the queue asked after it.

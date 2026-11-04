@@ -44,7 +44,8 @@ struct SuggestText: Sendable {
     /// `, assuming RPE {e}` when the set carried an RPE that is no rating (a
     /// pre-fill, a copy), then ` ({days} days ago)` only past 28 days.
     func previous(_ set: DoneSet, setting: Double?, rpe: EffectiveRPE, days: Int? = nil) -> String {
-        var text = set.kind == .timed
+        var text =
+            set.kind == .timed
             ? timed(load: setting, duration: set.duration)
             : self.set(load: setting, reps: set.effectiveReps)
         if rpe.logged {

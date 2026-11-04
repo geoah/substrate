@@ -1,11 +1,12 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 import SubstrateBridge
 import SubstrateCore
 import SubstrateDevice
 import SubstrateRuntime
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A command to the check root, which the bridge's runtime checks and the
 /// gallery-free smoke run (`bridge-check`) send to exercise each path.
@@ -103,8 +104,10 @@ public actor CheckRoot: BridgeRoot {
             let pad = String(repeating: "x", count: padding)
             for index in 1 ... max(count, 1) {
                 step += 1
-                context.present(CheckPresentation(step: step, result: .ok(name: name, detail: "\(index)/\(count)", millis: 0),
-                                                  padding: pad))
+                context.present(
+                    CheckPresentation(
+                        step: step, result: .ok(name: name, detail: "\(index)/\(count)", millis: 0),
+                        padding: pad))
             }
             return ok("\(count)")
         case let .rows(count):
@@ -124,10 +127,11 @@ public actor CheckRoot: BridgeRoot {
             guard let url = URL(string: url) else { return .failed(name: name, detail: "not a URL") }
             var request = URLRequest(url: url)
             request.timeoutInterval = 20
-            let transport: any HTTPTransport = switch via {
-            case .bridge: BridgeTransport(channel: context.device, folder: context.environment.spill)
-            case .urlSession: URLSessionTransport.shared
-            }
+            let transport: any HTTPTransport =
+                switch via {
+                case .bridge: BridgeTransport(channel: context.device, folder: context.environment.spill)
+                case .urlSession: URLSessionTransport.shared
+                }
             let (data, response) = try await transport.data(for: request)
             return ok("\(response.statusCode) \(data.count) bytes")
         case let .lines(url, delay, capacity):
@@ -169,7 +173,7 @@ public actor CheckRoot: BridgeRoot {
             return onMain ? ok("main thread") : .failed(name: name, detail: "the main actor ran off the main thread")
         case .resource:
             guard let bundle = context.environment.bundle(package: "SubstrateKit", target: "SubstrateBridgeCheck"),
-                  let url = bundle.url(forResource: "check", withExtension: "txt")
+                let url = bundle.url(forResource: "check", withExtension: "txt")
             else { return .failed(name: name, detail: "no resource bundle under \(context.environment.resources.path)") }
             return ok(try String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))
         case .stats:

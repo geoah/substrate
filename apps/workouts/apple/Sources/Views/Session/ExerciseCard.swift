@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// One exercise in the session (DESIGN.md §7.6): its name (a tap opens the
 /// exercise), the `…` menu, the group label, the Rest and Note chips, the

@@ -1,6 +1,6 @@
 import Observation
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The Rows layout's own view state (DESIGN.md §7.6a): which done set is
 /// being fixed and its draft, which field the keypad types into, which
@@ -395,11 +395,12 @@ final class RowsScreenModel {
         }
         if let undo {
             let state = layout.item(undo.row)?.state
-            let stands = switch undo.kind {
-            case .logged: state == .done
-            case .unticked: state != nil && state != .done
-            case .deleted: state == nil
-            }
+            let stands =
+                switch undo.kind {
+                case .logged: state == .done
+                case .unticked: state != nil && state != .done
+                case .deleted: state == nil
+                }
             if !stands { self.undo = nil }
         }
         if let islandRPE, islandRPE != layout.openRow { self.islandRPE = nil }

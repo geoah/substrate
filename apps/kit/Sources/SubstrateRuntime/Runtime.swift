@@ -121,8 +121,10 @@ public actor Runtime<Root: Controller> {
                     let (json, moved) = try crossing.encode(presentation)
                     continuation.yield(PresentationFrame(presentation: .success(json), lists: moved))
                 } catch {
-                    continuation.yield(PresentationFrame(presentation: .failure(PresentationNotEncoded(reason: String(describing: error))),
-                                                         lists: []))
+                    continuation.yield(
+                        PresentationFrame(
+                            presentation: .failure(PresentationNotEncoded(reason: String(describing: error))),
+                            lists: []))
                 }
             }
             continuation.finish()

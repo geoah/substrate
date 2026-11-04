@@ -36,9 +36,13 @@ public struct RecordPill: View {
         .contentShape(.capsule)
         Group {
             if let open {
-                Button { open(reference, title: known) } label: { label }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens it")
+                Button {
+                    open(reference, title: known)
+                } label: {
+                    label
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens it")
             } else {
                 label
             }

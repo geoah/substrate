@@ -1,12 +1,13 @@
 import Foundation
-import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
+import SubstrateLocal
 import Testing
 import WorkoutsCore
+
 @testable import WorkoutsSync
-import SubstrateCore
 
 /// A routine edited on the phone: nothing the editor does not show is lost
 /// across a read, an edit and the write; the write is a guarded PATCH of
@@ -28,8 +29,7 @@ struct RoutineEditTests {
         }
         if let folder = ProcessInfo.processInfo.environment["WORKOUTS_REAL_ROUTINES"] {
             for url in try FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: folder), includingPropertiesForKeys: nil)
-                where url.pathExtension == "json"
-            {
+            where url.pathExtension == "json" {
                 out.append((url.lastPathComponent, try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))))
             }
         }
@@ -43,25 +43,28 @@ struct RoutineEditTests {
         guard case var .object(record) = json, case var .object(properties)? = record["properties"] else { throw CocoaError(.coderReadCorrupt) }
         properties["coachRationale"] = .string("written by the coach")
         if case let .array(groups)? = properties["groups"] {
-            properties["groups"] = .array(groups.map { group in
-                guard case var .object(object) = group else { return group }
-                object["futureGroupField"] = .number(3)
-                return .object(object)
-            })
+            properties["groups"] = .array(
+                groups.map { group in
+                    guard case var .object(object) = group else { return group }
+                    object["futureGroupField"] = .number(3)
+                    return .object(object)
+                })
         }
         if case let .array(slots)? = properties["slots"] {
-            properties["slots"] = .array(slots.map { slot in
-                guard case var .object(object) = slot else { return slot }
-                object["coachCue"] = .string("cue")
-                if case let .array(sets)? = object["sets"] {
-                    object["sets"] = .array(sets.map { set in
-                        guard case var .object(planned) = set else { return set }
-                        planned["futureSetField"] = .object(["unit": .string("x")])
-                        return .object(planned)
-                    })
-                }
-                return .object(object)
-            })
+            properties["slots"] = .array(
+                slots.map { slot in
+                    guard case var .object(object) = slot else { return slot }
+                    object["coachCue"] = .string("cue")
+                    if case let .array(sets)? = object["sets"] {
+                        object["sets"] = .array(
+                            sets.map { set in
+                                guard case var .object(planned) = set else { return set }
+                                planned["futureSetField"] = .object(["unit": .string("x")])
+                                return .object(planned)
+                            })
+                    }
+                    return .object(object)
+                })
         }
         record["properties"] = .object(properties)
         return .object(record)
@@ -76,18 +79,20 @@ struct RoutineEditTests {
         guard case var .object(properties) = value else { return value }
         properties["title"] = nil
         if case let .array(slots)? = properties["slots"] {
-            properties["slots"] = .array(slots.map { slot in
-                guard case var .object(object) = slot else { return slot }
-                if case let .array(sets)? = object["sets"] {
-                    object["sets"] = .array(sets.map { set in
-                        guard case var .object(planned) = set else { return set }
-                        if planned["role"] == nil { planned["role"] = .string("working") }
-                        if planned["structure"] == nil { planned["structure"] = .string("straight") }
-                        return .object(planned)
-                    })
-                }
-                return .object(object)
-            })
+            properties["slots"] = .array(
+                slots.map { slot in
+                    guard case var .object(object) = slot else { return slot }
+                    if case let .array(sets)? = object["sets"] {
+                        object["sets"] = .array(
+                            sets.map { set in
+                                guard case var .object(planned) = set else { return set }
+                                if planned["role"] == nil { planned["role"] = .string("working") }
+                                if planned["structure"] == nil { planned["structure"] = .string("straight") }
+                                return .object(planned)
+                            })
+                    }
+                    return .object(object)
+                })
         }
         return .object(properties)
     }
@@ -164,8 +169,11 @@ struct RoutineEditTests {
             editor.moveMembers(of: group, from: [0], to: before.count)
             #expect(editor.members(of: group) == Array(before.dropFirst()) + [before[0]], "\(name)")
             guard case let .array(was)? = Self.normalized(.object(record.properties)).objectValue?["slots"],
-                  case let .array(now)? = Self.normalized(.object(codec.encode(editor.routine).properties)).objectValue?["slots"]
-            else { Issue.record("no slots"); continue }
+                case let .array(now)? = Self.normalized(.object(codec.encode(editor.routine).properties)).objectValue?["slots"]
+            else {
+                Issue.record("no slots")
+                continue
+            }
             #expect(Set(was) == Set(now), "\(name): a slot changed while moving")
             #expect(Set(editor.patch(codec: codec).map(\.key)) == ["slots", "groups"])
         }
@@ -207,7 +215,10 @@ struct RoutineEditTests {
         try await outbox.edit(routine: "day-1", patch: ["name": .string("Renamed"), "folder": .null], baseVersion: 4, codec: codec)
         #expect(await outbox.flush(api(server)) == .sent)
         let sent = try #require(server.sent.first)
-        guard case let .object(body)? = sent.body, case let .object(properties)? = body["properties"] else { Issue.record("no body"); return }
+        guard case let .object(body)? = sent.body, case let .object(properties)? = body["properties"] else {
+            Issue.record("no body")
+            return
+        }
         #expect(body["ifVersion"] == .number(4))
         #expect(properties["name"] == .string("Renamed") && properties["folder"] == .null)
         #expect(await outbox.version(of: codec.kinds.routine, "day-1") == 5)
@@ -220,7 +231,10 @@ struct RoutineEditTests {
         let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.edit(routine: "day-1", patch: ["name": .string("Renamed")], baseVersion: 4, codec: codec)
         let state = await outbox.flush(api(server))
-        guard case .refused = state else { Issue.record("not refused: \(state)"); return }
+        guard case .refused = state else {
+            Issue.record("not refused: \(state)")
+            return
+        }
         #expect(server.methodsAndPaths == ["PATCH \(Self.path)"], "one try, no read, no second write")
         let parked = try #require(await outbox.parked.first)
         #expect(parked.conflict)
@@ -233,7 +247,10 @@ struct RoutineEditTests {
         again.answer("PATCH", Self.path, 200, record(7))
         try await outbox.resolve(parked.id, keepMine: true)
         #expect(await outbox.flush(api(again)) == .sent)
-        guard case let .object(body)? = again.sent.first?.body else { Issue.record("no body"); return }
+        guard case let .object(body)? = again.sent.first?.body else {
+            Issue.record("no body")
+            return
+        }
         #expect(body["ifVersion"] == nil)
         #expect(await outbox.entries.isEmpty)
     }
@@ -257,7 +274,10 @@ struct RoutineEditTests {
         offline.on { _ in (-1, "") }
         var outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         try await outbox.edit(routine: "day-1", patch: ["name": .string("First"), "notes": .string("a")], baseVersion: 4, codec: codec)
-        guard case .offline = await outbox.flush(api(offline)) else { Issue.record("not offline"); return }
+        guard case .offline = await outbox.flush(api(offline)) else {
+            Issue.record("not offline")
+            return
+        }
         try await outbox.edit(routine: "day-1", patch: ["name": .string("Second"), "folder": .null], baseVersion: 4, codec: codec)
         #expect(await outbox.entries.count == 1)
 
@@ -270,7 +290,10 @@ struct RoutineEditTests {
         server.answer("PATCH", Self.path, 200, record(5))
         #expect(await outbox.flush(api(server)) == .sent)
         #expect(server.sent.count == 1)
-        guard case let .object(body)? = server.sent.first?.body, case let .object(properties)? = body["properties"] else { Issue.record("no body"); return }
+        guard case let .object(body)? = server.sent.first?.body, case let .object(properties)? = body["properties"] else {
+            Issue.record("no body")
+            return
+        }
         #expect(body["ifVersion"] == .number(4))
         #expect(properties["name"] == .string("Second") && properties["notes"] == .string("a") && properties["folder"] == .null)
     }
@@ -316,7 +339,10 @@ struct RoutineEditTests {
         let second = try #require(await outbox.parked.first)
         #expect(second.conflict, "the second edit was on version 4, and only the app's own guarded writes move it")
         #expect(second.properties?["notes"] == .string("mine"))
-        guard case let .object(last)? = server.sent.last?.body else { Issue.record("no body"); return }
+        guard case let .object(last)? = server.sent.last?.body else {
+            Issue.record("no body")
+            return
+        }
         #expect(last["ifVersion"] == .number(4))
     }
 
@@ -344,8 +370,14 @@ struct RoutineEditTests {
         let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         let copy = RoutineEditor.duplicate(RoutineEditorFixture.routine, taken: ["day-1"])
         try await outbox.enqueue([OutboxPlan.routineCreated(copy.routine, codec: codec)])
-        guard case .refused = await outbox.flush(api(server)) else { Issue.record("not refused"); return }
-        guard case let .object(body)? = server.sent.first?.body else { Issue.record("no body"); return }
+        guard case .refused = await outbox.flush(api(server)) else {
+            Issue.record("not refused")
+            return
+        }
+        guard case let .object(body)? = server.sent.first?.body else {
+            Issue.record("no body")
+            return
+        }
         #expect(body["ifVersion"] == .number(0))
         let parked = try #require(await outbox.parked.first)
         #expect(!parked.conflict)
@@ -382,11 +414,13 @@ struct RoutineEditTests {
     @Test("a catalogue read lays waiting edits and creates over the server's routines")
     func overlay() throws {
         let (record, _) = try read(try #require(Self.serverRecords().first).json)
-        let merged = RemoteCatalog.overlay([record], waiting: [
-            record.id: (creates: false, properties: ["name": .string("Edited"), "folder": .null]),
-            "new-one": (creates: true, properties: ["name": .string("New"), "slots": .array([])]),
-            "gone": (creates: false, properties: ["name": .string("Nothing to edit")]),
-        ], kind: codec.kinds.routine)
+        let merged = RemoteCatalog.overlay(
+            [record],
+            waiting: [
+                record.id: (creates: false, properties: ["name": .string("Edited"), "folder": .null]),
+                "new-one": (creates: true, properties: ["name": .string("New"), "slots": .array([])]),
+                "gone": (creates: false, properties: ["name": .string("Nothing to edit")]),
+            ], kind: codec.kinds.routine)
         #expect(merged.count == 2)
         #expect(merged[0].properties["name"] == .string("Edited"))
         #expect(merged[0].properties["folder"] == nil)
@@ -396,6 +430,7 @@ struct RoutineEditTests {
 }
 
 enum RoutineEditorFixture {
-    static let routine = Routine(id: "day-1", version: 4, name: "Day 1",
-                                 slots: [RoutineSlot(key: "a", exercise: "a", sets: [PlannedSet(key: "s1", repsMin: 8, repsMax: 12)])])
+    static let routine = Routine(
+        id: "day-1", version: 4, name: "Day 1",
+        slots: [RoutineSlot(key: "a", exercise: "a", sets: [PlannedSet(key: "s1", repsMin: 8, repsMax: 12)])])
 }

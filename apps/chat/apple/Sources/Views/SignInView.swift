@@ -17,8 +17,9 @@ struct SignInView: View {
         ConnectView(manifest: ChatManifest.manifest, address: $address, unrevoked: SessionStore.chat.pendingRevocations()) {
             // The app's own icon, drawn by scripts/icons.mjs like the AppIcon
             // set, light and dark.
-            ConnectHeader(appName: ChatManifest.appName, tagline: "Talk to the agents in your substrate.",
-                          icon: Image("AppMark"))
+            ConnectHeader(
+                appName: ChatManifest.appName, tagline: "Talk to the agents in your substrate.",
+                icon: Image("AppMark"))
         } onSignIn: { probe in
             try await host.signIn(probe)
         } passwordDoor: { probe in
@@ -52,7 +53,7 @@ private struct PasswordDoor: View {
                 TextField("you.example.com", text: $repository)
                     .textContentType(.username)
                     #if os(iOS)
-                    .textInputAutocapitalization(.never)
+                .textInputAutocapitalization(.never)
                     #endif
                     .autocorrectionDisabled()
                     .focused($focus, equals: .repository)
@@ -69,7 +70,7 @@ private struct PasswordDoor: View {
                     TextField("6 digits", text: $code)
                         .textContentType(.oneTimeCode)
                         #if os(iOS)
-                        .keyboardType(.numberPad)
+                    .keyboardType(.numberPad)
                         #endif
                         .focused($focus, equals: .code)
                         .onSubmit(signIn)
@@ -122,8 +123,9 @@ private struct PasswordDoor: View {
         Task {
             defer { busy = false }
             do {
-                try await host.signIn(server: probe.origin, repository: repository.trimmingCharacters(in: .whitespaces),
-                                       password: password, totp: totpRequired ? code : nil)
+                try await host.signIn(
+                    server: probe.origin, repository: repository.trimmingCharacters(in: .whitespaces),
+                    password: password, totp: totpRequired ? code : nil)
                 password = ""
                 code = ""
             } catch {

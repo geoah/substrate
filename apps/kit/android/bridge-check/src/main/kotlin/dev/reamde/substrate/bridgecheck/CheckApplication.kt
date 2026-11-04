@@ -18,11 +18,13 @@ class CheckApplication : Application() {
     }
 
     companion object {
-        @Volatile var start: StartResult? = null
+        @Volatile
+        var start: StartResult? = null
             private set
 
         /** How long `Bridge.start` took, loading the libraries included. */
-        @Volatile var startMillis: Double = 0.0
+        @Volatile
+        var startMillis: Double = 0.0
             private set
     }
 }

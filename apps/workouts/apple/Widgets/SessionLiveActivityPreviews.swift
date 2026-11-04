@@ -136,8 +136,9 @@ extension WorkoutsActivityAttributes.ContentState {
         values: "40 kg × 10",
         next: "Set 2: 40 kg × 10",
         nextRowID: "row-curl-2",
-        countdown: .init(kind: .transition, label: "Go: Seated Leg Curl (Machine)", startedAt: .now.addingTimeInterval(-5),
-                         endsAt: .now.addingTimeInterval(10)),
+        countdown: .init(
+            kind: .transition, label: "Go: Seated Leg Curl (Machine)", startedAt: .now.addingTimeInterval(-5),
+            endsAt: .now.addingTimeInterval(10)),
         setsDone: 11,
         setsPlanned: 24,
         revision: 20

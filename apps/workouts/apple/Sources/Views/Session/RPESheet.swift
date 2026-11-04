@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The RPE sheet (DESIGN.md §7.6): 6 to 10 in half steps on the RIR-based
 /// scale with Hevy's wording, a −0.5 and a +0.5 beside the value, a slider
@@ -156,11 +156,13 @@ struct RPESheet: View {
             }
             .accessibilityLabel("About RPE")
             .popover(isPresented: $showsHelp) {
-                Text("RPE says how hard the set was by the reps left in you: 10, none left; 9, one; 8, two; 7, three; 6, four or more. A half step means maybe one more.")
-                    .font(.footnote)
-                    .padding()
-                    .frame(idealWidth: 300)
-                    .presentationCompactAdaptation(.popover)
+                Text(
+                    "RPE says how hard the set was by the reps left in you: 10, none left; 9, one; 8, two; 7, three; 6, four or more. A half step means maybe one more."
+                )
+                .font(.footnote)
+                .padding()
+                .frame(idealWidth: 300)
+                .presentationCompactAdaptation(.popover)
             }
         }
     }

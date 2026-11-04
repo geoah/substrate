@@ -28,9 +28,10 @@ public struct HistoryRow: Equatable, Sendable, Identifiable {
     public var health: HealthSaveStatus
     public var isDeload: Bool
 
-    public init(id: SessionID, start: Date, title: String, date: String, summary: String, health: HealthSaveStatus,
-                isDeload: Bool)
-    {
+    public init(
+        id: SessionID, start: Date, title: String, date: String, summary: String, health: HealthSaveStatus,
+        isDeload: Bool
+    ) {
         self.id = id
         self.start = start
         self.title = title
@@ -61,9 +62,10 @@ public struct SessionDetailPresentation: Equatable, Sendable, Identifiable {
     public var muscles: String?
     public var notes: String?
 
-    public init(id: SessionID, title: String, when: String, summary: String, sessionRPE: String?, health: HealthSaveStatus,
-                healthText: String?, canRetryHealth: Bool, blocks: [SessionDetailBlock], muscles: String?, notes: String?)
-    {
+    public init(
+        id: SessionID, title: String, when: String, summary: String, sessionRPE: String?, health: HealthSaveStatus,
+        healthText: String?, canRetryHealth: Bool, blocks: [SessionDetailBlock], muscles: String?, notes: String?
+    ) {
         self.id = id
         self.title = title
         self.when = when
@@ -139,19 +141,21 @@ public enum HistoryPresenter {
 
     /// The History list: finished sessions newest first, in month sections.
     /// - Parameter exercises: the catalogue's, for volume (records do not copy them).
-    public static func sections(_ entries: [HistoryEntry], exercises: [ExerciseID: Exercise],
-                                settings: PresenterSettings) -> [HistorySection]
-    {
+    public static func sections(
+        _ entries: [HistoryEntry], exercises: [ExerciseID: Exercise],
+        settings: PresenterSettings
+    ) -> [HistorySection] {
         var sections: [HistorySection] = []
         let sorted = entries.sorted { $0.records.session.at > $1.records.session.at }
         for entry in sorted {
             let session = entry.records.session
             let zone = zone(of: session, settings)
             let month = Format.month(session.at, in: zone)
-            let row = HistoryRow(id: session.id, start: session.at, title: routineTitle(of: session),
-                                 date: Format.dayAndTime(session.at, in: zone),
-                                 summary: summary(entry.records, exercises: exercises, settings: settings),
-                                 health: entry.local.health.status, isDeload: session.deload == true)
+            let row = HistoryRow(
+                id: session.id, start: session.at, title: routineTitle(of: session),
+                date: Format.dayAndTime(session.at, in: zone),
+                summary: summary(entry.records, exercises: exercises, settings: settings),
+                health: entry.local.health.status, isDeload: session.deload == true)
             if sections.last?.title == month {
                 sections[sections.count - 1].rows.append(row)
             } else {
@@ -162,9 +166,10 @@ public enum HistoryPresenter {
     }
 
     /// The session detail.
-    public static func detail(_ entry: HistoryEntry, exercises: [ExerciseID: Exercise],
-                              settings: PresenterSettings) -> SessionDetailPresentation
-    {
+    public static func detail(
+        _ entry: HistoryEntry, exercises: [ExerciseID: Exercise],
+        settings: PresenterSettings
+    ) -> SessionDetailPresentation {
         let records = entry.records
         let session = records.session
         let zone = zone(of: session, settings)
@@ -174,12 +179,13 @@ public enum HistoryPresenter {
             when += " to \(Format.time(end, in: zone)) (\(Format.minutes(seconds)))"
         }
         let health = entry.local.health.status
-        let healthText: String? = switch health {
-        case .saved: "Apple Health: saved"
-        case .pending: "Saving to Apple Health"
-        case .notSaved: "Apple Health: not saved"
-        case .notAvailable: nil
-        }
+        let healthText: String? =
+            switch health {
+            case .saved: "Apple Health: saved"
+            case .pending: "Saving to Apple Health"
+            case .notSaved: "Apple Health: not saved"
+            case .notAvailable: nil
+            }
         let muscles = Counting.setsPerMuscle(records.sets, exercises: exercises)
             .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key.label < $1.key.label }
             .map { "\($0.key.label) \(Format.number($0.value, decimals: 1))" }
@@ -200,17 +206,19 @@ public enum HistoryPresenter {
 
     /// `46 min, 24 sets, 3,120 kg`: the length with pauses left out, the
     /// working sets, and the volume when there is any.
-    public static func summary(_ records: SessionRecords, exercises: [ExerciseID: Exercise],
-                               settings: PresenterSettings) -> String
-    {
+    public static func summary(
+        _ records: SessionRecords, exercises: [ExerciseID: Exercise],
+        settings: PresenterSettings
+    ) -> String {
         let session = records.session
         var parts: [String] = []
         if let end = session.endsAt {
             parts.append(Format.minutes(SessionPresenter.activeSeconds(from: session.at, to: end, pauses: session.pauses)))
         }
         parts.append(Format.count(Counting.workingSets(records.sets), "set"))
-        let volume = Counting.volume(records.sets, exercises: exercises, bodyMass: session.bodyMass, unit: settings.defaultUnit,
-                                     includeWarmups: settings.countWarmupsInVolume)
+        let volume = Counting.volume(
+            records.sets, exercises: exercises, bodyMass: session.bodyMass, unit: settings.defaultUnit,
+            includeWarmups: settings.countWarmupsInVolume)
         if volume.value > 0 { parts.append(Format.volume(volume)) }
         return parts.joined(separator: ", ")
     }
@@ -219,7 +227,8 @@ public enum HistoryPresenter {
     /// (`, Tue 27 Oct 13:30`), else the whole name, else "Training session".
     public static func routineTitle(of session: TrainingSession) -> String {
         guard let name = session.name else { return "Training session" }
-        let zone = session.timezone.flatMap(TimeZone.init(identifier:))
+        let zone =
+            session.timezone.flatMap(TimeZone.init(identifier:))
             ?? TimeZone(secondsFromGMT: (session.utcOffsetStart ?? 0) * 60) ?? .gmt
         let suffix = String(TrainingSession.name(routine: "", start: session.at, timeZone: zone))
         if name.hasSuffix(suffix), name.count > suffix.count { return String(name.dropLast(suffix.count)) }
@@ -248,9 +257,10 @@ public enum HistoryPresenter {
                 groupLabel: label,
                 notes: slot.notes,
                 sets: sets.map { set in
-                    SessionDetailSet(id: set.id, label: labels[set.id] ?? SetLabel(short: "?", spoken: "set"),
-                                     text: text(of: set, measurement: measurement),
-                                     rest: set.restBefore.map { "rest \(Format.duration($0))" }, notes: set.notes)
+                    SessionDetailSet(
+                        id: set.id, label: labels[set.id] ?? SetLabel(short: "?", spoken: "set"),
+                        text: text(of: set, measurement: measurement),
+                        rest: set.restBefore.map { "rest \(Format.duration($0))" }, notes: set.notes)
                 }
             )
         }
@@ -263,11 +273,12 @@ public enum HistoryPresenter {
             placed.insert(key)
             let kind = session.groups.first { $0.key == key }?.groupKind ?? .superset
             let members = slots.filter { $0.group == key }
-            blocks.append(SessionDetailBlock(
-                id: "group-\(key)",
-                title: "\(kind.label) \(key.uppercased())",
-                exercises: members.enumerated().map { exercise($1, label: groupMemberLabel(group: key, position: $0 + 1)) }
-            ))
+            blocks.append(
+                SessionDetailBlock(
+                    id: "group-\(key)",
+                    title: "\(kind.label) \(key.uppercased())",
+                    exercises: members.enumerated().map { exercise($1, label: groupMemberLabel(group: key, position: $0 + 1)) }
+                ))
         }
         return blocks
     }
@@ -275,21 +286,24 @@ public enum HistoryPresenter {
     /// One record as text, by its exercise's measurement, else by what it
     /// holds. Only a rated RPE is shown: a pre-filled or copied one is no rating.
     static func text(of set: PerformedSet, measurement: MeasurementType?) -> String {
-        let values = SetValues(load: set.load, assistance: set.assistance, reps: set.reps, duration: set.duration,
-                               distance: set.distance, rpe: set.ratedRPE)
-        let inferred: MeasurementType = measurement ?? {
-            switch (set.loadMode, set.reps != nil, set.distance != nil) {
-            case (.bodyweight, _, _): .bodyweightreps
-            case (.bodyweightplus, _, _): .weightedbodyweightreps
-            case (.assisted, _, _): .bodyweightassistedreps
-            case (.external, true, _): .weightreps
-            case (.external, false, true): .shortdistanceweight
-            case (.external, false, false): .weightduration
-            case (nil, true, _): .repsonly
-            case (nil, false, true): .distanceduration
-            case (nil, false, false): .duration
-            }
-        }()
+        let values = SetValues(
+            load: set.load, assistance: set.assistance, reps: set.reps, duration: set.duration,
+            distance: set.distance, rpe: set.ratedRPE)
+        let inferred: MeasurementType =
+            measurement
+            ?? {
+                switch (set.loadMode, set.reps != nil, set.distance != nil) {
+                case (.bodyweight, _, _): .bodyweightreps
+                case (.bodyweightplus, _, _): .weightedbodyweightreps
+                case (.assisted, _, _): .bodyweightassistedreps
+                case (.external, true, _): .weightreps
+                case (.external, false, true): .shortdistanceweight
+                case (.external, false, false): .weightduration
+                case (nil, true, _): .repsonly
+                case (nil, false, true): .distanceduration
+                case (nil, false, false): .duration
+                }
+            }()
         return Format.set(values, measurement: inferred, rpe: true)
     }
 

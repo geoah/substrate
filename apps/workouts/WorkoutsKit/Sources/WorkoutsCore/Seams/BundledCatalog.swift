@@ -58,7 +58,10 @@ public final class BundledCatalog: CatalogSource, @unchecked Sendable {
                     // A new exercise's slug avoids taken ids; should one collide
                     // anyway, the bundled exercise, which routines name, wins.
                     guard catalog.exercises[exercise.id] == nil else {
-                        catalog.unreadable.append(UnreadableRecord(source: LocalExercises.fileName, kind: codec.kinds.exercise, id: exercise.id.rawValue, reason: "a bundled exercise has this id"))
+                        catalog.unreadable.append(
+                            UnreadableRecord(
+                                source: LocalExercises.fileName, kind: codec.kinds.exercise, id: exercise.id.rawValue, reason: "a bundled exercise has this id")
+                        )
                         continue
                     }
                     catalog.exercises[exercise.id] = exercise
@@ -92,11 +95,12 @@ public final class BundledCatalog: CatalogSource, @unchecked Sendable {
     @discardableResult
     public func addLocalExercises(_ exercises: [Exercise]) throws -> Catalog {
         guard let localExercises else { throw CatalogError.noLocalStore }
-        try localExercises.add(contentsOf: exercises.map { exercise in
-            var local = exercise
-            local.isLocal = true
-            return local
-        })
+        try localExercises.add(
+            contentsOf: exercises.map { exercise in
+                var local = exercise
+                local.isLocal = true
+                return local
+            })
         let catalog = try loadNow()
         let listeners = lock.withLock { Array(continuations.values) }
         for continuation in listeners {

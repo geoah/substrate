@@ -25,9 +25,10 @@ public struct IssueLine: Bridged, Hashable, Sendable {
     public var more: String?
     public var action: ActionButton<AccessAction>?
 
-    public init(symbol: ScreenSymbol, tone: ScreenTone, title: String, message: String, changes: [ChangeLine] = [], more: String? = nil,
-                action: ActionButton<AccessAction>? = nil)
-    {
+    public init(
+        symbol: ScreenSymbol, tone: ScreenTone, title: String, message: String, changes: [ChangeLine] = [], more: String? = nil,
+        action: ActionButton<AccessAction>? = nil
+    ) {
         self.symbol = symbol
         self.tone = tone
         self.title = title

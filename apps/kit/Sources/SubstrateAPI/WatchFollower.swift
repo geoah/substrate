@@ -1,9 +1,10 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
-import SubstrateDevice
 
 /// What following the watch reports.
 public enum WatchEvent: Equatable, Sendable {
@@ -50,9 +51,10 @@ public struct WatchFollower: Sendable {
     /// How a pause waits; a test replaces it so nothing sleeps.
     public var pause: @Sendable (Duration) async throws -> Void
 
-    public init(client: SubstrateClient, kinds: [String], app: String, pauses: [Duration] = [.seconds(1), .seconds(3), .seconds(8), .seconds(15)],
-                pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) })
-    {
+    public init(
+        client: SubstrateClient, kinds: [String], app: String, pauses: [Duration] = [.seconds(1), .seconds(3), .seconds(8), .seconds(15)],
+        pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    ) {
         self.client = client
         self.kinds = kinds
         self.app = app

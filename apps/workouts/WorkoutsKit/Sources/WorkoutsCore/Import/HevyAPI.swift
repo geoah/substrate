@@ -107,9 +107,10 @@ public enum HevyAPI {
         /// workout's own title and sets.
         public var missingTemplates: [String]
 
-        public init(workouts: [Workout] = [], routines: [Routine] = [], folders: [Folder] = [], templates: [String: Template] = [:],
-                    measurements: [BodyMeasurement] = [], missingTemplates: [String] = [])
-        {
+        public init(
+            workouts: [Workout] = [], routines: [Routine] = [], folders: [Folder] = [], templates: [String: Template] = [:],
+            measurements: [BodyMeasurement] = [], missingTemplates: [String] = []
+        ) {
             self.workouts = workouts
             self.routines = routines
             self.folders = folders

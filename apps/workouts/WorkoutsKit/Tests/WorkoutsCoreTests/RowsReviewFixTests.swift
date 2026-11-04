@@ -1,7 +1,8 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
 import SubstrateCore
+import Testing
+
+@testable import WorkoutsCore
 
 // Fixes from the data and UI review of the Rows layout (2026-10-31): the
 // Table's RPE sheet rates what it confirms, a planned set's unknown fields
@@ -17,8 +18,9 @@ private let kinds = WorkoutsKinds.v1
 /// One press slot whose planned sets aim at RPE 8, with a set rest of 90 s.
 private func pressSession() throws -> EngineScript {
     var script = EngineScript(at: engineEpoch)
-    try script.start(EngineCatalog.routine([EngineCatalog.slot("press", EngineCatalog.press, EngineCatalog.sets(3), setRest: 90)]),
-                     exercises: EngineCatalog.all)
+    try script.start(
+        EngineCatalog.routine([EngineCatalog.slot("press", EngineCatalog.press, EngineCatalog.sets(3), setRest: 90)]),
+        exercises: EngineCatalog.all)
     return script
 }
 
@@ -36,9 +38,10 @@ struct RowsReviewEffortTests {
         let (s1, s2) = try (script.row("press", 0), script.row("press", 1))
 
         // PREVIOUS copied 9.5; Done on the 9.5 the sheet opens on rates it.
-        let previous = PreviousSet(session: "past", date: engineEpoch, record: "p1",
-                                   values: SetValues(load: .kg(35), reps: 13, rpe: 9.5, rpeMethod: .entered),
-                                   text: "35 kg × 13 @ 9.5", deload: false)
+        let previous = PreviousSet(
+            session: "past", date: engineEpoch, record: "p1",
+            values: SetValues(load: .kg(35), reps: 13, rpe: 9.5, rpeMethod: .entered),
+            text: "35 kg × 13 @ 9.5", deload: false)
         try script.send(.editSet(.init(row: s1, values: previous.copy)))
         var row = try #require(try presented(script).row(s1))
         #expect(row.rpeEntry == .value(9.5, .copied))
@@ -110,8 +113,9 @@ struct RowsReviewEffortTests {
         done = SuggestionInputs.doneSets([cr10], exercise: EngineCatalog.press, config: config)
         #expect(done.first?.rpe == nil && done.first?.unratedRPE == nil)
         // An unknown method neither.
-        done = SuggestionInputs.doneSets([try set(["rpe": .string("8"), "rpeMethod": .string("suggested")])],
-                                         exercise: EngineCatalog.press, config: config)
+        done = SuggestionInputs.doneSets(
+            [try set(["rpe": .string("8"), "rpeMethod": .string("suggested")])],
+            exercise: EngineCatalog.press, config: config)
         #expect(done.first?.rpe == nil && done.first?.unratedRPE == nil)
     }
 }
@@ -121,15 +125,24 @@ struct RowsReviewRecordTests {
     @Test("a planned set's unknown fields reach the session's plan snapshot, never set.target")
     func targetKeepsDeclaredFieldsOnly() throws {
         let codec = RecordCodec()
-        let routine = try codec.decodeRoutine(FlatRecord(kind: kinds.routine, id: "r", properties: [
-            "name": .string("R"),
-            "slots": .array([.object([
-                "key": .string("press"), "exercise": .string("\(kinds.exercise)/press"),
-                "sets": .array([.object(["key": .string("s1"), "roleLabel": .string("finisher"), "band": .string("red"),
-                                         "repsMin": .number(8), "repsMax": .number(12), "rpeMin": .string("8"),
-                                         "rpeMax": .string("8")])]),
-            ])]),
-        ]))
+        let routine = try codec.decodeRoutine(
+            FlatRecord(
+                kind: kinds.routine, id: "r",
+                properties: [
+                    "name": .string("R"),
+                    "slots": .array([
+                        .object([
+                            "key": .string("press"), "exercise": .string("\(kinds.exercise)/press"),
+                            "sets": .array([
+                                .object([
+                                    "key": .string("s1"), "roleLabel": .string("finisher"), "band": .string("red"),
+                                    "repsMin": .number(8), "repsMax": .number(12), "rpeMin": .string("8"),
+                                    "rpeMax": .string("8"),
+                                ])
+                            ]),
+                        ])
+                    ]),
+                ]))
         var script = EngineScript(at: engineEpoch)
         try script.start(routine, exercises: EngineCatalog.all)
         let s1 = try script.row("press", 0)
@@ -145,9 +158,11 @@ struct RowsReviewRecordTests {
 
     @Test("a journal from before effort ranges resumes with its targets: a Start event's planned rpe and rir read as ranges of one")
     func legacyJournalStart() throws {
-        let legacy = try JSONDecoder().decode(PlannedSet.self, from: Data(
-            #"{"key": "s1", "role": "working", "structure": "straight", "rpe": 8, "rir": 2}"#.utf8
-        ))
+        let legacy = try JSONDecoder().decode(
+            PlannedSet.self,
+            from: Data(
+                #"{"key": "s1", "role": "working", "structure": "straight", "rpe": 8, "rir": 2}"#.utf8
+            ))
         #expect(legacy.rpeMin == 8 && legacy.rpeMax == 8 && legacy.rirMin == 2 && legacy.rirMax == 2)
         // A range written now wins over nothing; it round-trips as it is.
         let ranged = PlannedSet(key: "s2", rpeMin: 7, rpeMax: 8, extra: ["band": .string("red")])
@@ -180,13 +195,15 @@ struct RowsReviewRecordTests {
     @Test("a timed set's rest is measured to its start when its play ended it, else to the touch")
     func restMethodStart() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("plank", EngineCatalog.plank, (1 ... 3).map { PlannedSet(key: "s\($0)", durationMin: 45) }, setRest: 60),
-        ]), exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot("plank", EngineCatalog.plank, (1 ... 3).map { PlannedSet(key: "s\($0)", durationMin: 45) }, setRest: 60)
+            ]), exercises: EngineCatalog.all)
         let (p1, p2, p3) = try (script.row("plank", 0), script.row("plank", 1), script.row("plank", 2))
         func stop(_ row: RowID, after seconds: Int) throws {
-            try script.send(.stopTimedSet(.init(row: row, recordID: script.setID(), values: SetValues(duration: seconds))),
-                            at: script.now.addingTimeInterval(TimeInterval(seconds)))
+            try script.send(
+                .stopTimedSet(.init(row: row, recordID: script.setID(), values: SetValues(duration: seconds))),
+                at: script.now.addingTimeInterval(TimeInterval(seconds)))
         }
         try script.send(.startTimedSet(row: p1, target: 45), at: engineEpoch.addingTimeInterval(10))
         try stop(p1, after: 45)

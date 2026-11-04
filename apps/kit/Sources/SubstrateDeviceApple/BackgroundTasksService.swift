@@ -51,10 +51,12 @@ public final class BackgroundTasksService: BackgroundWork, @unchecked Sendable {
         let run = BackgroundRun(id: UUID().uuidString, job: job, budget: 30, payload: payload(of: job))
         task.expirationHandler = { [weak self] in
             // A run taken back before anyone listened is never handed over.
-            guard let self, let task = lock.withLock({ () -> BGTask? in
-                held.removeAll { $0.id == run.id }
-                return tasks.removeValue(forKey: run.id)
-            }) else { return }
+            guard let self,
+                let task = lock.withLock({ () -> BGTask? in
+                    held.removeAll { $0.id == run.id }
+                    return tasks.removeValue(forKey: run.id)
+                })
+            else { return }
             task.setTaskCompleted(success: false)
             for continuation in lock.withLock({ Array(expiring.values) }) { continuation.yield(run.id) }
         }

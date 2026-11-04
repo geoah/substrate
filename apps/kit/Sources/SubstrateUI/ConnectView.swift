@@ -51,9 +51,10 @@ public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
     @Binding var text: String
     @FocusState private var focused: Bool
 
-    public init(_ presentation: ConnectPresentation, text: Binding<String>, send: @escaping (ConnectController.Command) -> Void,
-                @ViewBuilder header: () -> Header, @ViewBuilder passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor)
-    {
+    public init(
+        _ presentation: ConnectPresentation, text: Binding<String>, send: @escaping (ConnectController.Command) -> Void,
+        @ViewBuilder header: () -> Header, @ViewBuilder passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor
+    ) {
         self.presentation = presentation
         self.header = header()
         self.passwordDoor = passwordDoor
@@ -76,11 +77,13 @@ public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
                 }
 
                 if let tooOld = presentation.tooOld {
-                    ServerTooOldScreen(tooOld, onTryAgain: { send(.checkAgain) }, onChangeServer: {
-                        send(.changeServer)
-                        text = ""
-                        focused = true
-                    })
+                    ServerTooOldScreen(
+                        tooOld, onTryAgain: { send(.checkAgain) },
+                        onChangeServer: {
+                            send(.changeServer)
+                            text = ""
+                            focused = true
+                        })
                 } else {
                     if presentation.door == .password, let found = presentation.found {
                         passwordDoor(found)
@@ -135,8 +138,8 @@ public struct ConnectScreen<Header: View, PasswordDoor: View>: View {
                 .textFieldStyle(.plain)
                 .textContentType(.URL)
                 #if os(iOS)
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
+            .keyboardType(.URL)
+            .textInputAutocapitalization(.never)
                 #endif
                 .autocorrectionDisabled()
                 .focused($focused)
@@ -194,19 +197,22 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
     let probe: ServerProbe
     @State private var holder = ModelHolder<ConnectController>()
 
-    public init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
-                @ViewBuilder header: () -> Header,
-                onSignIn: @escaping (ServerProbe.Result) async throws -> Void,
-                @ViewBuilder passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor)
-    {
-        self.init(manifest: manifest, address: address, probe: probe, header: header(), onSignIn: onSignIn,
-                  passwordDoor: passwordDoor, hasPasswordDoor: true, unrevoked: unrevoked)
+    public init(
+        manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
+        @ViewBuilder header: () -> Header,
+        onSignIn: @escaping (ServerProbe.Result) async throws -> Void,
+        @ViewBuilder passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor
+    ) {
+        self.init(
+            manifest: manifest, address: address, probe: probe, header: header(), onSignIn: onSignIn,
+            passwordDoor: passwordDoor, hasPasswordDoor: true, unrevoked: unrevoked)
     }
 
-    init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe, header: Header,
-         onSignIn: @escaping (ServerProbe.Result) async throws -> Void,
-         passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor, hasPasswordDoor: Bool, unrevoked: [Session] = [])
-    {
+    init(
+        manifest: AppManifest, address: Binding<String>, probe: ServerProbe, header: Header,
+        onSignIn: @escaping (ServerProbe.Result) async throws -> Void,
+        passwordDoor: @escaping (ServerProbe.Result) -> PasswordDoor, hasPasswordDoor: Bool, unrevoked: [Session] = []
+    ) {
         _address = address
         self.header = header
         self.passwordDoor = passwordDoor
@@ -218,10 +224,11 @@ public struct ConnectView<Header: View, PasswordDoor: View>: View {
         makeController = {
             // The app's sign-in runs on the main actor, where it was written to.
             let signIn = MainActorSignIn(onSignIn)
-            return ConnectController(manifest: manifest, address: initial,
-                                     locator: ServerLocator(probe: probe, resolver: DNSServiceTXTResolver()),
-                                     hasPasswordDoor: hasPasswordDoor, opensBrowser: WebAuthenticator.opensBrowser,
-                                     unrevoked: facts, signIn: { try await signIn.run($0) })
+            return ConnectController(
+                manifest: manifest, address: initial,
+                locator: ServerLocator(probe: probe, resolver: DNSServiceTXTResolver()),
+                hasPasswordDoor: hasPasswordDoor, opensBrowser: WebAuthenticator.opensBrowser,
+                unrevoked: facts, signIn: { try await signIn.run($0) })
         }
     }
 
@@ -252,23 +259,27 @@ final class ModelHolder<Root: Controller> {
 
 public extension ConnectView where PasswordDoor == EmptyView {
     /// A connect screen for an app with no password door.
-    init(manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
-         @ViewBuilder header: () -> Header, onSignIn: @escaping (ServerProbe.Result) async throws -> Void)
-    {
-        self.init(manifest: manifest, address: address, probe: probe, header: header(), onSignIn: onSignIn,
-                  passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, unrevoked: unrevoked)
+    init(
+        manifest: AppManifest, address: Binding<String>, probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
+        @ViewBuilder header: () -> Header, onSignIn: @escaping (ServerProbe.Result) async throws -> Void
+    ) {
+        self.init(
+            manifest: manifest, address: address, probe: probe, header: header(), onSignIn: onSignIn,
+            passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, unrevoked: unrevoked)
     }
 }
 
 public extension ConnectView where Header == ConnectHeader, PasswordDoor == EmptyView {
     /// A connect screen headed by the app's name and what it is for.
-    init(manifest: AppManifest, tagline: String? = nil, icon: Image? = nil, address: Binding<String>,
-         probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
-         onSignIn: @escaping (ServerProbe.Result) async throws -> Void)
-    {
-        self.init(manifest: manifest, address: address, probe: probe,
-                  header: ConnectHeader(appName: manifest.appName, tagline: tagline, icon: icon),
-                  onSignIn: onSignIn, passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, unrevoked: unrevoked)
+    init(
+        manifest: AppManifest, tagline: String? = nil, icon: Image? = nil, address: Binding<String>,
+        probe: ServerProbe = ServerProbe(), unrevoked: [Session] = [],
+        onSignIn: @escaping (ServerProbe.Result) async throws -> Void
+    ) {
+        self.init(
+            manifest: manifest, address: address, probe: probe,
+            header: ConnectHeader(appName: manifest.appName, tagline: tagline, icon: icon),
+            onSignIn: onSignIn, passwordDoor: { _ in EmptyView() }, hasPasswordDoor: false, unrevoked: unrevoked)
     }
 }
 

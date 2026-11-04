@@ -14,9 +14,10 @@ public struct LinkPresentation<App: Codable & Equatable & Sendable>: Bridged, Eq
     public var signOutProblem: ProblemPresentation?
     public var app: App?
 
-    public init(snapshot: LinkSnapshot, repository: RepositoryPresentation?, banner: AccessBanner?, ended: AccessEndedPresentation?,
-                status: StatusPresentation, signOutProblem: ProblemPresentation?, app: App?)
-    {
+    public init(
+        snapshot: LinkSnapshot, repository: RepositoryPresentation?, banner: AccessBanner?, ended: AccessEndedPresentation?,
+        status: StatusPresentation, signOutProblem: ProblemPresentation?, app: App?
+    ) {
         self.snapshot = snapshot
         self.repository = repository
         self.banner = banner

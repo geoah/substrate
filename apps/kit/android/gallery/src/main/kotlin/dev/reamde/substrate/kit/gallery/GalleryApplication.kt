@@ -15,7 +15,8 @@ class GalleryApplication : Application() {
     }
 
     companion object {
-        @Volatile var start: StartResult? = null
+        @Volatile
+        var start: StartResult? = null
             private set
     }
 }

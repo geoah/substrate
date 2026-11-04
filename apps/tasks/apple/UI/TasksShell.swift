@@ -44,4 +44,3 @@ extension AppShell where App == TasksApp {
         model.send(command, to: Link.appPath + [editor])
     }
 }
-

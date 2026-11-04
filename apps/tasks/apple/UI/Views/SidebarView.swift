@@ -57,7 +57,9 @@ struct SidebarView: View {
                 .padding(.horizontal)
         }
         .safeAreaInset(edge: .bottom) {
-            Button { naming = ListNaming(id: nil, name: "") } label: {
+            Button {
+                naming = ListNaming(id: nil, name: "")
+            } label: {
                 Label(sidebar.newList, systemImage: "plus.circle.fill")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -69,18 +71,20 @@ struct SidebarView: View {
     }
 
     private var selection: Binding<Item?> {
-        Binding(get: {
-            if menu?.selected == TasksMenu.settings { return .settings }
-            return sidebar.selected.map(Item.list)
-        }, set: { item in
-            switch item {
-            case .settings?: shell.send(.select(section: TasksMenu.settings))
-            case let .list(selection)?:
-                shell.send(.select(section: selection == .today ? TasksMenu.today : TasksMenu.lists))
-                select(selection)
-            case nil: break
-            }
-        })
+        Binding(
+            get: {
+                if menu?.selected == TasksMenu.settings { return .settings }
+                return sidebar.selected.map(Item.list)
+            },
+            set: { item in
+                switch item {
+                case .settings?: shell.send(.select(section: TasksMenu.settings))
+                case let .list(selection)?:
+                    shell.send(.select(section: selection == .today ? TasksMenu.today : TasksMenu.lists))
+                    select(selection)
+                case nil: break
+                }
+            })
     }
 
     @ViewBuilder
@@ -89,7 +93,9 @@ struct SidebarView: View {
             .badge(row.open)
             .accessibilityValue(row.openWords)
         if menu == nil {
-            Button { select(row.selection) } label: {
+            Button {
+                select(row.selection)
+            } label: {
                 HStack {
                     label.foregroundStyle(Color.primary)
                     Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)

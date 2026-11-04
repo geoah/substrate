@@ -155,9 +155,10 @@ public enum ScopeWords {
     /// The sentence for one scope. `kinds` are the kinds it reaches today,
     /// where the caller knows them; without them a pattern reads by its
     /// shape. `agents` are the names of the agents an agent scope matches.
-    public static func sentence(_ scope: String, kinds: [ScopeKind] = [], agents: [String] = [],
-                                functions: [String] = [], packageName: String? = nil) -> String
-    {
+    public static func sentence(
+        _ scope: String, kinds: [ScopeKind] = [], agents: [String] = [],
+        functions: [String] = [], packageName: String? = nil
+    ) -> String {
         let (verb, pattern) = split(scope)
         let glob = Grants.isGlob(pattern)
         let shape = Shape(pattern)
@@ -182,7 +183,8 @@ public enum ScopeWords {
                 + "and rename or stop any of those chats"
         case "decide":
             let later = glob ? ", including agents added later" : ""
-            return "Apply or dismiss the changes \(agentsPhrase(shape, pattern, agents)) \(glob ? "suggest" : "suggests")\(later), and edit one before applying it, as you"
+            return
+                "Apply or dismiss the changes \(agentsPhrase(shape, pattern, agents)) \(glob ? "suggest" : "suggests")\(later), and edit one before applying it, as you"
         case "webhook":
             return webhookSentence(trigger: pattern, packageName: packageName)
         case full:
@@ -196,7 +198,8 @@ public enum ScopeWords {
     public static let full = "full"
 
     /// What `full` lets an app do, as the approval page says it.
-    public static let fullSentence = "Do everything you can do when you sign in: see, add, change and delete any record, "
+    public static let fullSentence =
+        "Do everything you can do when you sign in: see, add, change and delete any record, "
         + "change your kinds, settings and agents, run your functions, and make or revoke tokens, including this one"
 
     /// What a `webhook:` scope lets the app do: deliver with its own token,
@@ -239,7 +242,9 @@ public enum ScopeWords {
                 self = parts.count > 1 && !parts[1].isEmpty ? .package(authority: parts[0], package: parts[1]) : .authority(parts.first ?? "")
             } else {
                 let parts = pattern.split(separator: "/", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
-                self = parts.count == 3 ? .exact(authority: parts[0], package: parts[1], name: parts[2])
+                self =
+                    parts.count == 3
+                    ? .exact(authority: parts[0], package: parts[1], name: parts[2])
                     : .exact(authority: "", package: "", name: pattern)
             }
         }
@@ -280,7 +285,9 @@ public enum ScopeWords {
             guard !named.isEmpty else { continue }
             phrases.append(packagePhrase(group.package, named.map { ($0.plural ?? kindDisplayPlural($0.identity)).lowercasedFirst }))
         }
-        let list = phrases.count <= 1 ? (phrases.first ?? "")
+        let list =
+            phrases.count <= 1
+            ? (phrases.first ?? "")
             : phrases.dropLast().joined(separator: ", ") + ", and " + phrases.last!
         guard more > 0 else { return list }
         return "\(list), and \(more) more \(more == 1 ? "kind" : "kinds")"
@@ -293,7 +300,8 @@ public enum ScopeWords {
         case .authority(let authority): "records from \(authority)"
         case .package(_, let package): "\(packageDisplayName(package)) records"
         case .exact(let authority, let package, let name):
-            package.isEmpty ? kindDisplayPlural(name).lowercasedFirst
+            package.isEmpty
+                ? kindDisplayPlural(name).lowercasedFirst
                 : packagePhrase(package, [kindDisplayPlural("\(authority)/\(package)/\(name)").lowercasedFirst])
         }
     }

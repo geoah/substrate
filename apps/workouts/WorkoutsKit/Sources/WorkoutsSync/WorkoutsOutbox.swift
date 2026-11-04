@@ -23,15 +23,18 @@ public extension Outbox {
     /// exchange derives them again from the history and the tombstones, the
     /// one path that writes a session the package lacks whole and leaves one
     /// it holds alone. A purge stays, since the server takes one of nothing.
-    static let workoutsUpgrade = OutboxUpgrade(respell: LegacyKinds.respell, respellProperties: LegacyKinds.respell,
-                                               rederives: { $0.session != nil && $0.method != .purge })
+    static let workoutsUpgrade = OutboxUpgrade(
+        respell: LegacyKinds.respell, respellProperties: LegacyKinds.respell,
+        rederives: { $0.session != nil && $0.method != .purge })
 
     /// The account folder's outbox.
-    static func workouts(directory: URL, writingOptions: Data.WritingOptions = WorkoutsFiles.protectedWriting,
-                         now: Date = Date()) throws -> Outbox
-    {
-        Outbox(folder: try RepositoryFolder(adopting: directory, writingOptions: writingOptions), name: fileName, area: .root, now: now,
-               upgrade: workoutsUpgrade)
+    static func workouts(
+        directory: URL, writingOptions: Data.WritingOptions = WorkoutsFiles.protectedWriting,
+        now: Date = Date()
+    ) throws -> Outbox {
+        Outbox(
+            folder: try RepositoryFolder(adopting: directory, writingOptions: writingOptions), name: fileName, area: .root, now: now,
+            upgrade: workoutsUpgrade)
     }
 
     /// The file that was there at open and could not be read, set aside, as
@@ -95,11 +98,13 @@ public extension Outbox {
 
 public extension OutboxEntry {
     /// An entry with Workouts' word for its batch, the session.
-    init(method: Method, kind: String, recordID: String, properties: JSONObject? = nil, guarded: Bool = false, session: String?,
-         baseVersion: Int? = nil)
-    {
-        self.init(method: method, kind: kind, recordID: recordID, properties: properties, guarded: guarded, batch: session,
-                  baseVersion: baseVersion)
+    init(
+        method: Method, kind: String, recordID: String, properties: JSONObject? = nil, guarded: Bool = false, session: String?,
+        baseVersion: Int? = nil
+    ) {
+        self.init(
+            method: method, kind: kind, recordID: recordID, properties: properties, guarded: guarded, batch: session,
+            baseVersion: baseVersion)
     }
 
     /// The session the entry belongs to: its batch.

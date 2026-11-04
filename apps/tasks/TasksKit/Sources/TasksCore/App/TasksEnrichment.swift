@@ -30,8 +30,9 @@ public extension TasksApp {
             guard !name.isEmpty else { return [] }
             let selection = state.selection ?? .inbox
             let list = selection.listID
-            let task = TaskItem(id: writes.newID(), name: name, list: list, position: Position.between(model.lastPosition(inList: list), nil),
-                                due: selection == .today ? .day(today) : nil)
+            let task = TaskItem(
+                id: writes.newID(), name: name, list: list, position: Position.between(model.lastPosition(inList: list), nil),
+                due: selection == .today ? .day(today) : nil)
             return [wrote(writes.create(task))]
         case .newTask:
             let selection = state.selection ?? .inbox
@@ -85,8 +86,9 @@ public extension TasksApp {
         case let .createList(name):
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return [] }
-            let list = TaskList(id: writes.newID(), name: name,
-                                position: Position.between(model.lists.values.compactMap(\.position).max(), nil))
+            let list = TaskList(
+                id: writes.newID(), name: name,
+                position: Position.between(model.lists.values.compactMap(\.position).max(), nil))
             return [wrote(writes.create(list)), .shown(.list(list.id))]
         case let .renameList(id, name):
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)

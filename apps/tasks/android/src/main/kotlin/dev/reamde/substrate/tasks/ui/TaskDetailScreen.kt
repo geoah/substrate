@@ -3,10 +3,10 @@ package dev.reamde.substrate.tasks.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -54,20 +54,21 @@ import dev.reamde.substrate.tasks.bridge.TaskStatus
 import dev.reamde.substrate.tasks.bridge.TasksApp
 
 /**
- * The open task: its name, then each fact once under the label the editor
- * gives it, the list and the priority as the choices that change them where
- * they stand, then what can be done to it. Edit is the top bar's.
+ * The open task: its name, then each fact once under the label the editor gives it, the list and the priority as the choices that change them where they stand,
+ * then what can be done to it. Edit is the top bar's.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TaskDetailScreen(detail: TaskDetailPresentation, actions: TasksActions, onBack: (() -> Unit)?) {
-    Scaffold(topBar = {
-        TopAppBar(
-            title = {},
-            navigationIcon = { onBack?.let { IconButton(onClick = it) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") } } },
-            actions = { TextButton(onClick = { actions.send(TasksApp.Command.Edit(detail.id)) }) { Text(detail.edit) } },
-        )
-    }) { padding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {},
+                navigationIcon = { onBack?.let { IconButton(onClick = it) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") } } },
+                actions = { TextButton(onClick = { actions.send(TasksApp.Command.Edit(detail.id)) }) { Text(detail.edit) } },
+            )
+        }
+    ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             Text(
                 detail.title,
@@ -100,13 +101,20 @@ private fun FactRow(field: DetailField, choose: (String) -> Unit) {
         choice != null -> {
             var open by remember { mutableStateOf(false) }
             Box {
-                KitRow(field.label, onClick = { open = true }, trailing = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(choice.options.firstOrNull { it.id == choice.selected }?.title ?: field.value, style = KitText.body.style,
-                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                })
+                KitRow(
+                    field.label,
+                    onClick = { open = true },
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                choice.options.firstOrNull { it.id == choice.selected }?.title ?: field.value,
+                                style = KitText.body.style,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    },
+                )
                 DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.align(Alignment.TopEnd)) {
                     for (option in choice.options) {
                         DropdownMenuItem(
@@ -121,8 +129,13 @@ private fun FactRow(field: DetailField, choose: (String) -> Unit) {
                 }
             }
         }
-        field.url != null -> FactLine(field.label, field.value, MaterialTheme.colorScheme.primary,
-                                      Modifier.clickable { runCatching { uri.openUri(field.url!!) } })
+        field.url != null ->
+            FactLine(
+                field.label,
+                field.value,
+                MaterialTheme.colorScheme.primary,
+                Modifier.clickable { runCatching { uri.openUri(field.url!!) } },
+            )
         field.tone != null -> FactLine(field.label, field.value, TasksMarks.color(field.tone!!))
         else -> KitValueRow(field.label, field.value, stacked = field.field == TaskField.notes)
     }
@@ -131,8 +144,11 @@ private fun FactRow(field: DetailField, choose: (String) -> Unit) {
 /** A label and a value that may run long: the label keeps its words whole, and the value wraps beside it. */
 @Composable
 private fun FactLine(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().kitRowPadding().padding(vertical = KitSpacing.small), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(KitSpacing.content)) {
+    Row(
+        modifier.fillMaxWidth().kitRowPadding().padding(vertical = KitSpacing.small),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(KitSpacing.content),
+    ) {
         Text(label, style = KitText.body.style, softWrap = false)
         Text(value, style = KitText.body.style, color = color, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
     }
@@ -162,6 +178,6 @@ private fun perform(task: String, action: TaskAction, actions: TasksActions) {
             TaskAction.Reopen -> TasksApp.Command.Reopen(task)
             TaskAction.Abandon -> TasksApp.Command.Abandon(task)
             TaskAction.Delete -> TasksApp.Command.DeleteTask(task)
-        },
+        }
     )
 }

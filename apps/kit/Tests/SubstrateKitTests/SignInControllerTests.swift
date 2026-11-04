@@ -15,17 +15,20 @@ struct SignInControllerTests {
         func txt(_ name: String) async throws -> TXTAnswer { .failed("no lookups here") }
     }
 
-    let controller = SignInController(ConnectController(
-        manifest: AppManifest(appName: "Test", clientID: "http://127.0.0.1/test", scopes: []),
-        locator: ServerLocator(probe: ServerProbe(), resolver: NoLookups()), opensBrowser: true
-    ) { _ in })
+    let controller = SignInController(
+        ConnectController(
+            manifest: AppManifest(appName: "Test", clientID: "http://127.0.0.1/test", scopes: []),
+            locator: ServerLocator(probe: ServerProbe(), resolver: NoLookups()), opensBrowser: true
+        ) { _ in })
 
     let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     func enrichment(_ state: SignInController.State) -> Enrichment<SignInController> {
-        Enrichment(state: state, transient: NoTransient(), presentation: nil, now: now, link: nil,
-                   environment: AppEnvironment(locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!,
-                                               devices: DeviceServices(transport: URLSessionTransport.shared)))
+        Enrichment(
+            state: state, transient: NoTransient(), presentation: nil, now: now, link: nil,
+            environment: AppEnvironment(
+                locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!,
+                devices: DeviceServices(transport: URLSessionTransport.shared)))
     }
 
     func present(_ state: SignInController.State) -> SignInPresentation {

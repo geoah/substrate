@@ -8,11 +8,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 /**
- * A presentation that crossed without its keyed lists' rows (Swift's
- * `KeyedListReference`, `{"$list": name, "revision": n}` where the list
- * stood), put back together from the lists the handle holds, so the
- * generated serializers decode the tree Swift presented: a `KeyedList` as
- * `{"revision": n, "rows": [...]}`.
+ * A presentation that crossed without its keyed lists' rows (Swift's `KeyedListReference`, `{"$list": name, "revision": n}` where the list stood), put back
+ * together from the lists the handle holds, so the generated serializers decode the tree Swift presented: a `KeyedList` as `{"revision": n, "rows": [...]}`.
  */
 public object KeyedListTree {
     private const val LIST = "\$list"
@@ -23,8 +20,7 @@ public object KeyedListTree {
 
     private fun collect(element: JsonElement, into: MutableMap<String, Long>) {
         when (element) {
-            is JsonObject -> reference(element)?.let { (name, revision) -> into[name] = revision }
-                ?: element.values.forEach { collect(it, into) }
+            is JsonObject -> reference(element)?.let { (name, revision) -> into[name] = revision } ?: element.values.forEach { collect(it, into) }
             is JsonArray -> element.forEach { collect(it, into) }
             else -> Unit
         }
@@ -38,10 +34,8 @@ public object KeyedListTree {
     }
 
     /**
-     * The tree with each reference replaced by its list's rows, or null
-     * while a list it names is missing or at another revision: a frame's
-     * lists come before its tree, so they agree once the tree arrives, and
-     * a delta that arrived since belongs to the next tree.
+     * The tree with each reference replaced by its list's rows, or null while a list it names is missing or at another revision: a frame's lists come before
+     * its tree, so they agree once the tree arrives, and a delta that arrived since belongs to the next tree.
      */
     public fun resolve(tree: JsonElement, lists: Map<String, List<ListRow>>, revisions: Map<String, Long>): JsonElement? {
         for ((name, revision) in references(tree)) {
@@ -50,11 +44,13 @@ public object KeyedListTree {
         return put(tree, lists)
     }
 
-    private fun put(element: JsonElement, lists: Map<String, List<ListRow>>): JsonElement = when (element) {
-        is JsonObject -> reference(element)?.let { (name, revision) ->
-            JsonObject(mapOf(REVISION to JsonPrimitive(revision), "rows" to JsonArray(lists.getValue(name).map { it.value })))
-        } ?: JsonObject(element.mapValues { put(it.value, lists) })
-        is JsonArray -> JsonArray(element.map { put(it, lists) })
-        else -> element
-    }
+    private fun put(element: JsonElement, lists: Map<String, List<ListRow>>): JsonElement =
+        when (element) {
+            is JsonObject ->
+                reference(element)?.let { (name, revision) ->
+                    JsonObject(mapOf(REVISION to JsonPrimitive(revision), "rows" to JsonArray(lists.getValue(name).map { it.value })))
+                } ?: JsonObject(element.mapValues { put(it.value, lists) })
+            is JsonArray -> JsonArray(element.map { put(it, lists) })
+            else -> element
+        }
 }

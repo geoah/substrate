@@ -1,7 +1,8 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
 import SubstrateCore
+import Testing
+
+@testable import WorkoutsCore
 
 /// Every example session (the three of sessions.json and the three of
 /// coverage.json, one of them in progress) with its sets.
@@ -269,7 +270,9 @@ struct LocalExercisesTests {
         defer { directory.remove() }
         let store = LocalExercises(directory: directory.url, writingOptions: .atomic)
         #expect(try store.load().exercises.isEmpty)
-        var exercise = Exercise(id: ExerciseID.slug(for: "Hack Squat (Machine)"), name: "Hack Squat (Machine)", measurement: .weightreps, equipment: .plateloaded, restClass: .heavycompound)
+        var exercise = Exercise(
+            id: ExerciseID.slug(for: "Hack Squat (Machine)"), name: "Hack Squat (Machine)", measurement: .weightreps, equipment: .plateloaded,
+            restClass: .heavycompound)
         try store.add(exercise)
         try store.add(Exercise(id: "sled-push", name: "Sled Push", measurement: .shortdistanceweight, equipment: .other))
         exercise.laterality = .bilateral

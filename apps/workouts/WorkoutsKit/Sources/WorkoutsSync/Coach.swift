@@ -1,9 +1,9 @@
 import Foundation
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
 import WorkoutsCore
-import SubstrateCore
 
 /// The workout coach (docs/plans/workouts-coach.md): an AI agent shipped in
 /// `substrate.reamde.dev/trainingcoach`, a published package the app's
@@ -46,7 +46,8 @@ public struct ClosureReach: Sendable, Hashable {
         var writes: Set<String> = []
         for document in documents {
             guard case let .object(object) = document, case let .string(kind)? = object["kind"],
-                  case let .object(data)? = object["data"] else { continue }
+                case let .object(data)? = object["data"]
+            else { continue }
             switch kind {
             case functionKind, Coach.agentKind:
                 guard case let .object(permissions)? = data["permissions"] else { continue }
@@ -54,7 +55,8 @@ public struct ClosureReach: Sendable, Hashable {
                 writes.formUnion(references(permissions["writes"]))
             case triggerKind:
                 guard case let .object(properties)? = data["properties"], case let .object(source)? = properties["source"],
-                      case let .object(record)? = source["record"] else { continue }
+                    case let .object(record)? = source["record"]
+                else { continue }
                 reads.formUnion(references(record["kinds"]))
             case mappingKind:
                 reads.formUnion(references(data["from"]))

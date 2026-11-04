@@ -1,9 +1,10 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
-import SubstrateDevice
 
 /// A password sign-in's answer: the token record minted, its secret, and
 /// the repository's authority.

@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import TasksCore
 
 /// A list's open rows' titles, as drawn.

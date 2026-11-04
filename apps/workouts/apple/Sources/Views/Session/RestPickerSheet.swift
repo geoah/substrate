@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The rest presets (DESIGN.md §7.6): Off, 0:30 to 3:00, the default, and
 /// "Custom…", which opens the wheel. The current value carries a check.

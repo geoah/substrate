@@ -25,8 +25,9 @@ public enum Counting {
     /// The volume load of the session so far, in the default unit, rounded
     /// to a whole unit.
     public static func volume(_ state: SessionState) -> Mass {
-        volume(SessionEngine.setRecords(state), exercises: state.exercises, bodyMass: state.session.bodyMass,
-               unit: state.settings.defaultUnit, includeWarmups: state.settings.countWarmupsInVolume)
+        volume(
+            SessionEngine.setRecords(state), exercises: state.exercises, bodyMass: state.session.bodyMass,
+            unit: state.settings.defaultUnit, includeWarmups: state.settings.countWarmupsInVolume)
     }
 
     /// The volume load of `sets`: for each set with reps and an effective
@@ -37,14 +38,15 @@ public enum Counting {
     /// own copy (`loadBasis`, `implements`, `laterality`, `bodyShare`), so an
     /// exercise edited later reinterprets nothing; a set written before those
     /// fields existed reads the exercise's.
-    public static func volume(_ sets: [PerformedSet], exercises: [ExerciseID: Exercise], bodyMass: Mass?, unit: MassUnit,
-                              includeWarmups: Bool) -> Mass
-    {
+    public static func volume(
+        _ sets: [PerformedSet], exercises: [ExerciseID: Exercise], bodyMass: Mass?, unit: MassUnit,
+        includeWarmups: Bool
+    ) -> Mass {
         var total = Decimal(0)
         for set in sets where includeWarmups || set.role == .working {
             let exercise = exercises[set.exercise]
             guard let reps = set.reps, exercise != nil || set.loadMode != nil,
-                  let load = effectiveLoad(set, exercise: exercise, bodyMass: bodyMass, unit: unit)
+                let load = effectiveLoad(set, exercise: exercise, bodyMass: bodyMass, unit: unit)
             else { continue }
             var multiplier = Decimal(1)
             switch set.resolvedLoadBasis(exercise) {

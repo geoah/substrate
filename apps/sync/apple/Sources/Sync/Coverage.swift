@@ -180,7 +180,11 @@ actor HealthScan {
         let task = Task { try await self.scan(since: since, store: store, calendar: calendar) }
         running = task
         defer { running = nil }
-        return try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     /// Drops a day the sync read and found empty: data deleted from Health
@@ -266,14 +270,18 @@ actor HealthScan {
         guard range.lowerBound < end else { return [] }
         let predicate = HKQuery.predicateForSamples(withStart: range.lowerBound, end: end, options: .strictStartDate)
         var days: Set<String> = []
-        for (id, options) in [(HKQuantityTypeIdentifier.stepCount, HKStatisticsOptions.cumulativeSum),
-                              (.heartRate, .discreteAverage)] {
-            guard let collection = try await noDataIsEmpty({
-                try await HKStatisticsCollectionQueryDescriptor(
-                    predicate: .quantitySample(type: HKQuantityType(id), predicate: predicate),
-                    options: options, anchorDate: range.lowerBound, intervalComponents: DateComponents(day: 1)
-                ).result(for: store)
-            }) else { continue }
+        for (id, options) in [
+            (HKQuantityTypeIdentifier.stepCount, HKStatisticsOptions.cumulativeSum),
+            (.heartRate, .discreteAverage),
+        ] {
+            guard
+                let collection = try await noDataIsEmpty({
+                    try await HKStatisticsCollectionQueryDescriptor(
+                        predicate: .quantitySample(type: HKQuantityType(id), predicate: predicate),
+                        options: options, anchorDate: range.lowerBound, intervalComponents: DateComponents(day: 1)
+                    ).result(for: store)
+                })
+            else { continue }
             collection.enumerateStatistics(from: range.lowerBound, to: end) { s, _ in
                 if s.sumQuantity() != nil || s.averageQuantity() != nil {
                     days.insert(Formats.day(s.startDate, in: calendar.timeZone))
@@ -281,12 +289,13 @@ actor HealthScan {
             }
             try Task.checkCancellation()
         }
-        let sleep = try await noDataIsEmpty {
-            try await HKSampleQueryDescriptor(
-                predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: predicate)],
-                sortDescriptors: []
-            ).result(for: store)
-        } ?? []
+        let sleep =
+            try await noDataIsEmpty {
+                try await HKSampleQueryDescriptor(
+                    predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: predicate)],
+                    sortDescriptors: []
+                ).result(for: store)
+            } ?? []
         for s in sleep { days.insert(Formats.day(s.startDate, in: calendar.timeZone)) }
         return days
     }

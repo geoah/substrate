@@ -1,9 +1,10 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
-import SubstrateDevice
 
 /// One row of a webhook trigger's parked list: a delivery its function
 /// refused, kept with its reason, or one accepted and not settled yet,
@@ -59,11 +60,13 @@ public extension SubstrateClient {
     /// flight across every sender, before it reads one, so a busy door is
     /// waited out and the delivery sent again.
     @discardableResult
-    func deliver(authority: String, trigger: String, body: Data, contentType: String = "application/json",
-                 headers: [String: String] = [:], credential: String? = nil, retries: Int = 8) async throws -> String
-    {
-        var req = try request("POST", "webhooks/\(segment(authority))/\(segment(trigger))",
-                              body: .bytes(body, contentType: contentType), timeout: Timeout.upload)
+    func deliver(
+        authority: String, trigger: String, body: Data, contentType: String = "application/json",
+        headers: [String: String] = [:], credential: String? = nil, retries: Int = 8
+    ) async throws -> String {
+        var req = try request(
+            "POST", "webhooks/\(segment(authority))/\(segment(trigger))",
+            body: .bytes(body, contentType: contentType), timeout: Timeout.upload)
         for (name, value) in headers { req.setValue(value, forHTTPHeaderField: name) }
         if let credential { req.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization") }
         let response = try await send(req, retries: retries, longestWait: 30)
@@ -76,7 +79,9 @@ public extension SubstrateClient {
     /// `webhook:<trigger>`.
     func parked(trigger: String, timeout: TimeInterval = Timeout.read) async throws -> [ParkedDelivery] {
         struct Page: Decodable { let items: [ParkedDelivery] }
-        return try await send("GET", "api/v1/substrate.reamde.dev/core/trigger/\(segment(trigger))/parked", timeout: timeout,
-                              retries: 0).decode(Page.self).items
+        return try await send(
+            "GET", "api/v1/substrate.reamde.dev/core/trigger/\(segment(trigger))/parked", timeout: timeout,
+            retries: 0
+        ).decode(Page.self).items
     }
 }

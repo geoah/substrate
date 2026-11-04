@@ -133,8 +133,9 @@ final class HandleOutbox: @unchecked Sendable {
                         text = try BridgeCodec.encode(op: .presentation, handle: handle, body: value)
                     }
                 } catch {
-                    text = BridgeCodec.failure(BridgeFailure(.swiftFailure, "a presentation did not encode: \(BridgeCodec.describe(error))"),
-                                               handle: handle)
+                    text = BridgeCodec.failure(
+                        BridgeFailure(.swiftFailure, "a presentation did not encode: \(BridgeCodec.describe(error))"),
+                        handle: handle)
                 }
                 if let failure = send(text) { report(failure, nil) }
             }

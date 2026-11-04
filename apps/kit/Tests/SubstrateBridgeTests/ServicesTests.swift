@@ -1,17 +1,20 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
-@testable import SubstrateBridge
 import SubstrateCore
 import SubstrateDevice
 import Testing
 
+@testable import SubstrateBridge
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 @Suite("The device services' Swift halves, and what is recorded of them", .timeLimit(.minutes(2)))
 struct ServicesTests {
     @Test func aTransportOrSecureStoreMessageIsRecordedWithoutItsBody() throws {
-        let bearer = TransportRequest(url: "https://example.com", method: "GET",
-                                      headers: [TransportHeader(name: "Authorization", value: "Bearer s3cret")], timeoutMillis: 1)
+        let bearer = TransportRequest(
+            url: "https://example.com", method: "GET",
+            headers: [TransportHeader(name: "Authorization", value: "Bearer s3cret")], timeoutMillis: 1)
         let request = try BridgeCodec.encode(op: .request, id: 1, body: DeviceRequest.transportFetch(request: bearer))
         #expect(!Redaction.redact(request, call: .unknown).contains("s3cret"))
         let stored = try BridgeCodec.encode(op: .request, id: 2, body: DeviceRequest.secureWrite(store: "s", account: "a", value: "dG9rZW4="))
@@ -117,7 +120,7 @@ struct ServicesTests {
         let uploading = Task { try await transport.data(for: uploadRequest).1.statusCode }
         let spilled = try await outlet.next(after: count) { $0.op == .request }
         guard case let .transportFetch(spilledWire) = try BridgeCodec.decode(DeviceRequest.self, from: spilled.body),
-              let file = spilledWire.bodyFile
+            let file = spilledWire.bodyFile
         else {
             Issue.record("the body did not spill")
             return
@@ -130,8 +133,10 @@ struct ServicesTests {
         // A reply Swift took whose body does not read still has its file deleted.
         let response = folder.appendingPathComponent("response-x")
         try Data("x".utf8).write(to: response)
-        let readable = TransportOutcome.response(response: TransportResponse(status: 200, url: "https://example.com/a", headers: [],
-                                                                             bodyFile: response.path))
+        let readable = TransportOutcome.response(
+            response: TransportResponse(
+                status: 200, url: "https://example.com/a", headers: [],
+                bodyFile: response.path))
         #expect(try BridgeCodec.value(readable)["response"]?["response"]?["bodyFile"] == .string(response.path))
         let unreadable: JSONValue = ["response": ["response": ["bodyFile": .string(response.path), "status": "not a number"]]]
         #expect(throws: BridgeFailure.self) { try BridgeTransport.answer(unreadable, for: upload) }
@@ -143,8 +148,10 @@ struct ServicesTests {
         let connectivity = BridgeConnectivity(channel: try #require(runtime.device))
         let paths = connectivity.paths(capacity: 2)
         let request = try await outlet.next { $0.op == .request }
-        let sent = [NetworkPath(online: true, expensive: false), NetworkPath(online: false, expensive: false),
-                    NetworkPath(online: true, expensive: true), NetworkPath(online: false, expensive: true)]
+        let sent = [
+            NetworkPath(online: true, expensive: false), NetworkPath(online: false, expensive: false),
+            NetworkPath(online: true, expensive: true), NetworkPath(online: false, expensive: true),
+        ]
         for (seq, path) in sent.enumerated() {
             _ = try post(runtime, Envelope(op: .chunk, id: request.id, seq: seq, body: try BridgeCodec.value(path)))
         }
@@ -170,8 +177,10 @@ struct ServicesTests {
             return (stream.head.statusCode, lines)
         }
         let request = try await outlet.next { $0.op == .request }
-        let chunks: [TransportChunk] = [.head(response: TransportResponse(status: 200, url: "https://example.com/watch", headers: [])),
-                                        .line(text: #"{"n":1}"#), .line(text: #"{"n":2}"#)]
+        let chunks: [TransportChunk] = [
+            .head(response: TransportResponse(status: 200, url: "https://example.com/watch", headers: [])),
+            .line(text: #"{"n":1}"#), .line(text: #"{"n":2}"#),
+        ]
         for (seq, chunk) in chunks.enumerated() {
             _ = try post(runtime, Envelope(op: .chunk, id: request.id, seq: seq, body: try BridgeCodec.value(chunk)))
         }
@@ -186,8 +195,12 @@ struct ServicesTests {
         let transport = BridgeTransport(channel: try #require(runtime.device), folder: FileManager.default.temporaryDirectory)
         let opening = Task { try await transport.lines(for: URLRequest(url: URL(string: "https://example.com/watch")!)).head.statusCode }
         let request = try await outlet.next { $0.op == .request }
-        _ = try post(runtime, Envelope(op: .chunk, id: request.id, seq: 0, body: try BridgeCodec.value(
-            TransportChunk.head(response: TransportResponse(status: 200, url: "https://example.com/watch", headers: [])))))
+        _ = try post(
+            runtime,
+            Envelope(
+                op: .chunk, id: request.id, seq: 0,
+                body: try BridgeCodec.value(
+                    TransportChunk.head(response: TransportResponse(status: 200, url: "https://example.com/watch", headers: [])))))
         #expect(try await opening.value == 200)
         let cancel = try await outlet.next { $0.op == .cancel && $0.id == request.id }
         #expect(cancel.id == request.id)
@@ -195,8 +208,9 @@ struct ServicesTests {
 
     @Test func aTXTAnswerKeepsEachOutcomeApart() {
         let name = "_substrate.example.com"
-        #expect(BridgeTXTResolver.classify(.answered(rcode: 0, records: [["v=substrate1 ", "server=x"]]), name: name)
-            == .records(["v=substrate1 server=x"]))
+        #expect(
+            BridgeTXTResolver.classify(.answered(rcode: 0, records: [["v=substrate1 ", "server=x"]]), name: name)
+                == .records(["v=substrate1 server=x"]))
         #expect(BridgeTXTResolver.classify(.answered(rcode: 0, records: []), name: name) == .confirmedAbsent)
         #expect(BridgeTXTResolver.classify(.answered(rcode: 3, records: []), name: name) == .confirmedAbsent)
         guard case .unconfirmedAbsent = BridgeTXTResolver.classify(.answered(rcode: 2, records: []), name: name) else {
@@ -221,21 +235,26 @@ struct ServicesTests {
 
     @Test func aRedirectIsTheAnswerAndABodyComesInlineOrAsAFile() throws {
         let request = URLRequest(url: URL(string: "https://example.com/a")!)
-        let redirect = TransportOutcome.response(response: TransportResponse(
-            status: 302, url: "https://example.com/a", headers: [TransportHeader(name: "Location", value: "https://elsewhere.example")]))
+        let redirect = TransportOutcome.response(
+            response: TransportResponse(
+                status: 302, url: "https://example.com/a", headers: [TransportHeader(name: "Location", value: "https://elsewhere.example")]))
         let (empty, head) = try BridgeTransport.answer(try BridgeCodec.value(redirect), for: request)
         #expect(head.statusCode == 302)
         #expect(head.value(forHTTPHeaderField: "Location") == "https://elsewhere.example")
         #expect(empty.isEmpty)
 
-        let inline = TransportOutcome.response(response: TransportResponse(status: 200, url: "https://example.com/a", headers: [],
-                                                                           body: Data("hello".utf8).base64EncodedString()))
+        let inline = TransportOutcome.response(
+            response: TransportResponse(
+                status: 200, url: "https://example.com/a", headers: [],
+                body: Data("hello".utf8).base64EncodedString()))
         #expect(try BridgeTransport.answer(try BridgeCodec.value(inline), for: request).0 == Data("hello".utf8))
 
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("response-\(UUID().uuidString)")
         try Data(repeating: 7, count: 1_000_000).write(to: file)
-        let spilled = TransportOutcome.response(response: TransportResponse(status: 200, url: "https://example.com/a", headers: [],
-                                                                            bodyFile: file.path))
+        let spilled = TransportOutcome.response(
+            response: TransportResponse(
+                status: 200, url: "https://example.com/a", headers: [],
+                bodyFile: file.path))
         #expect(try BridgeTransport.answer(try BridgeCodec.value(spilled), for: request).0.count == 1_000_000)
         #expect(!FileManager.default.fileExists(atPath: file.path))
 

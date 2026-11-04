@@ -1,9 +1,10 @@
 import Foundation
-@testable import SubstrateBridge
 import SubstrateBridgeCheck
 import SubstrateCore
 import SubstrateRuntime
 import Testing
+
+@testable import SubstrateBridge
 
 @Suite("The bridge's runtime, off Android", .timeLimit(.minutes(2)))
 struct BridgeTests {
@@ -17,11 +18,16 @@ struct BridgeTests {
     @Test func aFingerprintMismatchIsTerminalAndNothingIsHalfStarted() throws {
         let runtime = BridgeRuntime()
         var prepared = false
-        let answer = runtime.start(config(fingerprint: "kotlin's"), outlet: Outlet(), fingerprint: "swift's", prepare: {
-            prepared = true
-            return nil
-        })
-        guard case let .failed(failure) = answer else { Issue.record("started: \(answer)"); return }
+        let answer = runtime.start(
+            config(fingerprint: "kotlin's"), outlet: Outlet(), fingerprint: "swift's",
+            prepare: {
+                prepared = true
+                return nil
+            })
+        guard case let .failed(failure) = answer else {
+            Issue.record("started: \(answer)")
+            return
+        }
         #expect(failure.code == .protocolMismatch)
         #expect(!prepared)
         #expect(runtime.environment == nil)
@@ -33,9 +39,11 @@ struct BridgeTests {
 
     @Test func aFailedPrepareLeavesTheBridgeUnstarted() {
         let runtime = BridgeRuntime()
-        let answer = runtime.start(config(fingerprint: "x"), outlet: Outlet(), fingerprint: "x", prepare: {
-            BridgeFailure(.swiftFailure, "no Looper")
-        })
+        let answer = runtime.start(
+            config(fingerprint: "x"), outlet: Outlet(), fingerprint: "x",
+            prepare: {
+                BridgeFailure(.swiftFailure, "no Looper")
+            })
         #expect(answer == .failed(failure: BridgeFailure(.swiftFailure, "no Looper")))
         #expect(runtime.environment == nil)
     }
@@ -50,9 +58,10 @@ struct BridgeTests {
 
     @Test func malformedMessagesAreStructuredErrors() throws {
         let (runtime, _, _) = started()
-        for text in ["", "not json", #"{"v":2,"op":"open"}"#, #"{"v":1,"op":"teleport"}"#, #"{"v":1,"op":"command"}"#,
-                     #"{"v":1,"op":"presentation"}"#, #"{"v":1,"op":"open","body":{"nope":1}}"#]
-        {
+        for text in [
+            "", "not json", #"{"v":2,"op":"open"}"#, #"{"v":1,"op":"teleport"}"#, #"{"v":1,"op":"command"}"#,
+            #"{"v":1,"op":"presentation"}"#, #"{"v":1,"op":"open","body":{"nope":1}}"#,
+        ] {
             let reply = try BridgeCodec.decodeEnvelope(runtime.post(text))
             #expect(reply.op == .error, "\(text)")
             #expect(try BridgeCodec.decode(BridgeFailure.self, from: reply.body).code == .malformed, "\(text)")
@@ -185,7 +194,10 @@ struct BridgeTests {
         var overflowedAt: Int?
         for seq in 0 ..< 10 {
             let reply = try post(runtime, Envelope(op: .chunk, id: request.id, seq: seq, body: JSONValue(integerLiteral: seq)))
-            if reply.op == .error { overflowedAt = seq; break }
+            if reply.op == .error {
+                overflowedAt = seq
+                break
+            }
         }
         let cancel = try await outlet.next { $0.op == .cancel && $0.id == request.id }
         #expect(cancel.id == request.id)
@@ -358,15 +370,19 @@ struct BridgeTests {
         _ = try await outlet.next { $0.op == .presentation && $0.body?["rows"]?["revision"] == 4 }
         let lists = try outlet.messages.filter { $0.op == .list }.map { try BridgeCodec.decode(ListMessage.self, from: $0.body) }
         // Every revision crossed, in order, each a delta of only what moved.
-        #expect(lists == [
-            .whole(list: "rows", revision: 1, rows: []),
-            .delta(list: "rows", base: 1, revision: 2, inserted: [ListRow(id: "a", value: ["id": "a", "text": "A"])], changed: [],
-                   removed: [], order: ["a"]),
-            .delta(list: "rows", base: 2, revision: 3, inserted: [ListRow(id: "b", value: ["id": "b", "text": "B"])], changed: [],
-                   removed: [], order: ["a", "b"]),
-            .delta(list: "rows", base: 3, revision: 4, inserted: [], changed: [ListRow(id: "a", value: ["id": "a", "text": "A again"])],
-                   removed: [], order: ["a", "b"]),
-        ])
+        #expect(
+            lists == [
+                .whole(list: "rows", revision: 1, rows: []),
+                .delta(
+                    list: "rows", base: 1, revision: 2, inserted: [ListRow(id: "a", value: ["id": "a", "text": "A"])], changed: [],
+                    removed: [], order: ["a"]),
+                .delta(
+                    list: "rows", base: 2, revision: 3, inserted: [ListRow(id: "b", value: ["id": "b", "text": "B"])], changed: [],
+                    removed: [], order: ["a", "b"]),
+                .delta(
+                    list: "rows", base: 3, revision: 4, inserted: [], changed: [ListRow(id: "a", value: ["id": "a", "text": "A again"])],
+                    removed: [], order: ["a", "b"]),
+            ])
         // Each tree came after the list revision it names.
         for (index, message) in outlet.messages.enumerated() where message.op == .presentation {
             let named = try #require(message.body?["rows"]?["revision"]?.int)
@@ -397,7 +413,8 @@ struct BridgeTests {
         let handle = try ledger(runtime)
         _ = try await outlet.next { $0.op == .presentation && $0.handle == handle }
         let digits = "1234567890123456789012345678901234567890.0987654321"
-        let text = #"{"v":1,"op":"command","handle":{"id":\#(handle.id),"generation":\#(handle.generation)},"#
+        let text =
+            #"{"v":1,"op":"command","handle":{"id":\#(handle.id),"generation":\#(handle.generation)},"#
             + #""body":{"path":[],"command":{"note":{"value":{"n":\#(digits),"tiny":1e-400}}}}}"#
         #expect(try BridgeCodec.decodeEnvelope(runtime.post(text)).op == .accepted)
         let noted = try await outlet.next { $0.op == .presentation && $0.body?["note"] != nil }

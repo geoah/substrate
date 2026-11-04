@@ -59,8 +59,9 @@ public enum DeviceRequest: Bridged, Equatable {
         case .connectivityCurrent, .connectivityWatch: .connectivity
         case .browserPrepare, .browserOpen, .browserFinish: .browser
         case .notificationsPermission, .notificationsRequestPermission, .notificationsRegister, .notificationsSchedule,
-             .notificationsCancel, .notificationsCancelThread, .notificationsCancelAll, .notificationsBadge, .notificationsPending,
-             .notificationsResponses: .notifications
+            .notificationsCancel, .notificationsCancelThread, .notificationsCancelAll, .notificationsBadge, .notificationsPending,
+            .notificationsResponses:
+            .notifications
         }
     }
 }
@@ -115,9 +116,10 @@ public struct TransportRequest: Bridged, Equatable {
     /// The body or the answer may hold a credential (`BridgeTransport.carriesCredentials`).
     public var credentials: Bool
 
-    public init(url: String, method: String, headers: [TransportHeader], body: String? = nil, bodyFile: String? = nil,
-                timeoutMillis: Int, credentials: Bool = false)
-    {
+    public init(
+        url: String, method: String, headers: [TransportHeader], body: String? = nil, bodyFile: String? = nil,
+        timeoutMillis: Int, credentials: Bool = false
+    ) {
         self.url = url
         self.method = method
         self.headers = headers

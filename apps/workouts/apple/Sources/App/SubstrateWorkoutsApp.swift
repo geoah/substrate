@@ -1,6 +1,6 @@
 import SubstrateKit
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 @main
 struct SubstrateWorkoutsApp: App {
@@ -42,7 +42,8 @@ struct SubstrateWorkoutsApp: App {
     /// (the README's screenshots).
     private static func seedPreviewHistory() {
         guard ProcessInfo.processInfo.arguments.contains("-WorkoutsSeedPreviewHistory"),
-              let directory = AppModel.workoutsDirectory() else { return }
+            let directory = AppModel.workoutsDirectory()
+        else { return }
         let store = HistoryStore(directory: directory)
         guard store.loadAll().entries.isEmpty else { return }
         for entry in PreviewData.history {

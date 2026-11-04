@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// Finished sessions, newest first, in month sections (DESIGN.md §7.8). Each
 /// row: the routine, then the date and a short summary on their own lines,
@@ -84,11 +84,19 @@ struct HistoryView: View {
     }
 
     private var deletingShown: Binding<Bool> {
-        Binding { deleting != nil } set: { if !$0 { deleting = nil } }
+        Binding {
+            deleting != nil
+        } set: {
+            if !$0 { deleting = nil }
+        }
     }
 
     private var failureShown: Binding<Bool> {
-        Binding { failure != nil } set: { if !$0 { failure = nil } }
+        Binding {
+            failure != nil
+        } set: {
+            if !$0 { failure = nil }
+        }
     }
 }
 

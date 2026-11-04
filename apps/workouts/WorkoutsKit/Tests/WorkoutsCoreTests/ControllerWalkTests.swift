@@ -1,7 +1,8 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
 import SubstrateLocal
+import Testing
+
+@testable import WorkoutsCore
 
 // One session end to end, driven the way the app's SessionController drives
 // it (SubstrateWorkouts/Sources/App/SessionController.swift), since the app target's own tests
@@ -64,8 +65,9 @@ struct ControllerWalk {
         for slot in routine.slots where slot.sideOrder == .weakerfirst {
             if let side = Previous.weakerSide(of: slot.exercise, history: history) { firstSides[slot.key] = side }
         }
-        try script.start(routine, exercises: Array(exercises.values).sorted { $0.id < $1.id }, bodyMass: bodyMass,
-                         firstSides: firstSides)
+        try script.start(
+            routine, exercises: Array(exercises.values).sorted { $0.id < $1.id }, bodyMass: bodyMass,
+            firstSides: firstSides)
         try journal.write(events: script.events, state: script.current)
         present()
     }
@@ -91,10 +93,12 @@ struct ControllerWalk {
     @discardableResult
     mutating func tick(_ row: RowID, sourceLocation: SourceLocation = #_sourceLocation) throws -> EntryWarning? {
         let presented = try #require(try shown.row(row), sourceLocation: sourceLocation)
-        let values = try #require(presented.commitValues, "row \(presented.label.short) of \(presented.slot) cannot tick: missing \(presented.missing)",
-                                  sourceLocation: sourceLocation)
-        if let warning = EntryCheck.warning(for: row, values: values, in: try state, history: history, now: now,
-                                            calendar: settings.calendar)
+        let values = try #require(
+            presented.commitValues, "row \(presented.label.short) of \(presented.slot) cannot tick: missing \(presented.missing)",
+            sourceLocation: sourceLocation)
+        if let warning = EntryCheck.warning(
+            for: row, values: values, in: try state, history: history, now: now,
+            calendar: settings.calendar)
         {
             return warning
         }
@@ -104,10 +108,12 @@ struct ControllerWalk {
 
     /// `SessionController.commit`.
     mutating func commit(_ row: RowID, values: SetValues, stop: Bool, sourceLocation: SourceLocation = #_sourceLocation) throws {
-        let noLighterLoad = SuggestionInputs.noLighterLoad(afterTicking: row, with: values, in: try state, history: history,
-                                                           now: now, calendar: settings.calendar)
-        let complete = SessionEvent.CompleteSet(row: row, recordID: script.setID(), values: values,
-                                                segmentRowIDs: script.rowIDs(2), noLighterLoad: noLighterLoad)
+        let noLighterLoad = SuggestionInputs.noLighterLoad(
+            afterTicking: row, with: values, in: try state, history: history,
+            now: now, calendar: settings.calendar)
+        let complete = SessionEvent.CompleteSet(
+            row: row, recordID: script.setID(), values: values,
+            segmentRowIDs: script.rowIDs(2), noLighterLoad: noLighterLoad)
         try send(stop ? .stopTimedSet(complete) : .completeSet(complete), sourceLocation: sourceLocation)
     }
 
@@ -145,8 +151,9 @@ struct ControllerWalkTests {
         for records in past {
             try store.write(HistoryEntry(records: records, local: HistoryLocal(health: HealthSaveState(status: .saved))))
         }
-        var walk = try ControllerWalk(at: Self.friday, history: HistoryIndex(store.loadAll().entries.map(\.records)),
-                                      directory: directory)
+        var walk = try ControllerWalk(
+            at: Self.friday, history: HistoryIndex(store.loadAll().entries.map(\.records)),
+            directory: directory)
 
         // Start from Day 1: the cover opens at the first warm-up.
         try walk.start("day-1-strength-foundation", bodyMass: .kg(82.4))
@@ -184,7 +191,8 @@ struct ControllerWalkTests {
         // The phone is locked; the rest ends. The notification fired at its
         // end; on the next foreground the rest bar says it is over.
         walk.wait(Int(workingRest.timeIntervalSince(walk.now)) + 3)
-        if case .restOver = try walk.shown.restBar {} else {
+        if case .restOver = try walk.shown.restBar {
+        } else {
             Issue.record("rest bar after the end: \(String(describing: try walk.shown.restBar))")
         }
         // The presentation may still carry the past alert; the coordinator
@@ -263,9 +271,12 @@ struct ControllerWalkTests {
         // A timed plank, added in the gym: Play, then Stop on the Lock Screen.
         let plank = try #require(walk.catalog.exercises["plank"])
         let shape = Previous.lastShape(of: plank.id, history: walk.history, excluding: try walk.state.session.id)
-        try walk.send(.addExercise(.init(slot: "plank", exercise: plank, roles: shape.roles,
-                                         rowIDs: walk.script.rowIDs(shape.roles.count), rests: shape.rests, after: nil,
-                                         firstSide: nil)))
+        try walk.send(
+            .addExercise(
+                .init(
+                    slot: "plank", exercise: plank, roles: shape.roles,
+                    rowIDs: walk.script.rowIDs(shape.roles.count), rests: shape.rests, after: nil,
+                    firstSide: nil)))
         let plankRow = try walk.row("plank", shape.roles.firstIndex(of: .working) ?? 0)
         walk.wait(90)
         guard case let .ready(target)? = try walk.shown.row(plankRow)?.timer else {
@@ -308,11 +319,15 @@ struct ControllerWalkTests {
         // Finish: unticked rows dropped, a session RPE, notes.
         walk.wait(120)
         let state = try walk.state
-        let summary = FinishPresenter.summary(state, presentation: try walk.shown, policy: .drop, end: walk.now,
-                                              healthAllowed: true)
+        let summary = FinishPresenter.summary(
+            state, presentation: try walk.shown, policy: .drop, end: walk.now,
+            healthAllowed: true)
         #expect(!summary.rows.isEmpty)
-        try walk.send(.finish(summary.projection.event(start: summary.start, end: walk.now.flooredToSecond, sessionRPE: 7,
-                                                       notes: "Good day", utcOffset: 0)))
+        try walk.send(
+            .finish(
+                summary.projection.event(
+                    start: summary.start, end: walk.now.flooredToSecond, sessionRPE: 7,
+                    notes: "Good day", utcOffset: 0)))
         let finished = try walk.state
         let records = SessionEngine.records(finished, adapter: "substrate-workouts@0.1.0")
         #expect(records.session.endsAt == walk.now.flooredToSecond)

@@ -1,8 +1,9 @@
 import Foundation
+import WorkoutsCore
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import WorkoutsCore
 
 /// Hevy's public API, read with an account's API key (Hevy Pro: hevy.com →
 /// Settings → Developer). Read only: the import never writes to Hevy. Pages
@@ -49,8 +50,9 @@ public struct HevyClient: Sendable {
                 }
             }
         }
-        return HevyAPI.Export(workouts: workouts, routines: routines, folders: folders, templates: templates, measurements: measurements,
-                              missingTemplates: missing)
+        return HevyAPI.Export(
+            workouts: workouts, routines: routines, folders: folders, templates: templates, measurements: measurements,
+            missingTemplates: missing)
     }
 
     func pages<T: Decodable>(_ path: String, key: String, pageSize: Int, progress: (@Sendable (String) -> Void)? = nil) async throws -> [T] {

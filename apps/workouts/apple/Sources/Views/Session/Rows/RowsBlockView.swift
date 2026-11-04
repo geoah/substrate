@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// One exercise or group on the Rows layout (DESIGN.md §7.6a): an opaque
 /// card with the name, the plan in one line and the `…` menu, then its lines
@@ -256,27 +256,35 @@ struct RowsBlockView: View {
     private func setView(_ set: RowsSetItem) -> some View {
         Group {
             if let fixing = screen.fixing, fixing.row == set.id, let fix = set.fix {
-                RowsEditorPanel(editor: fix.editor(draft: fixing.draft), row: presentation.row(set.id), role: set.role,
-                                name: set.title)
+                RowsEditorPanel(
+                    editor: fix.editor(draft: fixing.draft), row: presentation.row(set.id), role: set.role,
+                    name: set.title)
             } else if screen.fixing == nil, set.state == .now, let editor = set.editor {
                 // With its Log button out of view, the island docks this set (§7.6a, `RowsDock`).
-                RowsEditorPanel(editor: editor, row: presentation.row(set.id), isResting: isResting, role: set.role,
-                                name: set.title) { visible in
+                RowsEditorPanel(
+                    editor: editor, row: presentation.row(set.id), isResting: isResting, role: set.role,
+                    name: set.title
+                ) { visible in
                     screen.logVisibility(set.id, visible: visible)
                 }
             } else if set.state == .done, let row = presentation.row(set.id) {
                 // A done set: its check unticks it, its `…` holds Untick set and Delete set (owner, 2026-11-02).
-                RowsSetLine(item: set, isFresh: screen.fresh == set.id, isMarked: screen.mark?.row == set.id,
-                            onUntick: { screen.untick(set.id, name: set.title, session: session) }) {
+                RowsSetLine(
+                    item: set, isFresh: screen.fresh == set.id, isMarked: screen.mark?.row == set.id,
+                    onUntick: { screen.untick(set.id, name: set.title, session: session) }
+                ) {
                     tap(set)
                 } menuItems: {
-                    SetMenuItems(row: row,
-                                 untick: { screen.untick(set.id, name: set.title, session: session) },
-                                 delete: { screen.delete(set.id, name: set.title, session: session) })
+                    SetMenuItems(
+                        row: row,
+                        untick: { screen.untick(set.id, name: set.title, session: session) },
+                        delete: { screen.delete(set.id, name: set.title, session: session) })
                 }
             } else {
-                RowsSetLine(item: set, collapsed: set.state == .now, isResting: isResting, isFresh: screen.fresh == set.id,
-                            isMarked: screen.mark?.row == set.id) {
+                RowsSetLine(
+                    item: set, collapsed: set.state == .now, isResting: isResting, isFresh: screen.fresh == set.id,
+                    isMarked: screen.mark?.row == set.id
+                ) {
                     tap(set)
                 }
             }

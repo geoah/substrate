@@ -30,21 +30,14 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.serialization.builtins.ListSerializer
 
 /**
- * The device's local notifications (SubstrateDevice's `Notifications`,
- * docs/plans/app-kit.md §5.4) on `NotificationManager`. A request with a
- * `fireAt` is kept in `noBackupFilesDir/notifications` until it is shown,
- * with an alarm to show it then, armed again at every start and after a
- * reboot, so `pending(prefix)` answers across launches; one with none is
- * shown at once, and one whose instant has passed is dropped. The owner's
- * tap, action or dismissal is a `NotificationResponse` on [responses], each
- * once, kept for the first reader. A tap lands on `NotificationOpened`,
- * which no other app may start, never on the app's exported launcher
- * activity, so no response is made from extras another app wrote. Nothing
- * here is backed up, so a restore never revives a
- * reminder for a session that is gone.
+ * The device's local notifications (SubstrateDevice's `Notifications`, docs/plans/app-kit.md §5.4) on `NotificationManager`. A request with a `fireAt` is kept
+ * in `noBackupFilesDir/notifications` until it is shown, with an alarm to show it then, armed again at every start and after a reboot, so `pending(prefix)`
+ * answers across launches; one with none is shown at once, and one whose instant has passed is dropped. The owner's tap, action or dismissal is a
+ * `NotificationResponse` on [responses], each once, kept for the first reader. A tap lands on `NotificationOpened`, which no other app may start, never on the
+ * app's exported launcher activity, so no response is made from extras another app wrote. Nothing here is backed up, so a restore never revives a reminder for
+ * a session that is gone.
  *
- * The alarm is exact where the owner lets the app schedule exact alarms,
- * and otherwise as close as Android's idle rules allow.
+ * The alarm is exact where the owner lets the app schedule exact alarms, and otherwise as close as Android's idle rules allow.
  */
 public class Notifications internal constructor(context: Context, private val channelName: String) {
     private val app = context.applicationContext
@@ -75,9 +68,8 @@ public class Notifications internal constructor(context: Context, private val ch
     }
 
     /**
-     * Asks once, from the activity in front, where the owner was never
-     * asked; answers where the permission stands after. With no activity
-     * in front there is nobody to ask, and nothing is marked asked.
+     * Asks once, from the activity in front, where the owner was never asked; answers where the permission stands after. With no activity in front there is
+     * nobody to ask, and nothing is marked asked.
      */
     public suspend fun requestPermission(): NotificationPermission {
         if (permission() != NotificationPermission.notAsked) return permission()
@@ -102,10 +94,10 @@ public class Notifications internal constructor(context: Context, private val ch
         synchronized(lock) { write(CATEGORIES, BridgeJson.encodeToString(ListSerializer(NotificationCategory.serializer()), categories)) }
     }
 
-    private fun categories(): List<NotificationCategory> = synchronized(lock) {
-        read(CATEGORIES)?.let { runCatching { BridgeJson.decodeFromString(ListSerializer(NotificationCategory.serializer()), it) }.getOrNull() }
-            .orEmpty()
-    }
+    private fun categories(): List<NotificationCategory> =
+        synchronized(lock) {
+            read(CATEGORIES)?.let { runCatching { BridgeJson.decodeFromString(ListSerializer(NotificationCategory.serializer()), it) }.getOrNull() }.orEmpty()
+        }
 
     // --- scheduling ----------------------------------------------------------
 
@@ -149,11 +141,8 @@ public class Notifications internal constructor(context: Context, private val ch
     public fun responses(): Flow<NotificationResponse> = answers.receiveAsFlow()
 
     /**
-     * A tap on a notification, or an action that opens the app, as
-     * `NotificationOpened` was started with: a response. An intent that
-     * reached any other component (the app's exported launcher activity,
-     * which anyone may start with any extras) is none. Answers whether it
-     * was one.
+     * A tap on a notification, or an action that opens the app, as `NotificationOpened` was started with: a response. An intent that reached any other
+     * component (the app's exported launcher activity, which anyone may start with any extras) is none. Answers whether it was one.
      */
     internal fun handle(intent: Intent?): Boolean {
         if (intent?.component?.let { it.packageName == app.packageName && it.className == NotificationOpened::class.java.name } != true) return false
@@ -173,10 +162,11 @@ public class Notifications internal constructor(context: Context, private val ch
 
     /** The alarm for [id] went off: its request is shown, and no longer pending. */
     internal fun fire(id: String) {
-        val request = synchronized(lock) {
-            val all = pending()
-            all.firstOrNull { it.id == id }?.also { found -> save(all.filter { it !== found }) }
-        } ?: return
+        val request =
+            synchronized(lock) {
+                val all = pending()
+                all.firstOrNull { it.id == id }?.also { found -> save(all.filter { it !== found }) }
+            } ?: return
         show(request)
     }
 
@@ -194,19 +184,21 @@ public class Notifications internal constructor(context: Context, private val ch
         if (permission() != NotificationPermission.on) return
         ensureChannel()
         val category = request.category?.let { id -> categories().firstOrNull { it.id == id } }
-        val builder = Notification.Builder(app, CHANNEL)
-            .setSmallIcon(R.drawable.substrate_notification)
-            .setContentTitle(request.title)
-            .setAutoCancel(true)
-            .setCategory(if (request.timeSensitive) Notification.CATEGORY_ALARM else Notification.CATEGORY_REMINDER)
-            .setContentIntent(opening(request, null))
+        val builder =
+            Notification.Builder(app, CHANNEL)
+                .setSmallIcon(R.drawable.substrate_notification)
+                .setContentTitle(request.title)
+                .setAutoCancel(true)
+                .setCategory(if (request.timeSensitive) Notification.CATEGORY_ALARM else Notification.CATEGORY_REMINDER)
+                .setContentIntent(opening(request, null))
         request.body?.let(builder::setContentText)
         request.subtitle?.let(builder::setSubText)
         request.thread?.let(builder::setGroup)
         if (category?.reportsDismissal == true) builder.setDeleteIntent(broadcast(request, ACTION_DISMISS, null, mutable = false))
         for (action in category?.actions.orEmpty()) {
             val input = action.input
-            val intent = if (action.opensApp && input == null) opening(request, action.id) else broadcast(request, ACTION_ACTION, action.id, mutable = input != null)
+            val intent =
+                if (action.opensApp && input == null) opening(request, action.id) else broadcast(request, ACTION_ACTION, action.id, mutable = input != null)
             val button = Notification.Action.Builder(null, action.title, intent)
             if (input != null) button.addRemoteInput(RemoteInput.Builder(EXTRA_TEXT).setLabel(input.placeholder).build())
             builder.addAction(button.build())
@@ -224,15 +216,18 @@ public class Notifications internal constructor(context: Context, private val ch
         }
     }
 
-    private fun extras(intent: Intent, request: NotificationRequest): Intent = intent
-        .putExtra(EXTRA_ID, request.id)
-        .putExtra(EXTRA_CATEGORY, request.category)
-        .putExtra(EXTRA_INFO, Bundle().apply { request.userInfo.forEach { (key, value) -> putString(key, value) } })
+    private fun extras(intent: Intent, request: NotificationRequest): Intent =
+        intent
+            .putExtra(EXTRA_ID, request.id)
+            .putExtra(EXTRA_CATEGORY, request.category)
+            .putExtra(EXTRA_INFO, Bundle().apply { request.userInfo.forEach { (key, value) -> putString(key, value) } })
 
     /** `NotificationOpened`, with what the response needs; it brings the app forward. */
     private fun opening(request: NotificationRequest, action: String?): PendingIntent {
-        val intent = extras(Intent(app, NotificationOpened::class.java), request).setData(uri(request.id, action ?: "open"))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+        val intent =
+            extras(Intent(app, NotificationOpened::class.java), request)
+                .setData(uri(request.id, action ?: "open"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
         action?.let { intent.putExtra(EXTRA_ACTION, it) }
         return PendingIntent.getActivity(app, request.id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
@@ -275,8 +270,7 @@ public class Notifications internal constructor(context: Context, private val ch
     // --- the store -----------------------------------------------------------
 
     private fun pending(): List<NotificationRequest> =
-        read(PENDING)?.let { runCatching { BridgeJson.decodeFromString(ListSerializer(NotificationRequest.serializer()), it) }.getOrNull() }
-            .orEmpty()
+        read(PENDING)?.let { runCatching { BridgeJson.decodeFromString(ListSerializer(NotificationRequest.serializer()), it) }.getOrNull() }.orEmpty()
 
     private fun save(requests: List<NotificationRequest>) {
         write(PENDING, BridgeJson.encodeToString(ListSerializer(NotificationRequest.serializer()), requests))
@@ -315,10 +309,8 @@ public class Notifications internal constructor(context: Context, private val ch
         @Volatile private var shared: Notifications? = null
 
         /**
-         * The process's one instance: the bridge's calls, an alarm and the
-         * app's activity reach the same store and the same responses.
-         * [channelName] is the system Settings' name for the app's
-         * notifications, given once.
+         * The process's one instance: the bridge's calls, an alarm and the app's activity reach the same store and the same responses. [channelName] is the
+         * system Settings' name for the app's notifications, given once.
          */
         public fun get(context: Context, channelName: String = "Notifications"): Notifications =
             shared ?: synchronized(this) { shared ?: Notifications(context, channelName).also { shared = it } }

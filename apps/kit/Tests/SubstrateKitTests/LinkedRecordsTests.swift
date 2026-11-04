@@ -14,8 +14,9 @@ private func note(_ id: String, _ title: String, version: Int = 1) -> Record {
     Record(id: id, kind: noteKind, properties: ["title": .string(title)], version: version)
 }
 
-private let online = LinkSnapshot(phase: .signedIn, server: URL(string: "https://ada.example.com")!, repository: "ada.example.com",
-                                  online: true)
+private let online = LinkSnapshot(
+    phase: .signedIn, server: URL(string: "https://ada.example.com")!, repository: "ada.example.com",
+    online: true)
 
 private func linked() -> LinkedRecords {
     LinkedRecords(kinds: [noteKind], cache: nil, outbox: nil, words: StatusWords(app: "Notes", device: "this iPhone", kept: "notes"))
@@ -144,9 +145,10 @@ struct LinkedRecordsTests {
 @Suite("Settings, composed", .timeLimit(.minutes(10)))
 struct SettingsCompositionTests {
     @Test func aPackageRowNamesItsFullReference() {
-        let status = StatusPresentation(title: "Substrate", symbol: .upToDate, tone: .positive, sentence: "Up to date.",
-                                        packages: [PackageLine(id: "example.com/notes", row: LabeledValue("Notes package", "Version 1"))],
-                                        actions: [], busy: false, footer: nil, refused: nil)
+        let status = StatusPresentation(
+            title: "Substrate", symbol: .upToDate, tone: .positive, sentence: "Up to date.",
+            packages: [PackageLine(id: "example.com/notes", row: LabeledValue("Notes package", "Version 1"))],
+            actions: [], busy: false, footer: nil, refused: nil)
         let row = SettingsPresenter.status(status)[0].rows.first { $0.id == .status(.package("example.com/notes")) }
         #expect(row?.label == "Notes package")
         #expect(row?.detail == "example.com/notes")
@@ -154,9 +156,10 @@ struct SettingsCompositionTests {
 
     @Test func aRefusedWriteIsANoticeOutsideSettings() {
         let parked = ParkedWrite(id: UUID(), method: .patch, kind: noteKind, recordID: "n1", words: "no", conflict: true)
-        let status = StatusPresenter.present(.refused(waiting: 1, reason: "no"), words: StatusWords(app: "Notes", device: "this iPhone", kept: "notes"),
-                                             host: "ada.example.com", packages: [], sending: false, waiting: 1, parked: [parked],
-                                             locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
+        let status = StatusPresenter.present(
+            .refused(waiting: 1, reason: "no"), words: StatusWords(app: "Notes", device: "this iPhone", kept: "notes"),
+            host: "ada.example.com", packages: [], sending: false, waiting: 1, parked: [parked],
+            locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
         #expect(status.notice == NoticeLine("1 change needs you", symbol: .warning, tone: .caution))
     }
 

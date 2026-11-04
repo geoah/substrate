@@ -1,13 +1,14 @@
 import Foundation
-import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
+import SubstrateLocal
 import SubstrateScreens
 import Testing
 import WorkoutsCore
+
 @testable import WorkoutsSync
-import SubstrateCore
 
 /// The outbox's order and its answers to the server: the session before its
 /// sets, a chain's head before its members, Finish under `ifVersion` raising
@@ -59,7 +60,9 @@ struct OutboxTests {
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
         server.on { sent in
             guard sent.method == "PATCH" else { return nil }
-            guard case let .object(body)? = sent.body, body["ifVersion"] == .number(1) else { return (409, #"{"error":{"code":"conflict","message":"version conflict"}}"#) }
+            guard case let .object(body)? = sent.body, body["ifVersion"] == .number(1) else {
+                return (409, #"{"error":{"code":"conflict","message":"version conflict"}}"#)
+            }
             return (200, record(2))
         }
         let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
@@ -82,8 +85,9 @@ struct OutboxTests {
     @Test("a conflict on Finish reads the record and sends the change again on top")
     func conflict() async throws {
         let server = ScriptedServer()
-        server.answer("GET", "/api/v1/substrate.reamde.dev/training/session/s1", 200,
-                      #"{"id":"s1","kind":"substrate.reamde.dev/training/session","properties":{},"version":5}"#)
+        server.answer(
+            "GET", "/api/v1/substrate.reamde.dev/training/session/s1", 200,
+            #"{"id":"s1","kind":"substrate.reamde.dev/training/session","properties":{},"version":5}"#)
         server.on { sent in
             guard sent.method == "PATCH" else { return nil }
             if case let .object(body)? = sent.body, body["ifVersion"] == .number(5) { return (200, record(6)) }
@@ -98,19 +102,22 @@ struct OutboxTests {
         #expect(await outbox.flush(api(server)) == .sent)
         // The create answered version 1, which somebody moved to 5: the
         // first patch is refused, the record read, and the patch sent again.
-        #expect(server.methodsAndPaths == [
-            "PUT /api/v1/substrate.reamde.dev/training/session/s1",
-            "PATCH /api/v1/substrate.reamde.dev/training/session/s1",
-            "GET /api/v1/substrate.reamde.dev/training/session/s1",
-            "PATCH /api/v1/substrate.reamde.dev/training/session/s1",
-        ])
+        #expect(
+            server.methodsAndPaths == [
+                "PUT /api/v1/substrate.reamde.dev/training/session/s1",
+                "PATCH /api/v1/substrate.reamde.dev/training/session/s1",
+                "GET /api/v1/substrate.reamde.dev/training/session/s1",
+                "PATCH /api/v1/substrate.reamde.dev/training/session/s1",
+            ])
     }
 
     @Test("a revision below the stored one is a newer write landed first: dropped")
     func staleRevision() async throws {
         let server = ScriptedServer()
-        server.answer("PUT", "/api/v1/substrate.reamde.dev/training/set/a", 422,
-                      #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.revision: 1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"]}}"#)
+        server.answer(
+            "PUT", "/api/v1/substrate.reamde.dev/training/set/a", 422,
+            #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.revision: 1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"]}}"#
+        )
         let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([OutboxEntry(method: .put, kind: codec.kinds.set, recordID: "a", properties: [:], session: "s")])
         #expect(await outbox.flush(api(server)) == .sent)
@@ -125,7 +132,10 @@ struct OutboxTests {
         let outbox = try Outbox.workouts(directory: directory, writingOptions: .atomic)
         try await outbox.enqueue(OutboxPlan.finished(try finished(), codec: codec))
         let state = await outbox.flush(api(server))
-        guard case .offline = state else { Issue.record("state \(state)"); return }
+        guard case .offline = state else {
+            Issue.record("state \(state)")
+            return
+        }
         let count = await outbox.entries.count
         #expect(count == 22)
         #expect(await (try! Outbox.workouts(directory: directory, writingOptions: .atomic)).entries.count == count)
@@ -134,8 +144,9 @@ struct OutboxTests {
     @Test("a refusal parks the write, holds the rest of its session and lets another session go")
     func refusalHoldsItsSession() async throws {
         let server = ScriptedServer()
-        server.answer("PUT", "/api/v1/substrate.reamde.dev/training/session/bad", 422,
-                      #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.sport: expected one of strength"]}}"#)
+        server.answer(
+            "PUT", "/api/v1/substrate.reamde.dev/training/session/bad", 422,
+            #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.sport: expected one of strength"]}}"#)
         server.on { $0.method == "PUT" ? (200, record(1)) : nil }
         let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
         try await outbox.enqueue([
@@ -144,7 +155,10 @@ struct OutboxTests {
             OutboxEntry(method: .put, kind: codec.kinds.session, recordID: "good", properties: [:], session: "good"),
         ])
         let state = await outbox.flush(api(server))
-        guard case let .refused(words) = state else { Issue.record("state \(state)"); return }
+        guard case let .refused(words) = state else {
+            Issue.record("state \(state)")
+            return
+        }
         #expect(words.contains("props.sport"))
         #expect(await outbox.entries.map(\.recordID) == ["bad", "bad-1"])
         #expect(await outbox.parked.map(\.recordID) == ["bad"])
@@ -152,7 +166,10 @@ struct OutboxTests {
         #expect(server.methodsAndPaths.contains("PUT /api/v1/substrate.reamde.dev/training/session/good"))
         // Parked, it is not sent again on its own, and the state still says so.
         let before = server.sent.count
-        guard case .refused = await outbox.flush(api(server)) else { Issue.record("a parked write stopped being reported"); return }
+        guard case .refused = await outbox.flush(api(server)) else {
+            Issue.record("a parked write stopped being reported")
+            return
+        }
         #expect(server.sent.count == before)
     }
 
@@ -221,7 +238,9 @@ struct PackageTests {
         stamped.answer("GET", packagePath, 200, packageRow(manifest.package, shipped: manifest.version))
         #expect(try await PackageCheck(api: api(stamped), manifest: manifest).state() == .current(held: manifest.version))
         let bare = ScriptedServer()
-        bare.answer("GET", packagePath, 200, #"{"id":"substrate.reamde.dev/training","kind":"substrate.reamde.dev/core/package","properties":{"version":\#(manifest.version + 1)},"version":4}"#)
+        bare.answer(
+            "GET", packagePath, 200,
+            #"{"id":"substrate.reamde.dev/training","kind":"substrate.reamde.dev/core/package","properties":{"version":\#(manifest.version + 1)},"version":4}"#)
         #expect(try await PackageCheck(api: api(bare), manifest: manifest).state() == .current(held: manifest.version + 1))
     }
 
@@ -269,9 +288,10 @@ struct SignInTests {
         #expect(!manifest.scopes.contains { $0.hasPrefix("declare:") || $0.contains("~") })
         let training = try PackageManifest.bundled()
         let coach = try PackageManifest.coach()
-        #expect(manifest.details.map { "\($0.package ?? "")@\($0.version ?? 0)" } == [
-            "substrate.reamde.dev/health@1", "\(training.package)@\(training.version)", "\(coach.package)@\(coach.version)",
-        ])
+        #expect(
+            manifest.details.map { "\($0.package ?? "")@\($0.version ?? 0)" } == [
+                "substrate.reamde.dev/health@1", "\(training.package)@\(training.version)", "\(coach.package)@\(coach.version)",
+            ])
         #expect(training.version >= 4 && coach.version >= 2)
         #expect(manifest.details.allSatisfy { $0.type == AuthorizationDetail.Types.package && !$0.optional })
         #expect(manifest.requirement.scopeVerbs == ["write", "agents", "read"])
@@ -285,8 +305,9 @@ struct SignInTests {
     func approvedAccessWords() throws {
         let manifest = WorkoutsManifest.manifest(clientID: WorkoutsManifest.localClientID)
         let session = SessionFacts(server: URL(string: "http://localhost:8080")!, repository: "ada", scopes: manifest.scopes)
-        let repository = RepositoryPresenter.present(session: session, manifest: manifest, serverVersion: nil, unrevoked: [],
-                                                     offersChangeAccess: true, locale: Locale(identifier: "en_GB"), timeZone: .gmt)
+        let repository = RepositoryPresenter.present(
+            session: session, manifest: manifest, serverVersion: nil, unrevoked: [],
+            offersChangeAccess: true, locale: Locale(identifier: "en_GB"), timeZone: .gmt)
         let words = try #require(repository.approved).scopes.map(\.words)
         #expect(words.contains("See your Apple Health accounts, and search them by meaning, which spends your embedding budget"))
         #expect(!words.contains { $0.contains("apple Health") })
@@ -295,14 +316,29 @@ struct SignInTests {
     @Test("a server without agents, or without package details, is too old, never a browser away")
     func tooOld() throws {
         let manifest = WorkoutsManifest.manifest(clientID: WorkoutsManifest.localClientID)
-        let noAgents = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"{"issuer":"http://localhost:8080","authorization_endpoint":"http://localhost:8080/oauth/authorize","token_endpoint":"http://localhost:8080/oauth/token","scopes_supported":["read:*","write:*"],"authorization_details_types_supported":["package","account","webhook"]}"#.utf8))
+        let noAgents = try JSONDecoder().decode(
+            AuthorizationServerMetadata.self,
+            from: Data(
+                #"{"issuer":"http://localhost:8080","authorization_endpoint":"http://localhost:8080/oauth/authorize","token_endpoint":"http://localhost:8080/oauth/token","scopes_supported":["read:*","write:*"],"authorization_details_types_supported":["package","account","webhook"]}"#
+                    .utf8))
         #expect(!manifest.requirement.verdict(version: "v0.114.0", metadata: noAgents).isCompatible)
-        let noDetails = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"{"issuer":"http://localhost:8080","authorization_endpoint":"http://localhost:8080/oauth/authorize","token_endpoint":"http://localhost:8080/oauth/token","scopes_supported":["read:*","write:*","agents:*","decide:*"]}"#.utf8))
+        let noDetails = try JSONDecoder().decode(
+            AuthorizationServerMetadata.self,
+            from: Data(
+                #"{"issuer":"http://localhost:8080","authorization_endpoint":"http://localhost:8080/oauth/authorize","token_endpoint":"http://localhost:8080/oauth/token","scopes_supported":["read:*","write:*","agents:*","decide:*"]}"#
+                    .utf8))
         #expect(!manifest.requirement.verdict(version: "dev", metadata: noDetails).isCompatible)
-        let fine = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(#"{"issuer":"http://localhost:8080","authorization_endpoint":"http://localhost:8080/oauth/authorize","token_endpoint":"http://localhost:8080/oauth/token","scopes_supported":["read:*","write:*","agents:*","decide:*"],"authorization_details_types_supported":["package","account","webhook"]}"#.utf8))
+        let fine = try JSONDecoder().decode(
+            AuthorizationServerMetadata.self,
+            from: Data(
+                #"{"issuer":"http://localhost:8080","authorization_endpoint":"http://localhost:8080/oauth/authorize","token_endpoint":"http://localhost:8080/oauth/token","scopes_supported":["read:*","write:*","agents:*","decide:*"],"authorization_details_types_supported":["package","account","webhook"]}"#
+                    .utf8))
         #expect(manifest.requirement.verdict(version: "dev", metadata: fine).isCompatible)
-        #expect(manifest.door(for: ServerProbe.Result(origin: URL(string: "http://localhost:8080")!, discovery: Discovery(server: .init(version: "dev")),
-                                                      metadata: noAgents, verdict: manifest.requirement.verdict(version: "dev", metadata: noAgents))) == .tooOld)
+        #expect(
+            manifest.door(
+                for: ServerProbe.Result(
+                    origin: URL(string: "http://localhost:8080")!, discovery: Discovery(server: .init(version: "dev")),
+                    metadata: noAgents, verdict: manifest.requirement.verdict(version: "dev", metadata: noAgents))) == .tooOld)
     }
 }
 

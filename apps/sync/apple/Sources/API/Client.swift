@@ -41,8 +41,9 @@ struct Client: Sendable {
     /// never sent twice: a second install while the first still runs only
     /// queues behind it.
     func catalog(_ verb: String, _ id: String) async throws {
-        try await api.send("POST", "api/v1/catalog/\(segment(id))/\(verb)", body: .json(Data("{}".utf8)),
-                           timeout: Self.serverWork, retries: 0)
+        try await api.send(
+            "POST", "api/v1/catalog/\(segment(id))/\(verb)", body: .json(Data("{}".utf8)),
+            timeout: Self.serverWork, retries: 0)
     }
 
     /// How long an install may take. A debug build reads
@@ -76,8 +77,9 @@ struct Client: Sendable {
     /// error, never an empty record: a receipt read as present when it is
     /// not would mark a Health day filed.
     func record(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = SubstrateClient.Timeout.read) async throws -> Stored {
-        let response = try await api.send(api.request("GET", SubstrateClient.recordPath(kind, id), timeout: timeout),
-                                          accept: [404], retries: retries)
+        let response = try await api.send(
+            api.request("GET", SubstrateClient.recordPath(kind, id), timeout: timeout),
+            accept: [404], retries: retries)
         if response.status == 404 { return .absent }
         guard let object = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any], object["id"] != nil
         else { throw URLError(.cannotParseResponse) }
@@ -99,8 +101,9 @@ struct Client: Sendable {
     }
 
     func delete(_ kind: String, _ id: String, retries: Int = 3, timeout: TimeInterval = SubstrateClient.Timeout.read) async throws {
-        try await api.send(api.request("DELETE", SubstrateClient.recordPath(kind, id), timeout: timeout), accept: [404],
-                           retries: retries)
+        try await api.send(
+            api.request("DELETE", SubstrateClient.recordPath(kind, id), timeout: timeout), accept: [404],
+            retries: retries)
     }
 
     /// One Health delivery to the webhook door, answering the fire id it was
@@ -115,9 +118,10 @@ struct Client: Sendable {
         let named = Dictionary(headers, uniquingKeysWith: { _, last in last })
         do {
             // A full spool drains as the server files: minutes, not seconds.
-            return try await api.deliver(authority: authority, trigger: trigger, body: body,
-                                         contentType: named["Content-Type"] ?? "application/json",
-                                         headers: named.filter { $0.key != "Content-Type" }, credential: key)
+            return try await api.deliver(
+                authority: authority, trigger: trigger, body: body,
+                contentType: named["Content-Type"] ?? "application/json",
+                headers: named.filter { $0.key != "Content-Type" }, credential: key)
         } catch {
             // The door's refusal is the webhook's, not the sign-in's: the
             // session stands, and a record read says whether it does not.
@@ -159,7 +163,8 @@ struct WebhookRefused: LocalizedError {
 
     var errorDescription: String? {
         if app {
-            return "The server did not take this phone's Health (\(text)). Its webhook is off, or Substrate Sync's access no longer reaches it: review its access on Home."
+            return
+                "The server did not take this phone's Health (\(text)). Its webhook is off, or Substrate Sync's access no longer reaches it: review its access on Home."
         }
         return "The server refused this phone's Health key (\(text)). Open Set Up and run it to turn the webhook on again."
     }

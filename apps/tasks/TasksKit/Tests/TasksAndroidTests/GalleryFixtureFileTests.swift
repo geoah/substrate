@@ -1,8 +1,9 @@
 import Foundation
 import SubstrateCore
-@testable import TasksAndroid
 import TasksCore
 import Testing
+
+@testable import TasksAndroid
 
 /// Tasks' screens as one file the Android gallery draws from: Swift writes
 /// `TasksFixtures.all` there as the bridge carries it, and the app's

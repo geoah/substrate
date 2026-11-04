@@ -18,9 +18,11 @@ struct NotificationTests {
 
     @Test func categoriesAreRegisteredThroughTheService() async {
         let notifications = RecordedNotifications()
-        let reply = NotificationCategory(id: "reply", actions: [
-            NotificationAction(id: "answer", title: "Reply", input: NotificationTextInput(button: "Send", placeholder: "Message")),
-        ])
+        let reply = NotificationCategory(
+            id: "reply",
+            actions: [
+                NotificationAction(id: "answer", title: "Reply", input: NotificationTextInput(button: "Send", placeholder: "Message"))
+            ])
         await notifications.register([reply])
         #expect(notifications.categories == [reply])
         #expect(notifications.calls == [.register([reply])])
@@ -30,8 +32,9 @@ struct NotificationTests {
     // carries comes back as it went: shown at once, quiet in front, its
     // category and its user info.
     @Test func aRequestCrossesTheBridgeWithEveryField() throws {
-        let request = NotificationRequest(id: "n", title: "Rest over", body: "Bench press, set 3", fireAt: nil, thread: "session",
-                                          category: "rest", timeSensitive: true, showsWhileActive: false, userInfo: ["session": "s1"])
+        let request = NotificationRequest(
+            id: "n", title: "Rest over", body: "Bench press, set 3", fireAt: nil, thread: "session",
+            category: "rest", timeSensitive: true, showsWhileActive: false, userInfo: ["session": "s1"])
         let back = try ValueCoding.decode(NotificationRequest.self, from: ValueCoding.encode(request))
         #expect(back == request)
         #expect(back.fireAt == nil)

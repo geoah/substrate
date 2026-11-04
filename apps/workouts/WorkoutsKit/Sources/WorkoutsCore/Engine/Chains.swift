@@ -23,7 +23,7 @@ public extension SessionState {
     /// and while the head is pending.
     func chainStops(_ id: RowID) -> Bool {
         guard let row = rows[id], let head = rows[row.headID], let headValues = head.performed?.values,
-              head.structure.growsOneAtATime
+            head.structure.growsOneAtATime
         else { return false }
         let minis = chain(of: head.id).dropFirst().filter(\.isCompleted).map { $0.performed?.values.reps ?? 0 }
         let headReps = headValues.reps ?? 0
@@ -100,10 +100,11 @@ extension SessionState {
     /// unless its stop rule holds.
     mutating func growChain(_ head: RowID, ids: inout RowIDPool) throws(EngineError) {
         guard let headRow = rows[head], headRow.structure.growsOneAtATime, headRow.side == nil, headRow.isCompleted,
-              isChainComplete(head), !chainStops(head), let index = slotIndex(headRow.slot)
+            isChainComplete(head), !chainStops(head), let index = slotIndex(headRow.slot)
         else { return }
-        let next = SessionEngine.segment(of: headRow, position: chain(of: head).count + 1, id: ids.next(),
-                                         reps: headRow.target?.miniSetReps)
+        let next = SessionEngine.segment(
+            of: headRow, position: chain(of: head).count + 1, id: ids.next(),
+            reps: headRow.target?.miniSetReps)
         try insert([next], inSlot: index, at: positionAfterChain(head) ?? slots[index].rows.count)
     }
 
@@ -128,7 +129,7 @@ extension SessionState {
     /// reps of the slot's previous working set (§4.5).
     mutating func resolveMatchTotal(_ head: RowID) {
         guard let row = rows[head], row.structure == .myomatch, row.target != nil, row.target?.totalReps == nil,
-              let total = previousWorkingReps(before: head)
+            let total = previousWorkingReps(before: head)
         else { return }
         rows[head]?.target?.totalReps = total
     }
@@ -137,7 +138,7 @@ extension SessionState {
     /// its reps, or its time on a timed hold.
     mutating func matchSecondSide(_ head: RowID) {
         guard let row = rows[head], row.side != nil, let target = row.target, slot(row.slot)?.sideMatch == true,
-              let values = row.performed?.values
+            let values = row.performed?.values
         else { return }
         var matched = SetTarget(plannedSet: target.plannedSet)
         if exercise(ofRow: head)?.measurement.isTimedHold == true {

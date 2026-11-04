@@ -1,13 +1,15 @@
 import Foundation
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateCore
+import SubstrateDevice
+import WorkoutsCore
+
+@testable import WorkoutsSync
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateAPI
-import SubstrateAuth
-import SubstrateDevice
-import WorkoutsCore
-@testable import WorkoutsSync
-import SubstrateCore
 
 /// A scripted server: each request is answered by the first rule whose
 /// method and path match, and every request is kept, in order.

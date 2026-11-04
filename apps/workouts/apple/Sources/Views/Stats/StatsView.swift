@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// Progress across every routine, or one of them: the routine page's
 /// Progress (`StatsProgressView`) with a routine picker above it. The period
@@ -43,7 +43,11 @@ struct StatsView: View {
     /// Which routine's sessions, as a label over its value with the menu's
     /// chevron: the one choice the page's numbers all depend on.
     private func routinePicker(_ catalog: Catalog) -> some View {
-        let selection = Binding { scope(catalog).routineID?.rawValue ?? "" } set: { routine = $0 }
+        let selection = Binding {
+            scope(catalog).routineID?.rawValue ?? ""
+        } set: {
+            routine = $0
+        }
         return Menu {
             Picker("Routine", selection: selection) {
                 Text(StatsPresentation.allRoutines).tag("")

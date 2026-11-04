@@ -169,7 +169,9 @@ private struct KeyedEncoder<Key: CodingKey>: KeyedEncodingContainerProtocol {
     mutating func encode(_ value: String, forKey key: Key) throws { set(.string(value), key) }
     mutating func encode(_ value: Double, forKey key: Key) throws { set(try ValueEncoder.number(value, codingPath + [key]), key) }
     mutating func encode(_ value: Float, forKey key: Key) throws {
-        guard let number = JSONNumber("\(value)") else { throw EncodingError.invalidValue(value, .init(codingPath: codingPath + [key], debugDescription: "no JSON number")) }
+        guard let number = JSONNumber("\(value)") else {
+            throw EncodingError.invalidValue(value, .init(codingPath: codingPath + [key], debugDescription: "no JSON number"))
+        }
         set(.number(number), key)
     }
 
@@ -230,7 +232,9 @@ private struct UnkeyedEncoder: UnkeyedEncodingContainer {
     mutating func encode(_ value: String) throws { append(.string(value)) }
     mutating func encode(_ value: Double) throws { append(try ValueEncoder.number(value, codingPath + [nextKey])) }
     mutating func encode(_ value: Float) throws {
-        guard let number = JSONNumber("\(value)") else { throw EncodingError.invalidValue(value, .init(codingPath: codingPath, debugDescription: "no JSON number")) }
+        guard let number = JSONNumber("\(value)") else {
+            throw EncodingError.invalidValue(value, .init(codingPath: codingPath, debugDescription: "no JSON number"))
+        }
         append(.number(number))
     }
 
@@ -283,7 +287,9 @@ private struct SingleEncoder: SingleValueEncodingContainer {
     mutating func encode(_ value: String) throws { set(.string(value)) }
     mutating func encode(_ value: Double) throws { set(try ValueEncoder.number(value, codingPath)) }
     mutating func encode(_ value: Float) throws {
-        guard let number = JSONNumber("\(value)") else { throw EncodingError.invalidValue(value, .init(codingPath: codingPath, debugDescription: "no JSON number")) }
+        guard let number = JSONNumber("\(value)") else {
+            throw EncodingError.invalidValue(value, .init(codingPath: codingPath, debugDescription: "no JSON number"))
+        }
         set(.number(number))
     }
 

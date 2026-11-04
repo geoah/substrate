@@ -108,9 +108,10 @@ public struct Conversation: Controller, Equatable {
         var listen: Bool
     }
 
-    init(key: ChildKey, seed: Seed, facts: ThreadFacts?, online: Bool, keyless: String?, newestTurn: Int?, visible: Bool,
-         pollNudge: Int, resumeNudge: Int, continuing: String?)
-    {
+    init(
+        key: ChildKey, seed: Seed, facts: ThreadFacts?, online: Bool, keyless: String?, newestTurn: Int?, visible: Bool,
+        pollNudge: Int, resumeNudge: Int, continuing: String?
+    ) {
         self.key = key
         self.seed = seed
         self.facts = facts

@@ -32,18 +32,13 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
 /**
- * The secure store (docs/plans/app-kit.md §5.4): per store name, a Tink
- * AES-256-GCM keyset wrapped by an Android Keystore key, and one DataStore
- * file holding the store's items as one ciphertext, both under
- * `noBackupFilesDir`. The Keystore key never leaves the device, and the
- * folder is in credential-encrypted storage, so an item is readable after
- * the first unlock and on this device only.
+ * The secure store (docs/plans/app-kit.md §5.4): per store name, a Tink AES-256-GCM keyset wrapped by an Android Keystore key, and one DataStore file holding
+ * the store's items as one ciphertext, both under `noBackupFilesDir`. The Keystore key never leaves the device, and the folder is in credential-encrypted
+ * storage, so an item is readable after the first unlock and on this device only.
  *
- * A keyset or a ciphertext that will not decrypt, or a Keystore key the
- * device dropped, is not a crash and not a plaintext fallback: the store's
- * files and key are deleted and the read answers `reset`, which the core
- * reads as missing, so the app signs in again. A Keystore or a disk that
- * cannot answer now is `unavailable`, and nothing is deleted.
+ * A keyset or a ciphertext that will not decrypt, or a Keystore key the device dropped, is not a crash and not a plaintext fallback: the store's files and key
+ * are deleted and the read answers `reset`, which the core reads as missing, so the app signs in again. A Keystore or a disk that cannot answer now is
+ * `unavailable`, and nothing is deleted.
  */
 public class SecureStore(context: Context) {
     private val folder = File(context.noBackupFilesDir, "secure-store")
@@ -52,30 +47,37 @@ public class SecureStore(context: Context) {
         AeadConfig.register()
     }
 
-    public suspend fun read(store: String, account: String): SecureItem = guarded(store) { opened ->
-        when (val value = opened.items()[account]) {
-            null -> SecureItem.Missing
-            else -> SecureItem.Found(value)
-        }
-    }.fold({ it }, { problem -> problem.item() })
+    public suspend fun read(store: String, account: String): SecureItem =
+        guarded(store) { opened ->
+                when (val value = opened.items()[account]) {
+                    null -> SecureItem.Missing
+                    else -> SecureItem.Found(value)
+                }
+            }
+            .fold({ it }, { problem -> problem.item() })
 
-    public suspend fun write(store: String, account: String, value: String): SecureOutcome = guarded(store) { opened ->
-        opened.update { it + (account to value) }
-        SecureOutcome.Done
-    }.fold({ it }, { problem -> SecureOutcome.Unavailable(problem.reason) })
+    public suspend fun write(store: String, account: String, value: String): SecureOutcome =
+        guarded(store) { opened ->
+                opened.update { it + (account to value) }
+                SecureOutcome.Done
+            }
+            .fold({ it }, { problem -> SecureOutcome.Unavailable(problem.reason) })
 
-    public suspend fun delete(store: String, account: String): SecureOutcome = guarded(store) { opened ->
-        opened.update { it - account }
-        SecureOutcome.Done
-    }.fold({ it }, { problem -> SecureOutcome.Unavailable(problem.reason) })
+    public suspend fun delete(store: String, account: String): SecureOutcome =
+        guarded(store) { opened ->
+                opened.update { it - account }
+                SecureOutcome.Done
+            }
+            .fold({ it }, { problem -> SecureOutcome.Unavailable(problem.reason) })
 
     private sealed interface Problem {
         val reason: String
 
-        fun item(): SecureItem = when (this) {
-            is Reset -> SecureItem.Reset(reason)
-            is Unavailable -> SecureItem.Unavailable(reason)
-        }
+        fun item(): SecureItem =
+            when (this) {
+                is Reset -> SecureItem.Reset(reason)
+                is Unavailable -> SecureItem.Unavailable(reason)
+            }
     }
 
     private class Reset(override val reason: String) : Problem
@@ -107,8 +109,7 @@ public class SecureStore(context: Context) {
         return when {
             chain.any { it is KeyPermanentlyInvalidatedException } -> Reset("the device invalidated the store's key")
             chain.any { it is MissingKey } -> Reset("the device no longer holds the store's key")
-            chain.any { it is AEADBadTagException || it is CorruptionException || it is CorruptKeyset } ->
-                Reset("the store would not decrypt")
+            chain.any { it is AEADBadTagException || it is CorruptionException || it is CorruptKeyset } -> Reset("the store would not decrypt")
             chain.any { it is GeneralSecurityException } -> Unavailable("the Keystore could not answer (${failure::class.java.simpleName})")
             chain.any { it is IOException } -> Unavailable("the store could not be read (${failure::class.java.simpleName})")
             else -> Unavailable("the store failed (${failure::class.java.simpleName})")
@@ -121,10 +122,11 @@ public class SecureStore(context: Context) {
         class Err<E>(val error: E) : Result<Nothing, E>
     }
 
-    private inline fun <T, E, R> Result<T, E>.fold(ok: (T) -> R, err: (E) -> R): R = when (this) {
-        is Result.Ok -> ok(value)
-        is Result.Err -> err(error)
-    }
+    private inline fun <T, E, R> Result<T, E>.fold(ok: (T) -> R, err: (E) -> R): R =
+        when (this) {
+            is Result.Ok -> ok(value)
+            is Result.Err -> err(error)
+        }
 
     private class MissingKey : GeneralSecurityException("the Keystore key is gone")
 
@@ -160,11 +162,12 @@ public class SecureStore(context: Context) {
             val aead = aead()
             // The keyset's own AES-GCM, in this process: a failure here is the
             // file, never the Keystore.
-            val plaintext = try {
-                aead.decrypt(ciphertext, associated)
-            } catch (failure: GeneralSecurityException) {
-                throw CorruptKeyset(failure)
-            }
+            val plaintext =
+                try {
+                    aead.decrypt(ciphertext, associated)
+                } catch (failure: GeneralSecurityException) {
+                    throw CorruptKeyset(failure)
+                }
             return try {
                 json.decodeFromString(ITEMS, plaintext.decodeToString())
             } catch (failure: Exception) {
@@ -177,24 +180,29 @@ public class SecureStore(context: Context) {
 
         @Synchronized
         private fun aead(): Aead {
-            aead?.let { return it }
-            val handle = if (keysetFile.exists()) {
-                if (!AndroidKeystore.hasKey(alias)) throw MissingKey()
-                val wrapped = keysetFile.readBytes()
-                try {
-                    TinkProtoKeysetFormat.parseEncryptedKeyset(wrapped, AndroidKeystore.getAead(alias), associated, RegistryConfiguration.get())
-                } catch (failure: GeneralSecurityException) {
-                    throw if (failure.isCorruption()) CorruptKeyset(failure) else failure
-                }
-            } else {
-                if (!AndroidKeystore.hasKey(alias)) AndroidKeystore.generateNewAes256GcmKey(alias)
-                val generated = KeysetHandle.generateNew(PredefinedAeadParameters.AES256_GCM, RegistryConfiguration.get())
-                keysetFile.parentFile?.mkdirs()
-                val tmp = File(keysetFile.path + ".tmp")
-                tmp.writeBytes(TinkProtoKeysetFormat.serializeEncryptedKeyset(generated, AndroidKeystore.getAead(alias), associated, RegistryConfiguration.get()))
-                if (!tmp.renameTo(keysetFile)) throw IOException("the keyset could not be written")
-                generated
+            aead?.let {
+                return it
             }
+            val handle =
+                if (keysetFile.exists()) {
+                    if (!AndroidKeystore.hasKey(alias)) throw MissingKey()
+                    val wrapped = keysetFile.readBytes()
+                    try {
+                        TinkProtoKeysetFormat.parseEncryptedKeyset(wrapped, AndroidKeystore.getAead(alias), associated, RegistryConfiguration.get())
+                    } catch (failure: GeneralSecurityException) {
+                        throw if (failure.isCorruption()) CorruptKeyset(failure) else failure
+                    }
+                } else {
+                    if (!AndroidKeystore.hasKey(alias)) AndroidKeystore.generateNewAes256GcmKey(alias)
+                    val generated = KeysetHandle.generateNew(PredefinedAeadParameters.AES256_GCM, RegistryConfiguration.get())
+                    keysetFile.parentFile?.mkdirs()
+                    val tmp = File(keysetFile.path + ".tmp")
+                    tmp.writeBytes(
+                        TinkProtoKeysetFormat.serializeEncryptedKeyset(generated, AndroidKeystore.getAead(alias), associated, RegistryConfiguration.get())
+                    )
+                    if (!tmp.renameTo(keysetFile)) throw IOException("the keyset could not be written")
+                    generated
+                }
             return handle.getPrimitive(RegistryConfiguration.get(), Aead::class.java).also { aead = it }
         }
 

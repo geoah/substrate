@@ -1,15 +1,17 @@
 import Foundation
+import SubstrateAPI
+import SubstrateAuth
+import SubstrateCore
+import SubstrateDevice
 import SubstrateLocal
+import Testing
+import WorkoutsCore
+
+@testable import WorkoutsSync
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateAPI
-import SubstrateAuth
-import SubstrateDevice
-import Testing
-import WorkoutsCore
-@testable import WorkoutsSync
-import SubstrateCore
 
 /// The app's whole path against a real substrate, skipped unless
 /// `WORKOUTS_E2E_SERVER` names one and `WORKOUTS_E2E_OWNER_TOKEN` holds a
@@ -55,7 +57,10 @@ struct LiveServerTests {
         let owner = SubstrateClient(server: server, token: ownerToken)
         let view = try await owner.send("GET", "api/v1/authorizations/\(id)").data
         let page = try JSONDecoder().decode(JSONValue.self, from: view)
-        guard case let .object(fields) = page, case let .array(scopes)? = fields["scopes"] else { Issue.record("no scopes"); return }
+        guard case let .object(fields) = page, case let .array(scopes)? = fields["scopes"] else {
+            Issue.record("no scopes")
+            return
+        }
         let approved = scopes.compactMap { scope -> JSONValue? in
             guard case let .object(row) = scope else { return nil }
             return row["scope"]
@@ -65,9 +70,11 @@ struct LiveServerTests {
         if let hash = fields["planHash"] { approval["planHash"] = hash }
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
-        var answer = try await owner.send("POST", "api/v1/authorizations/\(id)",
-                                          body: .json(encoder.encode(JSONValue.object(approval))),
-                                          timeout: SubstrateClient.Timeout.serverWork).data
+        var answer = try await owner.send(
+            "POST", "api/v1/authorizations/\(id)",
+            body: .json(encoder.encode(JSONValue.object(approval))),
+            timeout: SubstrateClient.Timeout.serverWork
+        ).data
         var next = redirectOf(answer)
         // The set up runs before the code exists; the page reads the request
         // until it is approved.
@@ -163,10 +170,14 @@ struct LiveServerTests {
         var stale = RoutineEditor(try codec.decodeRoutine(edited))
         stale.rename("Renamed against a stale version")
         let coachNotes = "The coach's notes."
-        try await ownerAPI.write("PATCH", codec.kinds.routine, SampleRoutine.id.rawValue, properties: ["notes": .string(coachNotes)],
-                                 ifVersion: edited.version)
+        try await ownerAPI.write(
+            "PATCH", codec.kinds.routine, SampleRoutine.id.rawValue, properties: ["notes": .string(coachNotes)],
+            ifVersion: edited.version)
         try await outbox.edit(routine: SampleRoutine.id, patch: stale.patch(codec: codec), baseVersion: stale.baseVersion, codec: codec)
-        guard case .refused = await outbox.flush(api) else { Issue.record("a stale edit was not refused"); return }
+        guard case .refused = await outbox.flush(api) else {
+            Issue.record("a stale edit was not refused")
+            return
+        }
         let conflict = try #require(await outbox.parked.first { $0.conflict })
         let coached = try #require(try await ownerAPI.get(codec.kinds.routine, SampleRoutine.id.rawValue))
         #expect(coached.properties["name"] == .string("Sample, edited on the phone"))
@@ -188,7 +199,10 @@ struct LiveServerTests {
         var clash = copy.routine
         clash.name = "A clashing copy"
         try await outbox.enqueue([OutboxPlan.routineCreated(clash, codec: codec)])
-        guard case .refused = await outbox.flush(api) else { Issue.record("a clashing create landed"); return }
+        guard case .refused = await outbox.flush(api) else {
+            Issue.record("a clashing create landed")
+            return
+        }
         let refusedCreate = try #require(await outbox.parked.first { !$0.conflict })
         #expect(try await ownerAPI.get(codec.kinds.routine, copy.routine.id.rawValue)?.properties["name"] == duplicated.properties["name"])
         try await outbox.discard(refusedCreate.id)
@@ -241,11 +255,13 @@ struct LiveServerTests {
         // version the outbox saw it written at. Then the owner deletes the
         // session on the server, and the phone reads it as theirs to delete.
         var snapshot = try await ServerHistory(api: api, codec: codec).snapshot()
-        let quiet = HistoryExchange.plan(server: snapshot, local: [finished, signedOut], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
+        let quiet = HistoryExchange.plan(
+            server: snapshot, local: [finished, signedOut], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
         #expect(quiet.isEmpty, "a session the phone just wrote read as changed: \(quiet)")
         try await owner.send("DELETE", SubstrateClient.recordPath(codec.kinds.session, finished.session.id.rawValue), query: [("purge", "true")])
         snapshot = try await ServerHistory(api: api, codec: codec).snapshot()
-        let deleted = HistoryExchange.plan(server: snapshot, local: [finished, signedOut], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
+        let deleted = HistoryExchange.plan(
+            server: snapshot, local: [finished, signedOut], queued: [], versions: await outbox.versions, tombstones: [], codec: codec)
         #expect(deleted.removals == [finished.id] && deleted.uploads.isEmpty)
         try await outbox.enqueue(OutboxPlan.finished(finished, codec: codec))
         #expect(await outbox.flush(api) == .sent)
@@ -255,8 +271,9 @@ struct LiveServerTests {
         #expect(stored.properties["status"] == .string("finished"))
         let sets = try await ownerAPI.list([codec.kinds.set])
         #expect(sets.count == finished.sets.count + signedOut.sets.count)
-        print("live: \(session.repository) holds \(WorkoutsKinds.packageID) at version \(shipped), " +
-            "the sample written and deleted, session \(finished.session.id.rawValue) finished with \(sets.count) sets")
+        print(
+            "live: \(session.repository) holds \(WorkoutsKinds.packageID) at version \(shipped), "
+                + "the sample written and deleted, session \(finished.session.id.rawValue) finished with \(sets.count) sets")
     }
 
     private func redirectOf(_ data: Data) -> String? {

@@ -1,6 +1,7 @@
 import Foundation
-@testable import WorkoutsCore
 import Testing
+
+@testable import WorkoutsCore
 
 // The sample routine the app carries (decision S1, docs/examples/sample.yaml):
 // it must hold every method the app runs, and a session through it must
@@ -81,14 +82,16 @@ struct SampleRoutineTests {
         #expect(slots.count == 13)
         #expect(slots.allSatisfy { $0.notes != nil })
         let text = slots.flatMap(\.lines).joined(separator: "\n")
-        for phrase in ["Warm-up: 500 m", "Warm-up: 8 reps", "Warm-up: 12 reps at 50% of body mass", "Set 1 is the top set",
-                       "Set 2 backs off 10%", "Warm-up rest 1:00", "RPE 7–8", "Tempo 3-0-1-0", "Rest after set 2: 3:00",
-                       "Set 3 is a drop set: 2 drops, 5 kg lighter each, 6 reps each", "BW − 90 lb", "Then straight to Push Up",
-                       "each until 2–3 reps in reserve", "as many reps as possible", "Set 1 is myo-reps, until a mini-set comes in short",
-                       "Set 2 is a myo-rep match", "Weaker side first", "Switch sides 0:15", "The second side matches",
-                       "Set 2 is rest-pause: 3 mini-sets, to 20 total reps", "Set 1 is a cluster set", "Set 2 to failure",
-                       "counted down", "on the stopwatch", "Then 0:15 to Farmer's Carry (Dumbbell)", "2 sets of 40 m, with 16 kg", "hold 0:30–0:45, counted down, with 10 kg"]
-        {
+        for phrase in [
+            "Warm-up: 500 m", "Warm-up: 8 reps", "Warm-up: 12 reps at 50% of body mass", "Set 1 is the top set",
+            "Set 2 backs off 10%", "Warm-up rest 1:00", "RPE 7–8", "Tempo 3-0-1-0", "Rest after set 2: 3:00",
+            "Set 3 is a drop set: 2 drops, 5 kg lighter each, 6 reps each", "BW − 90 lb", "Then straight to Push Up",
+            "each until 2–3 reps in reserve", "as many reps as possible", "Set 1 is myo-reps, until a mini-set comes in short",
+            "Set 2 is a myo-rep match", "Weaker side first", "Switch sides 0:15", "The second side matches",
+            "Set 2 is rest-pause: 3 mini-sets, to 20 total reps", "Set 1 is a cluster set", "Set 2 to failure",
+            "counted down", "on the stopwatch", "Then 0:15 to Farmer's Carry (Dumbbell)", "2 sets of 40 m, with 16 kg",
+            "hold 0:30–0:45, counted down, with 10 kg",
+        ] {
             #expect(text.localizedCaseInsensitiveContains(phrase), "the preview names \(phrase):\n\(text)")
         }
         // The two groups show as their own blocks, with no group letters.
@@ -130,8 +133,9 @@ struct SampleRoutineTests {
                     reps.reps = .set(8)
                     try walk.edit(row, reps)
                 }
-                let values = try #require(try walk.shown.row(row)?.commitValues,
-                                          "\(shown.slot) \(shown.label.short) cannot tick: missing \(shown.missing)")
+                let values = try #require(
+                    try walk.shown.row(row)?.commitValues,
+                    "\(shown.slot) \(shown.label.short) cannot tick: missing \(shown.missing)")
                 try walk.commit(row, values: values, stop: false)
             }
             if try walk.state.restClock?.slot == .roundRest { roundRests += 1 }
@@ -143,8 +147,11 @@ struct SampleRoutineTests {
 
         let state = try walk.state
         let summary = FinishPresenter.summary(state, presentation: try walk.shown, policy: .drop, end: walk.now, healthAllowed: true)
-        try walk.send(.finish(summary.projection.event(start: summary.start, end: walk.now.flooredToSecond, sessionRPE: 7,
-                                                       notes: nil, utcOffset: 0)))
+        try walk.send(
+            .finish(
+                summary.projection.event(
+                    start: summary.start, end: walk.now.flooredToSecond, sessionRPE: 7,
+                    notes: nil, utcOffset: 0)))
         let records = SessionEngine.records(try walk.state, adapter: "substrate-workouts@0.1.0")
         #expect(records.session.routine == SampleRoutine.id)
         #expect(records.session.slots.map(\.key) == state.slots.map(\.key))

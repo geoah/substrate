@@ -1,9 +1,9 @@
 import Foundation
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
 import WorkoutsCore
-import SubstrateCore
 
 /// The requests the app makes, over SubstrateKit's client, with WorkoutsCore's
 /// JSON on both sides: a decimal keeps its digits and an object its key
@@ -75,7 +75,7 @@ public struct WorkoutsAPI: Sendable {
         let response = try await client.send("GET", SubstrateClient.recordPath("substrate.reamde.dev/core/package", id), accept: [404])
         if response.status == 404 { return nil }
         guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: response.data),
-              case let .object(properties)? = object["properties"]
+            case let .object(properties)? = object["properties"]
         else { return nil }
         if let deleted = object["deletedAt"], deleted != .null { return nil }
         return properties
@@ -111,7 +111,7 @@ public struct WorkoutsAPI: Sendable {
 
     static func version(of data: Data) throws -> Int {
         guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: data),
-              case let .number(number)? = object["version"]
+            case let .number(number)? = object["version"]
         else { return 0 }
         return number.int ?? 0
     }

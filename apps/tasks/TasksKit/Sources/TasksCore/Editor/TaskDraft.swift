@@ -28,9 +28,10 @@ public struct TaskDraft: Codable, Hashable, Sendable {
     public var at: Date?
     public var priority: TaskPriority
 
-    public init(name: String = "", notes: String = "", link: String = "", list: String? = nil, dueKind: DueKind = .none,
-                day: CivilDay? = nil, at: Date? = nil, priority: TaskPriority = .none)
-    {
+    public init(
+        name: String = "", notes: String = "", link: String = "", list: String? = nil, dueKind: DueKind = .none,
+        day: CivilDay? = nil, at: Date? = nil, priority: TaskPriority = .none
+    ) {
         self.name = name
         self.notes = notes
         self.link = link

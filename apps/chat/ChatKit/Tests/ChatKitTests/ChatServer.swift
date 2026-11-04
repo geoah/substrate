@@ -1,8 +1,9 @@
 import Foundation
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateDevice
 
 /// A server scripted per test: each request is answered by the first route
 /// whose method matches, whose path ends with the route's and whose query
@@ -81,8 +82,9 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
             let head = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
             return LineStream(head: head, body: Data(body.utf8))
         case let .stream(lines, holdAfter):
-            let head = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
-                                       headerFields: ["Content-Type": "application/x-ndjson"])!
+            let head = HTTPURLResponse(
+                url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/x-ndjson"])!
             let stream = AsyncThrowingStream<String, any Error> { continuation in
                 let task = Task {
                     for (index, line) in lines.enumerated() {

@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The Finish sheet (DESIGN.md §7.7): editable start and end, clamped as the
 /// engine will; the duration that follows them; an optional session RPE on

@@ -1,9 +1,10 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
-import SubstrateDevice
 
 /// A list read of `GET /api/v1/records`: the kinds in `filter.kinds`, the
 /// property arms beside them, and the wire's compact `orderBy`.
@@ -14,9 +15,10 @@ public struct ListQuery: Sendable, Hashable {
     public var after: String?
     public var orderBy: String?
 
-    public init(kinds: [String], properties: [String: JSONValue] = [:], first: Int = 100, after: String? = nil,
-                orderBy: String? = nil)
-    {
+    public init(
+        kinds: [String], properties: [String: JSONValue] = [:], first: Int = 100, after: String? = nil,
+        orderBy: String? = nil
+    ) {
         self.kinds = kinds
         self.properties = properties
         self.first = first
@@ -128,9 +130,10 @@ public extension SubstrateClient {
         return all
     }
 
-    private func write(_ method: String, _ kind: String, _ id: String, properties: [String: JSONValue],
-                       ifVersion: Int?) async throws -> Record
-    {
+    private func write(
+        _ method: String, _ kind: String, _ id: String, properties: [String: JSONValue],
+        ifVersion: Int?
+    ) async throws -> Record {
         var body: JSONObject = ["properties": .object(JSONObject(properties))]
         if let ifVersion { body["ifVersion"] = .number(Decimal(ifVersion)) }
         return try await send(method, Self.recordPath(kind, id), body: .jsonValue(.object(body))).decode(Record.self)

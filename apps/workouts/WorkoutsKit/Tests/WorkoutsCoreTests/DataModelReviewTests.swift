@@ -1,7 +1,8 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
 import SubstrateCore
+import Testing
+
+@testable import WorkoutsCore
 
 // The data-model review's decisions (2026-10-31) as the app holds them:
 // the codec reads substrate's canonical reference objects and keeps unknown
@@ -79,47 +80,58 @@ struct ReviewCodecTests {
         var references = 0
         for original in try ExampleFixtures.allRecords() {
             let schema = try #require(codec.schema(for: original.kind))
-            let served = FlatRecord(kind: original.kind, id: original.id,
-                                    properties: canonical(original.properties, schema.allProperties))
+            let served = FlatRecord(
+                kind: original.kind, id: original.id,
+                properties: canonical(original.properties, schema.allProperties))
             let text = String(decoding: JSONValue.object(served.properties).data(pretty: false), as: UTF8.self)
             references += text.components(separatedBy: "\"ref\"").count - 1
             let encoded = try encodeAny(codec, served)
             // Written back in the form it was read, nothing lost.
-            #expect(normalizedProperties(encoded.properties, schema.allProperties)
-                == normalizedProperties(served.properties, schema.allProperties), "\(original.id)")
+            #expect(
+                normalizedProperties(encoded.properties, schema.allProperties)
+                    == normalizedProperties(served.properties, schema.allProperties), "\(original.id)")
             // The same record as the shorthand reads.
-            #expect(normalizedProperties(shorthand(encoded.properties, schema.allProperties), schema.allProperties)
-                == normalizedProperties(original.properties, schema.allProperties), "\(original.id)")
+            #expect(
+                normalizedProperties(shorthand(encoded.properties, schema.allProperties), schema.allProperties)
+                    == normalizedProperties(original.properties, schema.allProperties), "\(original.id)")
         }
         #expect(references > 300)
         // The typed values are the targets, at the top level and nested.
-        let set = try codec.decodeSet(FlatRecord(kind: kinds.set, id: "x", properties: [
-            "at": .string("2026-10-27T13:42:10Z"),
-            "session": .object(["ref": .string("\(kinds.session)/s1")]),
-            "exercise": .object(["ref": .string("\(kinds.exercise)/chest-press-machine")]),
-            "slot": .string("chest-press"), "order": .number(2),
-            "setup": .object(["ref": .string("\(kinds.setup)/hotel-gym-chest-press")]),
-            "continues": .object(["ref": .string("\(kinds.set)/head")]),
-            "origin": .object(["ref": .string("providers.substrate.reamde.dev/hevy/workout/w1")]),
-        ]))
+        let set = try codec.decodeSet(
+            FlatRecord(
+                kind: kinds.set, id: "x",
+                properties: [
+                    "at": .string("2026-10-27T13:42:10Z"),
+                    "session": .object(["ref": .string("\(kinds.session)/s1")]),
+                    "exercise": .object(["ref": .string("\(kinds.exercise)/chest-press-machine")]),
+                    "slot": .string("chest-press"), "order": .number(2),
+                    "setup": .object(["ref": .string("\(kinds.setup)/hotel-gym-chest-press")]),
+                    "continues": .object(["ref": .string("\(kinds.set)/head")]),
+                    "origin": .object(["ref": .string("providers.substrate.reamde.dev/hevy/workout/w1")]),
+                ]))
         #expect(set.session == "s1" && set.exercise == "chest-press-machine" && set.setup == "hotel-gym-chest-press")
         #expect(set.continues == "head")
         #expect(set.origin == RecordRef(kind: "providers.substrate.reamde.dev/hevy/workout", id: "w1"))
-        let routine = try codec.decodeRoutine(FlatRecord(kind: kinds.routine, id: "r", properties: [
-            "name": .string("R"),
-            "slots": .array([.object(["key": .string("a"), "exercise": .object(["ref": .string("\(kinds.exercise)/plank")])])]),
-        ]))
+        let routine = try codec.decodeRoutine(
+            FlatRecord(
+                kind: kinds.routine, id: "r",
+                properties: [
+                    "name": .string("R"),
+                    "slots": .array([.object(["key": .string("a"), "exercise": .object(["ref": .string("\(kinds.exercise)/plank")])])]),
+                ]))
         #expect(routine.slots.first?.exercise == "plank")
     }
 
     @Test("a decorated reference keeps its link fields while it points at the same record; a changed or cleared one is written anew")
     func decoratedReference() throws {
         let decorated: JSONValue = .object(["ref": .string("\(kinds.exercise)/chest-press-machine"), "since": .string("2026-10-01")])
-        let flat = FlatRecord(kind: kinds.set, id: "x", properties: [
-            "at": .string("2026-10-27T13:42:10Z"), "session": .string("\(kinds.session)/s1"),
-            "exercise": decorated, "slot": .string("a"), "order": .number(1),
-            "origin": .object(["ref": .string("x.example.com/import/row/7"), "line": .number(7)]),
-        ])
+        let flat = FlatRecord(
+            kind: kinds.set, id: "x",
+            properties: [
+                "at": .string("2026-10-27T13:42:10Z"), "session": .string("\(kinds.session)/s1"),
+                "exercise": decorated, "slot": .string("a"), "order": .number(1),
+                "origin": .object(["ref": .string("x.example.com/import/row/7"), "line": .number(7)]),
+            ])
         var set = try codec.decodeSet(flat)
         #expect(codec.encode(set).properties["exercise"] == decorated)
         #expect(codec.encode(set).properties["origin"] == flat.properties["origin"])
@@ -138,16 +150,24 @@ struct ReviewCodecTests {
 
     @Test("unknown fields at every nesting level, and an unknown descriptive enum, survive decode and encode")
     func unknownNestedFields() throws {
-        let routine = FlatRecord(kind: kinds.routine, id: "r", properties: [
-            "name": .string("R"),
-            "groups": .array([.object(["key": .string("a"), "groupKind": .string("superset"), "cap": .string("PT10M")])]),
-            "slots": .array([.object([
-                "key": .string("press"), "exercise": .string("\(kinds.exercise)/chest-press-machine"),
-                "station": .string("B"),
-                "sets": .array([.object(["key": .string("s1"), "roleLabel": .string("finisher"), "band": .string("red"),
-                                         "rpeMin": .string("7"), "rpeMax": .string("8")])]),
-            ])]),
-        ])
+        let routine = FlatRecord(
+            kind: kinds.routine, id: "r",
+            properties: [
+                "name": .string("R"),
+                "groups": .array([.object(["key": .string("a"), "groupKind": .string("superset"), "cap": .string("PT10M")])]),
+                "slots": .array([
+                    .object([
+                        "key": .string("press"), "exercise": .string("\(kinds.exercise)/chest-press-machine"),
+                        "station": .string("B"),
+                        "sets": .array([
+                            .object([
+                                "key": .string("s1"), "roleLabel": .string("finisher"), "band": .string("red"),
+                                "rpeMin": .string("7"), "rpeMax": .string("8"),
+                            ])
+                        ]),
+                    ])
+                ]),
+            ])
         let decodedRoutine = try codec.decodeRoutine(routine)
         #expect(decodedRoutine.groups[0].extra == ["cap": .string("PT10M")])
         #expect(decodedRoutine.slots[0].extra == ["station": .string("B")])
@@ -155,16 +175,20 @@ struct ReviewCodecTests {
         #expect(decodedRoutine.slots[0].sets[0].extra == ["roleLabel": .string("finisher"), "band": .string("red")])
         #expect(codec.encode(decodedRoutine).properties == routine.properties)
 
-        let session = FlatRecord(kind: kinds.session, id: "s", properties: [
-            "at": .string("2026-10-27T13:30:00Z"),
-            "slots": .array([.object([
-                "key": .string("press"), "exercise": .string("\(kinds.exercise)/chest-press-machine"),
-                "routineSlot": .string("press"), "machine": .string("2"),
-                "sets": .array([.object(["key": .string("s1"), "work": .string("PT40S")])]),
-            ])]),
-            "groups": .array([.object(["key": .string("a"), "groupKind": .string("circuit"), "execution": .string("emom")])]),
-            "pauses": .array([.object(["start": .string("2026-10-27T13:40:00Z"), "reason": .string("phone")])]),
-        ])
+        let session = FlatRecord(
+            kind: kinds.session, id: "s",
+            properties: [
+                "at": .string("2026-10-27T13:30:00Z"),
+                "slots": .array([
+                    .object([
+                        "key": .string("press"), "exercise": .string("\(kinds.exercise)/chest-press-machine"),
+                        "routineSlot": .string("press"), "machine": .string("2"),
+                        "sets": .array([.object(["key": .string("s1"), "work": .string("PT40S")])]),
+                    ])
+                ]),
+                "groups": .array([.object(["key": .string("a"), "groupKind": .string("circuit"), "execution": .string("emom")])]),
+                "pauses": .array([.object(["start": .string("2026-10-27T13:40:00Z"), "reason": .string("phone")])]),
+            ])
         let decodedSession = try codec.decodeSession(session)
         #expect(decodedSession.slots[0].extra == ["machine": .string("2")])
         #expect(decodedSession.slots[0].sets[0].extra == ["work": .string("PT40S")])
@@ -172,20 +196,24 @@ struct ReviewCodecTests {
         #expect(decodedSession.pauses[0].extra == ["reason": .string("phone")])
         #expect(codec.encode(decodedSession).properties == session.properties)
 
-        let set = FlatRecord(kind: kinds.set, id: "x", properties: [
-            "at": .string("2026-10-27T13:42:10Z"), "session": .string("\(kinds.session)/s"),
-            "exercise": .string("\(kinds.exercise)/chest-press-machine"), "slot": .string("press"), "order": .number(1),
-            "target": .object(["plannedSet": .string("s1"), "timerMode": .string("interval"), "cadence": .string("fast")]),
-        ])
+        let set = FlatRecord(
+            kind: kinds.set, id: "x",
+            properties: [
+                "at": .string("2026-10-27T13:42:10Z"), "session": .string("\(kinds.session)/s"),
+                "exercise": .string("\(kinds.exercise)/chest-press-machine"), "slot": .string("press"), "order": .number(1),
+                "target": .object(["plannedSet": .string("s1"), "timerMode": .string("interval"), "cadence": .string("fast")]),
+            ])
         let decodedSet = try codec.decodeSet(set)
         #expect(decodedSet.target?.timerMode == nil)
         #expect(decodedSet.target?.extra == ["timerMode": .string("interval"), "cadence": .string("fast")])
         #expect(codec.encode(decodedSet).properties == set.properties)
 
-        let exercise = FlatRecord(kind: kinds.exercise, id: "e", properties: [
-            "name": .string("E"), "measurement": .string("weightreps"),
-            "codes": .array([.object(["system": .string("fit"), "code": .string("1"), "url": .string("https://x")])]),
-        ])
+        let exercise = FlatRecord(
+            kind: kinds.exercise, id: "e",
+            properties: [
+                "name": .string("E"), "measurement": .string("weightreps"),
+                "codes": .array([.object(["system": .string("fit"), "code": .string("1"), "url": .string("https://x")])]),
+            ])
         let decodedExercise = try codec.decodeExercise(exercise)
         #expect(decodedExercise.codes[0].extra == ["url": .string("https://x")])
         #expect(codec.encode(decodedExercise).properties == exercise.properties)
@@ -204,9 +232,10 @@ struct ReviewCodecTests {
             }
             return FlatRecord(kind: kinds.routine, id: "r", properties: ["name": .string("R"), "slots": .array([.object(slotObject)])])
         }
-        for (field, value) in [("structure", "emom"), ("role", "cooldown"), ("termination", "amraptime"), ("timerMode", "interval"),
-                               ("myoStopRule", "velocity"), ("loadReference", "vmax")]
-        {
+        for (field, value) in [
+            ("structure", "emom"), ("role", "cooldown"), ("termination", "amraptime"), ("timerMode", "interval"),
+            ("myoStopRule", "velocity"), ("loadReference", "vmax"),
+        ] {
             #expect(throws: CodecError.unsupported(kind: kinds.routine, id: "r", property: "slots[0].sets[0].\(field)", value: value)) {
                 try codec.decodeRoutine(routine([field: .string(value)]))
             }
@@ -214,29 +243,43 @@ struct ReviewCodecTests {
         #expect(throws: CodecError.unsupported(kind: kinds.routine, id: "r", property: "slots[0].sideOrder", value: "alternate")) {
             try codec.decodeRoutine(routine(slot: ["sideOrder": .string("alternate")]))
         }
-        let set: JSONObject = ["at": .string("2026-10-27T13:42:10Z"), "session": .string("\(kinds.session)/s"),
-                               "exercise": .string("\(kinds.exercise)/e"), "slot": .string("a"), "order": .number(1),
-                               "role": .string("cooldown")]
+        let set: JSONObject = [
+            "at": .string("2026-10-27T13:42:10Z"), "session": .string("\(kinds.session)/s"),
+            "exercise": .string("\(kinds.exercise)/e"), "slot": .string("a"), "order": .number(1),
+            "role": .string("cooldown"),
+        ]
         #expect(throws: CodecError.unsupported(kind: kinds.set, id: "x", property: "role", value: "cooldown")) {
             try codec.decodeSet(FlatRecord(kind: kinds.set, id: "x", properties: set))
         }
         // An exercise's laterality and myo-rep stop rule decide side chains and the stop.
         for (field, value) in [("laterality", "sequential"), ("myoStopRule", "velocity")] {
-            let exercise = FlatRecord(kind: kinds.exercise, id: "e", properties: [
-                "name": .string("E"), "measurement": .string("weightreps"), field: .string(value),
-            ])
+            let exercise = FlatRecord(
+                kind: kinds.exercise, id: "e",
+                properties: [
+                    "name": .string("E"), "measurement": .string("weightreps"), field: .string(value),
+                ])
             #expect(throws: CodecError.unsupported(kind: kinds.exercise, id: "e", property: field, value: value)) {
                 try codec.decodeExercise(exercise)
             }
         }
         // A session's plan snapshot is never run: an unknown value there is
         // kept raw and the session stays readable (History, PREVIOUS).
-        let session = FlatRecord(kind: kinds.session, id: "s", properties: [
-            "at": .string("2026-10-27T13:30:00Z"),
-            "slots": .array([.object(["key": .string("a"), "exercise": .string("\(kinds.exercise)/e"),
-                                      "sets": .array([.object(["key": .string("s1"), "structure": .string("emom"),
-                                                               "role": .string("cooldown"), "loadReference": .string("vmax")])])])]),
-        ])
+        let session = FlatRecord(
+            kind: kinds.session, id: "s",
+            properties: [
+                "at": .string("2026-10-27T13:30:00Z"),
+                "slots": .array([
+                    .object([
+                        "key": .string("a"), "exercise": .string("\(kinds.exercise)/e"),
+                        "sets": .array([
+                            .object([
+                                "key": .string("s1"), "structure": .string("emom"),
+                                "role": .string("cooldown"), "loadReference": .string("vmax"),
+                            ])
+                        ]),
+                    ])
+                ]),
+            ])
         let decoded = try codec.decodeSession(session)
         let snapshot = try #require(decoded.slots.first?.sets.first)
         #expect(snapshot.structure == .straight && snapshot.role == .working && snapshot.loadReference == nil)
@@ -247,8 +290,11 @@ struct ReviewCodecTests {
     @Test("the setup kind decodes, round-trips and overrides its exercise's load grid field by field")
     func setups() throws {
         let setups = try ExampleFixtures.records("coverage").filter { $0.kind == kinds.setup }.map(codec.decodeSetup)
-        #expect(setups.map(\.id.rawValue).sorted() == ["hotel-gym-chest-press", "hotel-gym-leg-extension", "hotel-gym-seated-row",
-                                                       "old-gym-chest-press", "old-gym-seated-row"])
+        #expect(
+            setups.map(\.id.rawValue).sorted() == [
+                "hotel-gym-chest-press", "hotel-gym-leg-extension", "hotel-gym-seated-row",
+                "old-gym-chest-press", "old-gym-seated-row",
+            ])
         let hotel = try #require(setups.first { $0.id == "hotel-gym-chest-press" })
         #expect(hotel.exercise == "chest-press-machine")
         let exercise = try #require(try EngineFixtures.exercises()["chest-press-machine"])
@@ -258,8 +304,9 @@ struct ReviewCodecTests {
         #expect(onSetup.loadMax == (hotel.loadMax ?? exercise.loadMax))
         #expect(exercise.on(nil) == exercise)
         // A setup of another exercise changes nothing.
-        #expect(try #require(try EngineFixtures.exercises()["leg-press-machine"]).on(hotel).loadStep
-            == (try EngineFixtures.exercises()["leg-press-machine"])?.loadStep)
+        #expect(
+            try #require(try EngineFixtures.exercises()["leg-press-machine"]).on(hotel).loadStep
+                == (try EngineFixtures.exercises()["leg-press-machine"])?.loadStep)
         // A set names its setup by full path and keeps it.
         let set = try #require(try ExampleFixtures.sessions("coverage").flatMap(\.sets).first { $0.setup == "hotel-gym-chest-press" })
         #expect(codec.encode(set).properties["setup"] == .string("\(kinds.setup)/hotel-gym-chest-press"))
@@ -275,8 +322,9 @@ struct ReviewCodecTests {
         #expect(patch.rpeMethod == nil)
         // An event written before the method existed: a tick with a bare RPE was a tap.
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([EngineCatalog.slot("press", EngineCatalog.press, EngineCatalog.sets(1))]),
-                         exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine([EngineCatalog.slot("press", EngineCatalog.press, EngineCatalog.sets(1))]),
+            exercises: EngineCatalog.all)
         let row = try script.row("press", 0)
         let state = try script.tick(row, SetValues(load: .kg(50), reps: 10, rpe: 9))
         #expect(state.rows[row]?.performed?.values.rpeMethod == .entered)
@@ -290,12 +338,14 @@ struct ReviewCodecTests {
 private func provenanceSession() throws -> EngineScript {
     var script = EngineScript(at: engineEpoch)
     let routine = EngineCatalog.routine([
-        EngineCatalog.slot("press", EngineCatalog.press, [
-            PlannedSet(key: "s1", repsMin: 8, repsMax: 12, load: .kg(50), rpeMin: 8, rpeMax: 8),
-            PlannedSet(key: "s2", repsMin: 8, repsMax: 12, load: .kg(50), rpeMin: 7, rpeMax: 8),
-            PlannedSet(key: "s3", repsMin: 8, repsMax: 12, load: .kg(50), rirMin: 2, rirMax: 3),
-            PlannedSet(key: "s4", structure: .drop, repsMin: 8, repsMax: 12, load: .kg(50), rpeMin: 9, rpeMax: 9),
-        ], setRest: 90),
+        EngineCatalog.slot(
+            "press", EngineCatalog.press,
+            [
+                PlannedSet(key: "s1", repsMin: 8, repsMax: 12, load: .kg(50), rpeMin: 8, rpeMax: 8),
+                PlannedSet(key: "s2", repsMin: 8, repsMax: 12, load: .kg(50), rpeMin: 7, rpeMax: 8),
+                PlannedSet(key: "s3", repsMin: 8, repsMax: 12, load: .kg(50), rirMin: 2, rirMax: 3),
+                PlannedSet(key: "s4", structure: .drop, repsMin: 8, repsMax: 12, load: .kg(50), rpeMin: 9, rpeMax: 9),
+            ], setRest: 90)
     ])
     try script.start(routine, exercises: EngineCatalog.all)
     return script
@@ -339,8 +389,9 @@ struct ReviewEffortTests {
         #expect(state.rpe(ofRow: s1) == .value(8, .entered))
         #expect(state.rpePrefill(ofRow: s1) == nil)
         // The row's own value wins over the pre-fill; the tick keeps its method.
-        let committed = state.acceptingRPEPrefill(try #require(state.rows[s1]).entered.applying(.setting(SetValues(load: .kg(50), reps: 10))),
-                                                  row: s1)
+        let committed = state.acceptingRPEPrefill(
+            try #require(state.rows[s1]).entered.applying(.setting(SetValues(load: .kg(50), reps: 10))),
+            row: s1)
         #expect(committed.rpeMethod == .entered)
         state = try script.tick(s1, committed)
         #expect(SessionEngine.setRecords(state).first?.rpeMethod == .entered)
@@ -354,9 +405,10 @@ struct ReviewEffortTests {
     func copied() throws {
         var script = try provenanceSession()
         let s1 = try script.row("press", 0)
-        let previous = PreviousSet(session: "past", date: engineEpoch, record: "p1",
-                                   values: SetValues(load: .kg(45), reps: 12, rpe: 9, rpeMethod: .entered), text: "45 kg × 12 @ 9",
-                                   deload: false)
+        let previous = PreviousSet(
+            session: "past", date: engineEpoch, record: "p1",
+            values: SetValues(load: .kg(45), reps: 12, rpe: 9, rpeMethod: .entered), text: "45 kg × 12 @ 9",
+            deload: false)
         var state = try script.send(.editSet(.init(row: s1, values: previous.copy)))
         #expect(state.rpe(ofRow: s1) == .value(9, .copied))
         state = try script.tick(s1, try #require(state.rows[s1]).entered)
@@ -405,15 +457,18 @@ struct ReviewEffortTests {
     func refusals() throws {
         var script = try provenanceSession()
         let s1 = try script.row("press", 0)
-        script.refuse(.completeSet(.init(row: s1, recordID: "r", values: SetValues(load: .kg(50), reps: 10, rpe: 9, rpeMethod: .prefilled))),
-                      .invalidEffort)
-        script.refuse(.completeSet(.init(row: s1, recordID: "r", values: SetValues(load: .kg(50), reps: 10, rpe: 8, rpeMethod: .imported))),
-                      .invalidEffort)
+        script.refuse(
+            .completeSet(.init(row: s1, recordID: "r", values: SetValues(load: .kg(50), reps: 10, rpe: 9, rpeMethod: .prefilled))),
+            .invalidEffort)
+        script.refuse(
+            .completeSet(.init(row: s1, recordID: "r", values: SetValues(load: .kg(50), reps: 10, rpe: 8, rpeMethod: .imported))),
+            .invalidEffort)
         script.refuse(.editSet(.init(row: s1, values: SetValuesPatch(rpe: .set(8), rpeMethod: .prefilled))), .invalidEffort)
         try script.send(.addSet(.init(slot: "press", row: "added", role: .working)))
         let added: RowID = "added"
-        script.refuse(.completeSet(.init(row: added, recordID: "r", values: SetValues(load: .kg(50), reps: 10, rpe: 8, rpeMethod: .prefilled))),
-                      .invalidEffort)
+        script.refuse(
+            .completeSet(.init(row: added, recordID: "r", values: SetValues(load: .kg(50), reps: 10, rpe: 8, rpeMethod: .prefilled))),
+            .invalidEffort)
         // A method with no value is dropped.
         let state = try script.tick(s1, SetValues(load: .kg(50), reps: 10, rpeMethod: .entered))
         #expect(state.rows[s1]?.performed?.values.rpeMethod == nil)
@@ -422,8 +477,9 @@ struct ReviewEffortTests {
     @Test("the second side of a one-side set pre-fills its head's plan")
     func secondSide() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([EngineCatalog.slot("lunge", EngineCatalog.lunge, EngineCatalog.sets(1, rpe: 8))]),
-                         exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine([EngineCatalog.slot("lunge", EngineCatalog.lunge, EngineCatalog.sets(1, rpe: 8))]),
+            exercises: EngineCatalog.all)
         let (left, right) = try (script.row("lunge", 0), script.row("lunge", 1))
         #expect(try script.current.rpePrefill(ofRow: right) == 8)
         try script.tick(left, try script.current.acceptingRPEPrefill(kgReps(10, 10), row: left))
@@ -501,19 +557,21 @@ struct ReviewRecordTests {
     @Test("each set copies what its numbers meant, and a later edit of the exercise reinterprets nothing")
     func loadMeaning() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("raise", EngineCatalog.raise, EngineCatalog.sets(1, load: 10)),
-            EngineCatalog.slot("lunge", EngineCatalog.lunge, EngineCatalog.sets(1, load: 12)),
-            EngineCatalog.slot("push-up", EngineCatalog.pushUp, EngineCatalog.sets(1, load: nil)),
-            EngineCatalog.slot("plank", EngineCatalog.plank, [PlannedSet(key: "s1", durationMin: 30)]),
-        ]), exercises: EngineCatalog.all, bodyMass: .kg(80))
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot("raise", EngineCatalog.raise, EngineCatalog.sets(1, load: 10)),
+                EngineCatalog.slot("lunge", EngineCatalog.lunge, EngineCatalog.sets(1, load: 12)),
+                EngineCatalog.slot("push-up", EngineCatalog.pushUp, EngineCatalog.sets(1, load: nil)),
+                EngineCatalog.slot("plank", EngineCatalog.plank, [PlannedSet(key: "s1", durationMin: 30)]),
+            ]), exercises: EngineCatalog.all, bodyMass: .kg(80))
         try script.tick(try script.row("raise", 0), kgReps(10, 10))
         try script.tick(try script.row("lunge", 0), kgReps(12, 8))
         try script.tick(try script.row("lunge", 1), kgReps(12, 8))
         try script.tick(try script.row("push-up", 0), SetValues(reps: 15))
         try script.send(.startTimedSet(row: try script.row("plank", 0), target: 30))
-        let state = try script.send(.stopTimedSet(.init(row: try script.row("plank", 0), recordID: "plank-1", values: SetValues())),
-                                    at: script.now.addingTimeInterval(32))
+        let state = try script.send(
+            .stopTimedSet(.init(row: try script.row("plank", 0), recordID: "plank-1", values: SetValues())),
+            at: script.now.addingTimeInterval(32))
         let sets = SessionEngine.setRecords(state)
         let raise = try #require(sets.first { $0.slot == "raise" })
         #expect(raise.loadBasis == .perimplement && raise.implements == 2 && raise.laterality == .bilateral && raise.repsBasis == .total)
@@ -550,15 +608,18 @@ struct ReviewRecordTests {
         myoExercise.myoStopRule = .belowtarget
         let hold = EngineCatalog.exercise("side-hold", .duration, laterality: .unilateral, restClass: .timed, equipment: Equipment.none)
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("press", EngineCatalog.press, [
-                PlannedSet(key: "s1", repsMin: 8, repsMax: 10, load: .kg(50), rpeMin: 7, rpeMax: 8, tempo: "3-1-1-0"),
-                PlannedSet(key: "s2", structure: .drop, repsMin: 8, repsMax: 10, load: .kg(50), drops: 1, dropReps: 6),
-            ]),
-            EngineCatalog.slot("curl", myoExercise, [PlannedSet(key: "s1", structure: .myo, repsMin: 12, repsMax: 15, load: .kg(10))]),
-            EngineCatalog.slot("plank", EngineCatalog.plank, [PlannedSet(key: "s1", durationMin: 30, durationMax: 45)]),
-            EngineCatalog.slot("hold", hold, [PlannedSet(key: "s1", durationMin: 20, timerMode: .stopwatch)]),
-        ]), exercises: EngineCatalog.all + [myoExercise, hold])
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot(
+                    "press", EngineCatalog.press,
+                    [
+                        PlannedSet(key: "s1", repsMin: 8, repsMax: 10, load: .kg(50), rpeMin: 7, rpeMax: 8, tempo: "3-1-1-0"),
+                        PlannedSet(key: "s2", structure: .drop, repsMin: 8, repsMax: 10, load: .kg(50), drops: 1, dropReps: 6),
+                    ]),
+                EngineCatalog.slot("curl", myoExercise, [PlannedSet(key: "s1", structure: .myo, repsMin: 12, repsMax: 15, load: .kg(10))]),
+                EngineCatalog.slot("plank", EngineCatalog.plank, [PlannedSet(key: "s1", durationMin: 30, durationMax: 45)]),
+                EngineCatalog.slot("hold", hold, [PlannedSet(key: "s1", durationMin: 20, timerMode: .stopwatch)]),
+            ]), exercises: EngineCatalog.all + [myoExercise, hold])
         let (s1, s2, drop) = try (script.row("press", 0), script.row("press", 1), script.row("press", 2))
         try script.tick(s1, kgReps(50, 9))
         try script.tick(s2, kgReps(50, 9))
@@ -566,13 +627,17 @@ struct ReviewRecordTests {
         try script.tick(try script.row("curl", 0), kgReps(10, 14))
         for row in try [script.row("plank", 0), script.row("hold", 0), script.row("hold", 1)] {
             try script.send(.startTimedSet(row: row, target: nil))
-            try script.send(.stopTimedSet(.init(row: row, recordID: SetID("t-\(row.rawValue)"), values: SetValues())),
-                            at: script.now.addingTimeInterval(25))
+            try script.send(
+                .stopTimedSet(.init(row: row, recordID: SetID("t-\(row.rawValue)"), values: SetValues())),
+                at: script.now.addingTimeInterval(25))
         }
         let sets = SessionEngine.setRecords(try script.current)
         let straight = try #require(sets.first { $0.slot == "press" && $0.target?.plannedSet == "s1" }?.target)
-        #expect(straight == SetTarget(plannedSet: "s1", termination: .reprange, repsMin: 8, repsMax: 10, load: .kg(50), rpeMin: 7, rpeMax: 8,
-                                      tempo: "3-1-1-0"))
+        #expect(
+            straight
+                == SetTarget(
+                    plannedSet: "s1", termination: .reprange, repsMin: 8, repsMax: 10, load: .kg(50), rpeMin: 7, rpeMax: 8,
+                    tempo: "3-1-1-0"))
         let dropHead = try #require(sets.first { $0.slot == "press" && $0.structure == .drop && $0.continues == nil }?.target)
         #expect(dropHead.dropReps == 6 && dropHead.drops == 1 && dropHead.intraSetPause == 0)
         let dropLink = try #require(sets.first { $0.slot == "press" && $0.continues != nil }?.target)
@@ -587,13 +652,16 @@ struct ReviewRecordTests {
     @Test("a percentage of body mass resolves into the target's and the snapshot's load; another reference stays a percentage")
     func percentLoads() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("press", EngineCatalog.press, [
-                PlannedSet(key: "s1", repsMin: 8, repsMax: 8, loadPercent: 50, loadReference: .bodymass),
-                PlannedSet(key: "s2", repsMin: 5, repsMax: 5, loadPercent: 80, loadReference: .trainingmax),
-                PlannedSet(key: "s3", repsMin: 5, repsMax: 5, load: .kg(60), loadPercent: 80, loadReference: .bodymass),
-            ]),
-        ]), exercises: EngineCatalog.all, bodyMass: .kg(d("82.4")))
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot(
+                    "press", EngineCatalog.press,
+                    [
+                        PlannedSet(key: "s1", repsMin: 8, repsMax: 8, loadPercent: 50, loadReference: .bodymass),
+                        PlannedSet(key: "s2", repsMin: 5, repsMax: 5, loadPercent: 80, loadReference: .trainingmax),
+                        PlannedSet(key: "s3", repsMin: 5, repsMax: 5, load: .kg(60), loadPercent: 80, loadReference: .bodymass),
+                    ])
+            ]), exercises: EngineCatalog.all, bodyMass: .kg(d("82.4")))
         let rows = try script.current.orderedRows(inSlot: "press")
         #expect(rows[0].target?.load == .kg(d("41.2")) && rows[0].target?.referenceLoad == .kg(d("82.4")))
         #expect(rows[0].target?.loadPercent == 50 && rows[0].target?.loadReference == .bodymass)
@@ -661,8 +729,10 @@ struct ReviewSuggestionTests {
     private func next(after set: DoneSet) throws -> Suggestion {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
-        return try #require(suggest(pending: PendingSet(kind: .normal, ordinal: 2, target: target), exercise: config, today: [set],
-                                    history: [], bodyMass: nil, now: now, calendar: calendar))
+        return try #require(
+            suggest(
+                pending: PendingSet(kind: .normal, ordinal: 2, target: target), exercise: config, today: [set],
+                history: [], bodyMass: nil, now: now, calendar: calendar))
     }
 
     @Test("a pre-filled or copied RPE gives what no RPE gives, and says \"assuming\"; a rating says \"at\"")
@@ -693,23 +763,58 @@ struct ReviewSuggestionTests {
             return set
         }
         #expect(with { $0.rpe = 8 }.ratedRPE == 8)
-        #expect(with { $0.rpe = 8; $0.rpeMethod = .imported }.ratedRPE == 8)
-        #expect(with { $0.rpe = 8; $0.rpeMethod = .prefilled }.ratedRPE == nil)
-        #expect(with { $0.rpe = 8; $0.rpeMethod = .copied }.ratedRPE == nil)
-        #expect(with { $0.rir = 2; $0.rirMethod = .imported; $0.rpeScale = .hevy }.ratedRPE == 8)
-        #expect(with { $0.rir = 2; $0.rpeScale = .cr10 }.ratedRPE == nil)
-        #expect(with { $0.rpe = 8; $0.rpeMethod = .prefilled }.loggedRPE == 8)
-        let sets = [with { $0.load = .kg(100); $0.reps = 10; $0.loadMode = .external; $0.rpe = 8; $0.rpeMethod = .prefilled }]
+        #expect(
+            with {
+                $0.rpe = 8
+                $0.rpeMethod = .imported
+            }.ratedRPE == 8)
+        #expect(
+            with {
+                $0.rpe = 8
+                $0.rpeMethod = .prefilled
+            }.ratedRPE == nil)
+        #expect(
+            with {
+                $0.rpe = 8
+                $0.rpeMethod = .copied
+            }.ratedRPE == nil)
+        #expect(
+            with {
+                $0.rir = 2
+                $0.rirMethod = .imported
+                $0.rpeScale = .hevy
+            }.ratedRPE == 8)
+        #expect(
+            with {
+                $0.rir = 2
+                $0.rpeScale = .cr10
+            }.ratedRPE == nil)
+        #expect(
+            with {
+                $0.rpe = 8
+                $0.rpeMethod = .prefilled
+            }.loggedRPE == 8)
+        let sets = [
+            with {
+                $0.load = .kg(100)
+                $0.reps = 10
+                $0.loadMode = .external
+                $0.rpe = 8
+                $0.rpeMethod = .prefilled
+            }
+        ]
         let doneSets = SuggestionInputs.doneSets(sets, exercise: EngineCatalog.press, config: config)
         #expect(doneSets.first?.rpe == nil && doneSets.first?.unratedRPE == 8)
     }
 
     @Test("a side pair folds to its highest rating; an unrated side does not count")
     func chainFold() {
-        let left = SuggestionInputs.doneSet(kind: .normal, values: SetValues(load: .kg(10), reps: 10, rpe: 9, rpeMethod: .prefilled),
-                                            side: .left, config: config, target: target, completedAt: now, ordinal: 1)
-        let right = SuggestionInputs.doneSet(kind: .normal, values: SetValues(load: .kg(10), reps: 9, rpe: 8, rpeMethod: .entered),
-                                             side: .right, config: config, target: target, completedAt: now, ordinal: 1)
+        let left = SuggestionInputs.doneSet(
+            kind: .normal, values: SetValues(load: .kg(10), reps: 10, rpe: 9, rpeMethod: .prefilled),
+            side: .left, config: config, target: target, completedAt: now, ordinal: 1)
+        let right = SuggestionInputs.doneSet(
+            kind: .normal, values: SetValues(load: .kg(10), reps: 9, rpe: 8, rpeMethod: .entered),
+            side: .right, config: config, target: target, completedAt: now, ordinal: 1)
         #expect(SuggestionInputs.merged(left, with: right).rpe == 8)
         let unrated = SuggestionInputs.merged(left, with: left)
         #expect(unrated.rpe == nil && unrated.unratedRPE == 9)
@@ -731,8 +836,10 @@ struct ReviewSuggestionTests {
         #expect(Format.effort(rpeMin: 8, rpeMax: 8, rirMin: nil, rirMax: nil) == "RPE 8")
         #expect(Format.effort(rpeMin: nil, rpeMax: nil, rirMin: 2, rirMax: 3) == "2–3 reps in reserve")
         #expect(Format.effort(rpeMin: nil, rpeMax: nil, rirMin: 1, rirMax: 1) == "1 rep in reserve")
-        #expect(RoutinePresenter.runText(PlannedSet(key: "s1", repsMin: 5, repsMax: 5, loadPercent: 80, loadReference: .trainingmax),
-                                         count: 3, measurement: .weightreps) == "3 sets of 5 reps, from 80% of training max")
+        #expect(
+            RoutinePresenter.runText(
+                PlannedSet(key: "s1", repsMin: 5, repsMax: 5, loadPercent: 80, loadReference: .trainingmax),
+                count: 3, measurement: .weightreps) == "3 sets of 5 reps, from 80% of training max")
     }
 }
 
@@ -765,17 +872,23 @@ struct ReviewHealthAndHistoryTests {
         let old: JSONValue = .object([
             "format": .number(1),
             "records": .array([
-                FlatRecord(kind: kinds.session, id: session.rawValue, properties: [
-                    "at": .string("2026-10-27T13:30:00Z"), "status": .string("finished"), "timeZone": .string("Europe/London"),
-                    "adapter": .string("substrate-workouts@0.1.0"),
-                ]).json,
-                FlatRecord(kind: kinds.set, id: "set-1", properties: [
-                    "at": .string("2026-10-27T13:42:10Z"), "session": .string("\(kinds.session)/\(session.rawValue)"),
-                    "exercise": .string("\(kinds.exercise)/chest-press-machine"), "slot": .string("chest-press"), "order": .number(1),
-                    "loadMode": .string("external"), "load": .object(["value": .string("35"), "unit": .string("kg")]), "reps": .number(13),
-                    "rpe": .string("9.5"),
-                    "target": .object(["plannedSet": .string("s1"), "rpe": .string("9.5"), "rir": .string("1")]),
-                ]).json,
+                FlatRecord(
+                    kind: kinds.session, id: session.rawValue,
+                    properties: [
+                        "at": .string("2026-10-27T13:30:00Z"), "status": .string("finished"), "timeZone": .string("Europe/London"),
+                        "adapter": .string("substrate-workouts@0.1.0"),
+                    ]
+                ).json,
+                FlatRecord(
+                    kind: kinds.set, id: "set-1",
+                    properties: [
+                        "at": .string("2026-10-27T13:42:10Z"), "session": .string("\(kinds.session)/\(session.rawValue)"),
+                        "exercise": .string("\(kinds.exercise)/chest-press-machine"), "slot": .string("chest-press"), "order": .number(1),
+                        "loadMode": .string("external"), "load": .object(["value": .string("35"), "unit": .string("kg")]), "reps": .number(13),
+                        "rpe": .string("9.5"),
+                        "target": .object(["plannedSet": .string("s1"), "rpe": .string("9.5"), "rir": .string("1")]),
+                    ]
+                ).json,
             ]),
         ])
         let history = directory.url.appendingPathComponent("history")

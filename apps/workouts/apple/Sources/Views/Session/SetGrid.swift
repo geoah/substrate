@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The grid's column widths (DESIGN.md §7.6). A grid is bounded tabular
 /// data, so fixed columns are right for it; PREVIOUS takes what is left.
@@ -11,11 +11,12 @@ struct GridLayout: Equatable {
     let stacksPrevious: Bool
 
     init(_ size: DynamicTypeSize) {
-        scale = switch size {
-        case ...DynamicTypeSize.large: 1
-        case .xLarge: 1.08
-        default: 1.16
-        }
+        scale =
+            switch size {
+            case ...DynamicTypeSize.large: 1
+            case .xLarge: 1.08
+            default: 1.16
+            }
         stacksPrevious = size >= .xxLarge
     }
 

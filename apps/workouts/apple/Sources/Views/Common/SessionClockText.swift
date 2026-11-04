@@ -1,6 +1,6 @@
-import WorkoutsCore
 import SwiftUI
 import UIKit
+import WorkoutsCore
 
 /// The session clock: elapsed time that ticks with no app code, or the
 /// frozen time while paused.

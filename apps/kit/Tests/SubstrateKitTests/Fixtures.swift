@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import SubstrateAPI
 @testable import SubstrateAuth
 
@@ -33,30 +34,31 @@ func discoveryJSON(version: String = "v0.114.0", totp: Bool = true) -> String {
 
 /// The OAuth metadata a substrate at `issuer` serves; `endpoints` moves its
 /// endpoints elsewhere, as a server handing the sign-in on would.
-func metadataJSON(issuer: String = "https://ada.example.com", details: [String] = ["package", "account", "webhook"],
-                  verbs: [String] = ["read", "write", "agents", "decide"], endpoints: String? = nil) -> String
-{
+func metadataJSON(
+    issuer: String = "https://ada.example.com", details: [String] = ["package", "account", "webhook"],
+    verbs: [String] = ["read", "write", "agents", "decide"], endpoints: String? = nil
+) -> String {
     let scopes = verbs.map { "\"\($0):*\"" }.joined(separator: ",")
     let types = details.map { "\"\($0)\"" }.joined(separator: ",")
     let at = endpoints ?? issuer
     return #"""
-    {
-      "issuer": "\#(issuer)",
-      "authorization_endpoint": "\#(at)/oauth/authorize",
-      "token_endpoint": "\#(at)/oauth/token",
-      "revocation_endpoint": "\#(at)/oauth/revoke",
-      "response_types_supported": ["code"],
-      "response_modes_supported": ["query"],
-      "grant_types_supported": ["authorization_code"],
-      "code_challenge_methods_supported": ["S256"],
-      "token_endpoint_auth_methods_supported": ["none"],
-      "revocation_endpoint_auth_methods_supported": ["none"],
-      "scopes_supported": [\#(scopes)],
-      "authorization_details_types_supported": [\#(types)],
-      "authorization_response_iss_parameter_supported": true,
-      "client_id_metadata_document_supported": true
-    }
-    """#
+        {
+          "issuer": "\#(issuer)",
+          "authorization_endpoint": "\#(at)/oauth/authorize",
+          "token_endpoint": "\#(at)/oauth/token",
+          "revocation_endpoint": "\#(at)/oauth/revoke",
+          "response_types_supported": ["code"],
+          "response_modes_supported": ["query"],
+          "grant_types_supported": ["authorization_code"],
+          "code_challenge_methods_supported": ["S256"],
+          "token_endpoint_auth_methods_supported": ["none"],
+          "revocation_endpoint_auth_methods_supported": ["none"],
+          "scopes_supported": [\#(scopes)],
+          "authorization_details_types_supported": [\#(types)],
+          "authorization_response_iss_parameter_supported": true,
+          "client_id_metadata_document_supported": true
+        }
+        """#
 }
 
 /// Substrate Sync's request, as docs/plans/app-setup.md writes it.
@@ -64,14 +66,17 @@ func syncManifest() -> AppManifest {
     AppManifest(
         appName: "Substrate Sync",
         clientID: "https://sync.substrate.example.com/client.json",
-        scopes: ["write:providers.substrate.reamde.dev/apple/*",
-                 "read:providers.substrate.reamde.dev/applehealth/account",
-                 "read:providers.substrate.reamde.dev/applehealth/export"],
+        scopes: [
+            "write:providers.substrate.reamde.dev/apple/*",
+            "read:providers.substrate.reamde.dev/applehealth/account",
+            "read:providers.substrate.reamde.dev/applehealth/export",
+        ],
         details: [
             .package("providers.substrate.reamde.dev/apple", atLeast: 3),
             .package("providers.substrate.reamde.dev/applehealth", atLeast: 5),
-            .account(kind: "providers.substrate.reamde.dev/applehealth/account", id: "substrate-sync-1a2b3c4d",
-                     properties: ["displayName": "Ada's iPhone", "timezone": "Europe/London"]),
+            .account(
+                kind: "providers.substrate.reamde.dev/applehealth/account", id: "substrate-sync-1a2b3c4d",
+                properties: ["displayName": "Ada's iPhone", "timezone": "Europe/London"]),
             .webhook(trigger: "applehealth-webhook", deliversTo: "providers.substrate.reamde.dev/applehealth"),
         ],
         requirement: ServerRequirement(minimumVersion: "0.114.0"),

@@ -40,7 +40,9 @@ struct SessionExpiredView: View {
             Section {
                 ProblemBox(
                     title: "Signed out by the server",
-                    message: "\(model.session?.server.absoluteString ?? "The server") no longer accepts this phone's sign-in. The token was revoked, or the repository was reset. Sign in again to carry on; what this phone pushed is checked against the server and sent again where it is missing.")
+                    message:
+                        "\(model.session?.server.absoluteString ?? "The server") no longer accepts this phone's sign-in. The token was revoked, or the repository was reset. Sign in again to carry on; what this phone pushed is checked against the server and sent again where it is missing."
+                )
             }
             Section {
                 Button {
@@ -124,8 +126,12 @@ struct RootView: View {
             }
             .readableWidth()
         }
-        .alert("Couldn't sign out", isPresented: Binding(get: { model.signOutProblem != nil },
-                                                          set: { if !$0 { model.signOutProblem = nil } })) {
+        .alert(
+            "Couldn't sign out",
+            isPresented: Binding(
+                get: { model.signOutProblem != nil },
+                set: { if !$0 { model.signOutProblem = nil } })
+        ) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.signOutProblem ?? "")

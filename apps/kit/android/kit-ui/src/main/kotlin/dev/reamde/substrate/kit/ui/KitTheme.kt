@@ -11,10 +11,8 @@ import androidx.compose.ui.graphics.luminance
 import dev.reamde.substrate.kit.bridge.ScreenTone
 
 /**
- * Material 3 as the shared screens draw in it: the system's own scheme for
- * surfaces and controls, light or dark as the device is. What a tone says
- * by its colour comes from the design tokens, so a caution is the same
- * orange on both systems.
+ * Material 3 as the shared screens draw in it: the system's own scheme for surfaces and controls, light or dark as the device is. What a tone says by its
+ * colour comes from the design tokens, so a caution is the same orange on both systems.
  */
 @Composable
 public fun KitTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
@@ -23,10 +21,8 @@ public fun KitTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable 
 
 /** Whether the scheme in force is a dark one. */
 public val isKitDark: Boolean
-    @Composable @ReadOnlyComposable
-    get() = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
 /** A tone as a colour here: a quiet one is the scheme's secondary text, the rest the tokens'. */
 public val ScreenTone.tint: Color
-    @Composable @ReadOnlyComposable
-    get() = if (this == ScreenTone.quiet) MaterialTheme.colorScheme.onSurfaceVariant else color(isKitDark)
+    @Composable @ReadOnlyComposable get() = if (this == ScreenTone.quiet) MaterialTheme.colorScheme.onSurfaceVariant else color(isKitDark)

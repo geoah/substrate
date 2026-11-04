@@ -44,17 +44,18 @@ func decisionNotice(_ turn: Turn) -> DecisionNotice? {
     guard let env = envelope(turn, role: .system), env["event"]?.string == "proposalDecision" else { return nil }
     let decision = env["decision"]?.string
     guard decision == "accepted" || decision == "rejected",
-          let request = env["request"]?.string, let id = request.split(separator: "/").last.map(String.init)
+        let request = env["request"]?.string, let id = request.split(separator: "/").last.map(String.init)
     else { return nil }
-    return DecisionNotice(requestID: id, accepted: decision == "accepted", op: env["op"]?.text ?? "patch",
-                          target: env["target"]?.text, adjustedValues: env["adjustedDiff"]?["properties"]?.object)
+    return DecisionNotice(
+        requestID: id, accepted: decision == "accepted", op: env["op"]?.text ?? "patch",
+        target: env["target"]?.text, adjustedValues: env["adjustedDiff"]?["properties"]?.object)
 }
 
 func interactionNotice(_ turn: Turn) -> InteractionNotice? {
     guard let env = envelope(turn, role: .system) else { return nil }
     let event = env["event"]?.string
     guard event == "interactionAnswered" || event == "interactionDismissed",
-          let path = env["interaction"]?.string, let id = path.split(separator: "/").last.map(String.init)
+        let path = env["interaction"]?.string, let id = path.split(separator: "/").last.map(String.init)
     else { return nil }
     let answers = (env["answers"]?.array ?? []).compactMap { item -> InteractionNotice.Answer? in
         guard let q = item["question"]?.text else { return nil }
@@ -65,9 +66,9 @@ func interactionNotice(_ turn: Turn) -> InteractionNotice? {
 
 func deliveryNotice(_ turn: Turn) -> DeliveryNotice? {
     guard let env = envelope(turn, role: .user), let change = env["change"]?.object,
-          let record = env["record"]?.object,
-          let op = change["op"]?.text, change["kind"]?.text != nil, change["id"]?.text != nil,
-          let kind = record["kind"]?.text, let id = record["id"]?.text
+        let record = env["record"]?.object,
+        let op = change["op"]?.text, change["kind"]?.text != nil, change["id"]?.text != nil,
+        let kind = record["kind"]?.text, let id = record["id"]?.text
     else { return nil }
     let props = record["properties"]?.object ?? [:]
     return DeliveryNotice(op: op, kind: kind, id: id, title: props["title"]?.text ?? props["name"]?.text)
@@ -92,7 +93,7 @@ func requestID(of call: ToolCall) -> String? {
         return nil
     }
     guard let object = JSONValue.parse(call.output)?.object, object.count == 1,
-          let id = object["id"]?.string, isMintedID(id)
+        let id = object["id"]?.string, isMintedID(id)
     else { return nil }
     return id
 }

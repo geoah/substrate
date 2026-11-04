@@ -164,8 +164,9 @@ extension WorkoutsApp {
                     unreadable.append(error.record)
                 } catch {}
                 let cached = account.remote.hasCache ? try? account.remote.loadNow() : nil
-                return .accountOpened(ref, cached: cached, draft: draft, sample: account.sample.state, unreadable: unreadable,
-                                      hidden: account.tombstones.all)
+                return .accountOpened(
+                    ref, cached: cached, draft: draft, sample: account.sample.state, unreadable: unreadable,
+                    hidden: account.tombstones.all)
             }
         case let .followOutbox(ref):
             guard let outbox = folder(ref)?.outbox else { return .none }
@@ -174,8 +175,9 @@ extension WorkoutsApp {
                     let task = Task {
                         for await _ in await outbox.changes() {
                             let entries = await outbox.entries
-                            let waiting = Set(entries.filter { $0.kind == codec.kinds.routine && $0.batch == nil && !$0.parked }
-                                .map { RoutineID($0.recordID) })
+                            let waiting = Set(
+                                entries.filter { $0.kind == codec.kinds.routine && $0.batch == nil && !$0.parked }
+                                    .map { RoutineID($0.recordID) })
                             let conflicts = entries.filter { $0.parked && $0.conflict && $0.kind == codec.kinds.routine }
                             continuation.yield(.outboxRead(ref, waitingRoutines: waiting, conflicts: conflicts))
                         }
@@ -192,8 +194,9 @@ extension WorkoutsApp {
                 yield(.syncStarted(ref))
                 guard let api = await api() else { return yield(.syncEnded(ref, problem: nil)) }
                 do {
-                    let read = try await CatalogSync.read(api, remote: account.remote, outbox: account.outbox, sample: account.sample,
-                                                          bundled: { try BundledCatalog().loadNow() })
+                    let read = try await CatalogSync.read(
+                        api, remote: account.remote, outbox: account.outbox, sample: account.sample,
+                        bundled: { try BundledCatalog().loadNow() })
                     yield(.catalogRead(ref, read.catalog, sample: account.sample.state, sampleProblem: read.sampleProblem))
                 } catch {
                     yield(Self.failed(error, ref))
@@ -204,8 +207,10 @@ extension WorkoutsApp {
             return steps { yield in
                 guard let api = await api() else { return yield(.syncEnded(ref, problem: nil)) }
                 do {
-                    yield(try await Self.exchange(api, account: account, outbox: outbox, local: local, hidden: hidden, exercises: exercises,
-                                                  directory: directory, codec: codec))
+                    yield(
+                        try await Self.exchange(
+                            api, account: account, outbox: outbox, local: local, hidden: hidden, exercises: exercises,
+                            directory: directory, codec: codec))
                 } catch {
                     yield(Self.failed(error, ref))
                 }
@@ -263,8 +268,9 @@ extension WorkoutsApp {
                     if editor.isNew {
                         try await outbox.enqueue([OutboxPlan.routineCreated(editor.routine, codec: codec)])
                     } else {
-                        try await outbox.edit(routine: editor.routine.id, patch: editor.patch(codec: codec), baseVersion: editor.baseVersion,
-                                              codec: codec)
+                        try await outbox.edit(
+                            routine: editor.routine.id, patch: editor.patch(codec: codec), baseVersion: editor.baseVersion,
+                            codec: codec)
                     }
                 } catch {
                     return yield(.outcome(receipt, problem: error.localizedDescription))
@@ -347,9 +353,12 @@ extension WorkoutsApp {
                     }
                 }
                 yield(.sessionsImported(written))
-                yield(.outcome(receipt, problem: failure.map {
-                    "\(written.count) of \(entries.count) workouts were imported; the rest could not be saved on this iPhone: \($0)"
-                }))
+                yield(
+                    .outcome(
+                        receipt,
+                        problem: failure.map {
+                            "\(written.count) of \(entries.count) workouts were imported; the rest could not be saved on this iPhone: \($0)"
+                        }))
             }
         case let .importRecords(ref, routines, measurements, exercises, receipt):
             guard let account = folder(ref), let outbox = account.outbox else { return .none }
@@ -424,8 +433,9 @@ extension WorkoutsApp {
     /// The routines read again into the account's cache, laying what waits over them.
     static func refresh(_ api: WorkoutsAPI, account: WorkoutsFolder, codec: RecordCodec) async throws -> Catalog {
         let outbox = account.outbox
-        return try await account.remote.refresh(api, hiding: { await outbox?.waitingDeletes ?? [] },
-                                                waiting: { await outbox?.waitingRoutines(codec: codec) ?? [:] })
+        return try await account.remote.refresh(
+            api, hiding: { await outbox?.waitingDeletes ?? [] },
+            waiting: { await outbox?.waitingRoutines(codec: codec) ?? [:] })
     }
 
     /// Routines read again from the server, one by one, into the cache.
@@ -443,15 +453,17 @@ extension WorkoutsApp {
     /// the server after this phone sent them are removed here, all of it in
     /// the history files first; sessions and exercises the server never held
     /// are queued, and sessions deleted on the phone purged there.
-    static func exchange(_ api: WorkoutsAPI, account: WorkoutsFolder, outbox: Outbox, local: [HistoryEntry], hidden: Set<String>,
-                         exercises: [Exercise], directory: URL?, codec: RecordCodec) async throws -> Event
-    {
+    static func exchange(
+        _ api: WorkoutsAPI, account: WorkoutsFolder, outbox: Outbox, local: [HistoryEntry], hidden: Set<String>,
+        exercises: [Exercise], directory: URL?, codec: RecordCodec
+    ) async throws -> Event {
         let snapshot = try await ServerHistory(api: api, codec: codec).snapshot()
         let held = Set(try await api.list([codec.kinds.exercise]).map(\.id))
         let queued = Set(await outbox.entries.compactMap(\.batch))
         let versions = await outbox.versions
-        let plan = HistoryExchange.plan(server: snapshot, local: local.map(\.records), queued: queued, versions: versions,
-                                        tombstones: account.tombstones.all, hidden: hidden, codec: codec)
+        let plan = HistoryExchange.plan(
+            server: snapshot, local: local.map(\.records), queued: queued, versions: versions,
+            tombstones: account.tombstones.all, hidden: hidden, codec: codec)
         var imports: [HistoryEntry] = []
         var merges: [HistoryEntry] = []
         var removals: [SessionID] = []

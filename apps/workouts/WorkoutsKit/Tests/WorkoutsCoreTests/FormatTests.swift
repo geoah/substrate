@@ -1,7 +1,8 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
 import SubstrateCore
+import Testing
+
+@testable import WorkoutsCore
 
 // DESIGN §10.1 FormatTests: every formatter example in §4.13 and research
 // 03 §12, plus the labels and headers the screens read from the same place.
@@ -68,10 +69,12 @@ struct FormatTests {
         #expect(Format.set(SetValues(load: .kg(10), duration: 62), measurement: .weightduration) == "10 kg for 1:02")
         #expect(Format.set(SetValues(distance: Length(metres: 40)), measurement: .distanceduration) == "40 m")
         #expect(Format.set(SetValues(duration: 125, distance: Length(metres: 500)), measurement: .distanceduration) == "500 m in 2:05")
-        #expect(Format.set(SetValues(load: .kg(20), distance: Length(metres: 40)), measurement: .shortdistanceweight)
-            == "20 kg for 40 m")
-        #expect(Format.set(SetValues(load: .kg(35), reps: 13, rpe: d("9.5")), measurement: .weightreps, rpe: true)
-            == "35 kg × 13 @ 9.5")
+        #expect(
+            Format.set(SetValues(load: .kg(20), distance: Length(metres: 40)), measurement: .shortdistanceweight)
+                == "20 kg for 40 m")
+        #expect(
+            Format.set(SetValues(load: .kg(35), reps: 13, rpe: d("9.5")), measurement: .weightreps, rpe: true)
+                == "35 kg × 13 @ 9.5")
         #expect(Format.set(SetValues(load: .kg(35), reps: 13, rpe: d("9.5")), measurement: .weightreps) == "35 kg × 13")
         #expect(Format.set(SetValues(reps: 14, rpe: 9), measurement: .bodyweightreps, rpe: true) == "BW × 14 @ 9")
         #expect(Format.set(SetValues(reps: 15), measurement: .bodyweightreps, repsHint: true) == "BW × \u{2248}15")

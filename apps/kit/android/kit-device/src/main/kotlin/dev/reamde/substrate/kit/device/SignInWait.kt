@@ -12,13 +12,10 @@ import android.os.IBinder
 import android.util.Log
 
 /**
- * Keeps the app's process running while the owner is in their browser: a
- * process in the background is frozen within seconds (Android 14 and later
- * freeze cached apps), and a frozen process's loopback listener takes no
- * callback. A short foreground service, started while the app is still in
- * front and stopped when the sign-in finishes, says so in a notification.
- * Android ends a short service after about three minutes; a sign-in left
- * that long is answered when the app comes back to the front.
+ * Keeps the app's process running while the owner is in their browser: a process in the background is frozen within seconds (Android 14 and later freeze cached
+ * apps), and a frozen process's loopback listener takes no callback. A short foreground service, started while the app is still in front and stopped when the
+ * sign-in finishes, says so in a notification. Android ends a short service after about three minutes; a sign-in left that long is answered when the app comes
+ * back to the front.
  */
 public class SignInWait : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -29,12 +26,13 @@ public class SignInWait : Service() {
             manager.createNotificationChannel(NotificationChannel(CHANNEL, "Signing in", NotificationManager.IMPORTANCE_LOW))
         }
         val label = applicationInfo.loadLabel(packageManager)
-        val notification = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.substrate_notification)
-            .setContentTitle("Waiting for your browser")
-            .setContentText("$label finishes signing in when you approve it there.")
-            .setOngoing(true)
-            .build()
+        val notification =
+            Notification.Builder(this, CHANNEL)
+                .setSmallIcon(R.drawable.substrate_notification)
+                .setContentTitle("Waiting for your browser")
+                .setContentText("$label finishes signing in when you approve it there.")
+                .setOngoing(true)
+                .build()
         try {
             if (Build.VERSION.SDK_INT >= 34) {
                 startForeground(NOTIFICATION, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE)

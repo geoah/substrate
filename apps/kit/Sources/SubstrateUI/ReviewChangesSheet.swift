@@ -89,18 +89,22 @@ public struct ReviewChangesSheet: View {
     let onContinue: () -> Void
     let onCancel: () -> Void
 
-    public init(appName: String, host: String, changes: [Change], heading: ReviewHeading,
-                onContinue: @escaping () -> Void, onCancel: @escaping () -> Void)
-    {
-        self.init(appName: appName, host: host, changes: changes, heading: heading, alreadyAllowed: false,
-                  setsUp: changes.contains(where: \.isSetup), onContinue: onContinue, onCancel: onCancel)
+    public init(
+        appName: String, host: String, changes: [Change], heading: ReviewHeading,
+        onContinue: @escaping () -> Void, onCancel: @escaping () -> Void
+    ) {
+        self.init(
+            appName: appName, host: host, changes: changes, heading: heading, alreadyAllowed: false,
+            setsUp: changes.contains(where: \.isSetup), onContinue: onContinue, onCancel: onCancel)
     }
 
-    init(appName: String, host: String, changes: [Change], heading: ReviewHeading, alreadyAllowed: Bool, setsUp: Bool,
-         onContinue: @escaping () -> Void, onCancel: @escaping () -> Void)
-    {
-        presentation = ReviewPresenter.present(appName: appName, host: host, changes: changes, heading: heading,
-                                               alreadyAllowed: alreadyAllowed, setsUp: setsUp)
+    init(
+        appName: String, host: String, changes: [Change], heading: ReviewHeading, alreadyAllowed: Bool, setsUp: Bool,
+        onContinue: @escaping () -> Void, onCancel: @escaping () -> Void
+    ) {
+        presentation = ReviewPresenter.present(
+            appName: appName, host: host, changes: changes, heading: heading,
+            alreadyAllowed: alreadyAllowed, setsUp: setsUp)
         self.onContinue = onContinue
         self.onCancel = onCancel
     }
@@ -108,20 +112,24 @@ public struct ReviewChangesSheet: View {
     /// The owner's own Change Access for the request `manifest` sends now,
     /// `session` the access the app holds: the page's controls as the
     /// server will show them.
-    public init(changingAccessFor manifest: AppManifest, session: Session, changes: [Change],
-                onContinue: @escaping () -> Void, onCancel: @escaping () -> Void)
-    {
-        self.init(appName: manifest.appName, host: ServerAddress.display(session.server), changes: changes,
-                  heading: .changeAccess, alreadyAllowed: manifest.showsAlreadyAllowed(session),
-                  setsUp: !manifest.details.isEmpty, onContinue: onContinue, onCancel: onCancel)
+    public init(
+        changingAccessFor manifest: AppManifest, session: Session, changes: [Change],
+        onContinue: @escaping () -> Void, onCancel: @escaping () -> Void
+    ) {
+        self.init(
+            appName: manifest.appName, host: ServerAddress.display(session.server), changes: changes,
+            heading: .changeAccess, alreadyAllowed: manifest.showsAlreadyAllowed(session),
+            setsUp: !manifest.details.isEmpty, onContinue: onContinue, onCancel: onCancel)
     }
 
     /// Headed by what the changes are.
-    public init(appName: String, host: String, changes: [Change], firstSignIn: Bool,
-                onContinue: @escaping () -> Void, onCancel: @escaping () -> Void)
-    {
-        self.init(appName: appName, host: host, changes: changes, heading: ReviewHeading(changes: changes, firstSignIn: firstSignIn),
-                  onContinue: onContinue, onCancel: onCancel)
+    public init(
+        appName: String, host: String, changes: [Change], firstSignIn: Bool,
+        onContinue: @escaping () -> Void, onCancel: @escaping () -> Void
+    ) {
+        self.init(
+            appName: appName, host: host, changes: changes, heading: ReviewHeading(changes: changes, firstSignIn: firstSignIn),
+            onContinue: onContinue, onCancel: onCancel)
     }
 
     public var body: some View {

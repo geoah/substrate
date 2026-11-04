@@ -1,6 +1,7 @@
 import Foundation
-@testable import WorkoutsCore
 import Testing
+
+@testable import WorkoutsCore
 
 // Chains (DESIGN §4.9): drops, myo-reps and their stop rules, myo-rep match,
 // rest-pause, clusters and one side at a time, and the edits that stop or
@@ -12,21 +13,24 @@ private func chainReps(_ state: SessionState, _ head: RowID) -> [Int?] {
 }
 
 /// Ticks the chain's next pending links, one per entry of `reps`, 15 s apart.
-private func tickMiniSets(_ script: inout EngineScript, _ head: RowID, load: Decimal, _ reps: [Int],
-                          sourceLocation: SourceLocation = #_sourceLocation) throws
-{
+private func tickMiniSets(
+    _ script: inout EngineScript, _ head: RowID, load: Decimal, _ reps: [Int],
+    sourceLocation: SourceLocation = #_sourceLocation
+) throws {
     for count in reps {
         let next = try #require(try script.current.chain(of: head).first { $0.isPending }, "no pending link", sourceLocation: sourceLocation)
         try script.tick(next.id, kgReps(load, count), at: script.now.addingTimeInterval(15), sourceLocation: sourceLocation)
     }
 }
 
-private func singleSlot(_ exercise: Exercise, _ sets: [PlannedSet], sideOrder: SideOrder? = nil, sideMatch: Bool? = nil,
-                        firstSides: [String: Side] = [:]) throws -> EngineScript
-{
+private func singleSlot(
+    _ exercise: Exercise, _ sets: [PlannedSet], sideOrder: SideOrder? = nil, sideMatch: Bool? = nil,
+    firstSides: [String: Side] = [:]
+) throws -> EngineScript {
     var script = EngineScript(at: engineEpoch)
-    try script.start(EngineCatalog.routine([EngineCatalog.slot("x", exercise, sets, sideOrder: sideOrder, sideMatch: sideMatch)]),
-                     exercises: EngineCatalog.all + [exercise], firstSides: firstSides)
+    try script.start(
+        EngineCatalog.routine([EngineCatalog.slot("x", exercise, sets, sideOrder: sideOrder, sideMatch: sideMatch)]),
+        exercises: EngineCatalog.all + [exercise], firstSides: firstSides)
     return script
 }
 
@@ -34,8 +38,13 @@ private func singleSlot(_ exercise: Exercise, _ sets: [PlannedSet], sideOrder: S
 struct DropChainTests {
     @Test("drop rows come with the head, locked until it is ticked, with dropReps as their target")
     func created() throws {
-        var script = try singleSlot(EngineCatalog.press, [PlannedSet(key: "s1", structure: .drop, repsMin: 8, repsMax: 12, load: .kg(50),
-                                                                     drops: 2, dropReps: 6)])
+        var script = try singleSlot(
+            EngineCatalog.press,
+            [
+                PlannedSet(
+                    key: "s1", structure: .drop, repsMin: 8, repsMax: 12, load: .kg(50),
+                    drops: 2, dropReps: 6)
+            ])
         let state = try script.current
         let chain = state.chain(of: try script.row("x", 0))
         #expect(chain.map(\.structure) == [.drop, .drop, .drop])
@@ -64,8 +73,12 @@ struct DropChainTests {
         #expect(state.chain(of: head).count == 2)
         #expect(state.upNext == nil)
         // At the head: every drop goes, and the set is complete at once.
-        script = try singleSlot(EngineCatalog.press, [PlannedSet(key: "s1", structure: .drop, load: .kg(5), drops: 2, rest: 90),
-                                                     PlannedSet(key: "s2")])
+        script = try singleSlot(
+            EngineCatalog.press,
+            [
+                PlannedSet(key: "s1", structure: .drop, load: .kg(5), drops: 2, rest: 90),
+                PlannedSet(key: "s2"),
+            ])
         state = try script.tick(script.row("x", 0), kgReps(5, 10), noLighterLoad: true)
         #expect(state.chain(of: try script.row("x", 0)).count == 1)
         #expect(state.restClock?.slot == .override)
@@ -76,12 +89,18 @@ struct DropChainTests {
 struct MyoChainTests {
     private let raise = EngineCatalog.raise
 
-    private func myo(_ exercise: Exercise? = nil, miniSets: Int? = nil, totalReps: Int? = nil, rule: MyoStopRule? = nil,
-                     miniSetReps: Int? = nil) throws -> (EngineScript, RowID)
-    {
-        let script = try singleSlot(exercise ?? raise, [PlannedSet(key: "s1", structure: .myo, repsMin: 12, repsMax: 20, load: .kg(6),
-                                                                   miniSetReps: miniSetReps, miniSets: miniSets, myoStopRule: rule,
-                                                                   totalReps: totalReps)])
+    private func myo(
+        _ exercise: Exercise? = nil, miniSets: Int? = nil, totalReps: Int? = nil, rule: MyoStopRule? = nil,
+        miniSetReps: Int? = nil
+    ) throws -> (EngineScript, RowID) {
+        let script = try singleSlot(
+            exercise ?? raise,
+            [
+                PlannedSet(
+                    key: "s1", structure: .myo, repsMin: 12, repsMax: 20, load: .kg(6),
+                    miniSetReps: miniSetReps, miniSets: miniSets, myoStopRule: rule,
+                    totalReps: totalReps)
+            ])
         return (script, try script.row("x", 0))
     }
 
@@ -175,8 +194,12 @@ struct MyoChainTests {
 struct MatchPauseClusterTests {
     @Test("a myo-rep match resolves its total from the slot's previous working set at the head's tick (28 October)")
     func matchFromPrevious() throws {
-        var script = try singleSlot(EngineCatalog.curl, [PlannedSet(key: "s1", repsMin: 10, repsMax: 15, load: .kg(40)),
-                                                         PlannedSet(key: "s2", structure: .myomatch, load: .kg(40), intraSetPause: 10)])
+        var script = try singleSlot(
+            EngineCatalog.curl,
+            [
+                PlannedSet(key: "s1", repsMin: 10, repsMax: 15, load: .kg(40)),
+                PlannedSet(key: "s2", structure: .myomatch, load: .kg(40), intraSetPause: 10),
+            ])
         let (s1, s2) = try (script.row("x", 0), script.row("x", 1))
         #expect(try script.current.rows[s2]?.target?.termination == .totalreps)
         #expect(try script.current.rows[s2]?.target?.totalReps == nil)
@@ -203,8 +226,13 @@ struct MatchPauseClusterTests {
 
     @Test("rest-pause: two mini-sets by default, or until the total with the first bout")
     func restPause() throws {
-        var script = try singleSlot(EngineCatalog.curl, [PlannedSet(key: "s1", structure: .restpause, repsMin: 10, repsMax: 12, load: .kg(45),
-                                                                    miniSets: 2, intraSetPause: 20)])
+        var script = try singleSlot(
+            EngineCatalog.curl,
+            [
+                PlannedSet(
+                    key: "s1", structure: .restpause, repsMin: 10, repsMax: 12, load: .kg(45),
+                    miniSets: 2, intraSetPause: 20)
+            ])
         var head = try script.row("x", 0)
         try script.tick(head, kgReps(45, 12))
         try tickMiniSets(&script, head, load: 45, [4, 3])
@@ -220,13 +248,21 @@ struct MatchPauseClusterTests {
 
     @Test("a cluster set has all its clusters from the start, with miniSetReps as their target, and grows none")
     func cluster() throws {
-        var script = try singleSlot(EngineCatalog.press, [PlannedSet(key: "s1", structure: .cluster, load: .kg(80), rirMin: 2, rirMax: 2, miniSetReps: 3,
-                                                                     miniSets: 3, intraSetPause: 20)])
+        var script = try singleSlot(
+            EngineCatalog.press,
+            [
+                PlannedSet(
+                    key: "s1", structure: .cluster, load: .kg(80), rirMin: 2, rirMax: 2, miniSetReps: 3,
+                    miniSets: 3, intraSetPause: 20)
+            ])
         let head = try script.row("x", 0)
         let chain = try script.current.chain(of: head)
         #expect(chain.count == 4)
-        #expect(chain[0].target == SetTarget(plannedSet: "s1", load: .kg(80), rirMin: 2, rirMax: 2, miniSetReps: 3, miniSets: 3,
-                                             intraSetPause: 20))
+        #expect(
+            chain[0].target
+                == SetTarget(
+                    plannedSet: "s1", load: .kg(80), rirMin: 2, rirMax: 2, miniSetReps: 3, miniSets: 3,
+                    intraSetPause: 20))
         #expect(chain.dropFirst().allSatisfy { $0.target == SetTarget(plannedSet: "s1", repsMin: 3, repsMax: 3) })
         try script.tick(head, kgReps(80, 3))
         try tickMiniSets(&script, head, load: 80, [3, 3, 3])
@@ -243,11 +279,13 @@ struct SideChainTests {
     @Test("the first side by sideOrder: left by default, right, or the weaker side the controller found")
     func sideOrder() throws {
         let unilateral = EngineCatalog.lunge
-        for (order, resolved, expected) in [(SideOrder?.none, Side?.none, Side.left), (.left, nil, .left), (.right, nil, .right),
-                                            (.weakerfirst, .right, .right), (.weakerfirst, nil, .left)]
-        {
-            let script = try singleSlot(unilateral, EngineCatalog.sets(1), sideOrder: order,
-                                        firstSides: resolved.map { ["x": $0] } ?? [:])
+        for (order, resolved, expected) in [
+            (SideOrder?.none, Side?.none, Side.left), (.left, nil, .left), (.right, nil, .right),
+            (.weakerfirst, .right, .right), (.weakerfirst, nil, .left),
+        ] {
+            let script = try singleSlot(
+                unilateral, EngineCatalog.sets(1), sideOrder: order,
+                firstSides: resolved.map { ["x": $0] } ?? [:])
             let rows = try script.current.orderedRows(inSlot: "x")
             #expect(rows.map(\.side) == [expected, expected.other])
             #expect(rows[1].chainHead == rows[0].id && rows[1].structure == .straight)
@@ -277,8 +315,9 @@ struct SideChainTests {
         var script = try singleSlot(sidePlank, [PlannedSet(key: "s1", durationMin: 30, durationMax: 45, timerMode: .stopwatch)], sideMatch: true)
         let (left, right) = try (script.row("x", 0), script.row("x", 1))
         try script.send(.startTimedSet(row: left, target: nil))
-        let state = try script.send(.stopTimedSet(.init(row: left, recordID: script.setID(), values: SetValues())),
-                                    at: script.now.addingTimeInterval(41))
+        let state = try script.send(
+            .stopTimedSet(.init(row: left, recordID: script.setID(), values: SetValues())),
+            at: script.now.addingTimeInterval(41))
         #expect(state.rows[right]?.target == SetTarget(plannedSet: "s1", termination: .time, durationMin: 41, durationMax: 41))
         #expect(state.restClock?.slot == .sideSwitch)
     }

@@ -15,9 +15,8 @@ import androidx.compose.ui.unit.dp
 import dev.reamde.substrate.kit.bridge.ChangeLine
 
 /**
- * One change an approval would make: its mark, its words, and the fact
- * beside it, a blocked one's in full contrast, since that sentence is what
- * the owner acts on. Inside a card its words are set a size down (`style`).
+ * One change an approval would make: its mark, its words, and the fact beside it, a blocked one's in full contrast, since that sentence is what the owner acts
+ * on. Inside a card its words are set a size down (`style`).
  */
 @Composable
 public fun ChangeLineView(line: ChangeLine, modifier: Modifier = Modifier, style: TextStyle = KitText.body.style) {

@@ -7,11 +7,14 @@ public extension View {
     /// The question while the presentation asks one: its confirm drawn as
     /// destructive, its cancel as cancel. Dismissing it unanswered is the
     /// cancel.
-    func confirmation<Question>(_ confirmation: ConfirmationPresentation<Question>?, confirm: @escaping () -> Void,
-                                dismiss: @escaping () -> Void) -> some View
-    {
-        confirmationDialog(confirmation?.title ?? "", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { dismiss() } }),
-                           titleVisibility: .visible, presenting: confirmation) { confirmation in
+    func confirmation<Question>(
+        _ confirmation: ConfirmationPresentation<Question>?, confirm: @escaping () -> Void,
+        dismiss: @escaping () -> Void
+    ) -> some View {
+        confirmationDialog(
+            confirmation?.title ?? "", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { dismiss() } }),
+            titleVisibility: .visible, presenting: confirmation
+        ) { confirmation in
             Button(confirmation.confirm, role: .destructive, action: confirm)
             Button(confirmation.cancel, role: .cancel, action: dismiss)
         } message: { confirmation in
@@ -32,11 +35,15 @@ public extension View {
     /// key (an editor open over the screen): closed by the system, it sends
     /// `dismiss` with the child's key, and the child's presentation going
     /// closes it.
-    func childSheet<Child, Content: View>(_ children: [ChildKey: Child], dismiss: @escaping (ChildKey) -> Void,
-                                          @ViewBuilder content: @escaping (ChildKey, Child) -> Content) -> some View
-    {
-        sheet(item: Binding(get: { children.keys.sorted().first.map(SheetKey.init) },
-                            set: { key in if key == nil, let open = children.keys.sorted().first { dismiss(open) } })) { key in
+    func childSheet<Child, Content: View>(
+        _ children: [ChildKey: Child], dismiss: @escaping (ChildKey) -> Void,
+        @ViewBuilder content: @escaping (ChildKey, Child) -> Content
+    ) -> some View {
+        sheet(
+            item: Binding(
+                get: { children.keys.sorted().first.map(SheetKey.init) },
+                set: { key in if key == nil, let open = children.keys.sorted().first { dismiss(open) } })
+        ) { key in
             if let child = children[key.key] { content(key.key, child) }
         }
     }

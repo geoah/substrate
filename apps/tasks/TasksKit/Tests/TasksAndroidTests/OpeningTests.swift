@@ -1,15 +1,17 @@
 import Foundation
 import SubstrateBridge
 import SubstrateCore
-@testable import TasksAndroid
 import TasksCore
 import Testing
 
+@testable import TasksAndroid
+
 @Suite("Opening Tasks' roots")
 struct OpeningTests {
-    let environment = BridgeEnvironment(locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!,
-                                        resources: URL(fileURLWithPath: "/nonexistent"), data: FileManager.default.temporaryDirectory,
-                                        cache: FileManager.default.temporaryDirectory, sdk: 36)
+    let environment = BridgeEnvironment(
+        locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!,
+        resources: URL(fileURLWithPath: "/nonexistent"), data: FileManager.default.temporaryDirectory,
+        cache: FileManager.default.temporaryDirectory, sdk: 36)
 
     @Test func theSettingsOfThisTreesKotlinOpen() throws {
         let opening = TasksOpening(fingerprint: TasksAndroid.ProtocolFingerprint.value, debug: true, version: "0.1.0 (1)", device: "this phone")
@@ -28,9 +30,12 @@ struct OpeningTests {
         #expect(local.clientID == TasksManifest.localClientID)
         #expect(local.isLocal && local.signInRedirect == nil)
         #expect(local.softwareVersion == "0.1.0 (1)")
-        let release = try TasksOpening.read(ValueCoding.encode(
-            TasksOpening(fingerprint: TasksAndroid.ProtocolFingerprint.value, clientID: "https://apps.example.com/tasks/client.json",
-                         redirect: "https://apps.example.com/tasks/callback", version: "0.2.0 (7)", device: "this phone"))).manifest(in: environment)
+        let release = try TasksOpening.read(
+            ValueCoding.encode(
+                TasksOpening(
+                    fingerprint: TasksAndroid.ProtocolFingerprint.value, clientID: "https://apps.example.com/tasks/client.json",
+                    redirect: "https://apps.example.com/tasks/callback", version: "0.2.0 (7)", device: "this phone"))
+        ).manifest(in: environment)
         #expect(!release.isLocal)
         #expect(release.signInRedirect?.absoluteString == "https://apps.example.com/tasks/callback")
     }
@@ -38,9 +43,11 @@ struct OpeningTests {
     /// A debug build keeps loopback whatever it was stamped with: the stamp
     /// is a release's.
     @Test func aStampedDebugBuildStillSignsInThroughLoopback() {
-        let stamped = TasksOpening(fingerprint: TasksAndroid.ProtocolFingerprint.value, debug: true,
-                                   clientID: "https://apps.example.com/tasks/client.json", redirect: "https://apps.example.com/tasks/callback",
-                                   version: "0.1.0 (1)", device: "this phone").manifest(in: environment)
+        let stamped = TasksOpening(
+            fingerprint: TasksAndroid.ProtocolFingerprint.value, debug: true,
+            clientID: "https://apps.example.com/tasks/client.json", redirect: "https://apps.example.com/tasks/callback",
+            version: "0.1.0 (1)", device: "this phone"
+        ).manifest(in: environment)
         #expect(stamped.clientID == TasksManifest.localClientID)
         #expect(stamped.isLocal && stamped.signInRedirect == nil)
     }
@@ -59,8 +66,9 @@ struct OpeningTests {
             ("http://localhost", "http://127.0.0.1/oauth/callback"),
         ]
         for (clientID, redirect) in stamps {
-            let release = TasksOpening(fingerprint: TasksAndroid.ProtocolFingerprint.value, clientID: clientID, redirect: redirect,
-                                       version: "0.2.0 (7)", device: "this phone")
+            let release = TasksOpening(
+                fingerprint: TasksAndroid.ProtocolFingerprint.value, clientID: clientID, redirect: redirect,
+                version: "0.2.0 (7)", device: "this phone")
             #expect(throws: BridgeOpenRefused.self, "\(String(describing: clientID)) \(String(describing: redirect))") {
                 try TasksOpening.read(ValueCoding.encode(release))
             }

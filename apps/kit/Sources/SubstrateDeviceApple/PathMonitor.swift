@@ -16,8 +16,10 @@ public struct PathMonitor: Connectivity {
         AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let monitor = NWPathMonitor()
             monitor.pathUpdateHandler = { path in
-                continuation.yield(NetworkPath(online: path.status == .satisfied, expensive: path.isExpensive,
-                                               constrained: path.isConstrained))
+                continuation.yield(
+                    NetworkPath(
+                        online: path.status == .satisfied, expensive: path.isExpensive,
+                        constrained: path.isConstrained))
             }
             continuation.onTermination = { _ in monitor.cancel() }
             monitor.start(queue: DispatchQueue(label: "dev.reamde.substrate.kit.path"))

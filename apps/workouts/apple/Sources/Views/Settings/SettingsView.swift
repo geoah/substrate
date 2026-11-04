@@ -72,7 +72,9 @@ struct SettingsView: View {
                 } header: {
                     Text("Session")
                 } footer: {
-                    Text("Rows shows each set as a line, with the set to do now open and its planned RPE filled in. Table shows the grid. A session in progress keeps the rest and volume settings it started with.")
+                    Text(
+                        "Rows shows each set as a line, with the set to do now open and its planned RPE filled in. Table shows the grid. A session in progress keeps the rest and volume settings it started with."
+                    )
                 }
 
                 SubstrateSection()
@@ -81,9 +83,11 @@ struct SettingsView: View {
                 importSection
                 dataSection
 
-                AboutScreen(AboutPresentation.present(appName: WorkoutsManifest.appName, version: updates.build.version,
-                                                      channel: updates.enabled ? updates.build.channel : nil, offered: nil),
-                            onCheck: { updates.checkNow() })
+                AboutScreen(
+                    AboutPresentation.present(
+                        appName: WorkoutsManifest.appName, version: updates.build.version,
+                        channel: updates.enabled ? updates.build.channel : nil, offered: nil),
+                    onCheck: { updates.checkNow() })
             }
             .navigationTitle("Settings")
             .sheet(isPresented: $warmupWheel) {

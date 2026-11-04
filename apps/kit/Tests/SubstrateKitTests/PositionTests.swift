@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import SubstrateCore
 
 @Suite("Positions", .timeLimit(.minutes(10)))

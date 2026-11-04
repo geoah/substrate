@@ -16,9 +16,10 @@ public struct KeychainStorage: SessionStorage {
     /// Off keeps the item where a build without it left one.
     public let dataProtection: Bool
 
-    public init(service: String, accessGroup: String? = nil, accessibility: SecureAccessibility = .afterFirstUnlockThisDeviceOnly,
-                dataProtection: Bool = false)
-    {
+    public init(
+        service: String, accessGroup: String? = nil, accessibility: SecureAccessibility = .afterFirstUnlockThisDeviceOnly,
+        dataProtection: Bool = false
+    ) {
         self.service = service
         self.accessGroup = accessGroup
         self.accessibility = accessibility

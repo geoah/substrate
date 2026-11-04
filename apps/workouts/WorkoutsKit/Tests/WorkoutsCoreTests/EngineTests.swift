@@ -1,9 +1,10 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
+import SubstrateCore
 import SubstrateLocal
 import SubstrateTesting
-import SubstrateCore
+import Testing
+
+@testable import WorkoutsCore
 
 // The session engine (DESIGN §4, §10.1, §10.5): every event's success and
 // each error, the invariants and the journal's fold after every event, Finish
@@ -64,9 +65,10 @@ struct EngineScript {
     }
 
     /// Sends an event the engine must refuse; the state stays as it was.
-    mutating func refuse(_ event: SessionEvent, _ expected: EngineError, at date: Date? = nil,
-                         sourceLocation: SourceLocation = #_sourceLocation)
-    {
+    mutating func refuse(
+        _ event: SessionEvent, _ expected: EngineError, at date: Date? = nil,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
         let envelope = envelope(event, at: date)
         let before = state
         #expect(throws: expected, sourceLocation: sourceLocation) { try SessionEngine.apply(envelope, to: before) }
@@ -76,9 +78,10 @@ struct EngineScript {
     // MARK: Shortcuts
 
     @discardableResult
-    mutating func start(_ routine: Routine?, exercises: [Exercise], bodyMass: Mass? = nil, settings: SessionSettings = SessionSettings(),
-                        firstSides: [String: Side] = [:], timeZone: String = "Europe/London", session: SessionID? = nil) throws -> SessionState
-    {
+    mutating func start(
+        _ routine: Routine?, exercises: [Exercise], bodyMass: Mass? = nil, settings: SessionSettings = SessionSettings(),
+        firstSides: [String: Side] = [:], timeZone: String = "Europe/London", session: SessionID? = nil
+    ) throws -> SessionState {
         let byID = Dictionary(exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let start = SessionEvent.Start(
             session: session ?? SessionID(UUIDv7.make(at: now, using: &generator)),
@@ -102,12 +105,16 @@ struct EngineScript {
     }
 
     @discardableResult
-    mutating func tick(_ row: RowID, _ values: SetValues, at date: Date? = nil, noLighterLoad: Bool = false,
-                       sourceLocation: SourceLocation = #_sourceLocation) throws -> SessionState
-    {
+    mutating func tick(
+        _ row: RowID, _ values: SetValues, at date: Date? = nil, noLighterLoad: Bool = false,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) throws -> SessionState {
         let ids = rowIDs(1)
-        return try send(.completeSet(.init(row: row, recordID: setID(), values: values, segmentRowIDs: ids,
-                                           noLighterLoad: noLighterLoad)), at: date, sourceLocation: sourceLocation)
+        return try send(
+            .completeSet(
+                .init(
+                    row: row, recordID: setID(), values: values, segmentRowIDs: ids,
+                    noLighterLoad: noLighterLoad)), at: date, sourceLocation: sourceLocation)
     }
 }
 
@@ -116,19 +123,21 @@ func kgReps(_ load: Decimal, _ reps: Int, rpe: Decimal? = nil) -> SetValues {
     SetValues(load: .kg(load), reps: reps, rpe: rpe, rpeMethod: rpe == nil ? nil : .entered)
 }
 
-let engineEpoch = Date(timeIntervalSince1970: 1_793_700_000) // 2026-11-02T08:40:00Z
+let engineEpoch = Date(timeIntervalSince1970: 1_793_700_000)  // 2026-11-02T08:40:00Z
 
 // MARK: - A small catalogue for hand-made sessions
 
 enum EngineCatalog {
-    static func exercise(_ id: String, _ measurement: MeasurementType = .weightreps, laterality: Laterality? = nil,
-                         restClass: RestClass? = .compound, equipment: Equipment? = .machine, myoStopRule: MyoStopRule? = nil,
-                         myoMaxMiniSets: Int? = nil, loadBasis: LoadBasis? = nil, implements: Int? = nil,
-                         primary: [Muscle] = [], secondary: [Muscle] = []) -> Exercise
-    {
-        Exercise(id: ExerciseID(id), name: id.capitalized, measurement: measurement, equipment: equipment, laterality: laterality,
-                 loadBasis: loadBasis, implements: implements, primaryMuscles: primary, secondaryMuscles: secondary,
-                 restClass: restClass, myoStopRule: myoStopRule, myoMaxMiniSets: myoMaxMiniSets)
+    static func exercise(
+        _ id: String, _ measurement: MeasurementType = .weightreps, laterality: Laterality? = nil,
+        restClass: RestClass? = .compound, equipment: Equipment? = .machine, myoStopRule: MyoStopRule? = nil,
+        myoMaxMiniSets: Int? = nil, loadBasis: LoadBasis? = nil, implements: Int? = nil,
+        primary: [Muscle] = [], secondary: [Muscle] = []
+    ) -> Exercise {
+        Exercise(
+            id: ExerciseID(id), name: id.capitalized, measurement: measurement, equipment: equipment, laterality: laterality,
+            loadBasis: loadBasis, implements: implements, primaryMuscles: primary, secondaryMuscles: secondary,
+            restClass: restClass, myoStopRule: myoStopRule, myoMaxMiniSets: myoMaxMiniSets)
     }
 
     static let press = exercise("press", primary: [.chest], secondary: [.triceps, .shoulders])
@@ -147,12 +156,14 @@ enum EngineCatalog {
         }
     }
 
-    static func slot(_ key: String, _ exercise: Exercise, _ sets: [PlannedSet], group: String? = nil, setRest: Seconds? = nil,
-                     warmupRest: Seconds? = nil, transition: Seconds? = nil, sideSwitch: Seconds? = nil,
-                     sideOrder: SideOrder? = nil, sideMatch: Bool? = nil) -> RoutineSlot
-    {
-        RoutineSlot(key: key, exercise: exercise.id, group: group, setRest: setRest, warmupRest: warmupRest, transition: transition,
-                    sideSwitch: sideSwitch, sideOrder: sideOrder, sideMatch: sideMatch, sets: sets)
+    static func slot(
+        _ key: String, _ exercise: Exercise, _ sets: [PlannedSet], group: String? = nil, setRest: Seconds? = nil,
+        warmupRest: Seconds? = nil, transition: Seconds? = nil, sideSwitch: Seconds? = nil,
+        sideOrder: SideOrder? = nil, sideMatch: Bool? = nil
+    ) -> RoutineSlot {
+        RoutineSlot(
+            key: key, exercise: exercise.id, group: group, setRest: setRest, warmupRest: warmupRest, transition: transition,
+            sideSwitch: sideSwitch, sideOrder: sideOrder, sideMatch: sideMatch, sets: sets)
     }
 
     static func routine(_ slots: [RoutineSlot], groups: [RoutineGroup] = [], id: String = "test-routine") -> Routine {
@@ -207,15 +218,17 @@ struct ExampleReplay {
     /// Replays `fixture`. `prepare` runs right after Start; by default it
     /// makes the slot changes the record shows (a replaced exercise, an added
     /// set, a slot note).
-    static func run(_ fixture: SessionRecords, prepare: ((inout EngineScript, SessionRecords) throws -> Void)? = nil,
-                    finish: Bool = true) throws -> ExampleReplay
-    {
+    static func run(
+        _ fixture: SessionRecords, prepare: ((inout EngineScript, SessionRecords) throws -> Void)? = nil,
+        finish: Bool = true
+    ) throws -> ExampleReplay {
         let exercises = try EngineFixtures.exercises()
         let routine = try fixture.session.routine.map { id in try #require(try EngineFixtures.routines()[id]) }
         var script = EngineScript(at: fixture.session.at, seed: 11)
         let named = Set((routine?.slots.map(\.exercise) ?? []) + fixture.session.slots.map(\.exercise))
-        try script.start(routine, exercises: named.sorted().compactMap { exercises[$0] }, bodyMass: fixture.session.bodyMass,
-                         timeZone: fixture.session.timezone ?? "UTC", session: fixture.session.id)
+        try script.start(
+            routine, exercises: named.sorted().compactMap { exercises[$0] }, bodyMass: fixture.session.bodyMass,
+            timeZone: fixture.session.timezone ?? "UTC", session: fixture.session.id)
         if let prepare {
             try prepare(&script, fixture)
         } else {
@@ -224,21 +237,28 @@ struct ExampleReplay {
         var replay = ExampleReplay(script: script, fixture: fixture)
         try replay.playSets()
         if finish {
-            try replay.script.send(.finish(.init(start: fixture.session.at, end: fixture.session.endsAt ?? replay.script.now,
-                                                 sessionRPE: fixture.session.sessionRPE, notes: fixture.session.notes,
-                                                 utcOffset: fixture.session.utcOffsetEnd ?? 0)),
-                                   at: fixture.session.endsAt)
+            try replay.script.send(
+                .finish(
+                    .init(
+                        start: fixture.session.at, end: fixture.session.endsAt ?? replay.script.now,
+                        sessionRPE: fixture.session.sessionRPE, notes: fixture.session.notes,
+                        utcOffset: fixture.session.utcOffsetEnd ?? 0)),
+                at: fixture.session.endsAt)
         }
         return replay
     }
 
-    static func prepareFromRecords(_ script: inout EngineScript, _ fixture: SessionRecords,
-                                   exercises: [ExerciseID: Exercise]) throws
-    {
+    static func prepareFromRecords(
+        _ script: inout EngineScript, _ fixture: SessionRecords,
+        exercises: [ExerciseID: Exercise]
+    ) throws {
         for slot in fixture.session.slots {
             if let routineSlot = slot.routineSlot, routineSlot != slot.key {
-                try script.send(.replaceExercise(.init(slot: routineSlot, newSlot: slot.key,
-                                                       exercise: try #require(exercises[slot.exercise]))))
+                try script.send(
+                    .replaceExercise(
+                        .init(
+                            slot: routineSlot, newSlot: slot.key,
+                            exercise: try #require(exercises[slot.exercise]))))
             }
             if let notes = slot.notes {
                 try script.send(.setNote(target: .slot(slot.key), text: notes))
@@ -260,7 +280,8 @@ struct ExampleReplay {
             [(pause.start, .pauseClock)] + (pause.end.map { [($0, .resumeClock)] } ?? [])
         }
         for set in setsInOrder {
-            let firstInstant = set.restBefore.flatMap { rest in try? script.current.restClock.map { $0.since.addingTimeInterval(TimeInterval(rest)) } }
+            let firstInstant =
+                set.restBefore.flatMap { rest in try? script.current.restClock.map { $0.since.addingTimeInterval(TimeInterval(rest)) } }
                 ?? set.startedAt ?? set.at
             while let next = pauses.first, next.0 <= firstInstant {
                 try script.send(next.1, at: next.0)
@@ -303,9 +324,10 @@ struct ExampleReplay {
         if let notes = set.notes {
             try script.send(.editSet(.init(row: row, note: .set(notes))), at: max(script.now, set.startedAt ?? set.at))
         }
-        var values = SetValues(load: set.load, assistance: set.assistance, reps: set.reps, duration: set.duration,
-                               distance: set.distance, rpe: set.rpe, rpeMethod: set.rpeMethod,
-                               reachedFailure: set.reachedFailure, failedRepAttempted: set.failedRepAttempted)
+        var values = SetValues(
+            load: set.load, assistance: set.assistance, reps: set.reps, duration: set.duration,
+            distance: set.distance, rpe: set.rpe, rpeMethod: set.rpeMethod,
+            reachedFailure: set.reachedFailure, failedRepAttempted: set.failedRepAttempted)
         // A pre-filled RPE is the plan's, which the tick accepts (§4.14).
         if set.rpeMethod == .prefilled {
             values.rpe = nil
@@ -383,8 +405,11 @@ struct EngineStartTests {
         #expect(chest[3].chainHead == chest[2].id)
         #expect(chest[3].target == SetTarget(plannedSet: "s2"))
         #expect(chest[2].target?.drops == 1)
-        #expect(chest[1].target == SetTarget(plannedSet: "s1", termination: .reprange, repsMin: 10, repsMax: 15,
-                                             load: .kg(35), rpeMin: Decimal(string: "9.5"), rpeMax: Decimal(string: "9.5")))
+        #expect(
+            chest[1].target
+                == SetTarget(
+                    plannedSet: "s1", termination: .reprange, repsMin: 10, repsMax: 15,
+                    load: .kg(35), rpeMin: Decimal(string: "9.5"), rpeMax: Decimal(string: "9.5")))
         // One side at a time: left, then right, the second side with the key only.
         let split = state.orderedRows(inSlot: "bulgarian-split-squat")
         #expect(split.map(\.side) == [.left, .right, .left, .right])
@@ -437,8 +462,10 @@ struct EngineSetTests {
     private func pressSession(sets: Int = 3) throws -> EngineScript {
         var script = EngineScript(at: engineEpoch)
         let routine = EngineCatalog.routine([
-            EngineCatalog.slot("press", EngineCatalog.press, [PlannedSet(key: "w1", role: .warmup, repsMin: 10, repsMax: 10, load: .kg(30))]
-                + EngineCatalog.sets(sets), setRest: 120),
+            EngineCatalog.slot(
+                "press", EngineCatalog.press,
+                [PlannedSet(key: "w1", role: .warmup, repsMin: 10, repsMax: 10, load: .kg(30))]
+                    + EngineCatalog.sets(sets), setRest: 120),
             EngineCatalog.slot("plank", EngineCatalog.plank, [PlannedSet(key: "s1", durationMin: 45, durationMax: 60)], setRest: 60),
         ])
         try script.start(routine, exercises: EngineCatalog.all)
@@ -572,11 +599,13 @@ struct EngineSetTests {
     func removeSet() throws {
         var script = EngineScript(at: engineEpoch)
         let routine = EngineCatalog.routine([
-            EngineCatalog.slot("press", EngineCatalog.press, [
-                PlannedSet(key: "s1", repsMin: 8, repsMax: 12, load: .kg(50)),
-                PlannedSet(key: "s2", structure: .drop, repsMin: 8, repsMax: 12, load: .kg(50), drops: 2),
-                PlannedSet(key: "s3", repsMin: 8, repsMax: 12, load: .kg(50)),
-            ]),
+            EngineCatalog.slot(
+                "press", EngineCatalog.press,
+                [
+                    PlannedSet(key: "s1", repsMin: 8, repsMax: 12, load: .kg(50)),
+                    PlannedSet(key: "s2", structure: .drop, repsMin: 8, repsMax: 12, load: .kg(50), drops: 2),
+                    PlannedSet(key: "s3", repsMin: 8, repsMax: 12, load: .kg(50)),
+                ])
         ])
         try script.start(routine, exercises: EngineCatalog.all)
         let s3 = try script.row("press", 4)
@@ -600,15 +629,19 @@ struct EngineSetTests {
     func restoreSet() throws {
         var script = EngineScript(at: engineEpoch)
         let routine = EngineCatalog.routine([
-            EngineCatalog.slot("press", EngineCatalog.press, [
-                PlannedSet(key: "s1", repsMin: 8, repsMax: 12, load: .kg(50)),
-                PlannedSet(key: "s2", structure: .drop, repsMin: 8, repsMax: 12, load: .kg(50), drops: 2),
-                PlannedSet(key: "s3", repsMin: 8, repsMax: 12, load: .kg(50)),
-            ]),
+            EngineCatalog.slot(
+                "press", EngineCatalog.press,
+                [
+                    PlannedSet(key: "s1", repsMin: 8, repsMax: 12, load: .kg(50)),
+                    PlannedSet(key: "s2", structure: .drop, repsMin: 8, repsMax: 12, load: .kg(50), drops: 2),
+                    PlannedSet(key: "s3", repsMin: 8, repsMax: 12, load: .kg(50)),
+                ])
         ])
         try script.start(routine, exercises: EngineCatalog.all)
-        let (s1, head, drop1, drop2, s3) = try (script.row("press", 0), script.row("press", 1), script.row("press", 2),
-                                                script.row("press", 3), script.row("press", 4))
+        let (s1, head, drop1, drop2, s3) = try (
+            script.row("press", 0), script.row("press", 1), script.row("press", 2),
+            script.row("press", 3), script.row("press", 4)
+        )
         // A pending set with typed values comes back where it stood, values and all.
         try script.send(.editSet(.init(row: s1, values: SetValuesPatch(load: .set(.kg(55)), reps: .set(9)))))
         let before = try script.current
@@ -708,26 +741,33 @@ struct EngineSetTests {
 struct EngineStructureTests {
     private func threeSlots() throws -> EngineScript {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("press", EngineCatalog.press, EngineCatalog.sets(2)),
-            EngineCatalog.slot("row", EngineCatalog.row, EngineCatalog.sets(2)),
-            EngineCatalog.slot("curl", EngineCatalog.curl, EngineCatalog.sets(2)),
-        ]), exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot("press", EngineCatalog.press, EngineCatalog.sets(2)),
+                EngineCatalog.slot("row", EngineCatalog.row, EngineCatalog.sets(2)),
+                EngineCatalog.slot("curl", EngineCatalog.curl, EngineCatalog.sets(2)),
+            ]), exercises: EngineCatalog.all)
         return script
     }
 
     @Test("addExercise appends a slot with its rows and rests, or inserts it after a group block")
     func addExercise() throws {
         var script = try threeSlots()
-        var state = try script.send(.addExercise(.init(slot: "raise", exercise: EngineCatalog.raise, roles: [.working, .warmup, .working],
-                                                       rowIDs: script.rowIDs(3), rests: SlotRests(setRest: 75))))
+        var state = try script.send(
+            .addExercise(
+                .init(
+                    slot: "raise", exercise: EngineCatalog.raise, roles: [.working, .warmup, .working],
+                    rowIDs: script.rowIDs(3), rests: SlotRests(setRest: 75))))
         #expect(state.slots.map(\.key) == ["press", "row", "curl", "raise"])
         #expect(state.orderedRows(inSlot: "raise").map(\.role) == [.warmup, .working, .working])
         #expect(state.slot("raise")?.rests.setRest == 75)
         #expect(state.revision == 2)
         state = try script.send(.groupExercises(slot: "row", partner: "press", group: nil))
-        state = try script.send(.addExercise(.init(slot: "lunge", exercise: EngineCatalog.lunge, roles: [.working], rowIDs: script.rowIDs(2),
-                                                   after: "press", firstSide: .right)))
+        state = try script.send(
+            .addExercise(
+                .init(
+                    slot: "lunge", exercise: EngineCatalog.lunge, roles: [.working], rowIDs: script.rowIDs(2),
+                    after: "press", firstSide: .right)))
         #expect(state.slots.map(\.key) == ["press", "row", "lunge", "curl", "raise"])
         #expect(state.orderedRows(inSlot: "lunge").map(\.side) == [.right, .left])
         script.refuse(.addExercise(.init(slot: "lunge", exercise: EngineCatalog.lunge)), .duplicateID)
@@ -842,13 +882,25 @@ struct EngineStructureTests {
 struct EngineClockTests {
     private func session() throws -> EngineScript {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("press", EngineCatalog.press, EngineCatalog.sets(3), setRest: 90),
-            EngineCatalog.slot("plank", EngineCatalog.plank, [PlannedSet(key: "s1", durationMin: 45), PlannedSet(key: "s2", durationMin: 45,
-                                                                                                            timerMode: .stopwatch)]),
-            EngineCatalog.slot("carry", EngineCatalog.carry, [PlannedSet(key: "s1", termination: .distance, load: .kg(20),
-                                                                         distance: Length(metres: 40))]),
-        ]), exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot("press", EngineCatalog.press, EngineCatalog.sets(3), setRest: 90),
+                EngineCatalog.slot(
+                    "plank", EngineCatalog.plank,
+                    [
+                        PlannedSet(key: "s1", durationMin: 45),
+                        PlannedSet(
+                            key: "s2", durationMin: 45,
+                            timerMode: .stopwatch),
+                    ]),
+                EngineCatalog.slot(
+                    "carry", EngineCatalog.carry,
+                    [
+                        PlannedSet(
+                            key: "s1", termination: .distance, load: .kg(20),
+                            distance: Length(metres: 40))
+                    ]),
+            ]), exercises: EngineCatalog.all)
         return script
     }
 
@@ -932,15 +984,19 @@ struct EngineClockTests {
         state = try script.send(.cancelTimedSet(row: p2))
         #expect(state.countdown == nil && state.rows[p2]?.timerStartedAt == nil)
         try script.send(.startTimedSet(row: p2, target: nil), at: script.now.addingTimeInterval(5))
-        state = try script.send(.stopTimedSet(.init(row: p2, recordID: script.setID(), values: SetValues(duration: 40))),
-                                at: script.now.addingTimeInterval(44))
+        state = try script.send(
+            .stopTimedSet(.init(row: p2, recordID: script.setID(), values: SetValues(duration: 40))),
+            at: script.now.addingTimeInterval(44))
         #expect(state.rows[p2]?.performed?.values.duration == 40)
         // A carry's stopwatch records its time beside the distance.
         let carry = try script.row("carry", 0)
         try script.send(.startTimedSet(row: carry, target: nil), at: script.now.addingTimeInterval(60))
-        state = try script.send(.stopTimedSet(.init(row: carry, recordID: script.setID(),
-                                                    values: SetValues(load: .kg(20), distance: Length(metres: 40)))),
-                                at: script.now.addingTimeInterval(36))
+        state = try script.send(
+            .stopTimedSet(
+                .init(
+                    row: carry, recordID: script.setID(),
+                    values: SetValues(load: .kg(20), distance: Length(metres: 40)))),
+            at: script.now.addingTimeInterval(36))
         #expect(state.rows[carry]?.performed?.values.duration == 36)
     }
 
@@ -963,12 +1019,14 @@ struct EngineClockTests {
 struct EngineFinishTests {
     private func session() throws -> EngineScript {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("press", EngineCatalog.press, [PlannedSet(key: "w1", role: .warmup, repsMin: 10, repsMax: 10)] + EngineCatalog.sets(3)),
-            EngineCatalog.slot("row", EngineCatalog.row, EngineCatalog.sets(2), group: "a"),
-            EngineCatalog.slot("curl", EngineCatalog.curl, EngineCatalog.sets(2), group: "a"),
-            EngineCatalog.slot("raise", EngineCatalog.raise, EngineCatalog.sets(2)),
-        ], groups: [RoutineGroup(key: "a", groupKind: .superset)]), exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine(
+                [
+                    EngineCatalog.slot("press", EngineCatalog.press, [PlannedSet(key: "w1", role: .warmup, repsMin: 10, repsMax: 10)] + EngineCatalog.sets(3)),
+                    EngineCatalog.slot("row", EngineCatalog.row, EngineCatalog.sets(2), group: "a"),
+                    EngineCatalog.slot("curl", EngineCatalog.curl, EngineCatalog.sets(2), group: "a"),
+                    EngineCatalog.slot("raise", EngineCatalog.raise, EngineCatalog.sets(2)),
+                ], groups: [RoutineGroup(key: "a", groupKind: .superset)]), exercises: EngineCatalog.all)
         return script
     }
 
@@ -983,8 +1041,11 @@ struct EngineFinishTests {
         try script.send(.resumeClock, at: start.addingTimeInterval(180))
         try script.send(.pauseClock, at: start.addingTimeInterval(280))
         try script.tick(script.row("row", 0), kgReps(40, 12), at: start.addingTimeInterval(300))
-        let state = try script.send(.finish(.init(start: start.addingTimeInterval(200), end: start.addingTimeInterval(250),
-                                                  sessionRPE: 7, notes: "Short", utcOffset: 0)), at: start.addingTimeInterval(500))
+        let state = try script.send(
+            .finish(
+                .init(
+                    start: start.addingTimeInterval(200), end: start.addingTimeInterval(250),
+                    sessionRPE: 7, notes: "Short", utcOffset: 0)), at: start.addingTimeInterval(500))
         #expect(state.phase == .finished)
         #expect(state.slots.map(\.key) == ["press", "row"])
         #expect(state.groups.isEmpty && state.slot("row")?.group == nil)
@@ -992,8 +1053,11 @@ struct EngineFinishTests {
         #expect(state.session.at == start.addingTimeInterval(120))
         #expect(state.session.endsAt == start.addingTimeInterval(300))
         // The open pause closes at the end.
-        #expect(state.session.pauses == [Pause(start: start.addingTimeInterval(150), end: start.addingTimeInterval(180)),
-                                         Pause(start: start.addingTimeInterval(280), end: start.addingTimeInterval(300))])
+        #expect(
+            state.session.pauses == [
+                Pause(start: start.addingTimeInterval(150), end: start.addingTimeInterval(180)),
+                Pause(start: start.addingTimeInterval(280), end: start.addingTimeInterval(300)),
+            ])
         #expect(state.session.sessionRPE == 7 && state.session.notes == "Short")
         // Start, two pauses' ends and starts, then Finish.
         #expect(state.revision == 1 + 3 + 1)
@@ -1014,7 +1078,7 @@ struct EngineFinishTests {
         let end = start.addingTimeInterval(900)
         let marks = try [
             UntickedFate.MarkDone(row: s1, recordID: script.setID(), values: kgReps(50, 10)),
-            UntickedFate.MarkDone(row: s2, recordID: script.setID(), values: SetValues(reps: 9)), // nothing to commit: dropped
+            UntickedFate.MarkDone(row: s2, recordID: script.setID(), values: SetValues(reps: 9)),  // nothing to commit: dropped
             UntickedFate.MarkDone(row: s3, recordID: script.setID(), values: kgReps(50, 8)),
             UntickedFate.MarkDone(row: script.row("curl", 0), recordID: script.setID(), values: kgReps(20, 12)),
         ]
@@ -1046,14 +1110,19 @@ struct EngineCountingTests {
     @Test("sets count working chain heads once; volume follows load basis, body mass and the warm-up switch")
     func counting() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("press", EngineCatalog.press, [PlannedSet(key: "w1", role: .warmup, repsMin: 10, repsMax: 10),
-                                                               PlannedSet(key: "s1", structure: .drop, load: .kg(50))]),
-            EngineCatalog.slot("raise", EngineCatalog.raise, EngineCatalog.sets(1)),
-            EngineCatalog.slot("lunge", EngineCatalog.lunge, EngineCatalog.sets(1)),
-            EngineCatalog.slot("push-up", EngineCatalog.pushUp, EngineCatalog.sets(1)),
-            EngineCatalog.slot("plank", EngineCatalog.plank, [PlannedSet(key: "s1", durationMin: 30)]),
-        ]), exercises: EngineCatalog.all, bodyMass: .kg(80))
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot(
+                    "press", EngineCatalog.press,
+                    [
+                        PlannedSet(key: "w1", role: .warmup, repsMin: 10, repsMax: 10),
+                        PlannedSet(key: "s1", structure: .drop, load: .kg(50)),
+                    ]),
+                EngineCatalog.slot("raise", EngineCatalog.raise, EngineCatalog.sets(1)),
+                EngineCatalog.slot("lunge", EngineCatalog.lunge, EngineCatalog.sets(1)),
+                EngineCatalog.slot("push-up", EngineCatalog.pushUp, EngineCatalog.sets(1)),
+                EngineCatalog.slot("plank", EngineCatalog.plank, [PlannedSet(key: "s1", durationMin: 30)]),
+            ]), exercises: EngineCatalog.all, bodyMass: .kg(80))
         var state = try script.current
         #expect(Counting.workingSetsPlanned(state) == 5)
         try script.tick(script.row("press", 0), kgReps(30, 10))
@@ -1064,8 +1133,9 @@ struct EngineCountingTests {
         try script.tick(script.row("lunge", 1), kgReps(10, 9))
         try script.tick(script.row("push-up", 0), SetValues(reps: 15))
         state = try script.send(.startTimedSet(row: script.row("plank", 0), target: 30))
-        state = try script.send(.stopTimedSet(.init(row: script.row("plank", 0), recordID: script.setID(), values: SetValues())),
-                                at: script.now.addingTimeInterval(40))
+        state = try script.send(
+            .stopTimedSet(.init(row: script.row("plank", 0), recordID: script.setID(), values: SetValues())),
+            at: script.now.addingTimeInterval(40))
         #expect(Counting.workingSetsDone(state) == 5)
         // 500 + 200 (drop) + 6 × 12 × 2 dumbbells + 100 + 90 (each side) + 80 × 15 bodyweight; the warm-up left out.
         #expect(Counting.volume(state) == .kg(500 + 200 + 144 + 190 + 1200))
@@ -1078,8 +1148,9 @@ struct EngineCountingTests {
         #expect(Counting.workingSets(records) == 5)
         // Without a body mass a bodyweight set adds nothing.
         #expect(Counting.volume(records, exercises: state.exercises, bodyMass: nil, unit: .kg, includeWarmups: false) == .kg(1034))
-        #expect(Counting.volume(records, exercises: state.exercises, bodyMass: .kg(80), unit: .lb, includeWarmups: false)
-            == .lb(4925))
+        #expect(
+            Counting.volume(records, exercises: state.exercises, bodyMass: .kg(80), unit: .lb, includeWarmups: false)
+                == .lb(4925))
     }
 }
 
@@ -1102,8 +1173,9 @@ struct EngineJournalTests {
         var stale = state
         stale.revision += 10
         try journal.write(events: replay.script.events, state: stale)
-        let controller = SessionController(catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
-                                           directory: directory.url)
+        let controller = SessionController(
+            catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
+            directory: directory.url)
         let harness = ControllerHarness(controller, performsEffects: false)
         #expect(await harness.state.session == state)
         #expect(try journal.read()?.cachedState == state)
@@ -1177,18 +1249,23 @@ struct EngineRecordTests {
     func hotelGym() throws {
         let fixture = try EngineFixtures.session("coverage", EngineFixtures.hotelGym)
         let exercises = try EngineFixtures.exercises()
-        let replay = try ExampleReplay.run(fixture, prepare: { script, fixture in
-            for slot in fixture.session.slots {
-                let roles = fixture.sets.filter { $0.slot == slot.key && $0.continues == nil }.map(\.role)
-                try script.send(.addExercise(.init(slot: slot.key, exercise: #require(exercises[slot.exercise]), roles: roles,
-                                                   rowIDs: script.rowIDs(roles.count))))
-            }
-            // The owner's own values: the warm-up rest, the superset, its transition, pairing and round rest.
-            try script.send(.setSlotRest(slot: "leg-extension", rest: .warmupRest, seconds: 30))
-            try script.send(.groupExercises(slot: "seated-row", partner: "chest-press", group: nil))
-            try script.send(.setSlotRest(slot: "chest-press", rest: .transition, seconds: 15))
-            try script.send(.setGroup(.init(group: "a", pairing: .set(.antagonist), roundRest: .set(90))))
-        })
+        let replay = try ExampleReplay.run(
+            fixture,
+            prepare: { script, fixture in
+                for slot in fixture.session.slots {
+                    let roles = fixture.sets.filter { $0.slot == slot.key && $0.continues == nil }.map(\.role)
+                    try script.send(
+                        .addExercise(
+                            .init(
+                                slot: slot.key, exercise: #require(exercises[slot.exercise]), roles: roles,
+                                rowIDs: script.rowIDs(roles.count))))
+                }
+                // The owner's own values: the warm-up rest, the superset, its transition, pairing and round rest.
+                try script.send(.setSlotRest(slot: "leg-extension", rest: .warmupRest, seconds: 30))
+                try script.send(.groupExercises(slot: "seated-row", partner: "chest-press", group: nil))
+                try script.send(.setSlotRest(slot: "chest-press", rest: .transition, seconds: 15))
+                try script.send(.setGroup(.init(group: "a", pairing: .set(.antagonist), roundRest: .set(90))))
+            })
         let ours = try replay.records()
         #expect(ours.session.slots == fixture.session.slots)
         #expect(ours.session.groups == fixture.session.groups)

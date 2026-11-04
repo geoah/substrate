@@ -100,9 +100,10 @@ public struct TasksApp: LinkedRecordsApp {
 
     /// - Parameter words: the Status screen's words, as the shell made them
     ///   (`AppShell.Parts.words`, from `words(device:)`).
-    public init(cache: RecordCache?, outbox: Outbox?, words: StatusWords, device: String, build: BuildFacts,
-                line: WriteLine = WriteLine())
-    {
+    public init(
+        cache: RecordCache?, outbox: Outbox?, words: StatusWords, device: String, build: BuildFacts,
+        line: WriteLine = WriteLine()
+    ) {
         linked = LinkedRecords(kinds: TasksKinds.all, cache: cache, outbox: outbox, words: words, line: line)
         self.device = device
         self.build = build

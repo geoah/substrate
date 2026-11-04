@@ -97,8 +97,10 @@ public final class WebAuthenticator: BrowserSignIn {
             gate.set(continuation)
             let session = ASWebAuthenticationSession(url: url, callback: .customScheme(callbackScheme)) { _, error in
                 // The person closed the sheet, or the receiver's close below.
-                gate.resume(.failure(error.map { ($0 as? ASWebAuthenticationSessionError)?.code == .canceledLogin ? Cancelled() : $0 }
-                        ?? Cancelled()))
+                gate.resume(
+                    .failure(
+                        error.map { ($0 as? ASWebAuthenticationSessionError)?.code == .canceledLogin ? Cancelled() : $0 }
+                            ?? Cancelled()))
             }
             session.presentationContextProvider = anchor
             session.prefersEphemeralWebBrowserSession = false
@@ -138,8 +140,10 @@ public final class WebAuthenticator: BrowserSignIn {
                     if let callback {
                         gate.resume(.success(callback))
                     } else {
-                        gate.resume(.failure(error.map { ($0 as? ASWebAuthenticationSessionError)?.code == .canceledLogin ? Cancelled() : $0 }
-                                ?? Cancelled()))
+                        gate.resume(
+                            .failure(
+                                error.map { ($0 as? ASWebAuthenticationSessionError)?.code == .canceledLogin ? Cancelled() : $0 }
+                                    ?? Cancelled()))
                     }
                 }
                 session.presentationContextProvider = anchor
@@ -167,9 +171,9 @@ public final class WebAuthenticator: BrowserSignIn {
     /// again, so a query is never read from anywhere else.
     nonisolated static func query(_ callback: URL, redirect: URL) throws -> [String: String] {
         guard callback.scheme?.lowercased() == "https",
-              callback.host(percentEncoded: false)?.lowercased() == redirect.host(percentEncoded: false)?.lowercased(),
-              callback.port == redirect.port,
-              callback.path(percentEncoded: false) == redirect.path(percentEncoded: false)
+            callback.host(percentEncoded: false)?.lowercased() == redirect.host(percentEncoded: false)?.lowercased(),
+            callback.port == redirect.port,
+            callback.path(percentEncoded: false) == redirect.path(percentEncoded: false)
         else { throw OAuthRefusal(code: "invalid_request", text: "The sign-in came back to another address. Try again.") }
         var query: [String: String] = [:]
         for item in URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? [] {

@@ -159,7 +159,8 @@ final class PlaceMonitor: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
         let v = Visit(visit)
         PlaceLog.shared.record(v)
-        Activity.shared.log(.places, v.departure == nil ? "Arrived somewhere: the visit is kept here and sent" : "Left a place: the visit is kept here and sent")
+        Activity.shared.log(
+            .places, v.departure == nil ? "Arrived somewhere: the visit is kept here and sent" : "Left a place: the visit is kept here and sent")
         // The report may have relaunched the app with seconds to spare: the
         // visit is already kept, and the sync, at the owner's frequency,
         // runs inside a background task so iOS lets it finish.
@@ -192,7 +193,7 @@ enum PlaceNamer {
         var found = visit
         let location = CLLocation(latitude: visit.latitude, longitude: visit.longitude)
         guard let request = MKReverseGeocodingRequest(location: location),
-              let item = try await request.mapItems.first
+            let item = try await request.mapItems.first
         else { return found }
         found.name = item.name
         found.address = item.address?.fullAddress

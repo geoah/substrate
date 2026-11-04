@@ -11,19 +11,17 @@ import dev.reamde.substrate.kit.bridge.CheckResult
 import dev.reamde.substrate.kit.bridge.CheckRow
 import dev.reamde.substrate.kit.bridge.CheckTransport
 import dev.reamde.substrate.kit.bridge.Counter
-import dev.reamde.substrate.kit.bridge.RouteCommand
 import dev.reamde.substrate.kit.bridge.ProtocolFingerprint
+import dev.reamde.substrate.kit.bridge.RouteCommand
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 
 /**
- * The bridge's runtime checks (docs/plans/app-kit.md §8): what presenter
- * tests and screenshots cannot catch, run against the Swift library on a
- * device. Each check is one line: its name, PASS or FAIL, what it saw, and
- * how long it took.
+ * The bridge's runtime checks (docs/plans/app-kit.md §8): what presenter tests and screenshots cannot catch, run against the Swift library on a device. Each
+ * check is one line: its name, PASS or FAIL, what it saw, and how long it took.
  */
 class BridgeChecks(private val context: Context, private val emit: (String) -> Unit) {
     data class Result(val name: String, val passed: Boolean, val detail: String, val millis: Double)
@@ -125,21 +123,23 @@ class BridgeChecks(private val context: Context, private val emit: (String) -> U
 
     private suspend fun check(name: String, body: suspend () -> String) {
         val began = System.nanoTime()
-        val result = try {
-            Result(name, true, body(), ms(began))
-        } catch (failure: Throwable) {
-            Result(name, false, "${failure::class.java.simpleName}: ${failure.message}", ms(began))
-        }
+        val result =
+            try {
+                Result(name, true, body(), ms(began))
+            } catch (failure: Throwable) {
+                Result(name, false, "${failure::class.java.simpleName}: ${failure.message}", ms(began))
+            }
         results += result
         emit("${if (result.passed) "PASS" else "FAIL"} ${result.name} (${"%.1f".format(result.millis)} ms): ${result.detail}")
     }
 
     private fun ms(began: Long) = (System.nanoTime() - began) / 1e6
 
-    private fun ok(result: CheckResult): String = when (result) {
-        is CheckResult.Ok -> result.detail
-        is CheckResult.Failed -> throw IllegalStateException("${result.name}: ${result.detail}")
-    }
+    private fun ok(result: CheckResult): String =
+        when (result) {
+            is CheckResult.Ok -> result.detail
+            is CheckResult.Failed -> throw IllegalStateException("${result.name}: ${result.detail}")
+        }
 
     private suspend fun <T> withHandle(body: suspend (BridgeHandle) -> T): T {
         val handle = Bridge.open("check").getOrThrow()
@@ -153,8 +153,7 @@ class BridgeChecks(private val context: Context, private val emit: (String) -> U
     /** One command on a fresh handle, and the presentation it answers with. */
     private suspend fun single(command: CheckCommand, timeout: Long = 30_000): CheckResult = withHandle { handle ->
         handle.send(CheckCommand.serializer(), command).getOrThrow()
-        withTimeout(timeout) { handle.presentations(CheckPresentation.serializer()).first { it.step >= 1 } }.result
-            ?: throw IllegalStateException("no result")
+        withTimeout(timeout) { handle.presentations(CheckPresentation.serializer()).first { it.step >= 1 } }.result ?: throw IllegalStateException("no result")
     }
 
     private suspend fun roundTrip(): String = withHandle { handle ->
@@ -242,10 +241,10 @@ class BridgeChecks(private val context: Context, private val emit: (String) -> U
     }
 
     private suspend fun keyedList(): String = withHandle { handle ->
-        suspend fun rows(): List<CheckRow> = withTimeout(10_000) {
-            handle.state.first { it.lists["rows"] != null }.lists.getValue("rows")
-                .map { BridgeJson.decodeFromJsonElement(CheckRow.serializer(), it.value) }
-        }
+        suspend fun rows(): List<CheckRow> =
+            withTimeout(10_000) {
+                handle.state.first { it.lists["rows"] != null }.lists.getValue("rows").map { BridgeJson.decodeFromJsonElement(CheckRow.serializer(), it.value) }
+            }
         handle.send(CheckCommand.serializer(), CheckCommand.Rows(1000)).getOrThrow()
         withTimeout(10_000) { handle.state.first { it.lists["rows"]?.size == 1000 } }
         handle.send(CheckCommand.serializer(), CheckCommand.ChangeRow("row-5", "changed")).getOrThrow()

@@ -27,9 +27,10 @@ public struct TasksOpening: Bridged, Equatable {
     /// The address the connect screen opens with: the one last signed in to.
     public var address: String?
 
-    public init(fingerprint: String, debug: Bool = false, clientID: String? = nil, redirect: String? = nil, version: String,
-                channel: String? = nil, device: String, address: String? = nil)
-    {
+    public init(
+        fingerprint: String, debug: Bool = false, clientID: String? = nil, redirect: String? = nil, version: String,
+        channel: String? = nil, device: String, address: String? = nil
+    ) {
         self.fingerprint = fingerprint
         self.debug = debug
         self.clientID = clientID
@@ -61,9 +62,10 @@ public struct TasksOpening: Bridged, Equatable {
     /// loopback route, else the release's stamped client id and claimed
     /// redirect.
     func manifest(in environment: BridgeEnvironment) -> AppManifest {
-        TasksManifest.manifest(clientID: debug ? TasksManifest.localClientID : releaseClientID ?? "",
-                               claimedRedirect: debug ? nil : claimedRedirect, softwareVersion: version,
-                               version: Self.packageVersion(in: environment))
+        TasksManifest.manifest(
+            clientID: debug ? TasksManifest.localClientID : releaseClientID ?? "",
+            claimedRedirect: debug ? nil : claimedRedirect, softwareVersion: version,
+            version: Self.packageVersion(in: environment))
     }
 
     /// The stamped client id where it is an https URL with a host.

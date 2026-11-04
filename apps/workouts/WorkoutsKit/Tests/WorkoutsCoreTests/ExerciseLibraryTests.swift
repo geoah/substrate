@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import WorkoutsCore
 
 /// The exercise library this build carries (`Resources/Bundled/library.json`,
@@ -57,14 +58,16 @@ struct ExerciseLibraryTests {
     @Test("an owner's Hevy exercises resolve to library exercises by name")
     func hevyNames() throws {
         let library = try ExerciseLibrary.bundled().catalog().exercises
-        let file = try HevyCSV.read("""
-        title,start_time,end_time,description,exercise_title,superset_id,exercise_notes,set_index,set_type,weight_kg,reps,distance_km,duration_seconds,rpe
-        "Push","1 Nov 2026, 09:00","1 Nov 2026, 10:00","","Lateral Raise (Dumbbell)",,"",0,"normal",8,15,,,
-        "Push","1 Nov 2026, 09:00","1 Nov 2026, 10:00","","Bulgarian Split Squat",,"",0,"normal",12,10,,,
-        "Push","1 Nov 2026, 09:00","1 Nov 2026, 10:00","","Cat Camel",,"",0,"normal",,10,,,
-        """)
-        let plan = HevyImport.plan(file, exercises: [:], history: [], deleted: [], timeZone: TimeZone(identifier: "Europe/London")!,
-                                   adapter: "x@1", library: library)
+        let file = try HevyCSV.read(
+            """
+            title,start_time,end_time,description,exercise_title,superset_id,exercise_notes,set_index,set_type,weight_kg,reps,distance_km,duration_seconds,rpe
+            "Push","1 Nov 2026, 09:00","1 Nov 2026, 10:00","","Lateral Raise (Dumbbell)",,"",0,"normal",8,15,,,
+            "Push","1 Nov 2026, 09:00","1 Nov 2026, 10:00","","Bulgarian Split Squat",,"",0,"normal",12,10,,,
+            "Push","1 Nov 2026, 09:00","1 Nov 2026, 10:00","","Cat Camel",,"",0,"normal",,10,,,
+            """)
+        let plan = HevyImport.plan(
+            file, exercises: [:], history: [], deleted: [], timeZone: TimeZone(identifier: "Europe/London")!,
+            adapter: "x@1", library: library)
         let byName = Dictionary(uniqueKeysWithValues: plan.exercises.map { ($0.name, $0) })
         let raise = try #require(byName["Lateral Raise (Dumbbell)"])
         #expect(raise.movement == "lateral-raise" && raise.loadBasis == .perimplement && raise.implements == 2)

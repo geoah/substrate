@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// One exercise of the routine: which exercise, its planned sets to add,
 /// remove, reorder and open, its rests and its notes.
@@ -49,11 +49,16 @@ struct SlotEditorView: View {
                 sets(slot, measurement: exercise?.measurement ?? .weightreps)
                 rests(slot)
                 Section("Notes") {
-                    TextField("Seat height, cues", text: Binding { slot.notes ?? "" } set: { value in
-                        model.change { $0.update(current) { $0.notes = RoutineEditorText.text(value) } }
-                    }, axis: .vertical)
-                        .lineLimit(1 ... 6)
-                        .font(.subheadline)
+                    TextField(
+                        "Seat height, cues",
+                        text: Binding {
+                            slot.notes ?? ""
+                        } set: { value in
+                            model.change { $0.update(current) { $0.notes = RoutineEditorText.text(value) } }
+                        }, axis: .vertical
+                    )
+                    .lineLimit(1 ... 6)
+                    .font(.subheadline)
                 }
                 Section {
                     Button("Remove from Routine", systemImage: "trash", role: .destructive) {
@@ -113,15 +118,18 @@ struct SlotEditorView: View {
 
     private func rests(_ slot: RoutineSlot) -> some View {
         Section("Rest") {
-            RestMenuRow(title: RestField.sets.rawValue, current: slot.setRest, select: { set(.sets, $0) },
-                        custom: { customRest = .sets })
+            RestMenuRow(
+                title: RestField.sets.rawValue, current: slot.setRest, select: { set(.sets, $0) },
+                custom: { customRest = .sets })
             if slot.sets.contains(where: { $0.role == .warmup }) {
-                RestMenuRow(title: RestField.warmups.rawValue, current: slot.warmupRest, select: { set(.warmups, $0) },
-                            custom: { customRest = .warmups })
+                RestMenuRow(
+                    title: RestField.warmups.rawValue, current: slot.warmupRest, select: { set(.warmups, $0) },
+                    custom: { customRest = .warmups })
             }
             if slot.group != nil {
-                RestMenuRow(title: RestField.transition.rawValue, current: slot.transition, select: { set(.transition, $0) },
-                            custom: { customRest = .transition })
+                RestMenuRow(
+                    title: RestField.transition.rawValue, current: slot.transition, select: { set(.transition, $0) },
+                    custom: { customRest = .transition })
             }
         }
     }
@@ -172,7 +180,9 @@ struct PlannedSetEditorView: View {
     }
 
     enum Effort: String, CaseIterable {
-        case none = "None", rpe = "RPE", rir = "RIR"
+        case none = "None"
+        case rpe = "RPE"
+        case rir = "RIR"
     }
 
     var body: some View {
@@ -180,9 +190,14 @@ struct PlannedSetEditorView: View {
             let measurement = app.exercises[slot.exercise]?.measurement ?? .weightreps
             Form {
                 Section {
-                    Picker("Role", selection: Binding { planned.role } set: { role in
-                        model.change { $0.setRole(slotKey, setKey, role) }
-                    }) {
+                    Picker(
+                        "Role",
+                        selection: Binding {
+                            planned.role
+                        } set: { role in
+                            model.change { $0.setRole(slotKey, setKey, role) }
+                        }
+                    ) {
                         Text("Warm-up").tag(Role.warmup)
                         Text("Working").tag(Role.working)
                     }
@@ -210,9 +225,11 @@ struct PlannedSetEditorView: View {
                 target(planned, measurement: measurement)
                 effort(planned)
                 Section {
-                    RestMenuRow(title: "Rest after this set", current: planned.rest, select: { seconds in
-                        update { $0.rest = seconds }
-                    }, custom: { customRest = true })
+                    RestMenuRow(
+                        title: "Rest after this set", current: planned.rest,
+                        select: { seconds in
+                            update { $0.rest = seconds }
+                        }, custom: { customRest = true })
                 } footer: {
                     Text("Default uses the exercise\u{2019}s rest between sets.")
                 }
@@ -237,28 +254,74 @@ struct PlannedSetEditorView: View {
             if measurement.isTimedHold || planned.durationMin != nil {
                 let low = planned.durationMin ?? 30
                 let high = planned.durationMax ?? low
-                Stepper(value: Binding { low } set: { value in update { $0.durationMin = value; $0.durationMax = max(value, $0.durationMax ?? value) } },
-                        in: 5 ... 3600, step: 5) {
+                Stepper(
+                    value: Binding {
+                        low
+                    } set: { value in
+                        update {
+                            $0.durationMin = value
+                            $0.durationMax = max(value, $0.durationMax ?? value)
+                        }
+                    },
+                    in: 5 ... 3600, step: 5
+                ) {
                     LabeledContent("From", value: Format.duration(low))
                 }
-                Stepper(value: Binding { high } set: { value in update { $0.durationMax = value; $0.durationMin = min(value, $0.durationMin ?? value) } },
-                        in: 5 ... 3600, step: 5) {
+                Stepper(
+                    value: Binding {
+                        high
+                    } set: { value in
+                        update {
+                            $0.durationMax = value
+                            $0.durationMin = min(value, $0.durationMin ?? value)
+                        }
+                    },
+                    in: 5 ... 3600, step: 5
+                ) {
                     LabeledContent("To", value: Format.duration(high))
                 }
             } else if let low = planned.repsMin ?? planned.repsMax {
                 let high = planned.repsMax ?? low
-                Stepper(value: Binding { low } set: { value in update { $0.repsMin = value; $0.repsMax = max(value, $0.repsMax ?? value) } },
-                        in: 1 ... 100) {
+                Stepper(
+                    value: Binding {
+                        low
+                    } set: { value in
+                        update {
+                            $0.repsMin = value
+                            $0.repsMax = max(value, $0.repsMax ?? value)
+                        }
+                    },
+                    in: 1 ... 100
+                ) {
                     LabeledContent("Reps from", value: "\(low)")
                 }
-                Stepper(value: Binding { high } set: { value in update { $0.repsMax = value; $0.repsMin = min(value, $0.repsMin ?? value) } },
-                        in: 1 ... 100) {
+                Stepper(
+                    value: Binding {
+                        high
+                    } set: { value in
+                        update {
+                            $0.repsMax = value
+                            $0.repsMin = min(value, $0.repsMin ?? value)
+                        }
+                    },
+                    in: 1 ... 100
+                ) {
                     LabeledContent("Reps to", value: "\(high)")
                 }
-                Button("No rep target", role: .destructive) { update { $0.repsMin = nil; $0.repsMax = nil } }
-                    .font(.subheadline)
+                Button("No rep target", role: .destructive) {
+                    update {
+                        $0.repsMin = nil
+                        $0.repsMax = nil
+                    }
+                }
+                .font(.subheadline)
             } else {
-                Button("Add a rep target", systemImage: "plus") { update { $0.repsMin = 8; $0.repsMax = 12 } }
+                Button("Add a rep target", systemImage: "plus") {
+                    update {
+                        $0.repsMin = 8
+                        $0.repsMax = 12
+                    }
+                }
             }
         }
     }
@@ -267,33 +330,67 @@ struct PlannedSetEditorView: View {
     private func effort(_ planned: PlannedSet) -> some View {
         let mode: Effort = planned.rpeMin != nil || planned.rpeMax != nil ? .rpe : planned.rirMin != nil || planned.rirMax != nil ? .rir : .none
         Section("Effort") {
-            Picker("Effort", selection: Binding { mode } set: { next in setEffort(next, planned) }) {
+            Picker(
+                "Effort",
+                selection: Binding {
+                    mode
+                } set: { next in
+                    setEffort(next, planned)
+                }
+            ) {
                 ForEach(Effort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             switch mode {
             case .rpe:
-                effortSteppers(low: planned.rpeMin ?? planned.rpeMax ?? 8, high: planned.rpeMax ?? planned.rpeMin ?? 8, range: 1 ... 10,
-                               name: "RPE") { low, high in update { $0.rpeMin = low; $0.rpeMax = high } }
+                effortSteppers(
+                    low: planned.rpeMin ?? planned.rpeMax ?? 8, high: planned.rpeMax ?? planned.rpeMin ?? 8, range: 1 ... 10,
+                    name: "RPE"
+                ) { low, high in
+                    update {
+                        $0.rpeMin = low
+                        $0.rpeMax = high
+                    }
+                }
             case .rir:
-                effortSteppers(low: planned.rirMin ?? planned.rirMax ?? 2, high: planned.rirMax ?? planned.rirMin ?? 2, range: 0 ... 10,
-                               name: "RIR") { low, high in update { $0.rirMin = low; $0.rirMax = high } }
+                effortSteppers(
+                    low: planned.rirMin ?? planned.rirMax ?? 2, high: planned.rirMax ?? planned.rirMin ?? 2, range: 0 ... 10,
+                    name: "RIR"
+                ) { low, high in
+                    update {
+                        $0.rirMin = low
+                        $0.rirMax = high
+                    }
+                }
             case .none:
                 EmptyView()
             }
         }
     }
 
-    private func effortSteppers(low: Decimal, high: Decimal, range: ClosedRange<Double>, name: String,
-                                set: @escaping (Decimal, Decimal) -> Void) -> some View
-    {
+    private func effortSteppers(
+        low: Decimal, high: Decimal, range: ClosedRange<Double>, name: String,
+        set: @escaping (Decimal, Decimal) -> Void
+    ) -> some View {
         let lowValue = NSDecimalNumber(decimal: low).doubleValue
         let highValue = NSDecimalNumber(decimal: high).doubleValue
         return Group {
-            Stepper(value: Binding { lowValue } set: { value in set(Decimal(value), Decimal(max(value, highValue))) }, in: range, step: 0.5) {
+            Stepper(
+                value: Binding {
+                    lowValue
+                } set: { value in
+                    set(Decimal(value), Decimal(max(value, highValue)))
+                }, in: range, step: 0.5
+            ) {
                 LabeledContent("\(name) from", value: Format.number(low))
             }
-            Stepper(value: Binding { highValue } set: { value in set(Decimal(min(value, lowValue)), Decimal(value)) }, in: range, step: 0.5) {
+            Stepper(
+                value: Binding {
+                    highValue
+                } set: { value in
+                    set(Decimal(min(value, lowValue)), Decimal(value))
+                }, in: range, step: 0.5
+            ) {
                 LabeledContent("\(name) to", value: Format.number(high))
             }
         }
@@ -303,13 +400,24 @@ struct PlannedSetEditorView: View {
         update { set in
             switch mode {
             case .none:
-                set.rpeMin = nil; set.rpeMax = nil; set.rirMin = nil; set.rirMax = nil
+                set.rpeMin = nil
+                set.rpeMax = nil
+                set.rirMin = nil
+                set.rirMax = nil
             case .rpe:
-                set.rirMin = nil; set.rirMax = nil
-                if set.rpeMax == nil { set.rpeMin = 7; set.rpeMax = 8 }
+                set.rirMin = nil
+                set.rirMax = nil
+                if set.rpeMax == nil {
+                    set.rpeMin = 7
+                    set.rpeMax = 8
+                }
             case .rir:
-                set.rpeMin = nil; set.rpeMax = nil
-                if set.rirMax == nil { set.rirMin = 1; set.rirMax = 2 }
+                set.rpeMin = nil
+                set.rpeMax = nil
+                if set.rirMax == nil {
+                    set.rirMin = 1
+                    set.rirMax = 2
+                }
             }
         }
     }
@@ -319,6 +427,10 @@ struct PlannedSetEditorView: View {
     }
 
     private func binding<Value>(_ value: Value, _ write: @escaping (inout PlannedSet, Value) -> Void) -> Binding<Value> {
-        Binding { value } set: { next in update { write(&$0, next) } }
+        Binding {
+            value
+        } set: { next in
+            update { write(&$0, next) }
+        }
     }
 }

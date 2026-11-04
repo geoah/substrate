@@ -19,12 +19,14 @@ enum TurnFailureWords {
     static func note(_ text: String, agent: String, provider: String?) -> ConversationNote {
         switch cause(text) {
         case .keyRefused:
-            ConversationNote(kind: .failed, title: "\(provider ?? "The provider") refused the API key",
-                             message: "\(agent) couldn't answer. Replace the key on \(provider.map { "\($0)'s" } ?? "the") provider record, then send again.",
-                             detail: text)
+            ConversationNote(
+                kind: .failed, title: "\(provider ?? "The provider") refused the API key",
+                message: "\(agent) couldn't answer. Replace the key on \(provider.map { "\($0)'s" } ?? "the") provider record, then send again.",
+                detail: text)
         case .limited:
-            ConversationNote(kind: .failed, title: "\(provider ?? "The provider") is turning requests down",
-                             message: "\(agent) couldn't answer: a rate limit or a spent quota. Try again later.", detail: text)
+            ConversationNote(
+                kind: .failed, title: "\(provider ?? "The provider") is turning requests down",
+                message: "\(agent) couldn't answer: a rate limit or a spent quota. Try again later.", detail: text)
         case .other:
             ConversationNote(kind: .failed, title: "\(agent) couldn't answer", message: "The run ended in an error.", detail: text)
         }
@@ -42,8 +44,12 @@ enum TurnFailureWords {
     }
 
     /// How OpenAI, Anthropic and Gemini word a refused key.
-    static let keyRefused = ["unauthorized", "incorrect api key", "invalid api key", "invalid x-api-key", "authentication_error",
-                             "api_key_invalid", "api key not valid"]
-    static let limited = ["rate limit", "rate_limit", "too many requests", "insufficient_quota", "exceeded your current quota",
-                          "resource_exhausted"]
+    static let keyRefused = [
+        "unauthorized", "incorrect api key", "invalid api key", "invalid x-api-key", "authentication_error",
+        "api_key_invalid", "api key not valid",
+    ]
+    static let limited = [
+        "rate limit", "rate_limit", "too many requests", "insufficient_quota", "exceeded your current quota",
+        "resource_exhausted",
+    ]
 }

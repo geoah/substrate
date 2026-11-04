@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// "New exercise…" (DESIGN.md §7.6): name, what it records, equipment, sides
 /// and rest class. It lives on this iPhone ("On this iPhone"); its id is the
@@ -50,7 +50,14 @@ struct NewExerciseSheet: View {
                     .disabled(trimmed.isEmpty)
             }
         }
-        .alert("The exercise could not be saved", isPresented: Binding { failure != nil } set: { if !$0 { failure = nil } }) {
+        .alert(
+            "The exercise could not be saved",
+            isPresented: Binding {
+                failure != nil
+            } set: {
+                if !$0 { failure = nil }
+            }
+        ) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(failure ?? "")
@@ -60,8 +67,9 @@ struct NewExerciseSheet: View {
 
     private func save() {
         let id = ExerciseID.slug(for: trimmed, taken: Set(app.exercises.keys))
-        let exercise = Exercise(id: id, name: trimmed, measurement: measurement, equipment: equipment, laterality: laterality,
-                                restClass: restClass, isLocal: true)
+        let exercise = Exercise(
+            id: id, name: trimmed, measurement: measurement, equipment: equipment, laterality: laterality,
+            restClass: restClass, isLocal: true)
         Task {
             do {
                 created(try await app.addLocalExercise(exercise))

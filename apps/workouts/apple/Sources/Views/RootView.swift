@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// Five tabs in the system's Liquid Glass tab bar (DESIGN.md §7.1), the most
 /// an iPhone shows before it folds the rest under More. While a

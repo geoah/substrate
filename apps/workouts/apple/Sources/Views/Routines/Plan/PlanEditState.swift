@@ -41,7 +41,8 @@ final class PlanEditState {
     /// stay first.
     func move(_ ref: RoutinePlanSetRef, by offset: Int) {
         guard let target = neighbour(ref, by: offset), let slot = model.editor.slot(ref.slot),
-              let index = slot.sets.firstIndex(where: { $0.key == ref.set }) else { return }
+            let index = slot.sets.firstIndex(where: { $0.key == ref.set })
+        else { return }
         model.change { $0.moveSets(of: ref.slot, from: [index], to: offset < 0 ? target : target + 1) }
     }
 

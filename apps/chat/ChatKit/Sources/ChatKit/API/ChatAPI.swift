@@ -1,10 +1,11 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 import SubstrateAPI
 import SubstrateCore
 import SubstrateDevice
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// What only the chat asks of a substrate, over the kit's client: the agent
 /// streams, read line by line through the transport, a turn's stop, and the
@@ -31,9 +32,10 @@ enum ChatAPI {
         -> AsyncThrowingStream<AgentEvent, any Error>
     {
         stream(client) {
-            try client.request("POST", "api/v1/\(Kinds.agent)/\(segment(agent))/chat",
-                               body: .jsonValue(chatBody(thread: thread, message: message, context: [], timezone: timezone)),
-                               accept: "application/x-ndjson", timeout: streamTimeout)
+            try client.request(
+                "POST", "api/v1/\(Kinds.agent)/\(segment(agent))/chat",
+                body: .jsonValue(chatBody(thread: thread, message: message, context: [], timezone: timezone)),
+                accept: "application/x-ndjson", timeout: streamTimeout)
         }
     }
 
@@ -41,8 +43,9 @@ enum ChatAPI {
     /// events, then `done`; or one `idle` line when no chat turn runs.
     static func events(_ client: SubstrateClient, thread: String) -> AsyncThrowingStream<AgentEvent, any Error> {
         stream(client) {
-            try client.request("GET", "api/v1/\(Kinds.thread)/\(segment(thread))/events", accept: "application/x-ndjson",
-                               timeout: streamTimeout)
+            try client.request(
+                "GET", "api/v1/\(Kinds.thread)/\(segment(thread))/events", accept: "application/x-ndjson",
+                timeout: streamTimeout)
         }
     }
 
@@ -99,9 +102,11 @@ enum ChatAPI {
                         continuation.finish(throwing: error)
                     default:
                         let detail = explain(error, app: ChatManifest.appName, server: client.server)
-                        continuation.finish(throwing: TransportError(text: answered
-                                ? "The connection closed while the answer was read. \(detail)"
-                                : "The connection failed before the server answered. \(detail)"))
+                        continuation.finish(
+                            throwing: TransportError(
+                                text: answered
+                                    ? "The connection closed while the answer was read. \(detail)"
+                                    : "The connection failed before the server answered. \(detail)"))
                     }
                 }
             }

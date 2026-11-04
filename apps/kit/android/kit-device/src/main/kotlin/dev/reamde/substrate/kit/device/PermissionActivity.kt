@@ -6,9 +6,8 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 
 /**
- * The system's question for the notification permission, asked from an
- * activity of its own with nothing drawn, so `Notifications` asks it from
- * whatever activity is in front without that activity's help.
+ * The system's question for the notification permission, asked from an activity of its own with nothing drawn, so `Notifications` asks it from whatever
+ * activity is in front without that activity's help.
  */
 public class PermissionActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {

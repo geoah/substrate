@@ -106,7 +106,7 @@ public struct JSONNumber: Hashable, Sendable, CustomStringConvertible {
     /// 38 digits or its exponents.
     public var decimal: Decimal? {
         guard digits.count <= 38, let value = Decimal(string: description, locale: Locale(identifier: "en_US_POSIX")),
-              !value.isNaN, JSONNumber(value) == self
+            !value.isNaN, JSONNumber(value) == self
         else { return nil }
         return value
     }

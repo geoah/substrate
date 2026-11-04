@@ -65,9 +65,10 @@ public struct RoutinePlanBlock: Equatable, Sendable, Identifiable {
     /// `Superset, Glute Bridge and Bird Dog`.
     public var spokenTitle: String
 
-    public init(id: String, group: String?, members: [RoutinePlanMember], title: String, subtitle: String?, notes: String?,
-                items: [RowsItem], spokenTitle: String)
-    {
+    public init(
+        id: String, group: String?, members: [RoutinePlanMember], title: String, subtitle: String?, notes: String?,
+        items: [RowsItem], spokenTitle: String
+    ) {
         self.id = id
         self.group = group
         self.members = members
@@ -110,9 +111,10 @@ public enum RoutinePlanPresenter {
     /// its targets as values, the plan's effort beside them and last time's
     /// set at the end. `rests` are the defaults a slot without its own rest
     /// takes, as a session would.
-    public static func present(_ routine: Routine, exercises: [ExerciseID: Exercise], history: HistoryIndex,
-                               rests: SessionSettings = SessionSettings()) -> RoutinePlanPresentation
-    {
+    public static func present(
+        _ routine: Routine, exercises: [ExerciseID: Exercise], history: HistoryIndex,
+        rests: SessionSettings = SessionSettings()
+    ) -> RoutinePlanPresentation {
         var builder = PlanBuilder(routine: routine, exercises: exercises, history: history, rests: rests)
         let blocks = builder.blocks()
         return RoutinePlanPresentation(
@@ -129,12 +131,13 @@ public enum RoutinePlanPresenter {
     /// (`aimsAtEffort`), one to go as far as it can `max reps`, one that
     /// names nothing `any reps`.
     public static func values(_ planned: PlannedSet, measurement: MeasurementType, perSide: Bool) -> String {
-        let reps: String? = switch (planned.repsMin, planned.repsMax) {
-        case let (min?, max?): Format.range(min, max)
-        case let (min?, nil): "\(min)+"
-        case let (nil, max?): "\u{2264}\(max)"
-        case (nil, nil): nil
-        }
+        let reps: String? =
+            switch (planned.repsMin, planned.repsMax) {
+            case let (min?, max?): Format.range(min, max)
+            case let (min?, nil): "\(min)+"
+            case let (nil, max?): "\u{2264}\(max)"
+            case (nil, nil): nil
+            }
         let load = loadText(planned, measurement: measurement)
         let time = planned.durationMin.map { Format.durationRange($0, planned.durationMax ?? $0) }
         switch measurement {
@@ -184,12 +187,13 @@ public enum RoutinePlanPresenter {
     /// `50% 1RM`: a percentage load, short, for a line.
     static func percentText(_ planned: PlannedSet) -> String? {
         planned.loadPercent.map { percent in
-            let of: String = switch planned.loadReference {
-            case .onerm, nil: "1RM"
-            case .e1rm: "e1RM"
-            case .trainingmax: "TM"
-            case .bodymass: "BW"
-            }
+            let of: String =
+                switch planned.loadReference {
+                case .onerm, nil: "1RM"
+                case .e1rm: "e1RM"
+                case .trainingmax: "TM"
+                case .bodymass: "BW"
+                }
             return "\(Format.number(percent))% \(of)"
         }
     }
@@ -234,8 +238,9 @@ struct PlanBuilder {
 
     func member(_ slot: RoutineSlot) -> RoutinePlanMember {
         let exercise = exercises[slot.exercise]
-        return RoutinePlanMember(slot: slot.key, exercise: slot.exercise, name: exercise?.name ?? slot.exercise.rawValue,
-                                 isKnown: exercise != nil)
+        return RoutinePlanMember(
+            slot: slot.key, exercise: slot.exercise, name: exercise?.name ?? slot.exercise.rawValue,
+            isKnown: exercise != nil)
     }
 
     // MARK: - Blocks
@@ -251,8 +256,9 @@ struct PlanBuilder {
             if let header = chainHeader(planned, in: slot) { items.append(.chainHeader(header)) }
             items.append(.set(line(planned, in: slot, group: nil, last: last)))
         }
-        return RoutinePlanBlock(id: "slot-\(slot.key)", group: nil, members: [member], title: member.name,
-                                subtitle: subtitle(slot), notes: slot.notes, items: items, spokenTitle: member.name)
+        return RoutinePlanBlock(
+            id: "slot-\(slot.key)", group: nil, members: [member], title: member.name,
+            subtitle: subtitle(slot), notes: slot.notes, items: items, spokenTitle: member.name)
     }
 
     mutating func group(_ group: RoutineGroup, members slots: [RoutineSlot]) -> RoutinePlanBlock {
@@ -267,8 +273,11 @@ struct PlanBuilder {
         let working = slots.map { slot in slot.sets.filter { $0.role == .working } }
         let rounds = working.map(\.count).max() ?? 0
         for round in 0 ..< rounds {
-            items.append(.round(RowsRoundHeader(id: "group-\(group.key)-round-\(round + 1)", round: round + 1, rounds: rounds,
-                                                title: "Round \(round + 1) of \(rounds)", isDone: false)))
+            items.append(
+                .round(
+                    RowsRoundHeader(
+                        id: "group-\(group.key)-round-\(round + 1)", round: round + 1, rounds: rounds,
+                        title: "Round \(round + 1) of \(rounds)", isDone: false)))
             for (slot, sets) in zip(slots, working) where round < sets.count {
                 if let header = chainHeader(sets[round], in: slot) { items.append(.chainHeader(header)) }
                 items.append(.set(line(sets[round], in: slot, group: group, last: lasts[slot.key] ?? [:])))
@@ -276,16 +285,19 @@ struct PlanBuilder {
         }
         let names = members.map(\.name)
         let list = names.count == 1 ? names[0] : names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
-        let rest = group.roundRest ?? RestDefaults.roundRest(
-            kind: group.groupKind, memberRestClasses: slots.map { exercises[$0.exercise]?.restClass })
+        let rest =
+            group.roundRest
+            ?? RestDefaults.roundRest(
+                kind: group.groupKind, memberRestClasses: slots.map { exercises[$0.exercise]?.restClass })
         var parts = [list]
         if let count = group.rounds { parts.append(Format.count(count, "round")) }
         parts.append(rest > 0 ? "rest \(Format.duration(rest)) after each round" : "no rest between rounds")
         let notes = zip(slots, members).compactMap { slot, member in slot.notes.map { "\(member.name): \($0)" } }
         let title = group.groupKind.label
-        return RoutinePlanBlock(id: "group-\(group.key)", group: group.key, members: members, title: title,
-                                subtitle: parts.joined(separator: ", "), notes: notes.isEmpty ? nil : notes.joined(separator: "\n"),
-                                items: items, spokenTitle: "\(title), \(list)")
+        return RoutinePlanBlock(
+            id: "group-\(group.key)", group: group.key, members: members, title: title,
+            subtitle: parts.joined(separator: ", "), notes: notes.isEmpty ? nil : notes.joined(separator: "\n"),
+            items: items, spokenTitle: "\(title), \(list)")
     }
 
     /// `10–15 reps at RPE 8, rest 2:00, tempo 3-1-1-0`: the first working
@@ -331,8 +343,9 @@ struct PlanBuilder {
         let pause = planned.intraSetPause ?? RestDefaults.intraSetPause(planned.structure)
         let gap = pause > 0 ? "\(Format.duration(pause)) between \(noun)" : "no rest between \(noun)"
         let ref = RoutinePlanSetRef(slot: slot.key, set: planned.key)
-        return RowsChainHeader(id: "\(ref.row.rawValue)-chain", head: ref.row,
-                               text: "\(setTitle(planned, in: slot)) as \(what), \(gap)")
+        return RowsChainHeader(
+            id: "\(ref.row.rawValue)-chain", head: ref.row,
+            text: "\(setTitle(planned, in: slot)) as \(what), \(gap)")
     }
 
     // MARK: - Lines
@@ -345,9 +358,10 @@ struct PlanBuilder {
         return peers.count > 1 ? "Warm-up \(ordinal)" : "Warm-up"
     }
 
-    mutating func line(_ planned: PlannedSet, in slot: RoutineSlot, group: RoutineGroup?,
-                       last: [String: SetValues]) -> RowsSetItem
-    {
+    mutating func line(
+        _ planned: PlannedSet, in slot: RoutineSlot, group: RoutineGroup?,
+        last: [String: SetValues]
+    ) -> RowsSetItem {
         let ref = RoutinePlanSetRef(slot: slot.key, set: planned.key)
         refs[ref.row] = ref
         let exercise = exercises[slot.exercise]
@@ -409,8 +423,10 @@ struct PlanBuilder {
         }
         if let min = planned.durationMin {
             let max = planned.durationMax ?? min
-            parts.append(min == max ? "hold \(RowsText.spokenDuration(min))"
-                : "hold \(RowsText.spokenDuration(min)) to \(RowsText.spokenDuration(max))")
+            parts.append(
+                min == max
+                    ? "hold \(RowsText.spokenDuration(min))"
+                    : "hold \(RowsText.spokenDuration(min)) to \(RowsText.spokenDuration(max))")
         }
         if let distance = planned.distance { parts.append("\(Format.number(distance.metres)) metres") }
         if let effort = Format.effort(rpeMin: planned.rpeMin, rpeMax: planned.rpeMax, rirMin: planned.rirMin, rirMax: planned.rirMax) {
@@ -434,8 +450,9 @@ struct PlanBuilder {
             for (index, set) in planned.enumerated() {
                 let match = sets.first { $0.role == role && ordinals[$0.id] == index + 1 }
                 guard let match else { continue }
-                out[set.key] = SetValues(load: match.load, assistance: match.assistance, reps: match.reps, duration: match.duration,
-                                         distance: match.distance, rpe: match.ratedRPE)
+                out[set.key] = SetValues(
+                    load: match.load, assistance: match.assistance, reps: match.reps, duration: match.duration,
+                    distance: match.distance, rpe: match.ratedRPE)
             }
         }
         return out

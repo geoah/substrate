@@ -1,10 +1,11 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 import Observation
 import SubstrateCore
 import SubstrateDevice
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// How the record views read: an app hands them one over the client it
 /// already has, with its own session, timeouts and sign-in.
@@ -44,8 +45,9 @@ public struct HTTPRecordReader: RecordReader {
     }
 
     public init(server: URL, token: String, session: URLSession = .shared, deniedHint: String? = nil) {
-        self.init(client: SubstrateClient(server: server, token: token, transport: URLSessionTransport(session: session)),
-                  deniedHint: deniedHint)
+        self.init(
+            client: SubstrateClient(server: server, token: token, transport: URLSessionTransport(session: session)),
+            deniedHint: deniedHint)
     }
 
     public var server: URL { client.server }

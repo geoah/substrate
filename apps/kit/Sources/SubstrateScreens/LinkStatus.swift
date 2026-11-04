@@ -37,9 +37,10 @@ public enum LinkStatus: Codable, Hashable, Sendable {
     ///     stands with it; none for an app that writes no package's kinds.
     ///   - notKept: why a change, or the outbox, could not be kept on the
     ///     device: the outbox's save problem, or a journal's.
-    public static func derive(signedIn: Bool, packages: [PackageStanding], outbox: OutboxState, waiting: Int, issues: [AppIssue] = [],
-                              notKept: String? = nil) -> LinkStatus
-    {
+    public static func derive(
+        signedIn: Bool, packages: [PackageStanding], outbox: OutboxState, waiting: Int, issues: [AppIssue] = [],
+        notKept: String? = nil
+    ) -> LinkStatus {
         guard signedIn else { return .local }
         if issues.contains(.accessEnded) { return .signedOut }
         switch outbox {
@@ -112,9 +113,10 @@ public struct StatusWords: Codable, Hashable, Sendable {
     /// Out's question.
     public var signOut: String?
 
-    public init(app: String, device: String, kept: String, packageNames: [String: String] = [:], local: String? = nil,
-                footer: String? = nil, refusedFooter: String? = nil, signOut: String? = nil)
-    {
+    public init(
+        app: String, device: String, kept: String, packageNames: [String: String] = [:], local: String? = nil,
+        footer: String? = nil, refusedFooter: String? = nil, signOut: String? = nil
+    ) {
         self.signOut = signOut
         self.app = app
         self.device = device

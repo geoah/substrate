@@ -1,10 +1,11 @@
 import Foundation
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
 import WorkoutsCore
+
 @testable import WorkoutsSync
-import SubstrateCore
 
 /// A substrate's records in memory, behind a scripted server: the list read
 /// (`GET /api/v1/records`, by `filter.kinds`), one record's read, and PUT,
@@ -93,8 +94,10 @@ final class MemoryRecords: @unchecked Sendable {
     }
 
     private static func value(_ stored: Stored) -> JSONValue {
-        .object(["kind": .string(stored.kind), "id": .string(stored.id), "properties": .object(stored.properties),
-                 "version": .number(Decimal(stored.version))])
+        .object([
+            "kind": .string(stored.kind), "id": .string(stored.id), "properties": .object(stored.properties),
+            "version": .number(Decimal(stored.version)),
+        ])
     }
 
     private func json(_ object: JSONObject) -> String { json(.object(object)) }

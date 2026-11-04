@@ -1,10 +1,11 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 import SubstrateAPI
 import SubstrateCore
 import SubstrateDevice
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// The token endpoint's answer (RFC 6749 §5.1, with RFC 9396's
 /// `authorization_details` listing what the approval set up).
@@ -117,9 +118,10 @@ public struct OAuthClient: Sendable {
     public var metadata: AuthorizationServerMetadata
     public var transport: any HTTPTransport
 
-    public init(manifest: AppManifest, metadata: AuthorizationServerMetadata,
-                transport: any HTTPTransport = URLSessionTransport.shared)
-    {
+    public init(
+        manifest: AppManifest, metadata: AuthorizationServerMetadata,
+        transport: any HTTPTransport = URLSessionTransport.shared
+    ) {
         self.manifest = manifest
         self.metadata = metadata
         self.transport = transport
@@ -144,7 +146,9 @@ public struct OAuthClient: Sendable {
     public func authorizeURL(redirect: String, pkce: PKCE, state: String, loginHint: String? = nil) throws -> URL {
         if let problem = metadata.mismatch(server: nil) { throw ServerMismatch(problem) }
         guard manifest.takesDetails(metadata) else {
-            throw ServerMismatch("\(ServerAddress.display(metadata.issuerOrigin ?? metadata.authorizationEndpoint)) can't set up what \(manifest.appName) asks for: it needs an update first.")
+            throw ServerMismatch(
+                "\(ServerAddress.display(metadata.issuerOrigin ?? metadata.authorizationEndpoint)) can't set up what \(manifest.appName) asks for: it needs an update first."
+            )
         }
         var items = [
             ("response_type", "code"),
@@ -198,10 +202,12 @@ public struct OAuthClient: Sendable {
     /// whoever receives them.
     public func exchange(code: String, redirect: String, pkce: PKCE) async throws -> TokenResponse {
         if let problem = metadata.mismatch(server: nil) { throw ServerMismatch(problem) }
-        let request = Self.form(metadata.tokenEndpoint, [
-            ("grant_type", "authorization_code"), ("code", code), ("client_id", manifest.clientID),
-            ("redirect_uri", redirect), ("code_verifier", pkce.verifier),
-        ], timeout: SubstrateClient.Timeout.quick)
+        let request = Self.form(
+            metadata.tokenEndpoint,
+            [
+                ("grant_type", "authorization_code"), ("code", code), ("client_id", manifest.clientID),
+                ("redirect_uri", redirect), ("code_verifier", pkce.verifier),
+            ], timeout: SubstrateClient.Timeout.quick)
         let (data, response) = try await transport.data(for: request)
         guard response.statusCode == 200 else { throw Self.refusal(response, data: data) }
         return try JSONDecoder().decode(TokenResponse.self, from: data)
@@ -209,12 +215,14 @@ public struct OAuthClient: Sendable {
 
     /// The session a code is exchanged for. Its lifetime is read from `now`
     /// once the token came back, so a long approval does not shorten it.
-    public func session(exchanging code: String, redirect: String, pkce: PKCE, server: URL,
-                        now: @Sendable () -> Date = { Date() }) async throws -> Session
-    {
+    public func session(
+        exchanging code: String, redirect: String, pkce: PKCE, server: URL,
+        now: @Sendable () -> Date = { Date() }
+    ) async throws -> Session {
         let token = try await exchange(code: code, redirect: redirect, pkce: pkce)
-        return Session(server: server, token: token, clientID: manifest.clientID, revocation: metadata.revocation,
-                       requested: manifest.scopes, now: now())
+        return Session(
+            server: server, token: token, clientID: manifest.clientID, revocation: metadata.revocation,
+            requested: manifest.scopes, now: now())
     }
 
     /// The whole flow: the browser on the server's own sign-in and approval
@@ -229,9 +237,10 @@ public struct OAuthClient: Sendable {
     /// `revokePending`. `browser` is the device's: it opens the page and
     /// hands the callback back. The session it answers is not saved.
     @MainActor
-    public func signIn(server: URL, repository: String? = nil, keepingRejectedIn rejected: SessionStore? = nil,
-                       browser: any BrowserSignIn, now: @escaping @Sendable () -> Date = { Date() }) async throws -> Session
-    {
+    public func signIn(
+        server: URL, repository: String? = nil, keepingRejectedIn rejected: SessionStore? = nil,
+        browser: any BrowserSignIn, now: @escaping @Sendable () -> Date = { Date() }
+    ) async throws -> Session {
         if let problem = metadata.mismatch(server: server) { throw ServerMismatch(problem) }
         let pkce = try PKCE()
         let state = try PKCE.state()
@@ -265,9 +274,10 @@ public struct OAuthClient: Sendable {
     /// redirect, and the route let go of once the callback is in, before the
     /// code is exchanged.
     @MainActor
-    private func approve(_ route: SignInRoute, browser: any BrowserSignIn,
-                         page: (String) throws -> URL) async throws -> (redirect: String, query: [String: String])
-    {
+    private func approve(
+        _ route: SignInRoute, browser: any BrowserSignIn,
+        page: (String) throws -> URL
+    ) async throws -> (redirect: String, query: [String: String]) {
         let redirect = try await browser.prepare(route)
         defer { browser.finish(redirect) }
         switch try await browser.open(try page(redirect.uri), for: redirect) {

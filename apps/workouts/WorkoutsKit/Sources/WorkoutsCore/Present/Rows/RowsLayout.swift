@@ -62,9 +62,10 @@ public struct RowsBlock: Codable, Equatable, Sendable, Identifiable {
     /// What a finished block's line shows; nil until the block is finished.
     public var summary: RowsBlockSummary?
 
-    public init(id: String, slots: [String], group: String?, title: String, subtitle: String?,
-                items: [RowsItem], addSets: [RowsButton], isFinished: Bool, summary: RowsBlockSummary?)
-    {
+    public init(
+        id: String, slots: [String], group: String?, title: String, subtitle: String?,
+        items: [RowsItem], addSets: [RowsButton], isFinished: Bool, summary: RowsBlockSummary?
+    ) {
         self.id = id
         self.slots = slots
         self.group = group
@@ -292,11 +293,12 @@ public struct RowsSetItem: Codable, Equatable, Sendable, Identifiable {
     /// Done rows: the fix editor's start (tap the row, change, Save).
     public var fix: RowsFix?
 
-    public init(id: RowID, slot: String, state: RowsRowState, role: RowsRowRole, title: String, setLabel: String,
-                caption: String?, isChained: Bool, values: String, valuesChanged: Bool, rpe: String?, rpeIsPrefilled: Bool, tags: [RowsTag],
-                collapsedTag: RowsTag?, last: String?, changes: [RowsChange], verdict: RowsVerdict?, sentence: String,
-                tap: RowsTap, editor: RowsEditor?, fix: RowsFix?)
-    {
+    public init(
+        id: RowID, slot: String, state: RowsRowState, role: RowsRowRole, title: String, setLabel: String,
+        caption: String?, isChained: Bool, values: String, valuesChanged: Bool, rpe: String?, rpeIsPrefilled: Bool, tags: [RowsTag],
+        collapsedTag: RowsTag?, last: String?, changes: [RowsChange], verdict: RowsVerdict?, sentence: String,
+        tap: RowsTap, editor: RowsEditor?, fix: RowsFix?
+    ) {
         self.id = id
         self.slot = slot
         self.state = state
@@ -390,9 +392,10 @@ public struct RowsMiniSets: Codable, Equatable, Sendable, Identifiable {
     public var sets: [RowsSetItem]
     public var sentence: String
 
-    public init(id: String, title: String, chips: [RowsChip], comparison: RowsChange?, stopText: String?, sets: [RowsSetItem],
-                sentence: String)
-    {
+    public init(
+        id: String, title: String, chips: [RowsChip], comparison: RowsChange?, stopText: String?, sets: [RowsSetItem],
+        sentence: String
+    ) {
         self.id = id
         self.title = title
         self.chips = chips
@@ -539,9 +542,10 @@ public struct RowsRestPart: Codable, Equatable, Sendable {
     public var plus: RowsButton
     public var skip: RowsButton
 
-    public init(kind: LiveActivityCountdown.Kind, title: String, startedAt: Date, endsAt: Date, totalText: String,
-                minus: RowsButton, plus: RowsButton, skip: RowsButton)
-    {
+    public init(
+        kind: LiveActivityCountdown.Kind, title: String, startedAt: Date, endsAt: Date, totalText: String,
+        minus: RowsButton, plus: RowsButton, skip: RowsButton
+    ) {
         self.kind = kind
         self.title = title
         self.startedAt = startedAt
@@ -586,10 +590,11 @@ public struct RowsNextPart: Codable, Equatable, Sendable {
     /// The undo offer's words after a Log from the island: `Bird Dog, set 1 logged`, `Set 2 logged`.
     public var loggedText: String
 
-    public init(row: RowID, exercise: String, setLabel: String, isWarmup: Bool = false, label: String, tint: RowsEditor.Tint,
-                fields: [RowsField], rpe: String?, rpeStrip: RowsRPEStrip? = nil, primary: RowsButton, timerStartedAt: Date?,
-                sentence: String, loggedText: String? = nil)
-    {
+    public init(
+        row: RowID, exercise: String, setLabel: String, isWarmup: Bool = false, label: String, tint: RowsEditor.Tint,
+        fields: [RowsField], rpe: String?, rpeStrip: RowsRPEStrip? = nil, primary: RowsButton, timerStartedAt: Date?,
+        sentence: String, loggedText: String? = nil
+    ) {
         self.row = row
         self.exercise = exercise
         self.setLabel = setLabel

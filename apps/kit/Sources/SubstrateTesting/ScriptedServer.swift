@@ -1,9 +1,10 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
-import SubstrateDevice
 
 /// A scripted server answering by rules: each request is answered by the
 /// first rule whose method and path match, and every request is kept, in
@@ -58,8 +59,9 @@ public final class ScriptedServer: HTTPTransport, @unchecked Sendable {
         var body: JSONValue?
         if let data = request.httpBody { body = try? JSONDecoder().decode(JSONValue.self, from: data) }
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        let sent = Sent(method: request.httpMethod ?? "GET", path: components?.percentEncodedPath ?? url.path,
-                        query: components?.query, body: body)
+        let sent = Sent(
+            method: request.httpMethod ?? "GET", path: components?.percentEncodedPath ?? url.path,
+            query: components?.query, body: body)
         let held = lock.withLock { holds.removeValue(forKey: "\(sent.method) \(sent.path)") }
         if let held { await held.arriveAndWait() }
         let extra = lock.withLock { headers["\(sent.method) \(sent.path)"] ?? [:] }
@@ -71,8 +73,9 @@ public final class ScriptedServer: HTTPTransport, @unchecked Sendable {
             return (500, #"{"error":{"code":"internal","message":"no rule"}}"#)
         }
         if status == -1 { throw URLError(.notConnectedToInternet) }
-        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
-                                       headerFields: ["Content-Type": "application/json"].merging(extra) { $1 })!
+        let response = HTTPURLResponse(
+            url: url, statusCode: status, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"].merging(extra) { $1 })!
         return (Data(text.utf8), response)
     }
 }

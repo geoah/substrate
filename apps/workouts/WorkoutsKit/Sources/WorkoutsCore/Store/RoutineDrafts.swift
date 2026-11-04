@@ -50,8 +50,10 @@ public struct RoutineDrafts: Sendable {
             return editor
         } catch {
             let aside = try? WorkoutsFiles.setAside(url, at: now)
-            throw UnreadableDraft(record: UnreadableRecord(source: aside?.lastPathComponent ?? Self.fileName,
-                                                           reason: "A routine edit that was not saved could not be read: \(error)"))
+            throw UnreadableDraft(
+                record: UnreadableRecord(
+                    source: aside?.lastPathComponent ?? Self.fileName,
+                    reason: "A routine edit that was not saved could not be read: \(error)"))
         }
     }
 

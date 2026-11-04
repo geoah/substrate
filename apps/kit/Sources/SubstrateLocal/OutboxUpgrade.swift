@@ -26,10 +26,11 @@ public struct OutboxUpgrade: Sendable {
     ///   - rederives: a write of a moved record, in the old spelling, that
     ///     the app writes again from what it keeps itself, so it is dropped
     ///     rather than sent.
-    public init(respell: @escaping @Sendable (String) -> String,
-                respellProperties: @escaping @Sendable (JSONObject) -> JSONObject,
-                rederives: @escaping @Sendable (OutboxEntry) -> Bool = { _ in false })
-    {
+    public init(
+        respell: @escaping @Sendable (String) -> String,
+        respellProperties: @escaping @Sendable (JSONObject) -> JSONObject,
+        rederives: @escaping @Sendable (OutboxEntry) -> Bool = { _ in false }
+    ) {
         self.respell = respell
         self.respellProperties = respellProperties
         self.rederives = rederives

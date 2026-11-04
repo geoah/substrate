@@ -61,7 +61,7 @@ enum Background {
     /// starts them again; background delivery is what launches it.
     static func observeHealth() {
         guard HealthReader.isAvailable, !observing, SessionStore.sync.load() != nil,
-              UserDefaults.standard.bool(forKey: "health.asked"), Settings.enabled(.health)
+            UserDefaults.standard.bool(forKey: "health.asked"), Settings.enabled(.health)
         else { return }
         observing = true
         let store = SyncEngine.shared.health
@@ -100,11 +100,12 @@ enum Background {
     static func updateHealthDelivery() {
         guard HealthReader.isAvailable else { return }
         let store = SyncEngine.shared.health
-        let frequency: HKUpdateFrequency? = switch Settings.frequency {
-        case .manual: nil
-        case .hourly, .sixHours: .hourly
-        case .daily: .daily
-        }
+        let frequency: HKUpdateFrequency? =
+            switch Settings.frequency {
+            case .manual: nil
+            case .hourly, .sixHours: .hourly
+            case .daily: .daily
+            }
         for type in HealthReader.observed {
             if let frequency {
                 store.enableBackgroundDelivery(for: type, frequency: frequency) { _, _ in }

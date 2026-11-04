@@ -23,7 +23,7 @@ public struct LinkGeneration: Sendable {
     /// The generation now; 0 for a folder that never had one.
     public var current: Int {
         guard let data = try? folder.read(Self.fileName, in: .root),
-              let file = try? JSONDecoder().decode(File.self, from: data)
+            let file = try? JSONDecoder().decode(File.self, from: data)
         else { return 0 }
         return file.generation
     }

@@ -22,10 +22,11 @@ public struct RepositoryPresentation: Bridged, Hashable, Sendable {
     public var signOutConfirmation: ConfirmationPresentation<SettingsRowID>?
     public var footer: String
 
-    public init(title: String, server: LabeledValue, repository: LabeledValue, serverVersion: LabeledValue?, approved: ApprovedAccess?,
-                access: LabeledValue?, changeAccess: String?, unrevoked: [ProblemPresentation], signOut: String,
-                signOutConfirmation: ConfirmationPresentation<SettingsRowID>? = nil, footer: String)
-    {
+    public init(
+        title: String, server: LabeledValue, repository: LabeledValue, serverVersion: LabeledValue?, approved: ApprovedAccess?,
+        access: LabeledValue?, changeAccess: String?, unrevoked: [ProblemPresentation], signOut: String,
+        signOutConfirmation: ConfirmationPresentation<SettingsRowID>? = nil, footer: String
+    ) {
         self.signOutConfirmation = signOutConfirmation
         self.title = title
         self.server = server

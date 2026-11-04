@@ -1,7 +1,8 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
 import SubstrateCore
+import Testing
+
+@testable import WorkoutsCore
 
 // The Rows layout (§7.6 Rows, the owner's chosen session screen) over the
 // example sessions and routines: the moments the design's screens show, each
@@ -79,7 +80,10 @@ struct RowsSession {
         case let .edit(row, patch): try edit(row, patch, at: seconds)
         case let .removeSet(row): try send(.removeSet(row: row), at: seconds)
         case let .startTimedSet(row):
-            guard case let .ready(target) = try present(at: seconds).row(row)?.timer else { Issue.record("no timer"); return }
+            guard case let .ready(target) = try present(at: seconds).row(row)?.timer else {
+                Issue.record("no timer")
+                return
+            }
             try send(.startTimedSet(row: row, target: target), at: seconds)
         case .addSet, .stopTimedSet, .cancelTimedSet, .adjustRest, .skipRest:
             Issue.record("not used here: \(action)")
@@ -128,7 +132,10 @@ struct RowsOpenSetTests {
         #expect(block.addSets.map(\.title) == ["Add set"])
         #expect(block.addSets.first?.action == .addSet(slot: "leg-press", role: .working))
         #expect(block.shape == ["Warm-ups: 40 kg × 12, 70 kg × 6", "Set 1: done", "Set 2: now", "Set 3: next"])
-        guard case let .warmups(fold) = block.items[0] else { Issue.record("no warm-up fold"); return }
+        guard case let .warmups(fold) = block.items[0] else {
+            Issue.record("no warm-up fold")
+            return
+        }
         #expect(fold.comparison == RowsChange(text: "as last time", isGain: false))
         #expect(fold.sets.map(\.state) == [.done, .done])
         #expect(fold.sentence == "Warm-ups done: 40 kilograms, 12 reps; 70 kilograms, 6 reps. The same as last time.")
@@ -137,8 +144,9 @@ struct RowsOpenSetTests {
         #expect(set1.values == "105 kg × 10" && set1.rpe == "@ 8" && set1.rpeIsPrefilled)
         #expect(set1.changes == [RowsChange(text: "+1 rep", isGain: true)] && set1.verdict == .better)
         #expect(set1.last == nil && set1.tap == .fix && set1.fix != nil && set1.editor == nil)
-        #expect(set1.sentence
-            == "Set 1, done: 105 kilograms, 10 reps, RPE 8 as planned. 1 rep more than last time, better than last time.")
+        #expect(
+            set1.sentence
+                == "Set 1, done: 105 kilograms, 10 reps, RPE 8 as planned. 1 rep more than last time, better than last time.")
         #expect(set2.state == .now && set2.tap == .none && set2.collapsedTag == RowsTag(text: "up next", style: .accent))
         #expect(layout.openRow == set2.id)
         #expect(set3.values == "105 kg × 10" && set3.last == "last 105 × 8 @ 9" && set3.tap == .doNow(.touch(set3.id)))
@@ -151,8 +159,11 @@ struct RowsOpenSetTests {
         #expect(editor.fields.map(\.field) == [.load, .reps])
         let load = try #require(editor.field(.load))
         #expect(load.value == "105" && load.unit == "kg" && load.last == "last 105" && !load.isChanged && load.reset == nil)
-        #expect(load.minus == RowsStep(title: "\u{2212}5", accessibilityLabel: "5 kilograms less",
-                                       patch: SetValuesPatch(load: .set(.kg(100)))))
+        #expect(
+            load.minus
+                == RowsStep(
+                    title: "\u{2212}5", accessibilityLabel: "5 kilograms less",
+                    patch: SetValuesPatch(load: .set(.kg(100)))))
         #expect(load.plus?.title == "+5" && load.plus?.patch == SetValuesPatch(load: .set(.kg(110))))
         #expect(load.accessibilityLabel == "Leg Press (Machine), set 2, load in kilograms")
         #expect(load.accessibilityValue == "105, suggested")
@@ -167,25 +178,34 @@ struct RowsOpenSetTests {
         #expect(strip.cells.filter { $0.style != .plain }.map(\.text) == ["8"])
         // The pre-filled cell is hollow; a tap on it rates it.
         #expect(strip.cells[2].style == .outlined && strip.cells[2].patch == .enteringRPE(8))
-        #expect(strip.half == RowsRPEHalf(text: "\u{00BD}", isOn: false, patch: .enteringRPE(d("8.5")),
-                                          meaning: "RPE 8.5: could do 1 more rep, maybe 2", accessibilityLabel: "Add half a point"))
+        #expect(
+            strip.half
+                == RowsRPEHalf(
+                    text: "\u{00BD}", isOn: false, patch: .enteringRPE(d("8.5")),
+                    meaning: "RPE 8.5: could do 1 more rep, maybe 2", accessibilityLabel: "Add half a point"))
         #expect(strip.accessibilityValue == "8, planned, not rated yet")
 
         // The Log button names exactly what the tick commits.
         #expect(editor.primary == RowsButton(title: "Log 105 kg × 10 @ 8", action: .tick(set2.id)))
-        #expect(presentation.row(set2.id)?.commitValues
-            == SetValues(load: .kg(105), reps: 10, rpe: 8, rpeMethod: .prefilled))
+        #expect(
+            presentation.row(set2.id)?.commitValues
+                == SetValues(load: .kg(105), reps: 10, rpe: 8, rpeMethod: .prefilled))
         // The rest is over: no "is up" page, no clock. The island holds set 2 compact and set 3 after it.
         let island = layout.island
         #expect(island.rest == nil && island.end == nil)
-        #expect(island.next == RowsNextPart(
-            row: set2.id, exercise: "Leg Press (Machine)", setLabel: "2", label: "", tint: .accent, fields: editor.fields,
-            rpe: "@ 8", rpeStrip: editor.rpe,
-            primary: RowsButton(title: "Log", accessibilityLabel: "Log 105 kg × 10 @ 8", action: .tick(set2.id)),
-            timerStartedAt: nil, sentence: "Next: Leg Press (Machine). \(set2.sentence)", loggedText: "Set 2 logged"
-        ))
-        #expect(island.after == RowsAfterPart(row: set3.id, label: "Then", text: "Set 3, 105 kg × 10",
-                                              sentence: "Then Set 3, 105 kg × 10"))
+        #expect(
+            island.next
+                == RowsNextPart(
+                    row: set2.id, exercise: "Leg Press (Machine)", setLabel: "2", label: "", tint: .accent, fields: editor.fields,
+                    rpe: "@ 8", rpeStrip: editor.rpe,
+                    primary: RowsButton(title: "Log", accessibilityLabel: "Log 105 kg × 10 @ 8", action: .tick(set2.id)),
+                    timerStartedAt: nil, sentence: "Next: Leg Press (Machine). \(set2.sentence)", loggedText: "Set 2 logged"
+                ))
+        #expect(
+            island.after
+                == RowsAfterPart(
+                    row: set3.id, label: "Then", text: "Set 3, 105 kg × 10",
+                    sentence: "Then Set 3, 105 kg × 10"))
         #expect(!island.isCounting)
     }
 
@@ -409,8 +429,11 @@ struct RowsFlowTests {
         #expect(untouched.mode == .fix && untouched.tint == .neutral && untouched.title == "Set 1")
         #expect(untouched.note == RowsNote(text: "logged at 12:06", kind: .status))
         #expect(untouched.cancelTitle == "Cancel")
-        #expect(untouched.delete == RowsButton(title: "Delete set", accessibilityLabel: "Delete Leg Press (Machine), set 1",
-                                               action: .removeSet(set1)))
+        #expect(
+            untouched.delete
+                == RowsButton(
+                    title: "Delete set", accessibilityLabel: "Delete Leg Press (Machine), set 1",
+                    action: .removeSet(set1)))
         #expect(untouched.primary.title == "Save 105 kg × 10 @ 8" && !untouched.primary.isEnabled)
         // Logged as the plan's pre-fill, it is no rating: hollow, and a tap rates it.
         #expect(untouched.rpe?.cells[2].style == .outlined && untouched.rpe?.isRated == false)
@@ -422,8 +445,11 @@ struct RowsFlowTests {
         let changed = fix.editor(draft: draft)
         let reps = try #require(changed.field(.reps))
         #expect(reps.value == "9" && reps.isChanged)
-        #expect(reps.reset == RowsReset(text: "was 10", accessibilityLabel: "Back to 10, as logged",
-                                        patch: SetValuesPatch(reps: .set(10))))
+        #expect(
+            reps.reset
+                == RowsReset(
+                    text: "was 10", accessibilityLabel: "Back to 10, as logged",
+                    patch: SetValuesPatch(reps: .set(10))))
         #expect(changed.primary.title == "Save 105 kg × 9 @ 8" && changed.primary.isEnabled)
         #expect(changed.primary.action == .edit(set1, SetValuesPatch(reps: .set(9))))
         #expect(fix.save(draft) == .edit(set1, SetValuesPatch(reps: .set(9))))
@@ -502,14 +528,15 @@ struct RowsStructureTests {
         #expect(block.group == "a" && block.slots == ["glute-bridge", "bird-dog"])
         #expect(block.addSets.map(\.title) == ["Add Glute Bridge set", "Add Bird Dog set"])
         // Rest shows only in the island, as for a plain exercise: no "0:00, straight to A2", no "Rest 1:00, then round 2".
-        #expect(block.shape == [
-            "Round 1 of 2",
-            "Glute Bridge, set 1: done",
-            "Bird Dog, set 1: now",
-            "Round 2 of 2",
-            "Glute Bridge, set 2: next",
-            "Bird Dog, set 2: next",
-        ])
+        #expect(
+            block.shape == [
+                "Round 1 of 2",
+                "Glute Bridge, set 1: done",
+                "Bird Dog, set 1: now",
+                "Round 2 of 2",
+                "Glute Bridge, set 2: next",
+                "Bird Dog, set 2: next",
+            ])
         // Each line is its exercise and the set's own number, never a group letter.
         #expect(block.lines.map(\.setLabel) == ["1", "1", "2", "2"])
         #expect(block.lines.map(\.caption) == ["Glute Bridge", "Bird Dog", "Glute Bridge", "Bird Dog"])
@@ -582,8 +609,9 @@ struct RowsStructureTests {
         #expect(finished.isFinished)
         #expect(finished.summary?.text == "40 kg × 11, 35 kg × 14, drop 25 kg × 12")
         #expect(finished.summary?.change == RowsChange(text: "+5 kg", isGain: true))
-        #expect(finished.summary?.sentence == "Chest Press (Machine), done: 40 kilograms, 11 reps; 35 kilograms, 14 reps; "
-            + "drop, 25 kilograms, 12 reps. 5 kilograms more than last time.")
+        #expect(
+            finished.summary?.sentence == "Chest Press (Machine), done: 40 kilograms, 11 reps; 35 kilograms, 14 reps; "
+                + "drop, 25 kilograms, 12 reps. 5 kilograms more than last time.")
     }
 
     @Test("The plank: ready with its goal and last time on the track, then running with Stop and log; the island's next part runs its clock")
@@ -604,8 +632,11 @@ struct RowsStructureTests {
         #expect(ready.secondary == RowsButton(title: "Log 1:07 hold", action: .tick(plank)))
         #expect(ready.rpe?.isCollapsed == true)
         let readyIsland = try session.layout(at: 6).island
-        #expect(readyIsland.next?.primary == RowsButton(title: "Start", accessibilityLabel: "Start Plank, set 1, goal 1:07",
-                                                         action: .startTimedSet(plank)))
+        #expect(
+            readyIsland.next?.primary
+                == RowsButton(
+                    title: "Start", accessibilityLabel: "Start Plank, set 1, goal 1:07",
+                    action: .startTimedSet(plank)))
         #expect(readyIsland.next?.timerStartedAt == nil && !readyIsland.isCounting)
 
         try session.perform(ready.primary.action, at: 100)
@@ -644,16 +675,25 @@ struct RowsStructureTests {
         let pause = try #require(pausing.island.rest)
         #expect(pause.kind == .pause && pause.title == "Pause" && pause.totalText == "of 0:15")
         // The next mini-set appears only on a tick; the island names it all the same, with nothing to tap.
-        #expect(pausing.island.after == RowsAfterPart(row: nil, label: "Then", text: "Mini-set 2",
-                                                      sentence: "Then Mini-set 2"))
+        #expect(
+            pausing.island.after
+                == RowsAfterPart(
+                    row: nil, label: "Then", text: "Mini-set 2",
+                    sentence: "Then Mini-set 2"))
 
         try session.tick("lateral-raise", 2, SetValues(load: .kg(6), reps: 4), at: 230)
         try session.tick("lateral-raise", 3, SetValues(load: .kg(6), reps: 4), at: 260)
         let layout = try session.layout(at: 290)
         let chain = try #require(layout.block("lateral-raise"))
-        #expect(chain.shape == ["Set 1: done", "Set 2 as myo-reps, 0:15 between mini-sets", "Activation: done",
-                                "Mini-sets 4 4", "Mini-set 3: now"])
-        guard case let .miniSets(line) = chain.items[3] else { Issue.record("no chips"); return }
+        #expect(
+            chain.shape == [
+                "Set 1: done", "Set 2 as myo-reps, 0:15 between mini-sets", "Activation: done",
+                "Mini-sets 4 4", "Mini-set 3: now",
+            ])
+        guard case let .miniSets(line) = chain.items[3] else {
+            Issue.record("no chips")
+            return
+        }
         #expect(line.comparison == RowsChange(text: "as last time", isGain: false) && line.stopText == nil)
         #expect(line.sets.map(\.id) == line.chips.map(\.row) && line.sets.allSatisfy { $0.tap == .fix })
         #expect(line.sentence == "Mini-sets done: 4 and 4 reps. The same as last time.")
@@ -678,11 +718,13 @@ struct RowsStructureTests {
         try session.tick("bird-dog", 1, SetValues(reps: 11), at: 300)
         let block = try #require(try session.layout(at: 310).block("group-a"))
         #expect(block.isFinished)
-        #expect(block.summary == RowsBlockSummary(
-            text: "Glute Bridge 16, 16; Bird Dog 11, 11 per side", change: RowsChange(text: "+1 rep", isGain: true),
-            sentence: "Superset, done: Glute Bridge: 16 reps; 16 reps; Bird Dog: 11 reps per side; 11 reps per side. "
-                + "1 rep more than last time."
-        ))
+        #expect(
+            block.summary
+                == RowsBlockSummary(
+                    text: "Glute Bridge 16, 16; Bird Dog 11, 11 per side", change: RowsChange(text: "+1 rep", isGain: true),
+                    sentence: "Superset, done: Glute Bridge: 16 reps; 16 reps; Bird Dog: 11 reps per side; 11 reps per side. "
+                        + "1 rep more than last time."
+                ))
         #expect(block.items.compactMap { if case let .round(round) = $0 { round.isDone } else { nil } } == [true, true])
     }
 
@@ -690,8 +732,9 @@ struct RowsStructureTests {
     func emptyAndDone() throws {
         var empty = EngineScript(at: engineEpoch)
         try empty.start(nil, exercises: [])
-        let none = SessionPresenter.present(try empty.current, history: HistoryIndex([]),
-                                            settings: PresenterSettings(prefillsRPE: true), now: engineEpoch)
+        let none = SessionPresenter.present(
+            try empty.current, history: HistoryIndex([]),
+            settings: PresenterSettings(prefillsRPE: true), now: engineEpoch)
         #expect(none.rowsLayout == RowsLayout(blocks: [], island: .empty, openRow: nil))
         #expect(none.rowsLayout.island.parts(editorInView: false) == [.empty])
 
@@ -699,8 +742,9 @@ struct RowsStructureTests {
         var one = EngineScript(at: engineEpoch)
         try one.start(routine, exercises: [EngineCatalog.press])
         try one.tick(try one.row("press", 0), kgReps(50, 10, rpe: 8))
-        let done = SessionPresenter.present(try one.current, history: HistoryIndex([]),
-                                            settings: PresenterSettings(prefillsRPE: true), now: engineEpoch.addingTimeInterval(5))
+        let done = SessionPresenter.present(
+            try one.current, history: HistoryIndex([]),
+            settings: PresenterSettings(prefillsRPE: true), now: engineEpoch.addingTimeInterval(5))
         #expect(done.rowsLayout.island.end == .allDone(title: "All sets done", detail: "Finish saves the session"))
         #expect(done.rowsLayout.island.next == nil && done.rowsLayout.island.after == nil)
         #expect(done.rowsLayout.openRow == nil)
@@ -717,8 +761,9 @@ struct RowsStructureTests {
         var one = EngineScript(at: engineEpoch)
         try one.start(routine, exercises: [EngineCatalog.press])
         try one.tick(try one.row("press", 0), kgReps(30, 10))
-        let done = SessionPresenter.present(try one.current, history: HistoryIndex([]),
-                                            settings: PresenterSettings(prefillsRPE: true), now: engineEpoch.addingTimeInterval(5))
+        let done = SessionPresenter.present(
+            try one.current, history: HistoryIndex([]),
+            settings: PresenterSettings(prefillsRPE: true), now: engineEpoch.addingTimeInterval(5))
         let summary = try #require(done.rowsLayout.blocks.first?.summary)
         #expect(summary.text == "Warm-up 30 kg × 10")
         #expect(summary.sentence == "Press, done: warm-up, 30 kilograms, 10 reps. First time.")
@@ -783,22 +828,26 @@ struct RowsWordsTests {
 
     @Test("Changes against last time: units, a true minus, gains and losses, and the spoken form")
     func changes() {
-        let kg = RowsText.changes(SetValues(load: .kg(110), reps: 8), last: SetValues(load: .kg(105), reps: 10),
-                                  measurement: .weightreps, unit: .kg)
+        let kg = RowsText.changes(
+            SetValues(load: .kg(110), reps: 8), last: SetValues(load: .kg(105), reps: 10),
+            measurement: .weightreps, unit: .kg)
         #expect(kg == [RowsChange(text: "+5 kg", isGain: true), RowsChange(text: "\u{2212}2 reps", isGain: false)])
         #expect(RowsText.spokenChanges(kg, unit: .kg) == "5 kilograms more and 2 reps fewer than last time")
-        let assisted = RowsText.changes(SetValues(assistance: .kg(20), reps: 8), last: SetValues(assistance: .kg(25), reps: 8),
-                                        measurement: .bodyweightassistedreps, unit: .kg)
+        let assisted = RowsText.changes(
+            SetValues(assistance: .kg(20), reps: 8), last: SetValues(assistance: .kg(25), reps: 8),
+            measurement: .bodyweightassistedreps, unit: .kg)
         #expect(assisted == [RowsChange(text: "\u{2212}5 kg", isGain: true)])
         let hold = RowsText.changes(SetValues(duration: 67), last: SetValues(duration: 62), measurement: .duration, unit: .kg)
         #expect(hold == [RowsChange(text: "+0:05", isGain: true)])
         #expect(RowsText.spokenChanges(hold, unit: .kg) == "5 seconds longer than last time")
-        let row = RowsText.changes(SetValues(duration: 120, distance: Length(metres: 500)),
-                                   last: SetValues(duration: 125, distance: Length(metres: 500)),
-                                   measurement: .distanceduration, unit: .kg)
+        let row = RowsText.changes(
+            SetValues(duration: 120, distance: Length(metres: 500)),
+            last: SetValues(duration: 125, distance: Length(metres: 500)),
+            measurement: .distanceduration, unit: .kg)
         #expect(row == [RowsChange(text: "\u{2212}0:05", isGain: true)])
-        #expect(RowsText.changes(SetValues(reps: 15), last: SetValues(reps: 15), measurement: .repsonly, unit: .kg)
-            == [RowsChange(text: "as last time", isGain: false)])
+        #expect(
+            RowsText.changes(SetValues(reps: 15), last: SetValues(reps: 15), measurement: .repsonly, unit: .kg)
+                == [RowsChange(text: "as last time", isGain: false)])
     }
 
     @Test("Values as rows say them: units on loads, none on last time, reps and holds in words")
@@ -806,16 +855,21 @@ struct RowsWordsTests {
         #expect(RowsText.values(SetValues(load: .kg(110), reps: 8), measurement: .weightreps, perSide: false) == "110 kg × 8")
         #expect(RowsText.values(SetValues(reps: 1), measurement: .repsonly, perSide: false) == "1 rep")
         #expect(RowsText.values(SetValues(reps: 11), measurement: .repsonly, perSide: true) == "11 per side")
-        #expect(RowsText.values(SetValues(load: .kg(10), reps: 8), measurement: .weightedbodyweightreps, perSide: false)
-            == "BW + 10 kg × 8")
+        #expect(
+            RowsText.values(SetValues(load: .kg(10), reps: 8), measurement: .weightedbodyweightreps, perSide: false)
+                == "BW + 10 kg × 8")
         #expect(RowsText.values(SetValues(reps: 8), measurement: .weightedbodyweightreps, perSide: false) == "8 reps")
         #expect(RowsText.values(SetValues(duration: 58), measurement: .duration, perSide: false) == "0:58 hold")
-        #expect(RowsText.values(SetValues(load: .kg(25)), measurement: .weightreps, perSide: false, placeholder: "to failure")
-            == "25 kg to failure")
-        #expect(RowsText.compact(SetValues(load: .kg(35), reps: 13, rpe: d("9.5"), rpeMethod: .entered),
-                                 measurement: .weightreps, perSide: false) == "35 × 13 @ 9.5")
-        #expect(RowsText.compact(SetValues(load: .kg(10), duration: 55), measurement: .weightduration, perSide: false)
-            == "10 for 0:55")
+        #expect(
+            RowsText.values(SetValues(load: .kg(25)), measurement: .weightreps, perSide: false, placeholder: "to failure")
+                == "25 kg to failure")
+        #expect(
+            RowsText.compact(
+                SetValues(load: .kg(35), reps: 13, rpe: d("9.5"), rpeMethod: .entered),
+                measurement: .weightreps, perSide: false) == "35 × 13 @ 9.5")
+        #expect(
+            RowsText.compact(SetValues(load: .kg(10), duration: 55), measurement: .weightduration, perSide: false)
+                == "10 for 0:55")
         #expect(RowsText.logTitle(prefix: "Log A2,", values: "", rpe: nil) == "Log A2")
         #expect(RowsText.spokenDuration(62) == "1 minute 2 seconds" && RowsText.spokenDuration(120) == "2 minutes")
     }

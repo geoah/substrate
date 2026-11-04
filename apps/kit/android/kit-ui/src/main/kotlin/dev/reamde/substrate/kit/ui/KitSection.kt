@@ -21,10 +21,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /**
- * One section of a settings screen, as a grouped form's section is on an
- * Apple system: its title over its rows, which sit together on one
- * surface, and its footer under them. An app's own settings use it as the
- * kit's screens do.
+ * One section of a settings screen, as a grouped form's section is on an Apple system: its title over its rows, which sit together on one surface, and its
+ * footer under them. An app's own settings use it as the kit's screens do.
  */
 @Composable
 public fun KitSection(
@@ -83,9 +81,8 @@ public fun KitRow(
 }
 
 /**
- * A label and its value, read the same in a read view and an edit view. An
- * identifier a person may copy is set as one, and a long value goes under
- * its label rather than being squeezed beside it.
+ * A label and its value, read the same in a read view and an edit view. An identifier a person may copy is set as one, and a long value goes under its label
+ * rather than being squeezed beside it.
  */
 @Composable
 public fun KitValueRow(label: String, value: String, modifier: Modifier = Modifier, verbatim: Boolean = false, stacked: Boolean = false) {
@@ -105,9 +102,15 @@ public fun KitValueRow(label: String, value: String, modifier: Modifier = Modifi
 /** A row that opens a screen of its own. */
 @Composable
 public fun KitNavigationRow(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, supporting: String? = null) {
-    KitRow(label, modifier, supporting = supporting, onClick = onClick, trailing = {
-        Icon(KitMark.disclosure.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    })
+    KitRow(
+        label,
+        modifier,
+        supporting = supporting,
+        onClick = onClick,
+        trailing = {
+            Icon(KitMark.disclosure.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+    )
 }
 
 /** The padding a row of a section takes when it is not a `ListItem`. */
@@ -117,10 +120,8 @@ public fun Modifier.kitRowPadding(): Modifier = padding(horizontal = KitSpacing.
 public fun Modifier.clickableRow(onClick: () -> Unit): Modifier = clickable(onClick = onClick)
 
 /**
- * A row's value: in the body's size, secondary; an identifier in a
- * monospaced face a size down, so a long one wraps rarely. At a row's end it
- * wraps within at most two thirds of the row, as a grouped form's value
- * does, so a long one never squeezes its label to a letter a line.
+ * A row's value: in the body's size, secondary; an identifier in a monospaced face a size down, so a long one wraps rarely. At a row's end it wraps within at
+ * most two thirds of the row, as a grouped form's value does, so a long one never squeezes its label to a letter a line.
  */
 @Composable
 public fun KitValueText(value: String, verbatim: Boolean = false, textAlign: TextAlign = TextAlign.End) {

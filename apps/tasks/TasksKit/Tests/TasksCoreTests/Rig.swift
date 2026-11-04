@@ -6,6 +6,7 @@ import SubstrateLocal
 import SubstrateRuntime
 import SubstrateScreens
 import SubstrateTesting
+
 @testable import TasksCore
 
 /// A Tasks root over a folder of its own, a scripted server as its client
@@ -26,7 +27,8 @@ struct Rig {
         server = ScriptedServer()
         self.notifications = notifications
         clock = TestClock()
-        app = TasksApp(cache: cache, outbox: outbox, words: TasksApp.words(device: "this iPhone"), device: "this iPhone", build: BuildFacts(version: "0.1.0 (1)"))
+        app = TasksApp(
+            cache: cache, outbox: outbox, words: TasksApp.words(device: "this iPhone"), device: "this iPhone", build: BuildFacts(version: "0.1.0 (1)"))
     }
 
     var client: SubstrateClient {

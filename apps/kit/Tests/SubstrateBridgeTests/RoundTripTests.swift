@@ -1,10 +1,11 @@
 import Foundation
-@testable import SubstrateBridge
-@testable import SubstrateBridgeCheck
 import SubstrateCore
 import SubstrateDevice
 import SubstrateRuntime
 import Testing
+
+@testable import SubstrateBridge
+@testable import SubstrateBridgeCheck
 
 /// One value of the round trip (app-kit.md §5.5): Swift encodes it into the
 /// fixture file, Kotlin's test decodes and encodes it again, and Swift
@@ -18,8 +19,9 @@ struct Fixture: Sendable {
     let matches: @Sendable (Data) throws -> Bool
 
     static func of<T: Bridged & Equatable>(_ type: String, _ value: T, input: String? = nil) -> Fixture {
-        Fixture(type: type, input: input, encode: { try BridgeCodec.data(value) },
-                matches: { try BridgeCodec.decode(T.self, from: JSONValue(data: $0)) == value })
+        Fixture(
+            type: type, input: input, encode: { try BridgeCodec.data(value) },
+            matches: { try BridgeCodec.decode(T.self, from: JSONValue(data: $0)) == value })
     }
 }
 
@@ -31,9 +33,12 @@ enum Fixtures {
 
     static let all: [Fixture] = [
         // Payload enums: labelled payloads, none, nested enums.
-        .of("DeviceRequest", DeviceRequest.transportFetch(request: TransportRequest(
-            url: "https://example.com/ü?q=1&r=%20", method: "POST",
-            headers: [TransportHeader(name: "Content-Type", value: "application/json")], body: "AAECAwQ=", timeoutMillis: 30000))),
+        .of(
+            "DeviceRequest",
+            DeviceRequest.transportFetch(
+                request: TransportRequest(
+                    url: "https://example.com/ü?q=1&r=%20", method: "POST",
+                    headers: [TransportHeader(name: "Content-Type", value: "application/json")], body: "AAECAwQ=", timeoutMillis: 30000))),
         .of("DeviceRequest", DeviceRequest.connectivityWatch),
         .of("DeviceRequest", DeviceRequest.secureWrite(store: "session", account: "a", value: "c2VjcmV0")),
         .of("DeviceRequest", DeviceRequest.dnsTXT(name: "_substrate.example.com", timeoutMillis: 5000)),
@@ -44,55 +49,77 @@ enum Fixtures {
         .of("SecureItem", SecureItem.missing),
         .of("SecureItem", SecureItem.reset(reason: "key invalidated")),
         .of("DNSAnswer", DNSAnswer.answered(rcode: 0, records: [["v=substrate1 ", "server=https://example.com"], []])),
-        .of("ListMessage", ListMessage.delta(list: "rows", base: 4, revision: 5, inserted: [ListRow(id: "b", value: ["text": "B"])],
-                                             changed: [], removed: ["a"], order: ["b", "c"])),
+        .of(
+            "ListMessage",
+            ListMessage.delta(
+                list: "rows", base: 4, revision: 5, inserted: [ListRow(id: "b", value: ["text": "B"])],
+                changed: [], removed: ["a"], order: ["b", "c"])),
         .of("CheckCommand", CheckCommand.secure(account: "a", value: nil)),
         .of("CheckCommand", CheckCommand.fetch(url: "http://127.0.0.1/", via: .urlSession)),
         // Unicode across the boundary.
         .of("CheckResult", CheckResult.ok(name: "echo", detail: unicode, millis: 0.125)),
         // Absent against null: Swift leaves a nil out; null in, nil out.
         .of("TransportRequest", TransportRequest(url: "https://example.com", method: "GET", headers: [], timeoutMillis: 1)),
-        .of("TransportRequest", TransportRequest(url: "https://example.com", method: "GET", headers: [], timeoutMillis: 1),
+        .of(
+            "TransportRequest", TransportRequest(url: "https://example.com", method: "GET", headers: [], timeoutMillis: 1),
             input: #"{"url":"https://example.com","method":"GET","headers":[],"body":null,"bodyFile":null,"timeoutMillis":1,"credentials":false}"#),
-        .of("CheckPresentation", CheckPresentation(step: 1, result: nil, padding: nil),
+        .of(
+            "CheckPresentation", CheckPresentation(step: 1, result: nil, padding: nil),
             input: #"{"step":1,"result":null}"#),
         // Large integers and decimals: Int's extremes as Kotlin's Long, and
         // JSON numbers whose every digit a Double would lose.
-        .of("BridgeStats", {
-            var stats = BridgeStats()
-            stats.posted = Int.max
-            stats.delivered = Int.min
-            stats.dropped = 9_007_199_254_740_993
-            return stats
-        }()),
+        .of(
+            "BridgeStats",
+            {
+                var stats = BridgeStats()
+                stats.posted = Int.max
+                stats.delivered = Int.min
+                stats.dropped = 9_007_199_254_740_993
+                return stats
+            }()),
         .of("Handle", Handle(id: Int.max, generation: Int.max - 1)),
-        .of("Envelope", Envelope(op: .presentation, handle: Handle(id: 1, generation: 2), id: nil, seq: nil, body: [
-            "decimal": JSONValue.number(JSONNumber("0.1")!),
-            "long": JSONValue.number(JSONNumber("12345678901234567890.12345678901234567")!),
-            "negative": JSONValue.number(JSONNumber("-0.000000000000000000000000001")!),
-            "integer": JSONValue.number(JSONNumber("9223372036854775807")!),
-            "nested": ["list": [1, "two", true, .null], "empty": [:]],
-        ])),
+        .of(
+            "Envelope",
+            Envelope(
+                op: .presentation, handle: Handle(id: 1, generation: 2), id: nil, seq: nil,
+                body: [
+                    "decimal": JSONValue.number(JSONNumber("0.1")!),
+                    "long": JSONValue.number(JSONNumber("12345678901234567890.12345678901234567")!),
+                    "negative": JSONValue.number(JSONNumber("-0.000000000000000000000000001")!),
+                    "integer": JSONValue.number(JSONNumber("9223372036854775807")!),
+                    "nested": ["list": [1, "two", true, .null], "empty": [:]],
+                ])),
         // Past what a Decimal holds (38 digits, exponents to ±128) and what a
         // Double does (±1.8e308): only the exact reader and writer keep them,
         // on both sides.
-        .of("Envelope", Envelope(op: .command, handle: Handle(id: 3, generation: 1), body: [
-            "digits": JSONValue.number(JSONNumber("1234567890123456789012345678901234567890.0987654321")!),
-            "tiny": JSONValue.number(JSONNumber("-1.25e-400")!),
-            "huge": JSONValue.number(JSONNumber("9.87654321e+999")!),
-            "integer": JSONValue.number(JSONNumber("123456789012345678901234567890123456789012345678901234567890")!),
-        ])),
+        .of(
+            "Envelope",
+            Envelope(
+                op: .command, handle: Handle(id: 3, generation: 1),
+                body: [
+                    "digits": JSONValue.number(JSONNumber("1234567890123456789012345678901234567890.0987654321")!),
+                    "tiny": JSONValue.number(JSONNumber("-1.25e-400")!),
+                    "huge": JSONValue.number(JSONNumber("9.87654321e+999")!),
+                    "integer": JSONValue.number(JSONNumber("123456789012345678901234567890123456789012345678901234567890")!),
+                ])),
         .of("RouteCommand", RouteCommand(path: ["a"], command: ["amount": JSONValue.number(JSONNumber("1e-200")!)])),
         .of("CheckResult", CheckResult.ok(name: "double", detail: "", millis: 1e-300)),
         .of("NetworkPath", NetworkPath(online: true, expensive: false)),
         // A keyed list whole, as a presentation holds it once Kotlin has put
         // its rows back, and a command that hands a value on with every digit.
-        .of("Ledger.Presentation", Ledger.Presentation(rows: KeyedList([LedgerRow(id: "a", text: unicode), LedgerRow(id: "b", text: "B")],
-                                                                       revision: 7),
-                                                       count: "2 rows", drawn: "Tuesday", note: nil)),
+        .of(
+            "Ledger.Presentation",
+            Ledger.Presentation(
+                rows: KeyedList(
+                    [LedgerRow(id: "a", text: unicode), LedgerRow(id: "b", text: "B")],
+                    revision: 7),
+                count: "2 rows", drawn: "Tuesday", note: nil)),
         // An instant crosses as RFC 3339, in whole seconds where it has no fraction.
-        .of("NotificationRequest", NotificationRequest(id: "due|a", title: "Buy milk", body: "Due today", fireAt: Date(timeIntervalSince1970: 1_793_696_400),
-                                                       thread: "today", timeSensitive: true, userInfo: ["task": "a"])),
+        .of(
+            "NotificationRequest",
+            NotificationRequest(
+                id: "due|a", title: "Buy milk", body: "Due today", fireAt: Date(timeIntervalSince1970: 1_793_696_400),
+                thread: "today", timeSensitive: true, userInfo: ["task": "a"])),
         .of("Ledger.Command", Ledger.Command.note(value: ["n": JSONValue.number(JSONNumber("1234567890123456789012345678901234567890.5")!)])),
     ]
 
@@ -138,17 +165,23 @@ struct RoundTripTests {
         let handle = try open(runtime)
         _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["rows": ["a", "b", "c"]]))
         let whole = try await outlet.next { $0.op == .list }
-        #expect(try BridgeCodec.decode(ListMessage.self, from: whole.body) == .whole(list: "rows", revision: 1, rows: [
-            ListRow(id: "a", value: ["id": "a", "text": "a"]), ListRow(id: "b", value: ["id": "b", "text": "b"]),
-            ListRow(id: "c", value: ["id": "c", "text": "c"]),
-        ]))
+        #expect(
+            try BridgeCodec.decode(ListMessage.self, from: whole.body)
+                == .whole(
+                    list: "rows", revision: 1,
+                    rows: [
+                        ListRow(id: "a", value: ["id": "a", "text": "a"]), ListRow(id: "b", value: ["id": "b", "text": "b"]),
+                        ListRow(id: "c", value: ["id": "c", "text": "c"]),
+                    ]))
         let count = outlet.messages.count
         _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["rows": ["c", "b", "d"], "text": "b"]))
         let delta = try await outlet.next(after: count) { $0.op == .list }
         // Only the rows that changed are encoded: d inserted; c's text changed; b's did not.
-        #expect(try BridgeCodec.decode(ListMessage.self, from: delta.body) == .delta(
-            list: "rows", base: 1, revision: 2, inserted: [ListRow(id: "d", value: ["id": "d", "text": "b"])],
-            changed: [ListRow(id: "c", value: ["id": "c", "text": "b"])], removed: ["a"], order: ["c", "b", "d"]))
+        #expect(
+            try BridgeCodec.decode(ListMessage.self, from: delta.body)
+                == .delta(
+                    list: "rows", base: 1, revision: 2, inserted: [ListRow(id: "d", value: ["id": "d", "text": "b"])],
+                    changed: [ListRow(id: "c", value: ["id": "c", "text": "b"])], removed: ["a"], order: ["c", "b", "d"]))
         let before = outlet.messages.count
         _ = try post(runtime, Envelope(op: .resync, handle: handle, body: ["list": "rows"]))
         let again = try await outlet.next(after: before) { $0.op == .list }

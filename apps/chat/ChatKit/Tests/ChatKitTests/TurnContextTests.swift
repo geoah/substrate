@@ -1,10 +1,11 @@
 import Foundation
-import Testing
-@testable import ChatKit
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
+import Testing
+
+@testable import ChatKit
 
 /// The turn context (decision 0196): the chat body carries the device's zone
 /// and the records, and a user row's `contextRecords` reach its turn.
@@ -23,11 +24,13 @@ import SubstrateDevice
     }
 
     @Test func aUserRowsContextRecordsReachItsTurn() {
-        let row = Record(id: "u", kind: Kinds.message, properties: [
-            "role": "user", "content": "what is due?", "turn": 0,
-            "context": "<turn_context>\nnow: x\n</turn_context>",
-            "contextRecords": [["kind": "ada.example.com/tasks/task", "id": "q4"]],
-        ], createdAt: "2026-11-01T09:41:00Z")
+        let row = Record(
+            id: "u", kind: Kinds.message,
+            properties: [
+                "role": "user", "content": "what is due?", "turn": 0,
+                "context": "<turn_context>\nnow: x\n</turn_context>",
+                "contextRecords": [["kind": "ada.example.com/tasks/task", "id": "q4"]],
+            ], createdAt: "2026-11-01T09:41:00Z")
         let turns = transcript(of: [row])
         #expect(turns[0].content == "what is due?")
         #expect(turns[0].contextRecords == [RecordReference(kind: "ada.example.com/tasks/task", id: "q4")])

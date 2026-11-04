@@ -1,8 +1,7 @@
 import Foundation
+import SubstrateTesting
 import Testing
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
+
 @testable import SubstrateAPI
 @testable import SubstrateAuth
 @testable import SubstrateCore
@@ -10,7 +9,10 @@ import FoundationNetworking
 @testable import SubstrateDeviceApple
 @testable import SubstrateKit
 @testable import SubstrateUI
-import SubstrateTesting
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 @Suite(.timeLimit(.minutes(10))) struct KindWords {
     @Test func aKindNameSplitsIntoTheConsolesWords() {
@@ -40,8 +42,10 @@ import SubstrateTesting
 
     /// The hues the console's hashHue answers for the same references.
     @Test func anUnknownNameTakesTheConsolesHashedHue() {
-        let refs = ["a.example.com/commerce/category", "x.example.com/a/b", "x.example.com/a/c",
-                    "ada.example.com/health/sleep", "ada.example.com/llm/widget"]
+        let refs = [
+            "a.example.com/commerce/category", "x.example.com/a/b", "x.example.com/a/c",
+            "ada.example.com/health/sleep", "ada.example.com/llm/widget",
+        ]
         #expect(refs.map { KindHue.hash($0) } == [.green, .teal, .blue, .purple, .purple])
     }
 }
@@ -99,8 +103,9 @@ import SubstrateTesting
     @Test func aRecordIsReadOnceAndADenialIsRemembered() async throws {
         let cat = RecordReference(kind: "a.example.com/commerce/category", id: "mugs")
         let secret = RecordReference(kind: "a.example.com/x/y", id: "z")
-        let directory = RecordDirectory(reader: Fake(
-            records: [cat.path: Record(id: "mugs", kind: cat.kind, properties: ["title": "Mugs"])], denied: [secret.path]))
+        let directory = RecordDirectory(
+            reader: Fake(
+                records: [cat.path: Record(id: "mugs", kind: cat.kind, properties: ["title": "Mugs"])], denied: [secret.path]))
         #expect(directory.title(for: cat) == nil)
         await directory.resolve(cat)
         #expect(directory.title(for: cat) == "Mugs")

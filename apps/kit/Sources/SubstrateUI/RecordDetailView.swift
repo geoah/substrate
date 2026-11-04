@@ -18,7 +18,8 @@ public struct RecordDetailView: View {
     @State private var problem: Problem?
 
     enum Problem: Equatable {
-        case notAllowed, missing, failed(String)
+        case notAllowed, missing
+        case failed(String)
     }
 
     public init(reference: RecordReference, title: String? = nil) {

@@ -5,12 +5,9 @@ import android.content.Intent
 import android.os.Bundle
 
 /**
- * Where the sign-in's last page sends the owner back to the app: the
- * browser adds BROWSABLE to every intent a page starts, and an app's
- * launcher activity takes none, so this one does, on a scheme made of the
- * application id (`<applicationId>.signin`). It reads nothing from the
- * intent and starts nothing but the app's own launcher activity, which
- * brings the app's task to the front as it stood.
+ * Where the sign-in's last page sends the owner back to the app: the browser adds BROWSABLE to every intent a page starts, and an app's launcher activity takes
+ * none, so this one does, on a scheme made of the application id (`<applicationId>.signin`). It reads nothing from the intent and starts nothing but the app's
+ * own launcher activity, which brings the app's task to the front as it stood.
  */
 public class ReturnToApp : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {

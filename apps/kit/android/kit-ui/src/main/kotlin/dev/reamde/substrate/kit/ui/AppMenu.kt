@@ -27,14 +27,17 @@ import dev.reamde.substrate.kit.bridge.AppMenuPresentation
 import dev.reamde.substrate.kit.bridge.AppMenuSection
 
 /** How the menu is drawn: by the window's width, or as one of the three. */
-public enum class AppMenuLayout { Automatic, Bar, Rail, Drawer }
+public enum class AppMenuLayout {
+    Automatic,
+    Bar,
+    Rail,
+    Drawer,
+}
 
 /**
- * The app's menu as its presentation words it: a navigation bar of its
- * sections in a compact window, a rail in a medium one, and a drawer under
- * the app's name in an expanded one, the section shown beside it. Choosing
- * one is the app's to send; the menu keeps no state. A section's mark is
- * its symbol's name in the design tokens (`menuIcon`).
+ * The app's menu as its presentation words it: a navigation bar of its sections in a compact window, a rail in a medium one, and a drawer under the app's name
+ * in an expanded one, the section shown beside it. Choosing one is the app's to send; the menu keeps no state. A section's mark is its symbol's name in the
+ * design tokens (`menuIcon`).
  */
 @Composable
 public fun AppMenu(
@@ -49,57 +52,68 @@ public fun AppMenu(
     val selected = items.firstOrNull { it.id == menu.selected }
     val choose = { item: AppMenuSection -> select(item.id) }
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val drawn = when {
-            layout != AppMenuLayout.Automatic -> layout
-            maxWidth < 600.dp -> AppMenuLayout.Bar
-            maxWidth < 1200.dp -> AppMenuLayout.Rail
-            else -> AppMenuLayout.Drawer
-        }
+        val drawn =
+            when {
+                layout != AppMenuLayout.Automatic -> layout
+                maxWidth < 600.dp -> AppMenuLayout.Bar
+                maxWidth < 1200.dp -> AppMenuLayout.Rail
+                else -> AppMenuLayout.Drawer
+            }
         when (drawn) {
-            AppMenuLayout.Bar, AppMenuLayout.Automatic -> Scaffold(bottomBar = {
-                NavigationBar {
-                    for (item in items) {
-                        NavigationBarItem(
-                            selected = item.id == menu.selected,
-                            onClick = { choose(item) },
-                            icon = { MenuIcon(item) },
-                            label = { Text(item.title) },
-                        )
+            AppMenuLayout.Bar,
+            AppMenuLayout.Automatic ->
+                Scaffold(
+                    bottomBar = {
+                        NavigationBar {
+                            for (item in items) {
+                                NavigationBarItem(
+                                    selected = item.id == menu.selected,
+                                    onClick = { choose(item) },
+                                    icon = { MenuIcon(item) },
+                                    label = { Text(item.title) },
+                                )
+                            }
+                        }
                     }
+                ) { padding ->
+                    // Consumed, so a section's own top bar does not count the
+                    // status bar the scaffold already made room for.
+                    Box(Modifier.padding(padding).consumeWindowInsets(padding)) { selected?.let { content(it) } }
                 }
-            }) { padding ->
-                // Consumed, so a section's own top bar does not count the
-                // status bar the scaffold already made room for.
-                Box(Modifier.padding(padding).consumeWindowInsets(padding)) { selected?.let { content(it) } }
-            }
-            AppMenuLayout.Rail -> Row {
-                NavigationRail {
-                    for (item in items) {
-                        NavigationRailItem(
-                            selected = item.id == menu.selected,
-                            onClick = { choose(item) },
-                            icon = { MenuIcon(item) },
-                            label = { Text(item.title) },
-                        )
+            AppMenuLayout.Rail ->
+                Row {
+                    NavigationRail {
+                        for (item in items) {
+                            NavigationRailItem(
+                                selected = item.id == menu.selected,
+                                onClick = { choose(item) },
+                                icon = { MenuIcon(item) },
+                                label = { Text(item.title) },
+                            )
+                        }
                     }
+                    Box(Modifier.fillMaxHeight().weight(1f)) { selected?.let { content(it) } }
                 }
-                Box(Modifier.fillMaxHeight().weight(1f)) { selected?.let { content(it) } }
-            }
-            AppMenuLayout.Drawer -> PermanentNavigationDrawer(drawerContent = {
-                PermanentDrawerSheet(Modifier.width(300.dp)) {
-                    title?.let { Text(it, style = KitText.screenTitle.style, modifier = Modifier.padding(KitSpacing.screen)) }
-                    for (item in items) {
-                        NavigationDrawerItem(
-                            label = { Text(item.title) },
-                            selected = item.id == menu.selected,
-                            onClick = { choose(item) },
-                            icon = { Icon(menuIcon(item.symbol), contentDescription = null) },
-                            badge = item.badge?.let { { Text("$it") } },
-                            modifier = Modifier.padding(horizontal = KitSpacing.row),
-                        )
+            AppMenuLayout.Drawer ->
+                PermanentNavigationDrawer(
+                    drawerContent = {
+                        PermanentDrawerSheet(Modifier.width(300.dp)) {
+                            title?.let { Text(it, style = KitText.screenTitle.style, modifier = Modifier.padding(KitSpacing.screen)) }
+                            for (item in items) {
+                                NavigationDrawerItem(
+                                    label = { Text(item.title) },
+                                    selected = item.id == menu.selected,
+                                    onClick = { choose(item) },
+                                    icon = { Icon(menuIcon(item.symbol), contentDescription = null) },
+                                    badge = item.badge?.let { { Text("$it") } },
+                                    modifier = Modifier.padding(horizontal = KitSpacing.row),
+                                )
+                            }
+                        }
                     }
+                ) {
+                    selected?.let { content(it) }
                 }
-            }) { selected?.let { content(it) } }
         }
     }
 }

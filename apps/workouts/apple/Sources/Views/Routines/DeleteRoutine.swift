@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// A routine the owner asked to delete, waiting for the confirmation.
 struct RoutineToDelete: Identifiable, Hashable {
@@ -25,7 +25,11 @@ private struct DeleteRoutineConfirmation: ViewModifier {
     func body(content: Content) -> some View {
         content.confirmationDialog(
             pending.map { "Delete \u{201C}\($0.name)\u{201D}?" } ?? "",
-            isPresented: Binding { pending != nil } set: { if !$0 { pending = nil } },
+            isPresented: Binding {
+                pending != nil
+            } set: {
+                if !$0 { pending = nil }
+            },
             titleVisibility: .visible,
             presenting: pending
         ) { routine in

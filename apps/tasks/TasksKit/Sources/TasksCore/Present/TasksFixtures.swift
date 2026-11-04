@@ -44,24 +44,45 @@ public enum TasksFixtures {
             record("groceries", TasksKinds.list, ["name": "Groceries", "position": "1"]),
             record("home", TasksKinds.list, ["name": "Home", "position": "2"]),
             record("milk", TasksKinds.task, ["name": "Oat milk", "list": list("groceries"), "position": "1", "status": "open", "priority": "none"]),
-            record("bread", TasksKinds.task, ["name": "Sourdough bread", "list": list("groceries"), "position": "2", "status": "open",
-                                              "priority": "none", "dueDay": "2026-11-03"]),
-            record("coffee", TasksKinds.task, ["name": "Coffee beans", "list": list("groceries"), "position": "3", "status": "done",
-                                               "priority": "none", "completedAt": "2026-11-02T18:00:00Z"]),
-            record("rent", TasksKinds.task, ["name": "Pay rent", "list": list("home"), "position": "1", "status": "open", "priority": "urgent",
-                                             "dueDay": "2026-11-02"]),
-            record("plumber", TasksKinds.task, ["name": "Call the plumber", "list": list("home"), "position": "2", "status": "open",
-                                                "priority": "high", "dueDay": "2026-11-03", "dueAt": "2026-11-03T15:00:00Z",
-                                                "description": "About the kitchen tap. Ask for Thursday morning.",
-                                                "url": "https://example.com/plumbers"]),
-            record("passport", TasksKinds.task, ["name": "Renew passport", "status": "open", "priority": "medium", "position": "1",
-                                                 "dueDay": "2026-11-20"]),
+            record(
+                "bread", TasksKinds.task,
+                [
+                    "name": "Sourdough bread", "list": list("groceries"), "position": "2", "status": "open",
+                    "priority": "none", "dueDay": "2026-11-03",
+                ]),
+            record(
+                "coffee", TasksKinds.task,
+                [
+                    "name": "Coffee beans", "list": list("groceries"), "position": "3", "status": "done",
+                    "priority": "none", "completedAt": "2026-11-02T18:00:00Z",
+                ]),
+            record(
+                "rent", TasksKinds.task,
+                [
+                    "name": "Pay rent", "list": list("home"), "position": "1", "status": "open", "priority": "urgent",
+                    "dueDay": "2026-11-02",
+                ]),
+            record(
+                "plumber", TasksKinds.task,
+                [
+                    "name": "Call the plumber", "list": list("home"), "position": "2", "status": "open",
+                    "priority": "high", "dueDay": "2026-11-03", "dueAt": "2026-11-03T15:00:00Z",
+                    "description": "About the kitchen tap. Ask for Thursday morning.",
+                    "url": "https://example.com/plumbers",
+                ]),
+            record(
+                "passport", TasksKinds.task,
+                [
+                    "name": "Renew passport", "status": "open", "priority": "medium", "position": "1",
+                    "dueDay": "2026-11-20",
+                ]),
         ])
     }
 
-    static func state(_ selection: ListSelection?, open: String? = nil, confirmation: Confirmation? = nil,
-                      editors: [ChildKey: EditorSeed] = [:]) -> TasksState
-    {
+    static func state(
+        _ selection: ListSelection?, open: String? = nil, confirmation: Confirmation? = nil,
+        editors: [ChildKey: EditorSeed] = [:]
+    ) -> TasksState {
         var state = TasksState()
         state.linked.server = records
         state.linked.records = records
@@ -80,9 +101,11 @@ public enum TasksFixtures {
     }
 
     static func present(_ state: TasksState, children: [ChildKey: TaskEditorPresentation] = [:]) -> TasksPresentation {
-        TasksPresenter.present(PresenterInput(state: state, transient: NoTransient(), children: children, now: now, locale: locale,
-                                              timeZone: timeZone, link: state.linked.link), linked: app.linked, device: "this iPhone",
-                                build: build)
+        TasksPresenter.present(
+            PresenterInput(
+                state: state, transient: NoTransient(), children: children, now: now, locale: locale,
+                timeZone: timeZone, link: state.linked.link), linked: app.linked, device: "this iPhone",
+            build: build)
     }
 
     static let app = TasksApp(cache: nil, outbox: nil, words: TasksApp.words(device: "this iPhone"), device: "this iPhone", build: build)
@@ -106,9 +129,10 @@ public enum TasksFixtures {
             if fixture.name == "repository", case let .repository(presented) = fixture.presentation { repository = presented }
         }
         guard let status else { return SettingsPresentation(sections: app.settings) }
-        let link = LinkPresentation<TasksPresentation>(snapshot: LinkSnapshot(phase: .signedIn, repository: "ada.example.com", online: true),
-                                                       repository: repository, banner: nil, ended: nil, status: status, signOutProblem: nil,
-                                                       app: app)
+        let link = LinkPresentation<TasksPresentation>(
+            snapshot: LinkSnapshot(phase: .signedIn, repository: "ada.example.com", online: true),
+            repository: repository, banner: nil, ended: nil, status: status, signOutProblem: nil,
+            app: app)
         return TasksSettings.screen(link, app)
     }
 

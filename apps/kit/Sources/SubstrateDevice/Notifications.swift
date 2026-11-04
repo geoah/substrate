@@ -98,10 +98,11 @@ public struct NotificationRequest: Bridged, Equatable {
     public var showsWhileActive: Bool
     public var userInfo: [String: String]
 
-    public init(id: String, title: String, body: String? = nil, fireAt: Date? = nil, thread: String? = nil, category: String? = nil,
-                timeSensitive: Bool = false, showsWhileActive: Bool = true, userInfo: [String: String] = [:],
-                subtitle: String? = nil)
-    {
+    public init(
+        id: String, title: String, body: String? = nil, fireAt: Date? = nil, thread: String? = nil, category: String? = nil,
+        timeSensitive: Bool = false, showsWhileActive: Bool = true, userInfo: [String: String] = [:],
+        subtitle: String? = nil
+    ) {
         self.id = id
         self.title = title
         self.subtitle = subtitle

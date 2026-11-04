@@ -60,10 +60,11 @@ public struct ConnectController: Controller {
     /// - Parameters:
     ///   - signIn: the app's sign-in to the server found: the browser, then
     ///     keeping the session. A `SignInCancelled` is the person closing it.
-    public init(manifest: AppManifest, address: String = "", locator: ServerLocator, hasPasswordDoor: Bool = false,
-                opensBrowser: Bool = false, unrevoked: [SessionFacts] = [],
-                signIn: @escaping @Sendable (ServerProbe.Result) async throws -> Void)
-    {
+    public init(
+        manifest: AppManifest, address: String = "", locator: ServerLocator, hasPasswordDoor: Bool = false,
+        opensBrowser: Bool = false, unrevoked: [SessionFacts] = [],
+        signIn: @escaping @Sendable (ServerProbe.Result) async throws -> Void
+    ) {
         self.manifest = manifest
         initialAddress = address
         self.locator = locator
@@ -172,9 +173,11 @@ public struct ConnectController: Controller {
                 do {
                     return .located(try await locator.locate(typed, requirement: manifest.requirement, app: manifest.appName))
                 } catch {
-                    let problem = isCancellation(error) ? nil
+                    let problem =
+                        isCancellation(error)
+                        ? nil
                         : (error as? LocalizedError)?.errorDescription
-                        ?? explain(error, app: manifest.appName, server: ServerAddress.origin(of: typed))
+                            ?? explain(error, app: manifest.appName, server: ServerAddress.origin(of: typed))
                     return .locateFailed(problem: problem, retryable: error is ServerLocator.LookupFailed)
                 }
             }
@@ -202,54 +205,66 @@ public struct ConnectController: Controller {
         let state = input.state
         let app = manifest.appName
         let found = state.found
-        let door: ConnectPresentation.Door = found.map { found in
-            switch self.door(for: found) {
-            case .app: .browser
-            case .password: .password
-            case .tooOld: .tooOld
-            }
-        } ?? .none
+        let door: ConnectPresentation.Door =
+            found.map { found in
+                switch self.door(for: found) {
+                case .app: .browser
+                case .password: .password
+                case .tooOld: .tooOld
+                }
+            } ?? .none
         let unrevoked = UnrevokedPresenter.present(appName: app, unrevoked: unrevoked)
-        let field = ConnectPresentation.Field(text: state.address, placeholder: "ada.example.com", label: "Repository or server",
-                                              disabled: state.busy, revision: state.addressRevision)
+        let field = ConnectPresentation.Field(
+            text: state.address, placeholder: "ada.example.com", label: "Repository or server",
+            disabled: state.busy, revision: state.addressRevision)
         if let found, door == .tooOld, case let .tooOld(running, needed, missing) = found.verdict {
-            return ConnectPresentation(field: field, door: door, found: found,
-                                       tooOld: .present(appName: app, host: found.host, running: running, needed: needed, missing: missing,
-                                                        tryAgain: true, changeServer: true),
-                                       problem: nil, button: nil, cancel: nil, footer: nil, unrevoked: unrevoked)
+            return ConnectPresentation(
+                field: field, door: door, found: found,
+                tooOld: .present(
+                    appName: app, host: found.host, running: running, needed: needed, missing: missing,
+                    tryAgain: true, changeServer: true),
+                problem: nil, button: nil, cancel: nil, footer: nil, unrevoked: unrevoked)
         }
         let problem = state.problem.map {
             ProblemPresentation(title: found == nil ? "Couldn't reach that server" : "Couldn't sign in", message: $0)
         }
         var signingIn = false
         if case .signingIn = state.phase { signingIn = true }
-        let title: String = switch state.phase {
-        case .idle: state.retryable ? "Try Again" : "Continue"
-        case .checking: "Checking…"
-        case .found: opensBrowser ? "Continue in Your Browser" : "Sign In with Your Substrate"
-        case .signingIn: "Waiting for Your Browser…"
-        }
-        let button = door == .password ? nil
-            : ConnectPresentation.Button(title: title, busy: state.busy,
-                                         enabled: !state.busy && !(found == nil && state.address.trimmingCharacters(in: .whitespaces).isEmpty))
+        let title: String =
+            switch state.phase {
+            case .idle: state.retryable ? "Try Again" : "Continue"
+            case .checking: "Checking…"
+            case .found: opensBrowser ? "Continue in Your Browser" : "Sign In with Your Substrate"
+            case .signingIn: "Waiting for Your Browser…"
+            }
+        let button =
+            door == .password
+            ? nil
+            : ConnectPresentation.Button(
+                title: title, busy: state.busy,
+                enabled: !state.busy && !(found == nil && state.address.trimmingCharacters(in: .whitespaces).isEmpty))
         let footer: ConnectPresentation.Footer
         if let found {
-            let note = if door == .password {
-                "This server can't give \(app) access of its own yet, so your password goes to it directly."
-            } else if signingIn, opensBrowser {
-                "\(found.host)'s sign-in page is open in your browser. Sign in there and choose what \(app) may do; "
-                    + "this window comes back when you're done."
-            } else {
-                "You sign in on \(found.host) itself and choose what \(app) may do there. "
-                    + "Later, Change Access in this app asks again; to revoke, use \(found.host)'s Settings, under Apps."
-            }
-            footer = .init(found: LabeledValue("Server found", found.host, verbatim: true),
-                           repository: found.repository.map { LabeledValue("Repository", $0, verbatim: true) }, note: note)
+            let note =
+                if door == .password {
+                    "This server can't give \(app) access of its own yet, so your password goes to it directly."
+                } else if signingIn, opensBrowser {
+                    "\(found.host)'s sign-in page is open in your browser. Sign in there and choose what \(app) may do; "
+                        + "this window comes back when you're done."
+                } else {
+                    "You sign in on \(found.host) itself and choose what \(app) may do there. "
+                        + "Later, Change Access in this app asks again; to revoke, use \(found.host)'s Settings, under Apps."
+                }
+            footer = .init(
+                found: LabeledValue("Server found", found.host, verbatim: true),
+                repository: found.repository.map { LabeledValue("Repository", $0, verbatim: true) }, note: note)
         } else {
-            footer = .init(found: nil, repository: nil,
-                           note: "Your repository's name, such as ada.example.com, or your Substrate server's address. A name finds its server on its own.")
+            footer = .init(
+                found: nil, repository: nil,
+                note: "Your repository's name, such as ada.example.com, or your Substrate server's address. A name finds its server on its own.")
         }
-        return ConnectPresentation(field: field, door: door, found: found, tooOld: nil, problem: problem, button: button,
-                                   cancel: signingIn && opensBrowser ? "Cancel" : nil, footer: footer, unrevoked: unrevoked)
+        return ConnectPresentation(
+            field: field, door: door, found: found, tooOld: nil, problem: problem, button: button,
+            cancel: signingIn && opensBrowser ? "Cancel" : nil, footer: footer, unrevoked: unrevoked)
     }
 }

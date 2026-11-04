@@ -1,9 +1,10 @@
+import Foundation
+
 #if canImport(CryptoKit)
 import CryptoKit
 #else
 import Crypto
 #endif
-import Foundation
 
 /// PKCE (RFC 7636): a random verifier and its S256 challenge, so a code
 /// caught on its way back is worth nothing without the verifier.

@@ -11,9 +11,10 @@ public enum SessionPresenter {
     ///   - catalog: names for exercises the state's snapshot lacks; optional.
     ///   - history: every finished session; the active one is left out.
     ///   - now: the instant the clock, the countdowns and the gaps to past sessions are read at.
-    public static func present(_ state: SessionState, catalog: Catalog? = nil, history: HistoryIndex,
-                               settings: PresenterSettings, now: Date) -> SessionPresentation
-    {
+    public static func present(
+        _ state: SessionState, catalog: Catalog? = nil, history: HistoryIndex,
+        settings: PresenterSettings, now: Date
+    ) -> SessionPresentation {
         Presenting(state: state, catalog: catalog, history: history, settings: settings, now: now).presentation()
     }
 
@@ -70,8 +71,9 @@ struct Presenting {
     /// Whether committing `values` on the row passes §5.7's entry check.
     func passesEntryCheck(_ id: RowID, _ values: SetValues?) -> Bool {
         guard let values else { return false }
-        return EntryCheck.warning(for: id, values: values, in: state, history: evaluator.history, now: now,
-                                  calendar: settings.calendar) == nil
+        return EntryCheck.warning(
+            for: id, values: values, in: state, history: evaluator.history, now: now,
+            calendar: settings.calendar) == nil
     }
 
     func presentation() -> SessionPresentation {
@@ -86,13 +88,14 @@ struct Presenting {
         // missing. No dialog can ask from the Lock Screen, so a set the entry
         // check would question offers neither: the owner answers in the app.
         let rows = blocks.lazy.flatMap(\.cards).flatMap(\.rows)
-        let canComplete = if let timed = timedID, let row = rows.first(where: { $0.id == timed }) {
-            row.canTick && passesEntryCheck(timed, row.stopValues)
-        } else if timedID == nil, let next = upNext, let row = rows.first(where: { $0.id == next.row }) {
-            passesEntryCheck(next.row, row.commitValues)
-        } else {
-            false
-        }
+        let canComplete =
+            if let timed = timedID, let row = rows.first(where: { $0.id == timed }) {
+                row.canTick && passesEntryCheck(timed, row.stopValues)
+            } else if timedID == nil, let next = upNext, let row = rows.first(where: { $0.id == next.row }) {
+                passesEntryCheck(next.row, row.commitValues)
+            } else {
+                false
+            }
         return SessionPresentation(
             sessionID: state.session.id,
             title: title,
@@ -167,17 +170,20 @@ struct Presenting {
             guard !placed.contains(key) else { continue }
             placed.insert(key)
             let members = state.members(ofGroup: key)
-            blocks.append(ExerciseBlock(id: "group-\(key)", group: groupHeader(key, members: members),
-                                        cards: members.map(card)))
+            blocks.append(
+                ExerciseBlock(
+                    id: "group-\(key)", group: groupHeader(key, members: members),
+                    cards: members.map(card)))
         }
         return blocks
     }
 
     func groupHeader(_ key: String, members: [SlotState]) -> GroupHeader? {
         guard let group = state.group(key) else { return nil }
-        let rounds = members.map { member in
-            state.units(inSlot: member.key).count { state.rows[$0[0]]?.role == .working }
-        }.max() ?? 0
+        let rounds =
+            members.map { member in
+                state.units(inSlot: member.key).count { state.rows[$0[0]]?.role == .working }
+            }.max() ?? 0
         let rest = RestRules.roundRest(group: key, in: state).seconds
         let restText = rest > 0 ? "\(Format.duration(rest)) after each round" : "no rest between rounds"
         return GroupHeader(
@@ -268,8 +274,9 @@ struct Presenting {
             var cleared = state
             cleared.slots[index].rests[kind] = nil
             let fallback = restValue(kind, slot: slot.key, in: cleared)
-            return SlotRestOption(kind: kind, seconds: current, defaultSeconds: fallback, isSetInGym: slot.rests[kind] != nil,
-                                  text: Format.rest(current), defaultText: "Default (\(Format.rest(fallback)))")
+            return SlotRestOption(
+                kind: kind, seconds: current, defaultSeconds: fallback, isSetInGym: slot.rests[kind] != nil,
+                text: Format.rest(current), defaultText: "Default (\(Format.rest(fallback)))")
         }
     }
 
@@ -289,17 +296,18 @@ struct Presenting {
         let id = row.id
         let head = state.rows[row.headID] ?? row
         let locked = state.isLocked(id)
-        let rowState: RowState = if row.isCompleted {
-            .done
-        } else if timedID == id {
-            .timing
-        } else if locked {
-            .locked
-        } else if upNextID == id {
-            .upNext
-        } else {
-            .pending
-        }
+        let rowState: RowState =
+            if row.isCompleted {
+                .done
+            } else if timedID == id {
+                .timing
+            } else if locked {
+                .locked
+            } else if upNextID == id {
+                .upNext
+            } else {
+                .pending
+            }
         let ghost = evaluator.ghost(id)
         let commit = committed(id, evaluator.commit(id))
         let missing = row.isPending ? measurement.missing(in: commit) : []
@@ -375,31 +383,37 @@ struct Presenting {
     }
 
     /// - Parameter spoken: the exercise and the set, `Leg Press (Machine), set 1`, for VoiceOver.
-    func cell(_ column: GridColumn, row: Row, ghost: GhostValues, missing: [ValueField], unit: MassUnit,
-              spoken: String) -> GridCell
-    {
+    func cell(
+        _ column: GridColumn, row: Row, ghost: GhostValues, missing: [ValueField], unit: MassUnit,
+        spoken: String
+    ) -> GridCell {
         let field = column.field ?? .reps
         let isMissing = missing.contains(field)
         let label = "\(spoken), \(column.spokenName(unit: unit))"
         if let performed = row.performed {
-            return GridCell(column: column, field: field, text: text(field, performed.values, unit: unit), isGhost: false,
-                            isHint: false, isMissing: false, entered: nil, accessibilityLabel: label)
+            return GridCell(
+                column: column, field: field, text: text(field, performed.values, unit: unit), isGhost: false,
+                isHint: false, isMissing: false, entered: nil, accessibilityLabel: label)
         }
         if let typed = text(field, row.entered, unit: unit) {
-            return GridCell(column: column, field: field, text: typed, isGhost: false, isHint: false, isMissing: false,
-                            entered: editText(field, row.entered), accessibilityLabel: label)
+            return GridCell(
+                column: column, field: field, text: typed, isGhost: false, isHint: false, isMissing: false,
+                entered: editText(field, row.entered), accessibilityLabel: label)
         }
-        var ghostValues = SetValues(load: ghost.load, assistance: ghost.assistance, reps: ghost.reps, duration: ghost.duration,
-                                    distance: ghost.distance)
+        var ghostValues = SetValues(
+            load: ghost.load, assistance: ghost.assistance, reps: ghost.reps, duration: ghost.duration,
+            distance: ghost.distance)
         if field == .reps, let placeholder = ghost.repsPlaceholder {
             ghostValues.reps = nil
-            return GridCell(column: column, field: field, text: placeholder, isGhost: true, isHint: true, isMissing: isMissing,
-                            entered: nil, accessibilityLabel: label)
+            return GridCell(
+                column: column, field: field, text: placeholder, isGhost: true, isHint: true, isMissing: isMissing,
+                entered: nil, accessibilityLabel: label)
         }
         let hint = field == .reps && ghost.repsIsHint
         let shown = text(field, ghostValues, unit: unit).map { hint ? "\u{2248}\($0)" : $0 }
-        return GridCell(column: column, field: field, text: shown, isGhost: shown != nil, isHint: hint, isMissing: isMissing,
-                        entered: nil, accessibilityLabel: label)
+        return GridCell(
+            column: column, field: field, text: shown, isGhost: shown != nil, isHint: hint, isMissing: isMissing,
+            entered: nil, accessibilityLabel: label)
     }
 
     /// A cell's text: a load's number (with its unit when it differs from the
@@ -506,19 +520,22 @@ struct Presenting {
 
     func restBar(_ next: UpNextPresentation?) -> RestBarPresentation {
         if let timed = timedID, let countdown = state.countdown, let row = describe(timed) {
-            return .timedSet(TimedSetBar(row: timed, label: "\(row.exercise), \(row.label.spoken)",
-                                         startedAt: countdown.startedAt, endsAt: countdown.endsAt))
+            return .timedSet(
+                TimedSetBar(
+                    row: timed, label: "\(row.exercise), \(row.label.spoken)",
+                    startedAt: countdown.startedAt, endsAt: countdown.endsAt))
         }
         if let countdown = state.countdown, countdown.isRestLike, let end = countdown.endsAt {
             if end > now {
-                return .resting(RestCountdownPresentation(
-                    label: countdownLabel(countdown, next: next, long: true),
-                    slot: restSlot(countdown),
-                    startedAt: countdown.startedAt,
-                    endsAt: end,
-                    next: next?.line,
-                    notifies: countdown.notifies
-                ))
+                return .resting(
+                    RestCountdownPresentation(
+                        label: countdownLabel(countdown, next: next, long: true),
+                        slot: restSlot(countdown),
+                        startedAt: countdown.startedAt,
+                        endsAt: end,
+                        next: next?.line,
+                        notifies: countdown.notifies
+                    ))
             }
             if now < end.addingTimeInterval(TimeInterval(SessionPresenter.restOverSeconds)) {
                 guard let next else { return state.rows.isEmpty ? .empty : .allDone }
@@ -576,8 +593,9 @@ struct Presenting {
             nextRowID: subject?.row,
             canComplete: canComplete,
             countdown: state.countdown.map { countdown in
-                LiveActivityCountdown(kind: activityKind(countdown), label: countdownLabel(countdown, next: upNext, long: false),
-                                      startedAt: countdown.startedAt, endsAt: countdown.endsAt)
+                LiveActivityCountdown(
+                    kind: activityKind(countdown), label: countdownLabel(countdown, next: upNext, long: false),
+                    startedAt: countdown.startedAt, endsAt: countdown.endsAt)
             },
             setsDone: header.setsDone,
             setsPlanned: header.setsPlanned

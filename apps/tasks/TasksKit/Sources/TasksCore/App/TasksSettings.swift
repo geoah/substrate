@@ -26,34 +26,47 @@ public enum TasksSettings {
     public static func showsCompleted(_ values: SettingsValues) -> Bool { values.toggle(showCompleted, default: false) }
 
     /// The app's two sections: the reminders, then how lists are shown.
-    public static func sections(_ values: SettingsValues, permission: NotificationPermission?, scheduled: Int, device: String,
-                                locale: Locale) -> [SettingsSection]
-    {
+    public static func sections(
+        _ values: SettingsValues, permission: NotificationPermission?, scheduled: Int, device: String,
+        locale: Locale
+    ) -> [SettingsSection] {
         var reminders = [
-            SettingsRow(id: .app(remind), label: "Remind Me When Tasks Are Due", control: .toggle(reminds(values))),
+            SettingsRow(id: .app(remind), label: "Remind Me When Tasks Are Due", control: .toggle(reminds(values)))
         ]
         if reminds(values) {
-            reminders.append(SettingsRow(id: .app(remindHour), label: "Tasks Due on a Day", detail: "When the reminder comes",
-                                         control: .choice(selected: String(hour(values)),
-                                                          options: hours.map { SettingsOption(id: String($0), label: hourWords($0, locale: locale)) })))
+            reminders.append(
+                SettingsRow(
+                    id: .app(remindHour), label: "Tasks Due on a Day", detail: "When the reminder comes",
+                    control: .choice(
+                        selected: String(hour(values)),
+                        options: hours.map { SettingsOption(id: String($0), label: hourWords($0, locale: locale)) })))
             if permission == .off {
-                reminders.append(SettingsRow(id: .app("notificationsOff"), label: "Notifications are off for Substrate Tasks",
-                                             detail: "Turn them on in the system's Settings to be reminded.", control: .note(.caution)))
+                reminders.append(
+                    SettingsRow(
+                        id: .app("notificationsOff"), label: "Notifications are off for Substrate Tasks",
+                        detail: "Turn them on in the system's Settings to be reminded.", control: .note(.caution)))
             } else {
-                reminders.append(SettingsRow(id: .app("scheduled"), label: "Reminders Set on \(titled(device))",
-                                             control: .value(String(scheduled), verbatim: false)))
+                reminders.append(
+                    SettingsRow(
+                        id: .app("scheduled"), label: "Reminders Set on \(titled(device))",
+                        control: .value(String(scheduled), verbatim: false)))
             }
         }
         let lists = [
-            SettingsRow(id: .app(order), label: "Sort Tasks By",
-                        control: .choice(selected: order(values).rawValue,
-                                         options: [SettingsOption(id: TaskOrder.manual.rawValue, label: "My Order"),
-                                                   SettingsOption(id: TaskOrder.due.rawValue, label: "Due Date")])),
+            SettingsRow(
+                id: .app(order), label: "Sort Tasks By",
+                control: .choice(
+                    selected: order(values).rawValue,
+                    options: [
+                        SettingsOption(id: TaskOrder.manual.rawValue, label: "My Order"),
+                        SettingsOption(id: TaskOrder.due.rawValue, label: "Due Date"),
+                    ])),
             SettingsRow(id: .app(showCompleted), label: "Show Completed Tasks", control: .toggle(showsCompleted(values))),
         ]
         return [
-            SettingsSection(id: .app("reminders"), title: "Reminders", rows: reminders,
-                            footer: "A task due at a time reminds you then; a task due on a day, at the hour above."),
+            SettingsSection(
+                id: .app("reminders"), title: "Reminders", rows: reminders,
+                footer: "A task due at a time reminds you then; a task due on a day, at the hour above."),
             SettingsSection(id: .app("lists"), title: "Lists", rows: lists),
         ]
     }

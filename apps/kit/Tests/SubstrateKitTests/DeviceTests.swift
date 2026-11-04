@@ -2,6 +2,7 @@ import Foundation
 import SubstrateDevice
 import SubstrateTesting
 import Testing
+
 #if canImport(Network)
 import SubstrateDeviceApple
 #endif

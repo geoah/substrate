@@ -111,8 +111,9 @@ enum SyncManifest {
             details: [
                 .package(AppModel.appleProvider, atLeast: AppModel.appleVersion),
                 .package(AppModel.healthProvider, atLeast: AppModel.healthVersion),
-                .account(kind: SyncEngine.healthAccountKind, id: account,
-                         properties: ["displayName": .string(deviceName), "timezone": .string(timeZone)]),
+                .account(
+                    kind: SyncEngine.healthAccountKind, id: account,
+                    properties: ["displayName": .string(deviceName), "timezone": .string(timeZone)]),
                 .webhook(trigger: SyncEngine.trigger, deliversTo: AppModel.healthProvider),
             ],
             requirement: release,

@@ -63,9 +63,10 @@ public struct OutboxFacts: Codable, Hashable, Sendable {
     /// set aside.
     public var problem: String?
 
-    public init(state: OutboxState = .idle, waiting: Int = 0, sendable: Int = 0, parked: [ParkedWrite] = [], flushing: Bool = false,
-                revision: Int = 0, problem: String? = nil)
-    {
+    public init(
+        state: OutboxState = .idle, waiting: Int = 0, sendable: Int = 0, parked: [ParkedWrite] = [], flushing: Bool = false,
+        revision: Int = 0, problem: String? = nil
+    ) {
         self.state = state
         self.waiting = waiting
         self.sendable = sendable
@@ -76,8 +77,9 @@ public struct OutboxFacts: Codable, Hashable, Sendable {
     }
 
     public init(_ summary: OutboxSummary) {
-        self.init(state: summary.state, waiting: summary.waiting, sendable: summary.sendable, parked: summary.parked.map(ParkedWrite.init),
-                  flushing: summary.flushing, revision: summary.revision,
-                  problem: summary.saveProblem ?? summary.unreadable.map { "The queue could not be read and was kept aside as \($0.name)." })
+        self.init(
+            state: summary.state, waiting: summary.waiting, sendable: summary.sendable, parked: summary.parked.map(ParkedWrite.init),
+            flushing: summary.flushing, revision: summary.revision,
+            problem: summary.saveProblem ?? summary.unreadable.map { "The queue could not be read and was kept aside as \($0.name)." })
     }
 }

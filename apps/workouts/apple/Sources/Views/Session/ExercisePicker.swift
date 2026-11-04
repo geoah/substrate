@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// Add or replace an exercise (DESIGN.md §7.6): a search whose words match
 /// names and aliases in any order (db, bb, kb, rdl and ohp understood),
@@ -15,8 +15,9 @@ struct ExercisePicker: View {
 
     var body: some View {
         NavigationStack {
-            let sections = ExercisePresenter.picker(app.exercises, history: app.historyIndex, query: query, now: .now,
-                                                    settings: app.presenterSettings)
+            let sections = ExercisePresenter.picker(
+                app.exercises, history: app.historyIndex, query: query, now: .now,
+                settings: app.presenterSettings)
             List {
                 ForEach(sections) { section in
                     Section(section.title) {

@@ -30,8 +30,9 @@ extension SessionController {
         case .discard:
             return discard(state, now: now, ids: ids, then: nil)
         case let .finish(request):
-            return finish(request, state: state, presentation: presented, now: now, calendar: calendar, ids: ids,
-                          then: context.transient.startAfterFinish)
+            return finish(
+                request, state: state, presentation: presented, now: now, calendar: calendar, ids: ids,
+                then: context.transient.startAfterFinish)
         case .foreground:
             return [.foregrounded]
         case let .scroll(target):
@@ -75,8 +76,13 @@ extension SessionController {
         case let .untick(row):
             return [engine(.uncompleteSet(row: row))]
         case let .addSet(slot, role):
-            return [engine(.addSet(SessionEvent.AddSet(slot: slot, row: RowID(ids.make(at: now)), role: role,
-                                                       segmentRowIDs: rows(1, at: now))))]
+            return [
+                engine(
+                    .addSet(
+                        SessionEvent.AddSet(
+                            slot: slot, row: RowID(ids.make(at: now)), role: role,
+                            segmentRowIDs: rows(1, at: now))))
+            ]
         case let .removeSet(row), let .removeUndoably(row):
             return [engine(.removeSet(row: row))]
         case let .restoreSet(restore):
@@ -90,16 +96,22 @@ extension SessionController {
             let unilateral = exercise.resolvedLaterality == .unilateral
             let count = shape.roles.count * (unilateral ? 2 : 1)
             let firstSide = unilateral ? Previous.weakerSide(of: exercise.id, history: history, excluding: session.session.id) : nil
-            let added = SessionEvent.AddExercise(slot: Self.slotKey(for: exercise, in: session), exercise: exercise, roles: shape.roles,
-                                                 rowIDs: rows(count, at: now), rests: shape.rests, after: after, firstSide: firstSide)
+            let added = SessionEvent.AddExercise(
+                slot: Self.slotKey(for: exercise, in: session), exercise: exercise, roles: shape.roles,
+                rowIDs: rows(count, at: now), rests: shape.rests, after: after, firstSide: firstSide)
             return [engine(.addExercise(added))]
         case let .removeExercise(slot):
             return [engine(.removeExercise(slot: slot))]
         case let .reorderExercises(slots):
             return [engine(.reorderExercises(slots: slots))]
         case let .replaceExercise(slot, exercise):
-            return [engine(.replaceExercise(SessionEvent.ReplaceExercise(slot: slot, newSlot: Self.slotKey(for: exercise, in: session),
-                                                                         exercise: exercise, segmentRowIDs: rows(8, at: now))))]
+            return [
+                engine(
+                    .replaceExercise(
+                        SessionEvent.ReplaceExercise(
+                            slot: slot, newSlot: Self.slotKey(for: exercise, in: session),
+                            exercise: exercise, segmentRowIDs: rows(8, at: now))))
+            ]
         case let .groupExercises(slot, partner):
             return [engine(.groupExercises(slot: slot, partner: partner, group: nil))]
         case let .ungroupExercise(slot):
@@ -156,25 +168,28 @@ extension SessionController {
             case .edit:
                 return [.noted(.answered(edit: true))]
             case .keep:
-                return commit(request.row, values: request.values, stop: request.isStop, session: session, now: now, calendar: calendar,
-                              state: state, ids: ids)
+                return commit(
+                    request.row, values: request.values, stop: request.isStop, session: session, now: now, calendar: calendar,
+                    state: state, ids: ids)
             case .useCorrected:
                 let values = request.warning.corrected(request.values, measurement: request.measurement)
-                return commit(request.row, values: values, stop: request.isStop, session: session, now: now, calendar: calendar,
-                              state: state, ids: ids)
+                return commit(
+                    request.row, values: values, stop: request.isStop, session: session, now: now, calendar: calendar,
+                    state: state, ids: ids)
             }
         case .start, .finishThenStart, .finishFlowShown, .cancelStartAfterFinish, .discardThenStart, .discard, .finish, .foreground,
-             .scroll, .dismissEntryCheck, .coverVisible, .reveal:
+            .scroll, .dismissEntryCheck, .coverVisible, .reveal:
             return []
         }
     }
 
     /// A tick or a Stop: the shown values, through the entry check (§5.7).
-    private func tick(_ row: RowID, stop: Bool, session: SessionState, presentation: SessionPresentation?, now: Date,
-                      calendar: Calendar, state: State, ids: MintedIDs) -> [Event]
-    {
+    private func tick(
+        _ row: RowID, stop: Bool, session: SessionState, presentation: SessionPresentation?, now: Date,
+        calendar: Calendar, state: State, ids: MintedIDs
+    ) -> [Event] {
         guard let presented = presentation?.row(row), let values = stop ? presented.stopValues : presented.commitValues,
-              let measurement = session.exercise(ofRow: row)?.measurement
+            let measurement = session.exercise(ofRow: row)?.measurement
         else {
             return [.noted(.refuse(.incompleteValues(missing: presentation?.row(row)?.missing ?? [])))]
         }
@@ -184,24 +199,33 @@ extension SessionController {
         return commit(row, values: values, stop: stop, session: session, now: now, calendar: calendar, state: state, ids: ids)
     }
 
-    private func commit(_ row: RowID, values: SetValues, stop: Bool, session: SessionState, now: Date, calendar: Calendar, state: State,
-                        ids: MintedIDs) -> [Event]
-    {
-        let noLighterLoad = SuggestionInputs.noLighterLoad(afterTicking: row, with: values, in: session, history: history, now: now,
-                                                           calendar: calendar)
+    private func commit(
+        _ row: RowID, values: SetValues, stop: Bool, session: SessionState, now: Date, calendar: Calendar, state: State,
+        ids: MintedIDs
+    ) -> [Event] {
+        let noLighterLoad = SuggestionInputs.noLighterLoad(
+            afterTicking: row, with: values, in: session, history: history, now: now,
+            calendar: calendar)
         let at = now.flooredToSecond
-        let complete = SessionEvent.CompleteSet(row: row, recordID: SetID(ids.make(at: at)), values: values,
-                                                segmentRowIDs: (0 ..< 2).map { _ in RowID(ids.make(at: at)) }, noLighterLoad: noLighterLoad)
-        var events: [Event] = [.engine(envelope(stop ? .stopTimedSet(complete) : .completeSet(complete), now: now, after: state.lastAt,
-                                                ids: ids))]
+        let complete = SessionEvent.CompleteSet(
+            row: row, recordID: SetID(ids.make(at: at)), values: values,
+            segmentRowIDs: (0 ..< 2).map { _ in RowID(ids.make(at: at)) }, noLighterLoad: noLighterLoad)
+        var events: [Event] = [
+            .engine(
+                envelope(
+                    stop ? .stopTimedSet(complete) : .completeSet(complete), now: now, after: state.lastAt,
+                    ids: ids))
+        ]
         // §7.6: with superset auto-scroll on and a 0 s transition, the Table
         // brings the next member's row into view; Rows follows its open row
         // on its own (§7.6a). Worked out from the state the tick makes.
         if settings.sessionLayout == .table, settings.supersetAutoScroll, case let .engine(applied) = events[0],
-           let next = try? SessionEngine.apply(applied, to: session), next.countdown == nil, next.restClock?.slot == .transition
+            let next = try? SessionEngine.apply(applied, to: session), next.countdown == nil, next.restClock?.slot == .transition
         {
-            let upNext = SessionPresenter.present(next, catalog: catalog, history: history, settings: presenterSettings(calendar: calendar),
-                                                  now: now).upNext
+            let upNext = SessionPresenter.present(
+                next, catalog: catalog, history: history, settings: presenterSettings(calendar: calendar),
+                now: now
+            ).upNext
             if let upNext { events.append(.noted(.scroll(ScrollTarget(row: upNext.row)))) }
         }
         return events
@@ -217,9 +241,10 @@ extension SessionController {
     /// showed for the policy, with the records it makes, which the effect
     /// writes to the history file. A Save the engine would refuse is
     /// refused under its receipt, so the sheet hears of it.
-    private func finish(_ request: FinishRequest, state: State, presentation: SessionPresentation?, now: Date, calendar: Calendar,
-                        ids: MintedIDs, then: StartRequest?) -> [Event]
-    {
+    private func finish(
+        _ request: FinishRequest, state: State, presentation: SessionPresentation?, now: Date, calendar: Calendar,
+        ids: MintedIDs, then: StartRequest?
+    ) -> [Event] {
         guard var session = state.session, state.finishing == nil, var presented = presentation else {
             return [.finishRefused(request.receipt, .noSession)]
         }
@@ -238,17 +263,19 @@ extension SessionController {
             events.append(.engine(cleared))
             after = cleared.at
             session = next
-            presented = SessionPresenter.present(next, catalog: catalog, history: history, settings: presenterSettings(calendar: calendar),
-                                                 now: now)
+            presented = SessionPresenter.present(
+                next, catalog: catalog, history: history, settings: presenterSettings(calendar: calendar),
+                now: now)
         }
         let ended = request.end.flooredToSecond
         // The sheet's numbers came from this projection: Save sends its `unticked` as it is.
         let projection = FinishPresenter.projection(session, presentation: presented, policy: request.policy, end: ended) { _ in
             SetID(ids.make(at: ended))
         }
-        let event = SessionEvent.finish(projection.event(
-            start: request.start.flooredToSecond, end: ended, sessionRPE: request.sessionRPE.map { Decimal($0) },
-            notes: trimmed.flatMap { $0.isEmpty ? nil : $0 }, utcOffset: calendar.timeZone.secondsFromGMT(for: ended) / 60))
+        let event = SessionEvent.finish(
+            projection.event(
+                start: request.start.flooredToSecond, end: ended, sessionRPE: request.sessionRPE.map { Decimal($0) },
+                notes: trimmed.flatMap { $0.isEmpty ? nil : $0 }, utcOffset: calendar.timeZone.secondsFromGMT(for: ended) / 60))
         let finish = envelope(event, now: now, after: after, ids: ids)
         let finished: SessionState
         do {
@@ -257,8 +284,13 @@ extension SessionController {
             return events + [.finishRefused(request.receipt, error)]
         }
         let records = SessionEngine.records(finished, adapter: adapter)
-        return events + [.finishRequested(finish, FinishedSession(entry: HistoryEntry(records: records), then: then,
-                                                                  activity: presented.liveActivity, receipt: request.receipt))]
+        return events + [
+            .finishRequested(
+                finish,
+                FinishedSession(
+                    entry: HistoryEntry(records: records), then: then,
+                    activity: presented.liveActivity, receipt: request.receipt))
+        ]
     }
 
     /// The event with its id and instant: floored to the second and never

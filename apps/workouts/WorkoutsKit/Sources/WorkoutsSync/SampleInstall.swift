@@ -1,7 +1,7 @@
 import Foundation
+import SubstrateCore
 import SubstrateLocal
 import WorkoutsCore
-import SubstrateCore
 
 /// Whether the sample routine was written into one server and repository
 /// (decision S1, owner 2026-11-02). The app writes the sample once, the first
@@ -142,9 +142,10 @@ public struct CatalogRead: Sendable {
 /// run that fails is reported in `sampleProblem` and tried again at the next
 /// sync, and never stops what follows it (the history exchange, the outbox).
 public enum CatalogSync {
-    public static func read(_ api: WorkoutsAPI, remote: RemoteCatalog, outbox: Outbox?, sample: SampleInstall?,
-                            bundled: @Sendable () throws -> Catalog) async throws -> CatalogRead
-    {
+    public static func read(
+        _ api: WorkoutsAPI, remote: RemoteCatalog, outbox: Outbox?, sample: SampleInstall?,
+        bundled: @Sendable () throws -> Catalog
+    ) async throws -> CatalogRead {
         let hiding: @Sendable () async -> Set<String> = { await outbox?.waitingDeletes ?? [] }
         let codec = remote.codec
         let waiting: @Sendable () async -> [String: (creates: Bool, properties: JSONObject)] = {

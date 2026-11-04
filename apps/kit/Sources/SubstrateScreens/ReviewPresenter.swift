@@ -8,13 +8,15 @@ public enum ReviewPresenter {
     ///     Already allowed (a released app's client id, approved before).
     ///   - setsUp: the request carries details, whose access comes with
     ///     setting them up.
-    public static func present(appName: String, host: String, changes: [Change], heading: ReviewHeading, alreadyAllowed: Bool,
-                               setsUp: Bool) -> ReviewPresentation
-    {
-        ReviewPresentation(title: heading == .firstSignIn ? "Connect \(appName) to \(host)" : heading.title(appName: appName),
-                           intro: intro(appName: appName, host: host, heading: heading, changes: changes, alreadyAllowed: alreadyAllowed),
-                           sections: sections(appName: appName, host: host, heading: heading, changes: changes),
-                           continueTitle: "Continue in Browser", footer: choosing(host: host, setsUp: setsUp), cancelTitle: "Not Now")
+    public static func present(
+        appName: String, host: String, changes: [Change], heading: ReviewHeading, alreadyAllowed: Bool,
+        setsUp: Bool
+    ) -> ReviewPresentation {
+        ReviewPresentation(
+            title: heading == .firstSignIn ? "Connect \(appName) to \(host)" : heading.title(appName: appName),
+            intro: intro(appName: appName, host: host, heading: heading, changes: changes, alreadyAllowed: alreadyAllowed),
+            sections: sections(appName: appName, host: host, heading: heading, changes: changes),
+            continueTitle: "Continue in Browser", footer: choosing(host: host, setsUp: setsUp), cancelTitle: "Not Now")
     }
 
     static func intro(appName: String, host: String, heading: ReviewHeading, changes: [Change], alreadyAllowed: Bool) -> String {
@@ -45,18 +47,24 @@ public enum ReviewPresenter {
         let setup = changes.filter(\.isSetup)
         var out: [ReviewSection] = []
         if !access.isEmpty {
-            out.append(ReviewSection(id: "access", title: heading == .firstSignIn ? "It will be able to" : "It asks to also",
-                                     rows: access.map(ChangeLine.init)))
+            out.append(
+                ReviewSection(
+                    id: "access", title: heading == .firstSignIn ? "It will be able to" : "It asks to also",
+                    rows: access.map(ChangeLine.init)))
         }
         if !leftOut.isEmpty {
-            out.append(ReviewSection(id: "leftOut", title: "You left these out last time", rows: leftOut.map(ChangeLine.init),
-                                     footer: "The page on \(host) asks for them again; uncheck them there to keep them out."))
+            out.append(
+                ReviewSection(
+                    id: "leftOut", title: "You left these out last time", rows: leftOut.map(ChangeLine.init),
+                    footer: "The page on \(host) asks for them again; uncheck them there to keep them out."))
         }
         if !setup.isEmpty {
-            out.append(ReviewSection(id: "setup", title: "It will set up on your server", rows: setup.map(ChangeLine.init),
-                                     footer: setup.contains(where: \.blocked)
-                                         ? "Some of this can't be set up yet: the page on \(host) shows why, and approving waits until it is fixed."
-                                         : "Setting up continues even if you close the browser. What it sets up stays if it stops part way or you later revoke \(appName)."))
+            out.append(
+                ReviewSection(
+                    id: "setup", title: "It will set up on your server", rows: setup.map(ChangeLine.init),
+                    footer: setup.contains(where: \.blocked)
+                        ? "Some of this can't be set up yet: the page on \(host) shows why, and approving waits until it is fixed."
+                        : "Setting up continues even if you close the browser. What it sets up stays if it stops part way or you later revoke \(appName)."))
         }
         return out
     }

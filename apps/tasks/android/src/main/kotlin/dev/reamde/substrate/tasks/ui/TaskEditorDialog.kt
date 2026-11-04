@@ -69,20 +69,21 @@ internal fun TaskEditorDialog(editor: TaskEditorPresentation, send: (TaskEditor.
     }
 }
 
-/**
- * The edit form: each field under the label the read view gives it, every
- * keystroke a command to the editor, Cancel and Save in the top bar.
- */
+/** The edit form: each field under the label the read view gives it, every keystroke a command to the editor, Cancel and Save in the top bar. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TaskEditorForm(editor: TaskEditorPresentation, send: (TaskEditor.Command) -> Unit, zone: ZoneId = ZoneId.systemDefault()) {
-    Scaffold(topBar = {
-        TopAppBar(
-            title = { Text(editor.title) },
-            navigationIcon = { IconButton(onClick = { send(TaskEditor.Command.Cancel) }) { Icon(Icons.Rounded.Close, contentDescription = editor.cancel) } },
-            actions = { TextButton(onClick = { send(TaskEditor.Command.Save) }, enabled = editor.canSave) { Text(editor.save) } },
-        )
-    }) { padding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(editor.title) },
+                navigationIcon = {
+                    IconButton(onClick = { send(TaskEditor.Command.Cancel) }) { Icon(Icons.Rounded.Close, contentDescription = editor.cancel) }
+                },
+                actions = { TextButton(onClick = { send(TaskEditor.Command.Save) }, enabled = editor.canSave) { Text(editor.save) } },
+            )
+        }
+    ) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(KitSpacing.content),
             verticalArrangement = Arrangement.spacedBy(KitSpacing.content),
@@ -133,19 +134,19 @@ private fun Choice(choice: EditorChoice, choose: (String) -> Unit) {
         )
         ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             for (option in choice.options) {
-                DropdownMenuItem(text = { Text(option.title) }, onClick = {
-                    open = false
-                    choose(option.id)
-                })
+                DropdownMenuItem(
+                    text = { Text(option.title) },
+                    onClick = {
+                        open = false
+                        choose(option.id)
+                    },
+                )
             }
         }
     }
 }
 
-/**
- * When it is due: none, a day, or a day and time, as segments under the
- * label, then the day (and the time) the pickers change.
- */
+/** When it is due: none, a day, or a day and time, as segments under the label, then the day (and the time) the pickers change. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Due(editor: TaskEditorPresentation, send: (TaskEditor.Command) -> Unit, zone: ZoneId) {
@@ -159,7 +160,9 @@ private fun Due(editor: TaskEditorPresentation, send: (TaskEditor.Command) -> Un
                     selected = kind.id == due.kind.name,
                     onClick = { send(TaskEditor.Command.SetDueKind(DueKind.valueOf(kind.id))) },
                     shape = SegmentedButtonDefaults.itemShape(index, due.kinds.size),
-                ) { Text(kind.title) }
+                ) {
+                    Text(kind.title)
+                }
             }
         }
         val instant = due.date?.let { runCatching { Instant.parse(it) }.getOrNull() }
@@ -179,16 +182,22 @@ private fun Due(editor: TaskEditorPresentation, send: (TaskEditor.Command) -> Un
                     DatePickerDialog(
                         onDismissRequest = { picking = null },
                         confirmButton = {
-                            TextButton(onClick = {
-                                picking = null
-                                state.selectedDateMillis?.let { millis ->
-                                    val day = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
-                                    send(TaskEditor.Command.SetDueDate(rfc3339(day, local.toLocalTime(), zone)))
+                            TextButton(
+                                onClick = {
+                                    picking = null
+                                    state.selectedDateMillis?.let { millis ->
+                                        val day = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
+                                        send(TaskEditor.Command.SetDueDate(rfc3339(day, local.toLocalTime(), zone)))
+                                    }
                                 }
-                            }) { Text("OK") }
+                            ) {
+                                Text("OK")
+                            }
                         },
                         dismissButton = { TextButton(onClick = { picking = null }) { Text("Cancel") } },
-                    ) { DatePicker(state) }
+                    ) {
+                        DatePicker(state)
+                    }
                 }
                 TIME -> {
                     val state = rememberTimePickerState(local.hour, local.minute)
@@ -196,10 +205,14 @@ private fun Due(editor: TaskEditorPresentation, send: (TaskEditor.Command) -> Un
                         onDismissRequest = { picking = null },
                         text = { TimePicker(state) },
                         confirmButton = {
-                            TextButton(onClick = {
-                                picking = null
-                                send(TaskEditor.Command.SetDueDate(rfc3339(local.toLocalDate(), LocalTime.of(state.hour, state.minute), zone)))
-                            }) { Text("OK") }
+                            TextButton(
+                                onClick = {
+                                    picking = null
+                                    send(TaskEditor.Command.SetDueDate(rfc3339(local.toLocalDate(), LocalTime.of(state.hour, state.minute), zone)))
+                                }
+                            ) {
+                                Text("OK")
+                            }
                         },
                         dismissButton = { TextButton(onClick = { picking = null }) { Text("Cancel") } },
                     )

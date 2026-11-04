@@ -1,9 +1,10 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
-import SubstrateDevice
 
 /// A request's body.
 public enum RequestBody: Sendable {
@@ -95,10 +96,11 @@ public struct SubstrateClient: Sendable {
         return url
     }
 
-    public func request(_ method: String, _ path: String, query: [(String, String)] = [], body: RequestBody = .none,
-                        accept: String = "application/json", timeout: TimeInterval = Timeout.read,
-                        authorized: Bool = true) throws -> URLRequest
-    {
+    public func request(
+        _ method: String, _ path: String, query: [(String, String)] = [], body: RequestBody = .none,
+        accept: String = "application/json", timeout: TimeInterval = Timeout.read,
+        authorized: Bool = true
+    ) throws -> URLRequest {
         var request = URLRequest(url: try url(path, query: query))
         request.httpMethod = method
         request.timeoutInterval = timeout
@@ -127,9 +129,10 @@ public struct SubstrateClient: Sendable {
     /// only a request that may run twice (GET, HEAD, PUT, DELETE) is sent
     /// again, since a POST or a PATCH that timed out may have landed.
     @discardableResult
-    public func send(_ request: URLRequest, accept: Set<Int> = [], retries: Int? = nil,
-                     longestWait: TimeInterval = 10) async throws -> Response
-    {
+    public func send(
+        _ request: URLRequest, accept: Set<Int> = [], retries: Int? = nil,
+        longestWait: TimeInterval = 10
+    ) async throws -> Response {
         let method = request.httpMethod?.uppercased() ?? "GET"
         let limit = retries ?? (Self.idempotent.contains(method) ? 3 : 0)
         var attempt = 0
@@ -148,9 +151,10 @@ public struct SubstrateClient: Sendable {
 
     /// Builds, sends and answers in one step.
     @discardableResult
-    public func send(_ method: String, _ path: String, query: [(String, String)] = [], body: RequestBody = .none,
-                     accept: Set<Int> = [], timeout: TimeInterval = Timeout.read, retries: Int? = nil) async throws -> Response
-    {
+    public func send(
+        _ method: String, _ path: String, query: [(String, String)] = [], body: RequestBody = .none,
+        accept: Set<Int> = [], timeout: TimeInterval = Timeout.read, retries: Int? = nil
+    ) async throws -> Response {
         try await send(request(method, path, query: query, body: body, timeout: timeout), accept: accept, retries: retries)
     }
 

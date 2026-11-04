@@ -40,8 +40,14 @@ enum SHA256 {
                 let t2 = s0 &+ majority
                 (hh, g, f, e, d, c, b, a) = (g, f, e, d &+ t1, c, b, a, t1 &+ t2)
             }
-            h[0] &+= a; h[1] &+= b; h[2] &+= c; h[3] &+= d
-            h[4] &+= e; h[5] &+= f; h[6] &+= g; h[7] &+= hh
+            h[0] &+= a
+            h[1] &+= b
+            h[2] &+= c
+            h[3] &+= d
+            h[4] &+= e
+            h[5] &+= f
+            h[6] &+= g
+            h[7] &+= hh
         }
         return h.map { value in
             let text = String(value, radix: 16)

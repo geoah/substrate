@@ -20,9 +20,10 @@ public struct AppEnvironment: Sendable {
     public var devices: DeviceServices
     private var values: [ObjectIdentifier: any Sendable] = [:]
 
-    public init(clock: any RuntimeClock = WallClock(), ids: (any IDSource)? = nil, locale: Locale, timeZone: TimeZone,
-                resources: URL? = nil, client: ClientSource = .none, devices: DeviceServices)
-    {
+    public init(
+        clock: any RuntimeClock = WallClock(), ids: (any IDSource)? = nil, locale: Locale, timeZone: TimeZone,
+        resources: URL? = nil, client: ClientSource = .none, devices: DeviceServices
+    ) {
         self.clock = clock
         self.ids = ids ?? TimeOrderedIDs(clock: clock)
         self.locale = locale
@@ -78,11 +79,12 @@ public struct DeviceServices: Sendable {
     public var activities: (any OngoingActivities)?
     public var background: (any BackgroundWork)?
 
-    public init(transport: any HTTPTransport, secureStore: (any SessionStorage)? = nil, browser: (any BrowserSignIn)? = nil,
-                resolver: (any TXTResolver)? = nil, connectivity: (any Connectivity)? = nil, folders: (any AppFolders)? = nil,
-                notifications: (any Notifications)? = nil, activities: (any OngoingActivities)? = nil,
-                background: (any BackgroundWork)? = nil)
-    {
+    public init(
+        transport: any HTTPTransport, secureStore: (any SessionStorage)? = nil, browser: (any BrowserSignIn)? = nil,
+        resolver: (any TXTResolver)? = nil, connectivity: (any Connectivity)? = nil, folders: (any AppFolders)? = nil,
+        notifications: (any Notifications)? = nil, activities: (any OngoingActivities)? = nil,
+        background: (any BackgroundWork)? = nil
+    ) {
         self.transport = transport
         self.secureStore = secureStore
         self.browser = browser

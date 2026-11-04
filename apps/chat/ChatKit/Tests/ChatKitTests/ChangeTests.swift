@@ -1,10 +1,11 @@
 import Foundation
-import Testing
-@testable import ChatKit
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
+import Testing
+
+@testable import ChatKit
 
 /// What a change panel shows comes from the transcript alone: a token that
 /// cannot read the records still sees what was written to them.
@@ -12,10 +13,11 @@ import SubstrateDevice
     private let pad = "a.example.com/llm/scratchpad"
 
     @Test func aWriteShowsTheValuesItWasAskedForAndTheTitleItAnsweredWith() throws {
-        let call = ToolCall(id: "w1", name: "write", callable: "function:substrate.reamde.dev:core:write",
-                            arguments: #"{"op":"patch","kind":"\#(pad)","id":"p1","input":{"properties":{"note":"tent, stove"}}}"#,
-                            output: #"{"record":{"kind":"\#(pad)","id":"p1","properties":{"name":"Packing list","note":"tent, stove","title":"Packing list"}}}"#,
-                            ok: true)
+        let call = ToolCall(
+            id: "w1", name: "write", callable: "function:substrate.reamde.dev:core:write",
+            arguments: #"{"op":"patch","kind":"\#(pad)","id":"p1","input":{"properties":{"note":"tent, stove"}}}"#,
+            output: #"{"record":{"kind":"\#(pad)","id":"p1","properties":{"name":"Packing list","note":"tent, stove","title":"Packing list"}}}"#,
+            ok: true)
         let change = try #require(writeChange(call))
         #expect(change.op == .patch)
         #expect(change.title == "Packing list")
@@ -32,9 +34,10 @@ import SubstrateDevice
     }
 
     @Test func aProposalCarriesItsKindTargetValuesAndReason() throws {
-        let call = ToolCall(id: "c1", name: "propose", callable: "function:substrate.reamde.dev:core:propose",
-                            arguments: #"{"op":"patch","kind":"\#(pad)","target":"p1","diff":{"properties":{"note":"hike on Sunday"}},"rationale":"Moves it."}"#,
-                            output: #"{"id":"aaaaaaaaaaaa"}"#, ok: true)
+        let call = ToolCall(
+            id: "c1", name: "propose", callable: "function:substrate.reamde.dev:core:propose",
+            arguments: #"{"op":"patch","kind":"\#(pad)","target":"p1","diff":{"properties":{"note":"hike on Sunday"}},"rationale":"Moves it."}"#,
+            output: #"{"id":"aaaaaaaaaaaa"}"#, ok: true)
         let asked = try #require(proposedChange(call))
         #expect(asked.change.kind == pad)
         #expect(asked.change.id == "p1")
@@ -43,7 +46,8 @@ import SubstrateDevice
     }
 
     @Test func aDecisionCarriesTheValuesTheOwnerAppliedInstead() throws {
-        let content = #"{"event":"proposalDecision","request":"substrate.reamde.dev/core/recordpatchrequest/r1","decision":"accepted","op":"patch","target":"\#(pad)/p1","adjustedDiff":{"properties":{"note":"hike on Monday"}}}"#
+        let content =
+            #"{"event":"proposalDecision","request":"substrate.reamde.dev/core/recordpatchrequest/r1","decision":"accepted","op":"patch","target":"\#(pad)/p1","adjustedDiff":{"properties":{"note":"hike on Monday"}}}"#
         let turn = Turn(id: "s", role: .system, content: content)
         let notice = try #require(decisionNotice(turn))
         #expect(notice.adjusted)
@@ -52,9 +56,11 @@ import SubstrateDevice
     }
 
     @Test func titlesComeFromWhatTheChatRead() {
-        let found = ToolCall(id: "q1", name: "query", arguments: "{}",
-                             output: #"{"records":[{"kind":"\#(pad)","id":"p1","properties":{"title":"Groceries"}},{"kind":"\#(pad)","id":"p2","properties":{"name":"Weekend plan"}}]}"#,
-                             ok: true)
+        let found = ToolCall(
+            id: "q1", name: "query", arguments: "{}",
+            output:
+                #"{"records":[{"kind":"\#(pad)","id":"p1","properties":{"title":"Groceries"}},{"kind":"\#(pad)","id":"p2","properties":{"name":"Weekend plan"}}]}"#,
+            ok: true)
         let titles = recordTitles([Turn(id: "a", role: .assistant, content: "", tools: [found])])
         #expect(titles["\(pad)/p1"] == "Groceries")
         #expect(titles["\(pad)/p2"] == "Weekend plan")

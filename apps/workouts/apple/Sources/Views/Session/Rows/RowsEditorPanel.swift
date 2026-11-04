@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The set open in place (DESIGN.md §7.6a): a tinted panel with a header
 /// line (the set and why today's numbers), each value with last time beside
@@ -178,8 +178,9 @@ struct RowsEditorPanel: View {
         HStack(spacing: 10) {
             RowsGlyph(kind: glyph)
             HStack(alignment: .center, spacing: 7) {
-                RowsSetLabel(text: editor.setLabel, isWarmup: role == .warmup,
-                             emphasis: editor.mode == .fix ? .done : .now)
+                RowsSetLabel(
+                    text: editor.setLabel, isWarmup: role == .warmup,
+                    emphasis: editor.mode == .fix ? .done : .now)
                 if let caption = editor.caption {
                     Text(caption)
                         .font(.body.weight(.semibold))
@@ -271,9 +272,10 @@ struct RowsEditorPanel: View {
             }
             if let row {
                 Menu {
-                    SetMenuItems(row: row,
-                                 untick: editor.mode == .fix ? { screen.untick(editor.row, name: name, session: session) } : nil,
-                                 delete: { screen.delete(editor.row, name: name, session: session) })
+                    SetMenuItems(
+                        row: row,
+                        untick: editor.mode == .fix ? { screen.untick(editor.row, name: name, session: session) } : nil,
+                        delete: { screen.delete(editor.row, name: name, session: session) })
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.subheadline.weight(.bold))
@@ -466,7 +468,11 @@ struct RowsFieldRow: View {
                         .lineLimit(1)
                 }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { onMeasure($0) }
+            .onGeometryChange(for: CGFloat.self) {
+                $0.size.width
+            } action: {
+                onMeasure($0)
+            }
             // The number is about 31 pt tall; the target is 44 (the row is 48).
             .frame(minHeight: 44)
             .contentShape(.rect)

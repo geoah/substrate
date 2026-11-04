@@ -6,6 +6,7 @@ import SubstrateLocal
 import SubstrateRuntime
 import SubstrateScreens
 import SubstrateTesting
+
 @testable import TasksCore
 
 let server = URL(string: "https://ada.example.com")!
@@ -22,9 +23,10 @@ var calendar: Calendar {
 let now = Date(timeIntervalSince1970: 1_793_696_400)
 let today = CivilDay(year: 2026, month: 11, day: 3)
 
-func taskRecord(_ id: String, _ name: String, list: String? = nil, position: String? = nil, dueDay: String? = nil, dueAt: String? = nil,
-                priority: String? = nil, status: String = "open", version: Int = 1) -> Record
-{
+func taskRecord(
+    _ id: String, _ name: String, list: String? = nil, position: String? = nil, dueDay: String? = nil, dueAt: String? = nil,
+    priority: String? = nil, status: String = "open", version: Int = 1
+) -> Record {
     var properties: [String: JSONValue] = ["name": .string(name), "status": .string(status), "priority": .string(priority ?? "none")]
     if let list { properties["list"] = ["ref": .string("\(TasksKinds.list)/\(list)")] }
     if let position { properties["position"] = .string(position) }
@@ -51,5 +53,6 @@ func page(_ records: [Record]) -> String {
 
 func path(_ kind: String, _ id: String) -> String { "/api/v1/\(kind)/\(id)" }
 
-let signedIn = LinkSnapshot(phase: .signedIn, server: server, repository: "ada.example.com", scopes: TasksManifest.scopes, online: true,
-                            packages: [TasksKinds.packageID: 1])
+let signedIn = LinkSnapshot(
+    phase: .signedIn, server: server, repository: "ada.example.com", scopes: TasksManifest.scopes, online: true,
+    packages: [TasksKinds.packageID: 1])

@@ -55,8 +55,9 @@ final class TasksRoot: BridgeRoot {
         }
         let session = sessions.load()
         let folder = session.flatMap { session in
-            try? RepositoryFolder(root: context.environment.data.appendingPathComponent(TasksRoots.folder, isDirectory: true)
-                .appendingPathComponent(RepositoryFolder.name(server: session.server, repository: session.repository), isDirectory: true))
+            try? RepositoryFolder(
+                root: context.environment.data.appendingPathComponent(TasksRoots.folder, isDirectory: true)
+                    .appendingPathComponent(RepositoryFolder.name(server: session.server, repository: session.repository), isDirectory: true))
         }
         environment.folder = folder
         let outbox = folder.map { Outbox(folder: $0) }
@@ -64,8 +65,9 @@ final class TasksRoot: BridgeRoot {
         let words = TasksApp.words(device: opening.device)
         let app = TasksApp(cache: folder.map { RecordCache(folder: $0) }, outbox: outbox, words: words, device: opening.device, build: build)
         let packages = [TasksKinds.packageID: TasksOpening.packageVersion(in: context.environment)]
-        let link = Link(app: app, manifest: opening.manifest(in: context.environment), sessions: sessions, outbox: outbox, packages: packages,
-                        words: words)
+        let link = Link(
+            app: app, manifest: opening.manifest(in: context.environment), sessions: sessions, outbox: outbox, packages: packages,
+            words: words)
         return (Runtime(link, environment: environment), session != nil)
     }
 

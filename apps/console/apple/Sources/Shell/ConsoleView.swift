@@ -63,10 +63,10 @@ private struct ConsoleContent: View {
         ConsoleWebView(controller: controller)
             .focusedSceneObject(controller)
             #if os(macOS)
-            .navigationTitle(controller.title)
-            .navigationSubtitle(controller.server.host() ?? controller.server.absoluteString)
+        .navigationTitle(controller.title)
+        .navigationSubtitle(controller.server.host() ?? controller.server.absoluteString)
             #else
-            .ignoresSafeArea(.container, edges: .bottom)
+        .ignoresSafeArea(.container, edges: .bottom)
             #endif
             .sheet(isPresented: $controller.picking) {
                 ConsoleConnect(cancellable: true)
@@ -74,7 +74,7 @@ private struct ConsoleContent: View {
                     // the sheet's own update check answers from it.
                     .updateOffer(updates)
                     #if os(macOS)
-                    .frame(width: 460, height: 640)
+                .frame(width: 460, height: 640)
                     #endif
             }
             .onAppear {

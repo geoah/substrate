@@ -36,8 +36,9 @@ struct Snapshots {
     }
 
     var metadata: AuthorizationServerMetadata {
-        AuthorizationServerMetadata(issuer: server, scopesSupported: ["read:*", "write:*", "agents:*", "decide:*"],
-                                    authorizationDetailsTypesSupported: AuthorizationDetail.Types.all)
+        AuthorizationServerMetadata(
+            issuer: server, scopesSupported: ["read:*", "write:*", "agents:*", "decide:*"],
+            authorizationDetailsTypesSupported: AuthorizationDetail.Types.all)
     }
 
     var header: ConnectHeader {
@@ -84,69 +85,112 @@ struct Snapshots {
             Change(kind: .upgrade, words: "Update Apple to version 3 or later", detail: shipsOld.problem, block: shipsOld),
             Change(kind: .install, words: "Install Apple Health version 5 or later", detail: needsFirst.problem, block: needsFirst),
         ]
-        try await draw("banner-server-update", screen {
-            AppStatusBanner(issues: [.serverTooOld(running: "v0.114.0", needed: nil, missing: [], blocked: serverBlocked)],
-                            appName: "Substrate Sync", host: "ada.example.com", actions: actions)
-        })
-        try await draw("banner-needs-approval", screen {
-            AppStatusBanner(issues: [.needsApproval(changes: update)], appName: "Substrate Sync", host: "ada.example.com",
-                            actions: actions)
-        })
-        let quarantined = AuthorizationSetup.Block(reason: "quarantined", problem: Blocks.quarantined,
-                                                   fix: "/catalog/providers.substrate.reamde.dev%2Fapplehealth")
-        try await draw("banner-blocked", screen {
-            AppStatusBanner(issues: [.needsApproval(changes: [
-                Change(kind: .install, words: "Install Apple", detail: "Version 3"),
-                Change(kind: .upgrade, words: "Update Apple Health", detail: quarantined.problem, block: quarantined),
-            ])], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
-        })
+        try await draw(
+            "banner-server-update",
+            screen {
+                AppStatusBanner(
+                    issues: [.serverTooOld(running: "v0.114.0", needed: nil, missing: [], blocked: serverBlocked)],
+                    appName: "Substrate Sync", host: "ada.example.com", actions: actions)
+            })
+        try await draw(
+            "banner-needs-approval",
+            screen {
+                AppStatusBanner(
+                    issues: [.needsApproval(changes: update)], appName: "Substrate Sync", host: "ada.example.com",
+                    actions: actions)
+            })
+        let quarantined = AuthorizationSetup.Block(
+            reason: "quarantined", problem: Blocks.quarantined,
+            fix: "/catalog/providers.substrate.reamde.dev%2Fapplehealth")
+        try await draw(
+            "banner-blocked",
+            screen {
+                AppStatusBanner(
+                    issues: [
+                        .needsApproval(changes: [
+                            Change(kind: .install, words: "Install Apple", detail: "Version 3"),
+                            Change(kind: .upgrade, words: "Update Apple Health", detail: quarantined.problem, block: quarantined),
+                        ])
+                    ], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
+            })
         let unshipped = AuthorizationSetup.Block(reason: "not-shipped", problem: Blocks.notShipped)
-        try await draw("banner-blocked-no-fix", screen {
-            AppStatusBanner(issues: [.needsApproval(changes: [
-                Change(kind: .install, words: "Install Clinical", detail: unshipped.problem, block: unshipped),
-            ])], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
-        })
-        try await draw("banner-ends-soon", screen {
-            AppStatusBanner(issues: [.accessEndsSoon(now.addingTimeInterval(3 * 86400))], appName: "Substrate Sync",
-                            host: "ada.example.com", actions: actions)
-        })
-        try await draw("banner-legacy", screen {
-            AppStatusBanner(issues: [.legacyAccess], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
-        })
-        try await draw("banner-several", screen {
-            AppStatusBanner(issues: [
-                .serverTooOld(running: "v0.114.0", needed: nil, missing: [], blocked: [serverBlocked[1]]),
-                .needsApproval(changes: update), .accessEndsSoon(now.addingTimeInterval(3 * 86400)),
-            ], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
-        })
-        try await draw("review-first-sign-in", ReviewChangesSheet(
-            appName: "Substrate Sync", host: "ada.example.com", changes: manifest.plannedChanges(), firstSignIn: true,
-            onContinue: {}, onCancel: {}))
-        try await draw("review-update", ReviewChangesSheet(
-            appName: "Substrate Sync", host: "ada.example.com", changes: update, firstSignIn: false, onContinue: {}, onCancel: {}))
-        let session = Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: manifest.clientID,
-                              scopes: manifest.scopes + ["webhook:applehealth-webhook"],
-                              expiresAt: now.addingTimeInterval(30 * 86400))
+        try await draw(
+            "banner-blocked-no-fix",
+            screen {
+                AppStatusBanner(
+                    issues: [
+                        .needsApproval(changes: [
+                            Change(kind: .install, words: "Install Clinical", detail: unshipped.problem, block: unshipped)
+                        ])
+                    ], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
+            })
+        try await draw(
+            "banner-ends-soon",
+            screen {
+                AppStatusBanner(
+                    issues: [.accessEndsSoon(now.addingTimeInterval(3 * 86400))], appName: "Substrate Sync",
+                    host: "ada.example.com", actions: actions)
+            })
+        try await draw(
+            "banner-legacy",
+            screen {
+                AppStatusBanner(issues: [.legacyAccess], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
+            })
+        try await draw(
+            "banner-several",
+            screen {
+                AppStatusBanner(
+                    issues: [
+                        .serverTooOld(running: "v0.114.0", needed: nil, missing: [], blocked: [serverBlocked[1]]),
+                        .needsApproval(changes: update), .accessEndsSoon(now.addingTimeInterval(3 * 86400)),
+                    ], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
+            })
+        try await draw(
+            "review-first-sign-in",
+            ReviewChangesSheet(
+                appName: "Substrate Sync", host: "ada.example.com", changes: manifest.plannedChanges(), firstSignIn: true,
+                onContinue: {}, onCancel: {}))
+        try await draw(
+            "review-update",
+            ReviewChangesSheet(
+                appName: "Substrate Sync", host: "ada.example.com", changes: update, firstSignIn: false, onContinue: {}, onCancel: {}))
+        let session = Session(
+            server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: manifest.clientID,
+            scopes: manifest.scopes + ["webhook:applehealth-webhook"],
+            expiresAt: now.addingTimeInterval(30 * 86400))
         var declined = session
         declined.scopes = [manifest.scopes[0], "webhook:applehealth-webhook"]
         declined.requestedScopes = manifest.scopes
-        try await draw("review-change-access", ReviewChangesSheet(
-            changingAccessFor: manifest, session: declined, changes: manifest.review(nil, session: declined),
-            onContinue: {}, onCancel: {}))
-        try await draw("account-section", Form {
-            AccountSection(session: session, manifest: manifest, serverVersion: "v0.114.0", onChangeAccess: {}, onSignOut: {})
-        }.formStyle(.grouped))
-        try await draw("account-section-unrevoked", Form {
-            AccountSection(session: session, manifest: manifest, serverVersion: "v0.114.0-3-gabc1234",
-                           unrevoked: [Session(server: server, repository: "ada.example.com", secret: "s", tokenID: "t"),
-                                       Session(server: URL(string: "https://substrate.example.org")!, repository: "grace.example.org",
-                                               secret: "o", clientID: manifest.clientID, scopes: ["read:*"])],
-                           onChangeAccess: {}, onSignOut: {})
-        }.formStyle(.grouped))
-        try await draw("account-section-password", Form {
-            AccountSection(session: Session(server: server, repository: "ada.example.com", secret: "s", tokenID: "t"),
-                           serverVersion: "v0.113.0", onSignOut: {})
-        }.formStyle(.grouped))
+        try await draw(
+            "review-change-access",
+            ReviewChangesSheet(
+                changingAccessFor: manifest, session: declined, changes: manifest.review(nil, session: declined),
+                onContinue: {}, onCancel: {}))
+        try await draw(
+            "account-section",
+            Form {
+                AccountSection(session: session, manifest: manifest, serverVersion: "v0.114.0", onChangeAccess: {}, onSignOut: {})
+            }.formStyle(.grouped))
+        try await draw(
+            "account-section-unrevoked",
+            Form {
+                AccountSection(
+                    session: session, manifest: manifest, serverVersion: "v0.114.0-3-gabc1234",
+                    unrevoked: [
+                        Session(server: server, repository: "ada.example.com", secret: "s", tokenID: "t"),
+                        Session(
+                            server: URL(string: "https://substrate.example.org")!, repository: "grace.example.org",
+                            secret: "o", clientID: manifest.clientID, scopes: ["read:*"]),
+                    ],
+                    onChangeAccess: {}, onSignOut: {})
+            }.formStyle(.grouped))
+        try await draw(
+            "account-section-password",
+            Form {
+                AccountSection(
+                    session: Session(server: server, repository: "ada.example.com", secret: "s", tokenID: "t"),
+                    serverVersion: "v0.113.0", onSignOut: {})
+            }.formStyle(.grouped))
         try await draw("access-ended", AccessEndedView(appName: "Substrate Sync", host: "ada.example.com", onSignInAgain: {}))
     }
 

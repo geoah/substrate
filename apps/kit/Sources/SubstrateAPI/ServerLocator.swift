@@ -1,9 +1,10 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
-import SubstrateDevice
 
 /// Finds the server behind what a person typed into the connect screen: a
 /// server's address, or a repository's name, whose own DNS says where it is
@@ -40,7 +41,8 @@ public struct ServerLocator: Sendable {
         public let name: String
         public let parent: String?
         public var errorDescription: String? {
-            var text = "\(name) is not a Substrate server, and it does not say where its repository is served: "
+            var text =
+                "\(name) is not a Substrate server, and it does not say where its repository is served: "
                 + "it has no _substrate record and no \(ServerLocator.repositoryDocumentPath)."
             if let parent { text += " \(parent) is not a Substrate server either." }
             return text
@@ -165,8 +167,8 @@ public struct ServerLocator: Sendable {
         do {
             let (data, response) = try await probe.transport.data(for: request)
             guard response.statusCode == 200,
-                  let document = try? JSONDecoder().decode(RepositoryDocument.self, from: data),
-                  let origin = DomainRecord.httpsOrigin(document.server)
+                let document = try? JSONDecoder().decode(RepositoryDocument.self, from: data),
+                let origin = DomainRecord.httpsOrigin(document.server)
             else { return nil }
             return URL(string: origin)
         } catch {
@@ -194,10 +196,10 @@ public struct ServerLocator: Sendable {
         }
         if name.hasSuffix(".") { name.removeLast() }
         guard !name.isEmpty, name.count <= 253, name.contains("."),
-              name.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "." || $0 == "_") }),
-              !name.split(separator: ".", omittingEmptySubsequences: false).contains(where: \.isEmpty),
-              name != "localhost",
-              !name.split(separator: ".").allSatisfy({ $0.allSatisfy(\.isNumber) })
+            name.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "." || $0 == "_") }),
+            !name.split(separator: ".", omittingEmptySubsequences: false).contains(where: \.isEmpty),
+            name != "localhost",
+            !name.split(separator: ".").allSatisfy({ $0.allSatisfy(\.isNumber) })
         else { return nil }
         return name
     }

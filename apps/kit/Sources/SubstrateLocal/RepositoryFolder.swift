@@ -125,9 +125,10 @@ public final class RepositoryFolder: @unchecked Sendable {
     /// The file decoded, nil when there is none. One that does not decode
     /// is set aside and answered as `aside`, so the caller starts afresh and
     /// says so; one that cannot be read at all stays where it is and throws.
-    public func load<Value: Decodable>(_ type: Value.Type, from name: String, in area: FolderArea,
-                                       at now: Date = Date()) throws -> (value: Value?, aside: SetAsideFile?)
-    {
+    public func load<Value: Decodable>(
+        _ type: Value.Type, from name: String, in area: FolderArea,
+        at now: Date = Date()
+    ) throws -> (value: Value?, aside: SetAsideFile?) {
         guard let data = try read(name, in: area) else { return (nil, nil) }
         do {
             return (try JSONDecoder().decode(type, from: data), nil)
@@ -235,7 +236,7 @@ public final class RepositoryFolder: @unchecked Sendable {
     private func entries(in area: FolderArea) -> [Entry] {
         names(in: area).compactMap { name -> Entry? in
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: url(name, in: area).path),
-                  (attributes[.type] as? FileAttributeType) == .typeRegular
+                (attributes[.type] as? FileAttributeType) == .typeRegular
             else { return nil }
             let bytes = (attributes[.size] as? NSNumber)?.intValue ?? 0
             let used = attributes[.modificationDate] as? Date ?? .distantPast

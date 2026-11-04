@@ -21,8 +21,9 @@ public struct WorkoutsSettings: Codable, Equatable, Sendable {
 
     /// What `start` snapshots.
     public var session: SessionSettings {
-        SessionSettings(defaultUnit: defaultUnit, warmupRest: warmupRest, setRest: setRest,
-                        restAfterLastSet: restAfterLastSet, countWarmupsInVolume: countWarmupsInVolume)
+        SessionSettings(
+            defaultUnit: defaultUnit, warmupRest: warmupRest, setRest: setRest,
+            restAfterLastSet: restAfterLastSet, countWarmupsInVolume: countWarmupsInVolume)
     }
 
     /// What the screens outside a session format with.
@@ -34,8 +35,9 @@ public struct WorkoutsSettings: Codable, Equatable, Sendable {
     /// plan's RPE (§4.14), so its strip shows it and Log commits it; the
     /// Table pre-fills nothing, as before.
     public var sessionPresenter: PresenterSettings {
-        PresenterSettings(calendar: .current, defaultUnit: defaultUnit, countWarmupsInVolume: countWarmupsInVolume,
-                          prefillsRPE: sessionLayout == .rows)
+        PresenterSettings(
+            calendar: .current, defaultUnit: defaultUnit, countWarmupsInVolume: countWarmupsInVolume,
+            prefillsRPE: sessionLayout == .rows)
     }
 
     // MARK: - Storage

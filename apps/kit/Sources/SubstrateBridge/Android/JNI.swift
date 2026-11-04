@@ -40,10 +40,10 @@ public func JNI_OnLoad(_ vm: UnsafeMutablePointer<JavaVM?>, _: UnsafeMutableRawP
     guard let functions = vm.pointee?.pointee, let getEnv = functions.GetEnv else { return JNI_ERR }
     var raw: UnsafeMutableRawPointer?
     guard getEnv(vm, &raw, jint(JNI_VERSION_1_6)) == JNI_OK, let env = raw?.assumingMemoryBound(to: JNIEnv?.self),
-          let jni = env.pointee?.pointee,
-          let findClass = jni.FindClass, let newGlobalRef = jni.NewGlobalRef, let deleteLocalRef = jni.DeleteLocalRef,
-          let getStaticMethodID = jni.GetStaticMethodID, let exceptionCheck = jni.ExceptionCheck,
-          let exceptionClear = jni.ExceptionClear
+        let jni = env.pointee?.pointee,
+        let findClass = jni.FindClass, let newGlobalRef = jni.NewGlobalRef, let deleteLocalRef = jni.DeleteLocalRef,
+        let getStaticMethodID = jni.GetStaticMethodID, let exceptionCheck = jni.ExceptionCheck,
+        let exceptionClear = jni.ExceptionClear
     else { return JNI_ERR }
     guard let local = findClass(env, bridgeClassName) else {
         if exceptionCheck(env) != 0 { exceptionClear(env) }
@@ -51,7 +51,7 @@ public func JNI_OnLoad(_ vm: UnsafeMutablePointer<JavaVM?>, _: UnsafeMutableRawP
     }
     defer { deleteLocalRef(env, local) }
     guard let global = newGlobalRef(env, local),
-          let deliver = getStaticMethodID(env, global, "deliver", "(Ljava/lang/String;)V")
+        let deliver = getStaticMethodID(env, global, "deliver", "(Ljava/lang/String;)V")
     else {
         if exceptionCheck(env) != 0 { exceptionClear(env) }
         return JNI_ERR
@@ -82,7 +82,8 @@ public func Java_dev_reamde_substrate_kit_NativeBridge_start(_ env: UnsafeMutabl
     } catch {
         answer = .failed(failure: BridgeFailure(.malformed, "the start config is not readable: \(BridgeCodec.describe(error))"))
     }
-    let text = (try? BridgeCodec.text(answer))
+    let text =
+        (try? BridgeCodec.text(answer))
         ?? #"{"failed":{"failure":{"code":"swiftFailure","message":"the start answer did not encode"}}}"#
     return try? newString(env, text)
 }
@@ -109,7 +110,7 @@ struct KotlinOutlet: BridgeOutlet {
             return error
         }
         guard let jni = env.pointee?.pointee, let pushLocalFrame = jni.PushLocalFrame, let popLocalFrame = jni.PopLocalFrame,
-              let call = jni.CallStaticVoidMethodA
+            let call = jni.CallStaticVoidMethodA
         else { return BridgeFailure(.jniFailure, "the JNI function table is incomplete") }
         // Each local reference made on an attached native thread lives until
         // it detaches; a long run of deliveries would fill the table without a frame.

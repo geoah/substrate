@@ -1,8 +1,7 @@
 import Foundation
+import SubstrateTesting
 import Testing
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
+
 @testable import SubstrateAPI
 @testable import SubstrateAuth
 @testable import SubstrateCore
@@ -10,7 +9,10 @@ import FoundationNetworking
 @testable import SubstrateDeviceApple
 @testable import SubstrateKit
 @testable import SubstrateUI
-import SubstrateTesting
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 @Suite(.timeLimit(.minutes(10))) struct Proofs {
     /// RFC 7636, appendix B.
@@ -42,11 +44,15 @@ import SubstrateTesting
     }
 
     @Test func theAuthorizeURLCarriesTheDetailsAsCompactJSON() throws {
-        let url = try client().authorizeURL(redirect: "http://127.0.0.1:5000/oauth/callback",
-                                            pkce: PKCE(verifier: "v"), state: "st")
+        let url = try client().authorizeURL(
+            redirect: "http://127.0.0.1:5000/oauth/callback",
+            pkce: PKCE(verifier: "v"), state: "st")
         #expect(url.absoluteString.hasPrefix("https://ada.example.com/oauth/authorize?response_type=code&client_id=https%3A%2F%2Fsync"))
         let items = query(url)
-        #expect(items["scope"] == "write:providers.substrate.reamde.dev/apple/* read:providers.substrate.reamde.dev/applehealth/account read:providers.substrate.reamde.dev/applehealth/export")
+        #expect(
+            items["scope"]
+                == "write:providers.substrate.reamde.dev/apple/* read:providers.substrate.reamde.dev/applehealth/account read:providers.substrate.reamde.dev/applehealth/export"
+        )
         #expect(items["code_challenge_method"] == "S256")
         #expect(items["redirect_uri"] == "http://127.0.0.1:5000/oauth/callback")
         #expect(items["state"] == "st")
@@ -54,7 +60,10 @@ import SubstrateTesting
         // details' floors (decision 0213).
         #expect(items["software_version"] == "0.120.0 (20261103.101500)")
         let details = try #require(items["authorization_details"])
-        #expect(details == #"[{"package":"providers.substrate.reamde.dev/apple","type":"package","version":3},{"package":"providers.substrate.reamde.dev/applehealth","type":"package","version":5},{"id":"substrate-sync-1a2b3c4d","kind":"providers.substrate.reamde.dev/applehealth/account","properties":{"displayName":"Ada's iPhone","timezone":"Europe/London"},"type":"account"},{"trigger":"applehealth-webhook","type":"webhook"}]"#)
+        #expect(
+            details
+                == #"[{"package":"providers.substrate.reamde.dev/apple","type":"package","version":3},{"package":"providers.substrate.reamde.dev/applehealth","type":"package","version":5},{"id":"substrate-sync-1a2b3c4d","kind":"providers.substrate.reamde.dev/applehealth/account","properties":{"displayName":"Ada's iPhone","timezone":"Europe/London"},"type":"account"},{"trigger":"applehealth-webhook","type":"webhook"}]"#
+        )
         // Encoded once: JSON's punctuation is escaped in the URL itself.
         #expect(url.absoluteString.contains("authorization_details=%5B%7B%22package%22%3A%22providers.substrate.reamde.dev%2Fapple%22"))
         let decoded = try JSONDecoder().decode([AuthorizationDetail].self, from: Data(details.utf8))
@@ -67,8 +76,9 @@ import SubstrateTesting
     /// which the app would read as set up: it is never sent the request.
     @Test func aServerThatCannotSetUpIsNeverSentTheRequest() throws {
         #expect(throws: ServerMismatch.self) {
-            try client(details: ["package"]).authorizeURL(redirect: "http://127.0.0.1:1/oauth/callback",
-                                                          pkce: PKCE(verifier: "v"), state: "s")
+            try client(details: ["package"]).authorizeURL(
+                redirect: "http://127.0.0.1:1/oauth/callback",
+                pkce: PKCE(verifier: "v"), state: "s")
         }
         // Its requirement says so first: the details' types and the scopes'
         // verbs are required whatever the app named.
@@ -76,9 +86,10 @@ import SubstrateTesting
         #expect(manifest.requirement.detailTypes == ["package", "account", "webhook"])
         #expect(manifest.requirement.scopeVerbs == ["write", "read"])
         let meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(metadataJSON(details: ["package"]).utf8))
-        let probe = ServerProbe.Result(origin: try #require(URL(string: "https://ada.example.com")),
-                                       discovery: Discovery(server: .init(version: "v0.114.0")), metadata: meta,
-                                       verdict: manifest.requirement.verdict(version: "v0.114.0", metadata: meta))
+        let probe = ServerProbe.Result(
+            origin: try #require(URL(string: "https://ada.example.com")),
+            discovery: Discovery(server: .init(version: "v0.114.0")), metadata: meta,
+            verdict: manifest.requirement.verdict(version: "v0.114.0", metadata: meta))
         #expect(manifest.door(for: probe) == .password)
         var strict = manifest
         strict.passwordFallback = .never
@@ -102,15 +113,18 @@ import SubstrateTesting
         }
         let handedOn = StubTransport()
         handedOn.on("GET", "/.well-known/substrate/server.json", json: discoveryJSON())
-        handedOn.on("GET", "/.well-known/oauth-authorization-server",
-                    json: metadataJSON(issuer: "https://evil.example.com", endpoints: "https://ada.example.com"))
+        handedOn.on(
+            "GET", "/.well-known/oauth-authorization-server",
+            json: metadataJSON(issuer: "https://evil.example.com", endpoints: "https://ada.example.com"))
         await #expect(throws: ServerMismatch.self) {
             try await ServerProbe(transport: handedOn).probe(origin, requirement: ServerRequirement(), app: "Substrate Sync")
         }
 
         // Driven by hand, the client still never sends the code elsewhere.
-        let meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(
-            metadataJSON(issuer: "https://ada.example.com", endpoints: "https://evil.example.com").utf8))
+        let meta = try JSONDecoder().decode(
+            AuthorizationServerMetadata.self,
+            from: Data(
+                metadataJSON(issuer: "https://ada.example.com", endpoints: "https://evil.example.com").utf8))
         let stub = StubTransport()
         stub.on("POST", "/oauth/token", json: #"{"access_token":"t","scope":"read:*","repository":"ada.example.com"}"#)
         let oauth = OAuthClient(manifest: syncManifest(), metadata: meta, transport: stub)
@@ -161,20 +175,21 @@ import SubstrateTesting
 
     @Test func theTokenAnswerListsWhatWasSetUp() throws {
         let json = #"""
-        {"access_token":"sub_app_x","token_type":"Bearer","scope":"write:providers.substrate.reamde.dev/apple/* webhook:applehealth-webhook",
-         "expires_in":2592000,"repository":"ada.example.com",
-         "authorization_details":[
-           {"type":"package","package":"providers.substrate.reamde.dev/apple","version":3},
-           {"type":"account","kind":"providers.substrate.reamde.dev/applehealth/account","id":"substrate-sync-1a2b3c4d"},
-           {"type":"webhook","trigger":"applehealth-webhook","url":"https://ada.example.com/webhooks/ada.example.com/applehealth-webhook"}]}
-        """#
+            {"access_token":"sub_app_x","token_type":"Bearer","scope":"write:providers.substrate.reamde.dev/apple/* webhook:applehealth-webhook",
+             "expires_in":2592000,"repository":"ada.example.com",
+             "authorization_details":[
+               {"type":"package","package":"providers.substrate.reamde.dev/apple","version":3},
+               {"type":"account","kind":"providers.substrate.reamde.dev/applehealth/account","id":"substrate-sync-1a2b3c4d"},
+               {"type":"webhook","trigger":"applehealth-webhook","url":"https://ada.example.com/webhooks/ada.example.com/applehealth-webhook"}]}
+            """#
         let token = try JSONDecoder().decode(TokenResponse.self, from: Data(json.utf8))
         #expect(token.scopes == ["write:providers.substrate.reamde.dev/apple/*", "webhook:applehealth-webhook"])
         #expect(token.authorizationDetails.count == 3)
         #expect(token.authorizationDetails[0].version == 3)
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let session = Session(server: try #require(URL(string: "https://ada.example.com")), token: token,
-                              clientID: "https://sync.substrate.example.com/client.json", revocation: nil, now: now)
+        let session = Session(
+            server: try #require(URL(string: "https://ada.example.com")), token: token,
+            clientID: "https://sync.substrate.example.com/client.json", revocation: nil, now: now)
         #expect(session.isApp)
         #expect(session.expiresAt == now.addingTimeInterval(2_592_000))
         #expect(session.issuedAt == now)
@@ -222,9 +237,10 @@ import SubstrateTesting
         }
         var oauth = try client()
         oauth.transport = Slow(clock)
-        let session = try await oauth.session(exchanging: "c", redirect: "http://127.0.0.1:1/oauth/callback",
-                                              pkce: PKCE(verifier: "v"), server: try #require(URL(string: "https://ada.example.com")),
-                                              now: { clock.now })
+        let session = try await oauth.session(
+            exchanging: "c", redirect: "http://127.0.0.1:1/oauth/callback",
+            pkce: PKCE(verifier: "v"), server: try #require(URL(string: "https://ada.example.com")),
+            now: { clock.now })
         #expect(session.issuedAt == Date(timeIntervalSince1970: 1_800_000_900))
         #expect(session.expiresAt == Date(timeIntervalSince1970: 1_800_004_500))
         #expect(session.requestedScopes == syncManifest().scopes)
@@ -279,8 +295,9 @@ import SubstrateTesting
 
     @Test func aReleaseSignsInThroughItsClaimedRedirect() async throws {
         let claimed = try #require(URL(string: "https://substrate.example.org/apps/sync/callback"))
-        let manifest = AppManifest(appName: "Substrate Sync", clientID: "https://substrate.example.org/apps/sync/client.json",
-                                   scopes: ["read:*"], claimedRedirect: claimed)
+        let manifest = AppManifest(
+            appName: "Substrate Sync", clientID: "https://substrate.example.org/apps/sync/client.json",
+            scopes: ["read:*"], claimedRedirect: claimed)
         let browser = approving()
         _ = try await oauth(tokens(), manifest).signIn(server: server, browser: browser)
         #expect(browser.prepared == [SignInRedirect(route: .claimed(claimed), uri: claimed.absoluteString)])
@@ -346,8 +363,9 @@ import SubstrateTesting
     let server = URL(string: "https://ada.example.com")!
 
     func app(clientID: String? = "http://127.0.0.1/substrate-sync", revocation: URL? = nil) -> Session {
-        Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: clientID,
-                scopes: ["webhook:applehealth-webhook"], revocation: revocation)
+        Session(
+            server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: clientID,
+            scopes: ["webhook:applehealth-webhook"], revocation: revocation)
     }
 
     @Test func anAppSessionIsRevokedWhereAndAsItWasApproved() async throws {
@@ -357,8 +375,9 @@ import SubstrateTesting
         let sent = stub.sent("POST", "/oauth/revoke")
         #expect(sent.count == 1)
         #expect(sent.first?.url?.absoluteString == "https://ada.example.com/oauth/revoke")
-        #expect(String(decoding: sent.first?.httpBody ?? Data(), as: UTF8.self)
-            == "token=sub_app_x&client_id=http%3A%2F%2F127.0.0.1%2Fsubstrate-sync")
+        #expect(
+            String(decoding: sent.first?.httpBody ?? Data(), as: UTF8.self)
+                == "token=sub_app_x&client_id=http%3A%2F%2F127.0.0.1%2Fsubstrate-sync")
         // A session that never kept its client id sends none: the token is
         // the credential, and a guessed id would revoke nothing.
         try await app(clientID: nil).revoke(transport: stub)
@@ -393,7 +412,8 @@ import SubstrateTesting
     /// two stores over one storage share them, and two over two storages
     /// never meet, whatever account each names.
     @Test func aStoreIsItsStoragesAndNoOneElses() throws {
-        let one = MemoryStorage(), other = MemoryStorage()
+        let one = MemoryStorage()
+        let other = MemoryStorage()
         try SessionStore(storage: one).save(app())
         #expect(SessionStore(storage: one).load() == app())
         #expect(SessionStore(storage: other).load() == nil)
@@ -405,8 +425,9 @@ import SubstrateTesting
     /// Every setting of the Apple store is the Keychain storage's, so the
     /// store reads and writes the item those settings name.
     @Test func theKeychainStoreIsTheStorageItsSettingsName() throws {
-        let store = SessionStore(service: "dev.reamde.substrate.kit.tests", accessGroup: "TEAM.dev.reamde.substrate.kit",
-                                 account: "a", accessibility: .afterFirstUnlock, dataProtection: true)
+        let store = SessionStore(
+            service: "dev.reamde.substrate.kit.tests", accessGroup: "TEAM.dev.reamde.substrate.kit",
+            account: "a", accessibility: .afterFirstUnlock, dataProtection: true)
         let keychain = try #require(store.storage as? KeychainStorage)
         #expect(keychain.service == "dev.reamde.substrate.kit.tests" && keychain.accessGroup == "TEAM.dev.reamde.substrate.kit")
         #expect(keychain.accessibility == .afterFirstUnlock && keychain.dataProtection && store.account == "a")
@@ -451,8 +472,9 @@ import SubstrateTesting
     let server = URL(string: "https://ada.example.com")!
 
     func app(_ secret: String) -> Session {
-        Session(server: server, repository: "ada.example.com", secret: secret, clientID: "http://127.0.0.1/substrate-sync",
-                scopes: ["read:*"])
+        Session(
+            server: server, repository: "ada.example.com", secret: secret, clientID: "http://127.0.0.1/substrate-sync",
+            scopes: ["read:*"])
     }
 
     /// The Keychain will not keep the revocations, and the store is over
@@ -489,7 +511,8 @@ import SubstrateTesting
 
     @Test func aReplacementKeepsTheOldTokenBeforeItIsSavedOver() async throws {
         let store = store(refusing: [])
-        let old = app("sub_app_old"), new = app("sub_app_new")
+        let old = app("sub_app_old")
+        let new = app("sub_app_new")
         try store.save(old)
         let offline = StubTransport()
         try await store.save(new, replacing: old, transport: offline)
@@ -500,7 +523,8 @@ import SubstrateTesting
 
     @Test func aReplacementTheKeychainWillNotKeepRevokesTheOldTokenFirst() async throws {
         let store = store()
-        let old = app("sub_app_old"), new = app("sub_app_new")
+        let old = app("sub_app_old")
+        let new = app("sub_app_new")
         try store.save(old)
         let ok = StubTransport()
         ok.on("POST", "/oauth/revoke", json: "")
@@ -513,7 +537,8 @@ import SubstrateTesting
     /// token, which nothing on the device will hold, is revoked.
     @Test func aReplacementNeitherKeptNorRevokedLeavesTheOldSessionInUse() async throws {
         let store = store()
-        let old = app("sub_app_old"), new = app("sub_app_new")
+        let old = app("sub_app_old")
+        let new = app("sub_app_new")
         try store.save(old)
         let busy = StubTransport()
         busy.on("POST", "/oauth/revoke", status: 503, json: "")
@@ -527,7 +552,8 @@ import SubstrateTesting
     @Test func aReplacementTheKeychainWillNotSaveLeavesTheOldSessionInUse() async throws {
         let storage = MemoryStorage(refusing: ["session"])
         let store = SessionStore(storage: storage)
-        let old = app("sub_app_old"), new = app("sub_app_new")
+        let old = app("sub_app_old")
+        let new = app("sub_app_new")
         try storage.writeUnchecked(JSONEncoder().encode(old), account: "session")
         let ok = StubTransport()
         ok.on("POST", "/oauth/revoke", json: "")
@@ -544,7 +570,8 @@ extension Retention {
     /// replacement saves is the one in use when both are done.
     @Test func aSignOutWaitingOnTheServerNeverClearsTheSessionSavedAfterIt() async throws {
         let store = SessionStore(storage: MemoryStorage(refusing: ["session.revocations"]))
-        let old = app("sub_app_old"), new = app("sub_app_new")
+        let old = app("sub_app_old")
+        let new = app("sub_app_new")
         try store.save(old)
         let paused = PausedTransport()
         let signingOut = Task { try await store.signOut(old, transport: paused) }
@@ -572,7 +599,8 @@ extension Retention {
     @Test func aReplacementNeitherSavedNorRevokedIsKeptForRevocation() async throws {
         let storage = MemoryStorage(refusing: ["session"])
         let store = SessionStore(storage: storage)
-        let old = app("sub_app_old"), new = app("sub_app_new")
+        let old = app("sub_app_old")
+        let new = app("sub_app_new")
         try storage.writeUnchecked(JSONEncoder().encode(old), account: "session")
         let busy = StubTransport()
         busy.on("POST", "/oauth/revoke", status: 503, json: "")
@@ -626,10 +654,10 @@ actor PausedTransport: HTTPTransport {
     @Test func chatsSessionStillDecodes() throws {
         // As Chat's JSONEncoder wrote it: the expiry in seconds since 2001.
         let chat = #"""
-        {"server":"https://ada.example.com","repository":"ada.example.com","secret":"sub_app_x","tokenID":"",
-         "grants":{"scopes":["agents:*","decide:*","read:*"]},"expiresAt":815000000,
-         "revocation":"https://ada.example.com/oauth/revoke"}
-        """#
+            {"server":"https://ada.example.com","repository":"ada.example.com","secret":"sub_app_x","tokenID":"",
+             "grants":{"scopes":["agents:*","decide:*","read:*"]},"expiresAt":815000000,
+             "revocation":"https://ada.example.com/oauth/revoke"}
+            """#
         let session = try JSONDecoder().decode(Session.self, from: Data(chat.utf8))
         #expect(session.isApp)
         #expect(session.scopes == ["agents:*", "decide:*", "read:*"])
@@ -640,12 +668,13 @@ actor PausedTransport: HTTPTransport {
     }
 
     @Test func aSessionRoundTripsAndStaysReadableByEarlierBuilds() throws {
-        let session = Session(server: try #require(URL(string: "https://ada.example.com")), repository: "ada.example.com",
-                              secret: "sub_app_x", clientID: "https://sync.substrate.example.com/client.json",
-                              scopes: ["webhook:applehealth-webhook"], expiresAt: Date(timeIntervalSinceReferenceDate: 815_000_000),
-                              issuedAt: Date(timeIntervalSinceReferenceDate: 812_408_000),
-                              webhooks: ["applehealth-webhook": try #require(URL(string: "https://ada.example.com/webhooks/ada.example.com/applehealth-webhook"))],
-                              details: [.webhook(trigger: "applehealth-webhook")])
+        let session = Session(
+            server: try #require(URL(string: "https://ada.example.com")), repository: "ada.example.com",
+            secret: "sub_app_x", clientID: "https://sync.substrate.example.com/client.json",
+            scopes: ["webhook:applehealth-webhook"], expiresAt: Date(timeIntervalSinceReferenceDate: 815_000_000),
+            issuedAt: Date(timeIntervalSinceReferenceDate: 812_408_000),
+            webhooks: ["applehealth-webhook": try #require(URL(string: "https://ada.example.com/webhooks/ada.example.com/applehealth-webhook"))],
+            details: [.webhook(trigger: "applehealth-webhook")])
         let data = try JSONEncoder().encode(session)
         #expect(try JSONDecoder().decode(Session.self, from: data) == session)
         let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])

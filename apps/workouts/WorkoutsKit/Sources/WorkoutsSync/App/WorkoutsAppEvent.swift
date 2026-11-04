@@ -17,8 +17,9 @@ public extension WorkoutsApp {
         case historyLoaded([HistoryEntry], unreadable: [UnreadableRecord], hidden: Set<String>)
         /// An account's folder read when it signed in: its cached
         /// catalogue, its draft, its sample's standing, what it could not read.
-        case accountOpened(AccountRef, cached: Catalog?, draft: RoutineEditor?, sample: SampleInstall.State?,
-                           unreadable: [UnreadableRecord], hidden: Set<String>)
+        case accountOpened(
+            AccountRef, cached: Catalog?, draft: RoutineEditor?, sample: SampleInstall.State?,
+            unreadable: [UnreadableRecord], hidden: Set<String>)
         case syncStarted(AccountRef)
         case catalogRead(AccountRef, Catalog, sample: SampleInstall.State?, sampleProblem: String?)
         /// The history exchange's outcome on the phone: the history files

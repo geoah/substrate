@@ -44,9 +44,10 @@ public final class AppShell<App: LinkedApp> {
         /// device's: the link's, and the app's own linked records'.
         public internal(set) var words: StatusWords
 
-        public init(folder: RepositoryFolder? = nil, cache: RecordCache? = nil, outbox: Outbox? = nil,
-                    outboxes: (@Sendable (SessionFacts) -> Outbox?)? = nil)
-        {
+        public init(
+            folder: RepositoryFolder? = nil, cache: RecordCache? = nil, outbox: Outbox? = nil,
+            outboxes: (@Sendable (SessionFacts) -> Outbox?)? = nil
+        ) {
             self.folder = folder
             self.cache = cache
             self.outbox = outbox
@@ -66,15 +67,17 @@ public final class AppShell<App: LinkedApp> {
             { session in
                 guard let session else { return Parts() }
                 let name = RepositoryFolder.name(server: session.server, repository: session.repository)
-                let made = try? RepositoryFolder(root: applicationSupport(folder).appendingPathComponent(name, isDirectory: true),
-                                                 writingOptions: protection)
+                let made = try? RepositoryFolder(
+                    root: applicationSupport(folder).appendingPathComponent(name, isDirectory: true),
+                    writingOptions: protection)
                 return Parts(folder: made, cache: made.map { RecordCache(folder: $0) }, outbox: made.map { Outbox(folder: $0) })
             }
         }
 
         /// A folder in Application Support, which the system does not clear.
         public static func applicationSupport(_ folder: String) -> URL {
-            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            let base =
+                FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
                 ?? FileManager.default.temporaryDirectory
             return base.appendingPathComponent(folder, isDirectory: true)
         }
@@ -119,12 +122,13 @@ public final class AppShell<App: LinkedApp> {
         /// The Settings screen from the link's presentation and the app's.
         public var settingsScreen: (LinkPresentation<App.Presentation>, App.Presentation) -> SettingsPresentation
 
-        public init(manifest: AppManifest, keychainService: String, parts: @escaping (Session?) -> Parts, packages: [String: Int],
-                    words: @escaping (_ device: String) -> StatusWords, app: @escaping (Parts) -> App, refresh: App.Command? = nil,
-                    respond: ((NotificationResponse) -> App.Command?)? = nil, settings: @escaping (SettingsCommand) -> App.Command? = { _ in nil },
-                    clearSaved: App.Command? = nil,
-                    settingsScreen: @escaping (LinkPresentation<App.Presentation>, App.Presentation) -> SettingsPresentation)
-        {
+        public init(
+            manifest: AppManifest, keychainService: String, parts: @escaping (Session?) -> Parts, packages: [String: Int],
+            words: @escaping (_ device: String) -> StatusWords, app: @escaping (Parts) -> App, refresh: App.Command? = nil,
+            respond: ((NotificationResponse) -> App.Command?)? = nil, settings: @escaping (SettingsCommand) -> App.Command? = { _ in nil },
+            clearSaved: App.Command? = nil,
+            settingsScreen: @escaping (LinkPresentation<App.Presentation>, App.Presentation) -> SettingsPresentation
+        ) {
             self.manifest = manifest
             self.keychainService = keychainService
             self.parts = parts
@@ -140,15 +144,17 @@ public final class AppShell<App: LinkedApp> {
 
         /// Each repository's folder in `Application Support/<folder>`
         /// (`Parts.repositoryFolders(in:)`).
-        public init(manifest: AppManifest, keychainService: String, folder: String, packages: [String: Int],
-                    words: @escaping (_ device: String) -> StatusWords, app: @escaping (Parts) -> App, refresh: App.Command? = nil,
-                    respond: ((NotificationResponse) -> App.Command?)? = nil, settings: @escaping (SettingsCommand) -> App.Command? = { _ in nil },
-                    clearSaved: App.Command? = nil,
-                    settingsScreen: @escaping (LinkPresentation<App.Presentation>, App.Presentation) -> SettingsPresentation)
-        {
-            self.init(manifest: manifest, keychainService: keychainService, parts: Parts.repositoryFolders(in: folder), packages: packages,
-                      words: words, app: app, refresh: refresh, respond: respond, settings: settings, clearSaved: clearSaved,
-                      settingsScreen: settingsScreen)
+        public init(
+            manifest: AppManifest, keychainService: String, folder: String, packages: [String: Int],
+            words: @escaping (_ device: String) -> StatusWords, app: @escaping (Parts) -> App, refresh: App.Command? = nil,
+            respond: ((NotificationResponse) -> App.Command?)? = nil, settings: @escaping (SettingsCommand) -> App.Command? = { _ in nil },
+            clearSaved: App.Command? = nil,
+            settingsScreen: @escaping (LinkPresentation<App.Presentation>, App.Presentation) -> SettingsPresentation
+        ) {
+            self.init(
+                manifest: manifest, keychainService: keychainService, parts: Parts.repositoryFolders(in: folder), packages: packages,
+                words: words, app: app, refresh: refresh, respond: respond, settings: settings, clearSaved: clearSaved,
+                settingsScreen: settingsScreen)
         }
     }
 
@@ -185,9 +191,10 @@ public final class AppShell<App: LinkedApp> {
         (model, folderName) = Self.make(configuration, session: nil, sessions: sessions, notifications: nil)
     }
 
-    private static func make(_ configuration: Configuration, session: Session?, sessions: SessionStore,
-                             notifications: SystemNotifications?) -> (PresentationModel<Link>, String?)
-    {
+    private static func make(
+        _ configuration: Configuration, session: Session?, sessions: SessionStore,
+        notifications: SystemNotifications?
+    ) -> (PresentationModel<Link>, String?) {
         var environment = AppEnvironment.apple()
         environment.client = ClientSource { sessions.load().map { SubstrateClient($0) } }
         environment.devices.notifications = notifications
@@ -211,30 +218,34 @@ public final class AppShell<App: LinkedApp> {
     static func link(_ configuration: Configuration, parts: Parts, sessions: SessionStore) -> Link {
         let app = configuration.app(parts)
         if let outboxes = parts.outboxes {
-            return Link(app: app, manifest: configuration.manifest, sessions: sessions, outboxes: outboxes, packages: configuration.packages,
-                        words: parts.words)
+            return Link(
+                app: app, manifest: configuration.manifest, sessions: sessions, outboxes: outboxes, packages: configuration.packages,
+                words: parts.words)
         }
-        return Link(app: app, manifest: configuration.manifest, sessions: sessions, outbox: parts.outbox, packages: configuration.packages,
-                    words: parts.words)
+        return Link(
+            app: app, manifest: configuration.manifest, sessions: sessions, outbox: parts.outbox, packages: configuration.packages,
+            words: parts.words)
     }
 
     /// The owner's answers to notifications, the one that launched the app
     /// included, and the time zone's moves, as the app's commands.
     private func follow() {
         if let notifications, let respond = configuration.respond {
-            following.append(Task { [weak self] in
-                for await response in notifications.responses() {
-                    guard let command = respond(response) else { continue }
-                    self?.send(command)
-                }
-            })
+            following.append(
+                Task { [weak self] in
+                    for await response in notifications.responses() {
+                        guard let command = respond(response) else { continue }
+                        self?.send(command)
+                    }
+                })
         }
         if let refresh = configuration.refresh {
-            following.append(Task { [weak self] in
-                for await _ in NotificationCenter.default.notifications(named: .NSSystemTimeZoneDidChange) {
-                    self?.send(refresh)
-                }
-            })
+            following.append(
+                Task { [weak self] in
+                    for await _ in NotificationCenter.default.notifications(named: .NSSystemTimeZoneDidChange) {
+                        self?.send(refresh)
+                    }
+                })
         }
     }
 
@@ -292,8 +303,9 @@ public final class AppShell<App: LinkedApp> {
     /// session replaces the one before, which is kept to be revoked.
     public func signIn(_ probe: ServerProbe.Result) async throws {
         guard let oauth = OAuthClient(manifest: manifest, probe: probe) else { throw URLError(.badServerResponse) }
-        let session = try await oauth.signIn(server: probe.origin, repository: probe.repository, keepingRejectedIn: sessions,
-                                             browser: WebAuthenticator())
+        let session = try await oauth.signIn(
+            server: probe.origin, repository: probe.repository, keepingRejectedIn: sessions,
+            browser: WebAuthenticator())
         try await sessions.save(session, replacing: sessions.load())
         adopt(session)
     }

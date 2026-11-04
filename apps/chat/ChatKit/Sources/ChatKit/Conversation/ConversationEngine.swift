@@ -160,8 +160,9 @@ extension Conversation {
         // The last run's overlay is the stored rows' job now, unless their
         // read failed: then it is still the only view of that run.
         let kept = state.reloadFailed != nil ? state.overlay.turns : []
-        let run = State.Send(message: message, agent: agent, sentTo: state.thread, kept: kept, failedBefore: state.reloadFailed,
-                             baseline: baseline, sentAt: at)
+        let run = State.Send(
+            message: message, agent: agent, sentTo: state.thread, kept: kept, failedBefore: state.reloadFailed,
+            baseline: baseline, sentAt: at)
         state.reloadFailed = nil
         state.seq += 1
         state.overlay = LiveOverlay(turns: kept + [Turn(id: "live-u\(state.seq)", role: .user, content: message, pending: true)])
@@ -291,8 +292,11 @@ extension Conversation {
         state.run = nil
         guard let unknown else { return }
         state.outcomes.append(Outcome(id: outcome, kind: .checking, reason: unknown, message: run.message))
-        state.asks.append(.check(State.Check(outcome: outcome, thread: run.sentTo, agent: run.agent, message: run.message,
-                                             baseline: run.baseline, sentAt: run.sentAt)))
+        state.asks.append(
+            .check(
+                State.Check(
+                    outcome: outcome, thread: run.sentTo, agent: run.agent, message: run.message,
+                    baseline: run.baseline, sentAt: run.sentAt)))
     }
 
     private func stopRunning(_ state: inout State) {

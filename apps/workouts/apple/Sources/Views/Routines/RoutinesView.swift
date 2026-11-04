@@ -1,6 +1,6 @@
+import SwiftUI
 import WorkoutsCore
 import WorkoutsSync
-import SwiftUI
 
 /// The owner's routines by folder (DESIGN.md §7.2): one collapsible section
 /// per folder, a card per routine with its own Start, and a "+" for an empty
@@ -43,11 +43,13 @@ struct RoutinesView: View {
     private var banner: some View {
         if let status = link.status, status.symbol == .warning || link.syncProblem != nil {
             VStack(alignment: .leading, spacing: 8) {
-                Label(link.syncProblem.map { "The training package could not be checked: \($0)" } ?? status.sentence,
-                      systemImage: "exclamationmark.triangle.fill")
-                    .font(.footnote)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Label(
+                    link.syncProblem.map { "The training package could not be checked: \($0)" } ?? status.sentence,
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.footnote)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
                 if let problem = status.problem {
                     Text(problem.message)
                         .font(.footnote)
@@ -191,7 +193,8 @@ struct RoutinesView: View {
                     Text("This sample comes with the app. Sign in to train from the routines your agent writes and keep your sessions there.")
                 }
             } else if case let .server(host) = app.catalogOrigin {
-                Section {} footer: {
+                Section {
+                } footer: {
                     Text("From \(host).")
                 }
             }

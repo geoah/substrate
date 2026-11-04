@@ -14,14 +14,18 @@ public enum DateWords {
 
     /// A day and a time, abbreviated: "1 Dec 2026 at 09:00".
     public static func moment(_ date: Date, locale: Locale, timeZone: TimeZone) -> String {
-        date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, locale: locale, calendar: calendar(locale, timeZone),
-                                        timeZone: timeZone))
+        date.formatted(
+            Date.FormatStyle(
+                date: .abbreviated, time: .shortened, locale: locale, calendar: calendar(locale, timeZone),
+                timeZone: timeZone))
     }
 
     /// A day, abbreviated: "1 Dec 2026".
     public static func date(_ date: Date, locale: Locale, timeZone: TimeZone) -> String {
-        date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, locale: locale, calendar: calendar(locale, timeZone),
-                                        timeZone: timeZone))
+        date.formatted(
+            Date.FormatStyle(
+                date: .abbreviated, time: .omitted, locale: locale, calendar: calendar(locale, timeZone),
+                timeZone: timeZone))
     }
 
     private static func calendar(_ locale: Locale, _ timeZone: TimeZone) -> Calendar {

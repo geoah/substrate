@@ -1,8 +1,9 @@
 import Foundation
-@testable import SubstrateBridge
 import SubstrateBridgeCheck
 import SubstrateCore
 import SubstrateRuntime
+
+@testable import SubstrateBridge
 
 /// Kotlin's side of the bridge in a test: every message Swift delivers,
 /// kept in order, and a way to wait for one.
@@ -153,8 +154,9 @@ func started(fingerprint: String = "test") -> (BridgeRuntime, Outlet, Box<TestRo
 }
 
 func config(fingerprint: String) -> StartConfig {
-    StartConfig(fingerprint: fingerprint, locale: "en-GB", timeZone: "Europe/London", resources: "/tmp/resources", data: "/tmp/data",
-                cache: "/tmp/cache", sdk: 36, debug: false)
+    StartConfig(
+        fingerprint: fingerprint, locale: "en-GB", timeZone: "Europe/London", resources: "/tmp/resources", data: "/tmp/data",
+        cache: "/tmp/cache", sdk: 36, debug: false)
 }
 
 final class Box<T>: @unchecked Sendable {

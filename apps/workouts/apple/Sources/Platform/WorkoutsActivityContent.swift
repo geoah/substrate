@@ -28,9 +28,11 @@ nonisolated extension WorkoutsActivityAttributes: OngoingActivityAttributes {
             nextRowID: content.nextRowID?.rawValue,
             canComplete: content.canComplete,
             // Finish ends the activity with the summary and no countdown.
-            countdown: payload.finishedSummary != nil ? nil : content.countdown.map { countdown in
-                .init(kind: kind(countdown.kind), label: countdown.label, startedAt: countdown.startedAt, endsAt: countdown.endsAt)
-            },
+            countdown: payload.finishedSummary != nil
+                ? nil
+                : content.countdown.map { countdown in
+                    .init(kind: kind(countdown.kind), label: countdown.label, startedAt: countdown.startedAt, endsAt: countdown.endsAt)
+                },
             setsDone: content.setsDone,
             setsPlanned: content.setsPlanned,
             finishedSummary: payload.finishedSummary,

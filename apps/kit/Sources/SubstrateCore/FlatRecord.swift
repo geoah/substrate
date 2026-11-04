@@ -27,8 +27,8 @@ public struct FlatRecord: Hashable, Sendable {
     /// Reads a record from its JSON object.
     public init(json: JSONValue) throws(CodecError) {
         guard case let .object(object) = json,
-              case let .string(kind)? = object["kind"],
-              case let .string(id)? = object["id"]
+            case let .string(kind)? = object["kind"],
+            case let .string(id)? = object["id"]
         else {
             throw .invalid(kind: "?", id: "?", property: "record", value: "not a flat record")
         }

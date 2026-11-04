@@ -1,6 +1,7 @@
 import Foundation
-@testable import WorkoutsCore
 import Testing
+
+@testable import WorkoutsCore
 
 // Research 03 §14's vectors V1 to V19 (DESIGN §10.2), verbatim, then the curve
 // and grid checks and the cases of the app's own rules (DESIGN §5.3). Loads,
@@ -34,9 +35,10 @@ private func set(
     target: Target03 = Target03(), ordinal: Int, position: Int? = nil, unit: MassUnit = .kg,
     left: Int? = nil, right: Int? = nil, start: Date = now, minutes: Int = 0
 ) -> DoneSet {
-    DoneSet(kind: kind, load: load, unit: unit, reps: reps, repsLeft: left, repsRight: right, duration: duration,
-            rpe: rpe, target: target, completedAt: start.addingTimeInterval(Double(minutes) * 60),
-            position: position ?? ordinal, ordinal: ordinal)
+    DoneSet(
+        kind: kind, load: load, unit: unit, reps: reps, repsLeft: left, repsRight: right, duration: duration,
+        rpe: rpe, target: target, completedAt: start.addingTimeInterval(Double(minutes) * 60),
+        position: position ?? ordinal, ordinal: ordinal)
 }
 
 private func session(daysAgo gap: Int = 7, bodyMass: Double? = nil, _ sets: [DoneSet]) -> PastSession {
@@ -47,8 +49,9 @@ private func run(
     _ pending: PendingSet, _ exercise: ExerciseConfig, today: [DoneSet] = [], history: [PastSession] = [],
     bodyMass: Double? = nil
 ) -> Suggestion? {
-    suggest(pending: pending, exercise: exercise, today: today, history: history,
-            bodyMass: bodyMass, now: now, calendar: utc)
+    suggest(
+        pending: pending, exercise: exercise, today: today, history: history,
+        bodyMass: bodyMass, now: now, calendar: utc)
 }
 
 private func grid(_ exercise: ExerciseConfig, bodyMass: Double? = nil) -> LoadGrid {
@@ -72,8 +75,9 @@ private func repsAt(_ load: Double, _ e1RM: Double, _ rpe: Double) -> Int {
 struct SuggestVectorTests {
     // Chest press (machine), stack kg; the owner's screenshot session.
     private let chestSet1 = set(load: 35, reps: 15, target: range(10, 15, rpe: 9.5), ordinal: 1, start: daysAgo(7))
-    private let chestSet2 = set(load: 35, reps: 13, rpe: 9.5, target: range(10, 15, rpe: 9.5), ordinal: 2,
-                                start: daysAgo(7), minutes: 3)
+    private let chestSet2 = set(
+        load: 35, reps: 13, rpe: 9.5, target: range(10, 15, rpe: 9.5), ordinal: 2,
+        start: daysAgo(7), minutes: 3)
 
     @Test("V1. First set from history, top of range reached (load up)")
     func v1() throws {
@@ -88,8 +92,10 @@ struct SuggestVectorTests {
         #expect(close(RPECurve.pInv(40 / e), 12.395604))
         #expect(repsAt(40, e, 9.5) == 11)
 
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(10, 15, rpe: 9.5)), stackKg,
-                                 history: [session([chestSet1])]))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(10, 15, rpe: 9.5)), stackKg,
+                history: [session([chestSet1])]))
         #expect(s.load == 40)
         #expect(s.reps == 11)
         #expect(!s.stop)
@@ -104,8 +110,10 @@ struct SuggestVectorTests {
         #expect(close(e, 54.6875))
         #expect(repsAt(35, e, 9.5) == 13)
 
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 2, target: range(10, 15, rpe: 9.5)), stackKg,
-                                 history: [session([chestSet1, chestSet2])]))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 2, target: range(10, 15, rpe: 9.5)), stackKg,
+                history: [session([chestSet1, chestSet2])]))
         #expect(s.load == 35)
         #expect(s.reps == 14)
         #expect(!s.stop)
@@ -120,8 +128,10 @@ struct SuggestVectorTests {
         #expect(repsAt(60, e, 8) == 11)
 
         let today = [set(load: 60, reps: 10, rpe: 7, target: range(8, 12, rpe: 8), ordinal: 1)]
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 2, target: range(8, 12, rpe: 8)), barbellKg,
-                                 today: today))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 2, target: range(8, 12, rpe: 8)), barbellKg,
+                today: today))
         #expect(s.load == 60)
         #expect(s.reps == 11)
         #expect(!s.stop)
@@ -144,8 +154,10 @@ struct SuggestVectorTests {
         #expect(close(RPECurve.pInv(65 / e), 14.243590))
 
         let today = [set(load: 60, reps: 12, rpe: 6, target: range(8, 12, rpe: 8), ordinal: 1)]
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 2, target: range(8, 12, rpe: 8)), barbellKg,
-                                 today: today))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 2, target: range(8, 12, rpe: 8)), barbellKg,
+                today: today))
         #expect(s.load == 65)
         #expect(s.reps == 12)
         #expect(!s.stop)
@@ -164,8 +176,10 @@ struct SuggestVectorTests {
         #expect(close(RPECurve.pInv(92.5 / e), 7.527885))
 
         let today = [set(load: 100, reps: 5, rpe: 9.5, target: range(5, 5, rpe: 8), ordinal: 1)]
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 2, target: range(5, 5, rpe: 8)), barbellKg,
-                                 today: today))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 2, target: range(5, 5, rpe: 8)), barbellKg,
+                today: today))
         #expect(s.load == 92.5)
         #expect(s.reps == 5)
         #expect(!s.stop)
@@ -180,8 +194,10 @@ struct SuggestVectorTests {
         #expect(repsAt(60, e, 8) == 8)
 
         let today = [set(load: 60, reps: 10, rpe: 9, target: range(8, 12, rpe: 8), ordinal: 1)]
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 2, target: range(8, 12, rpe: 8)), barbellKg,
-                                 today: today))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 2, target: range(8, 12, rpe: 8)), barbellKg,
+                today: today))
         #expect(s.load == 60)
         #expect(s.reps == 8)
         #expect(!s.stop)
@@ -202,8 +218,10 @@ struct SuggestVectorTests {
         #expect(close(35 / e, 0.732375))
         #expect(close(RPECurve.pInv(35 / e), 10.207031))
 
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 8)), barbellKg,
-                                 history: [session([last])]))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 8)), barbellKg,
+                history: [session([last])]))
         #expect(s.load == 35)
         #expect(s.reps == 8)
         #expect(!s.stop)
@@ -215,14 +233,17 @@ struct SuggestVectorTests {
     func v8() throws {
         let start = daysAgo(7)
         let warmup = set(.warmup, load: 25, reps: 15, rpe: 6, ordinal: 1, position: 0, start: start)
-        let working = set(load: 35, reps: 15, target: range(10, 15, rpe: 9.5), ordinal: 1, position: 1,
-                          start: start, minutes: 3)
+        let working = set(
+            load: 35, reps: 15, target: range(10, 15, rpe: 9.5), ordinal: 1, position: 1,
+            start: start, minutes: 3)
         let history = [session([warmup, working])]
 
         // 8a. The warm-ups are not W and not ordinal 1.
         let todayWarmup = set(.warmup, load: 25, reps: 15, rpe: 6, ordinal: 1, position: 0)
-        let a = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(10, 15, rpe: 9.5)), stackKg,
-                                 today: [todayWarmup], history: history))
+        let a = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(10, 15, rpe: 9.5)), stackKg,
+                today: [todayWarmup], history: history))
         #expect(a.load == 40)
         #expect(a.reps == 11)
         #expect(!a.stop)
@@ -242,7 +263,8 @@ struct SuggestVectorTests {
     private let activation = set(.myoActivation, load: 25, reps: 17, rpe: 9, ordinal: 1)
 
     private func mini(_ done: [Int], head: DoneSet? = nil) -> Suggestion? {
-        run(PendingSet(kind: .myoMini, ordinal: 1, parent: head ?? activation, miniSetsDone: done), stackKg,
+        run(
+            PendingSet(kind: .myoMini, ordinal: 1, parent: head ?? activation, miniSetsDone: done), stackKg,
             today: [head ?? activation])
     }
 
@@ -303,8 +325,10 @@ struct SuggestVectorTests {
         // 10b. A second drop after 25.
         let first = set(.drop, load: 25, reps: 6, ordinal: 1, position: 2, minutes: 1)
         #expect(grid(stackKg).floor(25 * 0.8) == 20)
-        let b = try #require(run(PendingSet(kind: .drop, ordinal: 1, parent: first), stackKg,
-                                 today: [parent, first]))
+        let b = try #require(
+            run(
+                PendingSet(kind: .drop, ordinal: 1, parent: first), stackKg,
+                today: [parent, first]))
         #expect(b.load == 20)
         #expect(b.reps == nil)
         #expect(!b.stop)
@@ -315,10 +339,12 @@ struct SuggestVectorTests {
     // Plank: a `duration` exercise, so no load (DESIGN §5.2); no duration range, no RPE.
     private let plank = ExerciseConfig(unit: .kg, mode: .none)
     private var plankHistory: [PastSession] {
-        [session([
-            set(.timed, load: nil, duration: 62, ordinal: 1, start: daysAgo(7)),
-            set(.timed, load: nil, duration: 53, ordinal: 2, start: daysAgo(7), minutes: 2),
-        ])]
+        [
+            session([
+                set(.timed, load: nil, duration: 62, ordinal: 1, start: daysAgo(7)),
+                set(.timed, load: nil, duration: 53, ordinal: 2, start: daysAgo(7), minutes: 2),
+            ])
+        ]
     }
 
     @Test("V11. Timed set")
@@ -348,8 +374,9 @@ struct SuggestVectorTests {
 
     @Test("V12. Bodyweight with added load")
     func v12() throws {
-        let pullUp = ExerciseConfig(unit: .kg, mode: .bodyweightAdded, bodyShare: 1.0, base: 0, step: 2.5,
-                                    canAddLoad: true)
+        let pullUp = ExerciseConfig(
+            unit: .kg, mode: .bodyweightAdded, bodyShare: 1.0, base: 0, step: 2.5,
+            canAddLoad: true)
         let last = set(load: 0, reps: 10, rpe: 9, target: range(6, 10, rpe: 9), ordinal: 1, start: daysAgo(7))
         let e = e1RM(last, pullUp, bodyMass: 80)
         #expect(exercise(pullUp, effectiveLoadOf: last, bodyMass: 80) == 80)
@@ -359,8 +386,10 @@ struct SuggestVectorTests {
         #expect(close(82.5 / e, 0.729094))
         #expect(close(RPECurve.pInv(82.5 / e), 10.309570))
 
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(6, 10, rpe: 9)), pullUp,
-                                 history: [session(bodyMass: 80, [last])], bodyMass: 80))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(6, 10, rpe: 9)), pullUp,
+                history: [session(bodyMass: 80, [last])], bodyMass: 80))
         #expect(s.load == 2.5)
         #expect(s.reps == 9)
         #expect(!s.stop)
@@ -380,8 +409,10 @@ struct SuggestVectorTests {
         #expect(close(55 / e, 0.688600))
         #expect(close(RPECurve.pInv(55 / e), 11.692857))
 
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 8)), assisted,
-                                 history: [session(bodyMass: 80, [last])], bodyMass: 80))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 8)), assisted,
+                history: [session(bodyMass: 80, [last])], bodyMass: 80))
         #expect(s.load == 25)
         #expect(s.reps == 9)
         #expect(!s.stop)
@@ -391,9 +422,14 @@ struct SuggestVectorTests {
 
     @Test("V14a. No history, the routine gives a load")
     func v14a() throws {
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: Target03(repsMin: 8, repsMax: 12,
-                                                                                         rpe: 8, load: 50)),
-                                 barbellKg))
+        let s = try #require(
+            run(
+                PendingSet(
+                    kind: .normal, ordinal: 1,
+                    target: Target03(
+                        repsMin: 8, repsMax: 12,
+                        rpe: 8, load: 50)),
+                barbellKg))
         #expect(s.load == 50)
         #expect(s.reps == 8)
         #expect(!s.stop)
@@ -415,8 +451,9 @@ struct SuggestVectorTests {
     func v15() throws {
         #expect(close(83.9146 / 0.45359237, 185.0000255, 1e-6))
         #expect(SuggestMath.convert(83.9146, from: .kg, to: .lb) == 185)
-        let last = set(load: 83.9146, reps: 8, rpe: 8, target: range(6, 8, rpe: 8), ordinal: 1, unit: .kg,
-                       start: daysAgo(7))
+        let last = set(
+            load: 83.9146, reps: 8, rpe: 8, target: range(6, 8, rpe: 8), ordinal: 1, unit: .kg,
+            start: daysAgo(7))
         let e = e1RM(last, barbellLb)
         #expect(close(e, 250.338295))
         #expect(repsAt(185, e, 8) == 8)
@@ -424,8 +461,10 @@ struct SuggestVectorTests {
         #expect(close(190 / e, 0.758973))
         #expect(close(RPECurve.pInv(190 / e), 9.137592))
 
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(6, 8, rpe: 8)), barbellLb,
-                                 history: [session([last])]))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(6, 8, rpe: 8)), barbellLb,
+                history: [session([last])]))
         #expect(s.load == 190)
         #expect(s.reps == 7)
         #expect(!s.stop)
@@ -442,8 +481,10 @@ struct SuggestVectorTests {
         #expect(close(RPECurve.pInv(60 / e), 10.725329))
         #expect(repsAt(60, e, 8) == 8)
 
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 8)), barbellKg,
-                                 history: [session(daysAgo: 45, [last])]))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 8)), barbellKg,
+                history: [session(daysAgo: 45, [last])]))
         #expect(s.load == 60)
         #expect(s.reps == 8)
         #expect(!s.stop)
@@ -461,8 +502,10 @@ struct SuggestVectorTests {
         #expect(close(80 / e, 0.648800))
         #expect(close(RPECurve.pInv(80 / e), 13.161538))
 
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(10, 12, rpe: 8)), barbellKg,
-                                 history: [session([last])]))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(10, 12, rpe: 8)), barbellKg,
+                history: [session([last])]))
         #expect(s.load == 80)
         #expect(s.reps == 11)
         #expect(!s.stop)
@@ -472,15 +515,18 @@ struct SuggestVectorTests {
 
     @Test("V18. Unilateral")
     func v18() throws {
-        let last = set(load: 20, rpe: 8, target: range(8, 12, rpe: 8), ordinal: 1, left: 10, right: 9,
-                       start: daysAgo(7))
+        let last = set(
+            load: 20, rpe: 8, target: range(8, 12, rpe: 8), ordinal: 1, left: 10, right: 9,
+            start: daysAgo(7))
         #expect(last.effectiveReps == 9)
         let e = e1RM(last, dumbbellKg)
         #expect(close(e, 28.288543))
         #expect(repsAt(20, e, 8) == 9)
 
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 8)), dumbbellKg,
-                                 history: [session([last])]))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 8)), dumbbellKg,
+                history: [session([last])]))
         #expect(s.load == 20)
         #expect(s.reps == 10)
         #expect(!s.stop)
@@ -568,8 +614,8 @@ struct SuggestBlockTests {
     func externalGrid() {
         let g = grid(barbellKg)
         #expect(g.floor(62.832168) == 62.5)
-        #expect(g.floor(62.5 - 1e-10) == 62.5) // the 1e-9 snapping tolerance
-        #expect(g.floor(5) == 20)               // below the bar: the lightest point
+        #expect(g.floor(62.5 - 1e-10) == 62.5)  // the 1e-9 snapping tolerance
+        #expect(g.floor(5) == 20)  // below the bar: the lightest point
         #expect(g.next(62.5) == 65)
         #expect(g.next(61) == 62.5)
         #expect(g.prev(62.5) == 60)
@@ -601,7 +647,7 @@ struct SuggestBlockTests {
         let g = grid(ExerciseConfig(unit: .kg, mode: .bodyweightAssisted, step: 5), bodyMass: 80)
         #expect(g.floor(52) == 50)  // assistance 30
         #expect(g.floor(90) == 80)  // no assistance is the heaviest point
-        #expect(g.floor(1) == 5)    // the most assistance that leaves a load
+        #expect(g.floor(1) == 5)  // the most assistance that leaves a load
         #expect(g.next(80) == nil)
         #expect(g.prev(5) == nil)
     }
@@ -647,16 +693,18 @@ struct SuggestBlockTests {
 struct SuggestWorkoutsRuleTests {
     // Leg press (machine), stack kg, as in the coverage session.
     private let legPress = ExerciseConfig(unit: .kg, base: 0, step: 5)
-    private let topSet = set(load: 110, reps: 6, rpe: 8, target: Target03(repsMin: 6, repsMax: 6, rpe: 8, load: 110),
-                             ordinal: 1)
+    private let topSet = set(
+        load: 110, reps: 6, rpe: 8, target: Target03(repsMin: 6, repsMax: 6, rpe: 8, load: 110),
+        ordinal: 1)
 
     @Test("Back-off by a percentage: the coverage session's 110 kg top set gives 95 kg")
     func backoffPercent() throws {
         let e = 110 / RPECurve.p(8)
         #expect(close(e, 139.949109))
         #expect(close(RPECurve.pInv(95 / e), 12.045462))
-        let pending = PendingSet(kind: .normal, ordinal: 2,
-                                 target: Target03(repsMin: 8, repsMax: 10, rpe: 8, dropPercent: 0.10), parent: topSet)
+        let pending = PendingSet(
+            kind: .normal, ordinal: 2,
+            target: Target03(repsMin: 8, repsMax: 10, rpe: 8, dropPercent: 0.10), parent: topSet)
         let s = try #require(run(pending, legPress, today: [topSet]))
         #expect(s.load == 95)
         #expect(s.reps == 10)
@@ -667,11 +715,12 @@ struct SuggestWorkoutsRuleTests {
 
     @Test("Back-off by a step")
     func backoffStep() throws {
-        let pending = PendingSet(kind: .normal, ordinal: 2,
-                                 target: Target03(repsMin: 8, repsMax: 10, rpe: 8, dropStep: 10), parent: topSet)
+        let pending = PendingSet(
+            kind: .normal, ordinal: 2,
+            target: Target03(repsMin: 8, repsMax: 10, rpe: 8, dropStep: 10), parent: topSet)
         let s = try #require(run(pending, legPress, today: [topSet]))
         #expect(s.load == 100)
-        #expect(s.reps == 8) // floor(10.764187 − 2) = 8
+        #expect(s.reps == 8)  // floor(10.764187 − 2) = 8
         #expect(s.reason == .backoff)
         #expect(s.text == "Back-off 10 kg from 110 kg: try 100 kg × 8")
     }
@@ -679,19 +728,21 @@ struct SuggestWorkoutsRuleTests {
     @Test("Back-off reps use 11.2's fatigue allowance and stay in the range")
     func backoffFatigue() throws {
         let top = set(load: 100, reps: 5, rpe: 9.5, ordinal: 1)
-        let pending = PendingSet(kind: .normal, ordinal: 2,
-                                 target: Target03(repsMin: 5, repsMax: 5, rpe: 8, dropPercent: 0.10), parent: top)
+        let pending = PendingSet(
+            kind: .normal, ordinal: 2,
+            target: Target03(repsMin: 5, repsMax: 5, rpe: 8, dropPercent: 0.10), parent: top)
         let s = try #require(run(pending, barbellKg, today: [top]))
         #expect(s.load == 90)
-        #expect(s.reps == 5) // repsAt(90) = 6 with E = 100 / p(5), capped to 5
+        #expect(s.reps == 5)  // repsAt(90) = 6 with E = 100 / p(5), capped to 5
         #expect(s.text == "Back-off 10% from 100 kg: try 90 kg × 5")
     }
 
     @Test("Back-off from the lightest load keeps it")
     func backoffAtMinimum() throws {
         let top = set(load: 5, reps: 10, rpe: 8, ordinal: 1)
-        let pending = PendingSet(kind: .normal, ordinal: 2,
-                                 target: Target03(repsMin: 8, repsMax: 12, rpe: 8, dropPercent: 0.20), parent: top)
+        let pending = PendingSet(
+            kind: .normal, ordinal: 2,
+            target: Target03(repsMin: 8, repsMax: 12, rpe: 8, dropPercent: 0.20), parent: top)
         let s = try #require(run(pending, legPress, today: [top]))
         #expect(s.load == 5)
         #expect(s.reason == .backoff)
@@ -699,8 +750,9 @@ struct SuggestWorkoutsRuleTests {
 
     @Test("A back-off row whose top set is not done follows 03's rules")
     func backoffWithoutParent() throws {
-        let pending = PendingSet(kind: .normal, ordinal: 2,
-                                 target: Target03(repsMin: 8, repsMax: 10, rpe: 8, dropPercent: 0.10))
+        let pending = PendingSet(
+            kind: .normal, ordinal: 2,
+            target: Target03(repsMin: 8, repsMax: 10, rpe: 8, dropPercent: 0.10))
         let s = try #require(run(pending, legPress))
         #expect(s.reason == .coldStartPickLoad)
     }
@@ -712,7 +764,8 @@ struct SuggestWorkoutsRuleTests {
     private func restPauseMini(_ done: [Int], target: Target03 = Target03(), exercise: ExerciseConfig? = nil)
         -> Suggestion?
     {
-        run(PendingSet(kind: .myoMini, ordinal: 1, target: target, parent: restPauseHead, miniSetsDone: done),
+        run(
+            PendingSet(kind: .myoMini, ordinal: 1, target: target, parent: restPauseHead, miniSetsDone: done),
             exercise ?? restPause, today: [restPauseHead])
     }
 
@@ -731,8 +784,11 @@ struct SuggestWorkoutsRuleTests {
         let second = try #require(restPauseMini([4]))
         #expect(!second.stop)
         #expect(second.text == "Mini-set 2: 45 kg")
-        let lostRep = try #require(restPauseMini([4, 2], exercise: ExerciseConfig(
-            unit: .kg, base: 0, step: 5, myoMaxMiniSets: 3, myoStopRule: nil)))
+        let lostRep = try #require(
+            restPauseMini(
+                [4, 2],
+                exercise: ExerciseConfig(
+                    unit: .kg, base: 0, step: 5, myoMaxMiniSets: 3, myoStopRule: nil)))
         #expect(!lostRep.stop)
         let capped = try #require(restPauseMini([4, 2]))
         #expect(capped.stop)
@@ -756,8 +812,10 @@ struct SuggestWorkoutsRuleTests {
         let hipThrust = ExerciseConfig(unit: .kg, base: 20, step: 2.5, myoMaxMiniSets: 3, myoStopRule: nil)
         let head = set(load: 80, reps: 3, rpe: 8, ordinal: 1)
         func cluster(_ done: [Int]) -> Suggestion? {
-            run(PendingSet(kind: .myoMini, ordinal: 1, target: Target03(repsMin: 3, repsMax: 3, myoMiniReps: 3),
-                           parent: head, miniSetsDone: done), hipThrust, today: [head])
+            run(
+                PendingSet(
+                    kind: .myoMini, ordinal: 1, target: Target03(repsMin: 3, repsMax: 3, myoMiniReps: 3),
+                    parent: head, miniSetsDone: done), hipThrust, today: [head])
         }
         let first = try #require(cluster([]))
         #expect(first.load == 80)
@@ -777,11 +835,13 @@ struct SuggestWorkoutsRuleTests {
         let head = set(.myoActivation, load: 40, reps: 12, rpe: 9, ordinal: 2)
         // The slot's previous working set did 20, so T = 20 and the mini-sets owe 8.
         func match(_ done: [Int]) -> Suggestion? {
-            run(PendingSet(kind: .myoMini, ordinal: 2, target: Target03(myoTotalReps: 20 - 12), parent: head,
-                           miniSetsDone: done), curl, today: [head])
+            run(
+                PendingSet(
+                    kind: .myoMini, ordinal: 2, target: Target03(myoTotalReps: 20 - 12), parent: head,
+                    miniSetsDone: done), curl, today: [head])
         }
         let first = try #require(match([]))
-        #expect(first.reps == 3) // t1 = round(12 / 4)
+        #expect(first.reps == 3)  // t1 = round(12 / 4)
         #expect(first.text == "Mini-set 1: 40 kg × 3")
         let third = try #require(match([3, 3]))
         #expect(third.reps == 2)
@@ -809,8 +869,10 @@ struct SuggestWorkoutsRuleTests {
     @Test("No grid: in session, the load stays and the reps move, uncapped")
     func noGridInSession() throws {
         let today = [set(load: 10, reps: 15, rpe: 6, ordinal: 1)]
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 2, target: range(8, 12, rpe: 8)), band,
-                                 today: today))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 2, target: range(8, 12, rpe: 8)), band,
+                today: today))
         #expect(s.load == 10)
         #expect(s.reps == 17)
         #expect(s.reason == .sessionKeep)
@@ -820,8 +882,10 @@ struct SuggestWorkoutsRuleTests {
     @Test("No grid: from history, the load stays and the reps follow the goal")
     func noGridHistory() throws {
         let last = set(load: 10, reps: 7, rpe: 10, target: range(8, 12, rpe: 8), ordinal: 1, start: daysAgo(7))
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 8)), band,
-                                 history: [session([last])]))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 8)), band,
+                history: [session([last])]))
         #expect(s.load == 10)
         #expect(s.reps == 6)
         #expect(s.reason == .historyAddRep)
@@ -830,8 +894,11 @@ struct SuggestWorkoutsRuleTests {
 
     @Test("No grid: the routine load is kept as written, and a drop leaves the lighter load to the owner")
     func noGridColdStartAndDrop() throws {
-        let cold = try #require(run(PendingSet(kind: .normal, ordinal: 1,
-                                               target: Target03(repsMin: 8, repsMax: 12, rpe: 8, load: 12.3)), band))
+        let cold = try #require(
+            run(
+                PendingSet(
+                    kind: .normal, ordinal: 1,
+                    target: Target03(repsMin: 8, repsMax: 12, rpe: 8, load: 12.3)), band))
         #expect(cold.load == 12.3)
         #expect(cold.text == "First time; routine load, try 12.3 kg × 8")
         // the app cannot know a band's lighter setting, so the drop is not
@@ -842,8 +909,11 @@ struct SuggestWorkoutsRuleTests {
         #expect(drop.reason == .drop)
         #expect(drop.load == nil && drop.reps == nil)
         #expect(drop.text == "Drop from 10 kg: a lighter load, to failure")
-        let withReps = try #require(run(PendingSet(kind: .drop, ordinal: 1, target: Target03(repsMin: 8, repsMax: 8),
-                                                   parent: parent), band, today: [parent]))
+        let withReps = try #require(
+            run(
+                PendingSet(
+                    kind: .drop, ordinal: 1, target: Target03(repsMin: 8, repsMax: 8),
+                    parent: parent), band, today: [parent]))
         #expect(withReps.reps == 8)
         #expect(withReps.text == "Drop from 10 kg: a lighter load, 8 reps")
     }
@@ -851,12 +921,18 @@ struct SuggestWorkoutsRuleTests {
     @Test("A drop by a planned step, and a drop with planned reps")
     func dropStepAndReps() throws {
         let parent = set(load: 35, reps: 8, rpe: 10, ordinal: 1)
-        let byStep = try #require(run(PendingSet(kind: .drop, ordinal: 1, target: Target03(dropStep: 10),
-                                                 parent: parent), stackKg, today: [parent]))
+        let byStep = try #require(
+            run(
+                PendingSet(
+                    kind: .drop, ordinal: 1, target: Target03(dropStep: 10),
+                    parent: parent), stackKg, today: [parent]))
         #expect(byStep.load == 25)
         #expect(byStep.text == "Drop 10 kg from 35 kg: 25 kg to failure")
-        let withReps = try #require(run(PendingSet(kind: .drop, ordinal: 1, target: Target03(repsMin: 8, repsMax: 8),
-                                                   parent: parent), stackKg, today: [parent]))
+        let withReps = try #require(
+            run(
+                PendingSet(
+                    kind: .drop, ordinal: 1, target: Target03(repsMin: 8, repsMax: 8),
+                    parent: parent), stackKg, today: [parent]))
         #expect(withReps.reps == 8)
         #expect(withReps.text == "Drop 20% from 35 kg: 25 kg × 8")
     }
@@ -885,8 +961,10 @@ struct SuggestWorkoutsRuleTests {
     func repsOnly() throws {
         let dip = ExerciseConfig(unit: .kg, mode: .bodyweightAdded, step: 2.5)
         let last = set(load: 0, reps: 12, rpe: 8, target: range(6, 10, rpe: 8), ordinal: 1, start: daysAgo(7))
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(6, 10, rpe: 8)), dip,
-                                 history: [session([last])]))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(6, 10, rpe: 8)), dip,
+                history: [session([last])]))
         // goal = floor(12 + 8 − 8) + 1 = 13 > 10: one step more added load, at the bottom of the range.
         #expect(s.load == 2.5)
         #expect(s.reps == 6)
@@ -898,8 +976,10 @@ struct SuggestWorkoutsRuleTests {
     func pushUp() throws {
         let pushUp = ExerciseConfig(unit: .kg, mode: .bodyweightAdded, bodyShare: 0.64, canAddLoad: false)
         let last = set(load: nil, reps: 14, rpe: 9, target: range(8, 12, rpe: 9), ordinal: 1, start: daysAgo(3))
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 9)), pushUp,
-                                 history: [session(daysAgo: 3, [last])], bodyMass: 82.4))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 9)), pushUp,
+                history: [session(daysAgo: 3, [last])], bodyMass: 82.4))
         #expect(s.load == 0)
         #expect(s.reps == 15)
         #expect(s.reason == .historyAddRep)
@@ -909,8 +989,10 @@ struct SuggestWorkoutsRuleTests {
     @Test("Plain bodyweight with no history: nothing to pick")
     func plainBodyweightColdStart() throws {
         let pushUp = ExerciseConfig(unit: .kg, mode: .bodyweightAdded, canAddLoad: false)
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 9)), pushUp,
-                                 bodyMass: 80))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: range(8, 12, rpe: 9)), pushUp,
+                bodyMass: 80))
         #expect(s.load == 0)
         #expect(s.reps == 8)
         #expect(s.text == "First time; try BW × 8")
@@ -920,9 +1002,14 @@ struct SuggestWorkoutsRuleTests {
     func timedLoadUp() throws {
         let weightedPlank = ExerciseConfig(unit: .kg, base: 0, step: 5)
         let last = set(.timed, load: 10, duration: 90, ordinal: 1, start: daysAgo(7))
-        let s = try #require(run(PendingSet(kind: .timed, ordinal: 1, target: Target03(durationMin: 45,
-                                                                                      durationMax: 90)),
-                                 weightedPlank, history: [session([last])]))
+        let s = try #require(
+            run(
+                PendingSet(
+                    kind: .timed, ordinal: 1,
+                    target: Target03(
+                        durationMin: 45,
+                        durationMax: 90)),
+                weightedPlank, history: [session([last])]))
         #expect(s.load == 15)
         #expect(s.duration == 45)
         #expect(s.reason == .timedLoadUp)
@@ -938,8 +1025,10 @@ struct SuggestWorkoutsRuleTests {
         #expect(s.text == "First time: hold for 0:45")
         // Set 1 held longer, so the cap changes nothing.
         let today = [set(.timed, load: nil, duration: 62, ordinal: 1)]
-        let second = try #require(run(PendingSet(kind: .timed, ordinal: 2, target: Target03(durationMin: 45)), plank,
-                                      today: today))
+        let second = try #require(
+            run(
+                PendingSet(kind: .timed, ordinal: 2, target: Target03(durationMin: 45)), plank,
+                today: today))
         #expect(second.reason == .timedColdStart)
         let open = try #require(run(PendingSet(kind: .timed, ordinal: 1), plank))
         #expect(open.duration == nil)
@@ -960,17 +1049,20 @@ struct SuggestWorkoutsRuleTests {
             session(daysAgo: gap, [set(load: 35, reps: 12, rpe: 8, target: target, ordinal: 1, start: daysAgo(gap))])
         }
         let typo = set(load: 350, reps: 12, rpe: 8, target: target, ordinal: 1)
-        let check = checkPlausibility(of: typo, exercise: stackKg, bodyMass: nil, history: history, now: now,
-                                      calendar: utc)
+        let check = checkPlausibility(
+            of: typo, exercise: stackKg, bodyMass: nil, history: history, now: now,
+            calendar: utc)
         #expect(!check.isPlausible)
         #expect(close(check.median ?? 0, 55.910543))
         #expect(check.accepts(35 / RPECurve.p(14)))
-        let fine = checkPlausibility(of: set(load: 40, reps: 10, rpe: 8, ordinal: 1), exercise: stackKg,
-                                     bodyMass: nil, history: history, now: now, calendar: utc)
+        let fine = checkPlausibility(
+            of: set(load: 40, reps: 10, rpe: 8, ordinal: 1), exercise: stackKg,
+            bodyMass: nil, history: history, now: now, calendar: utc)
         #expect(fine.isPlausible)
         // Fewer than three sessions: everything is plausible.
-        let early = checkPlausibility(of: typo, exercise: stackKg, bodyMass: nil, history: Array(history.prefix(2)),
-                                      now: now, calendar: utc)
+        let early = checkPlausibility(
+            of: typo, exercise: stackKg, bodyMass: nil, history: Array(history.prefix(2)),
+            now: now, calendar: utc)
         #expect(early.median == nil)
         #expect(early.isPlausible)
     }
@@ -987,8 +1079,8 @@ struct SuggestBranchTests {
         let e = 60 / RPECurve.p(19)
         let g = grid(barbellKg)
         #expect(close(e, 111.736060))
-        #expect(g.next(g.floor(e * RPECurve.p(15))) == 67.5) // the uncapped load
-        #expect(max(62.5, g.floor(1.10 * 60)) == 65)        // the cap
+        #expect(g.next(g.floor(e * RPECurve.p(15))) == 67.5)  // the uncapped load
+        #expect(max(62.5, g.floor(1.10 * 60)) == 65)  // the cap
         let today = [set(load: 60, reps: 15, rpe: 6, target: target, ordinal: 1)]
         let s = try #require(run(PendingSet(kind: .normal, ordinal: 2, target: target), barbellKg, today: today))
         #expect(s.load == 65)
@@ -1019,8 +1111,10 @@ struct SuggestBranchTests {
         #expect(session1.text == "Set 1: 100 kg × 15 at RPE 7, at the heaviest load; try 100 kg × 12")
 
         let last = set(load: 100, reps: 12, rpe: 8, target: target, ordinal: 1, start: daysAgo(7))
-        let fromHistory = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: target), capped,
-                                           history: [session([last])]))
+        let fromHistory = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: target), capped,
+                history: [session([last])]))
         #expect(fromHistory.load == 100)
         #expect(fromHistory.reps == 12)
         #expect(fromHistory.reason == .historyAtMax)
@@ -1033,8 +1127,10 @@ struct SuggestBranchTests {
         let e = e1RM(last, barbellKg) * 0.90
         #expect(close(e, 79.411765))
         #expect(repsAt(60, e, 8) == 7)
-        let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: target), barbellKg,
-                                 history: [session(daysAgo: 100, [last])]))
+        let s = try #require(
+            run(
+                PendingSet(kind: .normal, ordinal: 1, target: target), barbellKg,
+                history: [session(daysAgo: 100, [last])]))
         #expect(s.load == 57.5)
         #expect(s.reps == 8)
         #expect(s.reason == .historyLoadDown)

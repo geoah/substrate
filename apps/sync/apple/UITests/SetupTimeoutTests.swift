@@ -11,7 +11,7 @@ final class SetupTimeoutTests: XCTestCase {
     func testATimedOutInstallStopsSpinningAndTheNextCheckFindsIt() throws {
         let env = ProcessInfo.processInfo.environment
         guard let server = env["SYNC_SLOW_SERVER"], let repository = env["SYNC_E2E_REPOSITORY"],
-              let password = env["SYNC_E2E_PASSWORD"]
+            let password = env["SYNC_E2E_PASSWORD"]
         else { throw XCTSkip("SYNC_SLOW_SERVER, SYNC_E2E_REPOSITORY and SYNC_E2E_PASSWORD name the server") }
         let holds = Double(env["SYNC_SLOW_SECONDS"] ?? "8") ?? 8
 

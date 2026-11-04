@@ -1,8 +1,7 @@
 import Foundation
+import SubstrateTesting
 import Testing
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
+
 @testable import SubstrateAPI
 @testable import SubstrateAuth
 @testable import SubstrateCore
@@ -10,17 +9,21 @@ import FoundationNetworking
 @testable import SubstrateDeviceApple
 @testable import SubstrateKit
 @testable import SubstrateUI
-import SubstrateTesting
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// The cases internal/domains/record_test.go holds the server's parser to,
 /// so the app reads one record as the server does.
 @Suite(.timeLimit(.minutes(10))) struct DomainRecords {
     @Test func readsTheKeysItKnowsAndKeepsTheRest() throws {
-        let record = try #require(try DomainRecord.parse([
-            "google-site-verification=abc",
-            "v=substrate1 server=https://Substrate.Example.com/ proof=k3j9x2 doc=https://cdn.example.net/a.json sha256="
-                + "9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08 future=yes",
-        ]))
+        let record = try #require(
+            try DomainRecord.parse([
+                "google-site-verification=abc",
+                "v=substrate1 server=https://Substrate.Example.com/ proof=k3j9x2 doc=https://cdn.example.net/a.json sha256="
+                    + "9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08 future=yes",
+            ]))
         #expect(record.server == "https://substrate.example.com")
         #expect(record.proof == "k3j9x2")
         #expect(record.doc == "https://cdn.example.net/a.json")
@@ -219,7 +222,9 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     /// person reads, and it says which of the two answers disagreed.
     @Test func anUnconfirmedNegativeWithNoParentStandsAsTheLookupFailure() async throws {
         let transport = HostTransport()
-        let resolver = TableResolver(answer: .unconfirmedAbsent("Looking up _substrate.ada.example.com gave two answers: the system said there is no record and the DNS servers returned one."))
+        let resolver = TableResolver(
+            answer: .unconfirmedAbsent(
+                "Looking up _substrate.ada.example.com gave two answers: the system said there is no record and the DNS servers returned one."))
         do {
             _ = try await locator(transport, resolver).locate("ada.example.com", requirement: requirement, app: "App")
             Issue.record("an unconfirmed lookup with no parent server found one")
@@ -258,11 +263,12 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
         #expect(found.origin.absoluteString == "https://substrate.example.org")
         #expect(found.repository == "alice.substrate.example.org")
         #expect(resolver.asked == ["_substrate.alice.substrate.example.org"])
-        #expect(transport.requested.prefix(3) == [
-            "alice.substrate.example.org/.well-known/substrate/server.json",
-            "alice.substrate.example.org\(ServerLocator.repositoryDocumentPath)",
-            "substrate.example.org/.well-known/substrate/server.json",
-        ])
+        #expect(
+            transport.requested.prefix(3) == [
+                "alice.substrate.example.org/.well-known/substrate/server.json",
+                "alice.substrate.example.org\(ServerLocator.repositoryDocumentPath)",
+                "substrate.example.org/.well-known/substrate/server.json",
+            ])
     }
 
     @Test func nothingFoundSaysWhereItLooked() async throws {
@@ -311,8 +317,10 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
 
     /// An address with another scheme, a port or a path is a server or nothing.
     @Test func anAddressIsNeverReadAsAName() async throws {
-        for typed in ["http://ada.example.com", "https://ada.example.com:8443", "ada.example.com:8443", "ada.example.com/x",
-                      "https://ada.example.com/x", "127.0.0.1", "localhost"] {
+        for typed in [
+            "http://ada.example.com", "https://ada.example.com:8443", "ada.example.com:8443", "ada.example.com/x",
+            "https://ada.example.com/x", "127.0.0.1", "localhost",
+        ] {
             let resolver = TableResolver(["_substrate.ada.example.com": ["v=substrate1 server=https://substrate.example.org"]])
             await #expect(throws: ServerProbe.NotASubstrate.self, "\(typed)") {
                 try await locator(HostTransport().substrate("substrate.example.org"), resolver)
@@ -325,8 +333,10 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     @Test func namesAndParents() {
         #expect(ServerLocator.repositoryName(" Ada.Example.com. ") == "ada.example.com")
         #expect(ServerLocator.repositoryName("https://ada.example.com/") == "ada.example.com")
-        for typed in ["http://ada.example.com", "https://ada.example.com:443", "https://user@ada.example.com", "https://ada.example.com/x",
-                      "ada.example.com:443", "ada", "localhost", "10.0.0.1", "a..b", "ada@example.com"] {
+        for typed in [
+            "http://ada.example.com", "https://ada.example.com:443", "https://user@ada.example.com", "https://ada.example.com/x",
+            "ada.example.com:443", "ada", "localhost", "10.0.0.1", "a..b", "ada@example.com",
+        ] {
             #expect(ServerLocator.repositoryName(typed) == nil, "\(typed)")
         }
         #expect(ServerLocator.parent(of: "alice.substrate.example.org") == "substrate.example.org")
@@ -339,17 +349,20 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
 
     @Test func aReleaseClaimsItsRedirectAndALocalBuildDoesNot() {
         #expect(AppManifest.claimedRedirect("https://substrate.example.org/apps/workouts/callback") == redirect)
-        for text in ["", "http://substrate.example.org/apps/workouts/callback", "https://substrate.example.org",
-                     "https://substrate.example.org/", "https://substrate.example.org/cb?x=1", "dev.reamde.substrate:/cb"]
-        {
+        for text in [
+            "", "http://substrate.example.org/apps/workouts/callback", "https://substrate.example.org",
+            "https://substrate.example.org/", "https://substrate.example.org/cb?x=1", "dev.reamde.substrate:/cb",
+        ] {
             #expect(AppManifest.claimedRedirect(text) == nil, "\(text)")
         }
-        let release = AppManifest(appName: "Workouts", clientID: "https://substrate.example.org/apps/workouts/client.json",
-                                  scopes: [], claimedRedirect: redirect)
+        let release = AppManifest(
+            appName: "Workouts", clientID: "https://substrate.example.org/apps/workouts/client.json",
+            scopes: [], claimedRedirect: redirect)
         #expect(release.signInRedirect == redirect)
         // A loopback client id has no document to list the redirect in.
-        let local = AppManifest(appName: "Workouts", clientID: "http://127.0.0.1/substrate-workouts", scopes: [],
-                                claimedRedirect: redirect)
+        let local = AppManifest(
+            appName: "Workouts", clientID: "http://127.0.0.1/substrate-workouts", scopes: [],
+            claimedRedirect: redirect)
         #expect(local.signInRedirect == nil)
     }
 
@@ -357,11 +370,12 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     @Test func theCallbackIsReadOnlyFromTheClaimedAddress() throws {
         let back = try #require(URL(string: "https://substrate.example.org/apps/workouts/callback?code=c&state=s&iss=https%3A%2F%2Fada.example.com"))
         #expect(try WebAuthenticator.query(back, redirect: redirect) == ["code": "c", "state": "s", "iss": "https://ada.example.com"])
-        for other in ["https://evil.example.com/apps/workouts/callback?code=c",
-                      "https://substrate.example.org/apps/chat/callback?code=c",
-                      "http://substrate.example.org/apps/workouts/callback?code=c",
-                      "https://substrate.example.org:8443/apps/workouts/callback?code=c"]
-        {
+        for other in [
+            "https://evil.example.com/apps/workouts/callback?code=c",
+            "https://substrate.example.org/apps/chat/callback?code=c",
+            "http://substrate.example.org/apps/workouts/callback?code=c",
+            "https://substrate.example.org:8443/apps/workouts/callback?code=c",
+        ] {
             #expect(throws: OAuthRefusal.self, "\(other)") { try WebAuthenticator.query(URL(string: other)!, redirect: redirect) }
         }
     }
@@ -371,10 +385,12 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     @Test func theAuthorizeURLHintsTheRepository() throws {
         let meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(metadataJSON().utf8))
         let oauth = OAuthClient(manifest: syncManifest(), metadata: meta)
-        let url = try oauth.authorizeURL(redirect: redirect.absoluteString, pkce: PKCE(verifier: "v"), state: "s",
-                                         loginHint: "ada.example.com")
-        let items = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [])
-            .map { ($0.name, $0.value ?? "") })
+        let url = try oauth.authorizeURL(
+            redirect: redirect.absoluteString, pkce: PKCE(verifier: "v"), state: "s",
+            loginHint: "ada.example.com")
+        let items = Dictionary(
+            uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [])
+                .map { ($0.name, $0.value ?? "") })
         #expect(items["login_hint"] == "ada.example.com")
         #expect(items["redirect_uri"] == redirect.absoluteString)
         let bare = try oauth.authorizeURL(redirect: redirect.absoluteString, pkce: PKCE(verifier: "v"), state: "s")
@@ -387,10 +403,13 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     @Test func aRejectedTokenWhoseRevocationFailsIsKeptToRevoke() async throws {
         let server = try #require(URL(string: "https://ada.example.com"))
         let meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(metadataJSON().utf8))
-        let token = try JSONDecoder().decode(TokenResponse.self, from: Data(
-            #"{"access_token":"sub_app_bob","scope":"read:*","repository":"bob.example.com"}"#.utf8))
-        let session = Session(server: server, token: token, clientID: "https://sync.substrate.example.com/client.json",
-                              revocation: nil, now: Date())
+        let token = try JSONDecoder().decode(
+            TokenResponse.self,
+            from: Data(
+                #"{"access_token":"sub_app_bob","scope":"read:*","repository":"bob.example.com"}"#.utf8))
+        let session = Session(
+            server: server, token: token, clientID: "https://sync.substrate.example.com/client.json",
+            revocation: nil, now: Date())
         let mismatch = try #require(RepositoryMismatch(resolved: "ada.example.com", token: session.repository, server: server))
 
         let failing = StubTransport().on("POST", "/oauth/revoke", status: 503, json: "")

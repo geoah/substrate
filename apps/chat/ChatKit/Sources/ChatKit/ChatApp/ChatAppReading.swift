@@ -104,16 +104,18 @@ extension ChatAppState {
     }
 
     var plan: ChatAppAsk.Plan {
-        ChatAppAsk.Plan(showAutomated: preferences.showAutomated, canChat: session?.canChat ?? true,
-                        canDecide: session?.canDecide ?? true, canReadProviders: session?.canReadProviders ?? true,
-                        namesThreads: session?.grants != nil)
+        ChatAppAsk.Plan(
+            showAutomated: preferences.showAutomated, canChat: session?.canChat ?? true,
+            canDecide: session?.canDecide ?? true, canReadProviders: session?.canReadProviders ?? true,
+            namesThreads: session?.grants != nil)
     }
 
     var threadIDs: [String] { (chats + automated).map(\.id) }
 
     var cached: CachedState {
-        CachedState(agents: agents, providers: providers.values.sorted { $0.id < $1.id }, threads: chats, automated: automated,
-                    openings: openings, interactions: interactions, requests: requests, seen: seen, notified: notified,
-                    baselined: baselined, lastAgent: lastAgent)
+        CachedState(
+            agents: agents, providers: providers.values.sorted { $0.id < $1.id }, threads: chats, automated: automated,
+            openings: openings, interactions: interactions, requests: requests, seen: seen, notified: notified,
+            baselined: baselined, lastAgent: lastAgent)
     }
 }

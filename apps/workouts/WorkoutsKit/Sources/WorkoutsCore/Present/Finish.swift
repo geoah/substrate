@@ -36,10 +36,11 @@ public struct FinishSummary: Equatable, Sendable {
     /// What Save writes for the policy the summary was made for.
     public var projection: FinishProjection
 
-    public init(title: String, start: Date, end: Date, latestStart: Date?, earliestEnd: Date?, duration: Seconds,
-                durationText: String, rows: [LabelledValue], untickedCount: Int, untickedTitle: String?,
-                untickedMessage: String?, pendingText: String?, savedLine: String, projection: FinishProjection)
-    {
+    public init(
+        title: String, start: Date, end: Date, latestStart: Date?, earliestEnd: Date?, duration: Seconds,
+        durationText: String, rows: [LabelledValue], untickedCount: Int, untickedTitle: String?,
+        untickedMessage: String?, pendingText: String?, savedLine: String, projection: FinishProjection
+    ) {
         self.title = title
         self.start = start
         self.end = end
@@ -115,9 +116,10 @@ public struct FinishProjection: Equatable, Sendable {
     /// Exercises in the session now: the "21" of "9 of 21".
     public var exercisesInSession: Int
 
-    public init(policy: PendingSetPolicy, unticked: UntickedFate, pendingSets: Int, savedSets: Int, markedSets: Int,
-                incompleteSets: Int, workingSets: Int, volume: Mass, exercises: Int, exercisesInSession: Int)
-    {
+    public init(
+        policy: PendingSetPolicy, unticked: UntickedFate, pendingSets: Int, savedSets: Int, markedSets: Int,
+        incompleteSets: Int, workingSets: Int, volume: Mass, exercises: Int, exercisesInSession: Int
+    ) {
         self.policy = policy
         self.unticked = unticked
         self.pendingSets = pendingSets
@@ -135,11 +137,13 @@ public struct FinishProjection: Equatable, Sendable {
 
     /// The Finish event Save sends: this projection's `unticked` with the
     /// sheet's start, end, session RPE and notes.
-    public func event(start: Date, end: Date, sessionRPE: Decimal? = nil, notes: String? = nil,
-                      utcOffset: Int) -> SessionEvent.Finish
-    {
-        SessionEvent.Finish(start: start, end: end, unticked: unticked, sessionRPE: sessionRPE, notes: notes,
-                            utcOffset: utcOffset)
+    public func event(
+        start: Date, end: Date, sessionRPE: Decimal? = nil, notes: String? = nil,
+        utcOffset: Int
+    ) -> SessionEvent.Finish {
+        SessionEvent.Finish(
+            start: start, end: end, unticked: unticked, sessionRPE: sessionRPE, notes: notes,
+            utcOffset: utcOffset)
     }
 }
 
@@ -151,9 +155,10 @@ public enum FinishPresenter {
     ///     "Mark them done as shown" commits are the ones its rows show.
     ///   - healthAllowed: whether Apple Health sharing is allowed; the last
     ///     line says where the session goes.
-    public static func summary(_ state: SessionState, presentation: SessionPresentation, policy: PendingSetPolicy,
-                               start: Date? = nil, end: Date, healthAllowed: Bool) -> FinishSummary
-    {
+    public static func summary(
+        _ state: SessionState, presentation: SessionPresentation, policy: PendingSetPolicy,
+        start: Date? = nil, end: Date, healthAllowed: Bool
+    ) -> FinishSummary {
         // The ids only stand in: counts never read them, and Save mints its own.
         let projected = projection(state, presentation: presentation, policy: policy, end: end) {
             SetID("projected-\($0.rawValue)")
@@ -166,9 +171,10 @@ public enum FinishPresenter {
     /// the saved record come from one place.
     /// - Parameter recordID: the record id for each row marked done; Save
     ///   mints UUIDv7s of the end, a preview anything unique.
-    public static func projection(_ state: SessionState, presentation: SessionPresentation, policy: PendingSetPolicy,
-                                  end: Date, recordID: (RowID) -> SetID) -> FinishProjection
-    {
+    public static func projection(
+        _ state: SessionState, presentation: SessionPresentation, policy: PendingSetPolicy,
+        end: Date, recordID: (RowID) -> SetID
+    ) -> FinishProjection {
         let markAll = markDone(presentation, recordID: recordID)
         return projection(state, unticked: policy == .drop ? .drop : markAll, markAll: markAll, policy: policy, end: end)
     }
@@ -176,16 +182,18 @@ public enum FinishPresenter {
     /// The Finish event's `markDone` list from a presentation: each pending
     /// row with complete shown values, and the record id the controller mints.
     public static func markDone(_ presentation: SessionPresentation, recordID: (RowID) -> SetID) -> UntickedFate {
-        .markDone(presentation.unticked.compactMap { row in
-            row.values.map { UntickedFate.MarkDone(row: row.row, recordID: recordID(row.row), values: $0) }
-        })
+        .markDone(
+            presentation.unticked.compactMap { row in
+                row.values.map { UntickedFate.MarkDone(row: row.row, recordID: recordID(row.row), values: $0) }
+            })
     }
 
     // MARK: - Building
 
-    static func projection(_ state: SessionState, unticked: UntickedFate, markAll: UntickedFate, policy: PendingSetPolicy,
-                           end: Date) -> FinishProjection
-    {
+    static func projection(
+        _ state: SessionState, unticked: UntickedFate, markAll: UntickedFate, policy: PendingSetPolicy,
+        end: Date
+    ) -> FinishProjection {
         let pending = state.rows.values.filter(\.isPending).map(\.id)
         let finished = finishing(state, unticked: unticked, end: end)
         // What marking could complete, whichever policy is chosen.
@@ -200,9 +208,10 @@ public enum FinishPresenter {
             markedSets: pending.count { finished.rows[$0]?.isCompleted == true },
             incompleteSets: pending.count - completable,
             workingSets: Counting.workingSets(sets),
-            volume: Counting.volume(sets, exercises: finished.exercises, bodyMass: finished.session.bodyMass,
-                                    unit: finished.settings.defaultUnit,
-                                    includeWarmups: finished.settings.countWarmupsInVolume),
+            volume: Counting.volume(
+                sets, exercises: finished.exercises, bodyMass: finished.session.bodyMass,
+                unit: finished.settings.defaultUnit,
+                includeWarmups: finished.settings.countWarmupsInVolume),
             exercises: Set(sets.map(\.slot)).count,
             exercisesInSession: state.slots.count
         )
@@ -228,9 +237,10 @@ public enum FinishPresenter {
         return reduction.state
     }
 
-    static func summary(_ state: SessionState, projection: FinishProjection, start: Date?, end: Date,
-                        healthAllowed: Bool) -> FinishSummary
-    {
+    static func summary(
+        _ state: SessionState, projection: FinishProjection, start: Date?, end: Date,
+        healthAllowed: Bool
+    ) -> FinishSummary {
         let performed = state.rows.values.compactMap(\.performed)
         let latestStart = performed.map { $0.startedAt ?? $0.completedAt }.min()
         let earliestEnd = performed.map(\.completedAt).max()

@@ -25,15 +25,16 @@ import dev.reamde.substrate.kit.ui.tint
 import dev.reamde.substrate.tasks.bridge.TasksApp
 
 /**
- * What stands in the way above a column: the link's Access banner and the
- * app's notices (the tasks not being read), each line under its mark in its
- * tone. A notice opens Settings, where its Retry and Discard are.
+ * What stands in the way above a column: the link's Access banner and the app's notices (the tasks not being read), each line under its mark in its tone. A
+ * notice opens Settings, where its Retry and Discard are.
  */
 @Composable
 internal fun Notices(banner: AccessBanner?, lines: List<NoticeLine>, actions: TasksActions) {
     if (banner == null && lines.isEmpty()) return
-    Column(Modifier.fillMaxWidth().padding(horizontal = KitSpacing.content, vertical = KitSpacing.medium),
-           verticalArrangement = Arrangement.spacedBy(KitSpacing.medium)) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = KitSpacing.content, vertical = KitSpacing.medium),
+        verticalArrangement = Arrangement.spacedBy(KitSpacing.medium),
+    ) {
         banner?.let { AccessBannerView(it, actions::perform) }
         if (lines.isNotEmpty()) {
             KitCard(Modifier.clickable { actions.send(TasksApp.Command.Select(MENU_SETTINGS)) }, spacing = KitSpacing.small) {

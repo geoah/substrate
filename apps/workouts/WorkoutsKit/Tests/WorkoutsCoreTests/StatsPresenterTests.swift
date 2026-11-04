@@ -1,7 +1,8 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
 import SubstrateCore
+import Testing
+
+@testable import WorkoutsCore
 
 // The routine page's and the Stats tab's numbers, over the three example
 // sessions: Day 1 on Thu 22 Oct and Mon 26 Oct, Fully Body Collection #1 on
@@ -27,8 +28,9 @@ private enum Stats {
     }
 
     static func present(_ scope: StatsScope, _ period: StatsPeriod, catalog: Catalog? = nil) throws -> StatsPresentation {
-        StatsPresenter.present(try history(), catalog: try catalog ?? ExampleFixtures.catalog(), scope: scope, period: period,
-                               now: now, settings: settings)
+        StatsPresenter.present(
+            try history(), catalog: try catalog ?? ExampleFixtures.catalog(), scope: scope, period: period,
+            now: now, settings: settings)
     }
 
     static func session(on day: String) throws -> SessionRecords {
@@ -59,8 +61,9 @@ struct StatsPresenterTests {
         #expect(range(.sixMonths) == "Mon 4 May \u{2013} Fri 30 Oct")
         #expect(range(.year) == "Sat 1 Nov 2025 \u{2013} Fri 30 Oct 2026")
         let week = StatsPeriod.week.window(now: Stats.now, calendar: calendar)
-        #expect(StatsPresenter.range(StatsPeriod.previous(week, calendar: calendar), calendar: calendar)
-            == "Sat 17 Oct \u{2013} Fri 23 Oct")
+        #expect(
+            StatsPresenter.range(StatsPeriod.previous(week, calendar: calendar), calendar: calendar)
+                == "Sat 17 Oct \u{2013} Fri 23 Oct")
         // The clocks went back on 25 October: still seven days, not 7 × 24 hours.
         #expect(week.duration == 7 * 86400 + 3600)
     }
@@ -103,8 +106,10 @@ struct StatsPresenterTests {
         #expect(sessions.change == StatsChange(direction: .up, text: "+1", spoken: "Up 1 on the period before"))
 
         let exercises = try ExampleFixtures.catalog().exercises
-        let (thursday, monday, tuesday) = try (Stats.session(on: "2026-10-22"), Stats.session(on: "2026-10-26"),
-                                               Stats.session(on: "2026-10-27"))
+        let (thursday, monday, tuesday) = try (
+            Stats.session(on: "2026-10-22"), Stats.session(on: "2026-10-26"),
+            Stats.session(on: "2026-10-27")
+        )
         let volume = [monday, tuesday].reduce(0.0) { $0 + StatsPresenter.sessionVolume($1, exercises: exercises, settings: Stats.settings) }
         let before = StatsPresenter.sessionVolume(thursday, exercises: exercises, settings: Stats.settings)
         #expect(try Stats.total(stats, "Volume").value == "\(Format.grouped(Int(volume))) kg")
@@ -177,8 +182,9 @@ struct StatsPresenterTests {
             return set
         }
         warmupOnly[0] = HistoryEntry(records: records, local: first.local)
-        let without = StatsPresenter.present(warmupOnly, catalog: try ExampleFixtures.catalog(), scope: .all, period: .week, now: Stats.now,
-                                             settings: Stats.settings)
+        let without = StatsPresenter.present(
+            warmupOnly, catalog: try ExampleFixtures.catalog(), scope: .all, period: .week, now: Stats.now,
+            settings: Stats.settings)
         #expect(!without.exercises.flatMap(\.exercises).contains { $0.id == "plank" })
     }
 
@@ -203,20 +209,26 @@ struct StatsPresenterTests {
     @Test("Working sets per muscle group, weighted by share, and per muscle where the exercise gives shares")
     func muscles() throws {
         var catalog = try ExampleFixtures.catalog()
-        catalog.movements["chest-press"] = Movement(id: "chest-press", name: "Chest Press",
-                                                    muscles: [MuscleShare(.pecsternal, 1), MuscleShare(.deltfront, d("0.5")),
-                                                              MuscleShare(.tricepslateral, d("0.5"))])
+        catalog.movements["chest-press"] = Movement(
+            id: "chest-press", name: "Chest Press",
+            muscles: [
+                MuscleShare(.pecsternal, 1), MuscleShare(.deltfront, d("0.5")),
+                MuscleShare(.tricepslateral, d("0.5")),
+            ])
         catalog.exercises["chest-press-machine"]?.movement = "chest-press"
         catalog.exercises["iso-lateral-chest-press-machine"]?.movement = "chest-press"
-        catalog.exercises["leg-press-machine"]?.muscles = [MuscleShare(.vasti, 1), MuscleShare(.glutemax, d("0.5")),
-                                                           MuscleShare(.adductors, d("0.25"))]
+        catalog.exercises["leg-press-machine"]?.muscles = [
+            MuscleShare(.vasti, 1), MuscleShare(.glutemax, d("0.5")),
+            MuscleShare(.adductors, d("0.25")),
+        ]
         catalog.resolveMovements()
         let stats = try Stats.present(.all, .week, catalog: catalog)
 
         let sets = try [Stats.session(on: "2026-10-26"), Stats.session(on: "2026-10-27")].flatMap(\.sets)
         let groups = Counting.setsPerMuscle(sets, exercises: catalog.exercises)
-        #expect(stats.muscles.map(\.muscle).sorted { $0.rawValue < $1.rawValue }
-            == groups.filter { $0.value > 0 }.keys.sorted { $0.rawValue < $1.rawValue })
+        #expect(
+            stats.muscles.map(\.muscle).sorted { $0.rawValue < $1.rawValue }
+                == groups.filter { $0.value > 0 }.keys.sorted { $0.rawValue < $1.rawValue })
         #expect(stats.muscles.map(\.sets) == stats.muscles.map(\.sets).sorted(by: >))
         for group in stats.muscles {
             #expect(group.sets == groups[group.muscle]?.double)
@@ -255,8 +267,9 @@ struct StatsPresenterTests {
         #expect(never.exercises.isEmpty && never.records.isEmpty && never.muscles.isEmpty && never.sessions.isEmpty)
 
         // A week after the last session: the routine has sessions, the week none.
-        let later = StatsPresenter.present(try Stats.history(), catalog: try ExampleFixtures.catalog(), scope: .routine(Stats.dayOne),
-                                           period: .week, now: Stats.now.addingTimeInterval(9 * 86400), settings: Stats.settings)
+        let later = StatsPresenter.present(
+            try Stats.history(), catalog: try ExampleFixtures.catalog(), scope: .routine(Stats.dayOne),
+            period: .week, now: Stats.now.addingTimeInterval(9 * 86400), settings: Stats.settings)
         #expect(later.hasSessions && later.isEmpty)
         #expect(try Stats.total(later, "Sessions").change?.text == "\u{2212}1")
         #expect(later.sessions.count == 2)
@@ -269,8 +282,11 @@ struct StatsPresenterTests {
         let summary = StatsPresenter.summary(routine, history: try Stats.history(), settings: Stats.settings)
         #expect(summary.folder == "Full Body 3x Week (Back-Friendly)")
         let working = routine.slots.reduce(0) { $0 + $1.sets.count { $0.role == .working } }
-        #expect(summary.facts == [LabelledValue("Exercises", "5"), LabelledValue("Sets per session", "\(working)"),
-                                  LabelledValue("Last done", "Mon 26 Oct")])
+        #expect(
+            summary.facts == [
+                LabelledValue("Exercises", "5"), LabelledValue("Sets per session", "\(working)"),
+                LabelledValue("Last done", "Mon 26 Oct"),
+            ])
         let never = StatsPresenter.summary(try #require(catalog.routines["day-3"]), history: try Stats.history(), settings: Stats.settings)
         #expect(never.facts.map(\.label) == ["Exercises", "Sets per session"])
     }
@@ -321,8 +337,10 @@ struct StatsPresenterTests {
         // The leg press pushes, but on the legs: left out.
         let push = sets.count { set in
             let exercise = catalog.exercises[set.exercise]
-            return exercise.map { StatsPresenter.topGroup($0).map(StatsPresenter.upperBody.contains) == true
-                && StatsPresenter.force(of: $0, catalog: catalog) == .push } ?? false
+            return exercise.map {
+                StatsPresenter.topGroup($0).map(StatsPresenter.upperBody.contains) == true
+                    && StatsPresenter.force(of: $0, catalog: catalog) == .push
+            } ?? false
         }
         #expect(pushPull.parts[0].sets == Double(push))
         #expect(!sets.filter { $0.exercise == "leg-press-machine" }.isEmpty)
@@ -363,8 +381,9 @@ struct StatsPresenterTests {
         #expect(try Stats.present(.all, .week).lastSession == nil)
         // Without Tuesday, Monday's Day 1 against Thursday's, named.
         let earlier = try Stats.history().filter { $0.records.session.routine == Stats.dayOne }
-        let all = StatsPresenter.present(earlier, catalog: try ExampleFixtures.catalog(), scope: .all, period: .week, now: Stats.now,
-                                         settings: Stats.settings)
+        let all = StatsPresenter.present(
+            earlier, catalog: try ExampleFixtures.catalog(), scope: .all, period: .week, now: Stats.now,
+            settings: Stats.settings)
         #expect(all.lastSession?.title == "Mon 26 Oct, Day 1 \u{2013} Strength Foundation")
     }
 
@@ -378,8 +397,9 @@ struct StatsPresenterTests {
             guard let exercise = catalog.exercises[id], let earlier = then[id] else { continue }
             let config = SuggestionInputs.config(for: exercise, defaultUnit: .kg)
             guard let a = ExercisePresenter.trend(exercise, sessions: entries, config: config).points.map(\.value).max(),
-                  let b = ExercisePresenter.trend(exercise, sessions: earlier, config: config).points.map(\.value).max(),
-                  b > 0 else { continue }
+                let b = ExercisePresenter.trend(exercise, sessions: earlier, config: config).points.map(\.value).max(),
+                b > 0
+            else { continue }
             shared += 1
             if a > b * 1.01 { better += 1 }
         }

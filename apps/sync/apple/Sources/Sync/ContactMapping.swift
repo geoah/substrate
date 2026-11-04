@@ -44,49 +44,70 @@ enum ContactMapping {
         f.set("displayName", CNContactFormatter.string(from: c, style: .fullName))
         if let birthday = c.birthday { f.set("birthday", dateComponents(birthday, label: nil)) }
         f.set("dates", .array(c.dates.compactMap { dateComponents($0.value as DateComponents, label: $0.label) }))
-        f.set("phoneNumbers", .array(c.phoneNumbers.compactMap { entry in
-            labeled(entry.label) { $0.set("value", entry.value.stringValue) }
-        }))
-        f.set("emailAddresses", .array(c.emailAddresses.compactMap { entry in
-            let address = entry.value as String
-            guard isMailbox(address) else { return nil }
-            return labeled(entry.label) { $0.set("value", address) }
-        }))
-        f.set("postalAddresses", .array(c.postalAddresses.compactMap { entry in
-            let a = entry.value
-            return labeled(entry.label) {
-                $0.set("street", a.street)
-                $0.set("subLocality", a.subLocality)
-                $0.set("city", a.city)
-                $0.set("subAdministrativeArea", a.subAdministrativeArea)
-                $0.set("state", a.state)
-                $0.set("postalCode", a.postalCode)
-                $0.set("country", a.country)
-                $0.set("isoCountryCode", a.isoCountryCode)
-            }
-        }))
-        f.set("urlAddresses", .array(c.urlAddresses.compactMap { entry in
-            labeled(entry.label) { $0.set("value", entry.value as String) }
-        }))
-        f.set("socialProfiles", .array(c.socialProfiles.compactMap { entry in
-            let p = entry.value
-            return labeled(entry.label) {
-                $0.set("urlString", p.urlString)
-                $0.set("username", p.username)
-                $0.set("userIdentifier", p.userIdentifier)
-                $0.set("service", p.service)
-            }
-        }))
-        f.set("instantMessageAddresses", .array(c.instantMessageAddresses.compactMap { entry in
-            let im = entry.value
-            return labeled(entry.label) {
-                $0.set("username", im.username)
-                $0.set("service", im.service)
-            }
-        }))
-        f.set("contactRelations", .array(c.contactRelations.compactMap { entry in
-            labeled(entry.label) { $0.set("name", entry.value.name) }
-        }))
+        f.set(
+            "phoneNumbers",
+            .array(
+                c.phoneNumbers.compactMap { entry in
+                    labeled(entry.label) { $0.set("value", entry.value.stringValue) }
+                }))
+        f.set(
+            "emailAddresses",
+            .array(
+                c.emailAddresses.compactMap { entry in
+                    let address = entry.value as String
+                    guard isMailbox(address) else { return nil }
+                    return labeled(entry.label) { $0.set("value", address) }
+                }))
+        f.set(
+            "postalAddresses",
+            .array(
+                c.postalAddresses.compactMap { entry in
+                    let a = entry.value
+                    return labeled(entry.label) {
+                        $0.set("street", a.street)
+                        $0.set("subLocality", a.subLocality)
+                        $0.set("city", a.city)
+                        $0.set("subAdministrativeArea", a.subAdministrativeArea)
+                        $0.set("state", a.state)
+                        $0.set("postalCode", a.postalCode)
+                        $0.set("country", a.country)
+                        $0.set("isoCountryCode", a.isoCountryCode)
+                    }
+                }))
+        f.set(
+            "urlAddresses",
+            .array(
+                c.urlAddresses.compactMap { entry in
+                    labeled(entry.label) { $0.set("value", entry.value as String) }
+                }))
+        f.set(
+            "socialProfiles",
+            .array(
+                c.socialProfiles.compactMap { entry in
+                    let p = entry.value
+                    return labeled(entry.label) {
+                        $0.set("urlString", p.urlString)
+                        $0.set("username", p.username)
+                        $0.set("userIdentifier", p.userIdentifier)
+                        $0.set("service", p.service)
+                    }
+                }))
+        f.set(
+            "instantMessageAddresses",
+            .array(
+                c.instantMessageAddresses.compactMap { entry in
+                    let im = entry.value
+                    return labeled(entry.label) {
+                        $0.set("username", im.username)
+                        $0.set("service", im.service)
+                    }
+                }))
+        f.set(
+            "contactRelations",
+            .array(
+                c.contactRelations.compactMap { entry in
+                    labeled(entry.label) { $0.set("name", entry.value.name) }
+                }))
         return f.json
     }
 
@@ -103,7 +124,7 @@ enum ContactMapping {
 
     private static func dateComponents(_ d: DateComponents, label: String?) -> JSON? {
         guard let month = d.month, let day = d.day, month != NSDateComponentUndefined,
-              day != NSDateComponentUndefined
+            day != NSDateComponentUndefined
         else { return nil }
         var f = Fields()
         f.set("label", label.map(englishLabel))
@@ -126,7 +147,8 @@ enum ContactMapping {
         var current = ""
         let chars = Array(word)
         for (i, ch) in chars.enumerated() {
-            let startsWord = ch.isUppercase && !current.isEmpty
+            let startsWord =
+                ch.isUppercase && !current.isEmpty
                 && (!(chars[i - 1].isUppercase) || (i + 1 < chars.count && chars[i + 1].isLowercase))
             if startsWord {
                 words.append(current)
@@ -140,7 +162,7 @@ enum ContactMapping {
 
     /// Labels whose word is not their CamelCase split.
     private static let builtIn: [String: String] = [
-        "HomePage": "homepage",
+        "HomePage": "homepage"
     ]
 
     /// Whether Go's `net/mail.ParseAddress` accepts the address as it

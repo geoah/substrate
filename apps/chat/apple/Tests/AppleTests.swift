@@ -2,6 +2,7 @@ import ChatKit
 import Foundation
 import SubstrateKit
 import Testing
+
 @testable import SubstrateChat
 
 /// What only the Apple app holds; the chat's rules are ChatKit's.
@@ -47,9 +48,10 @@ private struct LegacySession: Codable {
         // The bytes an earlier build wrote, read back through the kit's store
         // under the same service.
         let ends = Date(timeIntervalSinceReferenceDate: 815_000_000)
-        let app = LegacySession(server: URL(string: "https://s.example.com")!, repository: "r.example.com", secret: "x", tokenID: "",
-                                grants: .init(scopes: ChatManifest.scopes), expiresAt: ends,
-                                revocation: URL(string: "https://s.example.com/oauth/revoke"))
+        let app = LegacySession(
+            server: URL(string: "https://s.example.com")!, repository: "r.example.com", secret: "x", tokenID: "",
+            grants: .init(scopes: ChatManifest.scopes), expiresAt: ends,
+            revocation: URL(string: "https://s.example.com/oauth/revoke"))
         let scratch = SessionStore(account: "test-\(UUID().uuidString)", storage: store.storage)
         defer { scratch.clear() }
         try scratch.write(JSONEncoder().encode(app), account: scratch.account)

@@ -28,9 +28,12 @@ struct QuestionCardView: View {
                             toggle(question, option.value)
                         } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Image(systemName: question.multi ? (chosen ? "checkmark.square.fill" : "square")
-                                    : (chosen ? "largecircle.fill.circle" : "circle"))
-                                    .foregroundStyle(chosen ? Color.accentColor : .secondary)
+                                Image(
+                                    systemName: question.multi
+                                        ? (chosen ? "checkmark.square.fill" : "square")
+                                        : (chosen ? "largecircle.fill.circle" : "circle")
+                                )
+                                .foregroundStyle(chosen ? Color.accentColor : .secondary)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(option.label)
                                     if let description = option.description {
@@ -268,7 +271,7 @@ struct ProviderKeySheet: View {
                         SecureField("API key", text: $key)
                             .textContentType(.password)
                             #if os(iOS)
-                            .textInputAutocapitalization(.never)
+                        .textInputAutocapitalization(.never)
                             #endif
                             .autocorrectionDisabled()
                     } header: {

@@ -44,16 +44,20 @@ public enum StatsPeriod: String, CaseIterable, Sendable, Identifiable {
     public func window(now: Date, calendar: Calendar) -> DateInterval {
         let today = calendar.startOfDay(for: now)
         let end = calendar.date(byAdding: .day, value: 1, to: today) ?? now
-        let start: Date? = switch self {
-        case .week: calendar.date(byAdding: .day, value: -6, to: today)
-        case .month: calendar.date(byAdding: .month, value: -1, to: end)
-        case .threeMonths: calendar.dateInterval(of: .weekOfYear, for: today)
-            .flatMap { calendar.date(byAdding: .weekOfYear, value: -12, to: $0.start) }
-        case .sixMonths: calendar.dateInterval(of: .weekOfYear, for: today)
-            .flatMap { calendar.date(byAdding: .weekOfYear, value: -25, to: $0.start) }
-        case .year: calendar.dateInterval(of: .month, for: today)
-            .flatMap { calendar.date(byAdding: .month, value: -11, to: $0.start) }
-        }
+        let start: Date? =
+            switch self {
+            case .week: calendar.date(byAdding: .day, value: -6, to: today)
+            case .month: calendar.date(byAdding: .month, value: -1, to: end)
+            case .threeMonths:
+                calendar.dateInterval(of: .weekOfYear, for: today)
+                    .flatMap { calendar.date(byAdding: .weekOfYear, value: -12, to: $0.start) }
+            case .sixMonths:
+                calendar.dateInterval(of: .weekOfYear, for: today)
+                    .flatMap { calendar.date(byAdding: .weekOfYear, value: -25, to: $0.start) }
+            case .year:
+                calendar.dateInterval(of: .month, for: today)
+                    .flatMap { calendar.date(byAdding: .month, value: -11, to: $0.start) }
+            }
         return DateInterval(start: start ?? today, end: end)
     }
 
@@ -118,10 +122,11 @@ public struct StatsPresentation: Equatable, Sendable {
     /// The scope's sessions in any period, newest first.
     public var sessions: [HistoryRow]
 
-    public init(scope: StatsScope, period: StatsPeriod, scopeTitle: String, range: String, comparison: String,
-                hasSessions: Bool, totals: [StatsTotal], volumeUnit: MassUnit, volume: [StatsVolumeBar],
-                exercises: [StatsExerciseGroup], records: [StatsRecord], muscles: [StatsMuscleGroup], sessions: [HistoryRow])
-    {
+    public init(
+        scope: StatsScope, period: StatsPeriod, scopeTitle: String, range: String, comparison: String,
+        hasSessions: Bool, totals: [StatsTotal], volumeUnit: MassUnit, volume: [StatsVolumeBar],
+        exercises: [StatsExerciseGroup], records: [StatsRecord], muscles: [StatsMuscleGroup], sessions: [HistoryRow]
+    ) {
         self.scope = scope
         self.period = period
         self.scopeTitle = scopeTitle
@@ -359,9 +364,10 @@ public struct StatsExercise: Equatable, Sendable, Identifiable {
     /// Best set, Working sets.
     public var facts: [LabelledValue]
 
-    public init(id: ExerciseID, name: String, metric: String?, trendMetric: TrendMetric, unit: MassUnit, best: String?,
-                change: StatsChange?, points: [TrendPoint], trendSummary: String?, facts: [LabelledValue])
-    {
+    public init(
+        id: ExerciseID, name: String, metric: String?, trendMetric: TrendMetric, unit: MassUnit, best: String?,
+        change: StatsChange?, points: [TrendPoint], trendSummary: String?, facts: [LabelledValue]
+    ) {
         self.id = id
         self.name = name
         self.metric = metric
@@ -391,9 +397,10 @@ public struct StatsRecord: Equatable, Sendable, Identifiable {
     /// `Mon 26 Oct`.
     public var date: String
 
-    public init(exercise: ExerciseID, session: SessionID, at: Date, name: String, kind: String, value: String, previous: String,
-                date: String)
-    {
+    public init(
+        exercise: ExerciseID, session: SessionID, at: Date, name: String, kind: String, value: String, previous: String,
+        date: String
+    ) {
         self.exercise = exercise
         self.session = session
         self.at = at
@@ -482,9 +489,10 @@ public enum StatsPresenter {
 
     /// The stats of `scope` over `period`, ending on `now`'s day in the
     /// settings' calendar.
-    public static func present(_ history: [HistoryEntry], catalog: Catalog, scope: StatsScope, period: StatsPeriod, now: Date,
-                               settings: PresenterSettings) -> StatsPresentation
-    {
+    public static func present(
+        _ history: [HistoryEntry], catalog: Catalog, scope: StatsScope, period: StatsPeriod, now: Date,
+        settings: PresenterSettings
+    ) -> StatsPresentation {
         let calendar = settings.calendar
         let window = period.window(now: now, calendar: calendar)
         let before = StatsPeriod.previous(window, calendar: calendar)
@@ -493,11 +501,13 @@ public enum StatsPresenter {
         }
         let current = scoped.filter { window.contains($0.records.session.at) && $0.records.session.at < window.end }
         let previous = scoped.filter { before.contains($0.records.session.at) && $0.records.session.at < before.end }
-        let scopeTitle: String = switch scope {
-        case .all: StatsPresentation.allRoutines
-        case let .routine(id): catalog.routines[id]?.name
-            ?? scoped.first.map { HistoryPresenter.routineTitle(of: $0.records.session) } ?? id.rawValue
-        }
+        let scopeTitle: String =
+            switch scope {
+            case .all: StatsPresentation.allRoutines
+            case let .routine(id):
+                catalog.routines[id]?.name
+                    ?? scoped.first.map { HistoryPresenter.routineTitle(of: $0.records.session) } ?? id.rawValue
+            }
         let unit = settings.defaultUnit
         var presentation = StatsPresentation(
             scope: scope,
@@ -506,8 +516,9 @@ public enum StatsPresenter {
             range: range(window, calendar: calendar),
             comparison: "Compared with \(range(before, calendar: calendar))",
             hasSessions: !scoped.isEmpty,
-            totals: totals(current.map(\.records), previous.map(\.records), exercises: catalog.exercises, settings: settings,
-                           days: days(window, calendar: calendar)),
+            totals: totals(
+                current.map(\.records), previous.map(\.records), exercises: catalog.exercises, settings: settings,
+                days: days(window, calendar: calendar)),
             volumeUnit: unit,
             volume: volume(current.map(\.records), window: window, bar: period.bar, exercises: catalog.exercises, settings: settings),
             exercises: exercises(current.map(\.records), previous.map(\.records), scope: scope, catalog: catalog, settings: settings),
@@ -520,8 +531,9 @@ public enum StatsPresenter {
         presentation.balance = balance(sets, catalog: catalog)
         presentation.weeks = weeks(current.map(\.records), window: window, calendar: calendar)
         if period != .week {
-            presentation.consistency = consistency(presentation.weeks, sessions: current.count, all: scoped.map(\.records),
-                                                   window: window, now: now, calendar: calendar)
+            presentation.consistency = consistency(
+                presentation.weeks, sessions: current.count, all: scoped.map(\.records),
+                window: window, now: now, calendar: calendar)
         }
         presentation.lastSession = lastSession(scoped.map(\.records), scope: scope, catalog: catalog, settings: settings)
         return presentation
@@ -529,9 +541,10 @@ public enum StatsPresenter {
 
     // MARK: - Totals
 
-    static func totals(_ current: [SessionRecords], _ previous: [SessionRecords], exercises: [ExerciseID: Exercise],
-                       settings: PresenterSettings, days: Int = 7) -> [StatsTotal]
-    {
+    static func totals(
+        _ current: [SessionRecords], _ previous: [SessionRecords], exercises: [ExerciseID: Exercise],
+        settings: PresenterSettings, days: Int = 7
+    ) -> [StatsTotal] {
         let now = Totals(current, exercises: exercises, settings: settings)
         let then = Totals(previous, exercises: exercises, settings: settings)
         let unit = settings.defaultUnit.rawValue
@@ -543,12 +556,15 @@ public enum StatsPresenter {
         let rate = days > 7 && now.sessions > 0 ? "\(perWeek(now.sessions, days: days)) a week" : nil
         return [
             StatsTotal(label: "Sessions", value: "\(now.sessions)", change: count(now.sessions, then.sessions), detail: rate),
-            StatsTotal(label: "Volume", value: "\(Format.grouped(Int(now.volume.rounded()))) \(unit)",
-                       change: percent(now.volume, then.volume)),
-            StatsTotal(label: "Working sets", value: "\(now.sets)",
-                       change: count(now.sets, then.sets)),
-            StatsTotal(label: "Time per session", value: now.average.map(Format.minutes) ?? "None",
-                       change: averageChange),
+            StatsTotal(
+                label: "Volume", value: "\(Format.grouped(Int(now.volume.rounded()))) \(unit)",
+                change: percent(now.volume, then.volume)),
+            StatsTotal(
+                label: "Working sets", value: "\(now.sets)",
+                change: count(now.sets, then.sets)),
+            StatsTotal(
+                label: "Time per session", value: now.average.map(Format.minutes) ?? "None",
+                change: averageChange),
         ]
     }
 
@@ -587,8 +603,10 @@ public enum StatsPresenter {
     }
 
     static func sessionVolume(_ records: SessionRecords, exercises: [ExerciseID: Exercise], settings: PresenterSettings) -> Double {
-        Counting.volume(records.sets, exercises: exercises, bodyMass: records.session.bodyMass, unit: settings.defaultUnit,
-                        includeWarmups: settings.countWarmupsInVolume).value.double
+        Counting.volume(
+            records.sets, exercises: exercises, bodyMass: records.session.bodyMass, unit: settings.defaultUnit,
+            includeWarmups: settings.countWarmupsInVolume
+        ).value.double
     }
 
     // MARK: - Changes
@@ -621,9 +639,10 @@ public enum StatsPresenter {
 
     // MARK: - Volume
 
-    static func volume(_ sessions: [SessionRecords], window: DateInterval, bar: StatsBar, exercises: [ExerciseID: Exercise],
-                       settings: PresenterSettings) -> [StatsVolumeBar]
-    {
+    static func volume(
+        _ sessions: [SessionRecords], window: DateInterval, bar: StatsBar, exercises: [ExerciseID: Exercise],
+        settings: PresenterSettings
+    ) -> [StatsVolumeBar] {
         let calendar = settings.calendar
         var starts: [Date] = []
         var cursor = window.start
@@ -642,12 +661,14 @@ public enum StatsPresenter {
         let unit = settings.defaultUnit
         return starts.map { start in
             let sum = sums[start] ?? (0, 0)
-            let label = switch bar {
-            case .day: Format.day(start, in: calendar.timeZone)
-            case .week: "Week of \(Format.day(start, in: calendar.timeZone))"
-            case .month: Format.month(start, in: calendar.timeZone)
-            }
-            let text = sum.sessions == 0
+            let label =
+                switch bar {
+                case .day: Format.day(start, in: calendar.timeZone)
+                case .week: "Week of \(Format.day(start, in: calendar.timeZone))"
+                case .month: Format.month(start, in: calendar.timeZone)
+                }
+            let text =
+                sum.sessions == 0
                 ? "No sessions"
                 : "\(Format.grouped(Int(sum.volume.rounded()))) \(unit.rawValue), \(Format.count(sum.sessions, "session"))"
             return StatsVolumeBar(start: start, value: sum.volume.rounded(), sessions: sum.sessions, label: label, text: text)
@@ -680,9 +701,10 @@ public enum StatsPresenter {
         return out
     }
 
-    static func exercises(_ current: [SessionRecords], _ previous: [SessionRecords], scope: StatsScope, catalog: Catalog,
-                          settings: PresenterSettings) -> [StatsExerciseGroup]
-    {
+    static func exercises(
+        _ current: [SessionRecords], _ previous: [SessionRecords], scope: StatsScope, catalog: Catalog,
+        settings: PresenterSettings
+    ) -> [StatsExerciseGroup] {
         let now = byExercise(current)
         let then = byExercise(previous)
         let workingSets = now.mapValues { $0.reduce(0) { $0 + Counting.workingSets($1.sets) } }
@@ -711,8 +733,10 @@ public enum StatsPresenter {
         for row in rows {
             if let movement = catalog.exercises[row.id]?.movement, let members = versions[movement], members.count > 1 {
                 guard placed.insert(movement).inserted else { continue }
-                groups.append(StatsExerciseGroup(id: "movement-\(movement.rawValue)", title: catalog.movements[movement]?.name,
-                                                 detail: "\(members.count) equipment versions", exercises: members))
+                groups.append(
+                    StatsExerciseGroup(
+                        id: "movement-\(movement.rawValue)", title: catalog.movements[movement]?.name,
+                        detail: "\(members.count) equipment versions", exercises: members))
             } else {
                 groups.append(StatsExerciseGroup(id: row.id.rawValue, title: nil, detail: nil, exercises: [row]))
             }
@@ -720,9 +744,10 @@ public enum StatsPresenter {
         return groups
     }
 
-    static func exercise(_ exercise: Exercise, now: [ExerciseHistory], then: [ExerciseHistory], catalog: Catalog,
-                         settings: PresenterSettings) -> StatsExercise
-    {
+    static func exercise(
+        _ exercise: Exercise, now: [ExerciseHistory], then: [ExerciseHistory], catalog: Catalog,
+        settings: PresenterSettings
+    ) -> StatsExercise {
         let config = SuggestionInputs.config(for: exercise, defaultUnit: settings.defaultUnit)
         let trend = ExercisePresenter.trend(exercise, sessions: now, config: config)
         let previous = ExercisePresenter.trend(exercise, sessions: then, config: config)
@@ -772,22 +797,24 @@ public enum StatsPresenter {
     /// reps; ties keep the newest. An e1RM ranks the sets the trend charts
     /// (`n ≤ 12`) above the rest, so the best set is the one behind the
     /// best shown beside it whenever there is one.
-    static func bestSet(_ sessions: [ExerciseHistory], exercise: Exercise, config: ExerciseConfig,
-                        metric: TrendMetric) -> PerformedSet?
-    {
+    static func bestSet(
+        _ sessions: [ExerciseHistory], exercise: Exercise, config: ExerciseConfig,
+        metric: TrendMetric
+    ) -> PerformedSet? {
         var best: (set: PerformedSet, charted: Bool, value: Double)?
         for entry in sessions {
             let bodyMass = entry.session.bodyMass.map(SuggestionInputs.kilograms)
             for set in entry.sets where set.role == .working {
-                let rank: (charted: Bool, value: Double)? = switch metric {
-                case .oneRepMax:
-                    SuggestionInputs.doneSets([set], exercise: exercise, config: config).first
-                        .flatMap { estimateOneRepMax(of: $0, exercise: config, bodyMass: bodyMass) }
-                        .map { ($0.effort <= 12, $0.value) }
-                case .longestHold: set.duration.map { (true, Double($0)) }
-                case .mostReps: set.reps.map { (true, Double($0)) }
-                case .none: nil
-                }
+                let rank: (charted: Bool, value: Double)? =
+                    switch metric {
+                    case .oneRepMax:
+                        SuggestionInputs.doneSets([set], exercise: exercise, config: config).first
+                            .flatMap { estimateOneRepMax(of: $0, exercise: config, bodyMass: bodyMass) }
+                            .map { ($0.effort <= 12, $0.value) }
+                    case .longestHold: set.duration.map { (true, Double($0)) }
+                    case .mostReps: set.reps.map { (true, Double($0)) }
+                    case .none: nil
+                    }
                 guard let rank else { continue }
                 if let current = best, (current.charted ? 1 : 0, current.value) >= (rank.charted ? 1 : 0, rank.value) { continue }
                 best = (set, rank.charted, rank.value)
@@ -801,9 +828,10 @@ public enum StatsPresenter {
     /// For each exercise of the period: the newest session in it whose best
     /// beat every earlier session's, in any routine, by its metric and, for
     /// a load, by the heaviest load. A first session beats nothing.
-    static func records(_ current: [SessionRecords], all: [SessionRecords], catalog: Catalog,
-                        settings: PresenterSettings) -> [StatsRecord]
-    {
+    static func records(
+        _ current: [SessionRecords], all: [SessionRecords], catalog: Catalog,
+        settings: PresenterSettings
+    ) -> [StatsRecord] {
         let inPeriod = Set(current.map(\.session.id))
         let everything = byExercise(all)
         var out: [StatsRecord] = []
@@ -851,11 +879,13 @@ public enum StatsPresenter {
         return found
     }
 
-    private static func statsRecord(_ exercise: Exercise, kind: String, _ found: (record: Best, beat: Best),
-                                    settings: PresenterSettings) -> StatsRecord
-    {
-        StatsRecord(exercise: exercise.id, session: found.record.session, at: found.record.at, name: exercise.name, kind: kind,
-                    value: found.record.text, previous: found.beat.text, date: Format.day(found.record.at, in: settings.timeZone))
+    private static func statsRecord(
+        _ exercise: Exercise, kind: String, _ found: (record: Best, beat: Best),
+        settings: PresenterSettings
+    ) -> StatsRecord {
+        StatsRecord(
+            exercise: exercise.id, session: found.record.session, at: found.record.at, name: exercise.name, kind: kind,
+            value: found.record.text, previous: found.beat.text, date: Format.day(found.record.at, in: settings.timeZone))
     }
 
     // MARK: - Muscles
@@ -879,8 +909,10 @@ public enum StatsPresenter {
         var groups: [StatsMuscleGroup] = []
         for (group, value) in Counting.setsPerMuscle(sets, exercises: exercises) where value > 0 {
             let muscles = rows.filter { $0.muscle.group == group }.sorted(by: largestFirst)
-            groups.append(StatsMuscleGroup(muscle: group, label: group.label, sets: value.double, text: setsText(value),
-                                           muscles: muscles))
+            groups.append(
+                StatsMuscleGroup(
+                    muscle: group, label: group.label, sets: value.double, text: setsText(value),
+                    muscles: muscles))
         }
         return groups.sorted(by: largestFirst)
     }
@@ -959,8 +991,9 @@ public enum StatsPresenter {
         let shares = parts.map { total > 0 ? $0.1 / total : 0 }
         let percents = roundedPercents(shares)
         let built = parts.indices.map { index in
-            StatsBalancePart(label: parts[index].0, sets: parts[index].1, share: shares[index], percent: "\(percents[index])%",
-                             text: setsText(Format.decimal(parts[index].1)))
+            StatsBalancePart(
+                label: parts[index].0, sets: parts[index].1, share: shares[index], percent: "\(percents[index])%",
+                text: setsText(Format.decimal(parts[index].1)))
         }
         let sentence = built.map { "\($0.label) \($0.percent), \($0.text)" }.joined(separator: ". ") + "."
         return StatsBalance(id: id, title: title, note: note, parts: built, sentence: sentence)
@@ -999,14 +1032,16 @@ public enum StatsPresenter {
         }
         return starts.map { start in
             let sessions = counts[start] ?? 0
-            return StatsWeek(start: start, sessions: sessions, label: "Week of \(Format.day(start, in: calendar.timeZone))",
-                             text: sessions == 0 ? "No sessions" : Format.count(sessions, "session"))
+            return StatsWeek(
+                start: start, sessions: sessions, label: "Week of \(Format.day(start, in: calendar.timeZone))",
+                text: sessions == 0 ? "No sessions" : Format.count(sessions, "session"))
         }
     }
 
-    static func consistency(_ weeks: [StatsWeek], sessions: Int, all: [SessionRecords], window: DateInterval, now: Date,
-                            calendar: Calendar) -> StatsConsistency?
-    {
+    static func consistency(
+        _ weeks: [StatsWeek], sessions: Int, all: [SessionRecords], window: DateInterval, now: Date,
+        calendar: Calendar
+    ) -> StatsConsistency? {
         guard !weeks.isEmpty else { return nil }
         let trained = weeks.count { $0.sessions > 0 }
         let rate = perWeek(sessions, days: days(window, calendar: calendar))
@@ -1014,8 +1049,9 @@ public enum StatsPresenter {
         let streakText = streak >= 2 ? "\(streak) weeks" : nil
         var sentence = "Trained in \(trained) of \(weeks.count) weeks, \(rate) sessions a week."
         if let streakText { sentence += " \(streakText) in a row." }
-        return StatsConsistency(weeksTrained: trained, weeks: weeks.count, value: "\(trained) of \(weeks.count)", perWeek: rate,
-                                streak: streakText, sentence: sentence)
+        return StatsConsistency(
+            weeksTrained: trained, weeks: weeks.count, value: "\(trained) of \(weeks.count)", perWeek: rate,
+            streak: streakText, sentence: sentence)
     }
 
     /// Weeks in a row with a session, back from this week, or from the
@@ -1040,11 +1076,13 @@ public enum StatsPresenter {
 
     /// The newest session against the newest one before it of the same
     /// routine. A session started empty has no routine to compare within.
-    static func lastSession(_ sessions: [SessionRecords], scope: StatsScope, catalog: Catalog,
-                            settings: PresenterSettings) -> StatsSessionComparison?
-    {
+    static func lastSession(
+        _ sessions: [SessionRecords], scope: StatsScope, catalog: Catalog,
+        settings: PresenterSettings
+    ) -> StatsSessionComparison? {
         guard let latest = sessions.first, let routine = latest.session.routine,
-              let before = sessions.dropFirst().first(where: { $0.session.routine == routine }) else { return nil }
+            let before = sessions.dropFirst().first(where: { $0.session.routine == routine })
+        else { return nil }
         func day(_ session: TrainingSession) -> String { Format.day(session.at, in: HistoryPresenter.zone(of: session, settings)) }
         let against = "the session before"
         let now = Totals([latest], exercises: catalog.exercises, settings: settings)
@@ -1056,8 +1094,10 @@ public enum StatsPresenter {
             }
             totals.append(StatsTotal(label: "Time", value: Format.minutes(seconds), change: change))
         }
-        totals.append(StatsTotal(label: "Volume", value: "\(Format.grouped(Int(now.volume.rounded()))) \(settings.defaultUnit.rawValue)",
-                                 change: percent(now.volume, then.volume, against: against)))
+        totals.append(
+            StatsTotal(
+                label: "Volume", value: "\(Format.grouped(Int(now.volume.rounded()))) \(settings.defaultUnit.rawValue)",
+                change: percent(now.volume, then.volume, against: against)))
         totals.append(StatsTotal(label: "Working sets", value: "\(now.sets)", change: count(now.sets, then.sets, against: against)))
         let today = byExercise([latest])
         let earlier = byExercise([before])
@@ -1067,15 +1107,17 @@ public enum StatsPresenter {
             guard let exercise = catalog.exercises[id], let previous = earlier[id] else { continue }
             let config = SuggestionInputs.config(for: exercise, defaultUnit: settings.defaultUnit)
             guard let value = ExercisePresenter.trend(exercise, sessions: entries, config: config).points.map(\.value).max(),
-                  let was = ExercisePresenter.trend(exercise, sessions: previous, config: config).points.map(\.value).max(),
-                  was > 0 else { continue }
+                let was = ExercisePresenter.trend(exercise, sessions: previous, config: config).points.map(\.value).max(),
+                was > 0
+            else { continue }
             shared += 1
             if value > was * 1.01 { better += 1 }
         }
         let title = scope == .all ? "\(day(latest.session)), \(HistoryPresenter.routineTitle(of: latest.session))" : day(latest.session)
-        return StatsSessionComparison(session: latest.session.id, previous: before.session.id, title: title,
-                                      against: "Against \(day(before.session))", totals: totals,
-                                      exercises: shared == 0 ? nil : "Better on \(better) of \(Format.count(shared, "exercise"))")
+        return StatsSessionComparison(
+            session: latest.session.id, previous: before.session.id, title: title,
+            against: "Against \(day(before.session))", totals: totals,
+            exercises: shared == 0 ? nil : "Better on \(better) of \(Format.count(shared, "exercise"))")
     }
 
     // MARK: - Dates and rows
@@ -1093,9 +1135,10 @@ public enum StatsPresenter {
     /// The row History shows for the session.
     static func row(_ entry: HistoryEntry, exercises: [ExerciseID: Exercise], settings: PresenterSettings) -> HistoryRow {
         let session = entry.records.session
-        return HistoryRow(id: session.id, start: session.at, title: HistoryPresenter.routineTitle(of: session),
-                          date: Format.dayAndTime(session.at, in: HistoryPresenter.zone(of: session, settings)),
-                          summary: HistoryPresenter.summary(entry.records, exercises: exercises, settings: settings),
-                          health: entry.local.health.status, isDeload: session.deload == true)
+        return HistoryRow(
+            id: session.id, start: session.at, title: HistoryPresenter.routineTitle(of: session),
+            date: Format.dayAndTime(session.at, in: HistoryPresenter.zone(of: session, settings)),
+            summary: HistoryPresenter.summary(entry.records, exercises: exercises, settings: settings),
+            health: entry.local.health.status, isDeload: session.deload == true)
     }
 }

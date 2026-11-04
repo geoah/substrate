@@ -17,9 +17,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The Gallery app on a device: every fixture the screens' presenters make
- * in Swift, here, crosses the bridge and decodes with the generated
- * Kotlin, every shared screen is among them, and each has its composable.
+ * The Gallery app on a device: every fixture the screens' presenters make in Swift, here, crosses the bridge and decodes with the generated Kotlin, every
+ * shared screen is among them, and each has its composable.
  */
 @RunWith(AndroidJUnit4::class)
 class GalleryTest {

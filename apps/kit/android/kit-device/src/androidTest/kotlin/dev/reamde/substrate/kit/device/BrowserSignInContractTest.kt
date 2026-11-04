@@ -28,13 +28,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The browser sign-in's half of the security parity list (app-kit.md §5.4):
- * a local build's loopback listener is bound to `127.0.0.1` alone, answers
- * only the path Swift named, takes as the callback only the request
- * carrying the attempt's `state` and hands its query back as it came (Swift
- * checks `state` and `iss`), survives whatever else a connection sends,
- * gives up at the attempt's deadline, and is gone once the attempt ends; a
- * release's claimed route is refused, never answered through loopback.
+ * The browser sign-in's half of the security parity list (app-kit.md §5.4): a local build's loopback listener is bound to `127.0.0.1` alone, answers only the
+ * path Swift named, takes as the callback only the request carrying the attempt's `state` and hands its query back as it came (Swift checks `state` and `iss`),
+ * survives whatever else a connection sends, gives up at the attempt's deadline, and is gone once the attempt ends; a release's claimed route is refused, never
+ * answered through loopback.
  */
 @RunWith(AndroidJUnit4::class)
 class BrowserSignInContractTest {
@@ -45,19 +42,20 @@ class BrowserSignInContractTest {
     private val state = "s%C3%A9"
 
     /** [request] written raw to the listener on [port]: the status it answered, or -1 where the connection closed or reset first. */
-    private fun raw(port: Int, request: String): Int = try {
-        Socket(InetAddress.getByName("127.0.0.1"), port).use { socket ->
-            socket.soTimeout = 5_000
-            socket.getOutputStream().apply {
-                write(request.toByteArray(Charsets.ISO_8859_1))
-                flush()
+    private fun raw(port: Int, request: String): Int =
+        try {
+            Socket(InetAddress.getByName("127.0.0.1"), port).use { socket ->
+                socket.soTimeout = 5_000
+                socket.getOutputStream().apply {
+                    write(request.toByteArray(Charsets.ISO_8859_1))
+                    flush()
+                }
+                val line = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.ISO_8859_1)).readLine()
+                line?.split(' ')?.getOrNull(1)?.toIntOrNull() ?: -1
             }
-            val line = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.ISO_8859_1)).readLine()
-            line?.split(' ')?.getOrNull(1)?.toIntOrNull() ?: -1
+        } catch (_: IOException) {
+            -1
         }
-    } catch (_: IOException) {
-        -1
-    }
 
     private fun port(redirect: String) = URL(redirect).port
 
@@ -114,14 +112,15 @@ class BrowserSignInContractTest {
         val answer = async(Dispatchers.IO) { browser.open(page, redirect) }
         while (opened.isEmpty()) delay(10)
         val port = port(redirect)
-        for (request in listOf(
-            "GET /oauth/callback?code=%&state=$state HTTP/1.1\r\n\r\n",
-            "GET /oauth/callback?code=%zz&state=$state HTTP/1.1\r\n\r\n",
-            "GET /oauth/callback?code=a&state=$state&state=$state HTTP/1.1\r\n\r\n",
-            "POST /oauth/callback?code=a&state=$state HTTP/1.1\r\n\r\n",
-            "HELLO\r\n\r\n",
-            "GET http://127.0.0.1/oauth/callback?code=a&state=$state HTTP/1.1\r\n\r\n",
-        )) {
+        for (request in
+            listOf(
+                "GET /oauth/callback?code=%&state=$state HTTP/1.1\r\n\r\n",
+                "GET /oauth/callback?code=%zz&state=$state HTTP/1.1\r\n\r\n",
+                "GET /oauth/callback?code=a&state=$state&state=$state HTTP/1.1\r\n\r\n",
+                "POST /oauth/callback?code=a&state=$state HTTP/1.1\r\n\r\n",
+                "HELLO\r\n\r\n",
+                "GET http://127.0.0.1/oauth/callback?code=a&state=$state HTTP/1.1\r\n\r\n",
+            )) {
             assertEquals(request, 400, raw(port, request))
         }
         assertTrue(answer.isActive)
@@ -131,9 +130,8 @@ class BrowserSignInContractTest {
     }
 
     /**
-     * A line or a head past its bound is refused once the bound is read; the
-     * rest is never read, so the refusal may arrive as a reset. Either way
-     * the attempt goes on.
+     * A line or a head past its bound is refused once the bound is read; the rest is never read, so the refusal may arrive as a reset. Either way the attempt
+     * goes on.
      */
     @Test
     fun anOversizedLineOrHeadIsRefusedAndTheWaitGoesOn() = runBlocking {
@@ -175,31 +173,28 @@ class BrowserSignInContractTest {
         browser.finish(redirect)
     }
 
-    /**
-     * A head that trickles in is cut at the connection's deadline, however
-     * often a byte arrives, and holds no other connection up meanwhile.
-     */
+    /** A head that trickles in is cut at the connection's deadline, however often a byte arrives, and holds no other connection up meanwhile. */
     @Test
     fun aTricklingConnectionIsCutAtItsDeadline() = runBlocking {
         val quick = BrowserSignIn(context, { page: String -> opened.add(page) }, BrowserSignIn.Limits(connection = 1_000))
         val redirect = (quick.prepare(BrowserRoute.Loopback("Substrate Tasks", "/oauth/callback")) as BrowserPrepared.Ready).redirect
         val answer = async(Dispatchers.IO) { quick.open(page, redirect) }
         while (opened.isEmpty()) delay(10)
-        val trickled = async(Dispatchers.IO) {
-            val started = System.nanoTime()
-            Socket(InetAddress.getByName("127.0.0.1"), port(redirect)).use { socket ->
-                val out = socket.getOutputStream()
-                try {
-                    for (byte in "GET /oauth/callback?code=a&state=$state HTTP/1.1\r\nHost: x\r\n".toByteArray()) {
-                        out.write(byte.toInt())
-                        out.flush()
-                        Thread.sleep(150)
-                    }
-                } catch (_: IOException) {
+        val trickled =
+            async(Dispatchers.IO) {
+                val started = System.nanoTime()
+                Socket(InetAddress.getByName("127.0.0.1"), port(redirect)).use { socket ->
+                    val out = socket.getOutputStream()
+                    try {
+                        for (byte in "GET /oauth/callback?code=a&state=$state HTTP/1.1\r\nHost: x\r\n".toByteArray()) {
+                            out.write(byte.toInt())
+                            out.flush()
+                            Thread.sleep(150)
+                        }
+                    } catch (_: IOException) {}
                 }
+                (System.nanoTime() - started) / 1_000_000
             }
-            (System.nanoTime() - started) / 1_000_000
-        }
         delay(200)
         // Another connection is answered while the trickle is still coming.
         assertEquals(404, get(redirect.replace("/oauth/callback", "/favicon.ico")).first)
@@ -237,14 +232,16 @@ class BrowserSignInContractTest {
     fun theListenerIsOnTheLoopbackAddressAlone() = runBlocking {
         val redirect = ready()
         val port = URL(redirect).port
-        val outside = NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
-            .filter { !it.isLoopbackAddress && it is java.net.Inet4Address }
+        val outside =
+            NetworkInterface.getNetworkInterfaces()
+                .toList()
+                .flatMap { it.inetAddresses.toList() }
+                .filter { !it.isLoopbackAddress && it is java.net.Inet4Address }
         for (address in outside) {
             try {
                 Socket(address, port).close()
                 fail("the listener answered on $address")
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) {}
         }
         Socket(InetAddress.getByName("127.0.0.1"), port).close()
         browser.finish(redirect)

@@ -1,11 +1,12 @@
 import Foundation
-import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
+import SubstrateLocal
 import Testing
 import WorkoutsCore
+
 @testable import WorkoutsSync
 
 /// A Hevy export imported and sent as the app sends it, against a real
@@ -23,15 +24,18 @@ import WorkoutsCore
 struct LiveHevyImportTests {
     let environment = ProcessInfo.processInfo.environment
 
-    @Test("an export's sessions and exercises land on the server",
-          .enabled(if: ProcessInfo.processInfo.environment["WORKOUTS_HEVY_CSV"] != nil))
+    @Test(
+        "an export's sessions and exercises land on the server",
+        .enabled(if: ProcessInfo.processInfo.environment["WORKOUTS_HEVY_CSV"] != nil))
     func importAndSend() async throws {
         let server = try #require(environment["WORKOUTS_E2E_SERVER"].flatMap(URL.init(string:)))
         let repository = try #require(environment["WORKOUTS_E2E_REPOSITORY"])
         let client = SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? "")
         let api = WorkoutsAPI(client: client)
         let codec = RecordCodec()
-        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(WorkoutsKinds.packageID) in \(repository) first")
+        #expect(
+            try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable,
+            "install \(WorkoutsKinds.packageID) in \(repository) first")
 
         // The exercise library, seeded as the sync seeds it, and read back as
         // the catalogue; a second run writes nothing.
@@ -48,8 +52,9 @@ struct LiveHevyImportTests {
         let path = try #require(environment["WORKOUTS_HEVY_CSV"])
         let file = try HevyCSV.read(String(contentsOfFile: path, encoding: .utf8))
         let bundled = try BundledCatalog().loadNow()
-        let plan = HevyImport.plan(file, exercises: catalog.exercises, history: [], deleted: [], timeZone: TimeZone(identifier: "Europe/London")!,
-                                   adapter: "substrate-workouts@test", library: try library.catalog().exercises)
+        let plan = HevyImport.plan(
+            file, exercises: catalog.exercises, history: [], deleted: [], timeZone: TimeZone(identifier: "Europe/London")!,
+            adapter: "substrate-workouts@test", library: try library.catalog().exercises)
         print("live Hevy import: \(plan.sessions.count) sessions, \(plan.matched.count) titles matched, new: \(plan.exercises.map(\.name))")
         #expect(plan.problems.isEmpty)
         #expect(!plan.sessions.isEmpty)
@@ -93,15 +98,18 @@ struct LiveHevyImportTests {
             session.extra = [:]
             for index in session.slots.indices { session.slots[index].extra = [:] }
             #expect(session == records.session, "\(records.id): the session differs")
-            #expect(Set(back.sets.map { set in
-                var set = set
-                set.extra = [:]
-                return set
-            }) == Set(records.sets), "\(records.id): the sets differ")
+            #expect(
+                Set(
+                    back.sets.map { set in
+                        var set = set
+                        set.extra = [:]
+                        return set
+                    }) == Set(records.sets), "\(records.id): the sets differ")
         }
         // This phone, after the flush, has nothing left to send.
-        let quiet = HistoryExchange.plan(server: after, local: plan.sessions, queued: [], versions: await outbox.versions, tombstones: [],
-                                         codec: codec)
+        let quiet = HistoryExchange.plan(
+            server: after, local: plan.sessions, queued: [], versions: await outbox.versions, tombstones: [],
+            codec: codec)
         #expect(quiet.uploads.isEmpty && quiet.removals.isEmpty && quiet.finishes.isEmpty && quiet.merges.isEmpty)
     }
 
@@ -109,14 +117,17 @@ struct LiveHevyImportTests {
     /// workouts, routines and own exercises, every exercise named by its
     /// template id, the routines written as workout routines and each
     /// session linked to the routine it was started from.
-    @Test("an account read through Hevy's API lands with its routines",
-          .enabled(if: ProcessInfo.processInfo.environment["WORKOUTS_HEVY_API_KEY"] != nil))
+    @Test(
+        "an account read through Hevy's API lands with its routines",
+        .enabled(if: ProcessInfo.processInfo.environment["WORKOUTS_HEVY_API_KEY"] != nil))
     func importFromAPI() async throws {
         let server = try #require(environment["WORKOUTS_E2E_SERVER"].flatMap(URL.init(string:)))
         let repository = try #require(environment["WORKOUTS_E2E_REPOSITORY"])
         let api = WorkoutsAPI(client: SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""))
         let codec = RecordCodec()
-        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(WorkoutsKinds.packageID) in \(repository) first")
+        #expect(
+            try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable,
+            "install \(WorkoutsKinds.packageID) in \(repository) first")
         let library = try ExerciseLibrary.bundled()
         try await LibraryInstall(directory: temporaryDirectory(), writingOptions: .atomic).ensure(api, library: library)
         let catalog = try await RemoteCatalog(directory: temporaryDirectory(), writingOptions: .atomic).refresh(api)
@@ -124,11 +135,13 @@ struct LiveHevyImportTests {
         let known = Set(libraryExercises.values.flatMap { $0.codes.filter { $0.system == "hevy" }.map(\.code) })
 
         let export = try await HevyClient(apiKey: environment["WORKOUTS_HEVY_API_KEY"] ?? "").export(known: known)
-        let plan = HevyImport.plan(export, exercises: catalog.exercises, routines: catalog.routines, history: [], deleted: [],
-                                   timeZone: TimeZone(identifier: "Europe/London")!, adapter: "substrate-workouts@test", library: libraryExercises)
+        let plan = HevyImport.plan(
+            export, exercises: catalog.exercises, routines: catalog.routines, history: [], deleted: [],
+            timeZone: TimeZone(identifier: "Europe/London")!, adapter: "substrate-workouts@test", library: libraryExercises)
         let linked = plan.sessions.count { $0.session.routine != nil }
-        print("live Hevy API: \(export.workouts.count) workouts, \(export.routines.count) routines, \(export.templates.count) own exercises; "
-            + "\(plan.sessions.count) sessions (\(linked) linked to a routine), \(plan.routines.count) routines, new: \(plan.exercises.map(\.name))")
+        print(
+            "live Hevy API: \(export.workouts.count) workouts, \(export.routines.count) routines, \(export.templates.count) own exercises; "
+                + "\(plan.sessions.count) sessions (\(linked) linked to a routine), \(plan.routines.count) routines, new: \(plan.exercises.map(\.name))")
         #expect(plan.problems.isEmpty)
         #expect(plan.routines.count == export.routines.count)
 
@@ -138,8 +151,9 @@ struct LiveHevyImportTests {
         let held = Set(try await api.list([codec.kinds.exercise]).map(\.id))
         var entries = plan.exercises.filter { !held.contains($0.id.rawValue) }.map { OutboxPlan.exerciseAdded($0, codec: codec) }
         entries += plan.routines.map { OutboxPlan.routineCreated($0, codec: codec) }
-        let exchange = HistoryExchange.plan(server: try await ServerHistory(api: api, codec: codec).snapshot(), local: plan.sessions, queued: [],
-                                            versions: [:], tombstones: [], codec: codec)
+        let exchange = HistoryExchange.plan(
+            server: try await ServerHistory(api: api, codec: codec).snapshot(), local: plan.sessions, queued: [],
+            versions: [:], tombstones: [], codec: codec)
         for records in exchange.uploads.sorted(by: { $0.session.at < $1.session.at }) {
             entries += OutboxPlan.finished(records, codec: codec)
         }
@@ -153,8 +167,10 @@ struct LiveHevyImportTests {
             let back = try #require(after.routines[routine.id], "\(routine.id) is not on the server")
             #expect(back.slots.map(\.exercise) == routine.slots.map(\.exercise) && back.slots.map(\.sets) == routine.slots.map(\.sets))
         }
-        let sessions = HistoryExchange.plan(server: try await ServerHistory(api: api, codec: codec).snapshot(), local: [], queued: [],
-                                            versions: [:], tombstones: [], codec: codec).imports
+        let sessions = HistoryExchange.plan(
+            server: try await ServerHistory(api: api, codec: codec).snapshot(), local: [], queued: [],
+            versions: [:], tombstones: [], codec: codec
+        ).imports
         #expect(sessions.count == plan.sessions.count)
         #expect(sessions.count { $0.session.routine != nil } == linked)
     }
@@ -165,18 +181,22 @@ struct LiveHevyImportTests {
     /// library id stays as the owner wrote it, a record the library
     /// recognises only gains what it is, and everything the account holds
     /// lands.
-    @Test("the library over an owner's exercise, then a whole Hevy account",
-          .enabled(if: ProcessInfo.processInfo.environment["WORKOUTS_HEVY_API_KEY"] != nil))
+    @Test(
+        "the library over an owner's exercise, then a whole Hevy account",
+        .enabled(if: ProcessInfo.processInfo.environment["WORKOUTS_HEVY_API_KEY"] != nil))
     func seedThenImport() async throws {
         let server = try #require(environment["WORKOUTS_E2E_SERVER"].flatMap(URL.init(string:)))
         let repository = try #require(environment["WORKOUTS_E2E_REPOSITORY"])
         let api = WorkoutsAPI(client: SubstrateClient(server: server, token: environment["WORKOUTS_E2E_OWNER_TOKEN"] ?? ""))
         let codec = RecordCodec()
-        #expect(try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable, "install \(WorkoutsKinds.packageID) in \(repository) first")
+        #expect(
+            try await PackageCheck(api: api, manifest: try PackageManifest.bundled()).state().writable,
+            "install \(WorkoutsKinds.packageID) in \(repository) first")
 
         // An owner's exercise at a library id, with no load basis.
-        try await api.write("PUT", codec.kinds.exercise, "bench-press-dumbbell",
-                            properties: ["name": .string("Bench Press (Dumbbell)"), "measurement": .string("weightreps")])
+        try await api.write(
+            "PUT", codec.kinds.exercise, "bench-press-dumbbell",
+            properties: ["name": .string("Bench Press (Dumbbell)"), "measurement": .string("weightreps")])
         let before = Dictionary(uniqueKeysWithValues: try await api.list([codec.kinds.exercise, codec.kinds.movement]).map { ("\($0.kind)/\($0.id)", $0) })
 
         let library = try ExerciseLibrary.bundled()
@@ -192,8 +212,9 @@ struct LiveHevyImportTests {
                 #expect(now[name] == value, "\(key).\(name) changed in the seeding")
             }
             let added = Set(now.keys).subtracting(record.properties.keys)
-            #expect(added.isSubset(of: ["movement", "muscles", "codes", "aliases", "force", "mechanic", "primaryMuscles", "secondaryMuscles"]),
-                    "\(key) gained \(added)")
+            #expect(
+                added.isSubset(of: ["movement", "muscles", "codes", "aliases", "force", "mechanic", "primaryMuscles", "secondaryMuscles"]),
+                "\(key) gained \(added)")
         }
         #expect(after["\(codec.kinds.exercise)/bench-press-dumbbell"]?.properties["loadBasis"] == nil)
         let marker = try await api.get(codec.kinds.library, LibraryInstall.markerID)
@@ -204,10 +225,13 @@ struct LiveHevyImportTests {
         let libraryExercises = try library.catalog().exercises
         let known = Set(libraryExercises.values.flatMap { $0.codes.filter { $0.system == "hevy" }.map(\.code) })
         let export = try await HevyClient(apiKey: environment["WORKOUTS_HEVY_API_KEY"] ?? "").export(known: known)
-        let plan = HevyImport.plan(export, exercises: catalog.exercises, routines: catalog.routines, history: [], deleted: [],
-                                   timeZone: TimeZone(identifier: "Europe/London")!, adapter: "substrate-workouts@test", library: libraryExercises)
-        print("live import: \(export.workouts.count) workouts, \(export.routines.count) routines, \(export.measurements.count) body measurements, "
-            + "\(export.templates.count) own exercises, missing \(export.missingTemplates); \(plan.sessions.count) sessions, problems \(plan.problems.count)")
+        let plan = HevyImport.plan(
+            export, exercises: catalog.exercises, routines: catalog.routines, history: [], deleted: [],
+            timeZone: TimeZone(identifier: "Europe/London")!, adapter: "substrate-workouts@test", library: libraryExercises)
+        print(
+            "live import: \(export.workouts.count) workouts, \(export.routines.count) routines, \(export.measurements.count) body measurements, "
+                + "\(export.templates.count) own exercises, missing \(export.missingTemplates); \(plan.sessions.count) sessions, problems \(plan.problems.count)"
+        )
         #expect(plan.sessions.count == export.workouts.count && plan.routines.count == export.routines.count)
         #expect(plan.measurements.count == export.measurements.count)
         let outbox = try Outbox.workouts(directory: temporaryDirectory(), writingOptions: .atomic)
@@ -221,10 +245,11 @@ struct LiveHevyImportTests {
         let parked = await outbox.parked.prefix(3).map { "\($0.kind)/\($0.recordID): \($0.lastError ?? "")" }
         #expect(state == .sent, "\(parked)")
         #expect(try await api.list([codec.kinds.bodyMeasurement]).count == export.measurements.count)
-        let sessions = HistoryExchange.plan(server: try await ServerHistory(api: api, codec: codec).snapshot(), local: [], queued: [],
-                                            versions: [:], tombstones: [], codec: codec).imports
+        let sessions = HistoryExchange.plan(
+            server: try await ServerHistory(api: api, codec: codec).snapshot(), local: [], queued: [],
+            versions: [:], tombstones: [], codec: codec
+        ).imports
         #expect(sessions.count == plan.sessions.count)
         #expect(sessions.count { $0.session.bodyMass != nil } == plan.sessions.count { $0.session.bodyMass != nil })
     }
 }
-

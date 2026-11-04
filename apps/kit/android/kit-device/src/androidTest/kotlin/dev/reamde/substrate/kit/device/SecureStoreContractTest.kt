@@ -18,10 +18,8 @@ import org.junit.runner.RunWith
 import org.xmlpull.v1.XmlPullParser
 
 /**
- * The secure store's half of the security parity list (app-kit.md §5.4):
- * missing told from found, ciphertext alone on disk, under no_backup/, which
- * the backup and transfer rules exclude by name, and a corrupt or dropped key
- * answered by a reset, never a crash and never plaintext.
+ * The secure store's half of the security parity list (app-kit.md §5.4): missing told from found, ciphertext alone on disk, under no_backup/, which the backup
+ * and transfer rules exclude by name, and a corrupt or dropped key answered by a reset, never a crash and never plaintext.
  */
 @RunWith(AndroidJUnit4::class)
 class SecureStoreContractTest {
@@ -102,9 +100,10 @@ class SecureStoreContractTest {
             while (parser.next() != XmlPullParser.END_DOCUMENT) {
                 if (parser.eventType != XmlPullParser.START_TAG) continue
                 when (parser.name) {
-                    "cloud-backup", "device-transfer" -> section = parser.name
-                    "exclude" -> found.getOrPut(section) { mutableListOf() } +=
-                        "${parser.getAttributeValue(null, "domain")}:${parser.getAttributeValue(null, "path")}"
+                    "cloud-backup",
+                    "device-transfer" -> section = parser.name
+                    "exclude" ->
+                        found.getOrPut(section) { mutableListOf() } += "${parser.getAttributeValue(null, "domain")}:${parser.getAttributeValue(null, "path")}"
                 }
             }
             return found

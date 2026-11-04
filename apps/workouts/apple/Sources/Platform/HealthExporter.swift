@@ -1,9 +1,9 @@
 import Foundation
 import HealthKit
 import Observation
-import os
-import WorkoutsCore
 import UIKit
+import WorkoutsCore
+import os
 
 /// Where Apple Health access stands, for Settings and the session detail.
 enum HealthAccess: Equatable, Sendable {

@@ -1,5 +1,4 @@
 import Foundation
-@testable import ChatKit
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
@@ -8,6 +7,8 @@ import SubstrateRuntime
 import SubstrateScreens
 import SubstrateTesting
 import Testing
+
+@testable import ChatKit
 
 /// DESIGN.md's seven rules ("The store and its concurrency rules"), one
 /// test each by its number, against a scripted server on the kit's runtime.
@@ -90,8 +91,9 @@ struct SevenRules {
         let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
         var state = signedInState()
         // The chat was opened, its disk read asked for; then a send took it.
-        state.conversations[ChildKey("k")] = .init(seed: .init(thread: "t1", agent: helper, draft: "", listen: false), thread: "t1",
-                                                   agent: helper, owns: true)
+        state.conversations[ChildKey("k")] = .init(
+            seed: .init(thread: "t1", agent: helper, draft: "", listen: false), thread: "t1",
+            agent: helper, owns: true)
         let late = try app.apply(.init(.cachedLoaded(thread: "t1", epoch: 0, cachedRows)), to: state)
         #expect(late.transcripts["t1"] == nil)
         #expect(!late.asks.contains { if case .read = $0 { true } else { false } })
@@ -104,8 +106,9 @@ struct SevenRules {
         state.conversations[key] = .init(seed: .init(thread: "t1", agent: helper, draft: "", listen: false), thread: "t1", agent: helper)
         // An attach takes the thread and a settle hands it back: each moves
         // the epoch.
-        let report = ChatAppStep.Report(thread: "t1", agent: helper, owns: true, active: true, streaming: true, outcomes: 0, name: "Helper",
-                                        settles: 0, named: nil, read: nil, draft: nil, sent: false, failure: nil)
+        let report = ChatAppStep.Report(
+            thread: "t1", agent: helper, owns: true, active: true, streaming: true, outcomes: 0, name: "Helper",
+            settles: 0, named: nil, read: nil, draft: nil, sent: false, failure: nil)
         state = try app.apply(.init(.conversation(key, report)), to: state)
         #expect(state.readEpochs["t1"] == 1)
         // The move cancels the read in flight, by its key.
@@ -122,8 +125,10 @@ struct SevenRules {
     }
 
     @Test func rule5_aNewRunDropsWhatAnOlderRunStillDelivers() async throws {
-        let rig = ChatRig(baseRoutes(threads: #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3, status: "running"))]}"#,
-                                     status: "running")
+        let rig = ChatRig(
+            baseRoutes(
+                threads: #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3, status: "running"))]}"#,
+                status: "running")
                 + [.init(method: "GET", path: "/events", answer: .stream([#"{"kind":"idle","status":"running"}"#]))])
         try await rig.signIn()
         // The attach's first read is held on the wire.
@@ -172,15 +177,19 @@ struct SevenRules {
         let storage = MemoryStorage()
         let sessions = SessionStore(storage: storage)
         let manifest = ChatManifest.manifest
-        try sessions.save(Session(server: origin, repository: repository, secret: "secret", clientID: manifest.clientID,
-                                  scopes: manifest.scopes))
+        try sessions.save(
+            Session(
+                server: origin, repository: repository, secret: "secret", clientID: manifest.clientID,
+                scopes: manifest.scopes))
         let server = ChatServer(baseRoutes() + [.init(method: "POST", path: "/oauth/revoke", answer: .json(200, "{}"))])
-        var environment = AppEnvironment.testing(transport: server,
-                                                 client: .fixed(SubstrateClient(server: origin, token: "secret", transport: server)))
+        var environment = AppEnvironment.testing(
+            transport: server,
+            client: .fixed(SubstrateClient(server: origin, token: "secret", transport: server)))
         environment.devices.notifications = RecordedNotifications()
         let app = ChatApp(storage: ChatStorage(base: temporaryFolder("chat")), preferences: MemoryPreferenceStore(), platform: .macos)
-        let link = LinkController(app: app, manifest: manifest, sessions: sessions,
-                                  words: StatusWords(app: ChatManifest.appName, device: "this Mac", kept: "saved chats"))
+        let link = LinkController(
+            app: app, manifest: manifest, sessions: sessions,
+            words: StatusWords(app: ChatManifest.appName, device: "this Mac", kept: "saved chats"))
         let harness = ControllerHarness(link, environment: environment)
         try await harness.until { await $0.presentation.snapshot.phase == .signedIn }
         await harness.send(.signOut)
@@ -272,9 +281,10 @@ struct ConversationRuns {
     }
 
     @Test func streamedTextPresentsWithinItsWindowAndStructureAtOnce() throws {
-        let conversation = Conversation(key: ChildKey("k"), seed: .init(thread: nil, agent: helper, draft: "", listen: false), facts: nil,
-                                        online: true, keyless: nil, newestTurn: nil, visible: true, pollNudge: 0, resumeNudge: 0,
-                                        continuing: nil)
+        let conversation = Conversation(
+            key: ChildKey("k"), seed: .init(thread: nil, agent: helper, draft: "", listen: false), facts: nil,
+            online: true, keyless: nil, newestTurn: nil, visible: true, pollNudge: 0, resumeNudge: 0,
+            continuing: nil)
         var delta = AgentEvent(kind: .delta)
         delta.text = "a"
         #expect(conversation.coalescing(of: .init(.streamed(delta, at: Date()))) == .within(.milliseconds(50)))
@@ -296,14 +306,16 @@ struct ListRules {
     }
 
     @Test func anAppTokenListsTheCardsUnderTheThreadsItKnows() async throws {
-        let interaction = #"{"head":10,"generation":"g","records":[{"id":"i1","kind":"substrate.reamde.dev/llm/interaction","version":1,"createdAt":"2026-10-31T10:00:02Z","updatedAt":"2026-10-31T10:00:02Z","properties":{"state":"pending","thread":{"ref":"substrate.reamde.dev/llm/thread/t1"}}}]}"#
+        let interaction =
+            #"{"head":10,"generation":"g","records":[{"id":"i1","kind":"substrate.reamde.dev/llm/interaction","version":1,"createdAt":"2026-10-31T10:00:02Z","updatedAt":"2026-10-31T10:00:02Z","properties":{"state":"pending","thread":{"ref":"substrate.reamde.dev/llm/thread/t1"}}}]}"#
         let named = #""thread":{"in":["t1"]}"#
         let forbidden = #"{"error":{"code":"forbidden","message":"an app's token lists it under filter.properties.thread"}}"#
         let threads = #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3))]}"#
-        let rig = ChatRig([
-            .init(method: "GET", path: "/api/v1/records", query: named, answer: .json(200, interaction)),
-            .init(method: "GET", path: "/api/v1/records", query: "llm/interaction", answer: .json(403, forbidden)),
-        ] + baseRoutes(threads: threads), scopes: ["agents:*"])
+        let rig = ChatRig(
+            [
+                .init(method: "GET", path: "/api/v1/records", query: named, answer: .json(200, interaction)),
+                .init(method: "GET", path: "/api/v1/records", query: "llm/interaction", answer: .json(403, forbidden)),
+            ] + baseRoutes(threads: threads), scopes: ["agents:*"])
         try await rig.signIn()
         #expect(await rig.harness.state.refreshError == nil)
         #expect(await rig.harness.state.interactions.map(\.id) == ["i1"])
@@ -372,13 +384,17 @@ struct ListRules {
     @Test func aReplyThatSettlesOffScreenNotifiesOnce() async throws {
         let rig = ChatRig(baseRoutes(threads: emptyPage))
         try await rig.signIn()
-        let settled = Record(id: "t1", kind: Kinds.thread, properties: [
-            "mode": "chat", "status": "ok", "finishedAt": "2026-10-31T10:00:05Z", "lastReply": "Hello",
-            "agent": ["ref": .string("\(Kinds.agent)/\(helper)")],
-        ], version: 4)
+        let settled = Record(
+            id: "t1", kind: Kinds.thread,
+            properties: [
+                "mode": "chat", "status": "ok", "finishedAt": "2026-10-31T10:00:05Z", "lastReply": "Hello",
+                "agent": ["ref": .string("\(Kinds.agent)/\(helper)")],
+            ], version: 4)
         await rig.harness.deliver(.init(.threadsRead(.init(chats: [settled], automated: []))))
         await rig.harness.deliver(.init(.threadsRead(.init(chats: [settled], automated: []))))
-        let scheduled: @Sendable () -> [NotificationRequest] = { rig.notifications.calls.compactMap { if case let .schedule(request) = $0 { request } else { nil } } }
+        let scheduled: @Sendable () -> [NotificationRequest] = {
+            rig.notifications.calls.compactMap { if case let .schedule(request) = $0 { request } else { nil } }
+        }
         try await rig.harness.until { _ in scheduled().count == 1 }
         await rig.harness.settle()
         #expect(scheduled().count == 1)

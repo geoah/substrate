@@ -28,6 +28,5 @@ class MainActivity : ComponentActivity() {
         fixture(intent)?.let { opened.value = it }
     }
 
-    private fun fixture(intent: Intent?): String? =
-        intent?.data?.takeIf { it.scheme == "substrate-gallery" && it.host == "fixture" }?.lastPathSegment
+    private fun fixture(intent: Intent?): String? = intent?.data?.takeIf { it.scheme == "substrate-gallery" && it.host == "fixture" }?.lastPathSegment
 }

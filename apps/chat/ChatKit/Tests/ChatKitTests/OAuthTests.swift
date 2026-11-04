@@ -1,14 +1,16 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
-import Testing
-@testable import ChatKit
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
 import SubstrateRuntime
+import Testing
+
+@testable import ChatKit
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 private let agentVerbs = ["read:*", "write:*", "agents:*", "decide:*"]
 
@@ -28,8 +30,9 @@ private final class Answers: HTTPTransport, @unchecked Sendable {
         lock.withLock { seen.append(request) }
         let path = request.url?.path ?? ""
         let (status, body) = routes[path] ?? (404, #"{"error":{"code":"not_found","message":"no route"}}"#)
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
-                                       headerFields: ["Content-Type": "application/json"])!
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"])!
         return (Data(body.utf8), response)
     }
 }
@@ -37,7 +40,8 @@ private final class Answers: HTTPTransport, @unchecked Sendable {
 private func metadataJSON(scopes: [String], details: [String] = []) -> String {
     let list = scopes.map { "\"\($0)\"" }.joined(separator: ",")
     let types = details.map { "\"\($0)\"" }.joined(separator: ",")
-    return #"{"issuer":"https://s.example.com","authorization_endpoint":"https://s.example.com/oauth/authorize","token_endpoint":"https://s.example.com/oauth/token","revocation_endpoint":"https://s.example.com/oauth/revoke","authorization_response_iss_parameter_supported":true,"scopes_supported":["#
+    return
+        #"{"issuer":"https://s.example.com","authorization_endpoint":"https://s.example.com/oauth/authorize","token_endpoint":"https://s.example.com/oauth/token","revocation_endpoint":"https://s.example.com/oauth/revoke","authorization_response_iss_parameter_supported":true,"scopes_supported":["#
         + list + #"],"authorization_details_types_supported":["# + types + "]}"
 }
 
@@ -45,8 +49,9 @@ private func metadataJSON(scopes: [String], details: [String] = []) -> String {
 /// the request it sends, the door each server takes, and the sessions
 /// earlier builds kept.
 @Suite(.timeLimit(.minutes(10))) struct OAuthFlow {
-    private let metadata = AuthorizationServerMetadata(issuer: origin, scopesSupported: agentVerbs,
-                                                       authorizationDetailsTypesSupported: AuthorizationDetail.Types.all)
+    private let metadata = AuthorizationServerMetadata(
+        issuer: origin, scopesSupported: agentVerbs,
+        authorizationDetailsTypesSupported: AuthorizationDetail.Types.all)
 
     @Test func theChallengeIsRFC7636sOwnVector() throws {
         let pkce = PKCE(verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
@@ -65,8 +70,9 @@ private func metadataJSON(scopes: [String], details: [String] = []) -> String {
     @Test func theAuthorizeURLCarriesChatsRequestAndNoDetails() throws {
         let client = OAuthClient(manifest: ChatManifest.manifest, metadata: metadata)
         let url = try client.authorizeURL(redirect: "http://127.0.0.1:5000/oauth/callback", pkce: PKCE(verifier: "v"), state: "st")
-        let items = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [])
-            .map { ($0.name, $0.value ?? "") })
+        let items = Dictionary(
+            uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [])
+                .map { ($0.name, $0.value ?? "") })
         #expect(items["response_type"] == "code")
         #expect(items["client_id"] == ChatManifest.manifest.clientID)
         #expect(items["code_challenge"] == PKCE(verifier: "v").challenge)
@@ -100,8 +106,10 @@ private func metadataJSON(scopes: [String], details: [String] = []) -> String {
     @Test func eachServerTakesTheDoorItCanServe() {
         func door(_ metadata: AuthorizationServerMetadata?, version: String = "dev") -> SignInDoor {
             let verdict = ChatManifest.requirement.verdict(version: version, metadata: metadata)
-            return ChatManifest.manifest.door(for: ServerProbe.Result(origin: origin, discovery: Discovery(server: .init(version: version)),
-                                                                      metadata: metadata, verdict: verdict))
+            return ChatManifest.manifest.door(
+                for: ServerProbe.Result(
+                    origin: origin, discovery: Discovery(server: .init(version: version)),
+                    metadata: metadata, verdict: verdict))
         }
         #expect(door(metadata) == .app)
         #expect(door(metadata, version: "v0.114.0") == .app)
@@ -132,7 +140,7 @@ private func metadataJSON(scopes: [String], details: [String] = []) -> String {
         #expect(missing == ["let apps talk to your agents", "let apps apply what your agents suggest"])
 
         let before = Answers([
-            "/.well-known/substrate/server.json": (200, #"{"server":{"version":"v0.113.0"},"registration":{"totpRequired":false}}"#),
+            "/.well-known/substrate/server.json": (200, #"{"server":{"version":"v0.113.0"},"registration":{"totpRequired":false}}"#)
         ])
         let old = try await ServerProbe(transport: before).probe(origin, requirement: ChatManifest.requirement, app: ChatManifest.appName)
         #expect(old.metadata == nil)
@@ -164,9 +172,10 @@ private struct LegacySession: Codable {
     private let ends = Date(timeIntervalSinceReferenceDate: 815_000_000)
 
     private var app: LegacySession {
-        LegacySession(server: origin, repository: "r.example.com", secret: "x", tokenID: "",
-                      grants: .init(scopes: ChatManifest.scopes), expiresAt: ends,
-                      revocation: URL(string: "https://s.example.com/oauth/revoke"))
+        LegacySession(
+            server: origin, repository: "r.example.com", secret: "x", tokenID: "",
+            grants: .init(scopes: ChatManifest.scopes), expiresAt: ends,
+            revocation: URL(string: "https://s.example.com/oauth/revoke"))
     }
 
     @Test func anAppSessionAnEarlierBuildKeptStillReads() throws {
@@ -243,7 +252,8 @@ private struct LegacySession: Codable {
     @Test func theApprovedAccessReadsAsTheApprovalPageSaysIt() {
         let words = Grants(ChatManifest.scopes).words
         #expect(words.count == 4)
-        #expect(words[0].hasPrefix("Talk to all your agents, including agents added later, and through a chat have them do anything they may do; read every chat"))
+        #expect(
+            words[0].hasPrefix("Talk to all your agents, including agents added later, and through a chat have them do anything they may do; read every chat"))
         #expect(words[1].hasPrefix("Apply or dismiss the changes your agents suggest"))
         #expect(words[2].hasPrefix("See your"))
         #expect(words[3] == "See all your records, including kinds added later, and search them by meaning, which spends your embedding budget")
@@ -253,8 +263,9 @@ private struct LegacySession: Codable {
 
 @Suite(.timeLimit(.minutes(10))) struct StillSetUp {
     private func session(_ scopes: [String], requested: [String]? = ChatManifest.scopes) -> Session {
-        Session(server: origin, repository: "r.example.com", secret: "x", clientID: ChatManifest.localClientID, scopes: scopes,
-                requestedScopes: requested)
+        Session(
+            server: origin, repository: "r.example.com", secret: "x", clientID: ChatManifest.localClientID, scopes: scopes,
+            requestedScopes: requested)
     }
 
     @Test func aScopeTheOwnerLeftOutIsNeverAskedAboutAgain() {
@@ -262,14 +273,17 @@ private struct LegacySession: Codable {
         // The last approval asked for all four, and the owner kept two.
         #expect(ChatManifest.manifest.check(for: kept).scope == "agents:* decide:*")
         // A session from before the request was kept was asked for the same.
-        #expect(ChatManifest.manifest.check(for: ChatManifest.asked(session(["agents:*", "decide:*"], requested: nil))).scope
-            == "agents:* decide:*")
+        #expect(
+            ChatManifest.manifest.check(for: ChatManifest.asked(session(["agents:*", "decide:*"], requested: nil))).scope
+                == "agents:* decide:*")
         // A scope the last approval never asked for is asked about.
-        #expect(ChatManifest.manifest.check(for: session(["agents:*", "decide:*"], requested: ["agents:*", "decide:*"])).scope
-            == ChatManifest.scopes.joined(separator: " "))
+        #expect(
+            ChatManifest.manifest.check(for: session(["agents:*", "decide:*"], requested: ["agents:*", "decide:*"])).scope
+                == ChatManifest.scopes.joined(separator: " "))
         // A review offers the left-out ones back.
-        #expect(ChatManifest.manifest.review(nil, session: kept).filter(\.leftOut).map(\.words)
-            == [ScopeWords.sentence("read:\(Kinds.provider)"), ScopeWords.sentence("read:*")])
+        #expect(
+            ChatManifest.manifest.review(nil, session: kept).filter(\.leftOut).map(\.words)
+                == [ScopeWords.sentence("read:\(Kinds.provider)"), ScopeWords.sentence("read:*")])
     }
 
     @Test func theCheckAsksForWhatANewerBuildNeedsAndTheBannerSaysIt() async throws {
@@ -280,8 +294,10 @@ private struct LegacySession: Codable {
             "/.well-known/oauth-authorization-server": (200, metadataJSON(scopes: agentVerbs, details: AuthorizationDetail.Types.all)),
             "/api/v1/authorizations/check": (200, #"{"scopes":{"missing":["read:*"]},"setup":[]}"#),
         ])
-        let status = await AppStatusCheck(manifest: ChatManifest.manifest, session: kept,
-                                          client: SubstrateClient(kept, transport: server)).run()
+        let status = await AppStatusCheck(
+            manifest: ChatManifest.manifest, session: kept,
+            client: SubstrateClient(kept, transport: server)
+        ).run()
         #expect(status.issues == [.needsApproval(changes: [Change(kind: .scope, words: ScopeWords.sentence("read:*"))])])
         let check = try #require(server.requests.first { $0.url?.path == "/api/v1/authorizations/check" })
         let body = try JSONDecoder().decode(AuthorizationCheck.self, from: try #require(check.httpBody))
@@ -297,8 +313,10 @@ private struct LegacySession: Codable {
             "/.well-known/oauth-authorization-server": (200, metadataJSON(scopes: agentVerbs)),
         ])
         let kept = session(ChatManifest.scopes)
-        let status = await AppStatusCheck(manifest: ChatManifest.manifest, session: kept,
-                                          client: SubstrateClient(kept, transport: server)).run()
+        let status = await AppStatusCheck(
+            manifest: ChatManifest.manifest, session: kept,
+            client: SubstrateClient(kept, transport: server)
+        ).run()
         #expect(status.isClear)
         #expect(!server.requests.contains { $0.url?.path == "/api/v1/authorizations/check" })
     }

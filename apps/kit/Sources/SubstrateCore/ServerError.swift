@@ -15,8 +15,8 @@ public struct ServerError: LocalizedError, Sendable, Equatable {
     /// a gateway's, and says nothing about whether the request took effect.
     public init?(status: Int, envelope data: Data) {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let error = object["error"] as? [String: Any],
-              let message = error["message"] as? String
+            let error = object["error"] as? [String: Any],
+            let message = error["message"] as? String
         else { return nil }
         self.status = status
         code = (error["code"] as? String) ?? ""

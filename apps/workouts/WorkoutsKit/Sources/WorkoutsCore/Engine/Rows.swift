@@ -250,9 +250,10 @@ public extension SessionEngine {
     internal static let defaultClusters = 3
 
     /// A planned set's head and its known segments.
-    internal static func rows(for planned: PlannedSet, slot: String, exercise: Exercise, firstSide: Side, ids: inout RowIDPool,
-                              bodyMass: Mass? = nil) -> [Row]
-    {
+    internal static func rows(
+        for planned: PlannedSet, slot: String, exercise: Exercise, firstSide: Side, ids: inout RowIDPool,
+        bodyMass: Mass? = nil
+    ) -> [Row] {
         let unilateral = exercise.resolvedLaterality == .unilateral
         let head = Row(
             id: ids.next(),
@@ -270,14 +271,16 @@ public extension SessionEngine {
         )
         if unilateral { return [head, secondSide(of: head, id: ids.next())] }
         let count = knownSegmentCount(of: planned, exercise: exercise)
-        let reps: Int? = switch planned.structure {
-        case .drop: planned.dropReps
-        case .cluster: planned.miniSetReps
-        default: nil
-        }
-        return [head] + (0 ..< count).map { index in
-            segment(of: head, position: index + 2, id: ids.next(), reps: reps)
-        }
+        let reps: Int? =
+            switch planned.structure {
+            case .drop: planned.dropReps
+            case .cluster: planned.miniSetReps
+            default: nil
+            }
+        return [head]
+            + (0 ..< count).map { index in
+                segment(of: head, position: index + 2, id: ids.next(), reps: reps)
+            }
     }
 
     /// A chain segment of `head`: a drop, cluster or mini-set. The examples'
@@ -406,7 +409,7 @@ extension SessionState {
         let ticks = removed.compactMap(\.performed)
         let survivingTicks = Set(rows.values.compactMap { $0.performed?.completedAt })
         if let countdown, case .rest = countdown.kind, ticks.contains(where: { $0.completedAt == countdown.startedAt }),
-           !survivingTicks.contains(countdown.startedAt)
+            !survivingTicks.contains(countdown.startedAt)
         {
             self.countdown = nil
         }
@@ -422,7 +425,7 @@ extension SessionState {
             return pa != pb ? pa < pb : a.recordID.rawValue < b.recordID.rawValue
         }
         while let clock = restClock, !survivingTicks.contains(clock.since),
-              let index = unused.firstIndex(where: { $0.completedAt == clock.since })
+            let index = unused.firstIndex(where: { $0.completedAt == clock.since })
         {
             restClock = unused.remove(at: index).priorRestClock
         }
@@ -440,7 +443,7 @@ extension SessionState {
     /// added row), so this is how history reads the set as failure (§5.2).
     func markedFailure(_ values: SetValues, row id: RowID) -> SetValues {
         guard values.reachedFailure == nil, let row = rows[id], let head = rows[row.headID],
-              head.termination == .failure, head.target?.termination != .failure
+            head.termination == .failure, head.target?.termination != .failure
         else { return values }
         var marked = values
         marked.reachedFailure = true
@@ -451,11 +454,12 @@ extension SessionState {
     mutating func recomputeLastCompleted() {
         let sequence = UpNext.sequence(self)
         let place = Dictionary(sequence.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
-        lastCompleted = rows.values.filter(\.isCompleted).max { a, b in
-            let (ta, tb) = (a.performed!.completedAt, b.performed!.completedAt)
-            if ta != tb { return ta < tb }
-            return (place[a.id] ?? 0) < (place[b.id] ?? 0)
-        }?.id
+        lastCompleted =
+            rows.values.filter(\.isCompleted).max { a, b in
+                let (ta, tb) = (a.performed!.completedAt, b.performed!.completedAt)
+                if ta != tb { return ta < tb }
+                return (place[a.id] ?? 0) < (place[b.id] ?? 0)
+            }?.id
     }
 
     /// Renumbers a chain's positions 1, 2, 3 in display order.

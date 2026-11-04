@@ -54,8 +54,7 @@ public struct TaskEditor: Controller, Equatable {
     /// task goes after it.
     public let lastPositions: [String: Decimal]
 
-    public init(original: TaskItem?, seedList: String? = nil, seedDay: CivilDay? = nil, lists: [EditorOption], lastPositions: [String: Decimal])
-    {
+    public init(original: TaskItem?, seedList: String? = nil, seedDay: CivilDay? = nil, lists: [EditorOption], lastPositions: [String: Decimal]) {
         self.original = original
         self.seedList = seedList
         self.seedDay = seedDay
@@ -141,24 +140,28 @@ public struct TaskEditor: Controller, Equatable {
     public func present(_ input: PresenterInput<TaskEditor>) -> TaskEditorPresentation {
         let draft = input.state.draft
         let calendar = input.calendar
-        let date: Date? = switch draft.dueKind {
-        case .none: nil
-        case .day: draft.day?.start(in: calendar, hour: 12)
-        case .time: draft.at
-        }
+        let date: Date? =
+            switch draft.dueKind {
+            case .none: nil
+            case .day: draft.day?.start(in: calendar, hour: 12)
+            case .time: draft.at
+            }
         let named = !draft.trimmedName.isEmpty
         return TaskEditorPresentation(
             title: original == nil ? "New Task" : "Edit Task",
             name: EditorText(label: TaskField.taskName.label, value: draft.name, prompt: "What to do"),
             notes: EditorText(label: TaskField.notes.label, value: draft.notes, prompt: "Details"),
             link: EditorText(label: TaskField.link.label, value: draft.link, prompt: "https://example.com"),
-            list: EditorChoice(label: TaskField.list.label, selected: draft.list ?? "",
-                               options: [EditorOption(id: "", title: InboxWords.title)] + lists),
-            due: EditorDue(label: TaskField.due.label, kind: draft.dueKind,
-                           kinds: DueKind.allCases.map { EditorOption(id: $0.rawValue, title: $0.words) }, date: date,
-                           dateLabel: draft.dueKind == .none ? nil : draft.dueKind == .day ? "Day" : "Day and Time"),
-            priority: EditorChoice(label: TaskField.priority.label, selected: draft.priority.rawValue,
-                                   options: TasksPresenter.priorities),
+            list: EditorChoice(
+                label: TaskField.list.label, selected: draft.list ?? "",
+                options: [EditorOption(id: "", title: InboxWords.title)] + lists),
+            due: EditorDue(
+                label: TaskField.due.label, kind: draft.dueKind,
+                kinds: DueKind.allCases.map { EditorOption(id: $0.rawValue, title: $0.words) }, date: date,
+                dateLabel: draft.dueKind == .none ? nil : draft.dueKind == .day ? "Day" : "Day and Time"),
+            priority: EditorChoice(
+                label: TaskField.priority.label, selected: draft.priority.rawValue,
+                options: TasksPresenter.priorities),
             save: original == nil ? "Add" : "Save", canSave: named, cancel: "Cancel",
             problem: input.state.touched && !named ? "A task needs a name." : nil)
     }

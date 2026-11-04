@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// One set of the grid (DESIGN.md §7.6). States: pending (ghost values in a
 /// readable grey, regular weight, fields bordered), Up next (a leading accent

@@ -46,9 +46,10 @@ extension SessionController {
     /// with no session open.
     func sync(_ state: State, _ presentation: SessionScreenPresentation) -> CountdownSync? {
         guard let session = state.session, let presented = presentation.session else { return nil }
-        return CountdownSync(session: session.session.id, active: session.phase == .active, title: presented.title,
-                             notification: presented.notification, quietInFront: presentation.coverVisible,
-                             activity: LiveActivityPayload(content: presented.liveActivity, revision: state.revision))
+        return CountdownSync(
+            session: session.session.id, active: session.phase == .active, title: presented.title,
+            notification: presented.notification, quietInFront: presentation.coverVisible,
+            activity: LiveActivityPayload(content: presented.liveActivity, revision: state.revision))
     }
 
     /// The alert and the activity follow the newest change: one under way
@@ -91,8 +92,9 @@ extension SessionController {
             return .once {
                 await notifications?.cancel(Self.countdownID)
                 let at = clock.now
-                await activities?.end(session.rawValue, final: final?.encoded(),
-                                      dismissAt: final == nil ? nil : at.addingTimeInterval(Self.finishedDisplay))
+                await activities?.end(
+                    session.rawValue, final: final?.encoded(),
+                    dismissAt: final == nil ? nil : at.addingTimeInterval(Self.finishedDisplay))
                 return nil
             }
         case let .prepareStart(request):
@@ -117,8 +119,9 @@ extension SessionController {
                 do {
                     try store.write(finished.entry)
                 } catch {
-                    return .finishFailed("The session could not be saved on this iPhone: \(error.localizedDescription)",
-                                         receipt: finished.receipt)
+                    return .finishFailed(
+                        "The session could not be saved on this iPhone: \(error.localizedDescription)",
+                        receipt: finished.receipt)
                 }
                 // Queued before the journal goes, so no death between here
                 // and the next launch can lose the Health save.
@@ -129,8 +132,10 @@ extension SessionController {
             let store = historyStore
             return .once {
                 guard let saved = try? store?.read(id) else { return nil }
-                return .alreadyFinished(id, recoverHealth: saved.local.health.status == .pending
-                    && saved.records.session.healthKitWorkout == nil)
+                return .alreadyFinished(
+                    id,
+                    recoverHealth: saved.local.health.status == .pending
+                        && saved.records.session.healthKitWorkout == nil)
             }
         case .registerCategory:
             guard let notifications else { return .none }
@@ -174,21 +179,25 @@ extension SessionController {
     /// replaced, then, unless a newer change started meanwhile, the Live
     /// Activity updated, stamped with the instant of this change so a late,
     /// older update loses.
-    static func apply(_ sync: CountdownSync, notifications: (any Notifications)?, activities: (any OngoingActivities)?,
-                      at now: Date) async
-    {
+    static func apply(
+        _ sync: CountdownSync, notifications: (any Notifications)?, activities: (any OngoingActivities)?,
+        at now: Date
+    ) async {
         await notifications?.cancel(countdownID)
         if sync.active, let notification = sync.notification, notification.fireDate > now {
-            await notifications?.schedule(NotificationRequest(
-                id: countdownID, title: notification.title, body: notification.body, fireAt: notification.fireDate,
-                thread: sync.session.rawValue, category: countdownCategory, timeSensitive: true, showsWhileActive: !sync.quietInFront,
-                userInfo: [sessionKey: sync.session.rawValue]))
+            await notifications?.schedule(
+                NotificationRequest(
+                    id: countdownID, title: notification.title, body: notification.body, fireAt: notification.fireDate,
+                    thread: sync.session.rawValue, category: countdownCategory, timeSensitive: true, showsWhileActive: !sync.quietInFront,
+                    userInfo: [sessionKey: sync.session.rawValue]))
         }
         // Finish ends the activity with its summary, never an "All sets
         // done" update first.
         guard !Task.isCancelled, sync.active else { return }
-        await activities?.show(OngoingActivity(id: sync.session.rawValue, title: sync.title, content: sync.activity.encoded(),
-                                               staleAt: sync.activity.staleAt, timestamp: now))
+        await activities?.show(
+            OngoingActivity(
+                id: sync.session.rawValue, title: sync.title, content: sync.activity.encoded(),
+                staleAt: sync.activity.staleAt, timestamp: now))
     }
 
     /// The Start, enriched once the device has answered: new ids, the

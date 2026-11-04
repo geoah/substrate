@@ -22,9 +22,8 @@ import dev.reamde.substrate.kit.bridge.ScreenTone
 import dev.reamde.substrate.kit.bridge.ServerTooOldPresentation
 
 /**
- * A server that cannot do what the app needs, as its presentation words
- * it: which release it runs and which the app needs, what it cannot do
- * yet, who can change that, and the two ways on where the app offers them.
+ * A server that cannot do what the app needs, as its presentation words it: which release it runs and which the app needs, what it cannot do yet, who can
+ * change that, and the two ways on where the app offers them.
  */
 @Composable
 public fun ServerTooOldScreen(

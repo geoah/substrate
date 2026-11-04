@@ -9,9 +9,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The bridge's runtime checks (app-kit.md §8) against the debug build, in
- * the app's process with the bridge its Application started. `android:smoke`
- * runs the same checks against the minified release build.
+ * The bridge's runtime checks (app-kit.md §8) against the debug build, in the app's process with the bridge its Application started. `android:smoke` runs the
+ * same checks against the minified release build.
  */
 @RunWith(AndroidJUnit4::class)
 class BridgeRuntimeTest {

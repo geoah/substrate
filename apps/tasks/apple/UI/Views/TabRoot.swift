@@ -53,11 +53,13 @@ struct TabRoot: View {
         let list = listed ? app.list.map { PhoneRoute.list($0.selection) } : nil
         let task = app.detail.map { PhoneRoute.task($0.id) }
         let current = [list, task].compactMap { $0 }
-        return Binding(get: { current }, set: { next in
-            guard next.count < current.count else { return }
-            if task != nil, !next.contains(where: { if case .task = $0 { true } else { false } }) { shell.send(.open(task: nil)) }
-            if list != nil, next.isEmpty { shell.send(.show(nil)) }
-        })
+        return Binding(
+            get: { current },
+            set: { next in
+                guard next.count < current.count else { return }
+                if task != nil, !next.contains(where: { if case .task = $0 { true } else { false } }) { shell.send(.open(task: nil)) }
+                if list != nil, next.isEmpty { shell.send(.show(nil)) }
+            })
     }
 }
 

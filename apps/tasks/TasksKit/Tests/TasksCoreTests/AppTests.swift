@@ -8,6 +8,7 @@ import SubstrateRuntime
 import SubstrateScreens
 import SubstrateTesting
 import Testing
+
 @testable import TasksCore
 
 /// Whether the scripted server answers, which a test flips.
@@ -76,8 +77,9 @@ struct LiveAppTests {
         // Back online: the write lands, leaves the queue, and the record is
         // read again; the row never goes away in between.
         network.online = true
-        rig.server.answer("GET", path(TasksKinds.task, entry.recordID), 200,
-                          json(taskRecord(entry.recordID, "Milk", list: "groceries", position: "2", version: 1)))
+        rig.server.answer(
+            "GET", path(TasksKinds.task, entry.recordID), 200,
+            json(taskRecord(entry.recordID, "Milk", list: "groceries", position: "2", version: 1)))
         #expect(await rig.outbox.flush(rig.client) == .sent)
         try await harness.until { harness in
             let state = await harness.state
@@ -110,8 +112,12 @@ struct LiveAppTests {
 
     @Test func remindersFollowTheTasksAndAreCancelledWhenOneIsDone() async throws {
         let rig = try Rig()
-        serve(rig, extra: [taskRecord("t2", "Call the vet", position: "1", dueDay: "2026-11-03", dueAt: "2026-11-03T15:00:00Z"),
-                           taskRecord("t3", "Pay rent", position: "2", dueDay: "2026-11-04")])
+        serve(
+            rig,
+            extra: [
+                taskRecord("t2", "Call the vet", position: "1", dueDay: "2026-11-03", dueAt: "2026-11-03T15:00:00Z"),
+                taskRecord("t3", "Pay rent", position: "2", dueDay: "2026-11-04"),
+            ])
         rig.server.on { $0.method == "PATCH" ? (200, json(taskRecord("t2", "Call the vet", status: "done", version: 2))) : nil }
         let harness = rig.harness()
         await harness.runtime.linkChanged(signedIn)
@@ -187,8 +193,10 @@ struct AppTests {
     }
 
     @Test func aDraggedTaskWritesItsOwnPositionAlone() async throws {
-        let (_, harness) = try await loaded([taskRecord("a", "A", position: "1"), taskRecord("b", "B", position: "2"),
-                                             taskRecord("c", "C", position: "3")])
+        let (_, harness) = try await loaded([
+            taskRecord("a", "A", position: "1"), taskRecord("b", "B", position: "2"),
+            taskRecord("c", "C", position: "3"),
+        ])
         #expect(titles(await harness.presentation) == ["A", "B", "C"])
         await harness.send(.reorderTask("c", to: 0))
         let writes = enqueued(harness)
@@ -209,8 +217,10 @@ struct AppTests {
     }
 
     @Test func sortedByDueDateTheOrderIsNotTheOwnersAndCannotBeDragged() async throws {
-        let (_, harness) = try await loaded([taskRecord("a", "A", position: "1"), taskRecord("b", "B", position: "2", dueDay: "2026-11-05"),
-                                             taskRecord("c", "C", position: "3", dueDay: "2026-11-04")])
+        let (_, harness) = try await loaded([
+            taskRecord("a", "A", position: "1"), taskRecord("b", "B", position: "2", dueDay: "2026-11-05"),
+            taskRecord("c", "C", position: "3", dueDay: "2026-11-04"),
+        ])
         await harness.send(.settings(.choose(row: .app(TasksSettings.order), option: TaskOrder.due.rawValue)))
         let list = try #require(await harness.presentation.list)
         #expect(list.open.rows.map(\.title) == ["C", "B", "A"])
@@ -221,9 +231,12 @@ struct AppTests {
     }
 
     @Test func deletingAListSaysHowManyTasksGoWithIt() async throws {
-        let (_, harness) = try await loaded([listRecord("home", "Home"), taskRecord("a", "A", list: "home"), taskRecord("b", "B", list: "home"),
-                                             taskRecord("c", "C", list: "home", status: "done"), taskRecord("d", "D")],
-                                            selection: .list("home"))
+        let (_, harness) = try await loaded(
+            [
+                listRecord("home", "Home"), taskRecord("a", "A", list: "home"), taskRecord("b", "B", list: "home"),
+                taskRecord("c", "C", list: "home", status: "done"), taskRecord("d", "D"),
+            ],
+            selection: .list("home"))
         await harness.send(.deleteList("home"))
         let asked = try #require(await harness.presentation.confirmation)
         #expect(asked.title == "Delete “Home”?")
@@ -233,10 +246,11 @@ struct AppTests {
         #expect(enqueued(harness).isEmpty)
 
         await harness.send(.confirm)
-        let write = try #require(harness.effects.compactMap { effect -> LocalWrite? in
-            if case let .records(.enqueue(write)) = effect { return write }
-            return nil
-        }.first)
+        let write = try #require(
+            harness.effects.compactMap { effect -> LocalWrite? in
+                if case let .records(.enqueue(write)) = effect { return write }
+                return nil
+            }.first)
         #expect(write.entries.map(\.method) == [.delete])
         #expect(write.replacing == "\(TasksKinds.list)/home")
         let presented = await harness.presentation
@@ -261,10 +275,13 @@ struct AppTests {
     }
 
     @Test func aRowSaysEachFactInItsOwnRole() async throws {
-        let (_, harness) = try await loaded([listRecord("home", "Home"),
-                                             taskRecord("a", "Pay rent", list: "home", dueDay: "2026-11-02", priority: "high"),
-                                             taskRecord("b", "Call", dueDay: "2026-11-03", dueAt: "2026-11-03T15:00:00Z")],
-                                            selection: .today)
+        let (_, harness) = try await loaded(
+            [
+                listRecord("home", "Home"),
+                taskRecord("a", "Pay rent", list: "home", dueDay: "2026-11-02", priority: "high"),
+                taskRecord("b", "Call", dueDay: "2026-11-03", dueAt: "2026-11-03T15:00:00Z"),
+            ],
+            selection: .today)
         let rows = try #require(await harness.presentation.list?.open.rows)
         #expect(rows.map(\.title) == ["Pay rent", "Call"])
         #expect(rows[0].due == DueBadge(text: "Overdue: Yesterday", tone: .overdue))
@@ -327,8 +344,9 @@ struct AppTests {
     }
 
     @Test func aNewTaskFromTheEditorGoesAfterTheLastOfItsList() async throws {
-        let (_, harness) = try await loaded([listRecord("home", "Home"), taskRecord("a", "A", list: "home", position: "4")],
-                                            selection: .list("home"))
+        let (_, harness) = try await loaded(
+            [listRecord("home", "Home"), taskRecord("a", "A", list: "home", position: "4")],
+            selection: .list("home"))
         await harness.send(.newTask)
         let (key, editor) = try #require(await harness.presentation.editors.first)
         #expect(editor.title == "New Task")
@@ -340,8 +358,11 @@ struct AppTests {
         try await harness.runtime.send(TaskEditor.Command.save, to: [key])
         let entry = try #require(enqueued(harness).last)
         #expect(entry.method == .put)
-        #expect(entry.properties == ["name": "B", "list": "substrate.reamde.dev/tasks/list/home", "position": "5",
-                                     "dueDay": "2026-11-03", "dueAt": "2026-11-03T09:00:00Z"])
+        #expect(
+            entry.properties == [
+                "name": "B", "list": "substrate.reamde.dev/tasks/list/home", "position": "5",
+                "dueDay": "2026-11-03", "dueAt": "2026-11-03T09:00:00Z",
+            ])
         #expect(titles(await harness.presentation) == ["A", "B"])
     }
 
@@ -376,15 +397,18 @@ struct AppTests {
         #expect(app.settings[0].rows.map(\.label) == ["Remind Me When Tasks Are Due", "Tasks Due on a Day", "Reminders Set on This iPhone"])
         #expect(app.about.version == LabeledValue("Version", "0.1.0 (1)"))
         // Android's device words are lowercase; the label is title case throughout.
-        for (device, label) in [("this phone", "Reminders Set on This Phone"), ("this tablet", "Reminders Set on This Tablet"),
-                                ("this iPad", "Reminders Set on This iPad"), ("this Mac", "Reminders Set on This Mac")] {
+        for (device, label) in [
+            ("this phone", "Reminders Set on This Phone"), ("this tablet", "Reminders Set on This Tablet"),
+            ("this iPad", "Reminders Set on This iPad"), ("this Mac", "Reminders Set on This Mac"),
+        ] {
             let sections = TasksSettings.sections(SettingsValues(), permission: .on, scheduled: 0, device: device, locale: Locale(identifier: "en_US"))
             #expect(sections[0].rows.last?.label == label)
         }
         // Routed as the shell routes them, with what TasksShell configures.
         let route = { SettingsRoute<TasksApp>.route($0, settings: { .settings($0) }, clearSaved: .clearSaved) }
-        #expect(route(.toggle(row: .app(TasksSettings.remind), on: false))
-            == .app(.settings(.toggle(row: .app(TasksSettings.remind), on: false))))
+        #expect(
+            route(.toggle(row: .app(TasksSettings.remind), on: false))
+                == .app(.settings(.toggle(row: .app(TasksSettings.remind), on: false))))
         #expect(route(.perform(row: .repository(.signOut))) == .link(.signOut))
         #expect(route(.perform(row: .storage(.clear))) == .app(.clearSaved))
         #expect(route(.perform(row: .repository(.changeAccess))) == .changeAccess)
@@ -398,11 +422,14 @@ struct LinkedTests {
         let rig = try Rig()
         rig.server.answer("GET", "/api/v1/records", 401, #"{"error":{"code":"unauthorized","message":"token expired"}}"#)
         let storage = MemoryStorage()
-        try SessionStore(storage: storage).save(Session(server: server, repository: "ada.example.com", secret: "sub_app_x",
-                                                        clientID: TasksManifest.localClientID, scopes: TasksManifest.scopes))
-        let link = LinkController(app: rig.app, manifest: TasksManifest.manifest(clientID: TasksManifest.localClientID),
-                                  sessions: SessionStore(storage: storage), outbox: rig.outbox, packages: TasksManifest.packages,
-                                  words: StatusWords(app: TasksApp.appName, device: "this iPhone", kept: "tasks"))
+        try SessionStore(storage: storage).save(
+            Session(
+                server: server, repository: "ada.example.com", secret: "sub_app_x",
+                clientID: TasksManifest.localClientID, scopes: TasksManifest.scopes))
+        let link = LinkController(
+            app: rig.app, manifest: TasksManifest.manifest(clientID: TasksManifest.localClientID),
+            sessions: SessionStore(storage: storage), outbox: rig.outbox, packages: TasksManifest.packages,
+            words: StatusWords(app: TasksApp.appName, device: "this iPhone", kept: "tasks"))
         var environment = rig.environment
         environment.devices.connectivity = ScriptedConnectivity()
         let harness = ControllerHarness(link, clock: rig.clock, environment: environment)
@@ -415,7 +442,10 @@ struct LinkedTests {
 
     @Test func theManifestIsTheRequestAppJSONRecords() throws {
         struct Recorded: Decodable {
-            struct Ask: Decodable, Equatable { var package: String; var atLeast: Int }
+            struct Ask: Decodable, Equatable {
+                var package: String
+                var atLeast: Int
+            }
             var name: String
             var scopes: [String]
             var asks: [Ask]

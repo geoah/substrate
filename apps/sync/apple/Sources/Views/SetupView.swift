@@ -37,8 +37,9 @@ struct SetupView: View {
                                 Button {
                                     Task { await model.runSetup() }
                                 } label: {
-                                    WideLabel(title: missing == 1 ? "Set Up the Missing Step" : "Set Up \(missing) Missing Steps",
-                                              systemImage: "wand.and.stars", busy: model.setupBusy)
+                                    WideLabel(
+                                        title: missing == 1 ? "Set Up the Missing Step" : "Set Up \(missing) Missing Steps",
+                                        systemImage: "wand.and.stars", busy: model.setupBusy)
                                 }
                                 .primaryAction()
                                 .disabled(model.setupBusy || model.setupChecking)

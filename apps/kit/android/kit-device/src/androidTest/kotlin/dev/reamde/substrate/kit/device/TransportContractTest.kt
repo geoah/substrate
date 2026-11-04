@@ -2,15 +2,15 @@ package dev.reamde.substrate.kit.device
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import dev.reamde.substrate.kit.bridge.TransportChunk
-import dev.reamde.substrate.kit.bridge.TransportOutcome
-import dev.reamde.substrate.kit.bridge.TransportRequest
 import dev.reamde.substrate.kit.BridgeCore
 import dev.reamde.substrate.kit.bridge.BridgeFailure
 import dev.reamde.substrate.kit.bridge.BridgeJson
 import dev.reamde.substrate.kit.bridge.DeviceRequest
 import dev.reamde.substrate.kit.bridge.Envelope
 import dev.reamde.substrate.kit.bridge.Op
+import dev.reamde.substrate.kit.bridge.TransportChunk
+import dev.reamde.substrate.kit.bridge.TransportOutcome
+import dev.reamde.substrate.kit.bridge.TransportRequest
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,9 +32,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * No request follows a redirect, a streamed one included (app-kit.md §5.4);
- * a cancel reaches the socket while the head or the body is still coming;
- * and no body is left on disk, nor a credential answer ever written there.
+ * No request follows a redirect, a streamed one included (app-kit.md §5.4); a cancel reaches the socket while the head or the body is still coming; and no body
+ * is left on disk, nor a credential answer ever written there.
  */
 @RunWith(AndroidJUnit4::class)
 class TransportContractTest {
@@ -154,22 +153,23 @@ class TransportContractTest {
     fun aRefusedReplyThroughTheBridgeLeavesNoFile() = runBlocking {
         server.enqueue(MockResponse.Builder().body(large).build())
         // A Swift whose call was cancelled before the reply came: it refuses it.
-        val core = BridgeCore(
-            post = { text ->
-                val envelope = BridgeJson.decodeFromString(Envelope.serializer(), text)
-                val refused = BridgeFailure(BridgeFailure.Code.unknownCall, "nothing waits on it")
-                BridgeJson.encodeToString(
-                    Envelope.serializer(),
-                    if (envelope.op == Op.reply) {
-                        Envelope(1, Op.error, id = envelope.id, body = BridgeJson.encodeToJsonElement(BridgeFailure.serializer(), refused))
-                    } else {
-                        Envelope(1, Op.accepted)
-                    },
-                )
-            },
-            services = KitDevice.services(context),
-            scope = CoroutineScope(Dispatchers.IO),
-        )
+        val core =
+            BridgeCore(
+                post = { text ->
+                    val envelope = BridgeJson.decodeFromString(Envelope.serializer(), text)
+                    val refused = BridgeFailure(BridgeFailure.Code.unknownCall, "nothing waits on it")
+                    BridgeJson.encodeToString(
+                        Envelope.serializer(),
+                        if (envelope.op == Op.reply) {
+                            Envelope(1, Op.error, id = envelope.id, body = BridgeJson.encodeToJsonElement(BridgeFailure.serializer(), refused))
+                        } else {
+                            Envelope(1, Op.accepted)
+                        },
+                    )
+                },
+                services = KitDevice.services(context),
+                scope = CoroutineScope(Dispatchers.IO),
+            )
         val request = BridgeJson.encodeToJsonElement(DeviceRequest.Serializer, DeviceRequest.TransportFetch(get("/large")))
         core.receive(BridgeJson.encodeToString(Envelope.serializer(), Envelope(1, Op.request, id = 1, body = request)))
         withTimeout(10_000) {

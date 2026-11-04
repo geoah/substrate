@@ -14,7 +14,7 @@ enum AppRoots {
         var info = Dl_info()
         let marker: @convention(c) () -> Void = substrate_bridge_marker
         guard dladdr(unsafeBitCast(marker, to: UnsafeRawPointer.self), &info) != 0, let path = info.dli_fname,
-              let library = dlopen(path, RTLD_NOW | RTLD_NOLOAD)
+            let library = dlopen(path, RTLD_NOW | RTLD_NOLOAD)
         else { return }
         defer { dlclose(library) }
         guard let symbol = dlsym(library, "substrate_bridge_roots") else { return }

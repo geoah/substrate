@@ -67,8 +67,11 @@ public struct WorkoutsApp: LinkedApp {
     // MARK: Composition
 
     public func children(in state: State) -> [ChildKey: SessionController] {
-        [Self.sessionKey: SessionController(catalog: state.catalog ?? Catalog(), history: state.index, settings: state.settings,
-                                            adapter: adapter, directory: directory, preview: preview?.session)]
+        [
+            Self.sessionKey: SessionController(
+                catalog: state.catalog ?? Catalog(), history: state.index, settings: state.settings,
+                adapter: adapter, directory: directory, preview: preview?.session)
+        ]
     }
 
     public func event(forLink link: LinkSnapshot) -> Event? { .linked(link) }
@@ -271,19 +274,21 @@ public struct WorkoutsApp: LinkedApp {
         let state = input.state
         let session = input.children[Self.sessionKey]
         let bundle = state.catalogFailure.map { [UnreadableRecord(source: "The routines and exercises in this build", reason: $0)] } ?? []
-        let unreadable = bundle + (state.catalog?.unreadable ?? []) + state.historyUnreadable + (session?.setAside ?? [])
+        let unreadable =
+            bundle + (state.catalog?.unreadable ?? []) + state.historyUnreadable + (session?.setAside ?? [])
             + state.syncUnreadable
-        let blocked: String? = if state.signedIn == nil {
-            "Sign in to your substrate first."
-        } else if state.canWrite {
-            nil
-        } else if let problem = state.problem {
-            "The training package could not be checked: \(problem)"
-        } else if case let .behind(held)? = state.package {
-            "Your substrate has version \(held) of the Training package and this app needs version \(WorkoutsManifest.trainingVersion) or later. The update waits for your approval on your substrate; sessions wait on this iPhone until then."
-        } else {
-            "Checking the training package on your substrate."
-        }
+        let blocked: String? =
+            if state.signedIn == nil {
+                "Sign in to your substrate first."
+            } else if state.canWrite {
+                nil
+            } else if let problem = state.problem {
+                "The training package could not be checked: \(problem)"
+            } else if case let .behind(held)? = state.package {
+                "Your substrate has version \(held) of the Training package and this app needs version \(WorkoutsManifest.trainingVersion) or later. The update waits for your approval on your substrate; sessions wait on this iPhone until then."
+            } else {
+                "Checking the training package on your substrate."
+            }
         return WorkoutsPresentation(
             catalog: state.catalog, origin: state.origin, catalogFailure: state.catalogFailure, history: state.history, index: state.index,
             historyLoaded: state.historyLoaded, unreadable: unreadable, settings: state.settings, host: state.host,

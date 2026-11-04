@@ -18,9 +18,10 @@ public struct GhostValues: Codable, Equatable, Sendable {
     /// failure", and nothing is committed for it.
     public var repsPlaceholder: String?
 
-    public init(load: Mass? = nil, assistance: Mass? = nil, reps: Int? = nil, duration: Seconds? = nil, distance: Length? = nil,
-                repsIsHint: Bool = false, repsPlaceholder: String? = nil)
-    {
+    public init(
+        load: Mass? = nil, assistance: Mass? = nil, reps: Int? = nil, duration: Seconds? = nil, distance: Length? = nil,
+        repsIsHint: Bool = false, repsPlaceholder: String? = nil
+    ) {
         self.load = load
         self.assistance = assistance
         self.reps = reps
@@ -78,8 +79,9 @@ final class SessionEvaluator {
 
     func past(_ exercise: Exercise) -> [PastSession] {
         if let cached = pasts[exercise.id] { return cached }
-        let sessions = SuggestionInputs.history(of: exercise, config: config(exercise), index: history,
-                                                excluding: state.session.id, now: now, calendar: calendar)
+        let sessions = SuggestionInputs.history(
+            of: exercise, config: config(exercise), index: history,
+            excluding: state.session.id, now: now, calendar: calendar)
         pasts[exercise.id] = sessions
         return sessions
     }
@@ -97,8 +99,9 @@ final class SessionEvaluator {
                 var pair: DoneSet?
                 for id in unit {
                     guard let row = state.rows[id], let performed = row.performed else { continue }
-                    let done = doneSet(row, head: head, values: performed.values, completedAt: performed.completedAt,
-                                       exercise: exercise, config: config, ordinal: ordinals[head.id])
+                    let done = doneSet(
+                        row, head: head, values: performed.values, completedAt: performed.completedAt,
+                        exercise: exercise, config: config, ordinal: ordinals[head.id])
                     if row.side != nil {
                         pair = pair.map { SuggestionInputs.merged($0, with: done) } ?? done
                     } else {
@@ -114,17 +117,21 @@ final class SessionEvaluator {
         return result
     }
 
-    func doneSet(_ row: Row, head: Row, values: SetValues, completedAt: Date, exercise: Exercise, config: ExerciseConfig,
-                 ordinal: Int?) -> DoneSet
-    {
-        let kind = SuggestionInputs.kind(role: head.role, isSegment: !row.isHead, side: row.side, structure: head.structure,
-                                         measurement: exercise.measurement, reachedFailure: values.reachedFailure == true,
-                                         termination: head.termination)
-        let copied = SuggestionInputs.target(row.isHead || row.side != nil ? head.target : row.target,
-                                             termination: head.termination, config: config)
+    func doneSet(
+        _ row: Row, head: Row, values: SetValues, completedAt: Date, exercise: Exercise, config: ExerciseConfig,
+        ordinal: Int?
+    ) -> DoneSet {
+        let kind = SuggestionInputs.kind(
+            role: head.role, isSegment: !row.isHead, side: row.side, structure: head.structure,
+            measurement: exercise.measurement, reachedFailure: values.reachedFailure == true,
+            termination: head.termination)
+        let copied = SuggestionInputs.target(
+            row.isHead || row.side != nil ? head.target : row.target,
+            termination: head.termination, config: config)
         let target = SuggestionInputs.clusterHead(copied, structure: head.structure, isHead: row.isHead)
-        return SuggestionInputs.doneSet(kind: kind, values: values, side: row.side, config: config, target: target,
-                                        completedAt: completedAt, ordinal: ordinal)
+        return SuggestionInputs.doneSet(
+            kind: kind, values: values, side: row.side, config: config, target: target,
+            completedAt: completedAt, ordinal: ordinal)
     }
 
     /// The set to suggest for `row` (03 §9.4), with the exercise settings
@@ -134,11 +141,13 @@ final class SessionEvaluator {
         guard let head = row.isHead ? row : state.rows[row.headID] else { return nil }
         var config = config(exercise)
         let ordinal = Ordinals.ordinal(of: head.id, in: state) ?? 1
-        let kind = SuggestionInputs.kind(role: head.role, isSegment: !row.isHead, side: row.side, structure: head.structure,
-                                         measurement: exercise.measurement,
-                                         reachedFailure: row.entered.reachedFailure == true, termination: row.termination)
-        var target = SuggestionInputs.clusterHead(SuggestionInputs.target(row.target, termination: row.termination, config: config),
-                                                  structure: head.structure, isHead: row.isHead)
+        let kind = SuggestionInputs.kind(
+            role: head.role, isSegment: !row.isHead, side: row.side, structure: head.structure,
+            measurement: exercise.measurement,
+            reachedFailure: row.entered.reachedFailure == true, termination: row.termination)
+        var target = SuggestionInputs.clusterHead(
+            SuggestionInputs.target(row.target, termination: row.termination, config: config),
+            structure: head.structure, isHead: row.isHead)
         var parent: DoneSet?
         var miniSets: [Int] = []
         let chain = state.chain(of: head.id)
@@ -186,10 +195,11 @@ final class SessionEvaluator {
             }
         default:
             if head.roleLabel == .backoff, target.dropPercent != nil || target.dropStep != nil,
-               let source = backoffParent(of: head)
+                let source = backoffParent(of: head)
             {
-                parent = shownDoneSet(source, head: source, exercise: exercise, config: config,
-                                      ordinal: Ordinals.ordinal(of: source.id, in: state))
+                parent = shownDoneSet(
+                    source, head: source, exercise: exercise, config: config,
+                    ordinal: Ordinals.ordinal(of: source.id, in: state))
             }
         }
         let pending = PendingSet(kind: kind, ordinal: ordinal, target: target, parent: parent, miniSetsDone: miniSets)
@@ -210,8 +220,9 @@ final class SessionEvaluator {
     /// A link as the set it is or will be: its performed values, else the
     /// values it shows.
     func shownDoneSet(_ row: Row, head: Row, exercise: Exercise, config: ExerciseConfig, ordinal: Int?) -> DoneSet {
-        doneSet(row, head: head, values: shown(row.id), completedAt: row.performed?.completedAt ?? now,
-                exercise: exercise, config: config, ordinal: ordinal)
+        doneSet(
+            row, head: head, values: shown(row.id), completedAt: row.performed?.completedAt ?? now,
+            exercise: exercise, config: config, ordinal: ordinal)
     }
 
     // MARK: - The suggestion
@@ -234,11 +245,12 @@ final class SessionEvaluator {
             guard var suggestion = runSuggestion(for: head, exercise: exercise, excludingChain: head.id) else { return nil }
             let first = shown(head.id)
             let unit = config(exercise).unit
-            let firstLoad: Mass? = switch config(exercise).mode {
-            case .external, .bodyweightAdded: first.load
-            case .bodyweightAssisted: first.assistance
-            case .none: nil
-            }
+            let firstLoad: Mass? =
+                switch config(exercise).mode {
+                case .external, .bodyweightAdded: first.load
+                case .bodyweightAssisted: first.assistance
+                case .none: nil
+                }
             if let firstLoad { suggestion.load = firstLoad.converted(to: unit).value.double }
             if let reps = row.target?.repsMin { suggestion.reps = reps }
             if let duration = row.target?.durationMin { suggestion.duration = duration }
@@ -250,12 +262,14 @@ final class SessionEvaluator {
     /// Runs `suggest` for a row (pending, or one about to be generated).
     func runSuggestion(for row: Row, exercise: Exercise, excludingChain excluded: RowID?) -> Suggestion? {
         guard let built = pending(row, exercise: exercise) else { return nil }
-        let sets: [DoneSet] = switch built.0.kind {
-        case .drop, .myoMini, .warmup: []
-        default: today(exercise, excludingChain: excluded)
-        }
-        return suggestNext(pending: built.0, exercise: built.1, today: sets, history: past(exercise),
-                           bodyMass: bodyMass, now: now, calendar: calendar)
+        let sets: [DoneSet] =
+            switch built.0.kind {
+            case .drop, .myoMini, .warmup: []
+            default: today(exercise, excludingChain: excluded)
+            }
+        return suggestNext(
+            pending: built.0, exercise: built.1, today: sets, history: past(exercise),
+            bodyMass: bodyMass, now: now, calendar: calendar)
     }
 
     /// The stop text of a myo, myo-match or rest-pause chain that has ended
@@ -263,10 +277,11 @@ final class SessionEvaluator {
     /// of the mini-set that will not come. Nil while the chain runs.
     func stopText(ofChain head: RowID) -> String? {
         guard let headRow = state.rows[head], headRow.structure.growsOneAtATime, headRow.side == nil,
-              state.isChainComplete(head), state.chainStops(head), let exercise = exercise(ofRow: headRow)
+            state.isChainComplete(head), state.chainStops(head), let exercise = exercise(ofRow: headRow)
         else { return nil }
-        let next = SessionEngine.segment(of: headRow, position: state.chain(of: head).count + 1,
-                                         id: RowID("\(head.rawValue)-stop"), reps: headRow.target?.miniSetReps)
+        let next = SessionEngine.segment(
+            of: headRow, position: state.chain(of: head).count + 1,
+            id: RowID("\(head.rawValue)-stop"), reps: headRow.target?.miniSetReps)
         guard let suggestion = runSuggestion(for: next, exercise: exercise, excludingChain: nil), suggestion.stop else {
             return nil
         }
@@ -354,9 +369,11 @@ final class SessionEvaluator {
 }
 
 /// The suggestion engine's entry point under a name no member shadows.
-private func suggestNext(pending: PendingSet, exercise: ExerciseConfig, today: [DoneSet], history: [PastSession],
-                         bodyMass: Double?, now: Date, calendar: Calendar) -> Suggestion?
-{
-    suggest(pending: pending, exercise: exercise, today: today, history: history, bodyMass: bodyMass, now: now,
-            calendar: calendar)
+private func suggestNext(
+    pending: PendingSet, exercise: ExerciseConfig, today: [DoneSet], history: [PastSession],
+    bodyMass: Double?, now: Date, calendar: Calendar
+) -> Suggestion? {
+    suggest(
+        pending: pending, exercise: exercise, today: today, history: history, bodyMass: bodyMass, now: now,
+        calendar: calendar)
 }

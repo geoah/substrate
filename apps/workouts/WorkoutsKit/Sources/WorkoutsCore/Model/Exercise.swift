@@ -156,7 +156,7 @@ public struct Coding: Codable, Hashable, Sendable {
 /// file that imports both modules.
 public enum MeasurementType: String, Codable, Sendable, CaseIterable {
     case weightreps, repsonly, bodyweightreps, weightedbodyweightreps,
-         bodyweightassistedreps, duration, weightduration, distanceduration, shortdistanceweight
+        bodyweightassistedreps, duration, weightduration, distanceduration, shortdistanceweight
 
     /// How a set's load reads (§3.5); nil when the exercise moves no load.
     public var loadMode: LoadMode? {
@@ -172,7 +172,7 @@ public enum MeasurementType: String, Codable, Sendable, CaseIterable {
 
 public enum Equipment: String, Codable, Sendable, CaseIterable {
     case none, barbell, dumbbell, kettlebell, machine, plateloaded, cable,
-         plate, resistanceband, suspension, other
+        plate, resistanceband, suspension, other
 }
 
 public enum Laterality: String, Codable, Sendable, CaseIterable {
@@ -185,8 +185,8 @@ public enum LoadBasis: String, Codable, Sendable, CaseIterable {
 
 public enum Muscle: String, Codable, Sendable, CaseIterable {
     case abdominals, abductors, adductors, biceps, calves, cardio, chest,
-         forearms, fullbody, glutes, hamstrings, lats, lowerback, neck, quadriceps, shoulders, traps, triceps,
-         upperback, other
+        forearms, fullbody, glutes, hamstrings, lats, lowerback, neck, quadriceps, shoulders, traps, triceps,
+        upperback, other
 }
 
 /// One muscle, finer than the twenty groups of `Muscle` (`muscles[].muscle`):
@@ -195,11 +195,11 @@ public enum Muscle: String, Codable, Sendable, CaseIterable {
 /// knows only the groups counts it.
 public enum MuscleDetail: String, Codable, Sendable, CaseIterable {
     case pecclavicular, pecsternal, serratus, deltfront, deltside, deltrear,
-         rotatorcuff, lats, trapsupper, trapsmiddle, trapslower, rhomboids,
-         erectors, bicepsbrachii, brachialis, brachioradialis, forearmflexors, forearmextensors,
-         tricepslong, tricepslateral, rectusabdominis, obliques, transverseabdominis, iliopsoas,
-         glutemax, glutemed, adductors, rectusfemoris, vasti, hamstrings,
-         gastrocnemius, soleus, tibialis, neck
+        rotatorcuff, lats, trapsupper, trapsmiddle, trapslower, rhomboids,
+        erectors, bicepsbrachii, brachialis, brachioradialis, forearmflexors, forearmextensors,
+        tricepslong, tricepslateral, rectusabdominis, obliques, transverseabdominis, iliopsoas,
+        glutemax, glutemed, adductors, rectusfemoris, vasti, hamstrings,
+        gastrocnemius, soleus, tibialis, neck
 
     /// The group it rolls up to, in Hevy's twenty.
     public var group: Muscle {

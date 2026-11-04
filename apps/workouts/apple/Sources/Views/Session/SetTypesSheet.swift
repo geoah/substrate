@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// "About set types…" in a row's set-kind menu (DESIGN.md §7.6): what each
 /// kind is, what Workouts adds for it, how rest works around it and when it
@@ -79,7 +79,8 @@ struct SetTypeHelp: Identifiable {
     static let all: [SetTypeHelp] = [
         SetTypeHelp(
             kind: .warmup, badge: "W",
-            text: "A lighter set before the work. It is not a working set and is left out of volume unless Settings counts it. The warm-up rest follows it (0:45 unless changed)."
+            text:
+                "A lighter set before the work. It is not a working set and is left out of volume unless Settings counts it. The warm-up rest follows it (0:45 unless changed)."
         ),
         SetTypeHelp(
             kind: .working, badge: "1",
@@ -91,15 +92,18 @@ struct SetTypeHelp: Identifiable {
         ),
         SetTypeHelp(
             kind: .drop, badge: "2a",
-            text: "Straight after the set, lighten the load and go again. Workouts adds the drop as its own row, 20 % lighter unless the routine says otherwise, to failure. There is no rest between the set and its drop; the exercise\u{2019}s rest starts after the last drop."
+            text:
+                "Straight after the set, lighten the load and go again. Workouts adds the drop as its own row, 20 % lighter unless the routine says otherwise, to failure. There is no rest between the set and its drop; the exercise\u{2019}s rest starts after the last drop."
         ),
         SetTypeHelp(
             kind: .myo, badge: "M",
-            text: "One set close to failure, then short mini-sets with the same load, 0:15 apart. Each tick adds the next mini-set, about a quarter of the first set\u{2019}s reps. Stop when a mini-set gets fewer reps than the first mini-set, or after 5."
+            text:
+                "One set close to failure, then short mini-sets with the same load, 0:15 apart. Each tick adds the next mini-set, about a quarter of the first set\u{2019}s reps. Stop when a mini-set gets fewer reps than the first mini-set, or after 5."
         ),
         SetTypeHelp(
             kind: .myomatch, badge: "M",
-            text: "Match the reps of your previous working set with the same load, in pieces. After this set Workouts adds mini-sets, 0:15 apart, until this set and its mini-sets reach that many reps, or after 5."
+            text:
+                "Match the reps of your previous working set with the same load, in pieces. After this set Workouts adds mini-sets, 0:15 apart, until this set and its mini-sets reach that many reps, or after 5."
         ),
     ]
 }

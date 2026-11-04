@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The rest bar (DESIGN.md §7.6, §8): the one custom glass element, in the
 /// cover's bottom safe-area bar. Its pill morphs between the forms the
@@ -115,9 +115,10 @@ struct RestBar: View {
 
     /// A pill and its button: side by side, or the button under the pill at
     /// the accessibility sizes.
-    private func pillAndAction<Pill: View, Action: View>(@ViewBuilder pill: () -> Pill,
-                                                         @ViewBuilder action: () -> Action) -> some View
-    {
+    private func pillAndAction<Pill: View, Action: View>(
+        @ViewBuilder pill: () -> Pill,
+        @ViewBuilder action: () -> Action
+    ) -> some View {
         let layout = stacked ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 12))
         return layout {
             pill()
@@ -236,8 +237,9 @@ struct RestBar: View {
                         .lineLimit(stacked ? 2 : 1)
                         .minimumScaleFactor(0.7)
                     Spacer(minLength: 4)
-                    RunningTime(startedAt: timed.startedAt, endsAt: timed.endsAt, overtimeColor: .white, showsLeft: false,
-                                font: .title3.weight(.semibold).monospacedDigit())
+                    RunningTime(
+                        startedAt: timed.startedAt, endsAt: timed.endsAt, overtimeColor: .white, showsLeft: false,
+                        font: .title3.weight(.semibold).monospacedDigit())
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 16)

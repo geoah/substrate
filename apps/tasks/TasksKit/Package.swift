@@ -22,7 +22,7 @@ let package = Package(
         .library(name: "SubstrateTasks", type: .dynamic, targets: ["TasksAndroid"]),
     ],
     dependencies: [
-        .package(path: "../../kit"),
+        .package(path: "../../kit")
     ],
     targets: [
         .target(
@@ -39,8 +39,10 @@ let package = Package(
         ),
         .testTarget(
             name: "TasksAndroidTests",
-            dependencies: ["TasksAndroid", "TasksCore", .product(name: "SubstrateBridge", package: "kit"),
-                           .product(name: "SubstrateTesting", package: "kit")] + kit
+            dependencies: [
+                "TasksAndroid", "TasksCore", .product(name: "SubstrateBridge", package: "kit"),
+                .product(name: "SubstrateTesting", package: "kit"),
+            ] + kit
         ),
         .testTarget(
             name: "TasksCoreTests",

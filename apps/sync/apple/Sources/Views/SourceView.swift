@@ -69,8 +69,10 @@ private struct StateCard: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             } else if source == .health, !model.healthWaiting.isEmpty {
-                Text("\(model.healthWaiting.count) days were delivered and are waiting for the server to file them. The next sync checks them before it sends anything.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                Text(
+                    "\(model.healthWaiting.count) days were delivered and are waiting for the server to file them. The next sync checks them before it sends anything."
+                )
+                .font(.footnote).foregroundStyle(.secondary)
             }
             if enabled {
                 // One button, the same size in every state: what it would do,
@@ -124,7 +126,10 @@ private struct HealthCoverage: View {
                     }
                 }
             } else if model.coverageLoading, model.healthScanning == nil {
-                HStack(spacing: 10) { ProgressView(); Text("Reading what the phone holds…").foregroundStyle(.secondary) }
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Reading what the phone holds…").foregroundStyle(.secondary)
+                }
             } else if model.healthScanning == nil {
                 Text(model.healthAvailable == nil ? "Allow Health access to see what the phone holds." : "No steps, heart rate or sleep in your history.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -388,7 +393,9 @@ private struct SourceSettings: View {
             case .reminders:
                 Text("Every list and every reminder, completed ones included. A reminder deleted on the phone is removed from your repository.")
             case .places:
-                Text("Records the places you stay at while it is on, named by Apple Maps. Needs Always location access; iOS reports only arrivals and departures, so it costs little battery. Keeps a year of visits on this phone.")
+                Text(
+                    "Records the places you stay at while it is on, named by Apple Maps. Needs Always location access; iOS reports only arrivals and departures, so it costs little battery. Keeps a year of visits on this phone."
+                )
             }
         }
         .onAppear { if source == .calendars { model.loadCalendars() } }

@@ -19,10 +19,11 @@ struct ShellPartsTests {
     let sessions = SessionStore(storage: MemoryStorage())
 
     func configuration(_ parts: @escaping (Session?) -> Shell.Parts) -> Shell.Configuration {
-        Shell.Configuration(manifest: AppManifest(appName: "Notes", clientID: "http://127.0.0.1/notes", scopes: ["write:example.com/notes/*"]),
-                            keychainService: "test.notes", parts: parts, packages: [:],
-                            words: { StatusWords(app: "Notes", device: $0, kept: "notes") }, app: { _ in NoApp() },
-                            settingsScreen: { link, _ in SettingsPresenter.screen([], link: link, storage: nil, about: Self.about) })
+        Shell.Configuration(
+            manifest: AppManifest(appName: "Notes", clientID: "http://127.0.0.1/notes", scopes: ["write:example.com/notes/*"]),
+            keychainService: "test.notes", parts: parts, packages: [:],
+            words: { StatusWords(app: "Notes", device: $0, kept: "notes") }, app: { _ in NoApp() },
+            settingsScreen: { link, _ in SettingsPresenter.screen([], link: link, storage: nil, about: Self.about) })
     }
 
     static let about = AboutPresentation.present(appName: "Notes", version: "1.0", channel: nil, offered: nil)

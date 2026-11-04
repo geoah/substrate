@@ -39,24 +39,17 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 
 /**
- * The transport: OkHttp, which follows no redirect on any path, a streamed
- * response's included (`URLSessionTransport`'s `RefusingRedirects`), so a
- * 3xx is the answer and the kit's client refuses it. No cache: every answer
- * is a repository's current state.
+ * The transport: OkHttp, which follows no redirect on any path, a streamed response's included (`URLSessionTransport`'s `RefusingRedirects`), so a 3xx is the
+ * answer and the kit's client refuses it. No cache: every answer is a repository's current state.
  *
- * A call is cancelled the moment its caller is, while it waits for the head
- * and while it reads the body alike: OkHttp's reads block, and only
- * cancelling the call ends them.
+ * A call is cancelled the moment its caller is, while it waits for the head and while it reads the body alike: OkHttp's reads block, and only cancelling the
+ * call ends them.
  *
- * Make one per process, before the bridge starts: it sweeps the spill
- * folder, where nothing is in flight yet and anything there was left by a
- * process that died.
+ * Make one per process, before the bridge starts: it sweeps the spill folder, where nothing is in flight yet and anything there was left by a process that
+ * died.
  */
 public class Transport(context: Context, base: OkHttpClient = OkHttpClient()) {
-    /**
-     * Bodies too large for a message, both ways: under `noBackupFilesDir`,
-     * since one may hold the owner's records (Swift's `BridgeEnvironment.spill`).
-     */
+    /** Bodies too large for a message, both ways: under `noBackupFilesDir`, since one may hold the owner's records (Swift's `BridgeEnvironment.spill`). */
     public val folder: File = File(context.noBackupFilesDir, "bridge")
 
     init {
@@ -65,18 +58,15 @@ public class Transport(context: Context, base: OkHttpClient = OkHttpClient()) {
         File(context.cacheDir, "bridge").deleteRecursively()
     }
 
-    public val client: OkHttpClient = base.newBuilder()
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .cache(null)
-        .build()
+    public val client: OkHttpClient = base.newBuilder().followRedirects(false).followSslRedirects(false).cache(null).build()
 
     /** A body Swift wrote to a file is deleted once the call is done with it. */
-    public suspend fun fetch(request: TransportRequest): TransportOutcome = try {
-        send(request)
-    } finally {
-        request.bodyFile?.let { File(it).delete() }
-    }
+    public suspend fun fetch(request: TransportRequest): TransportOutcome =
+        try {
+            send(request)
+        } finally {
+            request.bodyFile?.let { File(it).delete() }
+        }
 
     /** Deletes what an outcome Swift never took owns: its body's file. */
     public fun discard(outcome: TransportOutcome) {
@@ -84,11 +74,12 @@ public class Transport(context: Context, base: OkHttpClient = OkHttpClient()) {
     }
 
     private suspend fun send(request: TransportRequest): TransportOutcome {
-        val call = try {
-            newCall(request)
-        } catch (failure: IllegalArgumentException) {
-            return TransportOutcome.Failed(TransportFailureKind.other, "not a request OkHttp takes: ${failure.message}")
-        }
+        val call =
+            try {
+                newCall(request)
+            } catch (failure: IllegalArgumentException) {
+                return TransportOutcome.Failed(TransportFailureKind.other, "not a request OkHttp takes: ${failure.message}")
+            }
         return try {
             call.runCancellable({ response -> TransportOutcome.Response(read(response, request.credentials)) }, ::discard)
         } catch (failure: IOException) {
@@ -103,37 +94,40 @@ public class Transport(context: Context, base: OkHttpClient = OkHttpClient()) {
 
     /** The head, then each line of the body; the call is cancelled with the collector, mid-read included. */
     public fun lines(request: TransportRequest): Flow<TransportChunk> = channelFlow {
-        val call = try {
-            newCall(request)
-        } catch (failure: IllegalArgumentException) {
-            send(TransportChunk.Failed(TransportFailureKind.other, "not a request OkHttp takes: ${failure.message}"))
-            request.bodyFile?.let { File(it).delete() }
-            return@channelFlow
-        }
-        val reader = launch(Dispatchers.IO) {
+        val call =
             try {
-                val response = try {
-                    call.execute()
-                } catch (failure: IOException) {
-                    if (isActive) send(failed(failure) { kind, message -> TransportChunk.Failed(kind, message) })
-                    return@launch
-                }
-                response.use {
-                    send(TransportChunk.Head(head(it)))
-                    val source = it.body.source()
-                    try {
-                        while (true) {
-                            val line = source.readUtf8Line() ?: break
-                            send(TransportChunk.Line(line))
-                        }
-                    } catch (failure: IOException) {
-                        if (isActive) send(failed(failure) { kind, message -> TransportChunk.Failed(kind, message) })
-                    }
-                }
-            } finally {
+                newCall(request)
+            } catch (failure: IllegalArgumentException) {
+                send(TransportChunk.Failed(TransportFailureKind.other, "not a request OkHttp takes: ${failure.message}"))
                 request.bodyFile?.let { File(it).delete() }
+                return@channelFlow
             }
-        }
+        val reader =
+            launch(Dispatchers.IO) {
+                try {
+                    val response =
+                        try {
+                            call.execute()
+                        } catch (failure: IOException) {
+                            if (isActive) send(failed(failure) { kind, message -> TransportChunk.Failed(kind, message) })
+                            return@launch
+                        }
+                    response.use {
+                        send(TransportChunk.Head(head(it)))
+                        val source = it.body.source()
+                        try {
+                            while (true) {
+                                val line = source.readUtf8Line() ?: break
+                                send(TransportChunk.Line(line))
+                            }
+                        } catch (failure: IOException) {
+                            if (isActive) send(failed(failure) { kind, message -> TransportChunk.Failed(kind, message) })
+                        }
+                    }
+                } finally {
+                    request.bodyFile?.let { File(it).delete() }
+                }
+            }
         try {
             reader.join()
         } finally {
@@ -150,32 +144,34 @@ public class Transport(context: Context, base: OkHttpClient = OkHttpClient()) {
         val type = built["Content-Type"]?.toMediaTypeOrNull()
         val file = request.bodyFile
         val inline = request.body
-        val body: RequestBody? = when {
-            file != null -> File(file).asRequestBody(type)
-            inline != null -> Base64.getDecoder().decode(inline).toRequestBody(type)
-            request.method in setOf("POST", "PUT", "PATCH") -> ByteArray(0).toRequestBody(type)
-            else -> null
-        }
+        val body: RequestBody? =
+            when {
+                file != null -> File(file).asRequestBody(type)
+                inline != null -> Base64.getDecoder().decode(inline).toRequestBody(type)
+                request.method in setOf("POST", "PUT", "PATCH") -> ByteArray(0).toRequestBody(type)
+                else -> null
+            }
         val timeout = request.timeoutMillis.coerceAtLeast(1)
-        val client = client.newBuilder()
-            .connectTimeout(timeout, TimeUnit.MILLISECONDS)
-            .readTimeout(timeout, TimeUnit.MILLISECONDS)
-            .writeTimeout(timeout, TimeUnit.MILLISECONDS)
-            .build()
+        val client =
+            client
+                .newBuilder()
+                .connectTimeout(timeout, TimeUnit.MILLISECONDS)
+                .readTimeout(timeout, TimeUnit.MILLISECONDS)
+                .writeTimeout(timeout, TimeUnit.MILLISECONDS)
+                .build()
         return client.newCall(Request.Builder().url(request.url).headers(built).method(request.method, body).build())
     }
 
-    private fun head(response: Response) = TransportResponse(
-        status = response.code.toLong(),
-        url = response.request.url.toString(),
-        headers = response.headers.map { (name, value) -> TransportHeader(name, value) },
-    )
+    private fun head(response: Response) =
+        TransportResponse(
+            status = response.code.toLong(),
+            url = response.request.url.toString(),
+            headers = response.headers.map { (name, value) -> TransportHeader(name, value) },
+        )
 
     /**
-     * The body inline up to the inline limit, else in a file Swift reads and
-     * deletes. An answer to a request carrying credentials never goes to a
-     * file: inline up to [CREDENTIAL_LIMIT], refused past it. A file this
-     * read does not finish is deleted before the failure leaves it.
+     * The body inline up to the inline limit, else in a file Swift reads and deletes. An answer to a request carrying credentials never goes to a file: inline
+     * up to [CREDENTIAL_LIMIT], refused past it. A file this read does not finish is deleted before the failure leaves it.
      */
     private fun read(response: Response, credentials: Boolean): TransportResponse {
         val source = response.body.source()
@@ -198,15 +194,16 @@ public class Transport(context: Context, base: OkHttpClient = OkHttpClient()) {
     }
 
     private fun <T> failed(failure: IOException, make: (TransportFailureKind, String) -> T): T {
-        val kind = when (failure) {
-            is SocketTimeoutException -> TransportFailureKind.timedOut
-            is UnknownHostException -> TransportFailureKind.cannotConnect
-            is NoRouteToHostException -> TransportFailureKind.offline
-            is ConnectException -> TransportFailureKind.cannotConnect
-            is SSLException -> TransportFailureKind.secureConnectionFailed
-            is InterruptedIOException -> if (failure.message == "timeout") TransportFailureKind.timedOut else TransportFailureKind.cancelled
-            else -> if (failure.message == "Canceled") TransportFailureKind.cancelled else TransportFailureKind.other
-        }
+        val kind =
+            when (failure) {
+                is SocketTimeoutException -> TransportFailureKind.timedOut
+                is UnknownHostException -> TransportFailureKind.cannotConnect
+                is NoRouteToHostException -> TransportFailureKind.offline
+                is ConnectException -> TransportFailureKind.cannotConnect
+                is SSLException -> TransportFailureKind.secureConnectionFailed
+                is InterruptedIOException -> if (failure.message == "timeout") TransportFailureKind.timedOut else TransportFailureKind.cancelled
+                else -> if (failure.message == "Canceled") TransportFailureKind.cancelled else TransportFailureKind.other
+            }
         // The exception's own words name the host at most; never a header.
         return make(kind, "${failure::class.java.simpleName}: ${failure.message ?: "no detail"}")
     }
@@ -227,20 +224,20 @@ private const val MADE = 1
 private const val ABANDONED = 2
 
 /**
- * Runs the call and [read] on an IO thread, and cancels the call the moment
- * the caller is cancelled, through the head and the body alike. What [read]
- * makes after the caller gave up (a spilled file) goes to [discard], once,
- * whichever side finds it abandoned.
+ * Runs the call and [read] on an IO thread, and cancels the call the moment the caller is cancelled, through the head and the body alike. What [read] makes
+ * after the caller gave up (a spilled file) goes to [discard], once, whichever side finds it abandoned.
  */
 private suspend fun <T : Any> Call.runCancellable(read: (Response) -> T, discard: (T) -> Unit): T = coroutineScope {
     val made = AtomicReference<T?>(null)
     val state = AtomicInteger(PENDING)
-    val running = async(Dispatchers.IO) {
-        runCatching { execute().use(read) }.onSuccess { value ->
-            made.set(value)
-            if (!state.compareAndSet(PENDING, MADE)) discard(value)
+    val running =
+        async(Dispatchers.IO) {
+            runCatching { execute().use(read) }
+                .onSuccess { value ->
+                    made.set(value)
+                    if (!state.compareAndSet(PENDING, MADE)) discard(value)
+                }
         }
-    }
     try {
         running.await().getOrThrow()
     } catch (cancelled: CancellationException) {

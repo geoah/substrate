@@ -20,8 +20,8 @@ public enum ServerAddress {
             text = (isLoopback(host: host(in: authority)) ? "http://" : "https://") + text
         }
         guard let parts = URLComponents(string: text),
-              let scheme = parts.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              let host = parts.host, !host.isEmpty
+            let scheme = parts.scheme?.lowercased(), scheme == "http" || scheme == "https",
+            let host = parts.host, !host.isEmpty
         else { return nil }
         var origin = URLComponents()
         origin.scheme = scheme
@@ -35,7 +35,7 @@ public enum ServerAddress {
     public static func sameOrigin(_ a: URL, _ b: URL) -> Bool {
         func parts(_ url: URL) -> (String, String, Int)? {
             guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
-                  let host = url.host(percentEncoded: false)?.lowercased(), !host.isEmpty
+                let host = url.host(percentEncoded: false)?.lowercased(), !host.isEmpty
             else { return nil }
             return (scheme, host, url.port ?? (scheme == "https" ? 443 : 80))
         }

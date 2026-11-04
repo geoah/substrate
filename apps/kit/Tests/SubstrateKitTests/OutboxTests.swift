@@ -26,9 +26,10 @@ private func openOutbox(_ root: URL = temporaryFolder()) throws -> Outbox {
     Outbox(folder: try RepositoryFolder(root: root))
 }
 
-private func entry(_ method: OutboxEntry.Method, _ kind: String, _ id: String, batch: String? = nil, guarded: Bool = false,
-                   properties: JSONObject = [:]) -> OutboxEntry
-{
+private func entry(
+    _ method: OutboxEntry.Method, _ kind: String, _ id: String, batch: String? = nil, guarded: Bool = false,
+    properties: JSONObject = [:]
+) -> OutboxEntry {
     OutboxEntry(method: method, kind: kind, recordID: id, properties: properties, guarded: guarded, batch: batch)
 }
 
@@ -55,17 +56,20 @@ struct OutboxTests {
         #expect(await outbox.flush(writer(server)) == .sent)
         // The create answered version 1, which somebody moved to 5: the
         // first patch is refused, the record read, and the patch sent again.
-        #expect(server.methodsAndPaths == [
-            "PUT \(path(entryKind, "s1"))", "PATCH \(path(entryKind, "s1"))", "GET \(path(entryKind, "s1"))",
-            "PATCH \(path(entryKind, "s1"))",
-        ])
+        #expect(
+            server.methodsAndPaths == [
+                "PUT \(path(entryKind, "s1"))", "PATCH \(path(entryKind, "s1"))", "GET \(path(entryKind, "s1"))",
+                "PATCH \(path(entryKind, "s1"))",
+            ])
         #expect(await outbox.version(of: entryKind, "s1") == 6)
     }
 
     @Test func aRevisionBelowTheStoredOneIsANewerWriteLandedFirstAndIsDropped() async throws {
         let server = ScriptedServer()
-        server.answer("PUT", path(entryKind, "a"), 422,
-                      #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.revision: 1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"]}}"#)
+        server.answer(
+            "PUT", path(entryKind, "a"), 422,
+            #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.revision: 1 is below the stored revision 2; a rewrite never lowers it, so this is a stale delivery"]}}"#
+        )
         let outbox = try openOutbox()
         try await outbox.enqueue([entry(.put, entryKind, "a", batch: "s")])
         #expect(await outbox.flush(writer(server)) == .sent)
@@ -78,22 +82,29 @@ struct OutboxTests {
         let root = temporaryFolder()
         let first = try openOutbox(root)
         try await first.enqueue((1 ... 5).map { entry(.put, entryKind, "e\($0)", batch: "g") })
-        guard case .offline = await first.flush(writer(server)) else { Issue.record("not offline"); return }
+        guard case .offline = await first.flush(writer(server)) else {
+            Issue.record("not offline")
+            return
+        }
         #expect(await first.entries.count == 5)
         #expect(try await openOutbox(root).entries.count == 5)
     }
 
     @Test func aRefusalParksTheWriteHoldsTheRestOfItsBatchAndLetsAnotherGo() async throws {
         let server = ScriptedServer()
-        server.answer("PUT", path(entryKind, "bad"), 422,
-                      #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.sport: expected one of strength"]}}"#)
+        server.answer(
+            "PUT", path(entryKind, "bad"), 422,
+            #"{"error":{"code":"validation","message":"substrate: validation failed","problems":["props.sport: expected one of strength"]}}"#)
         server.on { $0.method == "PUT" ? (200, answered(1)) : nil }
         let outbox = try openOutbox()
         try await outbox.enqueue([
             entry(.put, entryKind, "bad", batch: "bad"), entry(.put, entryKind, "bad-1", batch: "bad"),
             entry(.put, entryKind, "good", batch: "good"),
         ])
-        guard case let .refused(words) = await outbox.flush(writer(server)) else { Issue.record("not refused"); return }
+        guard case let .refused(words) = await outbox.flush(writer(server)) else {
+            Issue.record("not refused")
+            return
+        }
         #expect(words.contains("props.sport"))
         #expect(await outbox.entries.map(\.recordID) == ["bad", "bad-1"])
         #expect(await outbox.parked.map(\.recordID) == ["bad"])
@@ -101,7 +112,10 @@ struct OutboxTests {
         #expect(server.methodsAndPaths.contains("PUT \(path(entryKind, "good"))"))
         // Parked, it is not sent again on its own, and the state still says so.
         let before = server.sent.count
-        guard case .refused = await outbox.flush(writer(server)) else { Issue.record("a parked write stopped being reported"); return }
+        guard case .refused = await outbox.flush(writer(server)) else {
+            Issue.record("a parked write stopped being reported")
+            return
+        }
         #expect(server.sent.count == before)
         // Retried, it goes; discarded, its batch goes with it.
         let parked = try #require(await outbox.parked.first)
@@ -260,7 +274,10 @@ struct OutboxEditTests {
         server.answer("PATCH", notePath, 409, #"{"error":{"code":"conflict","message":"version conflict: ifVersion 4, stored 6"}}"#)
         let outbox = try openOutbox()
         try await outbox.edit(edit("day-1", ["name": .string("Renamed")], base: 4))
-        guard case .refused = await outbox.flush(writer(server)) else { Issue.record("not refused"); return }
+        guard case .refused = await outbox.flush(writer(server)) else {
+            Issue.record("not refused")
+            return
+        }
         #expect(server.methodsAndPaths == ["PATCH \(notePath)"], "one try, no read, no second write")
         let parked = try #require(await outbox.parked.first)
         #expect(parked.conflict)
@@ -271,7 +288,10 @@ struct OutboxEditTests {
         again.answer("PATCH", notePath, 200, answered(7))
         try await outbox.resolve(parked.id, keepMine: true)
         #expect(await outbox.flush(writer(again)) == .sent)
-        guard case let .object(body)? = again.sent.first?.body else { Issue.record("no body"); return }
+        guard case let .object(body)? = again.sent.first?.body else {
+            Issue.record("no body")
+            return
+        }
         #expect(body["ifVersion"] == nil)
         #expect(await outbox.entries.isEmpty)
     }
@@ -293,7 +313,10 @@ struct OutboxEditTests {
         offline.on { _ in (-1, "") }
         var outbox = try openOutbox(root)
         try await outbox.edit(edit("day-1", ["name": .string("First"), "notes": .string("a")], base: 4))
-        guard case .offline = await outbox.flush(writer(offline)) else { Issue.record("not offline"); return }
+        guard case .offline = await outbox.flush(writer(offline)) else {
+            Issue.record("not offline")
+            return
+        }
         try await outbox.edit(edit("day-1", ["name": .string("Second"), "folder": .null], base: 4))
         #expect(await outbox.entries.count == 1)
 
@@ -363,11 +386,20 @@ struct OutboxEditTests {
         let server = ScriptedServer()
         server.answer("PUT", notePath, 409, #"{"error":{"code":"conflict","message":"exists"}}"#)
         let outbox = try openOutbox()
-        try await outbox.enqueue([OutboxEntry(method: .put, kind: noteKind, recordID: "day-1", properties: ["name": .string("Copy")],
-                                              guarded: true, baseVersion: 0)])
-        guard case let .refused(words) = await outbox.flush(writer(server)) else { Issue.record("not refused"); return }
+        try await outbox.enqueue([
+            OutboxEntry(
+                method: .put, kind: noteKind, recordID: "day-1", properties: ["name": .string("Copy")],
+                guarded: true, baseVersion: 0)
+        ])
+        guard case let .refused(words) = await outbox.flush(writer(server)) else {
+            Issue.record("not refused")
+            return
+        }
         #expect(words.contains("\u{201C}day-1\u{201D}"))
-        guard case let .object(body)? = server.sent.first?.body else { Issue.record("no body"); return }
+        guard case let .object(body)? = server.sent.first?.body else {
+            Issue.record("no body")
+            return
+        }
         #expect(body["ifVersion"] == .number(0))
     }
 
@@ -447,20 +479,21 @@ struct OutboxFileTests {
     @Test func aMovedRecordsWritesTheAppDerivesAgainAreDroppedAndTheRestIsLeftAlone() async throws {
         let folder = try RepositoryFolder(root: temporaryFolder())
         let file = #"""
-        {"entries": [
-          {"id": "00000000-0000-0000-0000-000000000001", "method": "PUT", "kind": "~/training/session", "recordID": "s", "session": "s"},
-          {"id": "00000000-0000-0000-0000-000000000002", "method": "DELETE", "kind": "~/training/session", "recordID": "t", "session": "t"},
-          {"id": "00000000-0000-0000-0000-000000000003", "method": "PATCH", "kind": "~/training/routine", "recordID": "r",
-           "properties": {"notes": "kept"}, "guarded": true, "baseVersion": 3},
-          {"id": "00000000-0000-0000-0000-000000000004", "method": "PATCH", "kind": "substrate.reamde.dev/training/routine", "recordID": "q",
-           "guarded": true, "baseVersion": 4}
-        ],
-        "versions": {"~/training/routine/r": 3, "substrate.reamde.dev/training/routine/q": 4},
-        "chains": {"~/training/routine/r": {"3": 4}, "substrate.reamde.dev/training/routine/q": {"4": 5}}}
-        """#
+            {"entries": [
+              {"id": "00000000-0000-0000-0000-000000000001", "method": "PUT", "kind": "~/training/session", "recordID": "s", "session": "s"},
+              {"id": "00000000-0000-0000-0000-000000000002", "method": "DELETE", "kind": "~/training/session", "recordID": "t", "session": "t"},
+              {"id": "00000000-0000-0000-0000-000000000003", "method": "PATCH", "kind": "~/training/routine", "recordID": "r",
+               "properties": {"notes": "kept"}, "guarded": true, "baseVersion": 3},
+              {"id": "00000000-0000-0000-0000-000000000004", "method": "PATCH", "kind": "substrate.reamde.dev/training/routine", "recordID": "q",
+               "guarded": true, "baseVersion": 4}
+            ],
+            "versions": {"~/training/routine/r": 3, "substrate.reamde.dev/training/routine/q": 4},
+            "chains": {"~/training/routine/r": {"3": 4}, "substrate.reamde.dev/training/routine/q": {"4": 5}}}
+            """#
         try folder.write(Data(file.utf8), to: "outbox.json", in: .outbox)
-        let upgrade = OutboxUpgrade(respell: respellKind, respellProperties: respellObject,
-                                    rederives: { $0.batch != nil && $0.method != OutboxEntry.Method.purge })
+        let upgrade = OutboxUpgrade(
+            respell: respellKind, respellProperties: respellObject,
+            rederives: { $0.batch != nil && $0.method != OutboxEntry.Method.purge })
         let outbox = Outbox(folder: folder, upgrade: upgrade)
 
         let entries = await outbox.entries

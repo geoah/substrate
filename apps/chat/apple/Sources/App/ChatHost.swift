@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import SubstrateKit
 import SwiftUI
+
 #if os(iOS)
 import UIKit
 #endif
@@ -52,12 +53,15 @@ final class ChatHost {
         let platform = ChatPlatform.macos
         let device = "this Mac"
         #endif
-        let app = ChatApp(storage: ChatStorage(base: try? folders.data(), writingOptions: folders.writingOptions),
-                          preferences: DefaultsPreferenceStore(defaults: .standard), platform: platform)
-        let link = Link(app: app, manifest: ChatManifest.manifest, sessions: store,
-                        words: StatusWords(app: ChatManifest.appName, device: device, kept: "saved chats",
-                                           signOut: "\(device.capitalizedFirst) forgets its saved chats. Your chats stay on the server."),
-                        offers: [.review, .signInAgain, .openFix])
+        let app = ChatApp(
+            storage: ChatStorage(base: try? folders.data(), writingOptions: folders.writingOptions),
+            preferences: DefaultsPreferenceStore(defaults: .standard), platform: platform)
+        let link = Link(
+            app: app, manifest: ChatManifest.manifest, sessions: store,
+            words: StatusWords(
+                app: ChatManifest.appName, device: device, kept: "saved chats",
+                signOut: "\(device.capitalizedFirst) forgets its saved chats. Your chats stay on the server."),
+            offers: [.review, .signInAgain, .openFix])
         model = PresentationModel(link, environment: environment)
         model.onSignal(\.app?.answered) { [weak self] answer in self?.answered(answer) }
         model.onSignal(\.app?.keySaved) { [weak self] provider in self?.savedKey = provider }
@@ -108,9 +112,10 @@ final class ChatHost {
         let session = SessionStore.chat.load()
         guard session?.identity != recordsFor else { return records }
         recordsFor = session?.identity
-        records = RecordDirectory(reader: session.map {
-            HTTPRecordReader(client: SubstrateClient(server: $0.server, token: $0.secret), deniedHint: ChatManifest.deniedHint($0.grants))
-        })
+        records = RecordDirectory(
+            reader: session.map {
+                HTTPRecordReader(client: SubstrateClient(server: $0.server, token: $0.secret), deniedHint: ChatManifest.deniedHint($0.grants))
+            })
         return records
     }
 
@@ -127,8 +132,9 @@ final class ChatHost {
 
     /// The password door, for a server without app authorization.
     func signIn(server: URL, repository: String, password: String, totp: String?) async throws {
-        let result = try await SubstrateClient(server: server).login(repository: repository, password: password, totp: totp,
-                                                                     label: Self.tokenLabel)
+        let result = try await SubstrateClient(server: server).login(
+            repository: repository, password: password, totp: totp,
+            label: Self.tokenLabel)
         try await adopt(Session(server: server, repository: result.repository, secret: result.secret, tokenID: result.token.id))
     }
 

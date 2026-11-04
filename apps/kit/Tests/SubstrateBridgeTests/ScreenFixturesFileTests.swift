@@ -1,9 +1,10 @@
 import Foundation
-@testable import SubstrateBridge
 import SubstrateBridgeCheck
 import SubstrateCore
 import SubstrateScreens
 import Testing
+
+@testable import SubstrateBridge
 
 /// The shared screens' fixtures as one file both platforms draw from
 /// (docs/plans/app-kit.md §7.4): Swift writes `ScreenFixtures.all` there as

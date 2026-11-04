@@ -57,14 +57,11 @@ public fun ConnectHeader(appName: String, modifier: Modifier = Modifier, tagline
 }
 
 /**
- * The connect screen as its presentation words it: the field, the door the
- * server found takes, the problem, the button and the footer. Every change
- * is a command; the screen keeps only what is typed, which the controller
- * writes over when it moves the field's revision (the name a server was
- * found from, an empty field for another server).
+ * The connect screen as its presentation words it: the field, the door the server found takes, the problem, the button and the footer. Every change is a
+ * command; the screen keeps only what is typed, which the controller writes over when it moves the field's revision (the name a server was found from, an empty
+ * field for another server).
  *
- * @param passwordDoor the app's own password form, drawn for the server
- *   found (the probe's whole answer, which the app hands back to Swift).
+ * @param passwordDoor the app's own password form, drawn for the server found (the probe's whole answer, which the app hands back to Swift).
  */
 @Composable
 public fun ConnectScreen(

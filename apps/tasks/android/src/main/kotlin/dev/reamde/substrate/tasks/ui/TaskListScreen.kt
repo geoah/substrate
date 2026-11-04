@@ -4,7 +4,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -67,11 +66,8 @@ import dev.reamde.substrate.tasks.bridge.TasksApp
 import dev.reamde.substrate.tasks.bridge.TasksPresentation
 
 /**
- * One list's tasks: the open ones in the order the presentation gives,
- * then the completed ones where shown, the quick add field at the bottom
- * and New Task as the floating button. A row's mark completes or reopens
- * it, a tap opens it and a long press offers the rest. Every change is a
- * command.
+ * One list's tasks: the open ones in the order the presentation gives, then the completed ones where shown, the quick add field at the bottom and New Task as
+ * the floating button. A row's mark completes or reopens it, a tap opens it and a long press offers the rest. Every change is a command.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,16 +94,23 @@ internal fun TaskListScreen(
                             IconButton(onClick = { options = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "List Options") }
                             DropdownMenu(expanded = options, onDismissRequest = { options = false }) {
                                 if (list.selection != ListSelection.Today) {
-                                    DropdownMenuItem(text = { Text(list.toggleClosed) }, onClick = {
-                                        options = false
-                                        actions.send(TasksApp.Command.Settings(showCompleted(!list.showsClosed)))
-                                    })
+                                    DropdownMenuItem(
+                                        text = { Text(list.toggleClosed) },
+                                        onClick = {
+                                            options = false
+                                            actions.send(TasksApp.Command.Settings(showCompleted(!list.showsClosed)))
+                                        },
+                                    )
                                 }
                                 for (action in list.actions) {
                                     val chosen = action.action
                                     DropdownMenuItem(
                                         text = {
-                                            Text(action.title, color = if (chosen is ListAction.Delete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                                            Text(
+                                                action.title,
+                                                color =
+                                                    if (chosen is ListAction.Delete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                            )
                                         },
                                         onClick = {
                                             options = false
@@ -136,15 +139,23 @@ internal fun TaskListScreen(
                 item { Notices(banner, app.notices, actions) }
                 list.orderNote?.let { note ->
                     item {
-                        Text(note, style = KitText.footnote.style, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                             modifier = Modifier.padding(horizontal = KitSpacing.content, vertical = KitSpacing.small))
+                        Text(
+                            note,
+                            style = KitText.footnote.style,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = KitSpacing.content, vertical = KitSpacing.small),
+                        )
                     }
                 }
                 items(list.open.rows, key = { it.id }) { row -> TaskRowView(row, row.id == selected, list.rowMenu, app, actions) }
                 if (list.showsClosed && list.closed.rows.isNotEmpty()) {
                     item {
-                        Text(list.closedTitle, style = KitText.heading.style, color = MaterialTheme.colorScheme.primary,
-                             modifier = Modifier.padding(start = KitSpacing.content, top = KitSpacing.screen, bottom = KitSpacing.medium))
+                        Text(
+                            list.closedTitle,
+                            style = KitText.heading.style,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = KitSpacing.content, top = KitSpacing.screen, bottom = KitSpacing.medium),
+                        )
                     }
                     items(list.closed.rows, key = { it.id }) { row -> TaskRowView(row, row.id == selected, list.rowMenu, app, actions) }
                 }
@@ -168,20 +179,21 @@ private fun QuickAdd(prompt: String, add: (String) -> Unit) {
             leadingIcon = { Icon(Icons.Rounded.AddCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = {
-                if (draft.isNotBlank()) add(draft)
-                draft = ""
-            }),
+            keyboardActions =
+                KeyboardActions(
+                    onDone = {
+                        if (draft.isNotBlank()) add(draft)
+                        draft = ""
+                    }
+                ),
             modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = KitSpacing.content, vertical = KitSpacing.medium),
         )
     }
 }
 
 /**
- * A task as a row: the round mark that completes or reopens it, its name,
- * and under it, each under its own mark, when it is due, how urgent it is,
- * the list it is in and whether it has notes. Read aloud as the
- * presentation words it.
+ * A task as a row: the round mark that completes or reopens it, its name, and under it, each under its own mark, when it is due, how urgent it is, the list it
+ * is in and whether it has notes. Read aloud as the presentation words it.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -192,8 +204,11 @@ internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, ap
         ListItem(
             leadingContent = {
                 IconButton(onClick = { actions.send(if (open) TasksApp.Command.Complete(row.id) else TasksApp.Command.Reopen(row.id)) }) {
-                    Icon(TasksMarks.mark(row.status), contentDescription = row.toggle,
-                         tint = if (open) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
+                    Icon(
+                        TasksMarks.mark(row.status),
+                        contentDescription = row.toggle,
+                        tint = if (open) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                    )
                 }
             },
             headlineContent = {
@@ -203,19 +218,19 @@ internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, ap
                     color = if (open) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             },
-            supportingContent = if (row.due != null || row.priority != null || row.listName != null || row.hasNotes) {
-                { Facts(row) }
-            } else {
-                null
-            },
-            colors = ListItemDefaults.colors(
-                containerColor = if (chosen) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-            ),
-            modifier = Modifier.combinedClickable(
-                onClick = { actions.send(TasksApp.Command.Open(row.id)) },
-                onLongClick = { menu = true },
-                onClickLabel = row.spoken,
-            ),
+            supportingContent =
+                if (row.due != null || row.priority != null || row.listName != null || row.hasNotes) {
+                    { Facts(row) }
+                } else {
+                    null
+                },
+            colors = ListItemDefaults.colors(containerColor = if (chosen) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface),
+            modifier =
+                Modifier.combinedClickable(
+                    onClick = { actions.send(TasksApp.Command.Open(row.id)) },
+                    onLongClick = { menu = true },
+                    onClickLabel = row.spoken,
+                ),
         )
         TaskMenu(menu, dismiss = { menu = false }, row, words, app, actions)
     }
@@ -223,13 +238,21 @@ internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, ap
 
 @Composable
 private fun Facts(row: TaskRow) {
-    Row(horizontalArrangement = Arrangement.spacedBy(KitSpacing.content), verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clearAndSetSemantics { contentDescription = row.spoken }) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(KitSpacing.content),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.clearAndSetSemantics { contentDescription = row.spoken },
+    ) {
         row.due?.let { Fact(Icons.Rounded.CalendarToday, it.text, TasksMarks.color(it.tone)) }
         row.priority?.let { Fact(TasksMarks.icon(it.priority), it.text, TasksMarks.color(it.priority)) }
         row.listName?.let { Fact(Icons.AutoMirrored.Rounded.List, it, MaterialTheme.colorScheme.onSurfaceVariant) }
-        if (row.hasNotes) Icon(Icons.AutoMirrored.Rounded.Notes, contentDescription = "Has notes", tint = MaterialTheme.colorScheme.outline,
-                               modifier = Modifier.size(14.dp))
+        if (row.hasNotes)
+            Icon(
+                Icons.AutoMirrored.Rounded.Notes,
+                contentDescription = "Has notes",
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(14.dp),
+            )
     }
 }
 
@@ -255,18 +278,25 @@ private fun TaskMenu(expanded: Boolean, dismiss: () -> Unit, row: TaskRow, words
     }
     DropdownMenu(expanded = expanded, onDismissRequest = close) {
         when (submenu) {
-            words.priority -> for (level in words.priorities) {
-                DropdownMenuItem(
-                    text = { Text(level.title) },
-                    trailingIcon = { if ((row.priority?.priority?.name ?: TaskPriority.none.name) == level.id) Icon(dev.reamde.substrate.kit.ui.KitMark.check.icon, null) },
-                    onClick = { send(TasksApp.Command.SetPriority(row.id, TaskPriority.valueOf(level.id))) },
-                )
-            }
-            words.move -> for (destination in app.sidebar.fixed.filter { it.selection != ListSelection.Today } + app.sidebar.lists.rows) {
-                DropdownMenuItem(text = { Text(destination.title) }, onClick = {
-                    send(TasksApp.Command.Move(row.id, (destination.selection as? ListSelection.List)?.value))
-                })
-            }
+            words.priority ->
+                for (level in words.priorities) {
+                    DropdownMenuItem(
+                        text = { Text(level.title) },
+                        trailingIcon = {
+                            if ((row.priority?.priority?.name ?: TaskPriority.none.name) == level.id) Icon(dev.reamde.substrate.kit.ui.KitMark.check.icon, null)
+                        },
+                        onClick = { send(TasksApp.Command.SetPriority(row.id, TaskPriority.valueOf(level.id))) },
+                    )
+                }
+            words.move ->
+                for (destination in app.sidebar.fixed.filter { it.selection != ListSelection.Today } + app.sidebar.lists.rows) {
+                    DropdownMenuItem(
+                        text = { Text(destination.title) },
+                        onClick = {
+                            send(TasksApp.Command.Move(row.id, (destination.selection as? ListSelection.List)?.value))
+                        },
+                    )
+                }
             else -> {
                 if (row.status == TaskStatus.open) {
                     DropdownMenuItem(text = { Text(words.complete) }, onClick = { send(TasksApp.Command.Complete(row.id)) })
@@ -278,7 +308,10 @@ private fun TaskMenu(expanded: Boolean, dismiss: () -> Unit, row: TaskRow, words
                 DropdownMenuItem(text = { Text(words.priority) }, onClick = { submenu = words.priority })
                 DropdownMenuItem(text = { Text(words.move) }, onClick = { submenu = words.move })
                 HorizontalDivider()
-                DropdownMenuItem(text = { Text(words.delete, color = MaterialTheme.colorScheme.error) }, onClick = { send(TasksApp.Command.DeleteTask(row.id)) })
+                DropdownMenuItem(
+                    text = { Text(words.delete, color = MaterialTheme.colorScheme.error) },
+                    onClick = { send(TasksApp.Command.DeleteTask(row.id)) },
+                )
             }
         }
     }

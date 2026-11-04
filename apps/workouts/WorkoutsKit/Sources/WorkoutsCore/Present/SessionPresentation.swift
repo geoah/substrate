@@ -20,9 +20,10 @@ public struct PresenterSettings: Codable, Equatable, Sendable {
     /// (`SetRowPresentation.commitValues`, `UntickedRow.values`).
     public var prefillsRPE: Bool
 
-    public init(calendar: Calendar = .current, defaultUnit: MassUnit = .kg, countWarmupsInVolume: Bool = false,
-                prefillsRPE: Bool = false)
-    {
+    public init(
+        calendar: Calendar = .current, defaultUnit: MassUnit = .kg, countWarmupsInVolume: Bool = false,
+        prefillsRPE: Bool = false
+    ) {
         self.calendar = calendar
         self.defaultUnit = defaultUnit
         self.countWarmupsInVolume = countWarmupsInVolume
@@ -68,11 +69,12 @@ public struct SessionPresentation: Codable, Equatable, Sendable {
     /// send the same commands.
     public var rowsLayout: RowsLayout
 
-    public init(sessionID: SessionID, title: String, isFinished: Bool, header: SessionHeaderStats, blocks: [ExerciseBlock],
-                upNext: UpNextPresentation?, restBar: RestBarPresentation, liveActivity: LiveActivityContent,
-                notification: CountdownNotification?, accessory: AccessoryPresentation, unticked: [UntickedRow],
-                completedSets: Int, summary: String, timedRow: RowID?, nextChange: Date?, rowsLayout: RowsLayout = .empty)
-    {
+    public init(
+        sessionID: SessionID, title: String, isFinished: Bool, header: SessionHeaderStats, blocks: [ExerciseBlock],
+        upNext: UpNextPresentation?, restBar: RestBarPresentation, liveActivity: LiveActivityContent,
+        notification: CountdownNotification?, accessory: AccessoryPresentation, unticked: [UntickedRow],
+        completedSets: Int, summary: String, timedRow: RowID?, nextChange: Date?, rowsLayout: RowsLayout = .empty
+    ) {
         self.sessionID = sessionID
         self.title = title
         self.isFinished = isFinished
@@ -153,9 +155,10 @@ public struct SessionHeaderStats: Codable, Equatable, Sendable {
     /// `3 of 40`, under `setsTitle`.
     public var setsText: String
 
-    public init(clockStart: Date, clockPausedAt: Date?, elapsed: Seconds, durationText: String, isPaused: Bool, volume: Mass,
-                volumeText: String, setsDone: Int, setsPlanned: Int, setsText: String)
-    {
+    public init(
+        clockStart: Date, clockPausedAt: Date?, elapsed: Seconds, durationText: String, isPaused: Bool, volume: Mass,
+        volumeText: String, setsDone: Int, setsPlanned: Int, setsText: String
+    ) {
         self.clockStart = clockStart
         self.clockPausedAt = clockPausedAt
         self.elapsed = elapsed
@@ -201,9 +204,10 @@ public struct GroupHeader: Codable, Equatable, Sendable {
     /// The fixed palette of four accessible colours the groups take in turn.
     public static let paletteSize = 4
 
-    public init(key: String, kind: GroupKind, pairing: Pairing?, rounds: Int, roundRest: Seconds, title: String,
-                colorIndex: Int, members: [String])
-    {
+    public init(
+        key: String, kind: GroupKind, pairing: Pairing?, rounds: Int, roundRest: Seconds, title: String,
+        colorIndex: Int, members: [String]
+    ) {
         self.key = key
         self.kind = kind
         self.pairing = pairing
@@ -262,12 +266,13 @@ public struct ExerciseCard: Codable, Equatable, Sendable, Identifiable {
         return "Remove \(name) and its \(Format.count(completedSets, "done set"))?"
     }
 
-    public init(slot: String, exercise: ExerciseID, name: String, measurement: MeasurementType, unit: MassUnit, isLocal: Bool,
-                group: String?, groupLabel: String?, colorIndex: Int?, restChip: String, rests: [SlotRestOption],
-                notes: String?, planNotes: String?, columns: [GridColumn], columnTitles: [String], rows: [SetRowPresentation],
-                loadStep: Mass?, timeStep: Seconds, workingDone: Int, workingPlanned: Int, progress: String,
-                completedSets: Int, hasWarmups: Bool)
-    {
+    public init(
+        slot: String, exercise: ExerciseID, name: String, measurement: MeasurementType, unit: MassUnit, isLocal: Bool,
+        group: String?, groupLabel: String?, colorIndex: Int?, restChip: String, rests: [SlotRestOption],
+        notes: String?, planNotes: String?, columns: [GridColumn], columnTitles: [String], rows: [SetRowPresentation],
+        loadStep: Mass?, timeStep: Seconds, workingDone: Int, workingPlanned: Int, progress: String,
+        completedSets: Int, hasWarmups: Bool
+    ) {
         self.slot = slot
         self.exercise = exercise
         self.name = name
@@ -307,9 +312,10 @@ public struct SlotRestOption: Codable, Equatable, Sendable {
     /// `Default (2:00)`, the picker's item.
     public var defaultText: String
 
-    public init(kind: SlotRestKind, seconds: Seconds, defaultSeconds: Seconds, isSetInGym: Bool, text: String,
-                defaultText: String)
-    {
+    public init(
+        kind: SlotRestKind, seconds: Seconds, defaultSeconds: Seconds, isSetInGym: Bool, text: String,
+        defaultText: String
+    ) {
         self.kind = kind
         self.seconds = seconds
         self.defaultSeconds = defaultSeconds
@@ -391,13 +397,14 @@ public struct SetRowPresentation: Codable, Equatable, Sendable, Identifiable {
     public var notes: String?
     public var isSegment: Bool
 
-    public init(id: RowID, slot: String, label: SetLabel, state: RowState, kind: SetKind?, allowedKinds: [SetKind],
-                previous: PreviousSet?, cells: [GridCell], rpe: Decimal?, rpeText: String?, rpeEntry: RowRPE = .none,
-                effortText: String? = nil, canRateEffort: Bool = false, rpeAccessibilityLabel: String = "RPE",
-                timer: TimedSetState?,
-                suggestion: Suggestion?, reason: String?, stopText: String?, commitValues: SetValues?, stopValues: SetValues?,
-                missing: [ValueField], canTick: Bool, restOverride: Seconds?, notes: String?, isSegment: Bool)
-    {
+    public init(
+        id: RowID, slot: String, label: SetLabel, state: RowState, kind: SetKind?, allowedKinds: [SetKind],
+        previous: PreviousSet?, cells: [GridCell], rpe: Decimal?, rpeText: String?, rpeEntry: RowRPE = .none,
+        effortText: String? = nil, canRateEffort: Bool = false, rpeAccessibilityLabel: String = "RPE",
+        timer: TimedSetState?,
+        suggestion: Suggestion?, reason: String?, stopText: String?, commitValues: SetValues?, stopValues: SetValues?,
+        missing: [ValueField], canTick: Bool, restOverride: Seconds?, notes: String?, isSegment: Bool
+    ) {
         self.id = id
         self.slot = slot
         self.label = label
@@ -472,9 +479,10 @@ public struct GridCell: Codable, Equatable, Sendable {
     /// its unit, `Leg Press (Machine), set 1, load in kilograms`.
     public var accessibilityLabel: String
 
-    public init(column: GridColumn, field: ValueField, text: String?, isGhost: Bool, isHint: Bool, isMissing: Bool,
-                entered: String?, accessibilityLabel: String = "")
-    {
+    public init(
+        column: GridColumn, field: ValueField, text: String?, isGhost: Bool, isHint: Bool, isMissing: Bool,
+        entered: String?, accessibilityLabel: String = ""
+    ) {
         self.column = column
         self.field = field
         self.text = text
@@ -548,9 +556,10 @@ public struct UpNextPresentation: Codable, Equatable, Sendable {
     /// The suggestion's text, shown under the row.
     public var reason: String?
 
-    public init(row: RowID, slot: String, exercise: String, label: SetLabel, round: Int?, values: String,
-                line: String, reason: String?)
-    {
+    public init(
+        row: RowID, slot: String, exercise: String, label: SetLabel, round: Int?, values: String,
+        line: String, reason: String?
+    ) {
         self.row = row
         self.slot = slot
         self.exercise = exercise
@@ -653,10 +662,11 @@ public struct LiveActivityContent: Codable, Equatable, Sendable {
     public var setsDone: Int
     public var setsPlanned: Int
 
-    public init(title: String, clockStart: Date, clockPausedAt: Date?, exercise: String, setLabel: String?,
-                isWarmup: Bool = false, values: String = "", next: String, nextRowID: RowID?, canComplete: Bool = true,
-                countdown: LiveActivityCountdown?, setsDone: Int, setsPlanned: Int)
-    {
+    public init(
+        title: String, clockStart: Date, clockPausedAt: Date?, exercise: String, setLabel: String?,
+        isWarmup: Bool = false, values: String = "", next: String, nextRowID: RowID?, canComplete: Bool = true,
+        countdown: LiveActivityCountdown?, setsDone: Int, setsPlanned: Int
+    ) {
         self.title = title
         self.clockStart = clockStart
         self.clockPausedAt = clockPausedAt
@@ -736,9 +746,10 @@ public struct AccessoryPresentation: Codable, Equatable, Sendable {
     /// A timed set's start while it runs: the bar counts up from it in place of the rest.
     public var timerStartedAt: Date?
 
-    public init(title: String, exercise: String?, setLabel: String?, values: String?, row: RowID? = nil, isPaused: Bool,
-                restEndsAt: Date?, timerStartedAt: Date? = nil)
-    {
+    public init(
+        title: String, exercise: String?, setLabel: String?, values: String?, row: RowID? = nil, isPaused: Bool,
+        restEndsAt: Date?, timerStartedAt: Date? = nil
+    ) {
         self.title = title
         self.exercise = exercise
         self.setLabel = setLabel

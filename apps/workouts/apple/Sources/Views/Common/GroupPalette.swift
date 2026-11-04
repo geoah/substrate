@@ -1,6 +1,6 @@
-import WorkoutsCore
 import SwiftUI
 import UIKit
+import WorkoutsCore
 
 /// A group's bracket, header and member labels. One grey for every group:
 /// a colour per group read as a warm-up's orange or a failure's red, so
@@ -15,8 +15,9 @@ enum GroupPalette {
     static let warmup = adaptive(light: 0xB35C00, dark: 0xFF9F0A)
 
     static func adaptive(light: UInt32, dark: UInt32) -> Color {
-        Color(UIColor { traits in
-            UIColor(rgb: traits.userInterfaceStyle == .dark ? dark : light)
-        })
+        Color(
+            UIColor { traits in
+                UIColor(rgb: traits.userInterfaceStyle == .dark ? dark : light)
+            })
     }
 }

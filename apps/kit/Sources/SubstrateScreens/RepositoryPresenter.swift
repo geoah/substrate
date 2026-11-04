@@ -12,10 +12,11 @@ public enum RepositoryPresenter {
     /// - Parameters:
     ///   - signOutMessage: what else signing out gives up on the device, in
     ///     the app's words (`StatusWords.signOut`), after the kit's own.
-    public static func present(session: SessionFacts, manifest: AppManifest?, serverVersion: String?, unrevoked: [SessionFacts],
-                               offersChangeAccess: Bool, signOutMessage: String? = nil, locale: Locale,
-                               timeZone: TimeZone) -> RepositoryPresentation
-    {
+    public static func present(
+        session: SessionFacts, manifest: AppManifest?, serverVersion: String?, unrevoked: [SessionFacts],
+        offersChangeAccess: Bool, signOutMessage: String? = nil, locale: Locale,
+        timeZone: TimeZone
+    ) -> RepositoryPresentation {
         let host = ServerAddress.display(session.server)
         let words = { (scope: String) in manifest?.scopeWords(scope) ?? ScopeWords.sentence(scope) }
         let app = session.scopes != nil

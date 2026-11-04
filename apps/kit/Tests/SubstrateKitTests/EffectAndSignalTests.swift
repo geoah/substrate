@@ -4,6 +4,7 @@ import SubstrateDevice
 import SubstrateRuntime
 import SubstrateTesting
 import Testing
+
 #if canImport(SwiftUI)
 import SubstrateUI
 #endif
@@ -83,8 +84,9 @@ struct EffectAndSignalTests {
     @Test func aControllerWithTheEffectsOfTheStateAfterAloneStillRunsThem() async {
         // `Training` implements `effects(of:on:presented:)` alone; the
         // runtime calls the four-argument one, whose default is that.
-        let harness = ControllerHarness(Training(store: MemoryJournal<Training.Event, Training.State>(), shelf: HistoryShelf()),
-                                        performsEffects: false)
+        let harness = ControllerHarness(
+            Training(store: MemoryJournal<Training.Event, Training.State>(), shelf: HistoryShelf()),
+            performsEffects: false)
         await harness.send(.start)
         await harness.send(.log("a"))
         #expect(harness.effects == [.announce("a, 1 so far")])

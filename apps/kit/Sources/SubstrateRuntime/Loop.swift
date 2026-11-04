@@ -29,9 +29,10 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
     private var subscribers: [Int: AsyncStream<Root.Presentation>.Continuation] = [:]
     private var nextSubscriber = 0
 
-    init(environment: AppEnvironment, options: RuntimeOptions,
-         hop: @escaping @Sendable (@escaping @Sendable () -> Void) async -> Void)
-    {
+    init(
+        environment: AppEnvironment, options: RuntimeOptions,
+        hop: @escaping @Sendable (@escaping @Sendable () -> Void) async -> Void
+    ) {
         self.environment = environment
         performsEffects = options.performsEffects
         traceSink = options.trace

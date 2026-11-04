@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// A timed set's TIME cell (DESIGN.md §7.6): a play button beside the
 /// duration; while it runs, Stop beside the countdown, which turns orange

@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import WorkoutsCore
 import SubstrateCore
+import Testing
+
+@testable import WorkoutsCore
 
 /// The files the last release left on the phone, every training kind
 /// spelled `~/training/…` (decision T3): each store reads them once in the
@@ -48,10 +49,16 @@ struct UpgradeTests {
         #expect(LegacyKinds.respell("substrate.reamde.dev/health/workout") == "substrate.reamde.dev/health/workout")
         #expect(LegacyKinds.respell("~/trainingcoach/workoutCoach") == "~/trainingcoach/workoutCoach")
         #expect(LegacyKinds.respell(codec.kinds.session) == codec.kinds.session)
-        let value: JSONValue = .object(["exercise": .object(["ref": .string("~/training/exercise/x")]), "notes": .string("squat"),
-                                        "refs": .array([.string("~/training/setup/s")])])
-        #expect(LegacyKinds.respell(value) == .object(["exercise": .object(["ref": .string("\(codec.kinds.exercise)/x")]), "notes": .string("squat"),
-                                                       "refs": .array([.string("\(codec.kinds.setup)/s")])]))
+        let value: JSONValue = .object([
+            "exercise": .object(["ref": .string("~/training/exercise/x")]), "notes": .string("squat"),
+            "refs": .array([.string("~/training/setup/s")]),
+        ])
+        #expect(
+            LegacyKinds.respell(value)
+                == .object([
+                    "exercise": .object(["ref": .string("\(codec.kinds.exercise)/x")]), "notes": .string("squat"),
+                    "refs": .array([.string("\(codec.kinds.setup)/s")]),
+                ]))
     }
 
     @Test("a history file from the last release reads in the published spelling, is rewritten as format 3, and a second load changes nothing")

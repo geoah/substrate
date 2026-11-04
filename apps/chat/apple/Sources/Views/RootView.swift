@@ -79,7 +79,7 @@ struct ChatSplitView: View {
         #if os(iOS)
         .sheet(isPresented: $showSettings) {
             SettingsView()
-                .environmentObject(updates)
+            .environmentObject(updates)
         }
         #endif
     }

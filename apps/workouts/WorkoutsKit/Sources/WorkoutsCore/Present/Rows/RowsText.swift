@@ -14,16 +14,18 @@ enum RowsText {
     /// `BW + 10 kg × 8`, `0:58 hold`, `10 kg for 0:55`, `20 kg for 40 m`,
     /// `500 m in 2:05`. `repsHint` writes the reps `≈15`; `placeholder` stands
     /// in for missing reps (`25 kg to failure`).
-    static func values(_ values: SetValues, measurement: MeasurementType, perSide: Bool, repsHint: Bool = false,
-                       placeholder: String? = nil) -> String
-    {
+    static func values(
+        _ values: SetValues, measurement: MeasurementType, perSide: Bool, repsHint: Bool = false,
+        placeholder: String? = nil
+    ) -> String {
         let reps = values.reps.map { repsHint ? "\u{2248}\($0)" : "\($0)" }
         switch measurement {
         case .weightreps:
             return joined(values.load.map(Format.mass), reps, placeholder: placeholder)
         case .weightedbodyweightreps, .bodyweightassistedreps:
             let load = Format.load(values, mode: measurement.loadMode)
-            return load == "BW" ? repsWords(reps, perSide: perSide, placeholder: placeholder)
+            return load == "BW"
+                ? repsWords(reps, perSide: perSide, placeholder: placeholder)
                 : joined(load, reps, placeholder: placeholder)
         case .repsonly, .bodyweightreps:
             return repsWords(reps, perSide: perSide, placeholder: placeholder)
@@ -96,9 +98,10 @@ enum RowsText {
 
     /// The word after the editor's big number: `kg`, `reps`, `per side`,
     /// `kg added`, `kg assist`, `m`; nil for a time.
-    static func unitText(_ field: ValueField, measurement: MeasurementType, unit: MassUnit, perSide: Bool,
-                         value: Decimal?) -> String?
-    {
+    static func unitText(
+        _ field: ValueField, measurement: MeasurementType, unit: MassUnit, perSide: Bool,
+        value: Decimal?
+    ) -> String? {
         switch field {
         case .load: measurement == .weightedbodyweightreps ? "\(unit.rawValue) added" : unit.rawValue
         case .assistance: "\(unit.rawValue) assist"
@@ -155,9 +158,10 @@ enum RowsText {
 
     /// A set as VoiceOver reads it: `110 kilograms, 8 reps`, `11 reps per side`,
     /// `58 seconds`, `bodyweight plus 10 kilograms, 8 reps`, `20 kilograms, 40 metres`.
-    static func spoken(_ values: SetValues, measurement: MeasurementType, perSide: Bool, repsHint: Bool = false,
-                       placeholder: String? = nil) -> String
-    {
+    static func spoken(
+        _ values: SetValues, measurement: MeasurementType, perSide: Bool, repsHint: Bool = false,
+        placeholder: String? = nil
+    ) -> String {
         var parts: [String] = []
         switch measurement.loadMode {
         case .external: if let load = values.load { parts.append(spokenMass(load)) }
@@ -214,8 +218,10 @@ enum RowsText {
             case .reps:
                 guard let now = today.reps, let then = last.reps, now != then else { continue }
                 let diff = now - then
-                result.append(RowsChange(text: signed("\(abs(diff))", diff > 0) + (abs(diff) == 1 ? " rep" : " reps"),
-                                         isGain: diff > 0))
+                result.append(
+                    RowsChange(
+                        text: signed("\(abs(diff))", diff > 0) + (abs(diff) == 1 ? " rep" : " reps"),
+                        isGain: diff > 0))
             case .duration:
                 guard let now = today.duration, let then = last.duration, now != then else { continue }
                 let diff = now - then
@@ -254,7 +260,9 @@ enum RowsText {
             let seconds = body.split(separator: ":").reduce(0) { $0 * 60 + (Int($1) ?? 0) }
             return "\(spokenDuration(seconds)) \(up ? "longer" : "shorter")"
         }
-        let list = words.count <= 1 ? words.joined()
+        let list =
+            words.count <= 1
+            ? words.joined()
             : words.dropLast().joined(separator: ", ") + " and " + (words.last ?? "")
         return list.capitalizedFirst + " than last time"
     }

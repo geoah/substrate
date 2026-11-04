@@ -13,9 +13,10 @@ public struct AppMenuView<Content: View>: View {
     let select: (String) -> Void
     let content: (AppMenuSection) -> Content
 
-    public init(_ menu: AppMenuPresentation, select: @escaping (String) -> Void,
-                @ViewBuilder content: @escaping (AppMenuSection) -> Content)
-    {
+    public init(
+        _ menu: AppMenuPresentation, select: @escaping (String) -> Void,
+        @ViewBuilder content: @escaping (AppMenuSection) -> Content
+    ) {
         self.menu = menu
         self.select = select
         self.content = content

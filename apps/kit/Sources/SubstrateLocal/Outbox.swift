@@ -87,9 +87,10 @@ public actor Outbox {
     /// - Parameter upgrade: how a file an older build of the app wrote is
     ///   read; without one, such a file is set aside like any other it
     ///   cannot read.
-    public init(folder: RepositoryFolder, name: String = "outbox.json", area: FolderArea = .outbox, now: Date = Date(),
-                upgrade: OutboxUpgrade? = nil)
-    {
+    public init(
+        folder: RepositoryFolder, name: String = "outbox.json", area: FolderArea = .outbox, now: Date = Date(),
+        upgrade: OutboxUpgrade? = nil
+    ) {
         self.folder = folder
         self.name = name
         self.area = area
@@ -139,8 +140,9 @@ public actor Outbox {
 
     /// Where the queue stands now.
     public var summary: OutboxSummary {
-        OutboxSummary(state: state, waiting: file.entries.count, parked: file.entries.filter(\.parked), sendable: sendable,
-                      flushing: flushing, revision: revision, saveProblem: saveProblem, unreadable: unreadable)
+        OutboxSummary(
+            state: state, waiting: file.entries.count, parked: file.entries.filter(\.parked), sendable: sendable,
+            flushing: flushing, revision: revision, saveProblem: saveProblem, unreadable: unreadable)
     }
 
     /// The summary now, then again each time the queue, its last flush or a
@@ -276,8 +278,8 @@ public actor Outbox {
         guard let patch = entry.properties, !patch.isEmpty else { return }
         try change { file in
             if let index = file.entries.lastIndex(where: { $0.batch == nil && $0.key == entry.key }),
-               file.entries[index].id != inFlight?.id, !file.entries[index].parked,
-               file.entries[index].baseVersion != nil, file.entries[index].method != .purge, file.entries[index].method != .delete
+                file.entries[index].id != inFlight?.id, !file.entries[index].parked,
+                file.entries[index].baseVersion != nil, file.entries[index].method != .purge, file.entries[index].method != .delete
             {
                 var merged = file.entries[index].properties ?? JSONObject()
                 for (key, value) in patch {

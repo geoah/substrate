@@ -108,9 +108,11 @@ struct ChatListView: View {
             #endif
             ToolbarItem(placement: .primaryAction) {
                 Menu("Show", systemImage: "line.3.horizontal.decrease") {
-                    Toggle("Automated Runs", systemImage: "bolt", isOn: Binding(
-                        get: { list?.showAutomated ?? false },
-                        set: { host.send(.settings(.toggle(row: .app("showAutomated"), on: $0))) }))
+                    Toggle(
+                        "Automated Runs", systemImage: "bolt",
+                        isOn: Binding(
+                            get: { list?.showAutomated ?? false },
+                            set: { host.send(.settings(.toggle(row: .app("showAutomated"), on: $0))) }))
                 }
             }
             #if os(iOS)
@@ -191,11 +193,13 @@ struct ReviewSheet: View {
         Group {
             if let session = SessionStore.chat.load(), let changes {
                 if changingAccess {
-                    ReviewChangesSheet(changingAccessFor: ChatManifest.manifest, session: session, changes: changes,
-                                       onContinue: continueReview, onCancel: { isPresented = false })
+                    ReviewChangesSheet(
+                        changingAccessFor: ChatManifest.manifest, session: session, changes: changes,
+                        onContinue: continueReview, onCancel: { isPresented = false })
                 } else {
-                    ReviewChangesSheet(appName: ChatManifest.appName, host: ServerAddress.display(session.server), changes: changes,
-                                       firstSignIn: false, onContinue: continueReview, onCancel: { isPresented = false })
+                    ReviewChangesSheet(
+                        appName: ChatManifest.appName, host: ServerAddress.display(session.server), changes: changes,
+                        firstSignIn: false, onContinue: continueReview, onCancel: { isPresented = false })
                 }
             } else {
                 ProgressView().padding(40)

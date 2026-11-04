@@ -29,8 +29,11 @@ public struct AboutPresentation: Bridged, Hashable, Sendable {
         AboutPresentation(
             title: "About", version: LabeledValue("Version", version),
             channel: channel.map { LabeledValue("Channel", $0 == "pre" ? "Pre-release" : $0.capitalizedFirst) },
-            update: offered.map { UpdateOffer(title: "Update available", message: "\(appName) \($0) is ready to install. You have \(version).",
-                                              install: "Install", later: "Not Now") },
+            update: offered.map {
+                UpdateOffer(
+                    title: "Update available", message: "\(appName) \($0) is ready to install. You have \(version).",
+                    install: "Install", later: "Not Now")
+            },
             check: channel == nil ? nil : "Check for Updates")
     }
 }

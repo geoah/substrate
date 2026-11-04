@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The session's bar in the tab view's bottom accessory (DESIGN.md §7.5): a
 /// plain button filling the bar, with no glass of its own (the bar is the

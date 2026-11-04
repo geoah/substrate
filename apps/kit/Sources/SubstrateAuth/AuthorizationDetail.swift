@@ -37,10 +37,11 @@ public struct AuthorizationDetail: Codable, Hashable, Sendable {
     /// refused as too old. Never sent.
     public var optional: Bool = false
 
-    public init(type: String, package: String? = nil, version: Int? = nil, kind: String? = nil, id: String? = nil,
-                properties: [String: JSONValue]? = nil, trigger: String? = nil, url: URL? = nil, deliversTo: String? = nil,
-                optional: Bool = false)
-    {
+    public init(
+        type: String, package: String? = nil, version: Int? = nil, kind: String? = nil, id: String? = nil,
+        properties: [String: JSONValue]? = nil, trigger: String? = nil, url: URL? = nil, deliversTo: String? = nil,
+        optional: Bool = false
+    ) {
         self.type = type
         self.package = package
         self.version = version
@@ -284,9 +285,10 @@ public struct AuthorizationSetup: Codable, Hashable, Sendable {
     public var account: Account?
     public var webhook: Webhook?
 
-    public init(type: String, action: String, blocked: Block? = nil, progress: String? = nil, package: Package? = nil,
-                account: Account? = nil, webhook: Webhook? = nil)
-    {
+    public init(
+        type: String, action: String, blocked: Block? = nil, progress: String? = nil, package: Package? = nil,
+        account: Account? = nil, webhook: Webhook? = nil
+    ) {
         self.type = type
         self.action = action
         self.blocked = blocked

@@ -1,10 +1,11 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 import SubstrateAPI
 import SubstrateCore
 import SubstrateDevice
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A signed-in session: the server, the repository's authority and the
 /// bearer secret. An app session (the authorization flow) carries what the
@@ -46,10 +47,11 @@ public struct Session: Codable, Equatable, Sendable {
     /// What the approval set up, as the token response listed it.
     public var details: [AuthorizationDetail]
 
-    public init(server: URL, repository: String, secret: String, tokenID: String? = nil, clientID: String? = nil,
-                scopes: [String]? = nil, requestedScopes: [String]? = nil, expiresAt: Date? = nil, issuedAt: Date? = nil,
-                revocation: URL? = nil, webhooks: [String: URL] = [:], details: [AuthorizationDetail] = [])
-    {
+    public init(
+        server: URL, repository: String, secret: String, tokenID: String? = nil, clientID: String? = nil,
+        scopes: [String]? = nil, requestedScopes: [String]? = nil, expiresAt: Date? = nil, issuedAt: Date? = nil,
+        revocation: URL? = nil, webhooks: [String: URL] = [:], details: [AuthorizationDetail] = []
+    ) {
         version = Self.currentVersion
         self.server = server
         self.repository = repository
@@ -68,18 +70,20 @@ public struct Session: Codable, Equatable, Sendable {
     /// An app session from the token endpoint's answer to a request that
     /// asked for `requested`. `now` is when the answer came: the lifetime the
     /// owner approved starts at the exchange, however long the approval took.
-    public init(server: URL, token: TokenResponse, clientID: String, revocation: URL?, requested: [String]? = nil,
-                now: Date = Date())
-    {
+    public init(
+        server: URL, token: TokenResponse, clientID: String, revocation: URL?, requested: [String]? = nil,
+        now: Date = Date()
+    ) {
         var webhooks: [String: URL] = [:]
         for detail in token.authorizationDetails where detail.type == AuthorizationDetail.Types.webhook {
             if let trigger = detail.trigger, let url = detail.url { webhooks[trigger] = url }
         }
-        self.init(server: server, repository: token.repository, secret: token.accessToken, tokenID: token.tokenID,
-                  clientID: clientID,
-                  scopes: token.scopes, requestedScopes: requested,
-                  expiresAt: token.expiresIn.map { now.addingTimeInterval(TimeInterval($0)) },
-                  issuedAt: now, revocation: revocation, webhooks: webhooks, details: token.authorizationDetails)
+        self.init(
+            server: server, repository: token.repository, secret: token.accessToken, tokenID: token.tokenID,
+            clientID: clientID,
+            scopes: token.scopes, requestedScopes: requested,
+            expiresAt: token.expiresIn.map { now.addingTimeInterval(TimeInterval($0)) },
+            issuedAt: now, revocation: revocation, webhooks: webhooks, details: token.authorizationDetails)
     }
 
     /// Whether the token is an app's, holding only what was approved.

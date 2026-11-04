@@ -73,8 +73,9 @@ struct RepositoryFolderTests {
     }
 
     @Test func aRepositorysFolderIsNamedForItAndItsServer() {
-        #expect(RepositoryFolder.name(server: URL(string: "https://substrate.example.com:8443")!, repository: "Ada.example.com")
-            == "ada.example.com@substrate.example.com-8443")
+        #expect(
+            RepositoryFolder.name(server: URL(string: "https://substrate.example.com:8443")!, repository: "Ada.example.com")
+                == "ada.example.com@substrate.example.com-8443")
     }
 
     @Test func theLinkGenerationIsKeptAndChecked() throws {
@@ -126,8 +127,9 @@ struct RecordCacheTests {
     @Test func aListFillsItAndTheWatchMarksWhatToReadAgain() async throws {
         let folder = try RepositoryFolder(root: temporaryFolder())
         let cache = RecordCache(folder: folder)
-        await cache.listed(RecordPage(records: [record("a", version: 1), record("b", version: 1)], head: 40, generation: "g1"),
-                           kinds: ["example.com/tasks/task"])
+        await cache.listed(
+            RecordPage(records: [record("a", version: 1), record("b", version: 1)], head: 40, generation: "g1"),
+            kinds: ["example.com/tasks/task"])
         #expect(await cache.cursor == WatchCursor(seq: 40, generation: "g1"))
         #expect(await cache.apply(WatchRow(seq: 41, kind: "example.com/tasks/task", recordID: "a", op: "patch")))
         #expect(!(await cache.apply(WatchRow(seq: 42, kind: "example.com/tasks/task", recordID: "b", op: "delete"))))
@@ -167,8 +169,9 @@ struct HeldPackageTests {
 
     @Test func theVersionHeldIsThePublishersAndAMissingRowIsMissing() async throws {
         let server = ScriptedServer()
-        server.answer("GET", path, 200,
-                      #"{"id":"substrate.reamde.dev/tasks","kind":"substrate.reamde.dev/core/package","properties":{"shippedVersion":3,"version":5},"version":2}"#)
+        server.answer(
+            "GET", path, 200,
+            #"{"id":"substrate.reamde.dev/tasks","kind":"substrate.reamde.dev/core/package","properties":{"shippedVersion":3,"version":5},"version":2}"#)
         #expect(try await HeldPackage.read("substrate.reamde.dev/tasks", needing: 3, from: client(server)) == .current(held: 3))
         #expect(try await HeldPackage.read("substrate.reamde.dev/tasks", needing: 4, from: client(server)) == .behind(held: 3))
         let empty = ScriptedServer()

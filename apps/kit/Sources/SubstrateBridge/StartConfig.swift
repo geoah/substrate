@@ -23,9 +23,10 @@ public struct StartConfig: Bridged, Equatable {
     /// A debuggable build: recorded messages go to the log, redacted.
     public var debug: Bool
 
-    public init(fingerprint: String, locale: String, timeZone: String, resources: String, data: String, cache: String,
-                sdk: Int, debug: Bool)
-    {
+    public init(
+        fingerprint: String, locale: String, timeZone: String, resources: String, data: String, cache: String,
+        sdk: Int, debug: Bool
+    ) {
         self.fingerprint = fingerprint
         self.locale = locale
         self.timeZone = timeZone
@@ -91,8 +92,9 @@ public struct BridgeEnvironment: Sendable, Equatable {
 
     /// This environment with `update`'s locale and time zone.
     func updated(_ update: EnvironmentUpdate) -> BridgeEnvironment {
-        BridgeEnvironment(locale: Locale(identifier: update.locale), timeZone: Self.timeZone(update.timeZone), resources: resources,
-                          data: data, cache: cache, sdk: sdk)
+        BridgeEnvironment(
+            locale: Locale(identifier: update.locale), timeZone: Self.timeZone(update.timeZone), resources: resources,
+            data: data, cache: cache, sdk: sdk)
     }
 
     private static func timeZone(_ id: String) -> TimeZone {

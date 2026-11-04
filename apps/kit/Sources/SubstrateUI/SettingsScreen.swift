@@ -69,7 +69,9 @@ struct SettingsRowView: View {
                 }
             }
         case .link:
-            Button { send(.open(row: row.id)) } label: {
+            Button {
+                send(.open(row: row.id))
+            } label: {
                 HStack {
                     Text(row.label).foregroundStyle(Color.primary)
                     Spacer()

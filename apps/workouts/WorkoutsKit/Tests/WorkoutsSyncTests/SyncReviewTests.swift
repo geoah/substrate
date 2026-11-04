@@ -1,12 +1,13 @@
 import Foundation
-import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
+import SubstrateLocal
 import Testing
 import WorkoutsCore
+
 @testable import WorkoutsSync
-import SubstrateCore
 
 private let notFound = #"{"error":{"code":"not_found","message":"not found"}}"#
 private let codec = RecordCodec()
@@ -30,7 +31,8 @@ struct OutboxInFlightTests {
         // B's writes wait at the head of the queue, parked by a refusal.
         try await outbox.enqueue([entry(.put, codec.kinds.session, "b", session: "b"), entry(.put, codec.kinds.set, "b-1", session: "b")])
         await outbox.flush(api(server))
-        try await outbox.enqueue([entry(.put, codec.kinds.session, "a", session: "a")] + (1 ... 5).map { entry(.put, codec.kinds.set, "a-\($0)", session: "a") })
+        try await outbox.enqueue(
+            [entry(.put, codec.kinds.session, "a", session: "a")] + (1 ... 5).map { entry(.put, codec.kinds.set, "a-\($0)", session: "a") })
 
         let flush = Task { await outbox.flush(api(server)) }
         await gate.arrived()
@@ -58,10 +60,11 @@ struct OutboxInFlightTests {
         #expect(try await outbox.discard(session: SessionID(rawValue: "a"), codec: codec))
         gate.release()
         #expect(await flush.value == .sent)
-        #expect(server.methodsAndPaths == [
-            "PUT /api/v1/substrate.reamde.dev/training/session/a",
-            "DELETE /api/v1/substrate.reamde.dev/training/session/a",
-        ])
+        #expect(
+            server.methodsAndPaths == [
+                "PUT /api/v1/substrate.reamde.dev/training/session/a",
+                "DELETE /api/v1/substrate.reamde.dev/training/session/a",
+            ])
         #expect(server.sent.last?.query?.contains("ifVersion=4") == true)
         #expect(await outbox.entries.isEmpty)
         #expect(await outbox.version(of: codec.kinds.session, "a") == nil)
@@ -98,10 +101,11 @@ struct OutboxInFlightTests {
         try await outbox.enqueue([entry(.put, codec.kinds.exercise, "row", session: nil)])
         gate.release()
         #expect(await flush.value == .sent)
-        #expect(server.methodsAndPaths == [
-            "PUT /api/v1/substrate.reamde.dev/training/session/a",
-            "PUT /api/v1/substrate.reamde.dev/training/exercise/row",
-        ])
+        #expect(
+            server.methodsAndPaths == [
+                "PUT /api/v1/substrate.reamde.dev/training/session/a",
+                "PUT /api/v1/substrate.reamde.dev/training/exercise/row",
+            ])
     }
 }
 
@@ -168,7 +172,10 @@ struct ParkedTests {
             entry(.put, codec.kinds.set, "a-late", session: "a"),
             entry(.put, codec.kinds.session, "b", session: "b"),
         ])
-        guard case let .refused(words) = await outbox.flush(api(server)) else { Issue.record("not refused"); return }
+        guard case let .refused(words) = await outbox.flush(api(server)) else {
+            Issue.record("not refused")
+            return
+        }
         #expect(words.contains("not on your substrate"))
         let parked = try #require(await outbox.parked.first)
         #expect(parked.recordID == "a")
@@ -248,8 +255,9 @@ struct HistoryExchangeTests {
     func hiddenNotPurged() throws {
         let theirs = try finished()
         let id = theirs.id.rawValue
-        let plan = HistoryExchange.plan(server: snapshot(theirs), local: [], queued: [], versions: [:], tombstones: [],
-                                        hidden: [id], codec: codec)
+        let plan = HistoryExchange.plan(
+            server: snapshot(theirs), local: [], queued: [], versions: [:], tombstones: [],
+            hidden: [id], codec: codec)
         #expect(plan.isEmpty)
     }
 
@@ -264,7 +272,8 @@ struct HistoryExchangeTests {
     @Test("a server edit to a session on the phone is merged; one the phone wrote itself is not")
     func merged() throws {
         let mine = try finished()
-        let same = HistoryExchange.plan(server: snapshot(mine, version: 2), local: [mine], queued: [], versions: versions(mine, 2), tombstones: [], codec: codec)
+        let same = HistoryExchange.plan(
+            server: snapshot(mine, version: 2), local: [mine], queued: [], versions: versions(mine, 2), tombstones: [], codec: codec)
         #expect(same.isEmpty)
         // The owner corrected a set's load on the server.
         var edited = snapshot(mine, version: 2)
@@ -308,10 +317,12 @@ struct TombstoneTests {
     @Test("one server only: a delete is kept for its server and repository, and purged there alone (O3)")
     func scopedToOneRepository() throws {
         let base = temporaryDirectory()
-        let here = SessionTombstones(directory: base.appendingPathComponent("substrate/a.example-me", isDirectory: true),
-                                     writingOptions: .atomic)
-        let there = SessionTombstones(directory: base.appendingPathComponent("substrate/b.example-me", isDirectory: true),
-                                      writingOptions: .atomic)
+        let here = SessionTombstones(
+            directory: base.appendingPathComponent("substrate/a.example-me", isDirectory: true),
+            writingOptions: .atomic)
+        let there = SessionTombstones(
+            directory: base.appendingPathComponent("substrate/b.example-me", isDirectory: true),
+            writingOptions: .atomic)
         let phone = SessionTombstones(directory: base, writingOptions: .atomic)
         let exchange = HistoryExchangeTests()
         let session = try exchange.finished()
@@ -319,12 +330,14 @@ struct TombstoneTests {
         #expect(here.contains(session.id) && !there.contains(session.id) && !phone.contains(session.id))
         let server = exchange.snapshot(session)
         // The repository it was deleted in purges its copy and imports nothing.
-        let mine = HistoryExchange.plan(server: server, local: [], queued: [], versions: [:], tombstones: here.all,
-                                        hidden: phone.all, codec: codec)
+        let mine = HistoryExchange.plan(
+            server: server, local: [], queued: [], versions: [:], tombstones: here.all,
+            hidden: phone.all, codec: codec)
         #expect(mine.purges == [session.id] && mine.imports.isEmpty)
         // Another repository's copy is not purged.
-        let other = HistoryExchange.plan(server: server, local: [], queued: [], versions: [:], tombstones: there.all,
-                                         hidden: phone.all, codec: codec)
+        let other = HistoryExchange.plan(
+            server: server, local: [], queued: [], versions: [:], tombstones: there.all,
+            hidden: phone.all, codec: codec)
         #expect(other.purges.isEmpty)
     }
 }

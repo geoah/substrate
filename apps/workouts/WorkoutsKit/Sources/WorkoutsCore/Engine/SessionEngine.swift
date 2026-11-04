@@ -38,7 +38,8 @@ public enum SessionEngine {
     public static func restoration(of id: RowID, in state: SessionState) -> SessionEvent.RestoreSet? {
         let rows = removed(by: id, in: state)
         guard let first = rows.first, let slot = state.slot(first.slot),
-              let position = slot.rows.firstIndex(of: first.id) else { return nil }
+            let position = slot.rows.firstIndex(of: first.id)
+        else { return nil }
         return SessionEvent.RestoreSet(slot: first.slot, position: position, rows: rows)
     }
 
@@ -81,19 +82,21 @@ public enum SessionEngine {
             // blocking the whole routine; the preview lists it as unreadable.
             guard let exercise = exercises[routineSlot.exercise] else { continue }
             guard state.slotIndex(routineSlot.key) == nil else { throw .duplicateID }
-            state.slots.append(SlotState(
-                key: routineSlot.key,
-                exercise: routineSlot.exercise,
-                group: routineSlot.group.flatMap { groupKeys.contains($0) ? $0 : nil },
-                routineSlot: routineSlot.key,
-                sideOrder: routineSlot.sideOrder,
-                sideMatch: routineSlot.sideMatch
-            ))
+            state.slots.append(
+                SlotState(
+                    key: routineSlot.key,
+                    exercise: routineSlot.exercise,
+                    group: routineSlot.group.flatMap { groupKeys.contains($0) ? $0 : nil },
+                    routineSlot: routineSlot.key,
+                    sideOrder: routineSlot.sideOrder,
+                    sideMatch: routineSlot.sideMatch
+                ))
             let index = state.slots.count - 1
             let side = firstSide(routineSlot.sideOrder, resolved: start.firstSides[routineSlot.key])
             for planned in routineSlot.sets {
-                let new = rows(for: planned, slot: routineSlot.key, exercise: exercise, firstSide: side, ids: &ids,
-                               bodyMass: start.bodyMass)
+                let new = rows(
+                    for: planned, slot: routineSlot.key, exercise: exercise, firstSide: side, ids: &ids,
+                    bodyMass: start.bodyMass)
                 try state.insert(new, inSlot: index, at: state.slots[index].rows.count)
             }
             state.sortWarmupsFirst(slot: routineSlot.key)
@@ -250,10 +253,11 @@ struct Reduction {
         // Owners type the next load during rest: a touch ends the rest only
         // once the countdown is over, or when none runs (§4.8).
         // The standalone timer is no rest countdown: it never holds the end back.
-        let restRunning = state.countdown.map { countdown in
-            if case .rest = countdown.kind { return !countdown.hasEnded(by: at) }
-            return false
-        } ?? false
+        let restRunning =
+            state.countdown.map { countdown in
+                if case .rest = countdown.kind { return !countdown.hasEnded(by: at) }
+                return false
+            } ?? false
         if var clock = state.restClock, clock.endedAt == nil, !restRunning {
             clock.endedAt = at
             state.restClock = clock
@@ -310,8 +314,9 @@ struct Reduction {
         values = state.markedFailure(values, row: tick.row)
 
         let clock = state.restClock
-        var performed = Performed(recordID: tick.recordID, completedAt: at, startedAt: row.timerStartedAt, values: values,
-                                  priorRestClock: clock)
+        var performed = Performed(
+            recordID: tick.recordID, completedAt: at, startedAt: row.timerStartedAt, values: values,
+            priorRestClock: clock)
         if let kept = row.kept {
             // Ticked before: the first record id and rest fields stay.
             performed.recordID = kept.recordID
@@ -338,8 +343,9 @@ struct Reduction {
     mutating func startRestClock(after id: RowID) {
         let decision = RestRules.after(id, in: state)
         if decision.seconds > 0 {
-            state.countdown = Countdown(kind: .rest(decision.slot ?? .setRest), startedAt: at,
-                                        endsAt: at.addingTimeInterval(TimeInterval(decision.seconds)))
+            state.countdown = Countdown(
+                kind: .rest(decision.slot ?? .setRest), startedAt: at,
+                endsAt: at.addingTimeInterval(TimeInterval(decision.seconds)))
         } else if state.countdown?.kind != .manual {
             // A rest of 0 runs no timer; an older rest is over. The standalone timer keeps running.
             state.countdown = nil
@@ -363,9 +369,10 @@ struct Reduction {
             entered.rpeMethod = nil
         }
         state.rows[id]?.entered = entered
-        state.rows[id]?.kept = KeptTick(recordID: performed.recordID, restBefore: performed.restBefore,
-                                        restPlanned: performed.restPlanned, restSkipped: performed.restSkipped,
-                                        edits: performed.edits)
+        state.rows[id]?.kept = KeptTick(
+            recordID: performed.recordID, restBefore: performed.restBefore,
+            restPlanned: performed.restPlanned, restSkipped: performed.restSkipped,
+            edits: performed.edits)
         state.removePendingMiniSets(of: row.headID, after: row.chainPosition)
         if row.isHead { state.unmatchSecondSide(id) }
         // The countdown and the clock go back only when this tick started
@@ -373,7 +380,7 @@ struct Reduction {
         // are floored to the second, so the latest tick is checked as well.
         let startedByThisTick = state.lastCompleted == id
         if startedByThisTick, let countdown = state.countdown, case .rest = countdown.kind,
-           countdown.startedAt == performed.completedAt
+            countdown.startedAt == performed.completedAt
         {
             state.countdown = nil
         }
@@ -437,11 +444,12 @@ struct Reduction {
             structure = change.kind == .drop ? .drop : change.kind == .myo ? .myo : .myomatch
         }
         let role: Role = change.kind == .warmup ? .warmup : .working
-        let termination: Termination? = switch change.kind {
-        case .failure: .failure
-        case .myomatch: .totalreps
-        default: row.target?.termination
-        }
+        let termination: Termination? =
+            switch change.kind {
+            case .failure: .failure
+            case .myomatch: .totalreps
+            default: row.target?.termination
+            }
         state.rows[change.row]?.role = role
         state.rows[change.row]?.termination = termination
         if structure != row.structure {
@@ -530,9 +538,11 @@ struct Reduction {
             for id in moving {
                 state.rows[id]?.slot = replace.newSlot
             }
-            state.slots.insert(SlotState(key: replace.newSlot, exercise: replace.exercise.id, group: old.group,
-                                         routineSlot: old.routineSlot, rows: moving, sideOrder: old.sideOrder,
-                                         sideMatch: old.sideMatch, replaces: old.lane), at: index + 1)
+            state.slots.insert(
+                SlotState(
+                    key: replace.newSlot, exercise: replace.exercise.id, group: old.group,
+                    routineSlot: old.routineSlot, rows: moving, sideOrder: old.sideOrder,
+                    sideMatch: old.sideMatch, replaces: old.lane), at: index + 1)
             state.pruneGroups()
         }
         try state.normalizeSides(slot: replace.newSlot, firstSide: side, ids: &ids)
@@ -620,7 +630,8 @@ struct Reduction {
     mutating func startRest(_ seconds: Seconds) throws(EngineError) {
         guard state.timedRow == nil else { throw .timerRunning }
         // A standalone timer replaces any rest countdown; the rest clock is untouched.
-        state.countdown = seconds > 0
+        state.countdown =
+            seconds > 0
             ? Countdown(kind: .manual, startedAt: at, endsAt: at.addingTimeInterval(TimeInterval(seconds)))
             : nil
     }
@@ -661,8 +672,9 @@ struct Reduction {
         }
         let now = at
         state.rows[id]?.timerStartedAt = now
-        state.countdown = Countdown(kind: .timedSet(id), startedAt: at,
-                                    endsAt: target.flatMap { $0 > 0 ? at.addingTimeInterval(TimeInterval($0)) : nil })
+        state.countdown = Countdown(
+            kind: .timedSet(id), startedAt: at,
+            endsAt: target.flatMap { $0 > 0 ? at.addingTimeInterval(TimeInterval($0)) : nil })
         state.focus = id
     }
 
@@ -688,7 +700,7 @@ struct Reduction {
         for slot in state.slots {
             for id in slot.rows {
                 guard let row = state.rows[id], row.isPending, let mark = marks[id], state.earlierLinksCompleted(id),
-                      let measurement = state.exercise(ofRow: id)?.measurement, measurement.missing(in: mark.values).isEmpty
+                    let measurement = state.exercise(ofRow: id)?.measurement, measurement.missing(in: mark.values).isEmpty
                 else { continue }
                 let recordID = row.kept?.recordID ?? mark.recordID
                 guard !state.rows.values.contains(where: { $0.performed?.recordID == recordID }) else { continue }
@@ -697,8 +709,9 @@ struct Reduction {
                 unrated.rpe = nil
                 unrated.rpeMethod = nil
                 let values = state.markedFailure((try? state.committedEffort(mark.values, row: id)) ?? unrated, row: id)
-                state.rows[id]?.performed = Performed(recordID: recordID, completedAt: end, startedAt: row.timerStartedAt,
-                                                      values: values, edits: row.kept?.edits ?? 0, completion: .bulk)
+                state.rows[id]?.performed = Performed(
+                    recordID: recordID, completedAt: end, startedAt: row.timerStartedAt,
+                    values: values, edits: row.kept?.edits ?? 0, completion: .bulk)
                 state.rows[id]?.kept = nil
             }
         }

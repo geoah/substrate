@@ -112,8 +112,9 @@ final class Host<C: Controller>: @unchecked Sendable {
     func send(_ command: C.Command) {
         guard !closed else { return }
         let environment = loop.environment
-        let context = Enrichment<C>(state: state, transient: transient, presentation: presentation, now: environment.clock.now,
-                                    link: loop.link, environment: environment)
+        let context = Enrichment<C>(
+            state: state, transient: transient, presentation: presentation, now: environment.clock.now,
+            link: loop.link, environment: environment)
         step(controller.events(for: command, in: context))
     }
 
@@ -224,8 +225,9 @@ final class Host<C: Controller>: @unchecked Sendable {
         case .once, .sequence: break
         }
         nextTicket += 1
-        let ticket = Ticket(id: nextTicket, key: key, epoch: key.flatMap { epochs[$0] } ?? 0, generation: generation,
-                            serial: loop.effectStarted())
+        let ticket = Ticket(
+            id: nextTicket, key: key, epoch: key.flatMap { epochs[$0] } ?? 0, generation: generation,
+            serial: loop.effectStarted())
         let hop = loop.hop
         // Held until the work ends, so a result for a controller closed
         // meanwhile still reaches it, to be counted and dropped.
@@ -291,9 +293,10 @@ final class Host<C: Controller>: @unchecked Sendable {
         dirty = false
         presentedChildProblem = childProblem
         let environment = loop.environment
-        let input = PresenterInput<C>(state: state, transient: transient, children: children.compactMapValues(\.presentation),
-                                      now: environment.clock.now, locale: environment.locale, timeZone: environment.timeZone,
-                                      link: loop.link, journalProblem: journalProblem, childJournalProblem: childProblem)
+        let input = PresenterInput<C>(
+            state: state, transient: transient, children: children.compactMapValues(\.presentation),
+            now: environment.clock.now, locale: environment.locale, timeZone: environment.timeZone,
+            link: loop.link, journalProblem: journalProblem, childJournalProblem: childProblem)
         let next = controller.present(input)
         let changed = next != presentation
         presentation = next

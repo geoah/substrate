@@ -172,8 +172,9 @@ final class AppModel: ObservableObject {
     /// create that one.
     func manifest() throws -> AppManifest {
         _ = try InstallID.get()
-        return SyncManifest.make(account: state.healthAccount, deviceName: UIDevice.current.name,
-                                 timeZone: TimeZone.current.identifier)
+        return SyncManifest.make(
+            account: state.healthAccount, deviceName: UIDevice.current.name,
+            timeZone: TimeZone.current.identifier)
     }
 
     /// How this app signs in to a server it probed: the authorization flow
@@ -226,7 +227,7 @@ final class AppModel: ObservableObject {
                 throw Message("\(ServerAddress.display(old.server)) can't set up \(manifest.appName) on approval: it needs an update first.")
             }
             try await adopt(try await oauth.signIn(server: old.server), replacing: old)
-        } catch where error is WebAuthenticator.Cancelled || isStop(error) {
+        } catch  where error is WebAuthenticator.Cancelled || isStop(error) {
             // The person closed the sheet, or the work was stopped: nothing
             // to say.
         } catch {
@@ -400,14 +401,16 @@ final class AppModel: ObservableObject {
                 steps.append(SetupStep(id: id, kind: .install(id), title: name, code: id, done: done, detail: detail))
             }
             let account = try await client.get(SyncEngine.healthAccountKind, state.healthAccount)
-            steps.append(SetupStep(
-                id: "account", kind: .account, title: "This phone's Health account", code: state.healthAccount,
-                done: account != nil))
+            steps.append(
+                SetupStep(
+                    id: "account", kind: .account, title: "This phone's Health account", code: state.healthAccount,
+                    done: account != nil))
             let trigger = try await client.get(SyncEngine.triggerKind, SyncEngine.trigger)
-            steps.append(SetupStep(
-                id: "trigger", kind: .trigger, title: "The webhook Health is sent to", code: SyncEngine.trigger,
-                done: Self.webhookOn(trigger),
-                detail: trigger == nil ? "Appears once the Apple Health provider is installed." : nil))
+            steps.append(
+                SetupStep(
+                    id: "trigger", kind: .trigger, title: "The webhook Health is sent to", code: SyncEngine.trigger,
+                    done: Self.webhookOn(trigger),
+                    detail: trigger == nil ? "Appears once the Apple Health provider is installed." : nil))
             guard current else { return }
             self.steps = steps
             setupChecked = true
@@ -460,9 +463,11 @@ final class AppModel: ObservableObject {
                 switch step.kind {
                 case let .install(id): try await client.catalog("install", id)
                 case .account:
-                    try await client.put(SyncEngine.healthAccountKind, state.healthAccount, [
-                        "displayName": UIDevice.current.name, "timezone": TimeZone.current.identifier,
-                    ])
+                    try await client.put(
+                        SyncEngine.healthAccountKind, state.healthAccount,
+                        [
+                            "displayName": UIDevice.current.name, "timezone": TimeZone.current.identifier,
+                        ])
                 case .trigger:
                     break
                 }
@@ -505,7 +510,9 @@ final class AppModel: ObservableObject {
         if timedOut(error), case .install? = step?.kind {
             return SetupProblem(
                 title: "The \(what) is taking long",
-                message: "The server did not finish installing it within \(Duration.seconds(Client.serverWork).formatted(.units(allowed: [.minutes, .seconds], width: .wide))). It may still be at it: Check Again in a minute.")
+                message:
+                    "The server did not finish installing it within \(Duration.seconds(Client.serverWork).formatted(.units(allowed: [.minutes, .seconds], width: .wide))). It may still be at it: Check Again in a minute."
+            )
         }
         return SetupProblem(title: "Set Up stopped", message: "\(what): \(explain(error, server: server))")
     }
@@ -560,29 +567,33 @@ final class AppModel: ObservableObject {
     // MARK: - access
 
     func refreshAccess() {
-        let contacts: String = switch CNContactStore.authorizationStatus(for: .contacts) {
-        case .authorized: "Allowed"
-        case .limited: "Allowed for some contacts"
-        case .denied, .restricted: "Not allowed"
-        default: "Not asked yet"
-        }
-        let calendars: String = switch EKEventStore.authorizationStatus(for: .event) {
-        case .fullAccess: "Allowed"
-        case .writeOnly: "Add only: full access is needed"
-        case .denied, .restricted: "Not allowed"
-        default: "Not asked yet"
-        }
-        let reminders: String = switch EKEventStore.authorizationStatus(for: .reminder) {
-        case .fullAccess: "Allowed"
-        case .denied, .restricted: "Not allowed"
-        default: "Not asked yet"
-        }
-        let places: String = switch PlaceMonitor.shared.authorization {
-        case .authorizedAlways: "Always"
-        case .authorizedWhenInUse: "While using: Always is needed"
-        case .denied, .restricted: "Not allowed"
-        default: "Not asked yet"
-        }
+        let contacts: String =
+            switch CNContactStore.authorizationStatus(for: .contacts) {
+            case .authorized: "Allowed"
+            case .limited: "Allowed for some contacts"
+            case .denied, .restricted: "Not allowed"
+            default: "Not asked yet"
+            }
+        let calendars: String =
+            switch EKEventStore.authorizationStatus(for: .event) {
+            case .fullAccess: "Allowed"
+            case .writeOnly: "Add only: full access is needed"
+            case .denied, .restricted: "Not allowed"
+            default: "Not asked yet"
+            }
+        let reminders: String =
+            switch EKEventStore.authorizationStatus(for: .reminder) {
+            case .fullAccess: "Allowed"
+            case .denied, .restricted: "Not allowed"
+            default: "Not asked yet"
+            }
+        let places: String =
+            switch PlaceMonitor.shared.authorization {
+            case .authorizedAlways: "Always"
+            case .authorizedWhenInUse: "While using: Always is needed"
+            case .denied, .restricted: "Not allowed"
+            default: "Not asked yet"
+            }
         // HealthKit never says whether reading was allowed; it says whether
         // the question was asked.
         let health: String
@@ -744,11 +755,12 @@ final class AppModel: ObservableObject {
             return
         }
         calendarChoices = EKEventStore().calendars(for: .event).map { c in
-            let note: String? = switch c.type {
-            case .subscription: "Subscribed"
-            case .birthday: "Birthdays from Contacts"
-            default: c.allowsContentModifications ? nil : "Read-only"
-            }
+            let note: String? =
+                switch c.type {
+                case .subscription: "Subscribed"
+                case .birthday: "Birthdays from Contacts"
+                default: c.allowsContentModifications ? nil : "Read-only"
+                }
             return CalendarChoice(
                 id: c.calendarIdentifier, title: c.title, account: c.source?.title ?? "Other", note: note,
                 color: Color(cgColor: c.cgColor))
@@ -784,7 +796,7 @@ final class AppModel: ObservableObject {
                         self.healthScanning = done < total ? SyncProgress(step: "Reading what the phone holds", done: done, total: total) : nil
                     }
                 }
-            } catch where isStop(error) {
+            } catch  where isStop(error) {
             } catch {
                 coverageError = explain(error)
             }

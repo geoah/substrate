@@ -71,16 +71,19 @@ enum EventMapping {
             o.set("isCurrentUser", organizer.isCurrentUser)
             f.set("organizer", o.json)
         }
-        f.set("attendees", .array((e.attendees ?? []).map { a in
-            var p = Fields()
-            p.set("name", a.name)
-            p.set("url", participantURL(a.url))
-            p.set("participantRole", role(a.participantRole))
-            p.set("participantStatus", participantStatus(a.participantStatus))
-            p.set("participantType", participantType(a.participantType))
-            p.set("isCurrentUser", a.isCurrentUser)
-            return p.json
-        }))
+        f.set(
+            "attendees",
+            .array(
+                (e.attendees ?? []).map { a in
+                    var p = Fields()
+                    p.set("name", a.name)
+                    p.set("url", participantURL(a.url))
+                    p.set("participantRole", role(a.participantRole))
+                    p.set("participantStatus", participantStatus(a.participantStatus))
+                    p.set("participantType", participantType(a.participantType))
+                    p.set("isCurrentUser", a.isCurrentUser)
+                    return p.json
+                }))
         f.set("creationDate", e.creationDate.map(Formats.utc))
         f.set("lastModifiedDate", e.lastModifiedDate.map(Formats.utc))
         return f.json
@@ -109,8 +112,8 @@ enum EventMapping {
     /// `#RRGGBB` in sRGB; nil for a colour that does not convert.
     static func hex(_ color: CGColor?) -> String? {
         guard let color, let srgb = CGColorSpace(name: CGColorSpace.sRGB),
-              let c = color.converted(to: srgb, intent: .defaultIntent, options: nil),
-              let comps = c.components, comps.count >= 3
+            let c = color.converted(to: srgb, intent: .defaultIntent, options: nil),
+            let comps = c.components, comps.count >= 3
         else { return nil }
         func byte(_ v: CGFloat) -> Int { Int((min(max(v, 0), 1) * 255).rounded()) }
         return String(format: "#%02X%02X%02X", byte(comps[0]), byte(comps[1]), byte(comps[2]))

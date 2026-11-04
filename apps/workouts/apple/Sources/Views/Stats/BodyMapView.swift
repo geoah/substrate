@@ -31,7 +31,8 @@ struct BodyMapView: View {
                 let transform = CGAffineTransform(translationX: offset.x, y: offset.y).scaledBy(x: scale, y: scale)
                 let shading = Self.shading(figure, regions: regions, most: most)
                 for (slug, paths) in Self.paths(figure) {
-                    let color = shading[slug].map { Color.accentColor.opacity(0.22 + 0.78 * $0) }
+                    let color =
+                        shading[slug].map { Color.accentColor.opacity(0.22 + 0.78 * $0) }
                         ?? Color.secondary.opacity(Self.outline.contains(slug) ? 0.16 : 0.24)
                     for path in paths {
                         context.fill(path.applying(transform), with: .color(color))
@@ -101,8 +102,9 @@ struct BodyMapView: View {
             case "M" where numbers.count >= 2: path.move(to: CGPoint(x: numbers[0], y: numbers[1]))
             case "L" where numbers.count >= 2: path.addLine(to: CGPoint(x: numbers[0], y: numbers[1]))
             case "C" where numbers.count >= 6:
-                path.addCurve(to: CGPoint(x: numbers[4], y: numbers[5]), control1: CGPoint(x: numbers[0], y: numbers[1]),
-                              control2: CGPoint(x: numbers[2], y: numbers[3]))
+                path.addCurve(
+                    to: CGPoint(x: numbers[4], y: numbers[5]), control1: CGPoint(x: numbers[0], y: numbers[1]),
+                    control2: CGPoint(x: numbers[2], y: numbers[3]))
             case "Z": path.closeSubpath()
             default: break
             }
@@ -111,12 +113,18 @@ struct BodyMapView: View {
         var token = ""
         for character in data {
             if character.isLetter {
-                if !token.isEmpty { numbers.append(CGFloat(Double(token) ?? 0)); token = "" }
+                if !token.isEmpty {
+                    numbers.append(CGFloat(Double(token) ?? 0))
+                    token = ""
+                }
                 flush()
                 command = character
                 if command == "Z" { flush() }
             } else if character == " " {
-                if !token.isEmpty { numbers.append(CGFloat(Double(token) ?? 0)); token = "" }
+                if !token.isEmpty {
+                    numbers.append(CGFloat(Double(token) ?? 0))
+                    token = ""
+                }
             } else {
                 token.append(character)
             }

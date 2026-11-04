@@ -1,9 +1,9 @@
 import Foundation
-import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
+import SubstrateLocal
 import WorkoutsCore
 
 /// What Substrate Workouts asks a substrate for (decision record 0214):
@@ -114,7 +114,8 @@ public enum WorkoutsManifest {
     /// This build's manifest: a release's stamped client id and claimed
     /// redirect, else the local client id and the loopback receiver.
     public static var current: AppManifest {
-        manifest(clientID: AppManifest.clientID(infoKey: clientIDKey, localDefault: localClientID),
-                 claimedRedirect: AppManifest.claimedRedirect(infoKey: redirectKey))
+        manifest(
+            clientID: AppManifest.clientID(infoKey: clientIDKey, localDefault: localClientID),
+            claimedRedirect: AppManifest.claimedRedirect(infoKey: redirectKey))
     }
 }

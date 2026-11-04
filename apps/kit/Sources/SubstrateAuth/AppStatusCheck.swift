@@ -19,9 +19,10 @@ public struct AppStatusCheck: Sendable {
     /// approved for a week is not ending from the moment it was approved.
     public var endingWindow: TimeInterval
 
-    public init(manifest: AppManifest, session: Session, client: SubstrateClient? = nil,
-                now: @escaping @Sendable () -> Date = { Date() }, endingWindow: TimeInterval = 7 * 86400)
-    {
+    public init(
+        manifest: AppManifest, session: Session, client: SubstrateClient? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }, endingWindow: TimeInterval = 7 * 86400
+    ) {
         self.manifest = manifest
         self.session = session
         self.client = client ?? SubstrateClient(session)
@@ -120,9 +121,10 @@ public final class AppStatusModel {
 
     /// `make` builds the check from the app's current session; nil while
     /// signed out. `now` is the clock the interval is kept by.
-    public init(interval: TimeInterval = 300, now: @escaping () -> Date = { Date() },
-                make: @escaping () -> AppStatusCheck?)
-    {
+    public init(
+        interval: TimeInterval = 300, now: @escaping () -> Date = { Date() },
+        make: @escaping () -> AppStatusCheck?
+    ) {
         self.interval = interval
         self.now = now
         self.make = make

@@ -1,7 +1,8 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
 import SubstrateCore
+import Testing
+
+@testable import WorkoutsCore
 
 // DESIGN §10.1 PresenterTests: columns per measurement, labels (§4.10), ghost
 // precedence (§5.5), PREVIOUS matching (§5.4), the reason line only on Up
@@ -25,8 +26,9 @@ struct NextFullyBody {
     }
 
     func present(at seconds: Int = 0) throws -> SessionPresentation {
-        SessionPresenter.present(try script.current, history: history, settings: Progression.settings,
-                                 now: Self.start.addingTimeInterval(TimeInterval(seconds)))
+        SessionPresenter.present(
+            try script.current, history: history, settings: Progression.settings,
+            now: Self.start.addingTimeInterval(TimeInterval(seconds)))
     }
 
     func row(_ slot: String, _ index: Int) throws -> RowID {
@@ -55,14 +57,17 @@ private func handMade(_ routine: Routine, exercises: [Exercise], at start: Date 
 private func pastSession(_ id: String, at date: Date, exercise: ExerciseID, sets: [SetValues]) -> SessionRecords {
     let session = SessionID(id)
     let records = sets.enumerated().map { index, values in
-        PerformedSet(id: SetID("\(id)-\(index)"), at: date.addingTimeInterval(TimeInterval(60 * (index + 1))), session: session,
-                     exercise: exercise, slot: "s", order: index + 1, ordinal: index + 1, loadMode: .external, load: values.load,
-                     reps: values.reps, duration: values.duration, distance: values.distance, rpe: values.rpe,
-                     target: SetTarget(repsMin: 8, repsMax: 12, rpeMin: 8, rpeMax: 8))
+        PerformedSet(
+            id: SetID("\(id)-\(index)"), at: date.addingTimeInterval(TimeInterval(60 * (index + 1))), session: session,
+            exercise: exercise, slot: "s", order: index + 1, ordinal: index + 1, loadMode: .external, load: values.load,
+            reps: values.reps, duration: values.duration, distance: values.distance, rpe: values.rpe,
+            target: SetTarget(repsMin: 8, repsMax: 12, rpeMin: 8, rpeMax: 8))
     }
-    return SessionRecords(session: TrainingSession(id: session, at: date, endsAt: date.addingTimeInterval(3600), status: .finished,
-                                                   slots: [SessionSlot(key: "s", exercise: exercise)], timezone: "UTC"),
-                          sets: records)
+    return SessionRecords(
+        session: TrainingSession(
+            id: session, at: date, endsAt: date.addingTimeInterval(3600), status: .finished,
+            slots: [SessionSlot(key: "s", exercise: exercise)], timezone: "UTC"),
+        sets: records)
 }
 
 @Suite("Session presenter: the grid", .timeLimit(.minutes(10)))
@@ -122,8 +127,9 @@ struct PresenterGridTests {
         let card = try #require(try NextFullyBody().present().card("bulgarian-split-squat"))
         #expect(card.rows.map(\.label.short) == ["1L", "1R", "2L", "2R"])
         #expect(card.rows.map(\.label.spoken) == ["set 1, left side", "set 1, right side", "set 2, left side", "set 2, right side"])
-        #expect(card.rows.map { $0.previous?.text }
-            == ["10 kg × 10 @ 8", "10 kg × 10 @ 8.5", "10 kg × 10 @ 8.5", "10 kg × 9 @ 9"])
+        #expect(
+            card.rows.map { $0.previous?.text }
+                == ["10 kg × 10 @ 8", "10 kg × 10 @ 8.5", "10 kg × 10 @ 8.5", "10 kg × 9 @ 9"])
         #expect(card.rows.map(\.state) == [.pending, .locked, .pending, .locked])
         #expect(card.rows.map { $0.cells.map(\.text) } == [["10", "10"], ["10", "10"], ["10", "9"], ["10", "9"]])
         #expect(card.rows[0].allowedKinds == [.warmup, .working, .failure])
@@ -178,12 +184,16 @@ struct PresenterGridTests {
     func ghostFromPrevious() throws {
         let carry = EngineCatalog.carry
         let routine = EngineCatalog.routine([EngineCatalog.slot("s", carry, [PlannedSet(key: "s1"), PlannedSet(key: "s2", distance: Length(metres: 50))])])
-        let past = pastSession("past", at: engineEpoch.addingTimeInterval(-3 * 86400), exercise: carry.id,
-                               sets: [SetValues(load: .kg(24), duration: 30, distance: Length(metres: 30)),
-                                      SetValues(load: .kg(24), duration: 32, distance: Length(metres: 30))])
+        let past = pastSession(
+            "past", at: engineEpoch.addingTimeInterval(-3 * 86400), exercise: carry.id,
+            sets: [
+                SetValues(load: .kg(24), duration: 30, distance: Length(metres: 30)),
+                SetValues(load: .kg(24), duration: 32, distance: Length(metres: 30)),
+            ])
         let script = try handMade(routine, exercises: [carry])
-        let presentation = SessionPresenter.present(try script.current, history: HistoryIndex([past]),
-                                                    settings: Progression.settings, now: engineEpoch)
+        let presentation = SessionPresenter.present(
+            try script.current, history: HistoryIndex([past]),
+            settings: Progression.settings, now: engineEpoch)
         let rows = try #require(presentation.card("s")).rows
         #expect(rows[0].previous?.text == "24 kg for 30 m")
         #expect(rows[0].cells.map(\.text) == ["24", "30"])
@@ -203,8 +213,11 @@ struct PresenterGridTests {
         #expect(!previous.deload)
         // Last time had one chest press slot, so a second one today has no PREVIOUS.
         let exercise = try #require(try EngineFixtures.exercises()["chest-press-machine"])
-        try session.send(.addExercise(.init(slot: "chest-press-2", exercise: exercise, roles: [.working],
-                                            rowIDs: session.script.rowIDs(1))), at: 5)
+        try session.send(
+            .addExercise(
+                .init(
+                    slot: "chest-press-2", exercise: exercise, roles: [.working],
+                    rowIDs: session.script.rowIDs(1))), at: 5)
         let second = try #require(try session.present(at: 5).card("chest-press-2"))
         #expect(second.rows.map { $0.previous?.text } == [nil])
         #expect(second.rows.first?.label.short == "1")
@@ -219,8 +232,9 @@ struct PresenterGridTests {
         #expect(reasons.first?.reason == "Warm-up, as last time: 40 kg × 12")
         #expect(reasons.first?.state == .upNext)
         #expect(rows.count { $0.suggestion != nil } > 30)
-        #expect(presentation.row(try NextFullyBody().row("chest-press", 1))?.suggestion?.text
-            == "Last time 35 kg × 15, top of range; try 40 kg × 11")
+        #expect(
+            presentation.row(try NextFullyBody().row("chest-press", 1))?.suggestion?.text
+                == "Last time 35 kg × 15, top of range; try 40 kg × 11")
     }
 
     @Test("A rirstop set shows its reps as approximate, and the tick commits them unless the reps done are typed")
@@ -261,17 +275,22 @@ struct PresenterSessionTests {
         #expect(upNext.line == "Next: Leg Press (Machine), warm-up: 40 kg × 12")
         #expect(upNext.values == "40 kg × 12")
         #expect(presentation.restBar == .upNext("Next: Leg Press (Machine), warm-up: 40 kg × 12"))
-        #expect(presentation.liveActivity == LiveActivityContent(
-            title: "Fully Body Collection #1", clockStart: NextFullyBody.start, clockPausedAt: nil,
-            exercise: "Leg Press (Machine)", setLabel: "W", isWarmup: true, values: "40 kg × 12", next: "Warm-up: 40 kg × 12",
-            nextRowID: upNext.row,
-            countdown: nil, setsDone: 0, setsPlanned: 42
-        ))
+        #expect(
+            presentation.liveActivity
+                == LiveActivityContent(
+                    title: "Fully Body Collection #1", clockStart: NextFullyBody.start, clockPausedAt: nil,
+                    exercise: "Leg Press (Machine)", setLabel: "W", isWarmup: true, values: "40 kg × 12", next: "Warm-up: 40 kg × 12",
+                    nextRowID: upNext.row,
+                    countdown: nil, setsDone: 0, setsPlanned: 42
+                ))
         #expect(presentation.notification == nil)
-        #expect(presentation.accessory == AccessoryPresentation(title: "Fully Body Collection #1",
-                                                                exercise: "Leg Press (Machine)", setLabel: "warm-up", values: "40 kg × 12",
-                                                                row: upNext.row, isPaused: false,
-                                                                restEndsAt: nil))
+        #expect(
+            presentation.accessory
+                == AccessoryPresentation(
+                    title: "Fully Body Collection #1",
+                    exercise: "Leg Press (Machine)", setLabel: "warm-up", values: "40 kg × 12",
+                    row: upNext.row, isPaused: false,
+                    restEndsAt: nil))
         #expect(presentation.accessory.set == "Leg Press (Machine), warm-up")
         #expect(presentation.summary == "Fully Body Collection #1, started 13:42, 0 sets done.")
         #expect(presentation.nextChange == nil)
@@ -305,18 +324,25 @@ struct PresenterSessionTests {
 
     @Test("Group colours go round a palette of four, in display order")
     func groupColours() throws {
-        let press = EngineCatalog.press, row = EngineCatalog.row, curl = EngineCatalog.curl, raise = EngineCatalog.raise
+        let press = EngineCatalog.press
+        let row = EngineCatalog.row
+        let curl = EngineCatalog.curl
+        let raise = EngineCatalog.raise
         let routine = EngineCatalog.routine(
-            [EngineCatalog.slot("p", press, EngineCatalog.sets(1), group: "b"), EngineCatalog.slot("r", row, EngineCatalog.sets(1), group: "b"),
-             EngineCatalog.slot("c", curl, EngineCatalog.sets(1), group: "a"), EngineCatalog.slot("l", raise, EngineCatalog.sets(1), group: "a")],
+            [
+                EngineCatalog.slot("p", press, EngineCatalog.sets(1), group: "b"), EngineCatalog.slot("r", row, EngineCatalog.sets(1), group: "b"),
+                EngineCatalog.slot("c", curl, EngineCatalog.sets(1), group: "a"), EngineCatalog.slot("l", raise, EngineCatalog.sets(1), group: "a"),
+            ],
             groups: [RoutineGroup(key: "a", groupKind: .superset), RoutineGroup(key: "b", groupKind: .paired, pairing: .antagonist)]
         )
         let script = try handMade(routine, exercises: [press, row, curl, raise])
-        let presentation = SessionPresenter.present(try script.current, history: HistoryIndex(), settings: Progression.settings,
-                                                    now: engineEpoch)
+        let presentation = SessionPresenter.present(
+            try script.current, history: HistoryIndex(), settings: Progression.settings,
+            now: engineEpoch)
         #expect(presentation.blocks.compactMap(\.group).map(\.colorIndex) == [0, 1])
-        #expect(presentation.blocks.compactMap(\.group).map(\.title)
-            == ["Paired sets B: 1 round, 2:30 after each round", "Superset A: 1 round, 1:30 after each round"])
+        #expect(
+            presentation.blocks.compactMap(\.group).map(\.title)
+                == ["Paired sets B: 1 round, 2:30 after each round", "Superset A: 1 round, 1:30 after each round"])
         // Antagonists move on in 15 s (§4.7, the pairing before the kind).
         #expect(presentation.blocks.first?.cards.map(\.restChip) == ["Then 0:15 to \(row.name)", "Round rest 2:30"])
     }
@@ -331,13 +357,18 @@ struct PresenterRestTests {
         let end = NextFullyBody.start.addingTimeInterval(105)
         let line = "Next: Chest Press (Machine), set 1: 40 kg × 11"
         var presentation = try session.present(at: 70)
-        #expect(presentation.restBar == .resting(RestCountdownPresentation(
-            label: "Warm-up rest", slot: .warmupRest, startedAt: NextFullyBody.start.addingTimeInterval(60), endsAt: end,
-            next: line, notifies: true
-        )))
+        #expect(
+            presentation.restBar
+                == .resting(
+                    RestCountdownPresentation(
+                        label: "Warm-up rest", slot: .warmupRest, startedAt: NextFullyBody.start.addingTimeInterval(60), endsAt: end,
+                        next: line, notifies: true
+                    )))
         #expect(presentation.notification == CountdownNotification(title: "Rest over", body: line, fireDate: end))
-        #expect(presentation.liveActivity.countdown == LiveActivityCountdown(
-            kind: .rest, label: "Warm-up rest", startedAt: NextFullyBody.start.addingTimeInterval(60), endsAt: end))
+        #expect(
+            presentation.liveActivity.countdown
+                == LiveActivityCountdown(
+                    kind: .rest, label: "Warm-up rest", startedAt: NextFullyBody.start.addingTimeInterval(60), endsAt: end))
         #expect(presentation.liveActivity.next == "Set 1: 40 kg × 11")
         #expect(presentation.liveActivity.exercise == "Chest Press (Machine)")
         #expect(presentation.accessory.restEndsAt == end)
@@ -374,24 +405,31 @@ struct PresenterRestTests {
             return
         }
         #expect(countdown.label == "Round rest" && countdown.slot == .roundRest && countdown.endsAt == end)
-        #expect(presentation.notification == CountdownNotification(title: "Round 2", body: "Next: Glute Bridge, set 2: × 16",
-                                                                   fireDate: end))
+        #expect(
+            presentation.notification
+                == CountdownNotification(
+                    title: "Round 2", body: "Next: Glute Bridge, set 2: × 16",
+                    fireDate: end))
         #expect(presentation.liveActivity.countdown?.kind == .roundRest)
         #expect(presentation.liveActivity.countdown?.label == "Round rest")
     }
 
     @Test("A transition names where to go, and notifies only past 20 s")
     func transitions() throws {
-        let press = EngineCatalog.press, row = EngineCatalog.row
+        let press = EngineCatalog.press
+        let row = EngineCatalog.row
         let routine = EngineCatalog.routine(
-            [EngineCatalog.slot("p", press, EngineCatalog.sets(2), group: "a", transition: 30),
-             EngineCatalog.slot("r", row, EngineCatalog.sets(2), group: "a")],
+            [
+                EngineCatalog.slot("p", press, EngineCatalog.sets(2), group: "a", transition: 30),
+                EngineCatalog.slot("r", row, EngineCatalog.sets(2), group: "a"),
+            ],
             groups: [RoutineGroup(key: "a", groupKind: .superset)]
         )
         var script = try handMade(routine, exercises: [press, row])
         try script.tick(try script.row("p", 0), kgReps(50, 10), at: engineEpoch.addingTimeInterval(60))
-        let presentation = SessionPresenter.present(try script.current, history: HistoryIndex(), settings: Progression.settings,
-                                                    now: engineEpoch.addingTimeInterval(65))
+        let presentation = SessionPresenter.present(
+            try script.current, history: HistoryIndex(), settings: Progression.settings,
+            now: engineEpoch.addingTimeInterval(65))
         guard case let .resting(countdown) = presentation.restBar else {
             Issue.record("expected a countdown, got \(presentation.restBar)")
             return
@@ -415,8 +453,11 @@ struct PresenterRestTests {
         #expect(presentation.restBar == .timedSet(TimedSetBar(row: plank, label: "Plank, set 1", startedAt: started, endsAt: end)))
         #expect(presentation.timedRow == plank)
         #expect(presentation.liveActivity.nextRowID == plank)
-        #expect(presentation.liveActivity.countdown == LiveActivityCountdown(kind: .timedSet, label: "Plank, set 1",
-                                                                              startedAt: started, endsAt: end))
+        #expect(
+            presentation.liveActivity.countdown
+                == LiveActivityCountdown(
+                    kind: .timedSet, label: "Plank, set 1",
+                    startedAt: started, endsAt: end))
         #expect(presentation.notification == CountdownNotification(title: "Time", body: "Plank, set 1: 1:07 reached", fireDate: end))
         let row = try #require(presentation.row(plank))
         #expect(row.state == .timing)
@@ -438,8 +479,11 @@ struct PresenterRestTests {
         }
         #expect(countdown.label == "Timer" && countdown.isManual)
         #expect(presentation.liveActivity.countdown?.kind == .manual)
-        #expect(presentation.notification == CountdownNotification(title: "Timer done", body: nil,
-                                                                   fireDate: NextFullyBody.start.addingTimeInterval(100)))
+        #expect(
+            presentation.notification
+                == CountdownNotification(
+                    title: "Timer done", body: nil,
+                    fireDate: NextFullyBody.start.addingTimeInterval(100)))
     }
 
     @Test("All sets done: no Up next, Finish in the bar, and the activity says so")
@@ -447,8 +491,9 @@ struct PresenterRestTests {
         let routine = EngineCatalog.routine([EngineCatalog.slot("p", EngineCatalog.press, EngineCatalog.sets(1))])
         var script = try handMade(routine, exercises: [EngineCatalog.press])
         try script.tick(try script.row("p", 0), kgReps(50, 10), at: engineEpoch.addingTimeInterval(60))
-        let presentation = SessionPresenter.present(try script.current, history: HistoryIndex(), settings: Progression.settings,
-                                                    now: engineEpoch.addingTimeInterval(61))
+        let presentation = SessionPresenter.present(
+            try script.current, history: HistoryIndex(), settings: Progression.settings,
+            now: engineEpoch.addingTimeInterval(61))
         #expect(presentation.upNext == nil && presentation.allDone)
         #expect(presentation.restBar == .allDone)
         #expect(presentation.liveActivity.next == "All sets done")
@@ -481,21 +526,31 @@ struct PresenterControllerTests {
         // A rirstop set's planned reps are shown, so saved as shown.
         #expect(unticked[try session.row("push-up", 0)] == .some(SetValues(reps: 15)))
         let end = NextFullyBody.start.addingTimeInterval(47 * 60 + 12)
-        let summary = FinishPresenter.summary(try session.script.current, presentation: presentation, policy: .drop, end: end,
-                                              healthAllowed: true)
+        let summary = FinishPresenter.summary(
+            try session.script.current, presentation: presentation, policy: .drop, end: end,
+            healthAllowed: true)
         #expect(summary.durationText == "47:12")
-        #expect(summary.rows == [LabelledValue("Working sets", "1"), LabelledValue("Volume", "440 kg"),
-                                 LabelledValue("Exercises", "1 of 21")])
+        #expect(
+            summary.rows == [
+                LabelledValue("Working sets", "1"), LabelledValue("Volume", "440 kg"),
+                LabelledValue("Exercises", "1 of 21"),
+            ])
         #expect(summary.untickedTitle == "53 sets are not ticked")
         #expect(summary.savedLine == "Saved to this iPhone and to Apple Health.")
         #expect(summary.earliestEnd == NextFullyBody.start.addingTimeInterval(180))
-        #expect(FinishPresenter.summary(try session.script.current, presentation: presentation, policy: .drop, end: end,
-                                        healthAllowed: false).savedLine
-            == "Apple Health access is off; saved to this iPhone.")
+        #expect(
+            FinishPresenter.summary(
+                try session.script.current, presentation: presentation, policy: .drop, end: end,
+                healthAllowed: false
+            ).savedLine
+                == "Apple Health access is off; saved to this iPhone.")
         // An end before the last tick is clamped to it.
-        #expect(FinishPresenter.summary(try session.script.current, presentation: presentation, policy: .markDone,
-                                        end: NextFullyBody.start, healthAllowed: true).end
-            == NextFullyBody.start.addingTimeInterval(180))
+        #expect(
+            FinishPresenter.summary(
+                try session.script.current, presentation: presentation, policy: .markDone,
+                end: NextFullyBody.start, healthAllowed: true
+            ).end
+                == NextFullyBody.start.addingTimeInterval(180))
         guard case let .markDone(marks) = FinishPresenter.markDone(presentation, recordID: { SetID("r-\($0.rawValue)") }) else {
             Issue.record("expected markDone")
             return
@@ -507,31 +562,42 @@ struct PresenterControllerTests {
     func entryCheck() throws {
         let press = EngineCatalog.press
         let past = (1 ... 3).map { day in
-            pastSession("p\(day)", at: engineEpoch.addingTimeInterval(TimeInterval(-day * 7 * 86400)), exercise: press.id,
-                        sets: [kgReps(35, 12, rpe: 8)])
+            pastSession(
+                "p\(day)", at: engineEpoch.addingTimeInterval(TimeInterval(-day * 7 * 86400)), exercise: press.id,
+                sets: [kgReps(35, 12, rpe: 8)])
         }
         let routine = EngineCatalog.routine([EngineCatalog.slot("p", press, EngineCatalog.sets(2) + [PlannedSet(key: "w", role: .warmup)])])
         let script = try handMade(routine, exercises: [press])
         let state = try script.current
         let row = try script.row("p", 1)
-        let warning = try #require(EntryCheck.warning(for: row, values: kgReps(500, 8), in: state, history: HistoryIndex(past),
-                                                      now: engineEpoch, calendar: Progression.calendar))
+        let warning = try #require(
+            EntryCheck.warning(
+                for: row, values: kgReps(500, 8), in: state, history: HistoryIndex(past),
+                now: engineEpoch, calendar: Progression.calendar))
         #expect(warning.title == "500 kg × 8 is far from your recent sets")
         #expect(warning.message == "Recently about 35 kg × 12.")
         #expect(warning.useTitle == "Use 50 kg")
         #expect(warning.keepTitle == "Keep 500 kg")
         #expect(warning.editTitle == "Edit")
         #expect(warning.corrected(kgReps(500, 8), measurement: .weightreps) == kgReps(50, 8))
-        #expect(EntryCheck.warning(for: row, values: kgReps(d("37.5"), 10), in: state, history: HistoryIndex(past),
-                                   now: engineEpoch, calendar: Progression.calendar) == nil)
+        #expect(
+            EntryCheck.warning(
+                for: row, values: kgReps(d("37.5"), 10), in: state, history: HistoryIndex(past),
+                now: engineEpoch, calendar: Progression.calendar) == nil)
         // Too little history, or a warm-up: no question.
-        #expect(EntryCheck.warning(for: row, values: kgReps(500, 8), in: state, history: HistoryIndex(Array(past.prefix(2))),
-                                   now: engineEpoch, calendar: Progression.calendar) == nil)
-        #expect(EntryCheck.warning(for: try script.row("p", 0), values: kgReps(500, 8), in: state, history: HistoryIndex(past),
-                                   now: engineEpoch, calendar: Progression.calendar) == nil)
+        #expect(
+            EntryCheck.warning(
+                for: row, values: kgReps(500, 8), in: state, history: HistoryIndex(Array(past.prefix(2))),
+                now: engineEpoch, calendar: Progression.calendar) == nil)
+        #expect(
+            EntryCheck.warning(
+                for: try script.row("p", 0), values: kgReps(500, 8), in: state, history: HistoryIndex(past),
+                now: engineEpoch, calendar: Progression.calendar) == nil)
         // A load no tenth or tenfold fixes: no Use button.
-        let odd = try #require(EntryCheck.warning(for: row, values: kgReps(200, 8), in: state, history: HistoryIndex(past),
-                                                  now: engineEpoch, calendar: Progression.calendar))
+        let odd = try #require(
+            EntryCheck.warning(
+                for: row, values: kgReps(200, 8), in: state, history: HistoryIndex(past),
+                now: engineEpoch, calendar: Progression.calendar))
         #expect(odd.useTitle == nil && odd.correctedLoad == nil && odd.keepTitle == "Keep 200 kg")
     }
 
@@ -541,15 +607,18 @@ struct PresenterControllerTests {
     func doneNeedsTheEntryCheck() throws {
         let press = EngineCatalog.press
         let past = (1 ... 3).map { day in
-            pastSession("p\(day)", at: engineEpoch.addingTimeInterval(TimeInterval(-day * 7 * 86400)), exercise: press.id,
-                        sets: [kgReps(35, 12, rpe: 8)])
+            pastSession(
+                "p\(day)", at: engineEpoch.addingTimeInterval(TimeInterval(-day * 7 * 86400)), exercise: press.id,
+                sets: [kgReps(35, 12, rpe: 8)])
         }
         let routine = EngineCatalog.routine([EngineCatalog.slot("p", press, EngineCatalog.sets(2, load: 35))])
         var script = try handMade(routine, exercises: [press])
         let row = try script.row("p", 0)
         func activity() throws -> LiveActivityContent {
-            SessionPresenter.present(try script.current, history: HistoryIndex(past), settings: Progression.settings,
-                                     now: engineEpoch).liveActivity
+            SessionPresenter.present(
+                try script.current, history: HistoryIndex(past), settings: Progression.settings,
+                now: engineEpoch
+            ).liveActivity
         }
         try script.send(.touchRow(row: row))
         #expect(try activity().nextRowID == row)
@@ -564,12 +633,18 @@ struct PresenterControllerTests {
         let session = try NextFullyBody()
         let state = try session.script.current
         let set2 = try session.row("chest-press", 2)
-        #expect(SuggestionInputs.noLighterLoad(afterTicking: set2, with: kgReps(5, 12), in: state, history: session.history,
-                                               now: NextFullyBody.start, calendar: Progression.calendar))
-        #expect(!SuggestionInputs.noLighterLoad(afterTicking: set2, with: kgReps(35, 12), in: state, history: session.history,
-                                                now: NextFullyBody.start, calendar: Progression.calendar))
-        #expect(!SuggestionInputs.noLighterLoad(afterTicking: try session.row("chest-press", 1), with: kgReps(5, 12), in: state,
-                                                history: session.history, now: NextFullyBody.start, calendar: Progression.calendar))
+        #expect(
+            SuggestionInputs.noLighterLoad(
+                afterTicking: set2, with: kgReps(5, 12), in: state, history: session.history,
+                now: NextFullyBody.start, calendar: Progression.calendar))
+        #expect(
+            !SuggestionInputs.noLighterLoad(
+                afterTicking: set2, with: kgReps(35, 12), in: state, history: session.history,
+                now: NextFullyBody.start, calendar: Progression.calendar))
+        #expect(
+            !SuggestionInputs.noLighterLoad(
+                afterTicking: try session.row("chest-press", 1), with: kgReps(5, 12), in: state,
+                history: session.history, now: NextFullyBody.start, calendar: Progression.calendar))
     }
 
     @Test("Last time's shape: the weaker side, an added exercise's sets and rests")
@@ -588,15 +663,19 @@ struct PresenterControllerTests {
     func historySelection() throws {
         let press = EngineCatalog.press
         var sessions = (1 ... 8).map { week in
-            pastSession("w\(week)", at: engineEpoch.addingTimeInterval(TimeInterval(-week * 7 * 86400)), exercise: press.id,
-                        sets: [kgReps(35, 12, rpe: 8)])
+            pastSession(
+                "w\(week)", at: engineEpoch.addingTimeInterval(TimeInterval(-week * 7 * 86400)), exercise: press.id,
+                sets: [kgReps(35, 12, rpe: 8)])
         }
         sessions[0].session.deload = true
-        sessions.append(pastSession("old", at: engineEpoch.addingTimeInterval(-200 * 86400), exercise: press.id,
-                                    sets: [kgReps(30, 12)]))
+        sessions.append(
+            pastSession(
+                "old", at: engineEpoch.addingTimeInterval(-200 * 86400), exercise: press.id,
+                sets: [kgReps(30, 12)]))
         let config = SuggestionInputs.config(for: press, defaultUnit: .kg)
-        let past = SuggestionInputs.history(of: press, config: config, index: HistoryIndex(sessions), excluding: nil,
-                                            now: engineEpoch, calendar: Progression.calendar)
+        let past = SuggestionInputs.history(
+            of: press, config: config, index: HistoryIndex(sessions), excluding: nil,
+            now: engineEpoch, calendar: Progression.calendar)
         #expect(past.map(\.start) == (2 ... 7).map { engineEpoch.addingTimeInterval(TimeInterval(-$0 * 7 * 86400)) })
     }
 
@@ -613,8 +692,10 @@ struct PresenterControllerTests {
         let pallof = SuggestionInputs.config(for: try #require(exercises["cable-core-pallof-press"]), defaultUnit: .kg)
         #expect(pallof.unit == .kg && pallof.step == 2.5)
         // A cable exercise naming no step takes 03 §9.1's default in the owner's unit.
-        let cable = SuggestionInputs.config(for: Exercise(id: "cable", name: "Cable", measurement: .weightreps,
-                                                          equipment: .cable), defaultUnit: .lb)
+        let cable = SuggestionInputs.config(
+            for: Exercise(
+                id: "cable", name: "Cable", measurement: .weightreps,
+                equipment: .cable), defaultUnit: .lb)
         #expect(cable.unit == .lb && cable.base == 0 && cable.step == 10)
         let push = SuggestionInputs.config(for: try #require(exercises["push-up"]), defaultUnit: .kg)
         #expect(push.mode == .bodyweightAdded && !push.canAddLoad && push.bodyShare == 0.65)
@@ -626,10 +707,16 @@ struct PresenterControllerTests {
         #expect(assisted.mode == .bodyweightAssisted && assisted.unit == .lb && assisted.step == 10)
         let barbell = Exercise(id: "bar", name: "Bar", measurement: .weightreps, equipment: .barbell)
         #expect(SuggestionInputs.defaultGrid(for: barbell, unit: .lb)! == (45, 5))
-        #expect(SuggestionInputs.defaultGrid(for: Exercise(id: "band", name: "Band", measurement: .weightreps,
-                                                           equipment: .resistanceband), unit: .kg) == nil)
-        #expect(SuggestionInputs.defaultGrid(for: Exercise(id: "dip", name: "Dip", measurement: .weightedbodyweightreps,
-                                                           equipment: .plate), unit: .kg)! == (0, 2.5))
+        #expect(
+            SuggestionInputs.defaultGrid(
+                for: Exercise(
+                    id: "band", name: "Band", measurement: .weightreps,
+                    equipment: .resistanceband), unit: .kg) == nil)
+        #expect(
+            SuggestionInputs.defaultGrid(
+                for: Exercise(
+                    id: "dip", name: "Dip", measurement: .weightedbodyweightreps,
+                    equipment: .plate), unit: .kg)! == (0, 2.5))
     }
 }
 
@@ -679,14 +766,16 @@ struct PresenterScreenTests {
         #expect(superset.title == "Superset A")
         #expect(superset.exercises.map(\.groupLabel) == ["A1", "A2"])
         #expect(superset.exercises.map(\.name) == ["Glute Bridge", "Bird Dog"])
-        #expect(detail.muscles
-            == "Abdominals 7, Chest 4, Glutes 4, Lower back 4, Hamstrings 2, Quadriceps 2, Shoulders 2, Triceps 2")
+        #expect(
+            detail.muscles
+                == "Abdominals 7, Chest 4, Glutes 4, Lower back 4, Hamstrings 2, Quadriceps 2, Shoulders 2, Triceps 2")
         let day1 = try #require(try Self.entries().first { $0.id.rawValue == EngineFixtures.day1First })
         let first = HistoryPresenter.detail(day1, exercises: catalog.exercises, settings: Progression.settings)
         #expect(first.sessionRPE == "Session RPE 7")
         #expect(first.when == "Thu 22 Oct 2026, 12:34 to 13:21 (46 min)")
-        #expect(first.blocks.flatMap(\.exercises).first { $0.slot == "lateral-raise" }?.sets.map(\.label.short)
-            == ["1", "2", "M", "M", "M", "M"])
+        #expect(
+            first.blocks.flatMap(\.exercises).first { $0.slot == "lateral-raise" }?.sets.map(\.label.short)
+                == ["1", "2", "M", "M", "M", "M"])
         var pending = entry
         pending.local.health.status = .notSaved
         #expect(HistoryPresenter.detail(pending, exercises: catalog.exercises, settings: Progression.settings).canRetryHealth)
@@ -705,8 +794,10 @@ struct PresenterScreenTests {
         #expect(cards.first?.exercises.hasPrefix("Leg Press (Machine), Calf Press (Machine), Seated Leg Curl (Machine)") == true)
         #expect(list.unreadable == nil)
         var broken = catalog
-        broken.unreadable = [UnreadableRecord(source: "x", kind: WorkoutsKinds.v1.routine, id: "a", reason: "r"),
-                             UnreadableRecord(source: "x", kind: WorkoutsKinds.v1.routine, id: "b", reason: "r")]
+        broken.unreadable = [
+            UnreadableRecord(source: "x", kind: WorkoutsKinds.v1.routine, id: "a", reason: "r"),
+            UnreadableRecord(source: "x", kind: WorkoutsKinds.v1.routine, id: "b", reason: "r"),
+        ]
         broken.routines["loose"] = Routine(id: "loose", name: "Loose")
         let other = RoutinePresenter.list(broken, history: history, settings: Progression.settings)
         #expect(other.unreadable == "2 routines could not be read")
@@ -722,27 +813,36 @@ struct PresenterScreenTests {
         #expect(preview.lastDone == "Last done Tue 27 Oct, 46 min")
         let slots = Dictionary(uniqueKeysWithValues: preview.blocks.flatMap(\.slots).map { ($0.id, $0) })
         #expect(slots["leg-press"]?.lines == ["Warm-up: 40 kg × 12", "2 sets of 10–15 reps at RPE 8, from 90 kg", "Rest 2:00"])
-        #expect(slots["chest-press"]?.lines
-            == ["Warm-up: 25 kg × 15", "2 sets of 10–15 reps at RPE 9.5, from 35 kg", "Set 2 is a drop set: 1 drop", "Rest 1:30"])
+        #expect(
+            slots["chest-press"]?.lines
+                == ["Warm-up: 25 kg × 15", "2 sets of 10–15 reps at RPE 9.5, from 35 kg", "Set 2 is a drop set: 1 drop", "Rest 1:30"])
         #expect(slots["plank"]?.lines == ["2 sets: hold 0:45–1:30, counted down", "Rest 0:15"])
         #expect(slots["push-up"]?.lines == ["2 sets, each until RPE 9", "Rest 1:30"])
         #expect(slots["crunch"]?.lines == ["2 sets of 12–20 reps", "Rest Off"])
-        #expect(slots["bulgarian-split-squat"]?.lines
-            == ["2 sets of 8–12 reps at RPE 8, from 10 kg", "Rest 2:00", "Left side first", "Switch sides 0:15"])
+        #expect(
+            slots["bulgarian-split-squat"]?.lines
+                == ["2 sets of 8–12 reps at RPE 8, from 10 kg", "Rest 2:00", "Left side first", "Switch sides 0:15"])
         #expect(slots["hip-thrust"]?.notes?.hasPrefix("Ribs down") == true)
         let group = try #require(preview.blocks.first { $0.header != nil })
         // No group letter and no colour: the members are named by their exercises.
         #expect(group.header == "Superset, rest 1:00 after each round" && group.colorIndex == nil)
         #expect(group.slots.allSatisfy { $0.groupLabel == nil })
         #expect(group.slots.map(\.lines) == [["2 sets of 12–20 reps", "Then straight to \(group.slots[1].name)"], ["2 sets of 8–10 reps"]])
-        let day1 = RoutinePresenter.preview(try #require(catalog.routines["day-1-strength-foundation"]), catalog: catalog,
-                                            history: history, settings: Progression.settings)
+        let day1 = RoutinePresenter.preview(
+            try #require(catalog.routines["day-1-strength-foundation"]), catalog: catalog,
+            history: history, settings: Progression.settings)
         let day1Slots = Dictionary(uniqueKeysWithValues: day1.blocks.flatMap(\.slots).map { ($0.id, $0) })
-        #expect(day1Slots["leg-press"]?.lines == ["Warm-up: 40 kg × 12", "Warm-up: 70 kg × 6",
-                                                  "3 sets of 6–10 reps at RPE 8, from 100 kg", "Rest 2:30",
-                                                  "Rest after warm-up 2: 1:30"])
-        #expect(day1Slots["lateral-raise"]?.lines == ["1 set of 12–15 reps at RPE 8, from 6 kg",
-                                                      "1 set of 12–20 reps at RPE 9, from 6 kg", "Set 2 is myo-reps", "Rest 1:30"])
+        #expect(
+            day1Slots["leg-press"]?.lines == [
+                "Warm-up: 40 kg × 12", "Warm-up: 70 kg × 6",
+                "3 sets of 6–10 reps at RPE 8, from 100 kg", "Rest 2:30",
+                "Rest after warm-up 2: 1:30",
+            ])
+        #expect(
+            day1Slots["lateral-raise"]?.lines == [
+                "1 set of 12–15 reps at RPE 8, from 6 kg",
+                "1 set of 12–20 reps at RPE 9, from 6 kg", "Set 2 is myo-reps", "Rest 1:30",
+            ])
         #expect(day1Slots["romanian-deadlift"]?.lines.last == "Tempo 3-1-1-0")
     }
 
@@ -766,8 +866,9 @@ struct PresenterScreenTests {
         // The stretch's alias is "Prone press-up".
         #expect(names("press-up") == ["Lumbar Extension Stretch", "Push Up"])
         #expect(names("zzz").isEmpty)
-        let picker = ExercisePresenter.picker(catalog.exercises, history: history, now: NextFullyBody.start,
-                                              settings: Progression.settings)
+        let picker = ExercisePresenter.picker(
+            catalog.exercises, history: history, now: NextFullyBody.start,
+            settings: Progression.settings)
         #expect(picker.first?.title == "Recent")
         // 27 October's exercises first, by name, then 26 October's.
         #expect(picker.first?.rows.prefix(2).map(\.name) == ["Bird Dog", "Bulgarian Split Squat (Dumbbell)"])
@@ -779,23 +880,31 @@ struct PresenterScreenTests {
     func exerciseDetail() throws {
         let catalog = try Self.catalog()
         let history = HistoryIndex(try ExampleFixtures.sessions("sessions"))
-        let chest = ExercisePresenter.detail(try #require(catalog.exercises["chest-press-machine"]), history: history,
-                                             settings: Progression.settings)
-        #expect(chest.facts == [LabelledValue("Equipment", "Machine"), LabelledValue("Records", "Weight and reps"),
-                                LabelledValue("Muscles", "Chest; also Shoulders, Triceps"), LabelledValue("Load", "5 kg steps")])
+        let chest = ExercisePresenter.detail(
+            try #require(catalog.exercises["chest-press-machine"]), history: history,
+            settings: Progression.settings)
+        #expect(
+            chest.facts == [
+                LabelledValue("Equipment", "Machine"), LabelledValue("Records", "Weight and reps"),
+                LabelledValue("Muscles", "Chest; also Shoulders, Triceps"), LabelledValue("Load", "5 kg steps"),
+            ])
         #expect(chest.sessions.map(\.title) == ["Tue 27 Oct, Fully Body Collection #1"])
         #expect(chest.sessions.first?.lines == ["W 25 kg × 15", "1 35 kg × 15", "2 35 kg × 13 @ 9.5, 2a 35 kg × 8 @ 9.5"])
         // 35 kg × 15 and × 13 at RPE 9.5 are too far from failure (n > 12) for the chart.
         #expect(chest.trend.metric == .oneRepMax && chest.trend.points.isEmpty)
-        let legPress = ExercisePresenter.detail(try #require(catalog.exercises["leg-press-machine"]), history: history,
-                                                settings: Progression.settings)
+        let legPress = ExercisePresenter.detail(
+            try #require(catalog.exercises["leg-press-machine"]), history: history,
+            settings: Progression.settings)
         // 22 Oct: 100 kg × 10 at RPE 8 (n = 12) gives 100 / 0.680; 26 Oct: 105 kg × 9 at RPE 8 gives 105 / 0.707.
         #expect(legPress.trend.points.map(\.text) == ["147.1 kg", "148.5 kg"])
         #expect(legPress.trend.title == "Estimated 1RM")
         #expect(legPress.trend.hasTrend(legPress.trend.points))
         #expect(legPress.trend.points(lastMonths: 3, now: NextFullyBody.start, calendar: Progression.calendar).count == 2)
-        #expect(legPress.trend.points(lastMonths: 3, now: NextFullyBody.start.addingTimeInterval(120 * 86400),
-                                      calendar: Progression.calendar).isEmpty)
+        #expect(
+            legPress.trend.points(
+                lastMonths: 3, now: NextFullyBody.start.addingTimeInterval(120 * 86400),
+                calendar: Progression.calendar
+            ).isEmpty)
         let plank = ExercisePresenter.trend(try #require(catalog.exercises["plank"]), history: history, settings: Progression.settings)
         #expect(plank.metric == .longestHold && plank.points.map(\.text) == ["1:02"])
         #expect(!plank.hasTrend(plank.points))
@@ -803,8 +912,9 @@ struct PresenterScreenTests {
         #expect(crunch.metric == .mostReps && crunch.points.map(\.text) == ["15 reps"])
         let push = ExercisePresenter.trend(try #require(catalog.exercises["push-up"]), history: history, settings: Progression.settings)
         #expect(push.metric == .oneRepMax)
-        let split = ExercisePresenter.detail(try #require(catalog.exercises["bulgarian-split-squat-dumbbell"]), history: history,
-                                             settings: Progression.settings)
+        let split = ExercisePresenter.detail(
+            try #require(catalog.exercises["bulgarian-split-squat-dumbbell"]), history: history,
+            settings: Progression.settings)
         #expect(split.facts.contains(LabelledValue("Sides", "One side at a time")))
         #expect(split.sessions.first?.lines == ["1L 10 kg × 10 @ 8, 1R 10 kg × 10 @ 8.5", "2L 10 kg × 10 @ 8.5, 2R 10 kg × 9 @ 9"])
     }

@@ -1,6 +1,6 @@
+import SwiftUI
 import WorkoutsCore
 import WorkoutsSync
-import SwiftUI
 
 /// A routine's plan as a started session draws it (DESIGN.md §7.3, §7.6a),
 /// read only or being edited: one opaque card per exercise or group, the
@@ -263,8 +263,10 @@ private struct PlanBlockCard: View {
     private func lineView(_ line: RowsSetItem) -> some View {
         let ref = plan.ref(line.id)
         if let edit, let ref, edit.openSet == ref, let editor = editor(ref, edit) {
-            PlanSetPanel(editor: editor, apply: { edit.apply($0, to: ref) }, customRest: { edit.customRest = ref },
-                         close: { edit.openSet = nil }) {
+            PlanSetPanel(
+                editor: editor, apply: { edit.apply($0, to: ref) }, customRest: { edit.customRest = ref },
+                close: { edit.openSet = nil }
+            ) {
                 setMenu(ref, edit)
             }
             .id(line.id)
@@ -290,8 +292,9 @@ private struct PlanBlockCard: View {
     }
 
     private func editor(_ ref: RoutinePlanSetRef, _ edit: PlanEditState) -> RoutinePlanSetEditor? {
-        RoutinePlanPresenter.editor(ref, in: edit.model.routine, exercises: app.exercises, history: app.historyIndex,
-                                    rests: app.settings.session, defaultUnit: app.settings.session.defaultUnit)
+        RoutinePlanPresenter.editor(
+            ref, in: edit.model.routine, exercises: app.exercises, history: app.historyIndex,
+            rests: app.settings.session, defaultUnit: app.settings.session.defaultUnit)
     }
 
     @ViewBuilder
@@ -387,7 +390,13 @@ private struct PlanEditSheets: ViewModifier {
                 .sheet(isPresented: $edit.reordering) {
                     PlanReorderSheet(model: edit.model)
                 }
-                .sheet(isPresented: Binding { edit.customRest != nil } set: { if !$0 { edit.customRest = nil } }) {
+                .sheet(
+                    isPresented: Binding {
+                        edit.customRest != nil
+                    } set: {
+                        if !$0 { edit.customRest = nil }
+                    }
+                ) {
                     if let ref = edit.customRest {
                         let current = edit.model.editor.slot(ref.slot)?.sets.first { $0.key == ref.set }?.rest
                         RestPickerSheet(title: "Rest after this set", initial: current ?? 90) { seconds in

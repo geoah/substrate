@@ -51,7 +51,7 @@ public extension SessionEngine {
             // them, done or not (§3.5), once per routine slot: a slot that
             // took over another's pending sets does not repeat them.
             if let name = slot.routineSlot, let planned = state.plan?.slots.first(where: { $0.key == name }),
-               snapshotted.insert(name).inserted
+                snapshotted.insert(name).inserted
             {
                 record.sets = planned.sets.map { snapshot($0, bodyMass: header.bodyMass) }
             }
@@ -75,8 +75,9 @@ public extension SessionEngine {
             id: header.id,
             at: start,
             endsAt: state.phase == .finished ? end : nil,
-            name: TrainingSession.name(routine: state.plan?.name, start: start,
-                                       timeZone: zone ?? TimeZone(secondsFromGMT: (header.utcOffsetStart ?? 0) * 60) ?? utc),
+            name: TrainingSession.name(
+                routine: state.plan?.name, start: start,
+                timeZone: zone ?? TimeZone(secondsFromGMT: (header.utcOffsetStart ?? 0) * 60) ?? utc),
             status: state.phase == .finished ? .finished : .active,
             routine: header.routine,
             routineVersion: header.routineVersion,
@@ -111,8 +112,9 @@ public extension SessionEngine {
                 let isChain = performed.count > 1 || head.structure != .straight || head.side != nil
                 for (offset, row) in performed.enumerated() {
                     guard let order = orders[row.id] else { continue }
-                    let set = setRecord(row, exercise: exercise, state: state, order: order, ordinal: ordinals[row.id],
-                                        continues: offset > 0 ? headRecord : nil, chainPosition: isChain ? offset + 1 : nil)
+                    let set = setRecord(
+                        row, exercise: exercise, state: state, order: order, ordinal: ordinals[row.id],
+                        continues: offset > 0 ? headRecord : nil, chainPosition: isChain ? offset + 1 : nil)
                     sets.append((slotIndex, set))
                 }
             }
@@ -168,9 +170,10 @@ public extension SessionEngine {
         return target
     }
 
-    private static func setRecord(_ row: Row, exercise: Exercise, state: SessionState, order: Int, ordinal: Int?,
-                                  continues: SetID?, chainPosition: Int?) -> PerformedSet
-    {
+    private static func setRecord(
+        _ row: Row, exercise: Exercise, state: SessionState, order: Int, ordinal: Int?,
+        continues: SetID?, chainPosition: Int?
+    ) -> PerformedSet {
         let performed = row.performed!
         let values = performed.values
         let measurement = exercise.measurement
@@ -229,7 +232,7 @@ public extension SessionEngine {
     static func restMethod(_ performed: Performed) -> RestMethod? {
         guard let rest = performed.restBefore else { return nil }
         if let start = performed.startedAt, let since = performed.priorRestClock?.since,
-           since.addingTimeInterval(TimeInterval(rest)) == start
+            since.addingTimeInterval(TimeInterval(rest)) == start
         {
             return .start
         }

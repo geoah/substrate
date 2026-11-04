@@ -13,13 +13,15 @@ let package = Package(
     name: "BridgeGen",
     platforms: [.macOS("15.0")],
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "604.0.0"),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "604.0.0")
     ],
     targets: [
-        .target(name: "BridgeModel", dependencies: [
-            .product(name: "SwiftSyntax", package: "swift-syntax"),
-            .product(name: "SwiftParser", package: "swift-syntax"),
-        ]),
+        .target(
+            name: "BridgeModel",
+            dependencies: [
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftParser", package: "swift-syntax"),
+            ]),
         .executableTarget(name: "bridgegen", dependencies: ["BridgeModel"]),
         .testTarget(name: "BridgeModelTests", dependencies: ["BridgeModel"]),
     ],

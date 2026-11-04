@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The Rows session layout (DESIGN.md §7.6a), the default: the session's
 /// blocks as opaque cards of one-line sets, the open set in place (any set
@@ -42,9 +42,11 @@ struct RowsSessionView: View {
                         AlertsOffBanner()
                     }
                     ForEach(layout.blocks) { block in
-                        RowsBlockView(block: block, presentation: presentation, isResting: isResting,
-                                      showExercise: showExercise)
-                            .id(block.id)
+                        RowsBlockView(
+                            block: block, presentation: presentation, isResting: isResting,
+                            showExercise: showExercise
+                        )
+                        .id(block.id)
                     }
                     Button {
                         cover.sheet = .addExercise(after: nil)
@@ -65,7 +67,9 @@ struct RowsSessionView: View {
             .background(Color(.systemGroupedBackground))
             .scrollEdgeEffectStyle(.soft, for: .bottom)
             .safeAreaBar(edge: .bottom) { bottomBar(proxy) }
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+            .onGeometryChange(for: CGRect.self) {
+                $0.frame(in: .global)
+            } action: { frame in
                 screen.listFrame = frame
             }
             .onScrollPhaseChange { _, phase in
@@ -148,14 +152,20 @@ struct RowsSessionView: View {
             }
         }
         .padding(.bottom, 6)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+        .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+        } action: { height in
             if screen.dock.isDocked, screen.typing == nil { dockedBarHeight = height }
         }
         // Undocked while the list moves: the island shrinks, the inset does not.
-        .frame(minHeight: screen.dock.holdsHeight && !screen.dock.isDocked && screen.typing == nil ? dockedBarHeight : nil,
-               alignment: .bottom)
+        .frame(
+            minHeight: screen.dock.holdsHeight && !screen.dock.isDocked && screen.typing == nil ? dockedBarHeight : nil,
+            alignment: .bottom
+        )
         // The viewport's foot: the bar's top on screen, at its held height too.
-        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+        .onGeometryChange(for: CGFloat.self) {
+            $0.frame(in: .global).minY
+        } action: { top in
             screen.barTop = top
         }
         .animation(.smooth(duration: 0.25), value: screen.typing?.row)
@@ -216,7 +226,7 @@ struct RowsSessionView: View {
             // A lazy list estimates the heights of blocks it has not laid out,
             // so jump without animation until the target is laid out, then
             // settle on it with one animated pass.
-            for _ in 0..<2 {
+            for _ in 0 ..< 2 {
                 proxy.scrollTo(block.id, anchor: .top)
                 try? await Task.sleep(for: .milliseconds(80))
             }

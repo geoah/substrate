@@ -23,20 +23,33 @@ struct TaskEditorView: View {
                     if let problem = editor.problem { Text(problem).foregroundStyle(.red) }
                 }
                 Section {
-                    Picker(editor.list.label, selection: Binding(get: { editor.list.selected },
-                                                                 set: { shell.send(.setList($0.isEmpty ? nil : $0), to: key) })) {
+                    Picker(
+                        editor.list.label,
+                        selection: Binding(
+                            get: { editor.list.selected },
+                            set: { shell.send(.setList($0.isEmpty ? nil : $0), to: key) })
+                    ) {
                         ForEach(editor.list.options) { Text($0.title).tag($0.id) }
                     }
-                    Picker(editor.due.label, selection: Binding(get: { editor.due.kind },
-                                                                set: { shell.send(.setDueKind($0), to: key) })) {
+                    Picker(
+                        editor.due.label,
+                        selection: Binding(
+                            get: { editor.due.kind },
+                            set: { shell.send(.setDueKind($0), to: key) })
+                    ) {
                         ForEach(editor.due.kinds) { Text($0.title).tag(DueKind(rawValue: $0.id) ?? .none) }
                     }
                     if let date = editor.due.date, let label = editor.due.dateLabel {
-                        DatePicker(label, selection: Binding(get: { date }, set: { shell.send(.setDueDate($0), to: key) }),
-                                   displayedComponents: editor.due.kind == .time ? [.date, .hourAndMinute] : [.date])
+                        DatePicker(
+                            label, selection: Binding(get: { date }, set: { shell.send(.setDueDate($0), to: key) }),
+                            displayedComponents: editor.due.kind == .time ? [.date, .hourAndMinute] : [.date])
                     }
-                    Picker(editor.priority.label, selection: Binding(get: { editor.priority.selected },
-                                                                     set: { shell.send(.setPriority(TaskPriority(rawValue: $0) ?? .none), to: key) })) {
+                    Picker(
+                        editor.priority.label,
+                        selection: Binding(
+                            get: { editor.priority.selected },
+                            set: { shell.send(.setPriority(TaskPriority(rawValue: $0) ?? .none), to: key) })
+                    ) {
                         ForEach(editor.priority.options) { Text($0.title).tag($0.id) }
                     }
                 }

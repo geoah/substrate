@@ -8,6 +8,7 @@ import SubstrateRuntime
 import SubstrateScreens
 import SubstrateTesting
 import Testing
+
 @testable import TasksCore
 
 @Suite("What became of a write", .timeLimit(.minutes(10)))
@@ -19,10 +20,11 @@ struct WrittenTests {
         await harness.deliver(.settingsRead(SettingsValues(), usage: []))
         await harness.send(.show(.inbox))
         await harness.send(.complete("a"))
-        let write = try #require(harness.effects.compactMap { effect -> OutboxEntry? in
-            if case let .records(.enqueue(write)) = effect { return write.entries.first }
-            return nil
-        }.first)
+        let write = try #require(
+            harness.effects.compactMap { effect -> OutboxEntry? in
+                if case let .records(.enqueue(write)) = effect { return write.entries.first }
+                return nil
+            }.first)
         await harness.deliver(.records(.enqueued([write.id], queue: [write], landed: [])))
         #expect(await harness.presentation.list?.open.rows.isEmpty == true)
         // Discarded on the Status screen: gone from the queue, landed never.
@@ -59,11 +61,14 @@ struct WrittenTests {
     /// The link over the app with a session, a network and the rig's server.
     func linked(_ rig: Rig) throws -> ControllerHarness<LinkController<TasksApp>> {
         let storage = MemoryStorage()
-        try SessionStore(storage: storage).save(Session(server: server, repository: "ada.example.com", secret: "sub_app_x",
-                                                        clientID: TasksManifest.localClientID, scopes: TasksManifest.scopes))
-        let link = LinkController(app: rig.app, manifest: TasksManifest.manifest(clientID: TasksManifest.localClientID),
-                                  sessions: SessionStore(storage: storage), outbox: rig.outbox, packages: TasksManifest.packages,
-                                  words: TasksApp.words(device: "this iPhone"))
+        try SessionStore(storage: storage).save(
+            Session(
+                server: server, repository: "ada.example.com", secret: "sub_app_x",
+                clientID: TasksManifest.localClientID, scopes: TasksManifest.scopes))
+        let link = LinkController(
+            app: rig.app, manifest: TasksManifest.manifest(clientID: TasksManifest.localClientID),
+            sessions: SessionStore(storage: storage), outbox: rig.outbox, packages: TasksManifest.packages,
+            words: TasksApp.words(device: "this iPhone"))
         var environment = rig.environment
         environment.devices.connectivity = ScriptedConnectivity()
         return ControllerHarness(link, clock: rig.clock, environment: environment)
@@ -94,8 +99,9 @@ struct WrittenTests {
 
     @Test func aReadAnswered403AsksTheOwnerForApproval() async throws {
         let rig = try Rig()
-        rig.server.answer("GET", "/api/v1/records", 403, #"{"error":{"code":"forbidden","message":"not in scope"}}"#,
-                          headers: ["WWW-Authenticate": #"Bearer error="insufficient_scope""#])
+        rig.server.answer(
+            "GET", "/api/v1/records", 403, #"{"error":{"code":"forbidden","message":"not in scope"}}"#,
+            headers: ["WWW-Authenticate": #"Bearer error="insufficient_scope""#])
         let harness = try linked(rig)
         try await harness.until { await $0.presentation.status.actions.contains { $0.action == .review } }
         let app = try #require(await harness.runtime.state(of: LinkController<TasksApp>.appKey))

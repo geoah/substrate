@@ -15,11 +15,13 @@ public enum WatchFrame: Equatable, Sendable {
     public static func parse(_ line: String) -> WatchFrame? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, let value = try? JSONDecoder().decode(JSONValue.self, from: Data(trimmed.utf8)),
-              case let .object(object) = value
+            case let .object(object) = value
         else { return nil }
         if case let .number(seq)? = object["seq"], case .string? = object["ts"] {
-            return .row(WatchRow(seq: (seq.int ?? 0), kind: object["kind"]?.stringValue ?? "",
-                                 recordID: object["recordId"]?.stringValue ?? "", op: object["op"]?.stringValue ?? ""))
+            return .row(
+                WatchRow(
+                    seq: (seq.int ?? 0), kind: object["kind"]?.stringValue ?? "",
+                    recordID: object["recordId"]?.stringValue ?? "", op: object["op"]?.stringValue ?? ""))
         }
         if case let .number(seq)? = object["bookmark"] {
             return .bookmark(WatchCursor(seq: (seq.int ?? 0), generation: object["generation"]?.stringValue ?? ""))

@@ -96,7 +96,9 @@ public struct HistoryStore: Sendable {
                 if respelled { try? write(entry) }
             } catch {
                 let name = "\(Self.directoryName)/\(file.lastPathComponent)"
-                unreadable.append(UnreadableRecord(source: name, kind: codec.kinds.session, id: file.deletingPathExtension().lastPathComponent, reason: String(describing: error)))
+                unreadable.append(
+                    UnreadableRecord(
+                        source: name, kind: codec.kinds.session, id: file.deletingPathExtension().lastPathComponent, reason: String(describing: error)))
             }
         }
         entries.sort(by: Self.newestFirst)
@@ -121,7 +123,9 @@ public struct HistoryStore: Sendable {
     /// Records the Health save's outcome. A save links the workout: the
     /// session keeps HealthKit's UUID and its revision rises by one (§9.5).
     @discardableResult
-    public func recordHealthSave(_ id: SessionID, status: HealthSaveStatus, healthKitWorkout: String? = nil, error: String? = nil, at date: Date) throws -> HistoryEntry {
+    public func recordHealthSave(_ id: SessionID, status: HealthSaveStatus, healthKitWorkout: String? = nil, error: String? = nil, at date: Date) throws
+        -> HistoryEntry
+    {
         var entry = try read(id)
         if let healthKitWorkout, entry.records.session.healthKitWorkout != healthKitWorkout {
             entry.records.session.healthKitWorkout = healthKitWorkout
@@ -195,8 +199,7 @@ public enum HistoryMigration {
                 }
             case kinds.set:
                 for (value, method) in [("rpe", "rpeMethod"), ("rir", "rirMethod")]
-                    where properties[value] != nil && properties[method] == nil
-                {
+                where properties[value] != nil && properties[method] == nil {
                     properties[method] = .string(EffortMethod.entered.rawValue)
                 }
                 if var target = properties["target"]?.objectValue {

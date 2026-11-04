@@ -114,7 +114,7 @@ public enum SessionStatus: String, Codable, Sendable, CaseIterable {
 /// What sport a session was, in `health/workout`'s code set (`session.sport`).
 public enum Sport: String, Codable, Sendable, CaseIterable {
     case running, walking, hiking, cycling, swimming, strength, yoga, pilates, rowing, elliptical, stairs, hiit, dance,
-         boxing, climbing, tennis, golf, skiing, other
+        boxing, climbing, tennis, golf, skiing, other
 }
 
 /// One exercise of a session, in display order; its sets name it by `key`.
@@ -172,9 +172,10 @@ public struct SessionGroup: Codable, Hashable, Sendable {
     /// Unknown fields, kept for round trips (§3.4 rule 7).
     @UnknownFields public var extra: [String: JSONValue]
 
-    public init(key: String, groupKind: GroupKind, pairing: Pairing? = nil, rounds: Int? = nil, roundRest: Seconds? = nil,
-                extra: [String: JSONValue] = [:])
-    {
+    public init(
+        key: String, groupKind: GroupKind, pairing: Pairing? = nil, rounds: Int? = nil, roundRest: Seconds? = nil,
+        extra: [String: JSONValue] = [:]
+    ) {
         self.key = key
         self.groupKind = groupKind
         self.pairing = pairing
@@ -222,9 +223,10 @@ public struct Catalog: Codable, Equatable, Sendable {
     /// Records the source could not decode; skipped, and listed in Settings.
     public var unreadable: [UnreadableRecord]
 
-    public init(exercises: [ExerciseID: Exercise] = [:], routines: [RoutineID: Routine] = [:], setups: [SetupID: Setup] = [:],
-                unreadable: [UnreadableRecord] = [])
-    {
+    public init(
+        exercises: [ExerciseID: Exercise] = [:], routines: [RoutineID: Routine] = [:], setups: [SetupID: Setup] = [:],
+        unreadable: [UnreadableRecord] = []
+    ) {
         self.exercises = exercises
         self.routines = routines
         self.setups = setups

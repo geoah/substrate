@@ -1,9 +1,10 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
-import SubstrateDevice
 
 /// The transport on Android: OkHttp, through the bridge. OkHttp follows no
 /// redirect on any path, a line stream's included, so a 3xx is the answer
@@ -84,13 +85,18 @@ public struct BridgeTransport: HTTPTransport {
         guard let url = request.url?.absoluteString else { throw URLError(.badURL) }
         let headers = (request.allHTTPHeaderFields ?? [:]).sorted { $0.key < $1.key }
             .map { TransportHeader(name: $0.key, value: $0.value) }
-        var wire = TransportRequest(url: url, method: request.httpMethod ?? "GET", headers: headers,
-                                    timeoutMillis: Int(request.timeoutInterval * 1000), credentials: Self.carriesCredentials(request))
+        var wire = TransportRequest(
+            url: url, method: request.httpMethod ?? "GET", headers: headers,
+            timeoutMillis: Int(request.timeoutInterval * 1000), credentials: Self.carriesCredentials(request))
         if let body = request.httpBody {
             if wire.credentials {
                 guard body.count <= TransportRequest.credentialLimit else {
-                    throw URLError(.dataLengthExceedsMaximum, userInfo: [NSLocalizedDescriptionKey:
-                            "A request carrying credentials is \(body.count) bytes, more than \(TransportRequest.credentialLimit)."])
+                    throw URLError(
+                        .dataLengthExceedsMaximum,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "A request carrying credentials is \(body.count) bytes, more than \(TransportRequest.credentialLimit)."
+                        ])
                 }
                 wire.body = body.base64EncodedString()
             } else if body.count <= TransportRequest.inlineLimit {
@@ -143,20 +149,21 @@ public struct BridgeTransport: HTTPTransport {
             fields[header.name] = fields[header.name].map { "\($0), \(header.value)" } ?? header.value
         }
         guard let url = URL(string: response.url) ?? request.url,
-              let http = HTTPURLResponse(url: url, statusCode: response.status, httpVersion: "HTTP/1.1", headerFields: fields)
+            let http = HTTPURLResponse(url: url, statusCode: response.status, httpVersion: "HTTP/1.1", headerFields: fields)
         else { throw URLError(.badServerResponse) }
         return http
     }
 
     static func urlError(_ kind: TransportFailureKind, _ message: String, url: URL?) -> URLError {
-        let code: URLError.Code = switch kind {
-        case .offline: .notConnectedToInternet
-        case .timedOut: .timedOut
-        case .cannotConnect: .cannotConnectToHost
-        case .secureConnectionFailed: .secureConnectionFailed
-        case .cancelled: .cancelled
-        case .other: .unknown
-        }
+        let code: URLError.Code =
+            switch kind {
+            case .offline: .notConnectedToInternet
+            case .timedOut: .timedOut
+            case .cannotConnect: .cannotConnectToHost
+            case .secureConnectionFailed: .secureConnectionFailed
+            case .cancelled: .cancelled
+            case .other: .unknown
+            }
         var info: [String: Any] = [NSLocalizedDescriptionKey: message]
         if let url { info[NSURLErrorFailingURLErrorKey] = url }
         return URLError(code, userInfo: info)

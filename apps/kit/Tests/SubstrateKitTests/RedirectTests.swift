@@ -1,11 +1,7 @@
 import Foundation
-#if canImport(Glibc)
-import Glibc
-#endif
+import SubstrateTesting
 import Testing
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
+
 @testable import SubstrateAPI
 @testable import SubstrateAuth
 @testable import SubstrateCore
@@ -13,7 +9,13 @@ import FoundationNetworking
 @testable import SubstrateDeviceApple
 @testable import SubstrateKit
 @testable import SubstrateUI
-import SubstrateTesting
+
+#if canImport(Glibc)
+import Glibc
+#endif
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// An HTTP server on a loopback port of its own, so two of them are two
 /// origins: each connection is answered `answer`, and every request that
@@ -90,11 +92,12 @@ final class LocalServer: @unchecked Sendable {
             data.append(contentsOf: buffer[0 ..< n])
             guard let end = data.range(of: Data("\r\n\r\n".utf8)) else { continue }
             let head = String(decoding: data[..<end.lowerBound], as: UTF8.self)
-            let length = head.split(separator: "\r\n").compactMap { line -> Int? in
-                let parts = line.split(separator: ":", maxSplits: 1)
-                guard parts.count == 2, parts[0].lowercased() == "content-length" else { return nil }
-                return Int(parts[1].trimmingCharacters(in: .whitespaces))
-            }.first ?? 0
+            let length =
+                head.split(separator: "\r\n").compactMap { line -> Int? in
+                    let parts = line.split(separator: ":", maxSplits: 1)
+                    guard parts.count == 2, parts[0].lowercased() == "content-length" else { return nil }
+                    return Int(parts[1].trimmingCharacters(in: .whitespaces))
+                }.first ?? 0
             if data.count - end.upperBound >= length { break }
         }
         return String(decoding: data, as: UTF8.self)
@@ -110,8 +113,9 @@ final class LocalServer: @unchecked Sendable {
     /// the body.
     func origins() throws -> (chosen: LocalServer, elsewhere: LocalServer) {
         let elsewhere = try LocalServer(answer: "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
-        let chosen = try LocalServer(answer: "HTTP/1.1 307 Temporary Redirect\r\nLocation: \(elsewhere.origin.absoluteString)/taken\r\n"
-            + "Content-Length: 0\r\nConnection: close\r\n\r\n")
+        let chosen = try LocalServer(
+            answer: "HTTP/1.1 307 Temporary Redirect\r\nLocation: \(elsewhere.origin.absoluteString)/taken\r\n"
+                + "Content-Length: 0\r\nConnection: close\r\n\r\n")
         return (chosen, elsewhere)
     }
 
@@ -175,8 +179,9 @@ final class LocalServer: @unchecked Sendable {
             chosen.stop()
             elsewhere.stop()
         }
-        let metadata = AuthorizationServerMetadata(issuer: chosen.origin, scopesSupported: ["read:*", "write:*"],
-                                                   authorizationDetailsTypesSupported: AuthorizationDetail.Types.all)
+        let metadata = AuthorizationServerMetadata(
+            issuer: chosen.origin, scopesSupported: ["read:*", "write:*"],
+            authorizationDetailsTypesSupported: AuthorizationDetail.Types.all)
         let oauth = OAuthClient(manifest: syncManifest(), metadata: metadata, transport: URLSessionTransport.shared)
         await #expect(throws: Redirected(status: 307, location: "\(elsewhere.origin.absoluteString)/taken")) {
             _ = try await oauth.exchange(code: "c", redirect: "http://127.0.0.1:1/oauth/callback", pkce: PKCE(verifier: "v"))
@@ -191,8 +196,9 @@ final class LocalServer: @unchecked Sendable {
             chosen.stop()
             elsewhere.stop()
         }
-        let app = Session(server: chosen.origin, repository: "ada.example.com", secret: "sub_app_x", clientID: "http://127.0.0.1/kit",
-                          scopes: ["read:*"], revocation: chosen.origin.appending(path: "oauth/revoke"))
+        let app = Session(
+            server: chosen.origin, repository: "ada.example.com", secret: "sub_app_x", clientID: "http://127.0.0.1/kit",
+            scopes: ["read:*"], revocation: chosen.origin.appending(path: "oauth/revoke"))
         await #expect(throws: Redirected.self) { try await app.revoke(transport: URLSessionTransport.shared) }
         let password = Session(server: chosen.origin, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
         await #expect(throws: Redirected.self) { try await password.revoke(transport: URLSessionTransport.shared) }

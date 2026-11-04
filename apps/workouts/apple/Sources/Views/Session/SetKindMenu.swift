@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The SET label and its menu (DESIGN.md §7.6): the kinds §4.3 allows for
 /// the row (the rest disabled), "About set types…", "Rate effort…" on a row
@@ -17,7 +17,9 @@ struct SetKindMenu: View {
         } label: {
             label
         }
-        .accessibilityLabel("\(row.label.spoken.capitalizedSentence)\(row.label.failureBadge ? ", to failure" : "")\(row.label.roleText.map { ", \($0)" } ?? "")")
+        .accessibilityLabel(
+            "\(row.label.spoken.capitalizedSentence)\(row.label.failureBadge ? ", to failure" : "")\(row.label.roleText.map { ", \($0)" } ?? "")"
+        )
         .accessibilityHint(row.canRateEffort ? "Set kind, effort, rest and note" : "Set kind, rest and note")
     }
 

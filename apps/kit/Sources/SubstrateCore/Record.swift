@@ -34,9 +34,10 @@ public struct Record: Codable, Hashable, Sendable, Identifiable {
         deletedAt = try? c.decodeIfPresent(String.self, forKey: .deletedAt)
     }
 
-    public init(id: String, kind: String, properties: [String: JSONValue], version: Int = 1,
-         createdAt: String = "", updatedAt: String = "", annotations: [String: JSONValue]? = nil)
-    {
+    public init(
+        id: String, kind: String, properties: [String: JSONValue], version: Int = 1,
+        createdAt: String = "", updatedAt: String = "", annotations: [String: JSONValue]? = nil
+    ) {
         self.id = id
         self.kind = kind
         self.properties = properties

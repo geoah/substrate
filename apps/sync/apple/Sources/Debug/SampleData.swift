@@ -55,10 +55,13 @@ enum SampleData {
         return "\(health) Health samples, \(contacts) contacts, \(events) events, \(reminders) reminders, \(visits) visits"
     }
 
-    private static func q(_ id: HKQuantityTypeIdentifier, _ value: Double, _ unit: HKUnit, _ start: Date, _ end: Date? = nil,
-                          _ meta: [String: Any]? = nil) -> HKQuantitySample {
-        HKQuantitySample(type: HKQuantityType(id), quantity: HKQuantity(unit: unit, doubleValue: value),
-                         start: start, end: end ?? start, metadata: meta)
+    private static func q(
+        _ id: HKQuantityTypeIdentifier, _ value: Double, _ unit: HKUnit, _ start: Date, _ end: Date? = nil,
+        _ meta: [String: Any]? = nil
+    ) -> HKQuantitySample {
+        HKQuantitySample(
+            type: HKQuantityType(id), quantity: HKQuantity(unit: unit, doubleValue: value),
+            start: start, end: end ?? start, metadata: meta)
     }
 
     private static func addHealth(day: Date, calendar: Calendar) async throws -> Int {
@@ -99,29 +102,37 @@ enum SampleData {
         samples.append(q(.bodyFatPercentage, 0.182, .percent(), at(7, 2)))
         samples.append(q(.bodyMassIndex, 22.6, .count(), at(7, 2)))
         samples.append(q(.height, 177.5, .meterUnit(with: .centi), at(7, 3)))
-        samples.append(q(.bloodGlucose, 92, HKUnit(from: "mg/dL"), at(7, 30), nil,
-                         [HKMetadataKeyBloodGlucoseMealTime: HKBloodGlucoseMealTime.preprandial.rawValue]))
-        samples.append(q(.bloodGlucose, 128, HKUnit(from: "mg/dL"), at(13, 45), nil,
-                         [HKMetadataKeyBloodGlucoseMealTime: HKBloodGlucoseMealTime.postprandial.rawValue]))
+        samples.append(
+            q(
+                .bloodGlucose, 92, HKUnit(from: "mg/dL"), at(7, 30), nil,
+                [HKMetadataKeyBloodGlucoseMealTime: HKBloodGlucoseMealTime.preprandial.rawValue]))
+        samples.append(
+            q(
+                .bloodGlucose, 128, HKUnit(from: "mg/dL"), at(13, 45), nil,
+                [HKMetadataKeyBloodGlucoseMealTime: HKBloodGlucoseMealTime.postprandial.rawValue]))
         let mmHg = HKUnit.millimeterOfMercury()
-        samples.append(HKCorrelation(
-            type: HKCorrelationType(.bloodPressure), start: at(7, 15), end: at(7, 15),
-            objects: [q(.bloodPressureSystolic, 118, mmHg, at(7, 15)), q(.bloodPressureDiastolic, 76, mmHg, at(7, 15))]))
+        samples.append(
+            HKCorrelation(
+                type: HKCorrelationType(.bloodPressure), start: at(7, 15), end: at(7, 15),
+                objects: [q(.bloodPressureSystolic, 118, mmHg, at(7, 15)), q(.bloodPressureDiastolic, 76, mmHg, at(7, 15))]))
 
         // The night that ended this morning: in bed from the iPhone, stages
         // from the watch.
         let sleep = HKCategoryType(.sleepAnalysis)
         let bedtime = at(0, -50)
         func stage(_ value: HKCategoryValueSleepAnalysis, _ from: Int, _ to: Int) -> HKCategorySample {
-            HKCategorySample(type: sleep, value: value.rawValue, start: bedtime.addingTimeInterval(Double(from * 60)),
-                             end: bedtime.addingTimeInterval(Double(to * 60)))
+            HKCategorySample(
+                type: sleep, value: value.rawValue, start: bedtime.addingTimeInterval(Double(from * 60)),
+                end: bedtime.addingTimeInterval(Double(to * 60)))
         }
         samples.append(stage(.inBed, 0, 450))
         samples.append(stage(.awake, 0, 14))
         var minute = 14
-        for (value, length) in [(HKCategoryValueSleepAnalysis.asleepCore, 70), (.asleepDeep, 45), (.asleepCore, 60),
-                                (.asleepREM, 30), (.awake, 6), (.asleepCore, 80), (.asleepDeep, 25), (.asleepREM, 40),
-                                (.asleepCore, 60), (.awake, 6)] {
+        for (value, length) in [
+            (HKCategoryValueSleepAnalysis.asleepCore, 70), (.asleepDeep, 45), (.asleepCore, 60),
+            (.asleepREM, 30), (.awake, 6), (.asleepCore, 80), (.asleepDeep, 25), (.asleepREM, 40),
+            (.asleepCore, 60), (.awake, 6),
+        ] {
             samples.append(stage(value, minute, minute + length))
             minute += length
         }
@@ -133,7 +144,8 @@ enum SampleData {
         configuration.activityType = .running
         configuration.locationType = .outdoor
         let builder = HKWorkoutBuilder(healthStore: store, configuration: configuration, device: .local())
-        let start = at(18, 5), end = at(18, 41)
+        let start = at(18, 5)
+        let end = at(18, 41)
         try await builder.beginCollection(at: start)
         log.notice("health: workout collecting")
         var workoutSamples: [HKSample] = []
@@ -177,13 +189,17 @@ enum SampleData {
         grace.givenName = "Grace"
         grace.familyName = "Hopper"
         grace.urlAddresses = [CNLabeledValue(label: CNLabelURLAddressHomePage, value: "https://example.com/grace" as NSString)]
-        grace.postalAddresses = [CNLabeledValue(label: CNLabelHome, value: {
-            let a = CNMutablePostalAddress()
-            a.street = "1 Example Street"
-            a.city = "Arlington"
-            a.isoCountryCode = "us"
-            return a
-        }())]
+        grace.postalAddresses = [
+            CNLabeledValue(
+                label: CNLabelHome,
+                value: {
+                    let a = CNMutablePostalAddress()
+                    a.street = "1 Example Street"
+                    a.city = "Arlington"
+                    a.isoCountryCode = "us"
+                    return a
+                }())
+        ]
         let org = CNMutableContact()
         org.contactType = .organization
         org.organizationName = "Example Labs"
@@ -223,8 +239,9 @@ enum SampleData {
         standup.title = "Standup"
         standup.startDate = at(0, 9, 30)
         standup.endDate = at(0, 9, 45)
-        standup.addRecurrenceRule(EKRecurrenceRule(
-            recurrenceWith: .weekly, interval: 1, end: EKRecurrenceEnd(occurrenceCount: 6)))
+        standup.addRecurrenceRule(
+            EKRecurrenceRule(
+                recurrenceWith: .weekly, interval: 1, end: EKRecurrenceEnd(occurrenceCount: 6)))
         let trip = EKEvent(eventStore: store)
         trip.calendar = cal
         trip.title = "Conference"
@@ -268,8 +285,9 @@ enum SampleData {
         call.calendar = list
         call.title = "Call the dentist"
         call.priority = 1
-        call.dueDateComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute],
-                                                         from: calendar.date(byAdding: DateComponents(day: 1, hour: 10), to: day)!)
+        call.dueDateComponents = calendar.dateComponents(
+            [.year, .month, .day, .hour, .minute],
+            from: calendar.date(byAdding: DateComponents(day: 1, hour: 10), to: day)!)
         call.addAlarm(EKAlarm(relativeOffset: -900))
         let done = EKReminder(eventStore: store)
         done.calendar = list

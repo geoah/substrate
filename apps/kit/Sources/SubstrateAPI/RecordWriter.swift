@@ -1,8 +1,9 @@
 import Foundation
+import SubstrateCore
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
 
 /// The record calls an outbox sends its writes through: a put or a patch
 /// with the properties as the app spelled them (key order and decimal
@@ -30,7 +31,7 @@ extension SubstrateClient: RecordWriter {
         if let ifVersion { body["ifVersion"] = .number(Decimal(ifVersion)) }
         let response = try await send(method, Self.recordPath(kind, id), body: .encoding(JSONValue.object(body)))
         guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: response.data),
-              case let .number(version)? = object["version"]
+            case let .number(version)? = object["version"]
         else { return 0 }
         return (version.int ?? 0)
     }

@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// A group's header row (DESIGN.md §7.6): "Superset A: 2 rounds, 1:00 after
 /// each round", and a menu for the round rest, the kind, the pairing and

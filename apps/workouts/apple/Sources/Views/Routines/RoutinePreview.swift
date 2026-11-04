@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// A routine's page (DESIGN.md §7.3): its folder, notes and what the plan
 /// holds, then Plan or Progress. The plan is the routine as a started
@@ -56,9 +56,10 @@ struct RoutinePreview: View {
                     RoutinePlanCards(plan: plan, edit: edit)
                 } else {
                     RoutineEditStatus(routineID: routineID) { if let draft = link.draft { begin(draft, open: nil) } }
-                    RoutineHeader(name: typeSize.isAccessibilitySize ? routine.name : nil,
-                                  summary: StatsPresenter.summary(routine, history: app.history, settings: app.presenterSettings),
-                                  notes: routine.notes)
+                    RoutineHeader(
+                        name: typeSize.isAccessibilitySize ? routine.name : nil,
+                        summary: StatsPresenter.summary(routine, history: app.history, settings: app.presenterSettings),
+                        notes: routine.notes)
                     Picker("Show", selection: $page) {
                         Text("Plan").tag(Page.plan)
                         Text("Progress").tag(Page.progress)
@@ -68,10 +69,12 @@ struct RoutinePreview: View {
                     case .plan:
                         RoutinePlanCards(plan: plan, beginEdit: canBeginEdit ? { begin(RoutineEditor(routine), open: nil) } : nil)
                         if case .bundled = app.catalogOrigin {
-                            Text("This sample comes with the app and can\u{2019}t be changed. Sign in to your substrate to edit routines or make your own copy.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 4)
+                            Text(
+                                "This sample comes with the app and can\u{2019}t be changed. Sign in to your substrate to edit routines or make your own copy."
+                            )
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
                         }
                     case .progress:
                         StatsProgressView(scope: .routine(routineID))
@@ -123,9 +126,15 @@ struct RoutinePreview: View {
         }
         .confirmsRoutineDelete($deleting) { dismiss() }
         .routineEditor($duplicating)
-        .confirmationDialog(replacingDraft.map { _ in "Discard your unsaved edit of \u{201C}\(link.draft?.routine.name ?? "")\u{201D}?" } ?? "",
-                            isPresented: Binding { replacingDraft != nil } set: { if !$0 { replacingDraft = nil } },
-                            titleVisibility: .visible, presenting: replacingDraft) { pending in
+        .confirmationDialog(
+            replacingDraft.map { _ in "Discard your unsaved edit of \u{201C}\(link.draft?.routine.name ?? "")\u{201D}?" } ?? "",
+            isPresented: Binding {
+                replacingDraft != nil
+            } set: {
+                if !$0 { replacingDraft = nil }
+            },
+            titleVisibility: .visible, presenting: replacingDraft
+        ) { pending in
             Button("Discard and Edit", role: .destructive) {
                 replacingDraft = nil
                 open(pending.editor, set: pending.open)
@@ -200,7 +209,8 @@ private struct RoutineHeader: View {
                 Text(notes)
                     .font(.subheadline)
             }
-            let layout = typeSize.isAccessibilitySize
+            let layout =
+                typeSize.isAccessibilitySize
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
                 : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
             layout {
@@ -267,16 +277,20 @@ private struct RoutineHeader: View {
 #Preview("Editing, a set open") {
     let app = PreviewData.app()
     let routine = PreviewData.catalog.routines[SampleRoutine.id]!
-    let edit = PlanEditState(model: RoutineEditorModel(RoutineEditor(routine)) { _ in },
-                             openSet: routine.slots.first.flatMap { slot in
-                                 slot.sets.first { $0.role == .working }.map { RoutinePlanSetRef(slot: slot.key, set: $0.key) }
-                             })
+    let edit = PlanEditState(
+        model: RoutineEditorModel(RoutineEditor(routine)) { _ in },
+        openSet: routine.slots.first.flatMap { slot in
+            slot.sets.first { $0.role == .working }.map { RoutinePlanSetRef(slot: slot.key, set: $0.key) }
+        })
     NavigationStack {
         ScrollView {
-            RoutinePlanCards(plan: RoutinePlanPresenter.present(routine, exercises: PreviewData.catalog.exercises,
-                                                                history: app.historyIndex),
-                             edit: edit)
-                .padding(16)
+            RoutinePlanCards(
+                plan: RoutinePlanPresenter.present(
+                    routine, exercises: PreviewData.catalog.exercises,
+                    history: app.historyIndex),
+                edit: edit
+            )
+            .padding(16)
         }
         .background(Color(.systemGroupedBackground))
         .planEditing(edit)

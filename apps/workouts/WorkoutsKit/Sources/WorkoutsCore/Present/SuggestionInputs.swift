@@ -18,21 +18,23 @@ public enum SuggestionInputs {
     ///   - history: every finished session; the active one is left out.
     ///   - now: the instant the gap to each past session is counted to.
     ///   - calendar: the owner's calendar, which counts whole local days.
-    public static func suggestion(for row: RowID, in state: SessionState, history: HistoryIndex, now: Date,
-                                  calendar: Calendar) -> Suggestion?
-    {
+    public static func suggestion(
+        for row: RowID, in state: SessionState, history: HistoryIndex, now: Date,
+        calendar: Calendar
+    ) -> Suggestion? {
         SessionEvaluator(state: state, history: history, now: now, calendar: calendar).suggestion(row)
     }
 
     /// Whether ticking `row` with `values` leaves no lighter load for the drop
     /// after it (03 §11.7), which the controller passes as
     /// `CompleteSet.noLighterLoad` so the drops left are removed.
-    public static func noLighterLoad(afterTicking row: RowID, with values: SetValues, in state: SessionState,
-                                     history: HistoryIndex, now: Date, calendar: Calendar) -> Bool
-    {
+    public static func noLighterLoad(
+        afterTicking row: RowID, with values: SetValues, in state: SessionState,
+        history: HistoryIndex, now: Date, calendar: Calendar
+    ) -> Bool {
         guard let current = state.rows[row], current.isPending,
-              let next = state.chain(of: row).first(where: { $0.chainPosition == current.chainPosition + 1 }),
-              next.structure == .drop, next.side == nil
+            let next = state.chain(of: row).first(where: { $0.chainPosition == current.chainPosition + 1 }),
+            next.structure == .drop, next.side == nil
         else { return false }
         var ticked = state
         ticked.rows[row]?.performed = Performed(recordID: SetID("pending"), completedAt: now, values: values)
@@ -111,9 +113,10 @@ public enum SuggestionInputs {
     /// `myoActivation`; a timed exercise's set `timed`; `failure` when it
     /// reached failure or its termination is failure or AMRAP; else `normal`.
     /// A side chain's records are one set of the head's kind.
-    public static func kind(role: Role, isSegment: Bool, side: Side?, structure: Structure, measurement: MeasurementType,
-                            reachedFailure: Bool, termination: Termination?) -> SuggestKind
-    {
+    public static func kind(
+        role: Role, isSegment: Bool, side: Side?, structure: Structure, measurement: MeasurementType,
+        reachedFailure: Bool, termination: Termination?
+    ) -> SuggestKind {
         if role == .warmup { return .warmup }
         if isSegment, side == nil {
             switch structure {
@@ -136,11 +139,12 @@ public enum SuggestionInputs {
     /// its kind was switched to failure or AMRAP.
     public static func target(_ target: SetTarget?, termination: Termination?, config: ExerciseConfig) -> Target03 {
         guard let target else { return Target03(openTop: termination == .amrap || termination == .failure) }
-        let load: Mass? = switch config.mode {
-        case .external, .bodyweightAdded: target.load
-        case .bodyweightAssisted: target.assistance
-        case .none: nil
-        }
+        let load: Mass? =
+            switch config.mode {
+            case .external, .bodyweightAdded: target.load
+            case .bodyweightAssisted: target.assistance
+            case .none: nil
+            }
         let term = termination ?? target.termination
         return Target03(
             repsMin: target.repsMin,
@@ -162,7 +166,7 @@ public enum SuggestionInputs {
     /// default range, so its load holds for the clusters after it.
     static func clusterHead(_ target: Target03, structure: Structure, isHead: Bool) -> Target03 {
         guard isHead, structure == .cluster, target.repsMin == nil, target.repsMax == nil,
-              let reps = target.myoMiniReps
+            let reps = target.myoMiniReps
         else { return target }
         var target = target
         target.repsMin = reps
@@ -176,17 +180,19 @@ public enum SuggestionInputs {
     /// sessions with sets of it on no setup (V1), newest first, without the
     /// active session and deload sessions, the six newest within 180 days
     /// of `now`.
-    public static func history(of exercise: Exercise, config: ExerciseConfig, index: HistoryIndex,
-                               excluding active: SessionID?, now: Date, calendar: Calendar) -> [PastSession]
-    {
+    public static func history(
+        of exercise: Exercise, config: ExerciseConfig, index: HistoryIndex,
+        excluding active: SessionID?, now: Date, calendar: Calendar
+    ) -> [PastSession] {
         index.history(of: exercise.id, setup: nil, excluding: active)
             .lazy
             .filter { $0.session.deload != true }
             .filter { SuggestMath.days(from: $0.session.at, to: now, calendar: calendar) <= historyDays }
             .prefix(historySessions)
             .map { entry in
-                PastSession(start: entry.session.at, bodyMass: entry.session.bodyMass.map(kilograms),
-                            sets: doneSets(entry.sets, exercise: exercise, config: config))
+                PastSession(
+                    start: entry.session.at, bodyMass: entry.session.bodyMass.map(kilograms),
+                    sets: doneSets(entry.sets, exercise: exercise, config: config))
             }
     }
 
@@ -207,16 +213,19 @@ public enum SuggestionInputs {
             // method of the field it came from, so it stays no rating.
             let rated = set.ratedRPE
             let unrated = set.unratedRPE
-            let values = SetValues(load: set.load, assistance: set.assistance, reps: set.reps, duration: set.duration,
-                                   distance: set.distance, rpe: rated ?? unrated?.value,
-                                   rpeMethod: rated == nil ? unrated?.method : .entered, reachedFailure: set.reachedFailure)
-            let kind = kind(role: head.role, isSegment: set.continues != nil, side: set.side, structure: head.structure,
-                            measurement: exercise.measurement, reachedFailure: set.reachedFailure == true,
-                            termination: head.target?.termination)
+            let values = SetValues(
+                load: set.load, assistance: set.assistance, reps: set.reps, duration: set.duration,
+                distance: set.distance, rpe: rated ?? unrated?.value,
+                rpeMethod: rated == nil ? unrated?.method : .entered, reachedFailure: set.reachedFailure)
+            let kind = kind(
+                role: head.role, isSegment: set.continues != nil, side: set.side, structure: head.structure,
+                measurement: exercise.measurement, reachedFailure: set.reachedFailure == true,
+                termination: head.target?.termination)
             let copied = target(set.target ?? head.target, termination: head.target?.termination, config: config)
-            let done = doneSet(kind: kind, values: values, side: set.side, config: config,
-                               target: clusterHead(copied, structure: head.structure, isHead: set.continues == nil),
-                               completedAt: set.at, ordinal: ordinals[set.id])
+            let done = doneSet(
+                kind: kind, values: values, side: set.side, config: config,
+                target: clusterHead(copied, structure: head.structure, isHead: set.continues == nil),
+                completedAt: set.at, ordinal: ordinals[set.id])
             if set.side != nil, let index = pairs[headID] {
                 result[index] = merged(result[index], with: done)
             } else {
@@ -236,14 +245,16 @@ public enum SuggestionInputs {
     /// `repsRight`, so a lone side reads as 03 §13's "one side logged". Its
     /// RPE is the rated one; a pre-filled or copied value is kept apart
     /// (`unratedRPE`) and read as none.
-    static func doneSet(kind: SuggestKind, values: SetValues, side: Side?, config: ExerciseConfig, target: Target03,
-                        completedAt: Date, ordinal: Int?) -> DoneSet
-    {
-        let load: Mass? = switch config.mode {
-        case .external, .bodyweightAdded: values.load
-        case .bodyweightAssisted: values.assistance
-        case .none: nil
-        }
+    static func doneSet(
+        kind: SuggestKind, values: SetValues, side: Side?, config: ExerciseConfig, target: Target03,
+        completedAt: Date, ordinal: Int?
+    ) -> DoneSet {
+        let load: Mass? =
+            switch config.mode {
+            case .external, .bodyweightAdded: values.load
+            case .bodyweightAssisted: values.assistance
+            case .none: nil
+            }
         return DoneSet(
             kind: kind,
             load: load?.value.double,

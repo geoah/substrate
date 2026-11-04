@@ -64,8 +64,9 @@ public struct Ledger: Controller {
         style.locale = input.locale
         style.timeZone = input.timeZone
         let count = input.state.rows.rows.count
-        return Presentation(rows: input.state.rows, count: count == 1 ? "1 row" : "\(count) rows", drawn: Ledger.epoch.formatted(style),
-                            note: input.state.note)
+        return Presentation(
+            rows: input.state.rows, count: count == 1 ? "1 row" : "\(count) rows", drawn: Ledger.epoch.formatted(style),
+            note: input.state.note)
     }
 
     /// The instant `drawn` words, fixed so a test reads only the locale's

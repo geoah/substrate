@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// One routine in the list (DESIGN.md §7.2): its name, its exercises in two
 /// lines at most, when it was last done, and Start. Tapping the text opens

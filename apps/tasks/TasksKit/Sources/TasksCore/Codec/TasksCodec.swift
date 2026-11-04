@@ -32,8 +32,9 @@ public enum TasksCodec {
     }
 
     public static func list(_ record: Record) -> TaskList {
-        TaskList(id: record.id, name: record.properties["name"]?.text ?? "", position: decimal(record.properties["position"]),
-                 version: record.version > 0 ? record.version : nil)
+        TaskList(
+            id: record.id, name: record.properties["name"]?.text ?? "", position: decimal(record.properties["position"]),
+            version: record.version > 0 ? record.version : nil)
     }
 
     /// A list's id from a task's `list`: `{ref: <kind>/<id>}` as served, or

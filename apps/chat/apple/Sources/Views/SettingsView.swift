@@ -54,16 +54,16 @@ struct SettingsView: View {
                 host.send(.readSettings)
                 let supported = await SpeechTranscriber.supportedLocales
                 locales = supported.sorted {
-                    (Locale.current.localizedString(forIdentifier: $0.identifier) ?? "") <
-                        (Locale.current.localizedString(forIdentifier: $1.identifier) ?? "")
+                    (Locale.current.localizedString(forIdentifier: $0.identifier) ?? "") < (Locale.current.localizedString(forIdentifier: $1.identifier) ?? "")
                 }
             }
         }
     }
 
     private var about: AboutPresentation {
-        AboutPresentation.present(appName: ChatManifest.appName, version: updates.build.version,
-                                  channel: updates.enabled ? updates.build.channel : nil, offered: nil)
+        AboutPresentation.present(
+            appName: ChatManifest.appName, version: updates.build.version,
+            channel: updates.enabled ? updates.build.channel : nil, offered: nil)
     }
 
     private func send(_ command: SettingsCommand) {
@@ -84,16 +84,21 @@ struct SettingsView: View {
 
     @ViewBuilder private func assistants(_ section: AssistantsSection) -> some View {
         Section {
-            Picker(section.defaultLabel, selection: Binding(
-                get: { section.defaultChoice },
-                set: { host.send(.settings(.choose(row: .app("defaultAgent"), option: $0))) })) {
+            Picker(
+                section.defaultLabel,
+                selection: Binding(
+                    get: { section.defaultChoice },
+                    set: { host.send(.settings(.choose(row: .app("defaultAgent"), option: $0))) })
+            ) {
                 ForEach(section.defaultOptions) { Text($0.label).tag($0.id) }
             }
             ForEach(section.rows) { row in
-                AssistantRowView(row: row,
-                                 offered: Binding(get: { row.offered },
-                                                  set: { host.send(.settings(.toggle(row: .app("agent:\(row.id)"), on: $0))) }),
-                                 addKey: { keySheet = host.chats?.keys[$0] })
+                AssistantRowView(
+                    row: row,
+                    offered: Binding(
+                        get: { row.offered },
+                        set: { host.send(.settings(.toggle(row: .app("agent:\(row.id)"), on: $0))) }),
+                    addKey: { keySheet = host.chats?.keys[$0] })
             }
             if let empty = section.empty {
                 Text(empty).foregroundStyle(.secondary)
@@ -125,9 +130,12 @@ struct SettingsView: View {
     /// The languages are the device's speech models, which only it knows.
     private func voice(_ settings: ChatSettingsPresentation) -> some View {
         Section {
-            Picker("Language", selection: Binding(
-                get: { settings.voiceLocale ?? "" },
-                set: { host.send(.settings(.choose(row: .app("voiceLocale"), option: $0))) })) {
+            Picker(
+                "Language",
+                selection: Binding(
+                    get: { settings.voiceLocale ?? "" },
+                    set: { host.send(.settings(.choose(row: .app("voiceLocale"), option: $0))) })
+            ) {
                 Text("This device's").tag("")
                 ForEach(locales, id: \.identifier) { locale in
                     Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)

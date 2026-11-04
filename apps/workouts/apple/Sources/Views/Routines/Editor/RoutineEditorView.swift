@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// Where an edit's stack goes: a plain exercise, a group, a planned set.
 enum RoutineEditorRoute: Hashable {
@@ -30,9 +30,11 @@ struct RoutineEditorView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     RoutineDetailsFields(model: model)
-                    RoutinePlanCards(plan: RoutinePlanPresenter.present(model.routine, exercises: app.exercises, history: app.historyIndex,
-                                                                        rests: app.settings.session),
-                                     edit: edit)
+                    RoutinePlanCards(
+                        plan: RoutinePlanPresenter.present(
+                            model.routine, exercises: app.exercises, history: app.historyIndex,
+                            rests: app.settings.session),
+                        edit: edit)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)

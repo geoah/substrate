@@ -19,10 +19,11 @@ public final class ScriptedBrowser: BrowserSignIn {
     }
 
     public func prepare(_ route: SignInRoute) async throws -> SignInRedirect {
-        let redirect = switch route {
-        case let .claimed(url): SignInRedirect(route: route, uri: url.absoluteString)
-        case let .loopback(_, path): SignInRedirect(route: route, uri: "http://127.0.0.1:\(Self.loopbackPort)\(path)")
-        }
+        let redirect =
+            switch route {
+            case let .claimed(url): SignInRedirect(route: route, uri: url.absoluteString)
+            case let .loopback(_, path): SignInRedirect(route: route, uri: "http://127.0.0.1:\(Self.loopbackPort)\(path)")
+            }
         prepared.append(redirect)
         return redirect
     }

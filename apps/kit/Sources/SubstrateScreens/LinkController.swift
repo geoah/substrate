@@ -86,9 +86,10 @@ public struct LinkController<App: LinkedApp>: Controller {
     public let offers: Set<AccessAction.Offer>
     public let checkInterval: TimeInterval
 
-    public init(app: App, manifest: AppManifest, sessions: SessionStore, outbox: Outbox? = nil, packages: [String: Int] = [:],
-                words: StatusWords, offers: Set<AccessAction.Offer> = Set(AccessAction.Offer.allCases), checkInterval: TimeInterval = 300)
-    {
+    public init(
+        app: App, manifest: AppManifest, sessions: SessionStore, outbox: Outbox? = nil, packages: [String: Int] = [:],
+        words: StatusWords, offers: Set<AccessAction.Offer> = Set(AccessAction.Offer.allCases), checkInterval: TimeInterval = 300
+    ) {
         self.app = app
         self.manifest = manifest
         self.sessions = sessions
@@ -102,10 +103,11 @@ public struct LinkController<App: LinkedApp>: Controller {
 
     /// A link whose outbox is the signed-in repository's own, made or
     /// found by `outboxes` each time an effect needs it.
-    public init(app: App, manifest: AppManifest, sessions: SessionStore, outboxes: @escaping @Sendable (SessionFacts) -> Outbox?,
-                packages: [String: Int] = [:], words: StatusWords, offers: Set<AccessAction.Offer> = Set(AccessAction.Offer.allCases),
-                checkInterval: TimeInterval = 300)
-    {
+    public init(
+        app: App, manifest: AppManifest, sessions: SessionStore, outboxes: @escaping @Sendable (SessionFacts) -> Outbox?,
+        packages: [String: Int] = [:], words: StatusWords, offers: Set<AccessAction.Offer> = Set(AccessAction.Offer.allCases),
+        checkInterval: TimeInterval = 300
+    ) {
         self.app = app
         self.manifest = manifest
         self.sessions = sessions
@@ -349,9 +351,10 @@ public struct LinkController<App: LinkedApp>: Controller {
         }
     }
 
-    private static func relay<Element: Sendable>(_ source: AsyncStream<Element>,
-                                                 as event: @escaping @Sendable (Element) -> Event) -> AsyncStream<Event>
-    {
+    private static func relay<Element: Sendable>(
+        _ source: AsyncStream<Element>,
+        as event: @escaping @Sendable (Element) -> Event
+    ) -> AsyncStream<Event> {
         AsyncStream { continuation in
             let task = Task {
                 for await element in source { continuation.yield(event(element)) }
@@ -368,10 +371,11 @@ public struct LinkController<App: LinkedApp>: Controller {
     public func link(in state: LinkState) -> LinkSnapshot? { snapshot(of: state) }
 
     public func snapshot(of state: LinkState) -> LinkSnapshot {
-        LinkSnapshot(phase: state.session == nil ? .signedOut : state.accessEnded ? .accessEnded : .signedIn,
-                     server: state.session?.server, repository: state.session?.repository, scopes: state.session?.scopes,
-                     accessEnds: state.session?.expiresAt, generation: state.generation, online: state.network?.online,
-                     packages: state.packages.compactMapValues(\.held), waiting: state.outbox.waiting, refused: state.outbox.parked.count)
+        LinkSnapshot(
+            phase: state.session == nil ? .signedOut : state.accessEnded ? .accessEnded : .signedIn,
+            server: state.session?.server, repository: state.session?.repository, scopes: state.session?.scopes,
+            accessEnds: state.session?.expiresAt, generation: state.generation, online: state.network?.online,
+            packages: state.packages.compactMapValues(\.held), waiting: state.outbox.waiting, refused: state.outbox.parked.count)
     }
 
     // MARK: The presenter
@@ -395,22 +399,28 @@ public struct LinkController<App: LinkedApp>: Controller {
             standing.append(.needsApproval(changes: []))
         }
         let standings = standings(in: state)
-        let status = LinkStatus.derive(signedIn: state.session != nil, packages: standings, outbox: state.outbox.state,
-                                       waiting: state.outbox.waiting, issues: standing,
-                                       notKept: state.outbox.problem ?? input.journalProblem ?? input.childJournalProblem)
-        let statusPresentation = StatusPresenter.present(status, words: words, host: host, packages: standings, sending: state.sending,
-                                                         waiting: state.outbox.waiting, parked: state.outbox.parked,
-                                                         kindLabels: manifest.kindLabels.mapValues(\.singular),
-                                                         locale: input.locale, timeZone: input.timeZone)
+        let status = LinkStatus.derive(
+            signedIn: state.session != nil, packages: standings, outbox: state.outbox.state,
+            waiting: state.outbox.waiting, issues: standing,
+            notKept: state.outbox.problem ?? input.journalProblem ?? input.childJournalProblem)
+        let statusPresentation = StatusPresenter.present(
+            status, words: words, host: host, packages: standings, sending: state.sending,
+            waiting: state.outbox.waiting, parked: state.outbox.parked,
+            kindLabels: manifest.kindLabels.mapValues(\.singular),
+            locale: input.locale, timeZone: input.timeZone)
         let repository = state.session.map {
-            RepositoryPresenter.present(session: $0, manifest: manifest, serverVersion: state.status?.serverVersion, unrevoked: state.unrevoked,
-                                        offersChangeAccess: offers.contains(.review), signOutMessage: words.signOut, locale: input.locale,
-                                        timeZone: input.timeZone)
+            RepositoryPresenter.present(
+                session: $0, manifest: manifest, serverVersion: state.status?.serverVersion, unrevoked: state.unrevoked,
+                offersChangeAccess: offers.contains(.review), signOutMessage: words.signOut, locale: input.locale,
+                timeZone: input.timeZone)
         }
         return LinkPresentation(
             snapshot: snapshot(of: state), repository: repository,
-            banner: host.flatMap { AccessPresenter.banner(issues: issues.filter { $0 != .accessEnded }, appName: manifest.appName, host: $0,
-                                                           offers: offers, now: input.now, locale: input.locale, timeZone: input.timeZone) },
+            banner: host.flatMap {
+                AccessPresenter.banner(
+                    issues: issues.filter { $0 != .accessEnded }, appName: manifest.appName, host: $0,
+                    offers: offers, now: input.now, locale: input.locale, timeZone: input.timeZone)
+            },
             ended: state.accessEnded ? AccessPresenter.ended(appName: manifest.appName, host: host ?? "Your server") : nil,
             status: statusPresentation,
             signOutProblem: state.signOutProblem.map { ProblemPresentation(title: "Couldn't sign out", message: $0) },
@@ -420,10 +430,12 @@ public struct LinkController<App: LinkedApp>: Controller {
 
 public extension LinkController where App == NoApp {
     /// A link with no app under it: a test, a preview.
-    init(manifest: AppManifest, sessions: SessionStore, outbox: Outbox? = nil, packages: [String: Int] = [:], words: StatusWords,
-         offers: Set<AccessAction.Offer> = Set(AccessAction.Offer.allCases), checkInterval: TimeInterval = 300)
-    {
-        self.init(app: NoApp(), manifest: manifest, sessions: sessions, outbox: outbox, packages: packages, words: words, offers: offers,
-                  checkInterval: checkInterval)
+    init(
+        manifest: AppManifest, sessions: SessionStore, outbox: Outbox? = nil, packages: [String: Int] = [:], words: StatusWords,
+        offers: Set<AccessAction.Offer> = Set(AccessAction.Offer.allCases), checkInterval: TimeInterval = 300
+    ) {
+        self.init(
+            app: NoApp(), manifest: manifest, sessions: sessions, outbox: outbox, packages: packages, words: words, offers: offers,
+            checkInterval: checkInterval)
     }
 }

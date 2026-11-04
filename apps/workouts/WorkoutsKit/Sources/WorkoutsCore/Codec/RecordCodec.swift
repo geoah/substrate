@@ -252,27 +252,32 @@ public extension RecordCodec {
         w.bool("deload", routine.deload)
         w.enumeration("activityType", routine.activityType)
         let groupFields = routineSchema.fields("groups")
-        w.objects("groups", routine.groups.map { group in
-            encodeGroup(key: group.key, groupKind: group.groupKind, pairing: group.pairing, rounds: group.rounds,
-                        roundRest: group.roundRest, extra: group.extra, fields: groupFields)
-        })
+        w.objects(
+            "groups",
+            routine.groups.map { group in
+                encodeGroup(
+                    key: group.key, groupKind: group.groupKind, pairing: group.pairing, rounds: group.rounds,
+                    roundRest: group.roundRest, extra: group.extra, fields: groupFields)
+            })
         let slotFields = routineSchema.fields("slots")
         let setFields = routineSchema.fields("slots", "sets")
-        w.objects("slots", routine.slots.map { slot in
-            var s = PropertyWriter(schema: slotFields, extra: slot.extra)
-            s.string("key", slot.key)
-            s.reference("exercise", kind: kinds.exercise, id: slot.exercise.rawValue)
-            s.string("group", slot.group)
-            s.duration("setRest", slot.setRest)
-            s.duration("warmupRest", slot.warmupRest)
-            s.duration("transition", slot.transition)
-            s.duration("sideSwitch", slot.sideSwitch)
-            s.enumeration("sideOrder", slot.sideOrder)
-            s.bool("sideMatch", slot.sideMatch)
-            s.string("notes", slot.notes)
-            s.objects("sets", slot.sets.map { encodePlannedSet($0, fields: setFields) })
-            return s.finish()
-        })
+        w.objects(
+            "slots",
+            routine.slots.map { slot in
+                var s = PropertyWriter(schema: slotFields, extra: slot.extra)
+                s.string("key", slot.key)
+                s.reference("exercise", kind: kinds.exercise, id: slot.exercise.rawValue)
+                s.string("group", slot.group)
+                s.duration("setRest", slot.setRest)
+                s.duration("warmupRest", slot.warmupRest)
+                s.duration("transition", slot.transition)
+                s.duration("sideSwitch", slot.sideSwitch)
+                s.enumeration("sideOrder", slot.sideOrder)
+                s.bool("sideMatch", slot.sideMatch)
+                s.string("notes", slot.notes)
+                s.objects("sets", slot.sets.map { encodePlannedSet($0, fields: setFields) })
+                return s.finish()
+            })
         return FlatRecord(kind: kinds.routine, id: routine.id.rawValue, properties: w.finish(), version: routine.version)
     }
 }
@@ -372,9 +377,10 @@ extension RecordCodec {
         return group
     }
 
-    func encodeGroup(key: String, groupKind: GroupKind, pairing: Pairing?, rounds: Int?, roundRest: Seconds?,
-                     extra: [String: JSONValue], fields: [PropertySchema]) -> JSONObject
-    {
+    func encodeGroup(
+        key: String, groupKind: GroupKind, pairing: Pairing?, rounds: Int?, roundRest: Seconds?,
+        extra: [String: JSONValue], fields: [PropertySchema]
+    ) -> JSONObject {
         var g = PropertyWriter(schema: fields, extra: extra)
         g.string("key", key)
         g.enumeration("groupKind", groupKind)
@@ -424,8 +430,9 @@ public extension RecordCodec {
             },
             groups: r.objects("groups") { (g: inout PropertyReader) throws(CodecError) in
                 let group = try Self.decodeGroup(&g)
-                return SessionGroup(key: group.key, groupKind: group.groupKind, pairing: group.pairing, rounds: group.rounds,
-                                    roundRest: group.roundRest, extra: group.extra)
+                return SessionGroup(
+                    key: group.key, groupKind: group.groupKind, pairing: group.pairing, rounds: group.rounds,
+                    roundRest: group.roundRest, extra: group.extra)
             },
             pauses: r.objects("pauses") { (p: inout PropertyReader) throws(CodecError) in
                 var pause = try Pause(start: p.requiredDatetime("start"), end: p.datetime("end"))
@@ -465,32 +472,39 @@ public extension RecordCodec {
         w.enumeration("activityType", session.activityType)
         let slotFields = sessionSchema.fields("slots")
         let setFields = sessionSchema.fields("slots", "sets")
-        w.objects("slots", session.slots.map { slot in
-            var s = PropertyWriter(schema: slotFields, extra: slot.extra)
-            s.string("key", slot.key)
-            s.reference("exercise", kind: kinds.exercise, id: slot.exercise.rawValue)
-            s.string("group", slot.group)
-            s.string("routineSlot", slot.routineSlot)
-            s.string("notes", slot.notes)
-            s.duration("setRest", slot.setRest)
-            s.duration("warmupRest", slot.warmupRest)
-            s.duration("transition", slot.transition)
-            s.duration("sideSwitch", slot.sideSwitch)
-            s.objects("sets", slot.sets.map { encodePlannedSet($0, fields: setFields) })
-            return s.finish()
-        })
+        w.objects(
+            "slots",
+            session.slots.map { slot in
+                var s = PropertyWriter(schema: slotFields, extra: slot.extra)
+                s.string("key", slot.key)
+                s.reference("exercise", kind: kinds.exercise, id: slot.exercise.rawValue)
+                s.string("group", slot.group)
+                s.string("routineSlot", slot.routineSlot)
+                s.string("notes", slot.notes)
+                s.duration("setRest", slot.setRest)
+                s.duration("warmupRest", slot.warmupRest)
+                s.duration("transition", slot.transition)
+                s.duration("sideSwitch", slot.sideSwitch)
+                s.objects("sets", slot.sets.map { encodePlannedSet($0, fields: setFields) })
+                return s.finish()
+            })
         let groupFields = sessionSchema.fields("groups")
-        w.objects("groups", session.groups.map { group in
-            encodeGroup(key: group.key, groupKind: group.groupKind, pairing: group.pairing, rounds: group.rounds,
-                        roundRest: group.roundRest, extra: group.extra, fields: groupFields)
-        })
+        w.objects(
+            "groups",
+            session.groups.map { group in
+                encodeGroup(
+                    key: group.key, groupKind: group.groupKind, pairing: group.pairing, rounds: group.rounds,
+                    roundRest: group.roundRest, extra: group.extra, fields: groupFields)
+            })
         let pauseFields = sessionSchema.fields("pauses")
-        w.objects("pauses", session.pauses.map { pause in
-            var p = PropertyWriter(schema: pauseFields, extra: pause.extra)
-            p.datetime("start", pause.start)
-            p.datetime("end", pause.end)
-            return p.finish()
-        })
+        w.objects(
+            "pauses",
+            session.pauses.map { pause in
+                var p = PropertyWriter(schema: pauseFields, extra: pause.extra)
+                p.datetime("start", pause.start)
+                p.datetime("end", pause.end)
+                return p.finish()
+            })
         w.int("utcOffsetStart", session.utcOffsetStart)
         w.int("utcOffsetEnd", session.utcOffsetEnd)
         w.string("timezone", session.timezone)
@@ -642,37 +656,39 @@ public extension RecordCodec {
         w.enumeration("restMethod", set.restMethod)
         w.duration("restPlanned", set.restPlanned)
         w.bool("restSkipped", set.restSkipped)
-        w.object("target", set.target.map { target in
-            var t = PropertyWriter(schema: setSchema.fields("target"), extra: target.extra)
-            t.string("plannedSet", target.plannedSet)
-            t.enumeration("termination", target.termination)
-            t.int("repsMin", target.repsMin)
-            t.int("repsMax", target.repsMax)
-            t.mass("load", target.load)
-            t.decimal("loadPercent", target.loadPercent)
-            t.enumeration("loadReference", target.loadReference)
-            t.mass("referenceLoad", target.referenceLoad)
-            t.mass("assistance", target.assistance)
-            t.decimal("rpeMin", target.rpeMin)
-            t.decimal("rpeMax", target.rpeMax)
-            t.decimal("rirMin", target.rirMin)
-            t.decimal("rirMax", target.rirMax)
-            t.duration("durationMin", target.durationMin)
-            t.duration("durationMax", target.durationMax)
-            t.enumeration("timerMode", target.timerMode)
-            t.length("distance", target.distance)
-            t.string("tempo", target.tempo)
-            t.int("miniSetReps", target.miniSetReps)
-            t.int("miniSets", target.miniSets)
-            t.enumeration("myoStopRule", target.myoStopRule)
-            t.int("totalReps", target.totalReps)
-            t.int("drops", target.drops)
-            t.decimal("dropPercent", target.dropPercent)
-            t.mass("dropStep", target.dropStep)
-            t.int("dropReps", target.dropReps)
-            t.duration("intraSetPause", target.intraSetPause)
-            return t.finish()
-        })
+        w.object(
+            "target",
+            set.target.map { target in
+                var t = PropertyWriter(schema: setSchema.fields("target"), extra: target.extra)
+                t.string("plannedSet", target.plannedSet)
+                t.enumeration("termination", target.termination)
+                t.int("repsMin", target.repsMin)
+                t.int("repsMax", target.repsMax)
+                t.mass("load", target.load)
+                t.decimal("loadPercent", target.loadPercent)
+                t.enumeration("loadReference", target.loadReference)
+                t.mass("referenceLoad", target.referenceLoad)
+                t.mass("assistance", target.assistance)
+                t.decimal("rpeMin", target.rpeMin)
+                t.decimal("rpeMax", target.rpeMax)
+                t.decimal("rirMin", target.rirMin)
+                t.decimal("rirMax", target.rirMax)
+                t.duration("durationMin", target.durationMin)
+                t.duration("durationMax", target.durationMax)
+                t.enumeration("timerMode", target.timerMode)
+                t.length("distance", target.distance)
+                t.string("tempo", target.tempo)
+                t.int("miniSetReps", target.miniSetReps)
+                t.int("miniSets", target.miniSets)
+                t.enumeration("myoStopRule", target.myoStopRule)
+                t.int("totalReps", target.totalReps)
+                t.int("drops", target.drops)
+                t.decimal("dropPercent", target.dropPercent)
+                t.mass("dropStep", target.dropStep)
+                t.int("dropReps", target.dropReps)
+                t.duration("intraSetPause", target.intraSetPause)
+                return t.finish()
+            })
         w.recordRef("origin", set.origin)
         w.int("revision", set.revision)
         return FlatRecord(kind: kinds.set, id: set.id.rawValue, properties: w.finish())
@@ -731,12 +747,14 @@ extension RecordCodec {
 
     func writeMuscles(_ w: inout PropertyWriter, _ muscles: [MuscleShare], schema: KindSchema) {
         let fields = schema.fields("muscles")
-        w.objects("muscles", muscles.map { share in
-            var m = PropertyWriter(schema: fields, extra: share.extra)
-            m.enumeration("muscle", share.muscle)
-            m.decimal("involvement", share.involvement)
-            return m.finish()
-        })
+        w.objects(
+            "muscles",
+            muscles.map { share in
+                var m = PropertyWriter(schema: fields, extra: share.extra)
+                m.enumeration("muscle", share.muscle)
+                m.decimal("involvement", share.involvement)
+                return m.finish()
+            })
     }
 
     /// `codes[]`, as `observations/metric.codes` spells it.
@@ -755,13 +773,15 @@ extension RecordCodec {
 
     func writeCodes(_ w: inout PropertyWriter, _ codes: [Coding], schema: KindSchema) {
         let fields = schema.fields("codes")
-        w.objects("codes", codes.map { coding in
-            var c = PropertyWriter(schema: fields, extra: coding.extra)
-            c.string("system", coding.system)
-            c.string("code", coding.code)
-            c.string("version", coding.version)
-            c.string("display", coding.display)
-            return c.finish()
-        })
+        w.objects(
+            "codes",
+            codes.map { coding in
+                var c = PropertyWriter(schema: fields, extra: coding.extra)
+                c.string("system", coding.system)
+                c.string("code", coding.code)
+                c.string("version", coding.version)
+                c.string("display", coding.display)
+                return c.finish()
+            })
     }
 }

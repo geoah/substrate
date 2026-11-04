@@ -34,9 +34,10 @@ public struct SessionController: Controller, Equatable {
     /// A preview's session, open from the start.
     public var preview: SessionState?
 
-    public init(catalog: Catalog, history: HistoryIndex, settings: WorkoutsSettings, adapter: String, directory: URL?,
-                preview: SessionState? = nil)
-    {
+    public init(
+        catalog: Catalog, history: HistoryIndex, settings: WorkoutsSettings, adapter: String, directory: URL?,
+        preview: SessionState? = nil
+    ) {
         self.catalog = catalog
         self.history = history
         self.settings = settings
@@ -232,7 +233,7 @@ public struct SessionController: Controller, Equatable {
     /// the banner alerts), or a short one.
     private func countdownCue(_ session: SessionState?, at instant: Date) -> (kind: SessionCue.Kind, onlyOnScreen: Bool)? {
         guard let session, session.phase == .active, let countdown = session.countdown, let end = countdown.endsAt,
-              abs(end.timeIntervalSince(instant)) < 1
+            abs(end.timeIntervalSince(instant)) < 1
         else { return nil }
         if countdown.timedRow != nil { return (.targetReached, false) }
         return countdown.notifies ? (.countdownEnded, true) : (.shortCountdownEnded, false)
@@ -243,16 +244,18 @@ public struct SessionController: Controller, Equatable {
     /// The session in progress is presented with the RPE pre-fill when the
     /// cover shows Rows (§4.14), in the environment's calendar.
     func presenterSettings(calendar: Calendar) -> PresenterSettings {
-        PresenterSettings(calendar: calendar, defaultUnit: settings.defaultUnit, countWarmupsInVolume: settings.countWarmupsInVolume,
-                          prefillsRPE: settings.sessionLayout == .rows)
+        PresenterSettings(
+            calendar: calendar, defaultUnit: settings.defaultUnit, countWarmupsInVolume: settings.countWarmupsInVolume,
+            prefillsRPE: settings.sessionLayout == .rows)
     }
 
     public func present(_ input: PresenterInput<SessionController>) -> SessionScreenPresentation {
         let state = input.state
         let transient = input.transient
         let session = state.session.map {
-            SessionPresenter.present($0, catalog: catalog, history: history, settings: presenterSettings(calendar: input.calendar),
-                                     now: input.now)
+            SessionPresenter.present(
+                $0, catalog: catalog, history: history, settings: presenterSettings(calendar: input.calendar),
+                now: input.now)
         }
         // Rows' Log says the set is in the journal: with the write failed,
         // it is not, and the cover says so instead.

@@ -1,4 +1,5 @@
 import Foundation
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -74,7 +75,8 @@ public struct URLSessionTransport: HTTPTransport {
     public init(session: URLSession) {
         self.session = session
         #if !canImport(Darwin)
-        refusing = session.delegate is RefusingRedirects
+        refusing =
+            session.delegate is RefusingRedirects
             ? session
             : URLSession(configuration: session.configuration, delegate: RefusingRedirects.shared, delegateQueue: nil)
         #endif
@@ -87,9 +89,10 @@ public struct URLSessionTransport: HTTPTransport {
 
     /// A session whose every task refuses redirects, so a stream an app
     /// reads from it directly refuses them too.
-    public static func makeSession(timeout: TimeInterval = 30, resource: TimeInterval? = nil,
-                                   protocolClasses: [AnyClass]? = nil) -> URLSession
-    {
+    public static func makeSession(
+        timeout: TimeInterval = 30, resource: TimeInterval? = nil,
+        protocolClasses: [AnyClass]? = nil
+    ) -> URLSession {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = timeout
         if let resource { config.timeoutIntervalForResource = resource }
@@ -146,16 +149,18 @@ public final class RefusingRedirects: NSObject, URLSessionTaskDelegate, Sendable
     public static let shared = RefusingRedirects()
 
     #if canImport(Darwin)
-    public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                           newRequest request: URLRequest) async -> URLRequest?
-    {
+    public func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
         nil
     }
     #else
     // The open-source URLSession asks with a completion handler alone.
-    public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                           newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void)
-    {
+    public func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
         completionHandler(nil)
     }
     #endif

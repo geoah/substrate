@@ -27,7 +27,7 @@ public extension TasksApp {
         // Asked once there is something to remind of, never at a launch with
         // nothing due: the system asks only once.
         if TasksSettings.reminds(state.settings), state.permission == .notAsked, !out.contains(.askPermission),
-           Self.hasDue(state), !Self.hasDue(previous) || previous.permission != .notAsked
+            Self.hasDue(state), !Self.hasDue(previous) || previous.permission != .notAsked
         {
             out.append(.askPermission)
         }

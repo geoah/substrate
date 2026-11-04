@@ -22,7 +22,8 @@ public struct ParkedWrite: Codable, Hashable, Sendable, Identifiable {
     }
 
     public init(_ entry: OutboxEntry) {
-        self.init(id: entry.id, method: entry.method, kind: entry.kind, recordID: entry.recordID, words: entry.lastError,
-                  conflict: entry.conflict)
+        self.init(
+            id: entry.id, method: entry.method, kind: entry.kind, recordID: entry.recordID, words: entry.lastError,
+            conflict: entry.conflict)
     }
 }

@@ -24,9 +24,8 @@ import dev.reamde.substrate.kit.bridge.ReviewPresentation
 import dev.reamde.substrate.kit.bridge.ReviewSection
 
 /**
- * The review as its presentation words it, before the browser opens: the
- * heading and why, each list of what the app asks for and sets up, and the
- * way on, with Cancel where a sheet's is.
+ * The review as its presentation words it, before the browser opens: the heading and why, each list of what the app asks for and sets up, and the way on, with
+ * Cancel where a sheet's is.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

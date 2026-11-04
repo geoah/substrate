@@ -1,9 +1,10 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
-import SubstrateDevice
 
 public extension SubstrateClient {
     /// `GET /.well-known/substrate/server.json`. An answer that is not a JSON
@@ -19,8 +20,10 @@ public extension SubstrateClient {
     /// `GET /.well-known/oauth-authorization-server`; nil when the server
     /// predates app authorization (a 404) and has only the password door.
     func authorizationServerMetadata() async throws -> AuthorizationServerMetadata? {
-        let response = try await send(request("GET", ".well-known/oauth-authorization-server", timeout: Timeout.quick,
-                                              authorized: false), accept: [404])
+        let response = try await send(
+            request(
+                "GET", ".well-known/oauth-authorization-server", timeout: Timeout.quick,
+                authorized: false), accept: [404])
         if response.status == 404 { return nil }
         return try response.decode(AuthorizationServerMetadata.self)
     }

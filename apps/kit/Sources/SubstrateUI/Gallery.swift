@@ -10,9 +10,11 @@ public enum Gallery {
     public static let renderers: [ScreenKind: @MainActor (FixturePresentation) -> AnyView?] = [
         .connect: { presentation in
             guard case let .connect(connect) = presentation else { return nil }
-            return AnyView(ConnectScreen(connect, text: .constant(connect.field.text), send: { _ in },
-                                         header: { ConnectHeader(appName: ScreenFixtures.manifest.appName, tagline: "Your tasks, in your substrate.") },
-                                         passwordDoor: { _ in PasswordDoorStandIn() }))
+            return AnyView(
+                ConnectScreen(
+                    connect, text: .constant(connect.field.text), send: { _ in },
+                    header: { ConnectHeader(appName: ScreenFixtures.manifest.appName, tagline: "Your tasks, in your substrate.") },
+                    passwordDoor: { _ in PasswordDoorStandIn() }))
         },
         .serverTooOld: { presentation in
             guard case let .serverTooOld(tooOld) = presentation else { return nil }
@@ -52,9 +54,10 @@ public enum Gallery {
         },
         .menu: { presentation in
             guard case let .menu(menu) = presentation else { return nil }
-            return AnyView(AppMenuView(menu, select: { _ in }) { section in
-                DestinationStandIn(section: section)
-            })
+            return AnyView(
+                AppMenuView(menu, select: { _ in }) { section in
+                    DestinationStandIn(section: section)
+                })
         },
     ]
 

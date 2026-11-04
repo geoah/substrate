@@ -27,16 +27,13 @@ import dev.reamde.substrate.kit.StartResult
 import dev.reamde.substrate.kit.bridge.GalleryPresentation
 import dev.reamde.substrate.kit.ui.KitGallery
 import dev.reamde.substrate.kit.ui.KitMark
-import dev.reamde.substrate.kit.ui.KitSection
 import dev.reamde.substrate.kit.ui.KitNavigationRow
 import dev.reamde.substrate.kit.ui.KitRowDivider
+import dev.reamde.substrate.kit.ui.KitSection
 import dev.reamde.substrate.kit.ui.screen
 import kotlinx.coroutines.flow.emptyFlow
 
-/**
- * The gallery: every fixture the `gallery` root presented, by screen, and
- * one of them drawn whole by kit-ui when it is chosen.
- */
+/** The gallery: every fixture the `gallery` root presented, by screen, and one of them drawn whole by kit-ui when it is chosen. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalleryApp(start: StartResult?, opened: String?, open: (String?) -> Unit) {
@@ -53,12 +50,16 @@ fun GalleryApp(start: StartResult?, opened: String?, open: (String?) -> Unit) {
     val fixture = gallery?.fixtures?.firstOrNull { it.name == opened }
     if (fixture != null) {
         BackHandler { open(null) }
-        Scaffold(topBar = {
-            TopAppBar(
-                title = { Text(fixture.name) },
-                navigationIcon = { IconButton(onClick = { open(null) }) { Icon(KitMark.back.icon, contentDescription = "All screens") } },
-            )
-        }) { padding -> Box(Modifier.padding(padding)) { KitGallery.Render(fixture) } }
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(fixture.name) },
+                    navigationIcon = { IconButton(onClick = { open(null) }) { Icon(KitMark.back.icon, contentDescription = "All screens") } },
+                )
+            }
+        ) { padding ->
+            Box(Modifier.padding(padding)) { KitGallery.Render(fixture) }
+        }
         return
     }
     Scaffold(topBar = { TopAppBar(title = { Text("Substrate Gallery") }) }) { padding ->

@@ -6,9 +6,8 @@ import android.os.Bundle
 import java.lang.ref.WeakReference
 
 /**
- * The app's activity in front, if any: what a service that must show the
- * system's own screen (a permission's question, the browser) starts it
- * from, and whether a notification is shown over the app or beside it.
+ * The app's activity in front, if any: what a service that must show the system's own screen (a permission's question, the browser) starts it from, and whether
+ * a notification is shown over the app or beside it.
  */
 internal object ForegroundActivity : Application.ActivityLifecycleCallbacks {
     @Volatile private var resumed: WeakReference<Activity>? = null
@@ -23,7 +22,8 @@ internal object ForegroundActivity : Application.ActivityLifecycleCallbacks {
         app.registerActivityLifecycleCallbacks(this)
     }
 
-    val current: Activity? get() = resumed?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
+    val current: Activity?
+        get() = resumed?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
 
     override fun onActivityResumed(activity: Activity) {
         resumed = WeakReference(activity)

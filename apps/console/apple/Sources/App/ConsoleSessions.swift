@@ -161,7 +161,7 @@ final class ConsoleSessions: ObservableObject {
     /// a sign-in that failed before the server minted anything.
     private func forgetIfUnused(_ server: URL) {
         guard store(for: server).load() == nil, !pageSignIn.contains(server.absoluteString),
-              store(for: server).pendingRevocations().isEmpty
+            store(for: server).pendingRevocations().isEmpty
         else { return }
         known.removeAll { $0 == server }
         defaults.set(known.map(\.absoluteString), forKey: Self.knownKey)

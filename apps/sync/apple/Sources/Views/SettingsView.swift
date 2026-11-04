@@ -16,8 +16,9 @@ struct SettingsView: View {
     var body: some View {
         Form {
             if let session = model.session, session.isApp {
-                AccountSection(session: session, manifest: try? model.manifest(), serverVersion: model.status.status?.serverVersion,
-                               unrevoked: model.unrevoked, onChangeAccess: { changingAccess = true }, onSignOut: { model.signOut() })
+                AccountSection(
+                    session: session, manifest: try? model.manifest(), serverVersion: model.status.status?.serverVersion,
+                    unrevoked: model.unrevoked, onChangeAccess: { changingAccess = true }, onSignOut: { model.signOut() })
             } else if let session = model.session {
                 Section("Account") {
                     LabeledContent("Repository", value: session.repository)
@@ -107,12 +108,13 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .sheet(isPresented: $changingAccess) {
             if let session = model.session, let manifest = try? model.manifest() {
-                ReviewChangesSheet(changingAccessFor: manifest, session: session, changes: model.reviewChanges,
-                                   onContinue: {
-                                       changingAccess = false
-                                       Task { await model.authorize() }
-                                   },
-                                   onCancel: { changingAccess = false })
+                ReviewChangesSheet(
+                    changingAccessFor: manifest, session: session, changes: model.reviewChanges,
+                    onContinue: {
+                        changingAccess = false
+                        Task { await model.authorize() }
+                    },
+                    onCancel: { changingAccess = false })
             }
         }
     }

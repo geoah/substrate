@@ -18,21 +18,16 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * The gallery as a check (docs/plans/app-kit.md §7.4): every fixture Swift
- * wrote (`fixtures/screens.json`, from `ScreenFixtures.all`) drawn by its
- * screen's composable on the JVM, one test each, at the size SubstrateUI's
- * gallery draws an iPhone in (393 by 852, twice over), in light mode. A
- * screen without a composable fails here. Each is written as
- * `<fixture>.png` under the folder `-Psubstrate.gallery` names, else under
- * build/. The clock stands still, so a busy screen's spinner is drawn
- * rather than waited out.
+ * The gallery as a check (docs/plans/app-kit.md §7.4): every fixture Swift wrote (`fixtures/screens.json`, from `ScreenFixtures.all`) drawn by its screen's
+ * composable on the JVM, one test each, at the size SubstrateUI's gallery draws an iPhone in (393 by 852, twice over), in light mode. A screen without a
+ * composable fails here. Each is written as `<fixture>.png` under the folder `-Psubstrate.gallery` names, else under build/. The clock stands still, so a busy
+ * screen's spinner is drawn rather than waited out.
  */
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w393dp-h852dp-xhdpi")
 class KitGalleryTest(@Suppress("unused") private val name: String, private val fixture: ScreenFixture) {
-    @get:Rule
-    val compose = createComposeRule()
+    @get:Rule val compose = createComposeRule()
 
     @Test
     fun theFixtureDraws() {
@@ -53,7 +48,8 @@ class KitGalleryTest(@Suppress("unused") private val name: String, private val f
         @JvmStatic
         @ParameterizedRobolectricTestRunner.Parameters(name = "{0}")
         fun fixtures(): List<Array<Any>> =
-            BridgeJson.decodeFromString(ListSerializer(ScreenFixture.serializer()), File(System.getProperty("substrate.screens.fixtures")).readText())
-                .map { arrayOf(it.name, it) }
+            BridgeJson.decodeFromString(ListSerializer(ScreenFixture.serializer()), File(System.getProperty("substrate.screens.fixtures")).readText()).map {
+                arrayOf(it.name, it)
+            }
     }
 }

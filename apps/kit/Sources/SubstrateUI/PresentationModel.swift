@@ -57,8 +57,10 @@ public final class PresentationModel<Root: Controller> {
     /// state until the runtime publishes (at once, once it has folded its
     /// journal on its own executor).
     public convenience init(_ root: Root, environment: AppEnvironment, options: RuntimeOptions = RuntimeOptions()) {
-        let first = root.present(PresenterInput(state: root.initialState, transient: root.initialTransient, now: environment.clock.now,
-                                                locale: environment.locale, timeZone: environment.timeZone))
+        let first = root.present(
+            PresenterInput(
+                state: root.initialState, transient: root.initialTransient, now: environment.clock.now,
+                locale: environment.locale, timeZone: environment.timeZone))
         self.init(Runtime(root, environment: environment, options: options), first: first)
         ownsRuntime = true
     }

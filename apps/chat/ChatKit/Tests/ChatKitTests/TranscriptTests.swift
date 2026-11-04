@@ -1,10 +1,11 @@
 import Foundation
-import Testing
-@testable import ChatKit
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
+import Testing
+
+@testable import ChatKit
 
 private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     Record(id: id, kind: Kinds.message, properties: props, createdAt: "2026-10-31T10:00:00Z")
@@ -14,10 +15,15 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     @Test func toolRowsFoldIntoTheirCallsByID() {
         let rows = [
             message("u", ["role": "user", "content": "find it", "turn": 1]),
-            message("a", ["role": "assistant", "content": "", "turn": 2, "toolCalls": [
-                ["id": "c1", "name": "query", "arguments": "{\"q\":\"a\"}"],
-                ["id": "c2", "name": "query", "arguments": "{\"q\":\"b\"}"],
-            ]]),
+            message(
+                "a",
+                [
+                    "role": "assistant", "content": "", "turn": 2,
+                    "toolCalls": [
+                        ["id": "c1", "name": "query", "arguments": "{\"q\":\"a\"}"],
+                        ["id": "c2", "name": "query", "arguments": "{\"q\":\"b\"}"],
+                    ],
+                ]),
             // Settled out of order: pairing by name would settle the wrong card.
             message("t2", ["role": "tool", "toolCallId": "c2", "name": "query", "content": "{\"records\":[]}", "turn": 3]),
             message("t1", ["role": "tool", "toolCallId": "c1", "name": "query", "content": "{\"error\":\"nope\"}", "turn": 4]),
@@ -50,7 +56,13 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     @Test func summaryAndSystemTurnsStandAlone() {
         let rows = [
             message("s", ["role": "summary", "content": "folded", "covers": ["from": "a", "through": "b"], "tokensBefore": 9000]),
-            message("d", ["role": "system", "content": "{\"event\":\"proposalDecision\",\"decision\":\"accepted\",\"request\":\"substrate.reamde.dev/core/recordpatchrequest/abcdefghijkl\",\"op\":\"patch\"}"]),
+            message(
+                "d",
+                [
+                    "role": "system",
+                    "content":
+                        "{\"event\":\"proposalDecision\",\"decision\":\"accepted\",\"request\":\"substrate.reamde.dev/core/recordpatchrequest/abcdefghijkl\",\"op\":\"patch\"}",
+                ]),
         ]
         let turns = transcript(of: rows)
         #expect(turns[0].role == .summary)
@@ -66,16 +78,19 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
         #expect(requestID(of: call) == nil)
         call.changes = [ChangeStamp(seq: 4, op: "put", kind: Kinds.request, id: "mnopqrstuvwx")]
         #expect(requestID(of: call) == "mnopqrstuvwx")
-        let live = ToolCall(id: "c", name: "propose", callable: "function:substrate.reamde.dev:core:propose",
-                            arguments: "", output: "{\"id\":\"abcdefghijkl\"}", ok: true)
+        let live = ToolCall(
+            id: "c", name: "propose", callable: "function:substrate.reamde.dev:core:propose",
+            arguments: "", output: "{\"id\":\"abcdefghijkl\"}", ok: true)
         #expect(requestID(of: live) == "abcdefghijkl")
-        let impostor = ToolCall(id: "c", name: "propose", callable: "function:x.example.com:pkg:propose",
-                                arguments: "", output: "{\"id\":\"abcdefghijkl\"}", ok: true)
+        let impostor = ToolCall(
+            id: "c", name: "propose", callable: "function:x.example.com:pkg:propose",
+            arguments: "", output: "{\"id\":\"abcdefghijkl\"}", ok: true)
         #expect(requestID(of: impostor) == nil)
     }
 
     @Test func aTriggeredOpeningReadsAsWhatFired() {
-        let opening = "{\"change\":{\"op\":\"put\",\"kind\":\"x.example.com/tasks/task\",\"id\":\"t1\"},\"record\":{\"kind\":\"x.example.com/tasks/task\",\"id\":\"t1\",\"properties\":{\"name\":\"Call mum\"}}}"
+        let opening =
+            "{\"change\":{\"op\":\"put\",\"kind\":\"x.example.com/tasks/task\",\"id\":\"t1\"},\"record\":{\"kind\":\"x.example.com/tasks/task\",\"id\":\"t1\",\"properties\":{\"name\":\"Call mum\"}}}"
         #expect(threadTitle(subject: nil, opening: opening) == "When Call mum changed")
         #expect(threadTitle(subject: "  Trip  ", opening: opening) == "Trip")
         #expect(threadTitle(subject: nil, opening: "  \n") == "New chat")
@@ -160,8 +175,9 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     @Test func watchLines() {
         #expect(WatchFrame.parse("{\"bookmark\":12,\"generation\":\"g1\"}") == .bookmark(WatchCursor(seq: 12, generation: "g1")))
         #expect(WatchFrame.parse("{}") == nil)
-        #expect(WatchFrame.parse("{\"seq\":13,\"ts\":\"t\",\"kind\":\"k\",\"recordId\":\"r\",\"op\":\"put\"}")
-            == .row(WatchRow(seq: 13, kind: "k", recordID: "r", op: "put")))
+        #expect(
+            WatchFrame.parse("{\"seq\":13,\"ts\":\"t\",\"kind\":\"k\",\"recordId\":\"r\",\"op\":\"put\"}")
+                == .row(WatchRow(seq: 13, kind: "k", recordID: "r", op: "put")))
         #expect(WatchFrame.parse("{\"error\":{\"code\":\"compacted\",\"message\":\"gone\"}}") == .failed(code: "compacted", message: "gone"))
     }
 }
@@ -209,7 +225,8 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
         #expect(segment("x.example.com/pkg/agent") == "x.example.com%2Fpkg%2Fagent")
         let client = SubstrateClient(server: URL(string: "https://s.example.com")!)
         let url = try? client.url("api/v1/records", query: [("filter", "{\"kinds\":[\"a/b\"]}"), ("orderBy", "turn:desc,createdAt:desc")])
-        #expect(url?.absoluteString == "https://s.example.com/api/v1/records?filter=%7B%22kinds%22%3A%5B%22a%2Fb%22%5D%7D&orderBy=turn%3Adesc%2CcreatedAt%3Adesc")
+        #expect(
+            url?.absoluteString == "https://s.example.com/api/v1/records?filter=%7B%22kinds%22%3A%5B%22a%2Fb%22%5D%7D&orderBy=turn%3Adesc%2CcreatedAt%3Adesc")
     }
 }
 
@@ -217,16 +234,22 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     @Test func aReplyRowCarriesWhatItLinks() {
         let kind = "ada.example.com/tasks/task"
         let turns = transcript(of: [
-            message("a", ["role": "assistant", "content": "see it", "turn": 1, "mentions": [
-                ["kind": .string(kind), "id": "q4", "text": "Q4", "unread": true],
-                ["kind": .string(kind), "id": "ghost", "text": "Ghost", "missing": true],
-                ["kind": .string(kind)],
-            ]]),
+            message(
+                "a",
+                [
+                    "role": "assistant", "content": "see it", "turn": 1,
+                    "mentions": [
+                        ["kind": .string(kind), "id": "q4", "text": "Q4", "unread": true],
+                        ["kind": .string(kind), "id": "ghost", "text": "Ghost", "missing": true],
+                        ["kind": .string(kind)],
+                    ],
+                ])
         ])
-        #expect(turns[0].mentions == [
-            Mention(kind: kind, id: "q4", text: "Q4", unread: true),
-            Mention(kind: kind, id: "ghost", text: "Ghost", missing: true),
-        ])
+        #expect(
+            turns[0].mentions == [
+                Mention(kind: kind, id: "q4", text: "Q4", unread: true),
+                Mention(kind: kind, id: "ghost", text: "Ghost", missing: true),
+            ])
     }
 
     @Test func aReplyWithoutLinksHasNone() {

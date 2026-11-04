@@ -33,32 +33,37 @@ import dev.reamde.substrate.tasks.bridge.TasksApp
 import dev.reamde.substrate.tasks.bridge.TasksPresentation
 
 /** What a phone's or a narrow window's one pane shows, and a wide one's panes. */
-internal enum class Panes { One, Two, Three }
+internal enum class Panes {
+    One,
+    Two,
+    Three,
+}
 
 /**
- * The App menu's sections (§5.6): a navigation bar on a phone, a rail or a
- * drawer on a wider screen (kit-ui's `AppMenu`), the same presentation
- * under each. What a pane shows is the presentation's (the list shown, the
- * task open), so a reminder's tap or a command from anywhere moves it, and
- * going back is a command. What is open over the sections (an editor, a
- * question, a problem) is drawn here once.
+ * The App menu's sections (§5.6): a navigation bar on a phone, a rail or a drawer on a wider screen (kit-ui's `AppMenu`), the same presentation under each.
+ * What a pane shows is the presentation's (the list shown, the task open), so a reminder's tap or a command from anywhere moves it, and going back is a
+ * command. What is open over the sections (an editor, a question, a problem) is drawn here once.
  */
 @Composable
 fun TasksAppView(app: TasksPresentation, banner: AccessBanner?, settings: SettingsPresentation?, actions: TasksActions) {
     var naming by remember { mutableStateOf<ListNaming?>(null) }
     AppMenu(app.menu, select = { actions.send(TasksApp.Command.Select(it)) }, title = "Substrate Tasks") { section ->
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val panes = when {
-                maxWidth >= 900.dp -> Panes.Three
-                maxWidth >= 600.dp -> Panes.Two
-                else -> Panes.One
-            }
+            val panes =
+                when {
+                    maxWidth >= 900.dp -> Panes.Three
+                    maxWidth >= 600.dp -> Panes.Two
+                    else -> Panes.One
+                }
             Section(section.id, app, banner, settings, panes, actions, name = { naming = it })
         }
     }
-    app.editors.entries.sortedBy { it.key }.firstOrNull()?.let { (key, editor) ->
-        TaskEditorDialog(editor, send = { actions.send(key, it) })
-    }
+    app.editors.entries
+        .sortedBy { it.key }
+        .firstOrNull()
+        ?.let { (key, editor) ->
+            TaskEditorDialog(editor, send = { actions.send(key, it) })
+        }
     app.confirmation?.let { ConfirmationDialog(it, actions) }
     app.problem?.let { ProblemDialog(it) { actions.send(TasksApp.Command.DismissProblem) } }
     naming?.let { ListNamingDialog(it, dismiss = { naming = null }, actions) }
@@ -79,52 +84,58 @@ private fun Section(
     val back = { command: TasksApp.Command -> actions.send(command) }
     when (id) {
         MENU_SETTINGS -> SettingsPane(settings, actions)
-        MENU_TODAY -> when {
-            panes == Panes.One && detail != null -> {
-                BackHandler { back(TasksApp.Command.Open(null)) }
-                TaskDetailScreen(detail, actions, onBack = { back(TasksApp.Command.Open(null)) })
-            }
-            list != null && list.selection == ListSelection.Today && panes != Panes.One -> Row(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(1f)) { TaskListScreen(list, app, banner, actions, name, onBack = null, selected = detail?.id) }
-                VerticalDivider()
-                Box(Modifier.weight(1f)) { DetailPane(app, actions) }
-            }
-            list != null && list.selection == ListSelection.Today -> TaskListScreen(list, app, banner, actions, name, onBack = null)
-            else -> Box(Modifier.fillMaxSize())
-        }
-        else -> when (panes) {
-            Panes.One -> when {
-                detail != null -> {
+        MENU_TODAY ->
+            when {
+                panes == Panes.One && detail != null -> {
                     BackHandler { back(TasksApp.Command.Open(null)) }
                     TaskDetailScreen(detail, actions, onBack = { back(TasksApp.Command.Open(null)) })
                 }
-                list != null -> {
-                    BackHandler { back(TasksApp.Command.Show(null)) }
-                    TaskListScreen(list, app, banner, actions, name, onBack = { back(TasksApp.Command.Show(null)) })
-                }
-                else -> SidebarScreen(app.sidebar, app, banner, actions, name, showsToday = false)
+                list != null && list.selection == ListSelection.Today && panes != Panes.One ->
+                    Row(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(1f)) { TaskListScreen(list, app, banner, actions, name, onBack = null, selected = detail?.id) }
+                        VerticalDivider()
+                        Box(Modifier.weight(1f)) { DetailPane(app, actions) }
+                    }
+                list != null && list.selection == ListSelection.Today -> TaskListScreen(list, app, banner, actions, name, onBack = null)
+                else -> Box(Modifier.fillMaxSize())
             }
-            Panes.Two, Panes.Three -> Row(Modifier.fillMaxSize()) {
-                Box(Modifier.width(if (panes == Panes.Three) 300.dp else 280.dp).fillMaxHeight()) {
-                    SidebarScreen(app.sidebar, app, banner, actions, name, showsToday = true, selected = app.sidebar.selected)
-                }
-                VerticalDivider()
-                Box(Modifier.weight(1f)) {
+        else ->
+            when (panes) {
+                Panes.One ->
                     when {
-                        panes == Panes.Two && detail != null -> {
+                        detail != null -> {
                             BackHandler { back(TasksApp.Command.Open(null)) }
                             TaskDetailScreen(detail, actions, onBack = { back(TasksApp.Command.Open(null)) })
                         }
-                        list != null -> TaskListScreen(list, app, null, actions, name, onBack = null, selected = detail?.id)
-                        else -> Placeholder("Choose a list")
+                        list != null -> {
+                            BackHandler { back(TasksApp.Command.Show(null)) }
+                            TaskListScreen(list, app, banner, actions, name, onBack = { back(TasksApp.Command.Show(null)) })
+                        }
+                        else -> SidebarScreen(app.sidebar, app, banner, actions, name, showsToday = false)
                     }
-                }
-                if (panes == Panes.Three) {
-                    VerticalDivider()
-                    Box(Modifier.weight(1f)) { DetailPane(app, actions) }
-                }
+                Panes.Two,
+                Panes.Three ->
+                    Row(Modifier.fillMaxSize()) {
+                        Box(Modifier.width(if (panes == Panes.Three) 300.dp else 280.dp).fillMaxHeight()) {
+                            SidebarScreen(app.sidebar, app, banner, actions, name, showsToday = true, selected = app.sidebar.selected)
+                        }
+                        VerticalDivider()
+                        Box(Modifier.weight(1f)) {
+                            when {
+                                panes == Panes.Two && detail != null -> {
+                                    BackHandler { back(TasksApp.Command.Open(null)) }
+                                    TaskDetailScreen(detail, actions, onBack = { back(TasksApp.Command.Open(null)) })
+                                }
+                                list != null -> TaskListScreen(list, app, null, actions, name, onBack = null, selected = detail?.id)
+                                else -> Placeholder("Choose a list")
+                            }
+                        }
+                        if (panes == Panes.Three) {
+                            VerticalDivider()
+                            Box(Modifier.weight(1f)) { DetailPane(app, actions) }
+                        }
+                    }
             }
-        }
     }
 }
 

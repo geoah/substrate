@@ -21,21 +21,23 @@ import dev.reamde.substrate.kit.bridge.StatusAction
 import dev.reamde.substrate.kit.bridge.StatusPresentation
 
 /**
- * The Status screen as sections of a settings screen: the sentence, why
- * where there is a reason, each package, what to do about it, and the
- * writes the server refused, each with Retry and Discard.
+ * The Status screen as sections of a settings screen: the sentence, why where there is a reason, each package, what to do about it, and the writes the server
+ * refused, each with Retry and Discard.
  */
 @Composable
 public fun StatusScreen(presentation: StatusPresentation, perform: (StatusAction) -> Unit, modifier: Modifier = Modifier) {
     Column(modifier) {
         KitSection(presentation.title, footer = presentation.footer) {
-            KitRow(presentation.sentence, leading = {
-                Icon(
-                    presentation.symbol.icon,
-                    contentDescription = null,
-                    tint = if (presentation.tone == ScreenTone.quiet) MaterialTheme.colorScheme.onSurface else presentation.tone.tint,
-                )
-            })
+            KitRow(
+                presentation.sentence,
+                leading = {
+                    Icon(
+                        presentation.symbol.icon,
+                        contentDescription = null,
+                        tint = if (presentation.tone == ScreenTone.quiet) MaterialTheme.colorScheme.onSurface else presentation.tone.tint,
+                    )
+                },
+            )
             presentation.problem?.let {
                 KitRowDivider()
                 ProblemBox(it, Modifier.kitRowPadding())

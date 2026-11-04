@@ -17,10 +17,7 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/**
- * A card of the sign-in and status screens: a plain fill tinted by what it
- * says, never elevated, the same card SubstrateUI's `KitCard` draws.
- */
+/** A card of the sign-in and status screens: a plain fill tinted by what it says, never elevated, the same card SubstrateUI's `KitCard` draws. */
 @Composable
 public fun KitCard(
     modifier: Modifier = Modifier,

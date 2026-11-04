@@ -1,9 +1,9 @@
 import Foundation
-import os
 import SubstrateKit
 import SubstrateLocal
 import WorkoutsCore
 import WorkoutsSync
+import os
 
 extension SessionStore {
     /// The session, kept where every build keeps it: readable after the
@@ -66,11 +66,12 @@ final class WorkoutsRoot {
             content: WorkoutsActivityAttributes.contentState, dismissedKey: "workouts.liveActivity.dismissed")
         environment.workouts = WorkoutsPlatform()
         environment.folders = folders
-        let root = Link(app: WorkoutsApp(directory: directory, adapter: Self.adapter, settings: settings), manifest: manifest,
-                        sessions: .workouts,
-                        outboxes: { folders.folder(AccountRef(server: $0.server, repository: $0.repository))?.outbox },
-                        packages: [WorkoutsKinds.packageID: WorkoutsManifest.trainingVersion, Coach.package: WorkoutsManifest.coachVersion],
-                        words: Self.words)
+        let root = Link(
+            app: WorkoutsApp(directory: directory, adapter: Self.adapter, settings: settings), manifest: manifest,
+            sessions: .workouts,
+            outboxes: { folders.folder(AccountRef(server: $0.server, repository: $0.repository))?.outbox },
+            packages: [WorkoutsKinds.packageID: WorkoutsManifest.trainingVersion, Coach.package: WorkoutsManifest.coachVersion],
+            words: Self.words)
         model = PresentationModel(root, environment: environment)
         presentation = model.presentation
         app = AppModel(directory: directory, settings: settings)

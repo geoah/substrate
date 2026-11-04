@@ -1,6 +1,6 @@
-import WorkoutsCore
 import SwiftUI
 import UIKit
+import WorkoutsCore
 
 /// A countdown to `end` that ticks with no app code. The range is clamped so
 /// an end in the past never makes an invalid range.

@@ -53,8 +53,16 @@ final class Activity: @unchecked Sendable {
     private var listener: (@MainActor @Sendable (ActivityEntry) -> Void)?
     /// Called on the main actor with every new entry.
     var onEntry: (@MainActor @Sendable (ActivityEntry) -> Void)? {
-        get { lock.lock(); defer { lock.unlock() }; return listener }
-        set { lock.lock(); listener = newValue; lock.unlock() }
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return listener
+        }
+        set {
+            lock.lock()
+            listener = newValue
+            lock.unlock()
+        }
     }
 
     private static var url: URL {

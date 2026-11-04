@@ -26,8 +26,9 @@ struct ConversationView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
                 if let hero = screen.hero {
-                    NewChatHeroView(hero: hero, pick: { host.send(.draft($0), to: key) },
-                                    addKey: { keySheet = host.chats?.keys[$0] })
+                    NewChatHeroView(
+                        hero: hero, pick: { host.send(.draft($0), to: key) },
+                        addKey: { keySheet = host.chats?.keys[$0] })
                 }
                 if let older = screen.olderHidden {
                     Label(older, systemImage: "clock.arrow.circlepath")
@@ -79,9 +80,10 @@ struct ConversationView: View {
         .scrollDismissesKeyboard(.interactively)
         .scrollEdgeEffectStyle(.soft, for: .bottom)
         .safeAreaBar(edge: .bottom) {
-            ComposerBar(key: key, screen: screen, dictation: dictation, atBottom: atBottom,
-                        onJump: { withAnimation(.snappy) { position.scrollTo(edge: .bottom) } },
-                        onKey: { keySheet = host.chats?.keys[$0] })
+            ComposerBar(
+                key: key, screen: screen, dictation: dictation, atBottom: atBottom,
+                onJump: { withAnimation(.snappy) { position.scrollTo(edge: .bottom) } },
+                onKey: { keySheet = host.chats?.keys[$0] })
         }
         .navigationTitle(screen.title)
         .navigationSubtitle(screen.subtitle)

@@ -1,9 +1,10 @@
 import Foundation
-@testable import ChatKit
 import SubstrateDevice
 import SubstrateRuntime
 import SubstrateTesting
 import Testing
+
+@testable import ChatKit
 
 /// The refresh job, as the system runs it: scheduled with the repository
 /// and the link generation, checked against both before it writes, and

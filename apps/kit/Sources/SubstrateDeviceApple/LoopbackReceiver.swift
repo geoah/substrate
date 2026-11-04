@@ -33,8 +33,9 @@ public final class LoopbackReceiver: @unchecked Sendable {
         self.appName = appName
         self.path = path
         let slug = appName.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
-        source = DispatchSource.makeReadSource(fileDescriptor: socket,
-                                               queue: DispatchQueue(label: "dev.reamde.substrate.\(slug).oauth"))
+        source = DispatchSource.makeReadSource(
+            fileDescriptor: socket,
+            queue: DispatchQueue(label: "dev.reamde.substrate.\(slug).oauth"))
     }
 
     /// Listens on a free loopback port. `appName` is what the page the
@@ -130,21 +131,24 @@ public final class LoopbackReceiver: @unchecked Sendable {
         }
         var query: [String: String] = [:]
         for item in components.queryItems ?? [] { query[item.name] = item.value ?? "" }
-        write(client, status: "200 OK", body: query["error"] != nil
-            ? "Access was not granted. You can close this tab and go back to \(appName)."
-            : "Signed in. You can close this tab and go back to \(appName).")
+        write(
+            client, status: "200 OK",
+            body: query["error"] != nil
+                ? "Access was not granted. You can close this tab and go back to \(appName)."
+                : "Signed in. You can close this tab and go back to \(appName).")
         close(client)
         finish(.success(query))
     }
 
     private func write(_ client: Int32, status: String, body: String) {
         let page = """
-        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">\
-        <title>\(Self.escape(appName))</title></head><body style="font:17px -apple-system,system-ui;\
-        display:flex;align-items:center;justify-content:center;height:90vh;color:#444">\(Self.escape(body))</body></html>
-        """
+            <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">\
+            <title>\(Self.escape(appName))</title></head><body style="font:17px -apple-system,system-ui;\
+            display:flex;align-items:center;justify-content:center;height:90vh;color:#444">\(Self.escape(body))</body></html>
+            """
         let bytes = Data(page.utf8)
-        let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(bytes.count)\r\n"
+        let head =
+            "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(bytes.count)\r\n"
             + "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
         let all = Data(head.utf8) + bytes
         all.withUnsafeBytes { raw in

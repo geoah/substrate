@@ -9,10 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import dev.reamde.substrate.kit.bridge.AboutPresentation
 
-/**
- * The build, its channel and an update offered, as a section of a settings
- * screen. A pre-release's version is long: it goes under its label, whole.
- */
+/** The build, its channel and an update offered, as a section of a settings screen. A pre-release's version is long: it goes under its label, whole. */
 @Composable
 public fun AboutScreen(presentation: AboutPresentation, modifier: Modifier = Modifier, onCheck: () -> Unit = {}, onInstall: () -> Unit = {}) {
     KitSection(presentation.title, modifier) {

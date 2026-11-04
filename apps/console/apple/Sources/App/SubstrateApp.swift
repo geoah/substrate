@@ -15,7 +15,7 @@ struct SubstrateApp: App {
                 .environmentObject(updates)
                 .updateOffer(updates)
                 #if os(macOS)
-                .frame(minWidth: 720, minHeight: 480)
+            .frame(minWidth: 720, minHeight: 480)
                 #endif
         }
         #if os(macOS)

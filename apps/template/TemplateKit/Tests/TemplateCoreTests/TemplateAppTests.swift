@@ -5,14 +5,16 @@ import SubstrateRuntime
 import SubstrateScreens
 import SubstrateTesting
 import Testing
+
 @testable import TemplateCore
 
 @Suite("Substrate Template", .timeLimit(.minutes(10)))
 struct TemplateAppTests {
     func harness() throws -> ControllerHarness<TemplateApp> {
         let folder = try RepositoryFolder(root: temporaryFolder("template"))
-        let app = TemplateApp(cache: RecordCache(folder: folder), outbox: Outbox(folder: folder), words: TemplateApp.words(device: "this iPhone"),
-                              build: BuildFacts(version: "0.1.0 (1)"))
+        let app = TemplateApp(
+            cache: RecordCache(folder: folder), outbox: Outbox(folder: folder), words: TemplateApp.words(device: "this iPhone"),
+            build: BuildFacts(version: "0.1.0 (1)"))
         return ControllerHarness(app, performsEffects: false)
     }
 
@@ -21,10 +23,11 @@ struct TemplateAppTests {
         await harness.deliver(.records(.loaded([], cursor: nil, queue: [])))
         #expect(await harness.presentation.empty?.title == "No items")
         await harness.send(.add("  Milk "))
-        let write = try #require(harness.effects.compactMap { effect -> LocalWrite? in
-            if case let .records(.enqueue(write)) = effect { return write }
-            return nil
-        }.first)
+        let write = try #require(
+            harness.effects.compactMap { effect -> LocalWrite? in
+                if case let .records(.enqueue(write)) = effect { return write }
+                return nil
+            }.first)
         #expect(write.entries.map(\.method) == [.put])
         #expect(write.entries.first?.properties == ["name": "Milk"])
         #expect(await harness.presentation.items.rows.map(\.title) == ["Milk"])
@@ -34,7 +37,10 @@ struct TemplateAppTests {
 
     @Test func theManifestIsTheRequestAppJSONRecords() throws {
         struct Recorded: Decodable {
-            struct Ask: Decodable, Equatable { var package: String; var atLeast: Int }
+            struct Ask: Decodable, Equatable {
+                var package: String
+                var atLeast: Int
+            }
             var name: String
             var scopes: [String]
             var asks: [Ask]
@@ -61,8 +67,9 @@ struct TemplateAppTests {
 struct TemplateRootTests {
     @Test func storageIsReadAtOpenAndShownInSettings() async throws {
         let folder = try RepositoryFolder(root: temporaryFolder("template"))
-        let app = TemplateApp(cache: RecordCache(folder: folder), outbox: Outbox(folder: folder), words: TemplateApp.words(device: "this iPhone"),
-                              build: BuildFacts(version: "0.1.0 (1)"))
+        let app = TemplateApp(
+            cache: RecordCache(folder: folder), outbox: Outbox(folder: folder), words: TemplateApp.words(device: "this iPhone"),
+            build: BuildFacts(version: "0.1.0 (1)"))
         var environment = AppEnvironment.testing()
         environment.folder = folder
         let harness = ControllerHarness(app, environment: environment, performsEffects: false)
@@ -75,8 +82,10 @@ struct TemplateRootTests {
     }
 
     @Test func theItemsRevisionMovesWithTheItemsAlone() async throws {
-        let harness = ControllerHarness(TemplateApp(cache: nil, outbox: nil, words: TemplateApp.words(device: "this iPhone"),
-                                                    build: BuildFacts(version: "0.1.0 (1)")), performsEffects: false)
+        let harness = ControllerHarness(
+            TemplateApp(
+                cache: nil, outbox: nil, words: TemplateApp.words(device: "this iPhone"),
+                build: BuildFacts(version: "0.1.0 (1)")), performsEffects: false)
         await harness.deliver(.records(.loaded([], cursor: nil, queue: [])))
         let before = await harness.presentation.items.revision
         await harness.send(.add("Milk"))
@@ -92,8 +101,10 @@ struct TemplateRootTests {
     }
 
     @Test func theUpdatersOfferIsShownInAbout() async throws {
-        let harness = ControllerHarness(TemplateApp(cache: nil, outbox: nil, words: TemplateApp.words(device: "this iPhone"),
-                                                    build: BuildFacts(version: "0.1.0 (1)")), performsEffects: false)
+        let harness = ControllerHarness(
+            TemplateApp(
+                cache: nil, outbox: nil, words: TemplateApp.words(device: "this iPhone"),
+                build: BuildFacts(version: "0.1.0 (1)")), performsEffects: false)
         let before = await harness.presentation.about
         await harness.send(.offered("0.2.0"))
         let offered = await harness.presentation.about

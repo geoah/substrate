@@ -15,9 +15,10 @@ public struct ProblemBox: View {
     public var tint: Color
     public var systemImage: String
 
-    public init(title: String? = nil, message: String, tint: Color = .red,
-                systemImage: String = "exclamationmark.triangle.fill")
-    {
+    public init(
+        title: String? = nil, message: String, tint: Color = .red,
+        systemImage: String = "exclamationmark.triangle.fill"
+    ) {
         self.title = title
         self.message = message
         self.tint = tint

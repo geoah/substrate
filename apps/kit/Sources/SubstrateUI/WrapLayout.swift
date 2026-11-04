@@ -15,7 +15,10 @@ public struct WrapLayout: Layout {
 
     public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, row: CGFloat = 0, widest: CGFloat = 0
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var row: CGFloat = 0
+        var widest: CGFloat = 0
         for view in subviews {
             let size = view.sizeThatFits(.unspecified)
             if x > 0, x + size.width > width {
@@ -31,7 +34,9 @@ public struct WrapLayout: Layout {
     }
 
     public func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, row: CGFloat = 0
+        var x = bounds.minX
+        var y = bounds.minY
+        var row: CGFloat = 0
         for view in subviews {
             let size = view.sizeThatFits(.unspecified)
             if x > bounds.minX, x + size.width > bounds.maxX {

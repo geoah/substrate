@@ -18,9 +18,10 @@ public struct AppStatusActions {
     /// where what blocks an approval is fixed (`ServerAddress.page`).
     public var openFix: ((String) -> Void)?
 
-    public init(review: (() -> Void)? = nil, signInAgain: (() -> Void)? = nil, moveToAppAccess: (() -> Void)? = nil,
-                retry: (() -> Void)? = nil, openFix: ((String) -> Void)? = nil)
-    {
+    public init(
+        review: (() -> Void)? = nil, signInAgain: (() -> Void)? = nil, moveToAppAccess: (() -> Void)? = nil,
+        retry: (() -> Void)? = nil, openFix: ((String) -> Void)? = nil
+    ) {
         self.review = review
         self.signInAgain = signInAgain
         self.moveToAppAccess = moveToAppAccess
@@ -93,8 +94,9 @@ public struct AppStatusBanner: View {
     }
 
     public var body: some View {
-        if let banner = AccessPresenter.banner(issues: issues, appName: appName, host: host, offers: actions.offers, now: Date(),
-                                               locale: locale, timeZone: timeZone)
+        if let banner = AccessPresenter.banner(
+            issues: issues, appName: appName, host: host, offers: actions.offers, now: Date(),
+            locale: locale, timeZone: timeZone)
         {
             AccessBannerView(banner, perform: actions.perform)
         }

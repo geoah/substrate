@@ -10,10 +10,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * The shared screens' fixtures Swift wrote (`fixtures/screens.json`),
- * decoded with the generated serializers and encoded again: Kotlin writes
- * what Swift wrote, every key and value, and hands it back to Swift
- * (`swiftDecodesWhatKotlinWroteOfEachScreen`).
+ * The shared screens' fixtures Swift wrote (`fixtures/screens.json`), decoded with the generated serializers and encoded again: Kotlin writes what Swift wrote,
+ * every key and value, and hands it back to Swift (`swiftDecodesWhatKotlinWroteOfEachScreen`).
  */
 class ScreenFixturesTest {
     @Test

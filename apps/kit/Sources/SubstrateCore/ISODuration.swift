@@ -77,7 +77,8 @@ public enum ISODuration {
     private static func integer(followedBy designator: Character, in text: Substring) -> (Int, Substring)? {
         let digits = text.prefix { $0.isASCII && $0.isNumber }
         guard !digits.isEmpty, text.dropFirst(digits.count).first == designator,
-              let number = Int(digits) else { return nil }
+            let number = Int(digits)
+        else { return nil }
         return (number, text.dropFirst(digits.count + 1))
     }
 }

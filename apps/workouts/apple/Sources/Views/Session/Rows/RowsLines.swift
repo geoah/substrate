@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// One set as one line that reads like a sentence (DESIGN.md §7.6a):
 /// `[1]  110 kg × 8  @ 8      +5 kg, −2 reps  =`, the set's label first and,
@@ -65,9 +65,11 @@ struct RowsSetLine<MenuItems: View>: View {
         }
         .background {
             if isFresh || isMarked {
-                LinearGradient(colors: [(isFresh ? Color.green : Color.accentColor).opacity(0.12), .clear],
-                               startPoint: .leading, endPoint: UnitPoint(x: 0.75, y: 0.5))
-                    .transition(.opacity)
+                LinearGradient(
+                    colors: [(isFresh ? Color.green : Color.accentColor).opacity(0.12), .clear],
+                    startPoint: .leading, endPoint: UnitPoint(x: 0.75, y: 0.5)
+                )
+                .transition(.opacity)
             }
         }
         .animation(.smooth(duration: 0.3), value: isMarked)
@@ -275,11 +277,14 @@ private extension HorizontalAlignment {
 }
 
 extension RowsSetLine where MenuItems == EmptyView {
-    init(item: RowsSetItem, collapsed: Bool = false, isResting: Bool = false, isFresh: Bool = false, isMarked: Bool = false,
-         onTap: @escaping () -> Void)
-    {
-        self.init(item: item, collapsed: collapsed, isResting: isResting, isFresh: isFresh, isMarked: isMarked,
-                  onUntick: nil, onTap: onTap) { EmptyView() }
+    init(
+        item: RowsSetItem, collapsed: Bool = false, isResting: Bool = false, isFresh: Bool = false, isMarked: Bool = false,
+        onTap: @escaping () -> Void
+    ) {
+        self.init(
+            item: item, collapsed: collapsed, isResting: isResting, isFresh: isFresh, isMarked: isMarked,
+            onUntick: nil, onTap: onTap
+        ) { EmptyView() }
     }
 }
 

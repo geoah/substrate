@@ -45,8 +45,11 @@ extension ChatApp {
                     }
                     stale = await cache.stale.compactMap(Self.watchKey)
                 }
-                return Event(.diskOpened(.init(lease: lease, state: state, drafts: storage.drafts(lease),
-                                               preferences: preferences.load(identity), stale: stale)))
+                return Event(
+                    .diskOpened(
+                        .init(
+                            lease: lease, state: state, drafts: storage.drafts(lease),
+                            preferences: preferences.load(identity), stale: stale)))
             }
         case let .closeDisk(identity, deleting):
             // Fenced now, before any later effect starts.
@@ -117,9 +120,10 @@ extension ChatApp {
             return .once {
                 guard let client = await source.current() else { return nil }
                 do {
-                    let page = try await client.list(ListQuery(
-                        kinds: [Kinds.message], properties: ["role": ["eq": "user"], "thread": ["in": .array(threads.map(JSONValue.string))]],
-                        first: 500, orderBy: "turn:asc,createdAt:asc"))
+                    let page = try await client.list(
+                        ListQuery(
+                            kinds: [Kinds.message], properties: ["role": ["eq": "user"], "thread": ["in": .array(threads.map(JSONValue.string))]],
+                            first: 500, orderBy: "turn:asc,createdAt:asc"))
                     return Event(.openingsRead(openingMessages(page.records)))
                 } catch {
                     return Task.isCancelled ? nil : Event(.readFailed(failed(error, client)))
@@ -130,8 +134,10 @@ extension ChatApp {
                 guard let client = await source.current() else { return nil }
                 do {
                     let page = try await client.list(ChatAPI.transcriptQuery(thread, first: first))
-                    return Event(.rowsRead(thread: thread, epoch: epoch, version: version, rows: page.records.reversed(),
-                                           full: page.records.count >= first))
+                    return Event(
+                        .rowsRead(
+                            thread: thread, epoch: epoch, version: version, rows: page.records.reversed(),
+                            full: page.records.count >= first))
                 } catch {
                     return Task.isCancelled ? nil : Event(.rowsFailed(thread: thread, epoch: epoch, failed(error, client)))
                 }
@@ -237,8 +243,8 @@ extension ChatApp {
                         // The target is context, and often out of the token's reach.
                         var read: Record?
                         if target, let request, request["op"]?.string != "create",
-                           let kind = request["targetKind"]?.text ?? request["target"]?.referencePath.map(Self.kindOf),
-                           let targetID = request["targetId"]?.text ?? request["target"]?.referenceID
+                            let kind = request["targetKind"]?.text ?? request["target"]?.referencePath.map(Self.kindOf),
+                            let targetID = request["targetId"]?.text ?? request["target"]?.referenceID
                         {
                             read = try? await client.record(kind, targetID)
                         }
@@ -268,8 +274,9 @@ extension ChatApp {
                     if let diff = held["diff"]?["properties"]?.object, diff != shown {
                         return Event(.cardWriteFailed(id, Failure(kind: .other, words: conflict), conflict: conflict))
                     }
-                    let record = try await client.patch(Kinds.request, id, properties: ["decision": .string(accept ? "accepted" : "rejected")],
-                                                        ifVersion: held.version)
+                    let record = try await client.patch(
+                        Kinds.request, id, properties: ["decision": .string(accept ? "accepted" : "rejected")],
+                        ifVersion: held.version)
                     return Event(.cardWritten(id, record))
                 } catch {
                     return Event(.cardWriteFailed(id, failed(error, client), conflict: conflict))
@@ -357,13 +364,18 @@ extension ChatApp {
     private static func threadPages(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan) async throws
         -> (threads: ChatAppStep.Threads, page: RecordPage)
     {
-        let chats = try await client.list(ListQuery(kinds: [Kinds.thread], properties: ["mode": ["eq": "chat"]], first: 100,
-                                                    orderBy: "updatedAt:desc"))
+        let chats = try await client.list(
+            ListQuery(
+                kinds: [Kinds.thread], properties: ["mode": ["eq": "chat"]], first: 100,
+                orderBy: "updatedAt:desc"))
         var automated: [Record] = []
         if plan.showAutomated {
             let modes = conversationModes.filter { $0 != "chat" }.map(JSONValue.string)
-            automated = try await client.list(ListQuery(kinds: [Kinds.thread], properties: ["mode": ["in": .array(modes)]], first: 50,
-                                                        orderBy: "updatedAt:desc")).records
+            automated = try await client.list(
+                ListQuery(
+                    kinds: [Kinds.thread], properties: ["mode": ["in": .array(modes)]], first: 50,
+                    orderBy: "updatedAt:desc")
+            ).records
         }
         return (ChatAppStep.Threads(chats: chats.records, automated: automated), chats)
     }
@@ -414,7 +426,8 @@ extension ChatApp {
         }
         var head: WatchCursor?
         if !read.agents.generation.isEmpty {
-            let heads = [read.agents, read.providers].compactMap { $0 }.filter { $0.generation == read.agents.generation }.map(\.head)
+            let heads =
+                [read.agents, read.providers].compactMap { $0 }.filter { $0.generation == read.agents.generation }.map(\.head)
                 + [page.head]
             head = heads.min().map { WatchCursor(seq: $0, generation: read.agents.generation) }
         }
@@ -464,9 +477,10 @@ extension ChatApp {
 
     /// The body's answer, or nil once `seconds` passed first; without a
     /// limit, the body's.
-    static func within<Value: Sendable>(_ seconds: TimeInterval?, clock: any RuntimeClock,
-                                        _ body: @escaping @Sendable () async -> Value) async -> Value?
-    {
+    static func within<Value: Sendable>(
+        _ seconds: TimeInterval?, clock: any RuntimeClock,
+        _ body: @escaping @Sendable () async -> Value
+    ) async -> Value? {
         guard let seconds else { return await body() }
         return await withTaskGroup(of: Value?.self) { group in
             group.addTask { await body() }

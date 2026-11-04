@@ -20,28 +20,30 @@ struct TaskListView: View {
 
     var body: some View {
         List(selection: selection) { rows }
-        .overlay {
-            if let empty = list.empty, list.closed.rows.isEmpty {
-                ContentUnavailableView(empty.title, systemImage: "checkmark.circle", description: Text(empty.message))
+            .overlay {
+                if let empty = list.empty, list.closed.rows.isEmpty {
+                    ContentUnavailableView(empty.title, systemImage: "checkmark.circle", description: Text(empty.message))
+                }
             }
-        }
-        .navigationTitle(list.title)
-        .refreshable { shell.send(.refresh) }
-        .scrollDismissesKeyboard(.immediately)
-        .safeAreaInset(edge: .bottom) { quickAdd }
-        .toolbar { toolbar }
-        .listNaming($naming)
+            .navigationTitle(list.title)
+            .refreshable { shell.send(.refresh) }
+            .scrollDismissesKeyboard(.immediately)
+            .safeAreaInset(edge: .bottom) { quickAdd }
+            .toolbar { toolbar }
+            .listNaming($naming)
     }
 
     /// On a phone a row is a button that pushes the task; beside a detail
     /// column, the open task is the list's selection.
     private var selection: Binding<String?> {
-        Binding(get: { sizeClass == .compact ? nil : app.detail?.id }, set: { task in
-            // On a phone a row is a button and the list keeps no selection:
-            // what it writes back is no choice of the owner's.
-            guard sizeClass != .compact else { return }
-            shell.send(.open(task: task))
-        })
+        Binding(
+            get: { sizeClass == .compact ? nil : app.detail?.id },
+            set: { task in
+                // On a phone a row is a button and the list keeps no selection:
+                // what it writes back is no choice of the owner's.
+                guard sizeClass != .compact else { return }
+                shell.send(.open(task: task))
+            })
     }
 
     @ViewBuilder
@@ -64,8 +66,12 @@ struct TaskListView: View {
     private func rowView(_ row: TaskRow) -> some View {
         Group {
             if sizeClass == .compact {
-                Button { shell.send(.open(task: row.id)) } label: { TaskRowView(row: row) }
-                    .buttonStyle(.plain)
+                Button {
+                    shell.send(.open(task: row.id))
+                } label: {
+                    TaskRowView(row: row)
+                }
+                .buttonStyle(.plain)
             } else {
                 TaskRowView(row: row).tag(row.id)
             }
@@ -118,7 +124,11 @@ struct TaskListView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            Button { shell.send(.newTask) } label: { Label(list.newTask, systemImage: "square.and.pencil") }
+            Button {
+                shell.send(.newTask)
+            } label: {
+                Label(list.newTask, systemImage: "square.and.pencil")
+            }
         }
         ToolbarItem(placement: .secondaryAction) {
             Menu {
@@ -160,8 +170,11 @@ struct TaskMenu: View {
         Button(words.edit, systemImage: "pencil") { shell.send(.edit(task)) }
         Menu(words.priority) {
             ForEach(words.priorities) { level in
-                Toggle(level.title, isOn: Binding(get: { priority.rawValue == level.id },
-                                                  set: { _ in shell.send(.setPriority(task, TaskPriority(rawValue: level.id) ?? .none)) }))
+                Toggle(
+                    level.title,
+                    isOn: Binding(
+                        get: { priority.rawValue == level.id },
+                        set: { _ in shell.send(.setPriority(task, TaskPriority(rawValue: level.id) ?? .none)) }))
             }
         }
         Menu(words.move) {

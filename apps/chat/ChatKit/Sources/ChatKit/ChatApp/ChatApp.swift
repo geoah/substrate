@@ -160,18 +160,21 @@ public struct ChatApp: LinkedApp {
         default:
             break
         }
-        return Event(.conversation(key, ChatAppStep.Report(
-            thread: state.thread, agent: state.agent, owns: state.ownsTranscript, active: state.active, streaming: state.streaming,
-            outcomes: state.outcomes.count, name: state.agent.map(agentName) ?? "the assistant", settles: state.settles, named: named,
-            read: read, draft: draft, sent: sent, failure: state.failure)))
+        return Event(
+            .conversation(
+                key,
+                ChatAppStep.Report(
+                    thread: state.thread, agent: state.agent, owns: state.ownsTranscript, active: state.active, streaming: state.streaming,
+                    outcomes: state.outcomes.count, name: state.agent.map(agentName) ?? "the assistant", settles: state.settles, named: named,
+                    read: read, draft: draft, sent: sent, failure: state.failure)))
     }
 
     public func report(of event: Event) -> LinkReport? {
         switch event.step {
         case let .conversation(_, report): report.failure?.report
         case let .refreshFailed(failure), let .readFailed(failure), let .rowsFailed(_, _, failure), let .keyFailed(failure),
-             let .cardFailed(_, failure),
-             let .cardWriteFailed(_, failure, _), let .renameFailed(_, _, failure):
+            let .cardFailed(_, failure),
+            let .cardWriteFailed(_, failure, _), let .renameFailed(_, _, failure):
             failure.report
         case let .watchEnded(_, failure?): failure.report
         case let .feedApplied(feed): feed.failure?.report
@@ -236,7 +239,7 @@ public struct ChatApp: LinkedApp {
         case .readPermission: "permission"
         case let .cancel(key): key
         case .closeDisk, .prune, .clearTranscripts, .markRefreshed, .notify, .cancelGroup, .cancelAllNotifications, .badge,
-             .askPermission, .finishRun, .scheduleRefresh, .endContinued:
+            .askPermission, .finishRun, .scheduleRefresh, .endContinued:
             nil
         }
     }

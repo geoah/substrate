@@ -40,7 +40,11 @@ final class ReachTests: XCTestCase {
                 let line = raw.replacingOccurrences(of: "\t", with: "  ")
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
-                if trimmed == "---" { path = []; kindID = nil; continue }
+                if trimmed == "---" {
+                    path = []
+                    kindID = nil
+                    continue
+                }
                 let indent = line.prefix { $0 == " " }.count
                 while let last = path.last, last.indent >= indent { path.removeLast() }
                 if trimmed.hasPrefix("- ") {
@@ -92,8 +96,12 @@ final class ReachTests: XCTestCase {
             .filter { $0.type == AuthorizationDetail.Types.package }
             .map { Ask(package: $0.package ?? "", atLeast: $0.version ?? 0) }
         XCTAssertEqual(recorded.asks, asked)
-        XCTAssertEqual(recorded.asks, [Ask(package: AppModel.appleProvider, atLeast: AppModel.appleVersion),
-                                       Ask(package: AppModel.healthProvider, atLeast: AppModel.healthVersion)])
+        XCTAssertEqual(
+            recorded.asks,
+            [
+                Ask(package: AppModel.appleProvider, atLeast: AppModel.appleVersion),
+                Ask(package: AppModel.healthProvider, atLeast: AppModel.healthVersion),
+            ])
         XCTAssertEqual(recorded.publishes, [])
         XCTAssertEqual(recorded.name, SyncManifest.appName)
         XCTAssertEqual(recorded.apple.clientIDKey, SyncManifest.clientIDKey)
@@ -114,7 +122,8 @@ final class ReachTests: XCTestCase {
         XCTAssertTrue(reach.reads.contains("substrate.reamde.dev/observations/trace"))
         XCTAssertTrue(reach.internalKinds.contains("providers.substrate.reamde.dev/applehealth/account"))
         let grants = Grants(SyncManifest.scopes)
-        let uncovered = reach.writes.sorted().filter { !grants.covers("write:\($0)", internal: reach.internalKinds.contains($0)) }
+        let uncovered =
+            reach.writes.sorted().filter { !grants.covers("write:\($0)", internal: reach.internalKinds.contains($0)) }
             + reach.reads.subtracting(reach.writes).sorted().filter { !grants.covers("read:\($0)", internal: reach.internalKinds.contains($0)) }
         XCTAssertEqual(uncovered, [], "the server would block the applehealth row reaches-past-scopes")
         // The test is live: without the account's own scope the glob would not cover it.

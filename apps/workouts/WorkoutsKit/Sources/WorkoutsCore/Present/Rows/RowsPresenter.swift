@@ -57,8 +57,11 @@ struct RowsBuilder {
             for round in 0 ..< rounds {
                 let members = working.compactMap { round < $0.count ? $0[round] : nil }
                 let done = members.joined().allSatisfy { state.rows[$0]?.isCompleted == true }
-                items.append(.round(RowsRoundHeader(id: "\(block.id)-round-\(round + 1)", round: round + 1, rounds: rounds,
-                                                    title: "Round \(round + 1) of \(rounds)", isDone: done)))
+                items.append(
+                    .round(
+                        RowsRoundHeader(
+                            id: "\(block.id)-round-\(round + 1)", round: round + 1, rounds: rounds,
+                            title: "Round \(round + 1) of \(rounds)", isDone: done)))
                 // No rest lines between members or rounds: rest shows in the island.
                 for unit in members {
                     items += unitItems(unit, isGroup: true)
@@ -83,8 +86,9 @@ struct RowsBuilder {
             subtitle: isGroup ? groupSubtitle(block) : slots.first.flatMap(plainSubtitle),
             items: items,
             addSets: block.cards.map { card in
-                RowsButton(title: isGroup ? "Add \(card.name) set" : "Add set",
-                           accessibilityLabel: "Add a set to \(card.name)", action: .addSet(slot: card.slot, role: .working))
+                RowsButton(
+                    title: isGroup ? "Add \(card.name) set" : "Add set",
+                    accessibilityLabel: "Add a set to \(card.name)", action: .addSet(slot: card.slot, role: .working))
             },
             isFinished: isFinished,
             summary: isFinished ? summary(block, title: title) : nil
@@ -111,8 +115,9 @@ struct RowsBuilder {
                     aim = "\(Format.durationRange(min, target.durationMax ?? min)) holds"
                 }
             }
-            let effort = Format.effort(rpeMin: target.rpeMin, rpeMax: target.rpeMax, rirMin: target.rirMin,
-                                       rirMax: target.rirMax)
+            let effort = Format.effort(
+                rpeMin: target.rpeMin, rpeMax: target.rpeMax, rirMin: target.rirMin,
+                rirMax: target.rirMax)
             switch (aim, effort) {
             case let (aim?, effort?): parts.append("\(aim) at \(effort)")
             case let (aim?, nil): parts.append(aim)
@@ -195,11 +200,16 @@ struct RowsBuilder {
             let values = spokenValues(of: row)
             return isGroup ? "\(p.exerciseName(state.slot(row.slot)?.exercise ?? ExerciseID(""))): \(values)" : values
         }.joined(separator: "; ")
-        let tail = comparison.map { change in
-            ". " + (change == RowsText.sameAsLastTime ? "The same as last time" : change.text.capitalizedFirst)
-        } ?? ""
-        return [.warmups(RowsWarmupFold(id: "\(id)-warmups", title: title, values: values.joined(separator: ", "),
-                                        comparison: comparison, sets: sets, sentence: "\(title) done: \(spoken)\(tail)."))]
+        let tail =
+            comparison.map { change in
+                ". " + (change == RowsText.sameAsLastTime ? "The same as last time" : change.text.capitalizedFirst)
+            } ?? ""
+        return [
+            .warmups(
+                RowsWarmupFold(
+                    id: "\(id)-warmups", title: title, values: values.joined(separator: ", "),
+                    comparison: comparison, sets: sets, sentence: "\(title) done: \(spoken)\(tail)."))
+        ]
     }
 
     /// Done warm-ups against last time's: `as last time`, `last 40 × 12, 60 × 6`,
@@ -212,8 +222,9 @@ struct RowsBuilder {
             guard let done = row.performed?.values, let last, let exercise = state.exercise(ofRow: row.id) else {
                 return false
             }
-            return RowsText.changes(done, last: last, measurement: exercise.measurement,
-                                    unit: cards[row.slot]?.unit ?? .kg) == [RowsText.sameAsLastTime]
+            return RowsText.changes(
+                done, last: last, measurement: exercise.measurement,
+                unit: cards[row.slot]?.unit ?? .kg) == [RowsText.sameAsLastTime]
         }
         let lastTexts = zip(rows, previous).compactMap { row, last in last.map { compactText($0, row: row) } }
         return same ? RowsText.sameAsLastTime : RowsChange(text: "last " + lastTexts.joined(separator: ", "), isGain: false)
@@ -222,13 +233,14 @@ struct RowsBuilder {
     func chainHeader(_ head: Row) -> RowsChainHeader {
         let label = views[head.id]?.label.spoken.capitalizedFirst ?? "Set"
         let pause = RestRules.intraSetPause(head: head).seconds
-        let (what, noun): (String, String) = switch head.structure {
-        case .myo: ("myo-reps", "mini-sets")
-        case .myomatch: ("a myo-rep match", "mini-sets")
-        case .restpause: ("rest-pause", "mini-sets")
-        case .cluster: (head.target?.miniSetReps.map { "clusters of \($0)" } ?? "clusters", "clusters")
-        case .straight, .drop: ("one set", "sets")
-        }
+        let (what, noun): (String, String) =
+            switch head.structure {
+            case .myo: ("myo-reps", "mini-sets")
+            case .myomatch: ("a myo-rep match", "mini-sets")
+            case .restpause: ("rest-pause", "mini-sets")
+            case .cluster: (head.target?.miniSetReps.map { "clusters of \($0)" } ?? "clusters", "clusters")
+            case .straight, .drop: ("one set", "sets")
+            }
         let gap = pause > 0 ? "\(Format.duration(pause)) between \(noun)" : "no rest between \(noun)"
         return RowsChainHeader(id: "\(head.id.rawValue)-chain", head: head.id, text: "\(label) as \(what), \(gap)")
     }
@@ -240,23 +252,27 @@ struct RowsBuilder {
             return RowsChip(row: row.id, text: row.performed?.values.reps.map(String.init) ?? values)
         }
         let previous = done.map { evaluator.previous($0.id)?.values }
-        let comparison: RowsChange = if previous.allSatisfy({ $0 == nil }) {
-            RowsText.firstTime
-        } else if zip(done, previous).allSatisfy({ $0.performed?.values.reps == $1?.reps && $1 != nil }) {
-            RowsText.sameAsLastTime
-        } else {
-            RowsChange(text: "last " + previous.map { $0?.reps.map(String.init) ?? "none" }.joined(separator: ", "),
-                       isGain: false)
-        }
+        let comparison: RowsChange =
+            if previous.allSatisfy({ $0 == nil }) {
+                RowsText.firstTime
+            } else if zip(done, previous).allSatisfy({ $0.performed?.values.reps == $1?.reps && $1 != nil }) {
+                RowsText.sameAsLastTime
+            } else {
+                RowsChange(
+                    text: "last " + previous.map { $0?.reps.map(String.init) ?? "none" }.joined(separator: ", "),
+                    isGain: false)
+            }
         let title = head.structure == .cluster ? "Clusters" : "Mini-sets"
         let reps = chips.map(\.text)
         let list = reps.count == 1 ? reps.joined() : reps.dropLast().joined(separator: ", ") + " and " + (reps.last ?? "")
         let stop = done.last.flatMap { views[$0.id]?.stopText }
-        let sentence = "\(title) done: \(list) reps. "
+        let sentence =
+            "\(title) done: \(list) reps. "
             + (comparison == RowsText.sameAsLastTime ? "The same as last time." : "\(comparison.text.capitalizedFirst).")
             + (stop.map { " \($0)." } ?? "")
-        return RowsMiniSets(id: "\(head.id.rawValue)-minis", title: title, chips: chips, comparison: comparison, stopText: stop,
-                            sets: sets, sentence: sentence)
+        return RowsMiniSets(
+            id: "\(head.id.rawValue)-minis", title: title, chips: chips, comparison: comparison, stopText: stop,
+            sets: sets, sentence: sentence)
     }
 
     // MARK: - Set rows
@@ -361,8 +377,9 @@ struct RowsBuilder {
         let ghost = evaluator.ghost(row.id)
         let typedOnlyReps = row.isPending && row.entered.reps == nil
         let placeholder = typedOnlyReps ? ghost.repsPlaceholder : nil
-        let values = RowsText.values(evaluator.shown(row.id), measurement: measurement, perSide: perSide,
-                                     repsHint: typedOnlyReps && ghost.repsIsHint, placeholder: placeholder)
+        let values = RowsText.values(
+            evaluator.shown(row.id), measurement: measurement, perSide: perSide,
+            repsHint: typedOnlyReps && ghost.repsIsHint, placeholder: placeholder)
         let done = row.performed?.values
         let previous = view?.previous?.values
 
@@ -387,8 +404,9 @@ struct RowsBuilder {
             }
         }
         let who = title
-        let spokenNow = RowsText.spoken(done ?? evaluator.shown(row.id), measurement: measurement, perSide: perSide,
-                                        repsHint: done == nil && typedOnlyReps && ghost.repsIsHint, placeholder: placeholder)
+        let spokenNow = RowsText.spoken(
+            done ?? evaluator.shown(row.id), measurement: measurement, perSide: perSide,
+            repsHint: done == nil && typedOnlyReps && ghost.repsIsHint, placeholder: placeholder)
         let spokenLast = previous.map { "Last time \(RowsText.spoken($0, measurement: measurement, perSide: perSide))" }
         let sentence: String
         switch rowState {
@@ -406,25 +424,29 @@ struct RowsBuilder {
             let after = before.map { self.title($0, head: head, isGroup: isGroup) } ?? "the set before it"
             sentence = "\(who), after \(after): \(spokenNow)."
         }
-        let tap: RowsTap = switch rowState {
-        case .done: .fix
-        case .next: .doNow(.touch(row.id))
-        case .now, .locked: .none
-        }
+        let tap: RowsTap =
+            switch rowState {
+            case .done: .fix
+            case .next: .doNow(.touch(row.id))
+            case .now, .locked: .none
+            }
         let rpeShown = done?.rpe
         var editor: RowsEditor?
         if rowState == .now, let view {
-            let source = editorSource(row, head: head, view: view, mode: .log, title: title, setLabel: setLabel,
-                                      caption: caption, isGroup: isGroup)
+            let source = editorSource(
+                row, head: head, view: view, mode: .log, title: title, setLabel: setLabel,
+                caption: caption, isGroup: isGroup)
             let rpe: RowRPE = if case .prefill = view.rpeEntry, !p.settings.prefillsRPE { .none } else { view.rpeEntry }
             let running = p.timedID == row.id
-            editor = source.editor(values: row.entered, rpe: rpe, commit: running ? view.stopValues : view.commitValues,
-                                   canCommit: view.canTick, isMissing: view.missing)
+            editor = source.editor(
+                values: row.entered, rpe: rpe, commit: running ? view.stopValues : view.commitValues,
+                canCommit: view.canTick, isMissing: view.missing)
         }
         var fix: RowsFix?
         if let done, let view {
-            let source = editorSource(row, head: head, view: view, mode: .fix, title: title, setLabel: setLabel,
-                                      caption: caption, isGroup: isGroup)
+            let source = editorSource(
+                row, head: head, view: view, mode: .fix, title: title, setLabel: setLabel,
+                caption: caption, isGroup: isGroup)
             fix = RowsFix(row: row.id, logged: done, source: source)
         }
         return RowsSetItem(
@@ -454,21 +476,24 @@ struct RowsBuilder {
 
     func compactText(_ values: SetValues, row: Row) -> String {
         let exercise = state.exercise(ofRow: row.id)
-        return RowsText.compact(values, measurement: exercise?.measurement ?? .weightreps,
-                                perSide: exercise?.resolvedLaterality == .alternating)
+        return RowsText.compact(
+            values, measurement: exercise?.measurement ?? .weightreps,
+            perSide: exercise?.resolvedLaterality == .alternating)
     }
 
     func spokenValues(of row: Row) -> String {
         let exercise = state.exercise(ofRow: row.id)
-        return RowsText.spoken(row.performed?.values ?? evaluator.shown(row.id),
-                               measurement: exercise?.measurement ?? .weightreps,
-                               perSide: exercise?.resolvedLaterality == .alternating)
+        return RowsText.spoken(
+            row.performed?.values ?? evaluator.shown(row.id),
+            measurement: exercise?.measurement ?? .weightreps,
+            perSide: exercise?.resolvedLaterality == .alternating)
     }
 
     /// The ghost as values; a `rirstop` set's approximate reps pre-fill as any other.
     func ghostValues(_ ghost: GhostValues) -> SetValues {
-        SetValues(load: ghost.load, assistance: ghost.assistance, reps: ghost.reps,
-                  duration: ghost.duration, distance: ghost.distance)
+        SetValues(
+            load: ghost.load, assistance: ghost.assistance, reps: ghost.reps,
+            duration: ghost.duration, distance: ghost.distance)
     }
 
     /// A pending row's typed values differ from the suggestion somewhere.
@@ -489,8 +514,9 @@ struct RowsBuilder {
             let config = evaluator.config(exercise)
             let rated = done.ratedRPE != nil && last.ratedRPE != nil
             func estimate(_ values: SetValues) -> Double? {
-                var set = SuggestionInputs.doneSet(kind: .normal, values: values, side: nil, config: config, target: Target03(),
-                                                   completedAt: p.now, ordinal: nil)
+                var set = SuggestionInputs.doneSet(
+                    kind: .normal, values: values, side: nil, config: config, target: Target03(),
+                    completedAt: p.now, ordinal: nil)
                 set.rpe = rated ? values.ratedRPE?.double : 10
                 set.unratedRPE = nil
                 return config.oneRepMax(of: set, bodyMass: config.bodyMassInUnit(evaluator.bodyMass))?.value
@@ -510,9 +536,10 @@ struct RowsBuilder {
 
     // MARK: - Editors
 
-    func editorSource(_ row: Row, head: Row, view: SetRowPresentation, mode: RowsEditor.Mode, title: String,
-                      setLabel: String, caption: String?, isGroup: Bool) -> RowsEditorSource
-    {
+    func editorSource(
+        _ row: Row, head: Row, view: SetRowPresentation, mode: RowsEditor.Mode, title: String,
+        setLabel: String, caption: String?, isGroup: Bool
+    ) -> RowsEditorSource {
         let exercise = state.exercise(ofRow: row.id)
         let measurement = exercise?.measurement ?? .weightreps
         let card = cards[row.slot]
@@ -554,11 +581,12 @@ struct RowsBuilder {
 
         var secondary: RowsButton?
         if mode == .log, row.generated, isMini, head.structure.growsOneAtATime {
-            let words = switch head.structure {
-            case .myomatch: "End the match here"
-            case .restpause: "End rest-pause here"
-            default: "End myo-reps here"
-            }
+            let words =
+                switch head.structure {
+                case .myomatch: "End the match here"
+                case .restpause: "End rest-pause here"
+                default: "End myo-reps here"
+                }
             secondary = RowsButton(title: words, action: .removeSet(row.id))
         }
 
@@ -573,9 +601,10 @@ struct RowsBuilder {
             } else if case let .ready(target) = view.timer {
                 goal = target
             }
-            timer = RowsTimer(phase: phase, goal: goal, last: last, trackEnd: RowsTimer.trackEnd(goal: goal, last: last),
-                              goalText: goal.map { "goal \(Format.duration($0))" },
-                              lastText: last.map { "last \(Format.duration($0))" })
+            timer = RowsTimer(
+                phase: phase, goal: goal, last: last, trackEnd: RowsTimer.trackEnd(goal: goal, last: last),
+                goalText: goal.map { "goal \(Format.duration($0))" },
+                lastText: last.map { "last \(Format.duration($0))" })
         }
 
         let previousRated = view.previous?.values.rpe != nil
@@ -643,8 +672,9 @@ struct RowsBuilder {
                 let noun = warmups.count == 1 ? "warm-up" : "warm-ups"
                 let shown = warmups.map { row in
                     let exercise = state.exercise(ofRow: row.id)
-                    return RowsText.values(row.performed?.values ?? SetValues(), measurement: exercise?.measurement ?? .weightreps,
-                                           perSide: exercise?.resolvedLaterality == .alternating)
+                    return RowsText.values(
+                        row.performed?.values ?? SetValues(), measurement: exercise?.measurement ?? .weightreps,
+                        perSide: exercise?.resolvedLaterality == .alternating)
                 }.joined(separator: ", ")
                 let said = warmups.map(spokenValues(of:)).joined(separator: "; ")
                 let text = warmups.isEmpty ? "no sets" : "\(noun) \(shown)"
@@ -668,7 +698,8 @@ struct RowsBuilder {
         for change in changes where change != RowsText.sameAsLastTime && change != RowsText.firstTime {
             if !unique.contains(where: { $0.text == change.text }) { unique.append(change) }
         }
-        let change = unique.isEmpty
+        let change =
+            unique.isEmpty
             ? (changes.contains(RowsText.sameAsLastTime) ? RowsText.sameAsLastTime : RowsText.firstTime)
             : RowsChange(text: unique.map(\.text).joined(separator: ", "), isGain: unique.allSatisfy(\.isGain))
         let unit = block.cards.first?.unit ?? .kg
@@ -740,7 +771,9 @@ struct RowsBuilder {
         }
         guard !pairs.isEmpty else { return RowsText.firstTime }
         let measurement = exercise.measurement
-        let loadField: ValueField? = measurement.loadMode == .assisted ? .assistance
+        let loadField: ValueField? =
+            measurement.loadMode == .assisted
+            ? .assistance
             : measurement.valueColumns.contains(where: { $0.field == .load }) ? .load : nil
         if let loadField {
             func top(_ values: [SetValues]) -> Decimal? {
@@ -759,14 +792,15 @@ struct RowsBuilder {
             }
         }
         if measurement.recordsReps, let now = pairs.compactMap(\.0.reps).max(), let then = pairs.compactMap(\.1.reps).max(),
-           now != then
+            now != then
         {
             let diff = now - then
-            return RowsChange(text: RowsText.signed("\(abs(diff))", diff > 0) + (abs(diff) == 1 ? " rep" : " reps"),
-                              isGain: diff > 0)
+            return RowsChange(
+                text: RowsText.signed("\(abs(diff))", diff > 0) + (abs(diff) == 1 ? " rep" : " reps"),
+                isGain: diff > 0)
         }
         if measurement.isTimedHold, let now = pairs.compactMap(\.0.duration).max(),
-           let then = pairs.compactMap(\.1.duration).max(), now != then
+            let then = pairs.compactMap(\.1.duration).max(), now != then
         {
             return RowsChange(text: RowsText.signed(Format.duration(abs(now - then)), now > then), isGain: now > then)
         }
@@ -785,8 +819,9 @@ struct RowsBuilder {
             rest = restPart(countdown, endsAt: end)
         }
         guard let open = openRow else {
-            return RowsIsland(rest: rest, next: nil, after: nil,
-                              end: .allDone(title: "All sets done", detail: "Finish saves the session"))
+            return RowsIsland(
+                rest: rest, next: nil, after: nil,
+                end: .allDone(title: "All sets done", detail: "Finish saves the session"))
         }
         return RowsIsland(rest: rest, next: item.flatMap(nextPart), after: afterPart(open, blocks: blocks), end: nil)
     }
@@ -803,11 +838,12 @@ struct RowsBuilder {
         if label.isEmpty, slot.group != nil, item.role != .warmup {
             label = "Round \(max(1, UpNext.round(of: row.id, in: state)))"
         }
-        let word: String = switch editor.primary.action {
-        case .startTimedSet: "Start"
-        case .stopTimedSet: "Stop"
-        default: "Log"
-        }
+        let word: String =
+            switch editor.primary.action {
+            case .startTimedSet: "Start"
+            case .stopTimedSet: "Stop"
+            default: "Log"
+            }
         var startedAt: Date?
         if case let .running(start, _)? = editor.timer?.phase { startedAt = start }
         return RowsNextPart(
@@ -815,8 +851,9 @@ struct RowsBuilder {
             tint: editor.tint, fields: editor.fields,
             rpe: editor.rpe?.shown.map { "@ \(Format.rpe($0))" },
             rpeStrip: editor.rpe,
-            primary: RowsButton(title: word, accessibilityLabel: editor.primary.accessibilityLabel,
-                                action: editor.primary.action, isEnabled: editor.primary.isEnabled),
+            primary: RowsButton(
+                title: word, accessibilityLabel: editor.primary.accessibilityLabel,
+                action: editor.primary.action, isEnabled: editor.primary.isEnabled),
             timerStartedAt: startedAt,
             sentence: "Next: \(exercise). \(item.sentence)",
             loggedText: editor.loggedText
@@ -843,10 +880,11 @@ struct RowsBuilder {
     }
 
     func restPart(_ countdown: Countdown, endsAt end: Date) -> RowsRestPart {
-        let title: String = switch countdown.kind {
-        case .manual, .timedSet: "Timer"
-        case let .rest(slot): slot.label
-        }
+        let title: String =
+            switch countdown.kind {
+            case .manual, .timedSet: "Timer"
+            case let .rest(slot): slot.label
+            }
         let total = Seconds(end.timeIntervalSince(countdown.startedAt).rounded())
         return RowsRestPart(
             kind: p.activityKind(countdown), title: title, startedAt: countdown.startedAt, endsAt: end,
@@ -911,9 +949,10 @@ struct RowsBuilder {
         guard let row = state.rows[id], let exercise = state.exercise(ofRow: id) else { return "" }
         let ghost = evaluator.ghost(id)
         let typedOnlyReps = row.isPending && row.entered.reps == nil
-        return RowsText.values(evaluator.shown(id), measurement: exercise.measurement,
-                               perSide: exercise.resolvedLaterality == .alternating,
-                               repsHint: typedOnlyReps && ghost.repsIsHint,
-                               placeholder: typedOnlyReps ? ghost.repsPlaceholder : nil)
+        return RowsText.values(
+            evaluator.shown(id), measurement: exercise.measurement,
+            perSide: exercise.resolvedLaterality == .alternating,
+            repsHint: typedOnlyReps && ghost.repsIsHint,
+            placeholder: typedOnlyReps ? ghost.repsPlaceholder : nil)
     }
 }

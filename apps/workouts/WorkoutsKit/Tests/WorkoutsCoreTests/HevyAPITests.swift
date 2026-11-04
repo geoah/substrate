@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import WorkoutsCore
 
 /// An account read through Hevy's API (`Fixtures/hevy/api.json`, written by
@@ -21,8 +22,9 @@ struct HevyAPITests {
         let url = try #require(Bundle.module.url(forResource: "api", withExtension: "json", subdirectory: "Fixtures/hevy"))
         let fixture = try HevyAPI.decoder.decode(Fixture.self, from: Data(contentsOf: url))
         let export = HevyAPI.Export(workouts: fixture.workouts, routines: fixture.routines, folders: fixture.folders, templates: fixture.templates)
-        return HevyImport.plan(export, exercises: [:], routines: held, history: [], deleted: [], timeZone: london, adapter: "x@1",
-                               library: try ExerciseLibrary.bundled().catalog().exercises)
+        return HevyImport.plan(
+            export, exercises: [:], routines: held, history: [], deleted: [], timeZone: london, adapter: "x@1",
+            library: try ExerciseLibrary.bundled().catalog().exercises)
     }
 
     @Test("a workout lands at Hevy's id, linked to its routine, its exercises by template id")

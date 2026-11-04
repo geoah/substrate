@@ -42,12 +42,14 @@ public enum OffscreenDrawing {
         let drawn: NSView
         switch frame {
         case .screen:
-            let hosting = NSHostingView(rootView: view
-                .frame(width: size.width, height: size.height)
-                .background(Color(nsColor: .windowBackgroundColor))
-                .tint(Self.accent)
-                .environment(\.colorScheme, .light)
-                .environment(\.controlActiveState, .key))
+            let hosting = NSHostingView(
+                rootView:
+                    view
+                    .frame(width: size.width, height: size.height)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .tint(Self.accent)
+                    .environment(\.colorScheme, .light)
+                    .environment(\.controlActiveState, .key))
             hosting.frame = CGRect(origin: .zero, size: size)
             window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.contentView = hosting
@@ -57,9 +59,10 @@ public enum OffscreenDrawing {
             // view's toolbar and titles to the window.
             let controller = NSHostingController(rootView: view.tint(Self.accent).environment(\.colorScheme, .light))
             controller.sizingOptions = []
-            window = NSWindow(contentRect: CGRect(origin: .zero, size: size),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered,
-                              defer: false)
+            window = NSWindow(
+                contentRect: CGRect(origin: .zero, size: size),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered,
+                defer: false)
             window.contentViewController = controller
             window.setContentSize(size)
             window.toolbarStyle = .unified

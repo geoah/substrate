@@ -1,9 +1,9 @@
 import Foundation
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
 import WorkoutsCore
-import SubstrateCore
 
 /// The exercise library seeded into one server and repository: its
 /// movements and their exercises, written into the training package as
@@ -46,8 +46,10 @@ public final class LibraryInstall: @unchecked Sendable {
     public static let markerID = "exercises"
     /// The fields a held record may gain: what it is and what it works,
     /// nothing that changes how its sets are counted or run.
-    static let fillable: Set<String> = ["movement", "muscles", "codes", "aliases", "force", "mechanic", "primaryMuscles",
-                                        "secondaryMuscles"]
+    static let fillable: Set<String> = [
+        "movement", "muscles", "codes", "aliases", "force", "mechanic", "primaryMuscles",
+        "secondaryMuscles",
+    ]
 
     public let url: URL
     private let writingOptions: Data.WritingOptions
@@ -81,17 +83,19 @@ public final class LibraryInstall: @unchecked Sendable {
         // No marker at all: a repository an earlier build seeded reads its
         // version from the library's movements, which only a seeding writes.
         // A marker without a version is a first run cut short.
-        let from: Int = if let marker {
-            if case let .number(version)? = marker.properties["version"] { version.int ?? 0 } else { 0 }
-        } else {
-            listed.filter { $0.kind == kinds.movement }.compactMap { ExerciseLibrary.since($0.properties) }.max() ?? 0
-        }
+        let from: Int =
+            if let marker {
+                if case let .number(version)? = marker.properties["version"] { version.int ?? 0 } else { 0 }
+            } else {
+                listed.filter { $0.kind == kinds.movement }.compactMap { ExerciseLibrary.since($0.properties) }.max() ?? 0
+            }
         guard from < library.version else {
             try record(library.version)
             return Outcome()
         }
-        try await api.write("PUT", kinds.library, Self.markerID,
-                            properties: ["name": .string("Exercise library"), "seeding": .number(Decimal(library.version))])
+        try await api.write(
+            "PUT", kinds.library, Self.markerID,
+            properties: ["name": .string("Exercise library"), "seeding": .number(Decimal(library.version))])
 
         var outcome = Outcome()
         for record in library.records {
@@ -116,8 +120,9 @@ public final class LibraryInstall: @unchecked Sendable {
             }
         }
         guard outcome.deferred == 0 else { return outcome }
-        try await api.write("PUT", kinds.library, Self.markerID,
-                            properties: ["version": .number(Decimal(library.version)), "seeding": .null])
+        try await api.write(
+            "PUT", kinds.library, Self.markerID,
+            properties: ["version": .number(Decimal(library.version)), "seeding": .null])
         try record(library.version)
         return outcome
     }
@@ -154,11 +159,12 @@ public final class LibraryInstall: @unchecked Sendable {
         }
         func hevy(_ object: JSONObject) -> Set<String> {
             guard case let .array(codes)? = object["codes"] else { return [] }
-            return Set(codes.compactMap { value -> String? in
-                guard case let .object(coding) = value, coding["system"] == .string("hevy"), case let .string(code)? = coding["code"]
-                else { return nil }
-                return code
-            })
+            return Set(
+                codes.compactMap { value -> String? in
+                    guard case let .object(coding) = value, coding["system"] == .string("hevy"), case let .string(code)? = coding["code"]
+                    else { return nil }
+                    return code
+                })
         }
         guard case let .string(name)? = held["name"] else { return false }
         return names(library).contains(normalized(name)) || !hevy(held).isDisjoint(with: hevy(library))

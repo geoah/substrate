@@ -1,7 +1,7 @@
 import Foundation
+import SubstrateCore
 import SubstrateLocal
 import WorkoutsCore
-import SubstrateCore
 
 /// What one sync does between the phone's history and one repository's
 /// sessions, decided from three records the phone keeps:
@@ -52,9 +52,10 @@ public enum HistoryExchange {
         }
     }
 
-    public static func plan(server: ServerSnapshot, local: [SessionRecords], queued: Set<String>, versions: [String: Int],
-                            tombstones: Set<String>, hidden: Set<String> = [], codec: RecordCodec) -> Plan
-    {
+    public static func plan(
+        server: ServerSnapshot, local: [SessionRecords], queued: Set<String>, versions: [String: Int],
+        tombstones: Set<String>, hidden: Set<String> = [], codec: RecordCodec
+    ) -> Plan {
         var plan = Plan()
         let kinds = codec.kinds
         let localByID = Dictionary(local.map { ($0.id.rawValue, $0) }, uniquingKeysWith: { first, _ in first })

@@ -23,9 +23,10 @@ public struct Change: Codable, Hashable, Sendable, Identifiable {
     /// asks for again.
     public var leftOut: Bool
 
-    public init(kind: Kind, words: String, detail: String? = nil, block: AuthorizationSetup.Block? = nil,
-                leftOut: Bool = false)
-    {
+    public init(
+        kind: Kind, words: String, detail: String? = nil, block: AuthorizationSetup.Block? = nil,
+        leftOut: Bool = false
+    ) {
         self.kind = kind
         self.words = words
         self.detail = detail

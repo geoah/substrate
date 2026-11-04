@@ -12,8 +12,9 @@ private let shelfKind = "example.com/shelf/book"
 
 private struct Unexpected: Error {}
 
-private let reachable = LinkSnapshot(phase: .signedIn, server: URL(string: "https://ada.example.com")!, repository: "ada.example.com",
-                                     scopes: ["write:example.com/shelf/*"])
+private let reachable = LinkSnapshot(
+    phase: .signedIn, server: URL(string: "https://ada.example.com")!, repository: "ada.example.com",
+    scopes: ["write:example.com/shelf/*"])
 
 /// An app whose records are the kit's, writing none of their stages: its
 /// own event, its own effect, and an editor whose save is two events.
@@ -172,8 +173,9 @@ struct LinkedRecordsAppTests {
 @Suite("A stopped read", .timeLimit(.minutes(10)))
 struct StoppedReadTests {
     private struct Stepper {
-        let records = LinkedRecords(kinds: [shelfKind], cache: nil, outbox: nil, words: StatusWords(app: "Shelf", device: "this iPhone", kept: "books"),
-                                    limit: 2)
+        let records = LinkedRecords(
+            kinds: [shelfKind], cache: nil, outbox: nil, words: StatusWords(app: "Shelf", device: "this iPhone", kept: "books"),
+            limit: 2)
         var state = LinkedRecordsState()
 
         mutating func step(_ event: LinkedRecords.Event) -> [LinkedRecords.Effect] {

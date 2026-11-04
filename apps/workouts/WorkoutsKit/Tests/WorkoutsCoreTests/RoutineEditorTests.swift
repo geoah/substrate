@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import WorkoutsCore
 
 /// The routine editor: rename, order (blocks, members, sets), groups made
@@ -12,9 +13,10 @@ struct RoutineEditorTests {
     /// warm (plain), a1 a2 a3 (tri-set a), solo (plain), b1 b2 (paired b).
     static func routine() -> Routine {
         func slot(_ key: String, group: String? = nil, sets: [PlannedSet]? = nil) -> RoutineSlot {
-            RoutineSlot(key: key, exercise: ExerciseID(key), group: group,
-                        sets: sets ?? [PlannedSet(key: "s1", repsMin: 8, repsMax: 12), PlannedSet(key: "s2", repsMin: 8, repsMax: 12)],
-                        extra: ["coachTag": .string("slot \(key)")])
+            RoutineSlot(
+                key: key, exercise: ExerciseID(key), group: group,
+                sets: sets ?? [PlannedSet(key: "s1", repsMin: 8, repsMax: 12), PlannedSet(key: "s2", repsMin: 8, repsMax: 12)],
+                extra: ["coachTag": .string("slot \(key)")])
         }
         return Routine(
             id: "day-1", version: 4, name: "Day 1", folder: "Programme", notes: "Easy does it.",

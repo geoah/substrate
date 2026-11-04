@@ -67,8 +67,10 @@ public enum HevyCSV {
         guard missing.isEmpty else { throw .missingColumns(missing) }
         let massUnit: MassUnit = columns["weight_lbs"] != nil && columns["weight_kg"] == nil ? .lb : .kg
         let weightColumn = massUnit == .lb ? "weight_lbs" : "weight_kg"
-        let distanceColumns: [(String, Decimal)] = [("distance_km", 1000), ("distance_miles", Decimal(string: "1609.344")!),
-                                                    ("distance_meters", 1), ("distance_m", 1)]
+        let distanceColumns: [(String, Decimal)] = [
+            ("distance_km", 1000), ("distance_miles", Decimal(string: "1609.344")!),
+            ("distance_meters", 1), ("distance_m", 1),
+        ]
 
         var rows: [Row] = []
         var unreadable: [HevyImport.Problem] = []
@@ -88,10 +90,11 @@ public enum HevyCSV {
                 problem("the row names no exercise")
                 continue
             }
-            var row = Row(line: line.number, title: field("title"), start: start, end: parseTime(field("end_time")),
-                          description: field("description"), exercise: exercise,
-                          superset: field("superset_id").nilIfEmpty, exerciseNotes: field("exercise_notes"),
-                          setIndex: Int(field("set_index")), setType: field("set_type").lowercased())
+            var row = Row(
+                line: line.number, title: field("title"), start: start, end: parseTime(field("end_time")),
+                description: field("description"), exercise: exercise,
+                superset: field("superset_id").nilIfEmpty, exerciseNotes: field("exercise_notes"),
+                setIndex: Int(field("set_index")), setType: field("set_type").lowercased())
             do {
                 if let weight = try number(field(weightColumn), weightColumn) { row.weight = Mass(value: weight, unit: massUnit) }
                 row.reps = try number(field("reps"), "reps").map { NSDecimalNumber(decimal: $0).intValue }
@@ -138,9 +141,10 @@ public enum HevyCSV {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
-        for format in ["d MMM yyyy, HH:mm", "d MMM yyyy HH:mm", "d MMM yyyy, HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss",
-                       "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm"]
-        {
+        for format in [
+            "d MMM yyyy, HH:mm", "d MMM yyyy HH:mm", "d MMM yyyy, HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm",
+        ] {
             formatter.dateFormat = format
             if let date = formatter.date(from: text) {
                 var calendar = Calendar(identifier: .gregorian)
@@ -240,14 +244,16 @@ public enum HevyImport {
     /// The plan for an account read through Hevy's API: its workouts as the
     /// CSV's rows (at their instants, keyed by Hevy's workout id), its
     /// routines, its own exercises and its body measurements.
-    public static func plan(_ export: HevyAPI.Export, exercises: [ExerciseID: Exercise], routines: [RoutineID: Routine],
-                            history: [SessionRecords], deleted: Set<String>, timeZone: TimeZone, adapter: String,
-                            library: [ExerciseID: Exercise] = [:], pairs: PairedWeights = .each) -> Plan
-    {
-        var plan = plan(HevyAPI.rows(export.workouts, timeZone: timeZone), exercises: exercises, history: history, deleted: deleted,
-                        timeZone: timeZone, adapter: adapter, library: library, templates: export.templates,
-                        hevyRoutines: export.routines, folders: export.folders, routines: routines, measurements: export.measurements,
-                        pairs: pairs)
+    public static func plan(
+        _ export: HevyAPI.Export, exercises: [ExerciseID: Exercise], routines: [RoutineID: Routine],
+        history: [SessionRecords], deleted: Set<String>, timeZone: TimeZone, adapter: String,
+        library: [ExerciseID: Exercise] = [:], pairs: PairedWeights = .each
+    ) -> Plan {
+        var plan = plan(
+            HevyAPI.rows(export.workouts, timeZone: timeZone), exercises: exercises, history: history, deleted: deleted,
+            timeZone: timeZone, adapter: adapter, library: library, templates: export.templates,
+            hevyRoutines: export.routines, folders: export.folders, routines: routines, measurements: export.measurements,
+            pairs: pairs)
         for id in export.missingTemplates.sorted() {
             plan.problems.append(Problem(line: 0, reason: "Hevy no longer serves exercise \(id); its sets came in under the workout's own name"))
         }
@@ -276,13 +282,14 @@ public enum HevyImport {
     ///   - measurements: Hevy's body measurements; a session takes the
     ///     latest body mass on or before its day.
     ///   - pairs: how the account logged a pair of implements.
-    public static func plan(_ file: HevyCSV.File, exercises: [ExerciseID: Exercise], history: [SessionRecords],
-                            deleted: Set<String>, timeZone: TimeZone, adapter: String,
-                            library: [ExerciseID: Exercise] = [:], templates: [String: HevyAPI.Template] = [:],
-                            hevyRoutines: [HevyAPI.Routine] = [], folders: [HevyAPI.Folder] = [],
-                            routines: [RoutineID: Routine] = [:], measurements: [HevyAPI.BodyMeasurement] = [],
-                            pairs: PairedWeights = .each) -> Plan
-    {
+    public static func plan(
+        _ file: HevyCSV.File, exercises: [ExerciseID: Exercise], history: [SessionRecords],
+        deleted: Set<String>, timeZone: TimeZone, adapter: String,
+        library: [ExerciseID: Exercise] = [:], templates: [String: HevyAPI.Template] = [:],
+        hevyRoutines: [HevyAPI.Routine] = [], folders: [HevyAPI.Folder] = [],
+        routines: [RoutineID: Routine] = [:], measurements: [HevyAPI.BodyMeasurement] = [],
+        pairs: PairedWeights = .each
+    ) -> Plan {
         var plan = Plan(problems: file.unreadable, timeZone: timeZone)
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
@@ -371,9 +378,10 @@ public enum HevyImport {
             // From 1, in Hevy's order within the folder (`routine.position`).
             let position = positions[folder ?? "", default: 0] + 1
             positions[folder ?? ""] = position
-            plan.routines.append(routine(hevy, id: id, folder: folder, position: position, pairs: pairs) {
-                resolve($0.title, template: $0.exerciseTemplateId)
-            })
+            plan.routines.append(
+                routine(hevy, id: id, folder: folder, position: position, pairs: pairs) {
+                    resolve($0.title, template: $0.exerciseTemplateId)
+                })
         }
         // The account's own exercises, whether a workout names them or not.
         for template in templates.values.sorted(by: { $0.id < $1.id }) where template.isCustom == true {
@@ -437,8 +445,10 @@ public enum HevyImport {
             }
             var source: [SetID: HevyCSV.Row] = [:]
             let routine = first.routineID.flatMap { routineIDs[$0] }
-            var records = session(workout, id: id, title: title, start: start, end: end, timeZone: timeZone, adapter: adapter,
-                                  routine: routine, pairs: pairs, source: &source) { row in
+            var records = session(
+                workout, id: id, title: title, start: start, end: end, timeZone: timeZone, adapter: adapter,
+                routine: routine, pairs: pairs, source: &source
+            ) { row in
                 resolve(row.exercise, template: row.templateID)
             }
             if records.session.bodyMass == nil, let mass = masses.last(where: { $0.day <= start })?.mass {
@@ -446,7 +456,7 @@ public enum HevyImport {
             }
             for set in records.sets {
                 guard let exercise = known[set.exercise], exercise.measurement.loadMode == nil || exercise.measurement.loadMode == .bodyweight,
-                      let row = source[set.id], (row.weight?.value ?? 0) > 0
+                    let row = source[set.id], (row.weight?.value ?? 0) > 0
                 else { continue }
                 plan.weightsNotRecorded[row.exercise, default: 0] += 1
             }
@@ -464,7 +474,8 @@ public enum HevyImport {
         guard id.rawValue.hasPrefix("hevy-") else { return false }
         let rest = id.rawValue.dropFirst(5)
         let parts = rest.split(separator: "-")
-        let isStamp = parts.count >= 2 && parts[0].count == 8 && parts[1].count == 4 && parts[0].allSatisfy(\.isNumber)
+        let isStamp =
+            parts.count >= 2 && parts[0].count == 8 && parts[1].count == 4 && parts[0].allSatisfy(\.isNumber)
             && parts[1].allSatisfy(\.isNumber)
         return !isStamp
     }
@@ -492,12 +503,14 @@ public enum HevyImport {
         mass("bodyMass", entry.weightKg)
         mass("leanMass", entry.leanMassKg)
         if let fat = entry.fatPercent.flatMap(HevyAPI.decimal) { properties["bodyFat"] = .string(DecimalText.format(fat)) }
-        for (key, value) in [("neck", entry.neckCm), ("shoulders", entry.shoulderCm), ("chest", entry.chestCm),
-                             ("leftBicep", entry.leftBicepCm), ("rightBicep", entry.rightBicepCm),
-                             ("leftForearm", entry.leftForearmCm), ("rightForearm", entry.rightForearmCm),
-                             ("abdomen", entry.abdomen), ("waist", entry.waist), ("hips", entry.hips),
-                             ("leftThigh", entry.leftThigh), ("rightThigh", entry.rightThigh),
-                             ("leftCalf", entry.leftCalf), ("rightCalf", entry.rightCalf)] {
+        for (key, value) in [
+            ("neck", entry.neckCm), ("shoulders", entry.shoulderCm), ("chest", entry.chestCm),
+            ("leftBicep", entry.leftBicepCm), ("rightBicep", entry.rightBicepCm),
+            ("leftForearm", entry.leftForearmCm), ("rightForearm", entry.rightForearmCm),
+            ("abdomen", entry.abdomen), ("waist", entry.waist), ("hips", entry.hips),
+            ("leftThigh", entry.leftThigh), ("rightThigh", entry.rightThigh),
+            ("leftCalf", entry.leftCalf), ("rightCalf", entry.rightCalf),
+        ] {
             length(key, value)
         }
         properties["adapter"] = .string(adapter)
@@ -511,9 +524,10 @@ public enum HevyImport {
     /// (`warmup` a warm-up, `failure` a set to failure, its rep range or its
     /// reps, each `dropset` one more drop of the set before it, the first
     /// drop's reps and step kept).
-    static func routine(_ hevy: HevyAPI.Routine, id: RoutineID, folder: String?, position: Int, pairs: PairedWeights = .each,
-                        exercise resolve: (HevyAPI.Exercise) -> Exercise) -> Routine
-    {
+    static func routine(
+        _ hevy: HevyAPI.Routine, id: RoutineID, folder: String?, position: Int, pairs: PairedWeights = .each,
+        exercise resolve: (HevyAPI.Exercise) -> Exercise
+    ) -> Routine {
         var slots: [RoutineSlot] = []
         var keys = Set<String>()
         let ordered = hevy.exercises.sorted { $0.index < $1.index }
@@ -531,8 +545,9 @@ public enum HevyImport {
             var counters: [Role: Int] = [:]
             for set in item.sets.sorted(by: { $0.index < $1.index }) {
                 let type = set.type.lowercased()
-                let weight = perImplement(set.weightKg.flatMap(HevyAPI.decimal).flatMap { $0 > 0 ? Mass(value: $0, unit: .kg) : nil },
-                                          exercise: exercise, pairs: pairs)
+                let weight = perImplement(
+                    set.weightKg.flatMap(HevyAPI.decimal).flatMap { $0 > 0 ? Mass(value: $0, unit: .kg) : nil },
+                    exercise: exercise, pairs: pairs)
                 if type == "dropset" || type == "drop_set", !sets.isEmpty {
                     let last = sets.count - 1
                     if sets[last].drops == nil {
@@ -561,8 +576,10 @@ public enum HevyImport {
                 if type == "failure" { planned.termination = .failure }
                 sets.append(planned)
             }
-            slots.append(RoutineSlot(key: key, exercise: exercise.id, setRest: item.restSeconds.map { max(0, $0) },
-                                     notes: item.notes?.nilIfEmpty, sets: sets))
+            slots.append(
+                RoutineSlot(
+                    key: key, exercise: exercise.id, setRest: item.restSeconds.map { max(0, $0) },
+                    notes: item.notes?.nilIfEmpty, sets: sets))
         }
         var groups: [RoutineGroup] = []
         var cursor = 0
@@ -583,8 +600,9 @@ public enum HevyImport {
             }
             cursor = members.last! + 1
         }
-        return Routine(id: id, name: hevy.title, folder: folder, position: position, notes: hevy.notes?.nilIfEmpty, groups: groups,
-                       slots: slots)
+        return Routine(
+            id: id, name: hevy.title, folder: folder, position: position, notes: hevy.notes?.nilIfEmpty, groups: groups,
+            slots: slots)
     }
 
     // MARK: Workouts
@@ -630,10 +648,11 @@ public enum HevyImport {
 
     /// One workout as a finished session and its sets. Every set sits at the
     /// session's start (`timeBasis: session`): Hevy records no set times.
-    static func session(_ workout: Workout, id: SessionID, title: String, start: Date, end: Date, timeZone: TimeZone, adapter: String,
-                        routine: RoutineID? = nil, pairs: PairedWeights = .each, source: inout [SetID: HevyCSV.Row],
-                        exercise resolve: (HevyCSV.Row) -> Exercise) -> SessionRecords
-    {
+    static func session(
+        _ workout: Workout, id: SessionID, title: String, start: Date, end: Date, timeZone: TimeZone, adapter: String,
+        routine: RoutineID? = nil, pairs: PairedWeights = .each, source: inout [SetID: HevyCSV.Row],
+        exercise resolve: (HevyCSV.Row) -> Exercise
+    ) -> SessionRecords {
         // An exercise's rows are one slot while they run on, the set index
         // rising; the same title again later, or an index starting over, is
         // a slot of its own.
@@ -641,7 +660,7 @@ public enum HevyImport {
         // A workout's placeholder with no exercise carries the session alone.
         for row in workout.rows where !(row.placeholder && row.exercise.isEmpty) {
             if let last = runs.last?.last, last.exercise == row.exercise, last.superset == row.superset,
-               (row.setIndex ?? Int.max) > (last.setIndex ?? Int.min)
+                (row.setIndex ?? Int.max) > (last.setIndex ?? Int.min)
             {
                 runs[runs.count - 1].append(row)
             } else {
@@ -715,16 +734,18 @@ public enum HevyImport {
     /// One slot's rows as set records. `warmup` is a warm-up, `failure` a
     /// working set that reached failure, and each `dropset` row a drop of
     /// the set before it, which becomes the chain's head.
-    static func setRecords(_ run: [HevyCSV.Row], slot: String, slotIndex: Int, session: SessionID, at: Date,
-                           exercise: Exercise, pairs: PairedWeights = .each) -> [PerformedSet]
-    {
+    static func setRecords(
+        _ run: [HevyCSV.Row], slot: String, slotIndex: Int, session: SessionID, at: Date,
+        exercise: Exercise, pairs: PairedWeights = .each
+    ) -> [PerformedSet] {
         var out: [PerformedSet] = []
         var counters: [Role: Int] = [:]
         var head: Int?
         for (position, row) in run.enumerated() {
             let drop = row.setType == "dropset" || row.setType == "drop_set" || row.setType == "drop"
-            var set = setRecord(row, id: SetID("\(session.rawValue)-\(slotIndex)-\(position)"), slot: slot, order: position + 1,
-                                session: session, at: at, exercise: exercise, pairs: pairs)
+            var set = setRecord(
+                row, id: SetID("\(session.rawValue)-\(slotIndex)-\(position)"), slot: slot, order: position + 1,
+                session: session, at: at, exercise: exercise, pairs: pairs)
             if drop, let headIndex = head {
                 let chain = out.count(where: { $0.continues == out[headIndex].id }) + 2
                 out[headIndex].structure = .drop
@@ -745,9 +766,10 @@ public enum HevyImport {
         return out
     }
 
-    private static func setRecord(_ row: HevyCSV.Row, id: SetID, slot: String, order: Int, session: SessionID, at: Date,
-                                  exercise: Exercise, pairs: PairedWeights) -> PerformedSet
-    {
+    private static func setRecord(
+        _ row: HevyCSV.Row, id: SetID, slot: String, order: Int, session: SessionID, at: Date,
+        exercise: Exercise, pairs: PairedWeights
+    ) -> PerformedSet {
         let mode = exercise.measurement.loadMode
         let laterality = exercise.resolvedLaterality
         let weight = perImplement(row.weight, exercise: exercise, pairs: pairs)
@@ -809,18 +831,20 @@ public enum HevyImport {
         let reps = rows.contains { $0.reps != nil }
         let duration = rows.contains { $0.duration != nil }
         let distance = rows.contains { $0.distance != nil }
-        let measurement: MeasurementType = switch (weight, reps, duration, distance) {
-        case (_, _, true, true): .distanceduration
-        case (true, _, _, true): .shortdistanceweight
-        case (true, false, true, false): .weightduration
-        case (false, false, true, false): .duration
-        case (_, true, _, _) where qualifier.contains("assisted"): .bodyweightassistedreps
-        case (_, true, _, _) where qualifier.contains("weighted"): .weightedbodyweightreps
-        case (true, _, _, _): .weightreps
-        default: qualifier.contains("bodyweight") ? .bodyweightreps : .repsonly
-        }
-        return Exercise(id: ExerciseID.slug(for: title, taken: taken), name: title, measurement: measurement,
-                        equipment: equipment(qualifier), isLocal: true)
+        let measurement: MeasurementType =
+            switch (weight, reps, duration, distance) {
+            case (_, _, true, true): .distanceduration
+            case (true, _, _, true): .shortdistanceweight
+            case (true, false, true, false): .weightduration
+            case (false, false, true, false): .duration
+            case (_, true, _, _) where qualifier.contains("assisted"): .bodyweightassistedreps
+            case (_, true, _, _) where qualifier.contains("weighted"): .weightedbodyweightreps
+            case (true, _, _, _): .weightreps
+            default: qualifier.contains("bodyweight") ? .bodyweightreps : .repsonly
+            }
+        return Exercise(
+            id: ExerciseID.slug(for: title, taken: taken), name: title, measurement: measurement,
+            equipment: equipment(qualifier), isLocal: true)
     }
 
     /// An exercise from the account's own Hevy template: its type decides
@@ -828,30 +852,33 @@ public enum HevyImport {
     /// files a cable under machine) the equipment, its muscle groups the two
     /// group lists; its id goes in `codes`.
     static func newExercise(_ template: HevyAPI.Template, taken: Set<ExerciseID>) -> Exercise {
-        let measurement: MeasurementType = switch template.type {
-        case "weight_reps": .weightreps
-        case "bodyweight_reps": .bodyweightreps
-        case "bodyweight_weighted": .weightedbodyweightreps
-        case "bodyweight_assisted", "bodyweight_assisted_reps": .bodyweightassistedreps
-        case "duration", "floors_duration", "steps_duration": .duration
-        case "weight_duration": .weightduration
-        case "distance_duration": .distanceduration
-        case "short_distance_weight": .shortdistanceweight
-        default: .repsonly
-        }
+        let measurement: MeasurementType =
+            switch template.type {
+            case "weight_reps": .weightreps
+            case "bodyweight_reps": .bodyweightreps
+            case "bodyweight_weighted": .weightedbodyweightreps
+            case "bodyweight_assisted", "bodyweight_assisted_reps": .bodyweightassistedreps
+            case "duration", "floors_duration", "steps_duration": .duration
+            case "weight_duration": .weightduration
+            case "distance_duration": .distanceduration
+            case "short_distance_weight": .shortdistanceweight
+            default: .repsonly
+            }
         let qualifier = bracketed(template.title)?.lowercased() ?? ""
-        let equipment: Equipment? = switch template.equipment {
-        case "machine" where qualifier.contains("cable") || template.title.lowercased().contains("cable"): .cable
-        case "resistance_band": .resistanceband
-        case let value?: Equipment(rawValue: value) ?? equipment(qualifier)
-        case nil: equipment(qualifier)
-        }
+        let equipment: Equipment? =
+            switch template.equipment {
+            case "machine" where qualifier.contains("cable") || template.title.lowercased().contains("cable"): .cable
+            case "resistance_band": .resistanceband
+            case let value?: Equipment(rawValue: value) ?? equipment(qualifier)
+            case nil: equipment(qualifier)
+            }
         func group(_ name: String) -> Muscle? { Muscle(rawValue: name.replacingOccurrences(of: "_", with: "")) }
         let primary = template.primaryMuscleGroup.flatMap(group).map { [$0] } ?? []
         let secondary = (template.secondaryMuscleGroups ?? []).compactMap(group).filter { !primary.contains($0) }
-        return Exercise(id: ExerciseID.slug(for: template.title, taken: taken), name: template.title, measurement: measurement,
-                        equipment: equipment, primaryMuscles: primary, secondaryMuscles: secondary,
-                        codes: [Coding(system: hevySystem, code: template.id)], isLocal: true)
+        return Exercise(
+            id: ExerciseID.slug(for: template.title, taken: taken), name: template.title, measurement: measurement,
+            equipment: equipment, primaryMuscles: primary, secondaryMuscles: secondary,
+            codes: [Coding(system: hevySystem, code: template.id)], isLocal: true)
     }
 
     private static func bracketed(_ title: String) -> String? {

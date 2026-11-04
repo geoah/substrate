@@ -140,7 +140,7 @@ final class Updater: NSObject, ObservableObject {
     func install(_ release: ReleaseIndex.Release) {
         offer = nil
         guard let base = build.updates, let manifest = release.ios?.manifest,
-              let url = URL(string: manifest, relativeTo: base)?.absoluteString
+            let url = URL(string: manifest, relativeTo: base)?.absoluteString
         else { return }
         var allowed = CharacterSet.urlQueryAllowed
         allowed.remove(charactersIn: "&=?+")

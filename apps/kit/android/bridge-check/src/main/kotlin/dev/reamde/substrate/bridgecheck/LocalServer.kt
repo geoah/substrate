@@ -9,9 +9,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 /**
- * An HTTP server on a loopback port, so the transport checks need no
- * network: `/bytes?n=`, `/lines?n=`, `/redirect` (a 302 to `/landed`, whose
- * hits are counted, so a followed redirect shows).
+ * An HTTP server on a loopback port, so the transport checks need no network: `/bytes?n=`, `/lines?n=`, `/redirect` (a 302 to `/landed`, whose hits are
+ * counted, so a followed redirect shows).
  */
 class LocalServer : AutoCloseable {
     private val socket = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
@@ -21,11 +20,12 @@ class LocalServer : AutoCloseable {
     init {
         thread(isDaemon = true, name = "bridge-check-server") {
             while (!socket.isClosed) {
-                val client = try {
-                    socket.accept()
-                } catch (_: Exception) {
-                    return@thread
-                }
+                val client =
+                    try {
+                        socket.accept()
+                    } catch (_: Exception) {
+                        return@thread
+                    }
                 thread(isDaemon = true) { serve(client) }
             }
         }

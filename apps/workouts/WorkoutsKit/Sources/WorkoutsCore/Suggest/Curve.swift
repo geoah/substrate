@@ -18,7 +18,7 @@ public enum RPECurve {
     public static func p(_ n: Double) -> Double {
         if n <= 1 { return 1 }
         if n <= 16 {
-            let i = Int(((n - 1) * 2).rounded(.down)) // 0...30
+            let i = Int(((n - 1) * 2).rounded(.down))  // 0...30
             let a = 1 + 0.5 * Double(i)
             if i == 30 || n == a { return points[i] }
             return points[i] + (points[i + 1] - points[i]) * (n - a) / 0.5

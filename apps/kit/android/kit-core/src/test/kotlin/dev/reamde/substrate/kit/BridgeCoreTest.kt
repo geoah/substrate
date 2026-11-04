@@ -43,11 +43,17 @@ class BridgeCoreTest {
             val envelope = BridgeJson.decodeFromString(Envelope.serializer(), text)
             posted += envelope
             onPost(envelope)
-            val reply = when {
-                refuse(envelope) -> Envelope(1, Op.error, body = BridgeJson.encodeToJsonElement(BridgeFailure.serializer(), BridgeFailure(BridgeFailure.Code.unknownCall, "no")))
-                envelope.op == Op.open -> Envelope(1, Op.opened, handle = Handle(1, 1))
-                else -> Envelope(1, Op.accepted)
-            }
+            val reply =
+                when {
+                    refuse(envelope) ->
+                        Envelope(
+                            1,
+                            Op.error,
+                            body = BridgeJson.encodeToJsonElement(BridgeFailure.serializer(), BridgeFailure(BridgeFailure.Code.unknownCall, "no")),
+                        )
+                    envelope.op == Op.open -> Envelope(1, Op.opened, handle = Handle(1, 1))
+                    else -> Envelope(1, Op.accepted)
+                }
             return BridgeJson.encodeToString(Envelope.serializer(), reply)
         }
     }
@@ -60,8 +66,7 @@ class BridgeCoreTest {
 
     private fun request(request: DeviceRequest): JsonElement = BridgeJson.encodeToJsonElement(DeviceRequest.Serializer, request)
 
-    private fun TestScope.core(swift: FakeSwift, services: DeviceServices = NoDeviceServices) =
-        BridgeCore(swift::post, services, this)
+    private fun TestScope.core(swift: FakeSwift, services: DeviceServices = NoDeviceServices) = BridgeCore(swift::post, services, this)
 
     @Test
     fun presentationsAndListsBecomeTheHandlesState() = runTest {
@@ -71,7 +76,15 @@ class BridgeCoreTest {
         deliver(core, Envelope(1, Op.presentation, handle = handle.handle, body = buildJsonObject { put("step", 1) }))
         assertEquals(buildJsonObject { put("step", 1) }, handle.state.value.presentation)
         deliver(core, Envelope(1, Op.list, handle = handle.handle, body = list(ListMessage.Whole("rows", 1, listOf(row("a", "A"), row("b", "B"))))))
-        deliver(core, Envelope(1, Op.list, handle = handle.handle, body = list(ListMessage.Delta("rows", 1, 2, listOf(row("c", "C")), listOf(row("a", "a!")), listOf("b"), listOf("c", "a")))))
+        deliver(
+            core,
+            Envelope(
+                1,
+                Op.list,
+                handle = handle.handle,
+                body = list(ListMessage.Delta("rows", 1, 2, listOf(row("c", "C")), listOf(row("a", "a!")), listOf("b"), listOf("c", "a"))),
+            ),
+        )
         assertEquals(listOf(row("c", "C"), row("a", "a!")), handle.state.value.lists["rows"])
         deliver(core, Envelope(1, Op.closed, handle = handle.handle))
         assertTrue(handle.state.value.closed)
@@ -86,10 +99,21 @@ class BridgeCoreTest {
         val core = core(swift)
         val handle = core.open("check").getOrThrow()
         deliver(core, Envelope(1, Op.list, handle = handle.handle, body = list(ListMessage.Whole("rows", 1, listOf(row("a", "A"))))))
-        deliver(core, Envelope(1, Op.list, handle = handle.handle, body = list(ListMessage.Delta("rows", 2, 3, emptyList(), emptyList(), emptyList(), listOf("a")))))
+        deliver(
+            core,
+            Envelope(1, Op.list, handle = handle.handle, body = list(ListMessage.Delta("rows", 2, 3, emptyList(), emptyList(), emptyList(), listOf("a")))),
+        )
         assertEquals(Op.resync, swift.posted.last().op)
         // Deltas until the whole list are dropped; the whole one applies.
-        deliver(core, Envelope(1, Op.list, handle = handle.handle, body = list(ListMessage.Delta("rows", 3, 4, listOf(row("z", "Z")), emptyList(), emptyList(), listOf("a", "z")))))
+        deliver(
+            core,
+            Envelope(
+                1,
+                Op.list,
+                handle = handle.handle,
+                body = list(ListMessage.Delta("rows", 3, 4, listOf(row("z", "Z")), emptyList(), emptyList(), listOf("a", "z"))),
+            ),
+        )
         assertEquals(listOf(row("a", "A")), handle.state.value.lists["rows"])
         deliver(core, Envelope(1, Op.list, handle = handle.handle, body = list(ListMessage.Whole("rows", 4, listOf(row("a", "A"), row("z", "Z"))))))
         assertEquals(2, handle.state.value.lists.getValue("rows").size)
@@ -130,12 +154,13 @@ class BridgeCoreTest {
         val swift = FakeSwift()
         val dispatcher = StandardTestDispatcher(testScheduler)
         val started = CompletableDeferred<Unit>()
-        val core = core(swift) {
-            DeviceAnswer.Value(dispatcher) {
-                started.complete(Unit)
-                awaitCancellation()
+        val core =
+            core(swift) {
+                DeviceAnswer.Value(dispatcher) {
+                    started.complete(Unit)
+                    awaitCancellation()
+                }
             }
-        }
         deliver(core, Envelope(1, Op.request, id = 3, body = request(DeviceRequest.ConnectivityCurrent)))
         advanceUntilIdle()
         assertTrue(started.isCompleted)
@@ -150,12 +175,13 @@ class BridgeCoreTest {
     fun anUnsupportedOrThrowingServiceIsAStructuredErrorThatHidesSecrets() = runTest {
         val swift = FakeSwift()
         val dispatcher = StandardTestDispatcher(testScheduler)
-        val core = core(swift) { request ->
-            when (request) {
-                is DeviceRequest.SecureRead -> DeviceAnswer.Value(dispatcher) { throw IllegalStateException("the token is s3cret") }
-                else -> DeviceAnswer.Unsupported("not here")
+        val core =
+            core(swift) { request ->
+                when (request) {
+                    is DeviceRequest.SecureRead -> DeviceAnswer.Value(dispatcher) { throw IllegalStateException("the token is s3cret") }
+                    else -> DeviceAnswer.Unsupported("not here")
+                }
             }
-        }
         deliver(core, Envelope(1, Op.request, id = 4, body = request(DeviceRequest.ConnectivityCurrent)))
         deliver(core, Envelope(1, Op.request, id = 5, body = request(DeviceRequest.SecureRead("s", "a"))))
         advanceUntilIdle()
@@ -202,15 +228,20 @@ class BridgeCoreTest {
         val swift = FakeSwift()
         val dispatcher = StandardTestDispatcher(testScheduler)
         val discarded = CopyOnWriteArrayList<JsonElement>()
-        val core = core(swift) { request ->
-            when (request) {
-                DeviceRequest.ConnectivityWatch -> DeviceAnswer.Chunks(dispatcher, flow {
-                    emit(JsonPrimitive(1))
-                    throw BridgeException(BridgeFailure(BridgeFailure.Code.overflow, "too fast"))
-                })
-                else -> DeviceAnswer.Value(dispatcher, discard = { discarded += it }) { JsonPrimitive("a file") }
+        val core =
+            core(swift) { request ->
+                when (request) {
+                    DeviceRequest.ConnectivityWatch ->
+                        DeviceAnswer.Chunks(
+                            dispatcher,
+                            flow {
+                                emit(JsonPrimitive(1))
+                                throw BridgeException(BridgeFailure(BridgeFailure.Code.overflow, "too fast"))
+                            },
+                        )
+                    else -> DeviceAnswer.Value(dispatcher, discard = { discarded += it }) { JsonPrimitive("a file") }
+                }
             }
-        }
         deliver(core, Envelope(1, Op.request, id = 1, body = request(DeviceRequest.ConnectivityWatch)))
         advanceUntilIdle()
         val error = swift.posted.last { it.id == 1L }
@@ -230,14 +261,15 @@ class BridgeCoreTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val discarded = CopyOnWriteArrayList<JsonElement>()
         lateinit var core: BridgeCore
-        core = core(swift) {
-            DeviceAnswer.Value(dispatcher, discard = { discarded += it }) {
-                // Cancelled while the block makes its value: the block
-                // returns it, and the call ends before the reply.
-                deliver(core, Envelope(1, Op.cancel, id = 5))
-                JsonPrimitive("made")
+        core =
+            core(swift) {
+                DeviceAnswer.Value(dispatcher, discard = { discarded += it }) {
+                    // Cancelled while the block makes its value: the block
+                    // returns it, and the call ends before the reply.
+                    deliver(core, Envelope(1, Op.cancel, id = 5))
+                    JsonPrimitive("made")
+                }
             }
-        }
         deliver(core, Envelope(1, Op.request, id = 5, body = request(DeviceRequest.ConnectivityCurrent)))
         advanceUntilIdle()
         assertTrue(swift.posted.none { it.id == 5L && it.op == Op.reply })

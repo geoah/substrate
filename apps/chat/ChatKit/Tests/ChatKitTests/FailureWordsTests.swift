@@ -1,11 +1,14 @@
 import Foundation
-@testable import ChatKit
 import Testing
+
+@testable import ChatKit
 
 /// The helper on a keyless `openai` row.
 private func keylessRoutes(threads: String = emptyPage, status: String = "ok") -> [ChatServer.Route] {
-    let agents = #"{"head":10,"generation":"g","records":[{"id":"x.example.com/pkg/helper","kind":"substrate.reamde.dev/core/agent","version":1,"createdAt":"2026-10-30T10:00:00Z","updatedAt":"2026-10-30T10:00:00Z","properties":{"description":"Helps.","provider":{"ref":"substrate.reamde.dev/llm/provider/openai"}}}]}"#
-    let providers = #"{"head":10,"generation":"g","records":[{"id":"openai","kind":"substrate.reamde.dev/llm/provider","version":1,"createdAt":"2026-10-30T10:00:00Z","updatedAt":"2026-10-30T10:00:00Z","properties":{"wire":"openai"}}]}"#
+    let agents =
+        #"{"head":10,"generation":"g","records":[{"id":"x.example.com/pkg/helper","kind":"substrate.reamde.dev/core/agent","version":1,"createdAt":"2026-10-30T10:00:00Z","updatedAt":"2026-10-30T10:00:00Z","properties":{"description":"Helps.","provider":{"ref":"substrate.reamde.dev/llm/provider/openai"}}}]}"#
+    let providers =
+        #"{"head":10,"generation":"g","records":[{"id":"openai","kind":"substrate.reamde.dev/llm/provider","version":1,"createdAt":"2026-10-30T10:00:00Z","updatedAt":"2026-10-30T10:00:00Z","properties":{"wire":"openai"}}]}"#
     return [
         .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, agents)),
         .init(method: "GET", path: "/api/v1/records", query: "llm/provider", answer: .json(200, providers)),
@@ -16,7 +19,8 @@ private func keylessRoutes(threads: String = emptyPage, status: String = "ok") -
 struct FailureWordsTests {
     /// What the agent loop sends after a provider's 401: its own wrapping
     /// first, the provider's answer inside.
-    static let refusedKey = "substrate: validation failed: agent x.example.com/pkg/helper: llm: error, status code: 401, "
+    static let refusedKey =
+        "substrate: validation failed: agent x.example.com/pkg/helper: llm: error, status code: 401, "
         + "status: 401 Unauthorized, message: Incorrect API key provided: sk-…abcd."
 
     @Test func aRefusedKeySaysSoAndKeepsTheServersWordsApart() {
@@ -29,9 +33,10 @@ struct FailureWordsTests {
     }
 
     @Test func eachProvidersRefusalReadsAsOne() {
-        for text in ["anthropic: authentication_error: invalid x-api-key", "API key not valid. Please pass a valid API key. API_KEY_INVALID",
-                     "401 Unauthorized"]
-        {
+        for text in [
+            "anthropic: authentication_error: invalid x-api-key", "API key not valid. Please pass a valid API key. API_KEY_INVALID",
+            "401 Unauthorized",
+        ] {
             #expect(TurnFailureWords.cause(text) == .keyRefused, "\(text)")
         }
         #expect(TurnFailureWords.cause("error, status code: 429, message: Rate limit reached") == .limited)

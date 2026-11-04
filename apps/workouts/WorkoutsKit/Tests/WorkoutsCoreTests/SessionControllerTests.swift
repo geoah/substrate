@@ -4,6 +4,7 @@ import SubstrateLocal
 import SubstrateRuntime
 import SubstrateTesting
 import Testing
+
 @testable import WorkoutsCore
 
 /// The session on the kit's runtime: the order of the loop (engine, journal,
@@ -30,8 +31,9 @@ struct SessionControllerTests {
             environment.devices.notifications = notifications
             environment.devices.activities = activities
             environment.workouts = health
-            let controller = SessionController(catalog: try BundledCatalog().loadNow(), history: history, settings: WorkoutsSettings(),
-                                               adapter: "substrate-workouts@test", directory: directory)
+            let controller = SessionController(
+                catalog: try BundledCatalog().loadNow(), history: history, settings: WorkoutsSettings(),
+                adapter: "substrate-workouts@test", directory: directory)
             harness = ControllerHarness(controller, clock: clock, environment: environment, performsEffects: performsEffects)
         }
 
@@ -177,8 +179,9 @@ struct SessionControllerTests {
         let first = try Rig(directory: directory.url, clock: clock, performsEffects: false)
         await first.harness.send(.start(.empty))
         let start = try #require(first.harness.effects.compactMap { if case let .prepareStart(request) = $0 { request } else { nil } }.first)
-        let controller = SessionController(catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
-                                           directory: directory.url)
+        let controller = SessionController(
+            catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
+            directory: directory.url)
         await first.harness.deliver(controller.start(start, bodyMass: nil, environment: first.harness.environment))
         await first.finish()
         let finishing = try #require(await first.harness.state.finishing)
@@ -226,7 +229,10 @@ struct SessionControllerTests {
         // A replayed event runs no effect of its own: only the open's.
         let replayed = relaunched.harness.trace.contains { if case .replayed(_, 1) = $0 { true } else { false } }
         #expect(replayed)
-        guard case let .restore(sync)? = relaunched.harness.effects.dropFirst().first else { Issue.record("no restore"); return }
+        guard case let .restore(sync)? = relaunched.harness.effects.dropFirst().first else {
+            Issue.record("no restore")
+            return
+        }
         #expect(sync?.session == session.sessionID)
     }
 
@@ -242,7 +248,9 @@ struct SessionControllerTests {
         #expect(shown <= resting)
         rig.harness.clearTrace()
         await rig.harness.advance(by: resting.timeIntervalSince(rig.harness.clock.now) + 1)
-        try await rig.harness.until(timeout: .seconds(60)) { await $0.presentation.cue.value.map { [.countdownEnded, .shortCountdownEnded].contains($0.kind) } ?? false }
+        try await rig.harness.until(timeout: .seconds(60)) {
+            await $0.presentation.cue.value.map { [.countdownEnded, .shortCountdownEnded].contains($0.kind) } ?? false
+        }
         #expect(Self.steps(rig.harness.trace).contains("presented"))
         #expect(!Self.steps(rig.harness.trace).contains { $0.hasPrefix("journaled") })
     }
@@ -258,18 +266,21 @@ struct SessionControllerTests {
         let probe = try Rig(directory: directory.url, clock: clock)
         let started = try await probe.start()
         let state = try #require(await probe.harness.state.session)
-        let row = try #require(started.cards.flatMap(\.rows).first { row in
-            guard let held = state.rows[row.id], held.isHead, held.role == .working, row.state == .pending,
-                  row.commitValues?.load != nil else { return false }
-            return state.exercise(ofRow: row.id)?.measurement == .weightreps
-        })
+        let row = try #require(
+            started.cards.flatMap(\.rows).first { row in
+                guard let held = state.rows[row.id], held.isHead, held.role == .working, row.state == .pending,
+                    row.commitValues?.load != nil
+                else { return false }
+                return state.exercise(ofRow: row.id)?.measurement == .weightreps
+            })
         let exercise = try #require(state.exercise(ofRow: row.id)).id
         let unit = try #require(row.commitValues?.load?.unit)
         await probe.harness.runtime.close()
         try FileManager.default.removeItem(at: probe.journalURL)
         let past = (1 ... 3).map { week in
-            Self.pastSession("p\(week)", at: clock.now.addingTimeInterval(TimeInterval(-week * 7 * 86400)), exercise: exercise,
-                             load: Mass(value: 35, unit: unit), reps: 12)
+            Self.pastSession(
+                "p\(week)", at: clock.now.addingTimeInterval(TimeInterval(-week * 7 * 86400)), exercise: exercise,
+                load: Mass(value: 35, unit: unit), reps: 12)
         }
 
         let rig = try Rig(directory: directory.url, clock: clock, history: HistoryIndex(past))
@@ -291,12 +302,15 @@ struct SessionControllerTests {
     /// One finished session of `exercise`: a working set of `load` × `reps`.
     static func pastSession(_ id: String, at date: Date, exercise: ExerciseID, load: Mass, reps: Int) -> SessionRecords {
         let session = SessionID(id)
-        let set = PerformedSet(id: SetID("\(id)-0"), at: date.addingTimeInterval(60), session: session, exercise: exercise, slot: "s",
-                               order: 1, ordinal: 1, loadMode: .external, load: load, reps: reps, rpe: 8,
-                               target: SetTarget(repsMin: 8, repsMax: 12, rpeMin: 8, rpeMax: 8))
-        return SessionRecords(session: TrainingSession(id: session, at: date, endsAt: date.addingTimeInterval(3600), status: .finished,
-                                                       slots: [SessionSlot(key: "s", exercise: exercise)], timezone: "UTC"),
-                              sets: [set])
+        let set = PerformedSet(
+            id: SetID("\(id)-0"), at: date.addingTimeInterval(60), session: session, exercise: exercise, slot: "s",
+            order: 1, ordinal: 1, loadMode: .external, load: load, reps: reps, rpe: 8,
+            target: SetTarget(repsMin: 8, repsMax: 12, rpeMin: 8, rpeMax: 8))
+        return SessionRecords(
+            session: TrainingSession(
+                id: session, at: date, endsAt: date.addingTimeInterval(3600), status: .finished,
+                slots: [SessionSlot(key: "s", exercise: exercise)], timezone: "UTC"),
+            sets: [set])
     }
 
     @Test("a refused command changes nothing and says why, with the warning haptic")
@@ -342,8 +356,9 @@ struct SessionControllerTests {
         let rig = try Rig(directory: directory.url, performsEffects: false)
         await rig.harness.send(.start(.empty))
         let start = try #require(rig.harness.effects.compactMap { if case let .prepareStart(request) = $0 { request } else { nil } }.first)
-        let controller = SessionController(catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
-                                           directory: directory.url)
+        let controller = SessionController(
+            catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
+            directory: directory.url)
         await rig.harness.deliver(controller.start(start, bodyMass: nil, environment: rig.harness.environment))
         // The first Save's history file is still being written (held):
         // the two after it are refused alike, and neither waits forever.
@@ -460,8 +475,9 @@ struct SessionControllerTests {
         let first = try Rig(directory: directory, clock: clock, performsEffects: false)
         await first.harness.send(.start(.empty))
         let start = try #require(first.harness.effects.compactMap { if case let .prepareStart(request) = $0 { request } else { nil } }.first)
-        let controller = SessionController(catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
-                                           directory: directory)
+        let controller = SessionController(
+            catalog: Catalog(), history: HistoryIndex(), settings: WorkoutsSettings(), adapter: "test",
+            directory: directory)
         await first.harness.deliver(controller.start(start, bodyMass: nil, environment: first.harness.environment))
         await first.finish()
         var entry = try #require(await first.harness.state.finishing).entry

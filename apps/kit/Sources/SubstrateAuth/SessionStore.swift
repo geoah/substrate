@@ -118,9 +118,10 @@ public struct SessionStore: Sendable {
     /// `revokePending`. Where the Keychain refuses both writes, `old` was
     /// revoked to retire it and stays the session in use: its next request
     /// is refused and the app signs in again, which loses nothing.
-    public func save(_ session: Session, replacing old: Session?,
-                     transport: any HTTPTransport = URLSessionTransport.shared) async throws
-    {
+    public func save(
+        _ session: Session, replacing old: Session?,
+        transport: any HTTPTransport = URLSessionTransport.shared
+    ) async throws {
         try await SessionTransitions.shared.run(key) {
             if let old {
                 do {

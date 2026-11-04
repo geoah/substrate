@@ -80,9 +80,11 @@ public struct Reader {
                 declaration.fields = fields.compactMap { field in resolve(field.type, field.name).map { Field(name: field.name, type: $0) } }
             case let .cases(cases):
                 declaration.cases = cases.map { rawCase in
-                    Case(name: rawCase.name, rawValue: rawCase.rawValue, fields: rawCase.fields.compactMap { field in
-                        resolve(field.type, "\(rawCase.name).\(field.name)").map { Field(name: field.name, type: $0) }
-                    })
+                    Case(
+                        name: rawCase.name, rawValue: rawCase.rawValue,
+                        fields: rawCase.fields.compactMap { field in
+                            resolve(field.type, "\(rawCase.name).\(field.name)").map { Field(name: field.name, type: $0) }
+                        })
                 }
             }
             if declaration.kind == .enum || declaration.kind == .stringEnum {
@@ -100,9 +102,10 @@ public struct Reader {
     ///   - names: every declaration's qualified name, with how many type
     ///     parameters it takes.
     ///   - parameters: the type parameters of the declaration being read.
-    static func resolve(_ raw: RawType, scope: [String], names: [String: Int], parameters: Set<String> = [],
-                        opaque: Set<String> = []) -> Result<BridgedType, Refusal>
-    {
+    static func resolve(
+        _ raw: RawType, scope: [String], names: [String: Int], parameters: Set<String> = [],
+        opaque: Set<String> = []
+    ) -> Result<BridgedType, Refusal> {
         func again(_ raw: RawType) -> Result<BridgedType, Refusal> {
             resolve(raw, scope: scope, names: names, parameters: parameters, opaque: opaque)
         }
@@ -285,15 +288,20 @@ private final class Visitor: SyntaxVisitor {
                 // type written; no attribute on a stored property is in the model.
                 if let attribute = variable.attributes.first?.as(AttributeSyntax.self) {
                     let names = variable.bindings.compactMap { $0.pattern.as(IdentifierPatternSyntax.self)?.identifier.text }
-                    refuse(variable, "\(name).\(names.joined(separator: ", ")) is marked \(attribute.trimmedDescription); a property wrapper changes the synthesized coding")
+                    refuse(
+                        variable,
+                        "\(name).\(names.joined(separator: ", ")) is marked \(attribute.trimmedDescription); a property wrapper changes the synthesized coding")
                     continue
                 }
                 for binding in variable.bindings {
                     if let accessors = binding.accessorBlock {
                         // A computed property is not encoded; observers do not change that a stored one is.
                         if case let .accessors(list) = accessors.accessors,
-                           list.allSatisfy({ $0.accessorSpecifier.tokenKind == .keyword(.willSet) || $0.accessorSpecifier.tokenKind == .keyword(.didSet) })
-                        {} else { continue }
+                            list.allSatisfy({ $0.accessorSpecifier.tokenKind == .keyword(.willSet) || $0.accessorSpecifier.tokenKind == .keyword(.didSet) })
+                        {
+                        } else {
+                            continue
+                        }
                     }
                     guard let identifier = binding.pattern.as(IdentifierPatternSyntax.self) else {
                         refuse(binding, "\(name) has a property that is not a plain name")
@@ -311,8 +319,11 @@ private final class Visitor: SyntaxVisitor {
                     fields.append(RawField(name: field, type: Self.raw(type)))
                 }
             }
-            found.append((Declaration(name: name, module: module, kind: .struct, fields: [], cases: [], parameters: parameters), location(node),
-                          scope + [node.name.text], .fields(fields)))
+            found.append(
+                (
+                    Declaration(name: name, module: module, kind: .struct, fields: [], cases: [], parameters: parameters), location(node),
+                    scope + [node.name.text], .fields(fields)
+                ))
         }
         scope.append(node.name.text)
         return .visitChildren
@@ -360,8 +371,11 @@ private final class Visitor: SyntaxVisitor {
                     cases.append(RawCase(name: element.name.text, rawValue: rawValue, fields: fields))
                 }
             }
-            found.append((Declaration(name: name, module: module, kind: stringRaw ? .stringEnum : .enum, fields: [], cases: []),
-                          location(node), scope + [node.name.text], .cases(cases)))
+            found.append(
+                (
+                    Declaration(name: name, module: module, kind: stringRaw ? .stringEnum : .enum, fields: [], cases: []),
+                    location(node), scope + [node.name.text], .cases(cases)
+                ))
         }
         scope.append(node.name.text)
         return .visitChildren
@@ -375,16 +389,17 @@ private final class Visitor: SyntaxVisitor {
     static func handwritten(_ members: MemberBlockSyntax) -> [(MemberBlockItemSyntax, String)] {
         members.members.compactMap { member in
             let decl = member.decl
-            let named = decl.as(EnumDeclSyntax.self)?.name.text ?? decl.as(StructDeclSyntax.self)?.name.text
+            let named =
+                decl.as(EnumDeclSyntax.self)?.name.text ?? decl.as(StructDeclSyntax.self)?.name.text
                 ?? decl.as(TypeAliasDeclSyntax.self)?.name.text ?? decl.as(ClassDeclSyntax.self)?.name.text
             if named == "CodingKeys" { return (member, "declares CodingKeys") }
             if let function = decl.as(FunctionDeclSyntax.self), function.name.text == "encode",
-               function.signature.parameterClause.parameters.first?.firstName.text == "to"
+                function.signature.parameterClause.parameters.first?.firstName.text == "to"
             {
                 return (member, "writes its own encode(to:)")
             }
             if let initializer = decl.as(InitializerDeclSyntax.self),
-               initializer.signature.parameterClause.parameters.first?.firstName.text == "from"
+                initializer.signature.parameterClause.parameters.first?.firstName.text == "from"
             {
                 return (member, "writes its own init(from:)")
             }
@@ -403,10 +418,11 @@ private final class Visitor: SyntaxVisitor {
         }
         if let identifier = type.as(IdentifierTypeSyntax.self) {
             let name = identifier.name.text
-            let arguments = identifier.genericArgumentClause?.arguments.compactMap { argument -> TypeSyntax? in
-                if case let .type(type) = argument.argument { return type }
-                return nil
-            } ?? []
+            let arguments =
+                identifier.genericArgumentClause?.arguments.compactMap { argument -> TypeSyntax? in
+                    if case let .type(type) = argument.argument { return type }
+                    return nil
+                } ?? []
             switch (name, arguments.count) {
             case ("Optional", 1): return .optional(raw(arguments[0]))
             case ("Array", 1): return .array(raw(arguments[0]))

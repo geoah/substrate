@@ -156,8 +156,9 @@ struct Training: Controller {
         if let until = state.restUntil, until > input.now {
             rest = "Rest \(Int(until.timeIntervalSince(input.now).rounded())) s"
         }
-        return Presentation(open: state.id != nil, sets: state.sets, finishing: state.finishing,
-                            refusal: input.transient.refusal, rest: rest, restUntil: rest == nil ? nil : state.restUntil)
+        return Presentation(
+            open: state.id != nil, sets: state.sets, finishing: state.finishing,
+            refusal: input.transient.refusal, rest: rest, restUntil: rest == nil ? nil : state.restUntil)
     }
 
     func nextChange(of presentation: Presentation) -> Date? { presentation.restUntil }

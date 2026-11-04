@@ -1,7 +1,7 @@
 import Foundation
 import SubstrateCore
-import SubstrateScreens
 import SubstrateRuntime
+import SubstrateScreens
 
 /// The root's presenter: every word the app's screen shows.
 public enum TemplatePresenter {

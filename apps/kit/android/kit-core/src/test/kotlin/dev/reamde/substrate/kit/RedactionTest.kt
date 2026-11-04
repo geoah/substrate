@@ -20,7 +20,16 @@ class RedactionTest {
 
     @Test
     fun aTransportOrSecureStoreBodyIsNeverRecorded() {
-        val fetch = DeviceRequest.TransportFetch(TransportRequest("https://example.com", "GET", listOf(TransportHeader("Authorization", "Bearer s3cret")), timeoutMillis = 1, credentials = false))
+        val fetch =
+            DeviceRequest.TransportFetch(
+                TransportRequest(
+                    "https://example.com",
+                    "GET",
+                    listOf(TransportHeader("Authorization", "Bearer s3cret")),
+                    timeoutMillis = 1,
+                    credentials = false,
+                )
+            )
         val request = text(Envelope(1, Op.request, id = 1, body = BridgeJson.encodeToJsonElement(DeviceRequest.Serializer, fetch)))
         assertFalse(Redaction.redact(request).contains("s3cret"))
         val reply = text(Envelope(1, Op.reply, id = 1, body = JsonPrimitive("dG9rZW4=")))

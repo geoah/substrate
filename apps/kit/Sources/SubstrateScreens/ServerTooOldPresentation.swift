@@ -15,9 +15,10 @@ public struct ServerTooOldPresentation: Bridged, Hashable, Sendable {
     public var tryAgain: String?
     public var changeServer: String?
 
-    public init(symbol: ScreenSymbol, title: String, summary: String, cannotTitle: String?, missing: [ChangeLine], note: String,
-                tryAgain: String?, changeServer: String?)
-    {
+    public init(
+        symbol: ScreenSymbol, title: String, summary: String, cannotTitle: String?, missing: [ChangeLine], note: String,
+        tryAgain: String?, changeServer: String?
+    ) {
         self.symbol = symbol
         self.title = title
         self.summary = summary
@@ -33,17 +34,20 @@ public struct ServerTooOldPresentation: Bridged, Hashable, Sendable {
     ///     the server's sentence.
     ///   - actions: whether the screen offers Try Again and Use Another
     ///     Server.
-    public static func present(appName: String, host: String, running: String?, needed: String?, missing: [String],
-                               blocked: [Change] = [], tryAgain: Bool, changeServer: Bool) -> ServerTooOldPresentation
-    {
+    public static func present(
+        appName: String, host: String, running: String?, needed: String?, missing: [String],
+        blocked: [Change] = [], tryAgain: Bool, changeServer: Bool
+    ) -> ServerTooOldPresentation {
         let release = running.flatMap(ServerVersion.init)?.isRelease == true
         let runs = "\(host) runs \(ServerVersion.display(running))" + (release ? "." : " that can't do it yet.")
         let summary = needed.map { "\(appName) needs Substrate \($0) or later. \(runs)" } ?? "\(appName) needs a newer Substrate. \(runs)"
-        let lines = missing.map { ChangeLine(id: "missing|\($0)", symbol: .cannot, tone: .quiet, words: $0.capitalizedFirst) }
+        let lines =
+            missing.map { ChangeLine(id: "missing|\($0)", symbol: .cannot, tone: .quiet, words: $0.capitalizedFirst) }
             + blocked.map(ChangeLine.init)
-        return ServerTooOldPresentation(symbol: .serverUpdate, title: "\(host) needs an update", summary: summary,
-                                        cannotTitle: lines.isEmpty ? nil : "It can't yet", missing: lines,
-                                        note: "Whoever runs \(host) can update it. Once it is, try again.",
-                                        tryAgain: tryAgain ? "Try Again" : nil, changeServer: changeServer ? "Use Another Server" : nil)
+        return ServerTooOldPresentation(
+            symbol: .serverUpdate, title: "\(host) needs an update", summary: summary,
+            cannotTitle: lines.isEmpty ? nil : "It can't yet", missing: lines,
+            note: "Whoever runs \(host) can update it. Once it is, try again.",
+            tryAgain: tryAgain ? "Try Again" : nil, changeServer: changeServer ? "Use Another Server" : nil)
     }
 }

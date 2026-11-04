@@ -3,8 +3,8 @@ import Foundation
 /// A record or engine id: a string with a type, so a set id is never passed
 /// where a session id belongs. Encodes as the bare string.
 public protocol StringID: RawRepresentable, Codable, Hashable, Comparable, Sendable,
-    CustomStringConvertible, ExpressibleByStringLiteral where RawValue == String
-{
+    CustomStringConvertible, ExpressibleByStringLiteral
+where RawValue == String {
     init(rawValue: String)
 }
 

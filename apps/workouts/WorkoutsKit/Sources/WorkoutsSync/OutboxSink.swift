@@ -1,7 +1,7 @@
 import Foundation
+import SubstrateCore
 import SubstrateLocal
 import WorkoutsCore
-import SubstrateCore
 
 /// The session controller's sync seam (`SessionWriteSink`) over the outbox: a
 /// finished session, a Health link, a new exercise, a discard and a delete
@@ -16,9 +16,10 @@ public struct OutboxSink<Event: Sendable, State: Sendable>: SessionWriteSink {
     public let onQueued: @Sendable () async -> Void
     public let onProblem: @Sendable (any Error) async -> Void
 
-    public init(outbox: Outbox, codec: RecordCodec = RecordCodec(), onQueued: @escaping @Sendable () async -> Void,
-                onProblem: @escaping @Sendable (any Error) async -> Void = { _ in })
-    {
+    public init(
+        outbox: Outbox, codec: RecordCodec = RecordCodec(), onQueued: @escaping @Sendable () async -> Void,
+        onProblem: @escaping @Sendable (any Error) async -> Void = { _ in }
+    ) {
         self.outbox = outbox
         self.codec = codec
         self.onQueued = onQueued
@@ -92,8 +93,9 @@ public final class SessionTombstones: @unchecked Sendable {
             unreadable = nil
         } catch {
             let aside = try? WorkoutsFiles.setAside(url, at: now)
-            unreadable = UnreadableRecord(source: aside?.lastPathComponent ?? Self.fileName,
-                                          reason: "The list of sessions deleted on this iPhone could not be read: \(error)")
+            unreadable = UnreadableRecord(
+                source: aside?.lastPathComponent ?? Self.fileName,
+                reason: "The list of sessions deleted on this iPhone could not be read: \(error)")
         }
     }
 

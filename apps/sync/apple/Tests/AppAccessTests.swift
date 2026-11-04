@@ -51,30 +51,37 @@ final class ManifestTests: XCTestCase {
         XCTAssertEqual(manifest.appName, "Substrate Sync")
         // The app's Info.plist key is empty outside a release.
         XCTAssertEqual(manifest.clientID, "http://127.0.0.1/substrate-sync")
-        XCTAssertEqual(manifest.scope, "write:providers.substrate.reamde.dev/apple/* "
-            + "write:providers.substrate.reamde.dev/applehealth/account write:providers.substrate.reamde.dev/applehealth/export "
-            + "write:providers.substrate.reamde.dev/applehealth/* "
-            + "write:substrate.reamde.dev/health/sleep write:substrate.reamde.dev/health/workout write:substrate.reamde.dev/observations/*")
-        XCTAssertEqual(try AuthorizationDetail.json(manifest.details), #"[{"package":"providers.substrate.reamde.dev/apple","type":"package","version":3},"#
-            + #"{"package":"providers.substrate.reamde.dev/applehealth","type":"package","version":5},"#
-            + #"{"id":"substrate-sync-1a2b3c4d","kind":"providers.substrate.reamde.dev/applehealth/account","#
-            + #""properties":{"displayName":"Ada's iPhone","timezone":"Europe/London"},"type":"account"},"#
-            + #"{"trigger":"applehealth-webhook","type":"webhook"}]"#)
+        XCTAssertEqual(
+            manifest.scope,
+            "write:providers.substrate.reamde.dev/apple/* "
+                + "write:providers.substrate.reamde.dev/applehealth/account write:providers.substrate.reamde.dev/applehealth/export "
+                + "write:providers.substrate.reamde.dev/applehealth/* "
+                + "write:substrate.reamde.dev/health/sleep write:substrate.reamde.dev/health/workout write:substrate.reamde.dev/observations/*")
+        XCTAssertEqual(
+            try AuthorizationDetail.json(manifest.details),
+            #"[{"package":"providers.substrate.reamde.dev/apple","type":"package","version":3},"#
+                + #"{"package":"providers.substrate.reamde.dev/applehealth","type":"package","version":5},"#
+                + #"{"id":"substrate-sync-1a2b3c4d","kind":"providers.substrate.reamde.dev/applehealth/account","#
+                + #""properties":{"displayName":"Ada's iPhone","timezone":"Europe/London"},"type":"account"},"#
+                + #"{"trigger":"applehealth-webhook","type":"webhook"}]"#)
         XCTAssertEqual(AppModel.appleVersion, 3)
         XCTAssertEqual(AppModel.healthVersion, 5)
         // The account is the one the install names, which Set Up made under
         // a password session, so a move finds it in place.
-        XCTAssertEqual(SyncManifest.make(account: LocalState().healthAccount, deviceName: "d", timeZone: "UTC").details[2].id,
-                       LocalState().healthAccount)
+        XCTAssertEqual(
+            SyncManifest.make(account: LocalState().healthAccount, deviceName: "d", timeZone: "UTC").details[2].id,
+            LocalState().healthAccount)
     }
 
     func testAServerThatSetsUpGetsTheFlowAndAnyOtherThePassword() {
-        let full = AuthorizationServerMetadata(issuer: server, scopesSupported: ["read:*", "write:*", "agents:*", "decide:*"],
-                                               authorizationDetailsTypesSupported: ["package", "account", "webhook"])
+        let full = AuthorizationServerMetadata(
+            issuer: server, scopesSupported: ["read:*", "write:*", "agents:*", "decide:*"],
+            authorizationDetailsTypesSupported: ["package", "account", "webhook"])
         let scopesOnly = AuthorizationServerMetadata(issuer: server, scopesSupported: ["read:*", "write:*", "agents:*", "decide:*"])
         func probe(_ version: String, _ metadata: AuthorizationServerMetadata?) -> ServerProbe.Result {
-            ServerProbe.Result(origin: server, discovery: Discovery(server: .init(version: version)), metadata: metadata,
-                               verdict: SyncManifest.requirement.verdict(version: version, metadata: metadata))
+            ServerProbe.Result(
+                origin: server, discovery: Discovery(server: .init(version: version)), metadata: metadata,
+                verdict: SyncManifest.requirement.verdict(version: version, metadata: metadata))
         }
         XCTAssertEqual(manifest.door(for: probe("v0.114.0", full)), .app)
         XCTAssertEqual(manifest.door(for: probe("dev", full)), .app)
@@ -94,22 +101,24 @@ final class ManifestTests: XCTestCase {
     /// account, the deliveries) named one by one since a glob never reaches
     /// them, and the webhook by the package it delivers to.
     func testTheRequestReadsAsTheApprovalPageWordsIt() {
-        XCTAssertEqual(manifest.plannedChanges().map(\.words), [
-            "See, add, change and delete your Apple contacts, events, reminders, shares and visits, and 5 more kinds, including kinds added later, and search them by meaning, which spends your embedding budget",
-            "See, add, change and delete your Apple Health accounts, and search them by meaning, which spends your embedding budget",
-            "See, add, change and delete your Apple Health deliveries, and search them by meaning, which spends your embedding budget",
-            "See, add, change and delete your Apple Health cycle tracking entries, ECGs, heart rate notifications, medications, states of mind and symptoms, "
-                + "and 2 more kinds, including kinds added later, and search them by meaning, which spends your embedding budget",
-            "See, add, change and delete your Health sleep, and search them by meaning, which spends your embedding budget",
-            "See, add, change and delete your Health workouts, and search them by meaning, which spends your embedding budget",
-            "See, add, change and delete your Observations metrics and sources, and 3 more kinds, including kinds added later, and search them by meaning, which spends your embedding budget",
-            "Send data to your repository through the Apple Health webhook, for any Apple Health account, "
-                + "and see every delivery to it that could not be filed, whoever sent it",
-            "Install Apple",
-            "Install Apple Health",
-            "Create the Apple Health account “Ada's iPhone”",
-            "Turn on the Apple Health webhook",
-        ])
+        XCTAssertEqual(
+            manifest.plannedChanges().map(\.words),
+            [
+                "See, add, change and delete your Apple contacts, events, reminders, shares and visits, and 5 more kinds, including kinds added later, and search them by meaning, which spends your embedding budget",
+                "See, add, change and delete your Apple Health accounts, and search them by meaning, which spends your embedding budget",
+                "See, add, change and delete your Apple Health deliveries, and search them by meaning, which spends your embedding budget",
+                "See, add, change and delete your Apple Health cycle tracking entries, ECGs, heart rate notifications, medications, states of mind and symptoms, "
+                    + "and 2 more kinds, including kinds added later, and search them by meaning, which spends your embedding budget",
+                "See, add, change and delete your Health sleep, and search them by meaning, which spends your embedding budget",
+                "See, add, change and delete your Health workouts, and search them by meaning, which spends your embedding budget",
+                "See, add, change and delete your Observations metrics and sources, and 3 more kinds, including kinds added later, and search them by meaning, which spends your embedding budget",
+                "Send data to your repository through the Apple Health webhook, for any Apple Health account, "
+                    + "and see every delivery to it that could not be filed, whoever sent it",
+                "Install Apple",
+                "Install Apple Health",
+                "Create the Apple Health account “Ada's iPhone”",
+                "Turn on the Apple Health webhook",
+            ])
     }
 }
 
@@ -147,10 +156,11 @@ final class SessionKindTests: XCTestCase {
     func testAnAppSessionKeepsWhatItWasApproved() throws {
         let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
         defer { store.clear() }
-        let session = Session(server: URL(string: "https://ada.example.com")!, repository: "ada.example.com", secret: "sub_app_x",
-                              clientID: SyncManifest.localClientID, scopes: SyncManifest.scopes + ["webhook:applehealth-webhook"],
-                              expiresAt: Date(timeIntervalSinceReferenceDate: 815_000_000),
-                              revocation: URL(string: "https://ada.example.com/oauth/revoke"))
+        let session = Session(
+            server: URL(string: "https://ada.example.com")!, repository: "ada.example.com", secret: "sub_app_x",
+            clientID: SyncManifest.localClientID, scopes: SyncManifest.scopes + ["webhook:applehealth-webhook"],
+            expiresAt: Date(timeIntervalSinceReferenceDate: 815_000_000),
+            revocation: URL(string: "https://ada.example.com/oauth/revoke"))
         try store.save(session)
         guard case let .found(read) = store.read() else { return XCTFail("the app session did not read") }
         XCTAssertEqual(read, session)
@@ -188,14 +198,16 @@ final class DeliveryTests: XCTestCase {
     func testAnAppSessionDeliversWithItsTokenAndNeverReadsTheTrigger() async throws {
         let stub = StubTransport()
         stub.on("POST", door, status: 202, json: #"{"fire":"hook-1"}"#)
-        let session = Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
-                              scopes: SyncManifest.scopes + ["webhook:applehealth-webhook"])
+        let session = Session(
+            server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
+            scopes: SyncManifest.scopes + ["webhook:applehealth-webhook"])
         let client = Client(session, transport: stub)
         let key = try await SyncEngine.deliveryKey(client, session)
         XCTAssertNil(key)
         XCTAssertTrue(stub.sent("GET", trigger).isEmpty)
-        let fire = try await client.deliver(authority: session.repository, trigger: SyncEngine.trigger, body: Data("{}".utf8),
-                                            headers: headers, key: key)
+        let fire = try await client.deliver(
+            authority: session.repository, trigger: SyncEngine.trigger, body: Data("{}".utf8),
+            headers: headers, key: key)
         XCTAssertEqual(fire, "hook-1")
         let sent = try XCTUnwrap(stub.sent("POST", door).first)
         XCTAssertEqual(sent.value(forHTTPHeaderField: "Authorization"), "Bearer sub_app_x")
@@ -229,11 +241,13 @@ final class DeliveryTests: XCTestCase {
     func testAnAppsRefusedDeliveryAsksForApproval() async throws {
         let stub = StubTransport()
         stub.on("POST", door, status: 404, json: #"{"error":{"code":"not_found","message":"no such webhook"}}"#)
-        let session = Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
-                              scopes: SyncManifest.scopes)
+        let session = Session(
+            server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
+            scopes: SyncManifest.scopes)
         do {
-            try await Client(session, transport: stub).deliver(authority: session.repository, trigger: SyncEngine.trigger,
-                                                               body: Data("{}".utf8), headers: headers, key: nil)
+            try await Client(session, transport: stub).deliver(
+                authority: session.repository, trigger: SyncEngine.trigger,
+                body: Data("{}".utf8), headers: headers, key: nil)
             XCTFail("a refused delivery answered a fire")
         } catch {
             XCTAssertTrue(needsApproval(error), "\(error)")
@@ -244,8 +258,9 @@ final class DeliveryTests: XCTestCase {
     /// An app session never recreates its Health account: a missing one is
     /// the owner's to approve. A password session makes it, as Set Up does.
     func testOnlyAPasswordSessionMakesAMissingAccount() async throws {
-        let app = Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
-                          scopes: SyncManifest.scopes)
+        let app = Session(
+            server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
+            scopes: SyncManifest.scopes)
         let stub = StubTransport()
         let missing = try await SyncEngine.healthAccount(Client(app, transport: stub), app, id: "substrate-sync-1a2b3c4d") { "Ada's iPhone" }
         XCTAssertEqual(missing, .missing)
@@ -278,8 +293,9 @@ final class ApprovalReachTests: XCTestCase {
 
     func session(without scope: String? = nil) -> Session {
         let scopes = (SyncManifest.scopes + ["webhook:applehealth-webhook"]).filter { $0 != scope }
-        return Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
-                       scopes: scopes)
+        return Session(
+            server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
+            scopes: scopes)
     }
 
     func testEveryScopeLeftOutStopsTheSourcesThatNeedItAsAReview() {
@@ -293,9 +309,10 @@ final class ApprovalReachTests: XCTestCase {
             XCTAssertEqual(SyncEngine.unapproved(source, session(without: apple)), [apple], "\(source)")
         }
         XCTAssertEqual(SyncEngine.unapproved(.health, session(without: apple)), [])
-        for scope in ["write:providers.substrate.reamde.dev/applehealth/account", "write:providers.substrate.reamde.dev/applehealth/export",
-                      "webhook:applehealth-webhook"]
-        {
+        for scope in [
+            "write:providers.substrate.reamde.dev/applehealth/account", "write:providers.substrate.reamde.dev/applehealth/export",
+            "webhook:applehealth-webhook",
+        ] {
             XCTAssertEqual(SyncEngine.unapproved(.health, session(without: scope)), [scope])
             XCTAssertEqual(SyncEngine.unapproved(.contacts, session(without: scope)), [])
         }
@@ -308,8 +325,11 @@ final class ApprovalReachTests: XCTestCase {
         let error = SyncError.notApproved(source: "Health", scopes: ["write:providers.substrate.reamde.dev/applehealth/export"])
         XCTAssertTrue(needsApproval(error))
         XCTAssertFalse(isSignedOut(error))
-        XCTAssertEqual(error.localizedDescription, "Substrate Sync can't sync Health: the access you approved leaves out "
-            + "“See, add, change and delete your Apple Health deliveries, and search them by meaning, which spends your embedding budget”. Review its access on Home to allow it; nothing this phone sent is sent again.")
+        XCTAssertEqual(
+            error.localizedDescription,
+            "Substrate Sync can't sync Health: the access you approved leaves out "
+                + "“See, add, change and delete your Apple Health deliveries, and search them by meaning, which spends your embedding budget”. Review its access on Home to allow it; nothing this phone sent is sent again."
+        )
     }
 
     /// A deleted account is not one an approval creates: the planner leaves
@@ -342,8 +362,9 @@ final class RevocationTests: XCTestCase {
         let store = SessionStore(account: "session-test-\(UUID().uuidString)", storage: SessionStore.sync.storage)
         defer { for old in store.pendingRevocations() { store.revoked(old) } }
         let old = Session(server: server, repository: "ada.example.com", secret: "sub_password", tokenID: "tok_1")
-        let current = Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
-                              scopes: SyncManifest.scopes)
+        let current = Session(
+            server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
+            scopes: SyncManifest.scopes)
         try store.keepForRevocation(old)
 
         let stub = StubTransport()
@@ -352,9 +373,12 @@ final class RevocationTests: XCTestCase {
         XCTAssertEqual(live, [old])
         XCTAssertEqual(store.pendingRevocations(), [old])
         XCTAssertEqual(stub.sent("DELETE", "/tokens/tok_1").first?.value(forHTTPHeaderField: "Authorization"), "Bearer sub_password")
-        XCTAssertEqual(UnrevokedNotices.sentences(appName: SyncManifest.appName, unrevoked: live),
-                       ["Substrate Sync's earlier access still works on ada.example.com. It tries again each time it opens; "
-                           + "you can also revoke it yourself in ada.example.com's Settings, under Signed in."])
+        XCTAssertEqual(
+            UnrevokedNotices.sentences(appName: SyncManifest.appName, unrevoked: live),
+            [
+                "Substrate Sync's earlier access still works on ada.example.com. It tries again each time it opens; "
+                    + "you can also revoke it yourself in ada.example.com's Settings, under Signed in."
+            ])
 
         stub.on("DELETE", "/tokens/tok_1", status: 204, json: "")
         live = await store.revokePending(current: current, transport: stub)
@@ -370,8 +394,9 @@ final class RevocationTests: XCTestCase {
             for old in store.pendingRevocations() { store.revoked(old) }
             store.clear()
         }
-        let app = Session(server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
-                          scopes: SyncManifest.scopes)
+        let app = Session(
+            server: server, repository: "ada.example.com", secret: "sub_app_x", clientID: SyncManifest.localClientID,
+            scopes: SyncManifest.scopes)
         try store.save(app)
         let offline = StubTransport()
         try await store.signOut(app, transport: offline)

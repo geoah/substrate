@@ -6,9 +6,8 @@ import dev.reamde.substrate.tasks.bridge.TaskEditor
 import dev.reamde.substrate.tasks.bridge.TasksApp
 
 /**
- * Where a screen's commands go: the app's root, an editor by its key, a
- * Settings row, the Access banner. The screens hold no state of the app's
- * and decide nothing; a gallery hands them one that goes nowhere.
+ * Where a screen's commands go: the app's root, an editor by its key, a Settings row, the Access banner. The screens hold no state of the app's and decide
+ * nothing; a gallery hands them one that goes nowhere.
  */
 interface TasksActions {
     fun send(command: TasksApp.Command)

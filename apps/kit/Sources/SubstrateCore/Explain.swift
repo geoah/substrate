@@ -22,7 +22,7 @@ public func explain(_ error: Error, app: String, server: URL? = nil) -> String {
         case .cannotFindHost, .dnsLookupFailed: return "Couldn't find \(host). Check the address."
         case .cannotConnectToHost: return "\(Host) isn't answering."
         case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
-             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot, .clientCertificateRejected:
+            .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot, .clientCertificateRejected:
             return "Couldn't make a secure connection to \(host)."
         case .appTransportSecurityRequiresSecureConnection: return "\(Host) needs https:// to be reached from here."
         case .cancelled: return "Stopped."
@@ -53,8 +53,10 @@ public func explain(_ error: Error, app: String, server: URL? = nil) -> String {
 /// The network errors that mean the server could not be reached, as against
 /// one it answered, refused or that was stopped.
 public func isUnreachable(_ error: Error) -> Bool {
-    let codes: Set<URLError.Code> = [.timedOut, .cannotConnectToHost, .notConnectedToInternet, .networkConnectionLost,
-                                     .cannotFindHost, .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff]
+    let codes: Set<URLError.Code> = [
+        .timedOut, .cannotConnectToHost, .notConnectedToInternet, .networkConnectionLost,
+        .cannotFindHost, .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff,
+    ]
     return (error as? URLError).map { codes.contains($0.code) } ?? false
 }
 

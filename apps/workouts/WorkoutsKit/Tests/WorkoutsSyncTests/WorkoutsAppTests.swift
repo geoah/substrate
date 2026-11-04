@@ -5,6 +5,7 @@ import SubstrateScreens
 import SubstrateTesting
 import Testing
 import WorkoutsCore
+
 @testable import WorkoutsSync
 
 /// Workouts' root under the link: what the link's snapshot starts, what a
@@ -16,8 +17,9 @@ struct WorkoutsAppTests {
     static let account = AccountRef(server: server, repository: "ada")
 
     static func snapshot(_ repository: String = "ada", training: Int? = WorkoutsManifest.trainingVersion) -> LinkSnapshot {
-        LinkSnapshot(phase: .signedIn, server: server, repository: repository, scopes: WorkoutsManifest.scopes,
-                     packages: training.map { [WorkoutsKinds.packageID: $0] } ?? [:])
+        LinkSnapshot(
+            phase: .signedIn, server: server, repository: repository, scopes: WorkoutsManifest.scopes,
+            packages: training.map { [WorkoutsKinds.packageID: $0] } ?? [:])
     }
 
     static func harness(directory: URL?, performsEffects: Bool = false) -> ControllerHarness<WorkoutsApp> {
@@ -99,13 +101,16 @@ struct WorkoutsAppTests {
         let tick = EventEnvelope(id: EventID("e1"), at: at, event: .skipRest)
         #expect(app.event(fromChild: WorkoutsApp.sessionKey, .engine(tick)) == nil)
         #expect(app.event(fromChild: WorkoutsApp.sessionKey, .tick(at)) == nil)
-        let discard = SessionController.Event.discard(EventEnvelope(id: EventID("e2"), at: at, event: .discard), session: SessionID("s1"),
-                                                      then: nil)
+        let discard = SessionController.Event.discard(
+            EventEnvelope(id: EventID("e2"), at: at, event: .discard), session: SessionID("s1"),
+            then: nil)
         #expect(app.event(fromChild: WorkoutsApp.sessionKey, discard) == .session(discard))
         var exercise = try #require(try BundledCatalog().loadNow().exercises.values.first)
         exercise.isLocal = true
-        let added = SessionController.Event.engine(EventEnvelope(id: EventID("e3"), at: at,
-                                                                 event: .addExercise(SessionEvent.AddExercise(slot: "x", exercise: exercise))))
+        let added = SessionController.Event.engine(
+            EventEnvelope(
+                id: EventID("e3"), at: at,
+                event: .addExercise(SessionEvent.AddExercise(slot: "x", exercise: exercise))))
         #expect(app.event(fromChild: WorkoutsApp.sessionKey, added) == .session(added))
     }
 
@@ -139,8 +144,9 @@ struct WorkoutsAppTests {
         try await harness.until(timeout: .seconds(60)) { await $0.presentation.session?.session != nil }
         let id = try #require(await harness.presentation.session?.session?.sessionID)
         let now = harness.clock.now
-        try await harness.runtime.send(SessionCommand.finish(FinishRequest(start: now, end: now, policy: .drop, sessionRPE: nil, notes: nil)),
-                                       to: [WorkoutsApp.sessionKey])
+        try await harness.runtime.send(
+            SessionCommand.finish(FinishRequest(start: now, end: now, policy: .drop, sessionRPE: nil, notes: nil)),
+            to: [WorkoutsApp.sessionKey])
         try await harness.until(timeout: .seconds(60)) { await $0.presentation.history.contains { $0.id == id } }
         #expect(await harness.presentation.finished == 1)
         // The app's own outbox for the account: one actor per file.

@@ -20,8 +20,10 @@ struct LiveOverlay: Codable, Hashable, Sendable {
             turns[turns.count - 1].reasoningMillis = max(0, Int(now.timeIntervalSince(started) * 1000))
             turns[turns.count - 1].thinking = true
         } else {
-            turns.append(Turn(id: "live-a\(seq)", role: .assistant, content: "", reasoning: text,
-                              reasoningMillis: 0, reasoningStartedAt: now, thinking: true))
+            turns.append(
+                Turn(
+                    id: "live-a\(seq)", role: .assistant, content: "", reasoning: text,
+                    reasoningMillis: 0, reasoningStartedAt: now, thinking: true))
         }
         closed = false
     }
@@ -69,8 +71,10 @@ struct LiveOverlay: Codable, Hashable, Sendable {
     /// Where the loop compacted mid-run. The event carries no summary text
     /// (the row does), and what follows opens a new assistant turn.
     mutating func pushCompacted(tokensBefore: Int?, covered: Int?, seq: Int) {
-        turns.append(Turn(id: "live-c\(seq)", role: .summary, content: "",
-                          compaction: Compaction(tokensBefore: tokensBefore, covered: covered)))
+        turns.append(
+            Turn(
+                id: "live-c\(seq)", role: .summary, content: "",
+                compaction: Compaction(tokensBefore: tokensBefore, covered: covered)))
         closed = true
     }
 
@@ -85,12 +89,16 @@ struct LiveOverlay: Codable, Hashable, Sendable {
             guard let text = event.text, !text.isEmpty else { return false }
             pushDelta(text, seq: seq)
         case .toolStarted:
-            pushToolStart(ToolCall(id: event.id ?? "", name: event.tool ?? "tool", callable: event.callable,
-                                   arguments: event.args ?? ""), seq: seq)
+            pushToolStart(
+                ToolCall(
+                    id: event.id ?? "", name: event.tool ?? "tool", callable: event.callable,
+                    arguments: event.args ?? ""), seq: seq)
         case .toolFinished:
-            settleTool(ToolCall(id: event.id ?? "", name: event.tool ?? "tool", callable: event.callable,
-                                arguments: event.args ?? ""),
-                       output: event.output ?? "", ok: event.ok ?? true, seq: seq)
+            settleTool(
+                ToolCall(
+                    id: event.id ?? "", name: event.tool ?? "tool", callable: event.callable,
+                    arguments: event.args ?? ""),
+                output: event.output ?? "", ok: event.ok ?? true, seq: seq)
         case .compacted:
             pushCompacted(tokensBefore: event.tokensBefore, covered: event.covered, seq: seq)
         case .truncated:

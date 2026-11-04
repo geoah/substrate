@@ -1,6 +1,7 @@
 import Foundation
-@testable import WorkoutsCore
 import Testing
+
+@testable import WorkoutsCore
 
 // The routine page's plan, drawn as a started session's Rows layout, over
 // the owner's example routines and sessions, and its in-place set editor.
@@ -23,8 +24,10 @@ private enum Plan {
     }
 
     static func editor(_ routine: Routine, _ catalog: Catalog, _ slot: String, _ set: String) throws -> RoutinePlanSetEditor {
-        try #require(RoutinePlanPresenter.editor(RoutinePlanSetRef(slot: slot, set: set), in: routine, exercises: catalog.exercises,
-                                                 history: try history()))
+        try #require(
+            RoutinePlanPresenter.editor(
+                RoutinePlanSetRef(slot: slot, set: set), in: routine, exercises: catalog.exercises,
+                history: try history()))
     }
 }
 
@@ -44,8 +47,11 @@ struct RoutinePlanPresenterTests {
         let lines = leg.lines
         #expect(lines.map(\.setLabel) == ["W", "W", "1", "2", "3"])
         #expect(lines.map(\.title) == ["Warm-up 1", "Warm-up 2", "Set 1", "Set 2", "Set 3"])
-        #expect(lines.map(\.values) == ["40 kg \u{00D7} 12", "70 kg \u{00D7} 6", "100 kg \u{00D7} 6\u{2013}10",
-                                        "100 kg \u{00D7} 6\u{2013}10", "100 kg \u{00D7} 6\u{2013}10"])
+        #expect(
+            lines.map(\.values) == [
+                "40 kg \u{00D7} 12", "70 kg \u{00D7} 6", "100 kg \u{00D7} 6\u{2013}10",
+                "100 kg \u{00D7} 6\u{2013}10", "100 kg \u{00D7} 6\u{2013}10",
+            ])
         #expect(lines.map(\.role) == [.warmup, .warmup, .working, .working, .working])
         #expect(lines.map(\.rpe) == [nil, nil, "@ 8", "@ 8", "@ 8"])
         // The warm-up's own rest is its tag; the others take the slot's.
@@ -54,8 +60,11 @@ struct RoutinePlanPresenterTests {
         // Pending lines, read only: nothing to tap, no editor, nothing done.
         #expect(lines.allSatisfy { $0.state == .next && $0.tap == .none && $0.editor == nil && $0.fix == nil && $0.changes.isEmpty })
         // Last time, as PREVIOUS reads it: Monday's leg press, the pre-filled RPE no rating.
-        #expect(lines.map(\.last) == ["last 40 \u{00D7} 12", "last 70 \u{00D7} 6", "last 105 \u{00D7} 9",
-                                      "last 105 \u{00D7} 9 @ 8.5", "last 105 \u{00D7} 8 @ 9"])
+        #expect(
+            lines.map(\.last) == [
+                "last 40 \u{00D7} 12", "last 70 \u{00D7} 6", "last 105 \u{00D7} 9",
+                "last 105 \u{00D7} 9 @ 8.5", "last 105 \u{00D7} 8 @ 9",
+            ])
         #expect(lines[2].sentence == "Set 1: 100 kilograms, 6 to 10 reps, RPE 8. Last time 105 kilograms, 9 reps.")
         // Each line names its planned set.
         #expect(plan.ref(lines[3].id) == RoutinePlanSetRef(slot: "leg-press", set: "s2"))
@@ -90,28 +99,36 @@ struct RoutinePlanPresenterTests {
     func structures() throws {
         let (_, catalog) = try Plan.routine(Plan.dayOne)
         var routine = Routine(id: "test", name: "Test")
-        routine.slots = [RoutineSlot(key: "raise", exercise: "lateral-raise-dumbbell", sets: [
-            PlannedSet(key: "s1", roleLabel: .top, repsMin: 8, repsMax: 12, rpeMin: 9, rpeMax: 9),
-            PlannedSet(key: "s2", structure: .drop, repsMin: 10, repsMax: 15, drops: 2),
-            PlannedSet(key: "s3", structure: .myo, termination: .failure, repsMin: 12, repsMax: 15, intraSetPause: 15),
-            PlannedSet(key: "s4", termination: .amrap, repsMin: 10, rirMin: 1, rirMax: 2),
-            PlannedSet(key: "s5", termination: .rirstop, rirMin: 2, rirMax: 3),
-            PlannedSet(key: "s6", termination: .amrap),
-        ])]
+        routine.slots = [
+            RoutineSlot(
+                key: "raise", exercise: "lateral-raise-dumbbell",
+                sets: [
+                    PlannedSet(key: "s1", roleLabel: .top, repsMin: 8, repsMax: 12, rpeMin: 9, rpeMax: 9),
+                    PlannedSet(key: "s2", structure: .drop, repsMin: 10, repsMax: 15, drops: 2),
+                    PlannedSet(key: "s3", structure: .myo, termination: .failure, repsMin: 12, repsMax: 15, intraSetPause: 15),
+                    PlannedSet(key: "s4", termination: .amrap, repsMin: 10, rirMin: 1, rirMax: 2),
+                    PlannedSet(key: "s5", termination: .rirstop, rirMin: 2, rirMax: 3),
+                    PlannedSet(key: "s6", termination: .amrap),
+                ])
+        ]
         // No history: the lines say only what the plan does.
         let block = try #require(RoutinePlanPresenter.present(routine, exercises: catalog.exercises, history: HistoryIndex()).blocks.first)
         let lines = block.lines
-        #expect(lines.map(\.tags) == [
-            [RowsTag(text: "top set", style: .grey)],
-            [RowsTag(text: "+ 2 drops", style: .orange)],
-            [RowsTag(text: "to failure", style: .red)],
-            [RowsTag(text: "max reps", style: .grey)],
-            [],
-            // The values say it: no tag repeats it.
-            [],
-        ])
-        #expect(lines.map(\.values) == ["8\u{2013}12 reps", "10\u{2013}15 reps", "12\u{2013}15 reps", "10+ reps",
-                                        "to RIR 2\u{2013}3", "max reps"])
+        #expect(
+            lines.map(\.tags) == [
+                [RowsTag(text: "top set", style: .grey)],
+                [RowsTag(text: "+ 2 drops", style: .orange)],
+                [RowsTag(text: "to failure", style: .red)],
+                [RowsTag(text: "max reps", style: .grey)],
+                [],
+                // The values say it: no tag repeats it.
+                [],
+            ])
+        #expect(
+            lines.map(\.values) == [
+                "8\u{2013}12 reps", "10\u{2013}15 reps", "12\u{2013}15 reps", "10+ reps",
+                "to RIR 2\u{2013}3", "max reps",
+            ])
         // An effort the values carry stands nowhere else.
         #expect(lines.map(\.rpe) == ["@ 9", nil, nil, "RIR 1\u{2013}2", nil, nil])
         let headers = block.items.compactMap { item -> String? in if case let .chainHeader(header) = item { header.text } else { nil } }
@@ -132,10 +149,12 @@ struct RoutinePlanPresenterTests {
         #expect(text(PlannedSet(key: "s", repsMin: 10, repsMax: 10), .repsonly, perSide: true) == "10 per side")
         #expect(text(PlannedSet(key: "s", repsMin: 10, repsMax: 10), .bodyweightreps) == "10 reps")
         #expect(text(PlannedSet(key: "s", repsMin: 8, repsMax: 8, load: .kg(10)), .weightedbodyweightreps) == "BW + 10 kg \u{00D7} 8")
-        #expect(text(PlannedSet(key: "s", repsMin: 8, repsMax: 8, assistance: .kg(30)), .bodyweightassistedreps)
-            == "BW \u{2212} 30 kg \u{00D7} 8")
-        #expect(text(PlannedSet(key: "s", repsMin: 5, repsMax: 5, loadPercent: 70, loadReference: .onerm), .weightreps)
-            == "70% 1RM \u{00D7} 5")
+        #expect(
+            text(PlannedSet(key: "s", repsMin: 8, repsMax: 8, assistance: .kg(30)), .bodyweightassistedreps)
+                == "BW \u{2212} 30 kg \u{00D7} 8")
+        #expect(
+            text(PlannedSet(key: "s", repsMin: 5, repsMax: 5, loadPercent: 70, loadReference: .onerm), .weightreps)
+                == "70% 1RM \u{00D7} 5")
         #expect(text(PlannedSet(key: "s", durationMin: 30, durationMax: 45), .duration) == "0:30\u{2013}0:45 hold")
         #expect(text(PlannedSet(key: "s", load: .kg(10), durationMin: 45, durationMax: 45), .weightduration) == "10 kg for 0:45")
         #expect(text(PlannedSet(key: "s", load: .kg(20), distance: Length(metres: 40)), .shortdistanceweight) == "20 kg for 40 m")
@@ -182,9 +201,13 @@ struct RoutinePlanPresenterTests {
     func openFields() throws {
         let (_, catalog) = try Plan.routine(Plan.dayOne)
         var routine = Routine(id: "day-1-strength-foundation", name: "Test")
-        routine.slots = [RoutineSlot(key: "leg-press", exercise: "leg-press-machine", sets: [
-            PlannedSet(key: "s1"), PlannedSet(key: "s2", repsMin: 1, repsMax: 1, rirMin: 2, rirMax: 2),
-        ])]
+        routine.slots = [
+            RoutineSlot(
+                key: "leg-press", exercise: "leg-press-machine",
+                sets: [
+                    PlannedSet(key: "s1"), PlannedSet(key: "s2", repsMin: 1, repsMax: 1, rirMin: 2, rirMax: 2),
+                ])
+        ]
         let open = try Plan.editor(routine, catalog, "leg-press", "s1")
         #expect(open.fields.map(\.value) == ["Auto", "Any"])
         #expect(open.fields.allSatisfy { !$0.isSet && $0.minus == nil })
@@ -199,9 +222,11 @@ struct RoutinePlanPresenterTests {
         #expect(single.fields[1].minus == nil && single.fields[1].plus?.change == .reps(min: 2, max: 2))
         #expect(single.reserve == "Aims at 2 reps in reserve")
         // A low load steps down to nothing: the session suggests it again.
-        let low = RoutinePlanPresenter.massField(.load, label: "Load", .kg(5), last: nil,
-                                                 config: SuggestionInputs.config(for: try #require(catalog.exercises["leg-press-machine"]),
-                                                                                 defaultUnit: .kg))
+        let low = RoutinePlanPresenter.massField(
+            .load, label: "Load", .kg(5), last: nil,
+            config: SuggestionInputs.config(
+                for: try #require(catalog.exercises["leg-press-machine"]),
+                defaultUnit: .kg))
         #expect(low.minus?.change == .load(nil))
     }
 

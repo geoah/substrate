@@ -6,9 +6,8 @@ import dev.reamde.substrate.kit.bridge.ProblemPresentation
 import dev.reamde.substrate.kit.bridge.ScreenTone
 
 /**
- * The tokens a device stopped using that their servers have not revoked
- * yet, as `UnrevokedPresenter` words them: each in a card of its own on a
- * screen, or as a row of a section (`asRows`).
+ * The tokens a device stopped using that their servers have not revoked yet, as `UnrevokedPresenter` words them: each in a card of its own on a screen, or as a
+ * row of a section (`asRows`).
  */
 @Composable
 public fun UnrevokedNotices(notices: List<ProblemPresentation>, modifier: Modifier = Modifier, asRows: Boolean = false) {

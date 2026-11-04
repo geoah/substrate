@@ -69,10 +69,10 @@ public enum SessionEvent: Codable, Equatable, Sendable {
     public var touchesSessionRecord: Bool {
         switch self {
         case .start, .addExercise, .removeExercise, .reorderExercises, .replaceExercise, .groupExercises,
-             .ungroupExercise, .setGroup, .setSlotRest, .setNote, .pauseClock, .resumeClock, .finish:
+            .ungroupExercise, .setGroup, .setSlotRest, .setNote, .pauseClock, .resumeClock, .finish:
             true
         case .touchRow, .editSet, .completeSet, .uncompleteSet, .addSet, .removeSet, .restoreSet, .changeSetKind, .setRowRest,
-             .startRest, .adjustRest, .skipRest, .startTimedSet, .stopTimedSet, .cancelTimedSet, .discard:
+            .startRest, .adjustRest, .skipRest, .startTimedSet, .stopTimedSet, .cancelTimedSet, .discard:
             false
         }
     }
@@ -406,11 +406,12 @@ public extension SetValues {
     /// method (`entered` when it names none); a cleared one goes with its
     /// method; an unchanged one keeps both.
     func applying(_ patch: SetValuesPatch) -> SetValues {
-        let method: EffortMethod? = switch patch.rpe {
-        case .unchanged: rpeMethod
-        case .set: patch.rpeMethod ?? .entered
-        case .cleared: nil
-        }
+        let method: EffortMethod? =
+            switch patch.rpe {
+            case .unchanged: rpeMethod
+            case .set: patch.rpeMethod ?? .entered
+            case .cleared: nil
+            }
         return SetValues(
             load: patch.load.applied(to: load),
             assistance: patch.assistance.applied(to: assistance),

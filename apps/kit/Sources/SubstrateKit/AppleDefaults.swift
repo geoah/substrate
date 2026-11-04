@@ -22,9 +22,10 @@ public extension OAuthClient {
     /// The whole flow through the system's browser sign-in
     /// (`WebAuthenticator`).
     @MainActor
-    func signIn(server: URL, repository: String? = nil, keepingRejectedIn rejected: SessionStore? = nil,
-                now: @escaping @Sendable () -> Date = { Date() }) async throws -> Session
-    {
+    func signIn(
+        server: URL, repository: String? = nil, keepingRejectedIn rejected: SessionStore? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) async throws -> Session {
         try await signIn(server: server, repository: repository, keepingRejectedIn: rejected, browser: WebAuthenticator(), now: now)
     }
 }
@@ -37,11 +38,15 @@ public extension SessionStore {
     /// refresh) can use it, never synced off the device by default, and
     /// shared with the app's other targets (a share sheet, a widget) through
     /// `accessGroup` where one is named.
-    init(service: String, accessGroup: String? = nil, account: String = "session",
-         accessibility: Accessibility = .afterFirstUnlockThisDeviceOnly, dataProtection: Bool = false)
-    {
-        self.init(account: account, storage: KeychainStorage(service: service, accessGroup: accessGroup,
-                                                             accessibility: accessibility, dataProtection: dataProtection))
+    init(
+        service: String, accessGroup: String? = nil, account: String = "session",
+        accessibility: Accessibility = .afterFirstUnlockThisDeviceOnly, dataProtection: Bool = false
+    ) {
+        self.init(
+            account: account,
+            storage: KeychainStorage(
+                service: service, accessGroup: accessGroup,
+                accessibility: accessibility, dataProtection: dataProtection))
     }
 }
 #endif

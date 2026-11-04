@@ -23,10 +23,11 @@ public struct BridgeBrowserSignIn: BrowserSignIn {
 
     @MainActor
     public func prepare(_ route: SignInRoute) async throws -> SignInRedirect {
-        let bridged: BrowserRoute = switch route {
-        case let .claimed(url): .claimed(url: url.absoluteString)
-        case let .loopback(appName, path): .loopback(appName: appName, path: path)
-        }
+        let bridged: BrowserRoute =
+            switch route {
+            case let .claimed(url): .claimed(url: url.absoluteString)
+            case let .loopback(appName, path): .loopback(appName: appName, path: path)
+            }
         let channel = channel
         switch try await Self.cancellable({ try await channel.call(.browserPrepare(route: bridged), as: BrowserPrepared.self) }) {
         case let .ready(redirect): return SignInRedirect(route: route, uri: redirect)

@@ -1,6 +1,6 @@
+import SwiftUI
 import WorkoutsCore
 import WorkoutsSync
-import SwiftUI
 
 extension View {
     /// The routine editor as a sheet, for a duplicate and an edit resumed from the Routines list.
@@ -61,7 +61,14 @@ private struct RoutineEditControls: ViewModifier {
                     Button("Discard Changes", role: .destructive, action: discard)
                     Button("Keep Editing", role: .cancel) {}
                 }
-                .alert("The routine was not saved", isPresented: Binding { failure != nil } set: { if !$0 { failure = nil } }) {
+                .alert(
+                    "The routine was not saved",
+                    isPresented: Binding {
+                        failure != nil
+                    } set: {
+                        if !$0 { failure = nil }
+                    }
+                ) {
                     Button("OK", role: .cancel) {}
                 } message: {
                     Text(failure ?? "")
@@ -106,20 +113,38 @@ struct RoutineDetailsFields: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             field("Name") {
-                TextField("Name", text: Binding { model.routine.name } set: { value in model.change { $0.rename(value) } })
-                    .font(.headline)
+                TextField(
+                    "Name",
+                    text: Binding {
+                        model.routine.name
+                    } set: { value in
+                        model.change { $0.rename(value) }
+                    }
+                )
+                .font(.headline)
             }
             Divider().padding(.leading, 16)
             field("Folder") {
-                TextField("None", text: Binding { model.routine.folder ?? "" } set: { value in model.change { $0.setFolder(value) } })
+                TextField(
+                    "None",
+                    text: Binding {
+                        model.routine.folder ?? ""
+                    } set: { value in
+                        model.change { $0.setFolder(value) }
+                    })
             }
             Divider().padding(.leading, 16)
             field("Notes") {
-                TextField("What the routine is for", text: Binding { model.routine.notes ?? "" } set: { value in
-                    model.change { $0.setNotes(value) }
-                }, axis: .vertical)
-                    .lineLimit(1 ... 8)
-                    .font(.subheadline)
+                TextField(
+                    "What the routine is for",
+                    text: Binding {
+                        model.routine.notes ?? ""
+                    } set: { value in
+                        model.change { $0.setNotes(value) }
+                    }, axis: .vertical
+                )
+                .lineLimit(1 ... 8)
+                .font(.subheadline)
             }
         }
         .background(RowsStyle.card, in: .rect(cornerRadius: RowsStyle.cardRadius))

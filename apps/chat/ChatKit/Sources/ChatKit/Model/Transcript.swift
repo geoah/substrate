@@ -115,8 +115,9 @@ private func mentions(of record: Record) -> [Mention]? {
     guard let raw = record["mentions"]?.array else { return nil }
     let out = raw.compactMap { item -> Mention? in
         guard let kind = item["kind"]?.text, let id = item["id"]?.text else { return nil }
-        return Mention(kind: kind, id: id, text: item["text"]?.text ?? id,
-                       missing: item["missing"]?.bool ?? false, unread: item["unread"]?.bool ?? false)
+        return Mention(
+            kind: kind, id: id, text: item["text"]?.text ?? id,
+            missing: item["missing"]?.bool ?? false, unread: item["unread"]?.bool ?? false)
     }
     return out.isEmpty ? nil : out
 }
@@ -143,8 +144,9 @@ private func subagentWrites(of record: Record) -> SubagentWrites? {
 
 private func compaction(of record: Record) -> Compaction {
     let covers = record["covers"]?.object ?? [:]
-    return Compaction(from: covers["from"]?.text, through: covers["through"]?.text,
-                      tokensBefore: record["tokensBefore"]?.int, model: record["model"]?.text)
+    return Compaction(
+        from: covers["from"]?.text, through: covers["through"]?.text,
+        tokensBefore: record["tokensBefore"]?.int, model: record["model"]?.text)
 }
 
 /// Whether a tool row reports a failure. The row's `ok` decides where it
@@ -181,25 +183,30 @@ func transcript(of messages: [Record]) -> [Turn] {
         case "user", "assistant":
             let tools = role == "assistant" ? calls(of: record) : []
             let reasoning = role == "assistant" ? record["reasoning"]?.text : nil
-            turns.append(Turn(
-                id: record.id, role: role == "user" ? .user : .assistant,
-                content: record["content"]?.string ?? "", tools: tools,
-                contextRecords: role == "user" ? contextRecords(of: record) : nil,
-                reasoning: reasoning,
-                reasoningMillis: reasoning == nil ? nil : record["reasoningMillis"]?.int,
-                mentions: role == "assistant" ? mentions(of: record) : nil,
-                createdAt: record.createdDate))
+            turns.append(
+                Turn(
+                    id: record.id, role: role == "user" ? .user : .assistant,
+                    content: record["content"]?.string ?? "", tools: tools,
+                    contextRecords: role == "user" ? contextRecords(of: record) : nil,
+                    reasoning: reasoning,
+                    reasoningMillis: reasoning == nil ? nil : record["reasoningMillis"]?.int,
+                    mentions: role == "assistant" ? mentions(of: record) : nil,
+                    createdAt: record.createdDate))
             for (i, call) in tools.enumerated() where !call.id.isEmpty {
                 pending[call.id] = (turns.count - 1, i)
             }
         case "summary":
             // The engine's fold of older turns; no model said it to the reader.
-            turns.append(Turn(id: record.id, role: .summary, content: record["content"]?.string ?? "",
-                              compaction: compaction(of: record), createdAt: record.createdDate))
+            turns.append(
+                Turn(
+                    id: record.id, role: .summary, content: record["content"]?.string ?? "",
+                    compaction: compaction(of: record), createdAt: record.createdDate))
         case "system":
             // The substrate's own turn: a decision envelope. Nothing dispatched it.
-            turns.append(Turn(id: record.id, role: .system, content: record["content"]?.string ?? "",
-                              changes: changes(of: record), createdAt: record.createdDate))
+            turns.append(
+                Turn(
+                    id: record.id, role: .system, content: record["content"]?.string ?? "",
+                    changes: changes(of: record), createdAt: record.createdDate))
         case "tool":
             let callID = record["toolCallId"]?.string ?? ""
             let output = record["content"]?.string ?? ""
@@ -214,12 +221,16 @@ func transcript(of messages: [Record]) -> [Turn] {
             } else {
                 // An orphan: its call is not in this window. Its own turn,
                 // rather than attributed to whichever assistant turn is last.
-                turns.append(Turn(
-                    id: record.id, role: .assistant, content: "",
-                    tools: [ToolCall(id: callID, name: record["name"]?.string ?? "", callable: callable,
-                                     arguments: "", output: output, ok: toolOK(record),
-                                     changes: changes(of: record), subagentWrites: subagentWrites(of: record))],
-                    createdAt: record.createdDate))
+                turns.append(
+                    Turn(
+                        id: record.id, role: .assistant, content: "",
+                        tools: [
+                            ToolCall(
+                                id: callID, name: record["name"]?.string ?? "", callable: callable,
+                                arguments: "", output: output, ok: toolOK(record),
+                                changes: changes(of: record), subagentWrites: subagentWrites(of: record))
+                        ],
+                        createdAt: record.createdDate))
             }
         default:
             continue

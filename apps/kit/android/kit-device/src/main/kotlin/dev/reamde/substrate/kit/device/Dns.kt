@@ -10,11 +10,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * TXT lookups through the system resolver, `DnsResolver.rawQuery` (Android
- * 10 and later), which honours Private DNS and the active network. The
- * answer goes back raw: its response code and each TXT record's
- * character-strings. Joining, bounding and telling the outcomes apart is
- * Swift's (`BridgeTXTResolver`), as on Apple systems.
+ * TXT lookups through the system resolver, `DnsResolver.rawQuery` (Android 10 and later), which honours Private DNS and the active network. The answer goes
+ * back raw: its response code and each TXT record's character-strings. Joining, bounding and telling the outcomes apart is Swift's (`BridgeTXTResolver`), as on
+ * Apple systems.
  */
 public class Dns {
     private val executor = Executors.newSingleThreadExecutor()
@@ -23,16 +21,14 @@ public class Dns {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             return DNSAnswer.Failed("TXT lookups need Android 10 or later")
         }
-        return withTimeoutOrNull(timeoutMillis.coerceAtLeast(1)) { query(name) }
-            ?: DNSAnswer.Failed("no answer in ${timeoutMillis} ms")
+        return withTimeoutOrNull(timeoutMillis.coerceAtLeast(1)) { query(name) } ?: DNSAnswer.Failed("no answer in ${timeoutMillis} ms")
     }
 
     private suspend fun query(name: String): DNSAnswer = suspendCancellableCoroutine { continuation ->
         val signal = CancellationSignal()
         continuation.invokeOnCancellation { signal.cancel() }
         // `DnsResolver(context, looper)` replaces it from API 37 only.
-        @Suppress("DEPRECATION")
-        val resolver = DnsResolver.getInstance()
+        @Suppress("DEPRECATION") val resolver = DnsResolver.getInstance()
         resolver.rawQuery(
             null,
             name,
@@ -43,11 +39,12 @@ public class Dns {
             signal,
             object : DnsResolver.Callback<ByteArray> {
                 override fun onAnswer(answer: ByteArray, rcode: Int) {
-                    val parsed = try {
-                        DNSAnswer.Answered(rcode.toLong(), DnsMessage.txtRecords(answer))
-                    } catch (failure: IllegalArgumentException) {
-                        DNSAnswer.Failed("the answer could not be read: ${failure.message}")
-                    }
+                    val parsed =
+                        try {
+                            DNSAnswer.Answered(rcode.toLong(), DnsMessage.txtRecords(answer))
+                        } catch (failure: IllegalArgumentException) {
+                            DNSAnswer.Failed("the answer could not be read: ${failure.message}")
+                        }
                     continuation.resume(parsed)
                 }
 

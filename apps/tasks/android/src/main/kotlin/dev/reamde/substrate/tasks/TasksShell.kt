@@ -30,12 +30,9 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 
 /**
- * The app over its two roots, as Apple's `AppShell` is over its link: `tasks`
- * (the link with the app's root under it, one presentation tree) and, while
- * the owner signs in, `tasks.connect`. A finished sign-in is a signal on the
- * connect screen's presentation: the link is opened again, over the
- * repository's folder the new session names. Every command is Swift's to
- * apply; this only says which root it goes to.
+ * The app over its two roots, as Apple's `AppShell` is over its link: `tasks` (the link with the app's root under it, one presentation tree) and, while the
+ * owner signs in, `tasks.connect`. A finished sign-in is a signal on the connect screen's presentation: the link is opened again, over the repository's folder
+ * the new session names. Every command is Swift's to apply; this only says which root it goes to.
  */
 class TasksShell(context: Context, val start: StartResult) {
     private val app = context.applicationContext
@@ -68,26 +65,28 @@ class TasksShell(context: Context, val start: StartResult) {
         if (start is StartResult.Started) openLink()
     }
 
-    private fun opening(address: String? = prefs.getString(ADDRESS, null)) = TasksOpening(
-        fingerprint = ProtocolFingerprint.VALUE,
-        debug = BuildConfig.DEBUG,
-        clientID = BuildConfig.CLIENT_ID.ifEmpty { null },
-        redirect = BuildConfig.REDIRECT.ifEmpty { null },
-        version = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-        channel = BuildConfig.CHANNEL.ifEmpty { null },
-        device = if (app.resources.configuration.smallestScreenWidthDp >= 600) "this tablet" else "this phone",
-        address = address,
-    )
+    private fun opening(address: String? = prefs.getString(ADDRESS, null)) =
+        TasksOpening(
+            fingerprint = ProtocolFingerprint.VALUE,
+            debug = BuildConfig.DEBUG,
+            clientID = BuildConfig.CLIENT_ID.ifEmpty { null },
+            redirect = BuildConfig.REDIRECT.ifEmpty { null },
+            version = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            channel = BuildConfig.CHANNEL.ifEmpty { null },
+            device = if (app.resources.configuration.smallestScreenWidthDp >= 600) "this tablet" else "this phone",
+            address = address,
+        )
 
     private fun settings(opening: TasksOpening): JsonElement = BridgeJson.encodeToJsonElement(TasksOpening.serializer(), opening)
 
     private fun openLink() {
         linkFollowing?.cancel()
         link?.close()
-        val handle = Bridge.open("tasks", settings(opening())).getOrElse {
-            _problem.value = it.message
-            return
-        }
+        val handle =
+            Bridge.open("tasks", settings(opening())).getOrElse {
+                _problem.value = it.message
+                return
+            }
         link = handle
         linkFollowing = scope.launch {
             handle.presentations(TasksFrame.serializer()).collect { frame ->
@@ -104,10 +103,11 @@ class TasksShell(context: Context, val start: StartResult) {
     /** The connect screen, opened once; [address] is what its field starts with. */
     private fun openConnect(address: String? = null) {
         if (connect != null) return
-        val handle = Bridge.open("tasks.connect", settings(opening(address ?: prefs.getString(ADDRESS, null)))).getOrElse {
-            _problem.value = it.message
-            return
-        }
+        val handle =
+            Bridge.open("tasks.connect", settings(opening(address ?: prefs.getString(ADDRESS, null)))).getOrElse {
+                _problem.value = it.message
+                return
+            }
         connect = handle
         signedInSeen = 0
         connectFollowing = scope.launch {
@@ -141,8 +141,7 @@ class TasksShell(context: Context, val start: StartResult) {
 
     fun send(command: LinkController.Command) = route(emptyList(), BridgeJson.encodeToJsonElement(LinkController.Command.Serializer, command))
 
-    fun send(editor: String, command: TaskEditor.Command) =
-        route(listOf(APP, editor), BridgeJson.encodeToJsonElement(TaskEditor.Command.Serializer, command))
+    fun send(editor: String, command: TaskEditor.Command) = route(listOf(APP, editor), BridgeJson.encodeToJsonElement(TaskEditor.Command.Serializer, command))
 
     /** A command for the connect screen, the root of its runtime: a route with no path. */
     fun send(command: ConnectController.Command) {
@@ -150,9 +149,8 @@ class TasksShell(context: Context, val start: StartResult) {
     }
 
     /**
-     * A Settings row's command: the app's and the link's go to Swift, which
-     * routes them as `SettingsRoute` does; what only the UI can run (the
-     * browser for Change Access, the connect screen) runs here.
+     * A Settings row's command: the app's and the link's go to Swift, which routes them as `SettingsRoute` does; what only the UI can run (the browser for
+     * Change Access, the connect screen) runs here.
      */
     fun settings(command: SettingsCommand) {
         val row = (command as? SettingsCommand.Perform)?.row
@@ -168,7 +166,9 @@ class TasksShell(context: Context, val start: StartResult) {
     /** The Access banner's actions. */
     fun perform(action: AccessAction) {
         when (action) {
-            AccessAction.Review, AccessAction.SignInAgain, AccessAction.MoveToAppAccess -> changeAccess()
+            AccessAction.Review,
+            AccessAction.SignInAgain,
+            AccessAction.MoveToAppAccess -> changeAccess()
             else -> send(LinkController.Command.Refresh(force = true))
         }
     }

@@ -277,15 +277,16 @@ actor SyncEngine {
         _ source: Source, _ step: String?, _ done: Int = 0, _ total: Int = 0, bar: Double? = nil, run: (done: Int, total: Int)? = nil
     ) async {
         if let onProgress {
-            await onProgress(source, step.map {
-                SyncProgress(step: $0, done: done, total: total, bar: bar, runDone: run?.done, runTotal: run?.total)
-            })
+            await onProgress(
+                source,
+                step.map {
+                    SyncProgress(step: $0, done: done, total: total, bar: bar, runDone: run?.done, runTotal: run?.total)
+                })
         }
     }
 
     /// Whether Health can be read: it is encrypted while the phone is locked.
     @MainActor static var healthReadable: Bool { UIApplication.shared.isProtectedDataAvailable }
-
 
     private func log(_ source: Source?, _ message: String, _ level: ActivityEntry.Level = .info) {
         Activity.shared.log(source, message, level: level)
@@ -313,10 +314,11 @@ actor SyncEngine {
     }
 
     static func due(_ state: LocalState, only: Set<Source>?, interval: TimeInterval, now: Date) -> Set<Source> {
-        Set(Source.allCases.filter { source in
-            let last = state.runs.first { $0.source == source }?.finished ?? state.status[source]?.lastSync
-            return (only?.contains(source) ?? true) && (last.map { now.timeIntervalSince($0) >= interval * 0.9 } ?? true)
-        })
+        Set(
+            Source.allCases.filter { source in
+                let last = state.runs.first { $0.source == source }?.finished ?? state.status[source]?.lastSync
+                return (only?.contains(source) ?? true) && (last.map { now.timeIntervalSince($0) >= interval * 0.9 } ?? true)
+            })
     }
 
     /// Runs a sync of the sources given (all enabled ones by default) after
@@ -354,7 +356,9 @@ actor SyncEngine {
         // this one before it was reset), it is forgotten.
         var bound = LocalState.load()
         if !bound.isBound(to: session) {
-            if bound.repository != nil { log(nil, "Signed in to \(session.repository): what this phone pushed before is forgotten, and everything is sent again") }
+            if bound.repository != nil {
+                log(nil, "Signed in to \(session.repository): what this phone pushed before is forgotten, and everything is sent again")
+            }
             bound.forgetPushed()
             bound.repository = session.identity
             commit(&bound)
@@ -381,13 +385,15 @@ actor SyncEngine {
                 status.lastSync = Date()
                 status.lastError = nil
                 status.stopped = nil
-            } catch where isStop(error) {
-                status.lastError = budget == .full ? "Stopped before it finished. Sync again to carry on." : "iOS ended the background time before it finished; the next sync carries on."
+            } catch  where isStop(error) {
+                status.lastError =
+                    budget == .full
+                    ? "Stopped before it finished. Sync again to carry on." : "iOS ended the background time before it finished; the next sync carries on."
                 status.stopped = true
             } catch SyncError.locked {
                 status.lastError = SyncError.locked.localizedDescription
                 status.stopped = true
-            } catch where isSignedOut(error) {
+            } catch  where isSignedOut(error) {
                 status.stopped = nil
                 status.lastError = SyncError.signedOut.localizedDescription
                 signedOut = true
@@ -402,8 +408,10 @@ actor SyncEngine {
                 log(source, "Sync finished: \(status.counts ?? "")")
             }
             state.status[source] = status
-            state.record(SyncRun(source: source, started: started, finished: Date(), summary: status.lastError == nil ? status.counts : nil,
-                                 error: status.lastError, stopped: status.stopped))
+            state.record(
+                SyncRun(
+                    source: source, started: started, finished: Date(), summary: status.lastError == nil ? status.counts : nil,
+                    error: status.lastError, stopped: status.stopped))
             commit(&state)
             await progress(source, nil)
             if let onChange { await onChange(state) }
@@ -658,12 +666,15 @@ actor SyncEngine {
         for (offset, batch) in Self.batches(Array(changed)) {
             if Task.isCancelled { break }
             let before = failures.count
-            for ((id, props), result) in await eachLimited(batch, progress: { n in await self.progress(.contacts, "Writing contacts", offset + n, toWrite) }, { pair in
-                let (id, props) = pair
-                try await client.put(kind, id, props.foundation)
-                let gone = Set(previous[id]?.keys ?? []).subtracting(props.keys)
-                try await client.clear(kind, id, keys: gone.sorted())
-            }) {
+            for ((id, props), result) in await eachLimited(
+                batch, progress: { n in await self.progress(.contacts, "Writing contacts", offset + n, toWrite) },
+                { pair in
+                    let (id, props) = pair
+                    try await client.put(kind, id, props.foundation)
+                    let gone = Set(previous[id]?.keys ?? []).subtracting(props.keys)
+                    try await client.clear(kind, id, keys: gone.sorted())
+                })
+            {
                 switch result {
                 case .success:
                     state.contacts[id] = Pushed(props)
@@ -695,9 +706,11 @@ actor SyncEngine {
             throw ContextError(context: "\(failures.count) of \(changed.count + vanished.count) contact writes failed, the first", underlying: first)
         }
 
-        try await client.put(book, addressbook, [
-            "deviceName": name, "contactCount": contacts.count, "lastSyncedAt": Formats.utc(Date()),
-        ])
+        try await client.put(
+            book, addressbook,
+            [
+                "deviceName": name, "contactCount": contacts.count, "lastSyncedAt": Formats.utc(Date()),
+            ])
         return "\(contacts.count) contacts · " + Self.changes(written, removed)
     }
 
@@ -766,22 +779,32 @@ actor SyncEngine {
         let chosen = Set(calendars.map(\.calendarIdentifier))
         // A large window takes seconds to read: not on the actor, which the
         // progress callbacks and the app's updates go through.
-        let occurrences: [EKEvent] = chosen.isEmpty ? [] : await Task.detached {
-            let scanned = store.calendars(for: .event).filter { chosen.contains($0.calendarIdentifier) }
-            return store.events(matching: store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: scanned))
-        }.value
+        let occurrences: [EKEvent] =
+            chosen.isEmpty
+            ? []
+            : await Task.detached {
+                let scanned = store.calendars(for: .event).filter { chosen.contains($0.calendarIdentifier) }
+                return store.events(matching: store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: scanned))
+            }.value
 
         state.device.calendars = calendars.count
         state.device.events = occurrences.count
         let off = everything.count - calendars.count
-        log(.calendars, "Read \(calendars.count) calendars" + (off > 0 ? " (\(off) turned off)" : "") + " and \(occurrences.count) events from \(Formats.day(windowStart, in: .current)) to \(Formats.day(windowEnd, in: .current))")
+        log(
+            .calendars,
+            "Read \(calendars.count) calendars" + (off > 0 ? " (\(off) turned off)" : "")
+                + " and \(occurrences.count) events from \(Formats.day(windowStart, in: .current)) to \(Formats.day(windowEnd, in: .current))")
         // No event at all, from calendars that held some in this window, is
         // a store still loading (EventKit answers empty while it syncs an
         // account), never every event deleted.
         let chosenIDs = Set(chosen.map(ids.calendar))
-        if occurrences.isEmpty, state.events.values.contains(where: {
-            chosenIDs.contains($0.calendar ?? "") && ($0.start.map(window.contains) ?? false)
-        }) { throw SyncError.emptyScan("events") }
+        if occurrences.isEmpty,
+            state.events.values.contains(where: {
+                chosenIDs.contains($0.calendar ?? "") && ($0.start.map(window.contains) ?? false)
+            })
+        {
+            throw SyncError.emptyScan("events")
+        }
         let name = await deviceName
         try await client.put(storeKind, eventstore, ["deviceName": name])
         var failures: [Error] = []
@@ -791,11 +814,14 @@ actor SyncEngine {
         let previousCalendars = state.calendars
         let changedCalendars = currentCalendars.filter { previousCalendars[$0.key]?.hash != Pushed.hash($0.value) }
         await progress(.calendars, "Writing calendars", 0, changedCalendars.count)
-        for ((id, props), result) in await eachLimited(Array(changedCalendars), { pair in
-            let (id, props) = pair
-            try await client.put(calendarKind, id, props.foundation)
-            try await client.clear(calendarKind, id, keys: Set(previousCalendars[id]?.keys ?? []).subtracting(props.keys).sorted())
-        }) {
+        for ((id, props), result) in await eachLimited(
+            Array(changedCalendars),
+            { pair in
+                let (id, props) = pair
+                try await client.put(calendarKind, id, props.foundation)
+                try await client.clear(calendarKind, id, keys: Set(previousCalendars[id]?.keys ?? []).subtracting(props.keys).sorted())
+            })
+        {
             switch result {
             case .success: state.calendars[id] = Pushed(props)
             case let .failure(e): failures.append(e)
@@ -821,7 +847,11 @@ actor SyncEngine {
             throw ContextError(context: "\(failures.count) calendar writes failed, the first", underlying: failures[0])
         }
 
-        struct Occurrence: Sendable { let props: JSON; let start: Date?; let calendar: String }
+        struct Occurrence: Sendable {
+            let props: JSON
+            let start: Date?
+            let calendar: String
+        }
         var current: [String: Occurrence] = [:]
         for e in occurrences {
             guard let calendar = e.calendar else { continue }
@@ -840,11 +870,14 @@ actor SyncEngine {
         for (offset, batch) in Self.batches(Array(changed)) {
             if Task.isCancelled { break }
             let before = failures.count
-            for ((id, o), result) in await eachLimited(batch, progress: { n in await self.progress(.calendars, "Writing events", offset + n, toWrite) }, { pair in
-                let (id, o) = pair
-                try await client.put(eventKind, id, o.props.foundation)
-                try await client.clear(eventKind, id, keys: Set(previous[id]?.keys ?? []).subtracting(o.props.keys).sorted())
-            }) {
+            for ((id, o), result) in await eachLimited(
+                batch, progress: { n in await self.progress(.calendars, "Writing events", offset + n, toWrite) },
+                { pair in
+                    let (id, o) = pair
+                    try await client.put(eventKind, id, o.props.foundation)
+                    try await client.clear(eventKind, id, keys: Set(previous[id]?.keys ?? []).subtracting(o.props.keys).sorted())
+                })
+            {
                 switch result {
                 case .success:
                     state.events[id] = Pushed(o.props, start: o.start, calendar: o.calendar)
@@ -881,11 +914,13 @@ actor SyncEngine {
             throw ContextError(context: "\(failures.count) of \(changed.count + vanished.count) event writes failed, the first", underlying: first)
         }
 
-        try await client.put(storeKind, eventstore, [
-            "deviceName": name, "calendarCount": calendars.count, "eventCount": occurrences.count,
-            "windowStart": Formats.utc(windowStart), "windowEnd": Formats.utc(windowEnd),
-            "lastSyncedAt": Formats.utc(Date()),
-        ])
+        try await client.put(
+            storeKind, eventstore,
+            [
+                "deviceName": name, "calendarCount": calendars.count, "eventCount": occurrences.count,
+                "windowStart": Formats.utc(windowStart), "windowEnd": Formats.utc(windowEnd),
+                "lastSyncedAt": Formats.utc(Date()),
+            ])
         return "\(calendars.count) calendars · \(occurrences.count) events · " + Self.changes(written, removed)
     }
 
@@ -913,18 +948,23 @@ actor SyncEngine {
         let changed = current.filter { previous[$0.key]?.hash != $0.value.pushed.hash }
         let new = changed.keys.filter { previous[$0] == nil }.count
         let vanished = deleting ? previous.keys.filter { current[$0] == nil } : []
-        log(source, "\(new) \(noun) new, \(changed.count - new) changed, \(current.count - changed.count) unchanged" + (deleting ? ", \(vanished.count) gone" : ""))
+        log(
+            source,
+            "\(new) \(noun) new, \(changed.count - new) changed, \(current.count - changed.count) unchanged" + (deleting ? ", \(vanished.count) gone" : ""))
         var out = Pushes()
         let toWrite = changed.count
         if toWrite > 0 { await progress(source, "Writing \(noun)", 0, toWrite) }
         for (offset, batch) in Self.batches(Array(changed)) {
             if Task.isCancelled { break }
             let before = out.failures.count
-            for ((id, row), result) in await eachLimited(batch, progress: { n in await self.progress(source, "Writing \(noun)", offset + n, toWrite) }, { pair in
-                let (id, row) = pair
-                try await client.put(kind, id, row.props.foundation)
-                try await client.clear(kind, id, keys: Set(previous[id]?.keys ?? []).subtracting(row.props.keys).sorted())
-            }) {
+            for ((id, row), result) in await eachLimited(
+                batch, progress: { n in await self.progress(source, "Writing \(noun)", offset + n, toWrite) },
+                { pair in
+                    let (id, row) = pair
+                    try await client.put(kind, id, row.props.foundation)
+                    try await client.clear(kind, id, keys: Set(previous[id]?.keys ?? []).subtracting(row.props.keys).sorted())
+                })
+            {
                 switch result {
                 case .success:
                     state[keyPath: path][id] = row.pushed
@@ -987,14 +1027,15 @@ actor SyncEngine {
         // failure, never an empty store whose reminders the server forgets.
         let read: [(id: String, row: Pushed.Row)]? = await withCheckedContinuation { continuation in
             store.fetchReminders(matching: store.predicateForReminders(in: nil)) { reminders in
-                continuation.resume(returning: reminders.map { all in
-                    all.compactMap { r in
-                        guard let list = r.calendar else { return nil }
-                        let listID = ids.calendar(list.calendarIdentifier)
-                        let props = ReminderMapping.reminder(r, list: listID)
-                        return (ids.reminder(r.calendarItemIdentifier), Pushed.Row(props, Pushed(props, calendar: listID)))
-                    }
-                })
+                continuation.resume(
+                    returning: reminders.map { all in
+                        all.compactMap { r in
+                            guard let list = r.calendar else { return nil }
+                            let listID = ids.calendar(list.calendarIdentifier)
+                            let props = ReminderMapping.reminder(r, list: listID)
+                            return (ids.reminder(r.calendarItemIdentifier), Pushed.Row(props, Pushed(props, calendar: listID)))
+                        }
+                    })
             }
         }
         guard let fetched = read else { throw SyncError.unreadable("reminders") }
@@ -1012,22 +1053,26 @@ actor SyncEngine {
             let props = ReminderMapping.list(l, eventstore: eventstore)
             currentLists[ids.calendar(l.calendarIdentifier)] = Pushed.Row(props, Pushed(props))
         }
-        let listPushes = try await pushRows(client, &state, \.reminderLists, kind: ReminderMapping.listKind, currentLists,
-                                        deleting: true, source: .reminders, noun: "lists")
+        let listPushes = try await pushRows(
+            client, &state, \.reminderLists, kind: ReminderMapping.listKind, currentLists,
+            deleting: true, source: .reminders, noun: "lists")
         // A deleted list takes its reminders with it on the server.
         let goneLists = Set(state.reminders.values.compactMap(\.calendar)).subtracting(state.reminderLists.keys)
         state.reminders = state.reminders.filter { !goneLists.contains($0.value.calendar ?? "") }
         try settlePushes(.reminders, "list", [listPushes])
 
         let current = Dictionary(fetched.map { ($0.id, $0.row) }, uniquingKeysWith: { a, _ in a })
-        let pushes = try await pushRows(client, &state, \.reminders, kind: ReminderMapping.kind, current,
-                                    deleting: true, source: .reminders, noun: "reminders")
+        let pushes = try await pushRows(
+            client, &state, \.reminders, kind: ReminderMapping.kind, current,
+            deleting: true, source: .reminders, noun: "reminders")
         try settlePushes(.reminders, "reminder", [pushes])
 
-        try await client.put(storeKind, eventstore, [
-            "deviceName": name, "reminderListCount": lists.count, "reminderCount": fetched.count,
-            "lastSyncedAt": Formats.utc(Date()),
-        ])
+        try await client.put(
+            storeKind, eventstore,
+            [
+                "deviceName": name, "reminderListCount": lists.count, "reminderCount": fetched.count,
+                "lastSyncedAt": Formats.utc(Date()),
+            ])
         return "\(lists.count) lists · \(fetched.count) reminders · " + Self.changes(pushes.written, pushes.removed)
     }
 
@@ -1068,12 +1113,15 @@ actor SyncEngine {
             current[ids.visit(v.key)] = Pushed.Row(props, Pushed(props, start: v.arrival ?? v.departure))
         }
         // A visit aged out of the year kept here stays in the repository.
-        let pushes = try await pushRows(client, &state, \.visits, kind: VisitMapping.kind, current,
-                                    deleting: false, source: .places, noun: "visits")
+        let pushes = try await pushRows(
+            client, &state, \.visits, kind: VisitMapping.kind, current,
+            deleting: false, source: .places, noun: "visits")
         try settlePushes(.places, "visit", [pushes])
-        try await client.put(VisitMapping.storeKind, visitstore, [
-            "deviceName": name, "visitCount": visits.count, "lastSyncedAt": Formats.utc(Date()),
-        ])
+        try await client.put(
+            VisitMapping.storeKind, visitstore,
+            [
+                "deviceName": name, "visitCount": visits.count, "lastSyncedAt": Formats.utc(Date()),
+            ])
         return "\(visits.count) visits · " + Self.changes(pushes.written, 0)
     }
 
@@ -1092,7 +1140,8 @@ actor SyncEngine {
     ) -> [Date] {
         let todayStart = calendar.startOfDay(for: today)
         let parse = Coverage.dayParser(calendar)
-        let first = start.map { calendar.startOfDay(for: $0) }
+        let first =
+            start.map { calendar.startOfDay(for: $0) }
             ?? available.flatMap { $0.compactMap(parse.date(from:)).min() }
             ?? todayStart
         var out = Set<Date>()
@@ -1120,9 +1169,9 @@ actor SyncEngine {
     static func deliveryKey(_ client: Client, _ session: Session) async throws -> String? {
         guard !session.isApp else { return nil }
         guard let trigger = try await client.get(Self.triggerKind, Self.trigger),
-              trigger["enabled"] as? Bool == true,
-              let key = ((trigger["source"] as? [String: Any])?["webhook"] as? [String: Any])?["key"] as? String,
-              !key.isEmpty
+            trigger["enabled"] as? Bool == true,
+            let key = ((trigger["source"] as? [String: Any])?["webhook"] as? [String: Any])?["key"] as? String,
+            !key.isEmpty
         else { throw SyncError.webhookOff }
         return key
     }
@@ -1133,9 +1182,10 @@ actor SyncEngine {
     /// password session makes a missing one, or restores a deleted one, as
     /// Set Up makes it; an app session never writes it, since only the
     /// owner's approval creates it.
-    static func healthAccount(_ client: Client, _ session: Session, id: String,
-                              deviceName: @Sendable () async -> String) async throws -> AccountCheck
-    {
+    static func healthAccount(
+        _ client: Client, _ session: Session, id: String,
+        deviceName: @Sendable () async -> String
+    ) async throws -> AccountCheck {
         let stored = try await client.record(healthAccountKind, id)
         if case .live = stored { return .present }
         if session.isApp {
@@ -1241,13 +1291,14 @@ actor SyncEngine {
                     available = try await HealthScan.shared.days(since: start, store: health, calendar: calendar) { done, total, _ in
                         await self.progress(.health, "Reading what the phone holds", done, total)
                     }
-                } catch where !isStop(error) {
+                } catch  where !isStop(error) {
                     if await !Self.healthReadable { throw SyncError.locked }
                     throw ContextError(context: "Reading what the phone holds", underlying: error)
                 }
             }
-            days = Self.healthDays(today: today, from: start, sent: state.healthDays, queued: state.healthQueue,
-                                   available: available, calendar: calendar)
+            days = Self.healthDays(
+                today: today, from: start, sent: state.healthDays, queued: state.healthQueue,
+                available: available, calendar: calendar)
         }
         if days.isEmpty {
             return "Nothing to send"
@@ -1268,7 +1319,8 @@ actor SyncEngine {
             var rows = 0
             var skipped: [String] = []
             for grouping in Grouping.allCases {
-                let delivery = grouping == .minutes
+                let delivery =
+                    grouping == .minutes
                     ? await reader.minutes(span, zone: zone)
                     : await reader.seconds(span, zone: zone)
                 // The reads take seconds and do not stop for a Stop.
@@ -1287,8 +1339,10 @@ actor SyncEngine {
                 // replace.
                 for body in delivery.bodies() {
                     do {
-                        made.append(try await client.deliver(authority: session.repository, trigger: Self.trigger, body: body,
-                                                             headers: headers, key: key))
+                        made.append(
+                            try await client.deliver(
+                                authority: session.repository, trigger: Self.trigger, body: body,
+                                headers: headers, key: key))
                     } catch {
                         throw ContextError(context: "Sending \(name) (\(grouping.rawValue))", underlying: error)
                     }
@@ -1355,7 +1409,8 @@ actor SyncEngine {
         // the owner reads is the one to act on, not a count.
         if let first = firstRefusal {
             let more = refused > 1 ? ", and \(refused - 1) more \(refused == 2 ? "day" : "days") (see Activity)" : ""
-            throw Message("The server refused \(first.day)\(more): \(first.reason)\n\nThe rest went through (\(summary)). A refused day is sent again at the next sync.")
+            throw Message(
+                "The server refused \(first.day)\(more): \(first.reason)\n\nThe rest went through (\(summary)). A refused day is sent again at the next sync.")
         }
         return summary
     }

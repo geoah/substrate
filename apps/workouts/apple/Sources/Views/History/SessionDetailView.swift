@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// A finished session (DESIGN.md §7.8): when, the session RPE, the Apple
 /// Health state with "Try again" when it was not saved, every exercise's
@@ -51,7 +51,11 @@ struct SessionDetailView: View {
     }
 
     private var deleteFailureShown: Binding<Bool> {
-        Binding { deleteFailure != nil } set: { if !$0 { deleteFailure = nil } }
+        Binding {
+            deleteFailure != nil
+        } set: {
+            if !$0 { deleteFailure = nil }
+        }
     }
 
     private func list(_ detail: SessionDetailPresentation) -> some View {

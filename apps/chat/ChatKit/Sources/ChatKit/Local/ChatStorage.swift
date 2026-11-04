@@ -1,13 +1,14 @@
 import Foundation
+import SubstrateAPI
+import SubstrateCore
+import SubstrateDevice
+import SubstrateLocal
+
 #if canImport(CryptoKit)
 import CryptoKit
 #else
 import Crypto
 #endif
-import SubstrateAPI
-import SubstrateCore
-import SubstrateDevice
-import SubstrateLocal
 
 /// What the device keeps of each repository's chats, under one folder
 /// (`Application Support/SubstrateChat/` on an Apple device): a
@@ -210,8 +211,10 @@ public final class ChatStorage: @unchecked Sendable {
     /// Moves `messages/` into the cache area. `messages/` goes only once
     /// every file in it is moved or removed as the older of two; one that
     /// fails leaves it where it is, read again at the next open.
-    static func adoptTranscripts(in folder: RepositoryFolder,
-                                 move: (URL, URL) throws -> Void = { try FileManager.default.moveItem(at: $0, to: $1) })
+    static func adoptTranscripts(
+        in folder: RepositoryFolder,
+        move: (URL, URL) throws -> Void = { try FileManager.default.moveItem(at: $0, to: $1) }
+    )
         -> TranscriptAdoption
     {
         let manager = FileManager.default

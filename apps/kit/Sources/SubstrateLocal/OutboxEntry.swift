@@ -40,9 +40,10 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
     /// Parked because the record changed on the server since `baseVersion`.
     public var conflict = false
 
-    public init(id: UUID = UUID(), method: Method, kind: String, recordID: String, properties: JSONObject? = nil,
-                guarded: Bool = false, batch: String? = nil, baseVersion: Int? = nil)
-    {
+    public init(
+        id: UUID = UUID(), method: Method, kind: String, recordID: String, properties: JSONObject? = nil,
+        guarded: Bool = false, batch: String? = nil, baseVersion: Int? = nil
+    ) {
         self.id = id
         self.method = method
         self.kind = kind
@@ -73,7 +74,8 @@ public struct OutboxEntry: Codable, Sendable, Hashable, Identifiable {
         recordID = try c.decode(String.self, forKey: .recordID)
         properties = try c.decodeIfPresent(JSONObject.self, forKey: .properties)
         guarded = try c.decodeIfPresent(Bool.self, forKey: .guarded) ?? false
-        batch = try c.decodeIfPresent(String.self, forKey: .batch) ?? c.decodeIfPresent(String.self, forKey: .group)
+        batch =
+            try c.decodeIfPresent(String.self, forKey: .batch) ?? c.decodeIfPresent(String.self, forKey: .group)
             ?? c.decodeIfPresent(String.self, forKey: .session)
         attempts = try c.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
         lastError = try c.decodeIfPresent(String.self, forKey: .lastError)

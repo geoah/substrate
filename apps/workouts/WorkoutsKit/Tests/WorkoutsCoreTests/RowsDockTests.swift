@@ -1,6 +1,7 @@
 import Foundation
-@testable import WorkoutsCore
 import Testing
+
+@testable import WorkoutsCore
 
 // The review of the three-part island (PR #1110): when the island docks the
 // open set, what "Then …" may open, a group's warm-up in the island, and the
@@ -333,10 +334,16 @@ struct RowsAfterActionTests {
     @Test("a cluster's next part exists in the list: the line takes the list to it")
     func cluster() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("x", EngineCatalog.press, [PlannedSet(key: "s1", structure: .cluster, load: .kg(80), rirMin: 2, rirMax: 2,
-                                                                     miniSetReps: 3, miniSets: 3, intraSetPause: 20)]),
-        ]), exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine([
+                EngineCatalog.slot(
+                    "x", EngineCatalog.press,
+                    [
+                        PlannedSet(
+                            key: "s1", structure: .cluster, load: .kg(80), rirMin: 2, rirMax: 2,
+                            miniSetReps: 3, miniSets: 3, intraSetPause: 20)
+                    ])
+            ]), exercises: EngineCatalog.all)
         let session = RowsSession(start: engineEpoch, script: script, history: HistoryIndex([]))
         let head = try session.row("x", 0)
         let layout = try session.layout(at: 1)
@@ -407,12 +414,15 @@ struct RowsIslandWordsTests {
     @Test("a group's warm-up shows its orange W in the island, never Round 1 or a group letter")
     func groupWarmup() throws {
         var script = EngineScript(at: engineEpoch)
-        try script.start(EngineCatalog.routine([
-            EngineCatalog.slot("row", EngineCatalog.row,
-                               [PlannedSet(key: "w1", role: .warmup, repsMin: 10, repsMax: 10, load: .kg(30))] + EngineCatalog.sets(2),
-                               group: "a"),
-            EngineCatalog.slot("curl", EngineCatalog.curl, EngineCatalog.sets(2), group: "a"),
-        ], groups: [RoutineGroup(key: "a", groupKind: .superset)]), exercises: EngineCatalog.all)
+        try script.start(
+            EngineCatalog.routine(
+                [
+                    EngineCatalog.slot(
+                        "row", EngineCatalog.row,
+                        [PlannedSet(key: "w1", role: .warmup, repsMin: 10, repsMax: 10, load: .kg(30))] + EngineCatalog.sets(2),
+                        group: "a"),
+                    EngineCatalog.slot("curl", EngineCatalog.curl, EngineCatalog.sets(2), group: "a"),
+                ], groups: [RoutineGroup(key: "a", groupKind: .superset)]), exercises: EngineCatalog.all)
         var session = RowsSession(start: engineEpoch, script: script, history: HistoryIndex([]))
         let warmup = try session.row("row", 0)
         let layout = try session.layout(at: 1)

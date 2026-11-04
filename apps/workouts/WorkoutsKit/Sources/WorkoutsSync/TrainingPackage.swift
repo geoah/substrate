@@ -41,9 +41,9 @@ public struct PackageManifest: Sendable {
 
     static func decode(_ data: Data) throws -> PackageManifest {
         guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: data),
-              case let .string(package)? = object["package"],
-              case let .number(version)? = object["version"],
-              case let .array(documents)? = object["documents"]
+            case let .string(package)? = object["package"],
+            case let .number(version)? = object["version"],
+            case let .array(documents)? = object["documents"]
         else { throw CatalogError.missingResource("Package/*.json is not a manifest file") }
         return PackageManifest(package: package, version: version.int ?? 0, documents: documents)
     }
@@ -52,8 +52,9 @@ public struct PackageManifest: Sendable {
     public func documents(ofKind kind: String) -> [(id: String, data: JSONObject)] {
         documents.compactMap { document in
             guard case let .object(object) = document, object["kind"] == .string(kind),
-                  case let .object(metadata)? = object["metadata"], case let .string(id)? = metadata["id"],
-                  case let .object(data)? = object["data"] else { return nil }
+                case let .object(metadata)? = object["metadata"], case let .string(id)? = metadata["id"],
+                case let .object(data)? = object["data"]
+            else { return nil }
             return (id, data)
         }
     }

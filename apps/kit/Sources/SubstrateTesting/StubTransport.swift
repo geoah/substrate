@@ -1,8 +1,9 @@
 import Foundation
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateDevice
 
 /// A scripted server: each route answers its responses in turn, the last one
 /// again once they run out, and every request is kept for the test to read.

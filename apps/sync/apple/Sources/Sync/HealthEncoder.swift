@@ -67,9 +67,15 @@ struct HealthDelivery: Sendable {
     }
 
     static func body(metrics: [HealthMetric], workouts: [JSON], cycle: [JSON] = []) -> Data {
-        var data: [(String, JSON)] = [("metrics", .array(metrics.map { m in
-            .object([("name", .string(m.name)), ("units", .string(m.units)), ("data", .array(m.rows))])
-        }))]
+        var data: [(String, JSON)] = [
+            (
+                "metrics",
+                .array(
+                    metrics.map { m in
+                        .object([("name", .string(m.name)), ("units", .string(m.units)), ("data", .array(m.rows))])
+                    })
+            )
+        ]
         if !workouts.isEmpty { data.append(("workouts", .array(workouts))) }
         if !cycle.isEmpty { data.append(("cycleTracking", .array(cycle))) }
         return JSON.object([("data", .object(data))]).encoded
@@ -243,16 +249,19 @@ struct WorkoutSummary: Sendable {
             f.set("maxHeartRate", qty(hr.max, "bpm"))
         }
         if let elevationUpM { f.set("elevationUp", qty(elevationUpM, "m")) }
-        f.set("heartRateData", .array(heartRateData.map { m in
-            var row = Fields()
-            row.set("date", r.date(m.at))
-            row.set("Min", rounded(m.min, 6))
-            row.set("Avg", rounded(m.avg, 6))
-            row.set("Max", rounded(m.max, 6))
-            row.set("units", "bpm")
-            row.set("source", HealthRows.source(m.sources))
-            return row.json
-        }))
+        f.set(
+            "heartRateData",
+            .array(
+                heartRateData.map { m in
+                    var row = Fields()
+                    row.set("date", r.date(m.at))
+                    row.set("Min", rounded(m.min, 6))
+                    row.set("Avg", rounded(m.avg, 6))
+                    row.set("Max", rounded(m.max, 6))
+                    row.set("units", "bpm")
+                    row.set("source", HealthRows.source(m.sources))
+                    return row.json
+                }))
         if !route.isEmpty { f.set("route", .array(route.map { $0.json(r) })) }
         var meta = Fields()
         meta.set("HKTimeZone", timeZone)

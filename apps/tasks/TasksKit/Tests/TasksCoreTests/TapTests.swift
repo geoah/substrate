@@ -4,6 +4,7 @@ import SubstrateDevice
 import SubstrateScreens
 import SubstrateTesting
 import Testing
+
 @testable import TasksCore
 
 @Suite("A reminder's tap", .timeLimit(.minutes(10)))
@@ -83,8 +84,10 @@ struct TapTests {
         func fire(_ zone: String) -> Date? {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = TimeZone(identifier: zone)!
-            return Reminders.plan(model, settings: SettingsValues(), permission: .on, now: now, calendar: calendar,
-                                  locale: Locale(identifier: "en_US")).first?.fireAt
+            return Reminders.plan(
+                model, settings: SettingsValues(), permission: .on, now: now, calendar: calendar,
+                locale: Locale(identifier: "en_US")
+            ).first?.fireAt
         }
         // 9:00 in each zone: a move of the zone is a new plan, which the
         // next presentation makes and the effects schedule.

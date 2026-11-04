@@ -12,9 +12,10 @@ public struct ConfirmingButton<Question: Codable & Hashable & Sendable>: View {
     let action: () -> Void
     @State private var asking = false
 
-    public init(_ label: String, role: ButtonRole? = nil, confirmation: ConfirmationPresentation<Question>?,
-                action: @escaping () -> Void)
-    {
+    public init(
+        _ label: String, role: ButtonRole? = nil, confirmation: ConfirmationPresentation<Question>?,
+        action: @escaping () -> Void
+    ) {
         self.label = label
         self.role = role
         self.confirmation = confirmation

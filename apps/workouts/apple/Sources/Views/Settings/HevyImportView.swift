@@ -50,7 +50,9 @@ struct HevyImportView: View {
             } header: {
                 Text("Hevy account")
             } footer: {
-                Text("Reads your workouts, routines, body measurements and the exercises you made in Hevy. Get the key on hevy.com \u{2192} Settings \u{2192} Developer (it needs Hevy Pro). Nothing is written to Hevy, and the key is not kept.")
+                Text(
+                    "Reads your workouts, routines, body measurements and the exercises you made in Hevy. Get the key on hevy.com \u{2192} Settings \u{2192} Developer (it needs Hevy Pro). Nothing is written to Hevy, and the key is not kept."
+                )
             }
 
             Section {
@@ -61,7 +63,9 @@ struct HevyImportView: View {
             } header: {
                 Text("How you logged")
             } footer: {
-                Text("Substrate Workouts counts one dumbbell or kettlebell of a pair. If you logged the two together in Hevy (40 kg for two 20 kg dumbbells), choose Both together and they are halved on import.")
+                Text(
+                    "Substrate Workouts counts one dumbbell or kettlebell of a pair. If you logged the two together in Hevy (40 kg for two 20 kg dumbbells), choose Both together and they are halved on import."
+                )
             }
             .onChange(of: pairs) { _, _ in replan() }
 
@@ -75,7 +79,9 @@ struct HevyImportView: View {
             } header: {
                 Text("Or an export file")
             } footer: {
-                Text("In Hevy: Profile \u{2192} Settings \u{2192} Export & Import Data \u{2192} Export Data \u{2192} Export Workouts. The file holds workouts only, no routines. Nothing is saved until you import.")
+                Text(
+                    "In Hevy: Profile \u{2192} Settings \u{2192} Export & Import Data \u{2192} Export Data \u{2192} Export Workouts. The file holds workouts only, no routines. Nothing is saved until you import."
+                )
             }
 
             switch stage {
@@ -146,9 +152,11 @@ struct HevyImportView: View {
         if !plan.routines.isEmpty || !plan.routinesHeld.isEmpty {
             Section {
                 NavigationLink {
-                    NameList(title: "Routines to add", names: plan.routines.map { routine in
-                        routine.folder.map { "\(routine.name) (\($0))" } ?? routine.name
-                    })
+                    NameList(
+                        title: "Routines to add",
+                        names: plan.routines.map { routine in
+                            routine.folder.map { "\(routine.name) (\($0))" } ?? routine.name
+                        })
                 } label: {
                     LabeledContent("Routines to add", value: "\(plan.routines.count)")
                 }
@@ -163,9 +171,11 @@ struct HevyImportView: View {
             } header: {
                 Text("Routines")
             } footer: {
-                Text(!link.isSignedIn
-                    ? "Routines and body measurements live on your substrate: sign in to one, then import again to add them."
-                    : "Each routine keeps its folder, exercises, supersets, sets and rests. A routine here already is left as it is. Workouts started from a routine are linked to it.")
+                Text(
+                    !link.isSignedIn
+                        ? "Routines and body measurements live on your substrate: sign in to one, then import again to add them."
+                        : "Each routine keeps its folder, exercises, supersets, sets and rests. A routine here already is left as it is. Workouts started from a routine are linked to it."
+                )
             }
         }
 
@@ -177,10 +187,12 @@ struct HevyImportView: View {
             }
             .disabled(plan.exercises.isEmpty)
             NavigationLink {
-                NameList(title: "Matched exercises", names: plan.matched.map { title, id in
-                    let name = app.exercises[id]?.name ?? id.rawValue
-                    return name == title ? title : "\(title) \u{2192} \(name)"
-                }.sorted())
+                NameList(
+                    title: "Matched exercises",
+                    names: plan.matched.map { title, id in
+                        let name = app.exercises[id]?.name ?? id.rawValue
+                        return name == title ? title : "\(title) \u{2192} \(name)"
+                    }.sorted())
             } label: {
                 LabeledContent("Matched to your exercises", value: "\(plan.matched.count)")
             }
@@ -188,7 +200,9 @@ struct HevyImportView: View {
         } header: {
             Text("Exercises")
         } footer: {
-            Text("A Hevy exercise is matched to yours by Hevy's id, else by name. The rest come from the exercise library, movement and muscles included, or from your own Hevy exercises.")
+            Text(
+                "A Hevy exercise is matched to yours by Hevy's id, else by name. The rest come from the exercise library, movement and muscles included, or from your own Hevy exercises."
+            )
         }
 
         if !plan.skipped.isEmpty || !plan.problems.isEmpty || !plan.weightsNotRecorded.isEmpty {
@@ -202,9 +216,11 @@ struct HevyImportView: View {
                 }
                 if !plan.weightsNotRecorded.isEmpty {
                     NavigationLink {
-                        NameList(title: "Weights not recorded", names: plan.weightsNotRecorded.sorted { $0.key < $1.key }.map { title, count in
-                            "\(title): \(Format.count(count, "set"))"
-                        })
+                        NameList(
+                            title: "Weights not recorded",
+                            names: plan.weightsNotRecorded.sorted { $0.key < $1.key }.map { title, count in
+                                "\(title): \(Format.count(count, "set"))"
+                            })
                     } label: {
                         LabeledContent("Weights not recorded", value: "\(plan.weightsNotRecorded.values.reduce(0, +))")
                     }
@@ -219,7 +235,9 @@ struct HevyImportView: View {
             } header: {
                 Text("Left out")
             } footer: {
-                Text("A workout already imported, deleted from History, or overlapping a session you logged here is skipped. A weight is not recorded on a set whose matched exercise counts reps or time only.")
+                Text(
+                    "A workout already imported, deleted from History, or overlapping a session you logged here is skipped. A weight is not recorded on a set whose matched exercise counts reps or time only."
+                )
             }
         }
     }
@@ -286,8 +304,9 @@ struct HevyImportView: View {
     }
 
     private var inputs: Inputs {
-        Inputs(exercises: app.exercises, routines: app.catalog?.routines ?? [:], history: app.history.map(\.records),
-               deleted: app.hiddenSessions, adapter: WorkoutsRoot.adapter)
+        Inputs(
+            exercises: app.exercises, routines: app.catalog?.routines ?? [:], history: app.history.map(\.records),
+            deleted: app.hiddenSessions, adapter: WorkoutsRoot.adapter)
     }
 
     private func readAccount() {
@@ -341,12 +360,14 @@ struct HevyImportView: View {
         let inputs = inputs
         switch read {
         case let .account(export, library):
-            let plan = HevyImport.plan(export, exercises: inputs.exercises, routines: inputs.routines, history: inputs.history,
-                                       deleted: inputs.deleted, timeZone: .current, adapter: inputs.adapter, library: library, pairs: pairs)
+            let plan = HevyImport.plan(
+                export, exercises: inputs.exercises, routines: inputs.routines, history: inputs.history,
+                deleted: inputs.deleted, timeZone: .current, adapter: inputs.adapter, library: library, pairs: pairs)
             stage = .ready(source: "Your Hevy account", plan: plan)
         case let .file(name, file, library):
-            let plan = HevyImport.plan(file, exercises: inputs.exercises, history: inputs.history, deleted: inputs.deleted, timeZone: zone,
-                                       adapter: inputs.adapter, library: library, pairs: pairs)
+            let plan = HevyImport.plan(
+                file, exercises: inputs.exercises, history: inputs.history, deleted: inputs.deleted, timeZone: zone,
+                adapter: inputs.adapter, library: library, pairs: pairs)
             stage = .ready(source: name, plan: plan)
         }
     }

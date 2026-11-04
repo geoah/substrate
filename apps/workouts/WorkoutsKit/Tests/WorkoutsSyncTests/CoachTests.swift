@@ -1,11 +1,12 @@
 import Foundation
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
 import Testing
 import WorkoutsCore
+
 @testable import WorkoutsSync
-import SubstrateCore
 
 /// The workout coach as its published package declares it (decision records
 /// 0214, 0215 and 0217): the closure this build carries, the agent in it,
@@ -43,12 +44,14 @@ struct CoachTests {
         let models = strings(agent["models"])
         #expect(models.first == "claude-sonnet-5-5" && models.count >= 2 && Set(models).count == models.count)
         guard case let .object(budgets)? = agent["budgets"], case let .number(cap)? = budgets["spendCentsPerDay"] else {
-            Issue.record("no daily cap"); return
+            Issue.record("no daily cap")
+            return
         }
         #expect(cap.int == 100)
         let bundle = try #require(coach.documents(ofKind: "substrate.reamde.dev/core/bundle").first)
         guard case let .object(inputs)? = bundle.data["inputs"], case let .object(model)? = inputs["model"] else {
-            Issue.record("no model input"); return
+            Issue.record("no model input")
+            return
         }
         #expect(model["kind"] == .string("substrate.reamde.dev/llm/provider"))
         #expect(agent["purpose"] == .string("primary"))
@@ -69,14 +72,17 @@ struct CoachTests {
         #expect(Set(training) == Set(["exercise", "setup", "routine", "session", "set", "memory"].map { "\(WorkoutsKinds.packageID)/\($0)" }))
         #expect(reach.reads.contains("substrate.reamde.dev/health/workout") && reach.reads.contains("substrate.reamde.dev/health/sleep"))
         #expect(reach.reads.contains("substrate.reamde.dev/observations/observation") && reach.reads.contains("substrate.reamde.dev/clinical/*"))
-        #expect(Set(reach.writes) == Set(["exercise", "setup", "routine", "memory"].map { "\(WorkoutsKinds.packageID)/\($0)" } + ["substrate.reamde.dev/llm/interaction"]))
+        #expect(
+            Set(reach.writes)
+                == Set(["exercise", "setup", "routine", "memory"].map { "\(WorkoutsKinds.packageID)/\($0)" } + ["substrate.reamde.dev/llm/interaction"]))
         #expect(!reach.writes.contains { $0.hasSuffix("/session") || $0.hasSuffix("/set") })
         #expect(reach.reads.count <= 24 && Set(reach.reads).count == reach.reads.count)
         // Every write but the interaction the ask tool lands is a read too.
         #expect(reach.writes.filter { !$0.hasPrefix("substrate.reamde.dev/llm/") }.allSatisfy(reach.reads.contains))
         // The memory the prompt pins is read.
         guard case let .object(context)? = agent["context"], case let .array(pinned)? = context["pinned"], case let .object(pin)? = pinned.first else {
-            Issue.record("no pinned memory"); return
+            Issue.record("no pinned memory")
+            return
         }
         #expect(pin["kind"] == .string("\(WorkoutsKinds.packageID)/memory"))
     }
@@ -97,9 +103,12 @@ struct CoachTests {
         #expect(grants.talksTo(Coach.agent))
         // A scope the manifest lacks would block the row: the test is live.
         let narrower = Grants(WorkoutsManifest.scopes.filter { $0 != "read:substrate.reamde.dev/observations/*" })
-        #expect(reach.uncovered(by: narrower, purposes: purposes) == ["read:substrate.reamde.dev/observations/metric", "read:substrate.reamde.dev/observations/observation",
-                                                                       "read:substrate.reamde.dev/observations/source", "read:substrate.reamde.dev/observations/sourcelink",
-                                                                       "read:substrate.reamde.dev/observations/trace"])
+        #expect(
+            reach.uncovered(by: narrower, purposes: purposes) == [
+                "read:substrate.reamde.dev/observations/metric", "read:substrate.reamde.dev/observations/observation",
+                "read:substrate.reamde.dev/observations/source", "read:substrate.reamde.dev/observations/sourcelink",
+                "read:substrate.reamde.dev/observations/trace",
+            ])
         // Training is kinds alone: its closure has no reach of its own.
         #expect(ClosureReach.of(try PackageManifest.bundled().documents) == ClosureReach())
     }
@@ -141,7 +150,10 @@ struct CoachTests {
 
     @Test("the prompt this build carries is under 20 KB and names the published kinds")
     func thePrompt() throws {
-        guard case let .string(prompt)? = agent["prompt"] else { Issue.record("no prompt"); return }
+        guard case let .string(prompt)? = agent["prompt"] else {
+            Issue.record("no prompt")
+            return
+        }
         #expect(prompt.utf8.count <= 20480)
         #expect(prompt.contains("substrate.reamde.dev/training/memory"))
         #expect(prompt.contains("training package version \((try PackageManifest.bundled()).version)"))
@@ -156,7 +168,9 @@ struct CoachTests {
         #expect(grants.covers("read:a.example.com/x/thing") && grants.covers("write:a.example.com/x/thing"))
         #expect(grants.covers("read:a.example.com/x/*") && !grants.covers("read:a.example.com/*"))
         #expect(grants.covers("read:b.example.com/y/*") && grants.covers("read:b.example.com/y/z") && !grants.covers("write:b.example.com/y/z"))
-        #expect(!grants.covers("read:a.example.com/x/thing", internal: true) && Grants(["read:a.example.com/x/thing"]).covers("read:a.example.com/x/thing", internal: true))
+        #expect(
+            !grants.covers("read:a.example.com/x/thing", internal: true)
+                && Grants(["read:a.example.com/x/thing"]).covers("read:a.example.com/x/thing", internal: true))
         #expect(grants.covers("agents:a.example.com/x/coach") && !grants.covers("agents:a.example.com/y/coach"))
         #expect(grants.covers("webhook:hook") && !grants.covers("webhook:other"))
         #expect(Grants(["read:*"]).covers("read:anything.example.com/p/*") && !Grants(["read:*"]).covers("write:x.example.com/p/k"))

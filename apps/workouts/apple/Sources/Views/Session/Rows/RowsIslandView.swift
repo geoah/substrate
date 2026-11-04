@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The floating island at the bottom of the Rows layout (DESIGN.md §7.6a),
 /// on Liquid Glass: a stack of up to three parts, each drawn only when it
@@ -125,10 +125,14 @@ struct RowsIslandView: View {
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(.rect)
         if let row = after.row {
-            Button { showLine(row) } label: { content }
-                .buttonStyle(.plain)
-                .accessibilityLabel(after.sentence)
-                .accessibilityHint("Shows that set in the list")
+            Button {
+                showLine(row)
+            } label: {
+                content
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(after.sentence)
+            .accessibilityHint("Shows that set in the list")
         } else {
             content
                 .accessibilityElement(children: .ignore)
@@ -704,4 +708,3 @@ struct RowsUndoToast: View {
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
-

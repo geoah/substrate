@@ -160,13 +160,16 @@ extension Conversation {
             guard arrived else { return nil }
             return Found(thread: thread, record: now.thread, rows: now.rows, running: now.thread?["status"]?.string == "running")
         }
-        let page = try await client.list(ListQuery(
-            kinds: [Kinds.thread], properties: ["mode": ["eq": "chat"], "agent": ["eq": .string("\(Kinds.agent)/\(check.agent)")]],
-            first: 5, orderBy: "startedAt:desc"))
+        let page = try await client.list(
+            ListQuery(
+                kinds: [Kinds.thread], properties: ["mode": ["eq": "chat"], "agent": ["eq": .string("\(Kinds.agent)/\(check.agent)")]],
+                first: 5, orderBy: "startedAt:desc"))
         for thread in page.records where ChatThread(record: thread).startedAt >= since {
-            let first = try await client.list(ListQuery(
-                kinds: [Kinds.message], properties: ["thread": ["eq": .string(thread.id)], "role": ["eq": "user"]],
-                first: 1, orderBy: "turn:asc,createdAt:asc")).records.first
+            let first = try await client.list(
+                ListQuery(
+                    kinds: [Kinds.message], properties: ["thread": ["eq": .string(thread.id)], "role": ["eq": "user"]],
+                    first: 1, orderBy: "turn:asc,createdAt:asc")
+            ).records.first
             guard first?["content"]?.string == check.message else { continue }
             let record = try await client.record(Kinds.thread, thread.id)
             return Found(thread: thread.id, record: record, rows: [], running: record?["status"]?.string == "running")

@@ -59,8 +59,9 @@ public struct KeyedList<Row: Codable & Equatable & Sendable & Identifiable>: Cod
             }
         }
         let removed = base.ids.filter { old[$0] != nil }
-        return KeyedListDelta(base: base.revision, revision: revision, inserted: inserted, changed: changed, removed: removed,
-                              order: ids)
+        return KeyedListDelta(
+            base: base.revision, revision: revision, inserted: inserted, changed: changed, removed: removed,
+            order: ids)
     }
 
     /// Applies a delta made from this revision. One made from another is

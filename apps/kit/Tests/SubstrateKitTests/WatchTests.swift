@@ -1,12 +1,13 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 import SubstrateAPI
 import SubstrateCore
 import SubstrateDevice
 import SubstrateTesting
 import Testing
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 private let taskKind = "example.com/tasks/task"
 
@@ -15,8 +16,9 @@ private func row(_ seq: Int, _ id: String, _ op: String = "put") -> String {
 }
 
 private func follower(_ server: ScriptedLines) -> WatchFollower {
-    WatchFollower(client: SubstrateClient(server: URL(string: "https://ada.example.com")!, token: "t", transport: server),
-                  kinds: [taskKind], app: "Substrate Tasks", pause: { _ in })
+    WatchFollower(
+        client: SubstrateClient(server: URL(string: "https://ada.example.com")!, token: "t", transport: server),
+        kinds: [taskKind], app: "Substrate Tasks", pause: { _ in })
 }
 
 private func query(_ request: URLRequest) -> [String: String] {
@@ -49,11 +51,12 @@ struct WatchTests {
         let server = ScriptedLines()
         server.answer(lines: [#"{"bookmark":40,"generation":"g1"}"#, "{}", row(41, "a"), "{}", row(42, "b", "delete")], then: .open)
         let events = await take(3, from: follower(server).follow(from: nil))
-        #expect(events == [
-            .opened(WatchCursor(seq: 40, generation: "g1")),
-            .row(WatchRow(seq: 41, kind: taskKind, recordID: "a", op: "put")),
-            .row(WatchRow(seq: 42, kind: taskKind, recordID: "b", op: "delete")),
-        ])
+        #expect(
+            events == [
+                .opened(WatchCursor(seq: 40, generation: "g1")),
+                .row(WatchRow(seq: 41, kind: taskKind, recordID: "a", op: "put")),
+                .row(WatchRow(seq: 42, kind: taskKind, recordID: "b", op: "delete")),
+            ])
         let sent = try #require(server.requests.first)
         #expect(sent.value(forHTTPHeaderField: "Accept") == "application/x-ndjson")
         #expect(query(sent) == ["kinds": taskKind, "watch": "1"])
@@ -65,7 +68,10 @@ struct WatchTests {
         server.answer(lines: [#"{"bookmark":41,"generation":"g1"}"#, row(42, "b")], then: .open)
         let events = await take(5, from: follower(server).follow(from: WatchCursor(seq: 39, generation: "g1")))
         #expect(events.count == 5)
-        guard case .interrupted = events[2] else { Issue.record("no interruption: \(events)"); return }
+        guard case .interrupted = events[2] else {
+            Issue.record("no interruption: \(events)")
+            return
+        }
         #expect(events.last == .row(WatchRow(seq: 42, kind: taskKind, recordID: "b", op: "put")))
         #expect(query(server.requests[0])["from"] == "39")
         #expect(query(server.requests[1])["from"] == "41")
@@ -96,7 +102,10 @@ struct WatchTests {
         let server = ScriptedLines()
         server.answer(status: 307, lines: [])
         let events = await take(5, from: follower(server).follow(from: nil))
-        guard case let .ended(.refused(words))? = events.first else { Issue.record("not refused: \(events)"); return }
+        guard case let .ended(.refused(words))? = events.first else {
+            Issue.record("not refused: \(events)")
+            return
+        }
         #expect(words.contains("never follows"))
         #expect(server.requests.count == 1)
     }
@@ -106,7 +115,10 @@ struct WatchTests {
         server.answer(status: 503, lines: [#"{"error":{"code":"unavailable","message":"shutting down"}}"#])
         server.answer(lines: [#"{"bookmark":7,"generation":"g"}"#], then: .open)
         let events = await take(2, from: follower(server).follow(from: nil))
-        guard case .interrupted = events.first else { Issue.record("not interrupted: \(events)"); return }
+        guard case .interrupted = events.first else {
+            Issue.record("not interrupted: \(events)")
+            return
+        }
         #expect(events.last == .opened(WatchCursor(seq: 7, generation: "g")))
     }
 

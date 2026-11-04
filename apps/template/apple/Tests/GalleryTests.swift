@@ -18,8 +18,9 @@ import Testing
     var link: LinkPresentation<TemplatePresentation>? {
         for fixture in ScreenFixtures.all where fixture.name == "status-up-to-date" {
             if case let .status(status) = fixture.presentation {
-                return LinkPresentation(snapshot: LinkSnapshot(phase: .signedIn, repository: "ada.example.com", online: true),
-                                        repository: nil, banner: nil, ended: nil, status: status, signOutProblem: nil, app: nil)
+                return LinkPresentation(
+                    snapshot: LinkSnapshot(phase: .signedIn, repository: "ada.example.com", online: true),
+                    repository: nil, banner: nil, ended: nil, status: status, signOutProblem: nil, app: nil)
             }
         }
         return nil

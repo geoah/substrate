@@ -68,8 +68,9 @@ extension ChatApp {
             // lands under a live overlay.
             guard next.readEpochs[thread, default: 0] == epoch, !next.owned(thread) else { break }
             if let cached, next.transcripts[thread] == nil {
-                next.transcripts[thread] = State.Held(records: cached.records, turns: transcript(of: cached.records),
-                                                      version: cached.threadVersion, full: cached.full)
+                next.transcripts[thread] = State.Held(
+                    records: cached.records, turns: transcript(of: cached.records),
+                    version: cached.threadVersion, full: cached.full)
             }
             // What a conversation shows is read where the disk held none, or
             // held rows that are not current.
@@ -86,8 +87,10 @@ extension ChatApp {
             // token's lists carry none): what was written before the
             // bookmark is read again now.
             if fresh {
-                next.feedBatch.formUnion([.init(kind: Kinds.thread, id: ""), .init(kind: Kinds.agent, id: ""),
-                                          .init(kind: Kinds.interaction, id: "")])
+                next.feedBatch.formUnion([
+                    .init(kind: Kinds.thread, id: ""), .init(kind: Kinds.agent, id: ""),
+                    .init(kind: Kinds.interaction, id: ""),
+                ])
                 next.asks.append(.feedWait(seconds: 0))
             }
         case let .watchRow(row):
@@ -173,8 +176,10 @@ extension ChatApp {
             let answers: [JSONValue] = questions.map { q in
                 ["question": .string(q), "selected": .array((picks[q] ?? []).map(JSONValue.string))]
             }
-            next.asks.append(.writeCard(id, kind: Kinds.interaction, properties: ["state": "answered", "answers": .array(answers)],
-                                        ifVersion: record.version))
+            next.asks.append(
+                .writeCard(
+                    id, kind: Kinds.interaction, properties: ["state": "answered", "answers": .array(answers)],
+                    ifVersion: record.version))
         case let .questionsDismissed(id):
             guard let record = next.cards[id]?.record else { break }
             next.cards[id]?.busy = "dismiss"
@@ -186,8 +191,10 @@ extension ChatApp {
             // The version decided on is the one whose change is on screen:
             // read now when the card holds none.
             if let held = next.cards[id]?.record ?? next.requests.first(where: { $0.id == id }) {
-                next.asks.append(.writeCard(id, kind: Kinds.request, properties: ["decision": .string(accept ? "accepted" : "rejected")],
-                                            ifVersion: held.version))
+                next.asks.append(
+                    .writeCard(
+                        id, kind: Kinds.request, properties: ["decision": .string(accept ? "accepted" : "rejected")],
+                        ifVersion: held.version))
             } else {
                 next.asks.append(.decideUnread(id, accept: accept, shown: shown))
             }
@@ -195,8 +202,12 @@ extension ChatApp {
             next.cards[id, default: State.Card()].record = record
             next.cards[id]?.busy = nil
             // The resolution wrote into the thread and resumed the agent.
-            next.asks += [.cards(next.plan, threads: next.threadIDs), .applyFeed(next.plan, [.init(kind: Kinds.thread, id: "")],
-                                                                                   threads: next.threadIDs)]
+            next.asks += [
+                .cards(next.plan, threads: next.threadIDs),
+                .applyFeed(
+                    next.plan, [.init(kind: Kinds.thread, id: "")],
+                    threads: next.threadIDs),
+            ]
         case let .cardWriteFailed(id, failure, conflict):
             next.cards[id, default: State.Card()].busy = nil
             if failure.report == nil { next.cards[id]?.problem = failure.status == 409 ? conflict : failure.words }
@@ -393,13 +404,15 @@ extension ChatApp {
     /// at a time while nothing streams, so opening any of them is instant.
     private func prefetch(_ state: inout State) {
         guard let disk = state.disk, state.online, state.appActive,
-              !state.conversations.values.contains(where: \.streaming)
+            !state.conversations.values.contains(where: \.streaming)
         else { return }
         var items: [ChatAppAsk.Prefetch] = []
         for thread in state.threads where items.count < 8 && !thread.running {
             if state.isPrefetched(thread.id) || state.owned(thread.id) { continue }
-            items.append(.init(thread: thread.id, version: thread.record.version, epoch: state.readEpochs[thread.id, default: 0],
-                               held: state.transcripts[thread.id] != nil))
+            items.append(
+                .init(
+                    thread: thread.id, version: thread.record.version, epoch: state.readEpochs[thread.id, default: 0],
+                    held: state.transcripts[thread.id] != nil))
         }
         if !items.isEmpty { state.asks.append(.prefetch(disk, items)) }
     }
@@ -472,10 +485,13 @@ extension ChatApp {
                 // A stop is the owner's own act; an error says so rather
                 // than offering the turn before it as the answer.
                 if state.baselined, state.preferences.notifyReplies, !thread.automated, !state.visibleThreads.contains(thread.id),
-                   thread.status != "stopped", thread.status == "error" || record["lastReply"]?.text != nil
+                    thread.status != "stopped", thread.status == "error" || record["lastReply"]?.text != nil
                 {
-                    state.asks.append(.notify(ChatNotifications.reply(thread: thread, agent: agentName(thread.agentID ?? ""),
-                                                                      title: state.title(thread))))
+                    state.asks.append(
+                        .notify(
+                            ChatNotifications.reply(
+                                thread: thread, agent: agentName(thread.agentID ?? ""),
+                                title: state.title(thread))))
                 }
             }
         }
@@ -493,8 +509,11 @@ extension ChatApp {
             guard state.baselined, state.preferences.notifyAttention, !(thread.map(state.visibleThreads.contains) ?? false) else { continue }
             let row = thread.flatMap { state.thread($0) }
             let who = agentName(row?.agentID ?? record["proposer"]?.string ?? "Your agent")
-            state.asks.append(.notify(ChatNotifications.attention(record: record, thread: thread, agent: who,
-                                                                  title: row.map(state.title) ?? "A chat")))
+            state.asks.append(
+                .notify(
+                    ChatNotifications.attention(
+                        record: record, thread: thread, agent: who,
+                        title: row.map(state.title) ?? "A chat")))
         }
     }
 
@@ -602,9 +621,11 @@ extension ChatApp {
         }
         let draft = orphan.flatMap { state.drafts.removeValue(forKey: $0) } ?? ""
         if !draft.isEmpty { state.drafts[Self.newDraft + key.rawValue] = draft }
-        state.conversations[key] = State.Entry(seed: Conversation.Seed(thread: nil, agent: agent ?? state.defaultAgent?.id, draft: draft,
-                                                                       listen: listen),
-                                               agent: agent ?? state.defaultAgent?.id)
+        state.conversations[key] = State.Entry(
+            seed: Conversation.Seed(
+                thread: nil, agent: agent ?? state.defaultAgent?.id, draft: draft,
+                listen: listen),
+            agent: agent ?? state.defaultAgent?.id)
         state.scenes[scene, default: State.Scene()].current = key
     }
 
@@ -619,7 +640,7 @@ extension ChatApp {
 
     private func markSeen(_ state: inout State, _ id: String) {
         guard let thread = state.thread(id), !thread.running, let finished = thread.record["finishedAt"]?.string,
-              state.seen[id] != finished
+            state.seen[id] != finished
         else { return }
         state.seen[id] = finished
     }

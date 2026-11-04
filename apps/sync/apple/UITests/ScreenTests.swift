@@ -22,7 +22,8 @@ final class ScreenTests: XCTestCase {
         let deadline = Date().addingTimeInterval(120)
         while !FileManager.default.fileExists(atPath: down.path), Date() < deadline { sleep(1) }
         syncNow.tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS \"didn't sync\"")).firstMatch.waitForExistence(timeout: 120), app.debugDescription)
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS \"didn't sync\"")).firstMatch.waitForExistence(timeout: 120), app.debugDescription)
         shot("failed-home")
         app.buttons["source.contacts"].tap()
         sleep(1)

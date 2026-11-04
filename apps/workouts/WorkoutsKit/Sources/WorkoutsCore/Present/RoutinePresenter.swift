@@ -68,9 +68,10 @@ public struct RoutinePreviewPresentation: Equatable, Sendable, Identifiable {
     /// Slots whose exercise could not be read: a session leaves them out.
     public var unreadable: [String]
 
-    public init(id: RoutineID, name: String, notes: String?, lastDone: String?, blocks: [RoutinePreviewBlock],
-                unreadable: [String])
-    {
+    public init(
+        id: RoutineID, name: String, notes: String?, lastDone: String?, blocks: [RoutinePreviewBlock],
+        unreadable: [String]
+    ) {
         self.id = id
         self.name = name
         self.notes = notes
@@ -122,7 +123,8 @@ public enum RoutinePresenter {
     /// `position`, then name; routines with no folder last.
     public static func list(_ catalog: Catalog, history: HistoryIndex, settings: PresenterSettings) -> RoutineListPresentation {
         let byFolder = Dictionary(grouping: catalog.routines.values) { $0.folder ?? "" }
-        let folders = byFolder.keys.filter { !$0.isEmpty }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        let folders =
+            byFolder.keys.filter { !$0.isEmpty }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
             + (byFolder[""] == nil ? [] : [""])
         let sections = folders.map { folder in
             let routines = (byFolder[folder] ?? []).sorted { a, b in
@@ -157,9 +159,10 @@ public enum RoutinePresenter {
 
     /// The routine preview: each slot's planned sets in words, groups with
     /// their labels, the rests the routine names, tempo and notes.
-    public static func preview(_ routine: Routine, catalog: Catalog, history: HistoryIndex,
-                               settings: PresenterSettings) -> RoutinePreviewPresentation
-    {
+    public static func preview(
+        _ routine: Routine, catalog: Catalog, history: HistoryIndex,
+        settings: PresenterSettings
+    ) -> RoutinePreviewPresentation {
         let lastDone = lastSession(of: routine.id, history: history).map { session in
             var text = "Last done \(Format.day(session.at, in: HistoryPresenter.zone(of: session, settings)))"
             if let end = session.endsAt {
@@ -172,31 +175,37 @@ public enum RoutinePresenter {
         var placed: Set<String> = []
         for slot in routine.slots {
             guard let key = slot.group, groupKeys.contains(key) else {
-                blocks.append(RoutinePreviewBlock(id: slot.key, header: nil, colorIndex: nil,
-                                                  slots: [previewSlot(slot, routine: routine, catalog: catalog, label: nil)]))
+                blocks.append(
+                    RoutinePreviewBlock(
+                        id: slot.key, header: nil, colorIndex: nil,
+                        slots: [previewSlot(slot, routine: routine, catalog: catalog, label: nil)]))
                 continue
             }
             guard !placed.contains(key) else { continue }
             placed.insert(key)
             let members = routine.slots.filter { $0.group == key }
             let group = routine.groups.first { $0.key == key }!
-            let rest = group.roundRest ?? RestDefaults.roundRest(
-                kind: group.groupKind, memberRestClasses: members.map { catalog.exercises[$0.exercise]?.restClass })
+            let rest =
+                group.roundRest
+                ?? RestDefaults.roundRest(
+                    kind: group.groupKind, memberRestClasses: members.map { catalog.exercises[$0.exercise]?.restClass })
             let restText = rest > 0 ? "rest \(Format.duration(rest)) after each round" : "no rest between rounds"
             let roundsText = group.rounds.map { "\(Format.count($0, "round")), " } ?? ""
-            blocks.append(RoutinePreviewBlock(
-                id: "group-\(key)",
-                // No group letter and no colour: the members are named by their
-                // exercises, and colour is kept for warm-ups and failure (owner, 2026-11-02).
-                header: "\(group.groupKind.label), \(roundsText)\(restText)",
-                colorIndex: nil,
-                slots: members.enumerated().map { index, member in
-                    previewSlot(member, routine: routine, catalog: catalog, label: nil,
-                                nextLabel: index + 1 < members.count
-                                    ? catalog.exercises[members[index + 1].exercise]?.name ?? members[index + 1].exercise.rawValue
-                                    : nil)
-                }
-            ))
+            blocks.append(
+                RoutinePreviewBlock(
+                    id: "group-\(key)",
+                    // No group letter and no colour: the members are named by their
+                    // exercises, and colour is kept for warm-ups and failure (owner, 2026-11-02).
+                    header: "\(group.groupKind.label), \(roundsText)\(restText)",
+                    colorIndex: nil,
+                    slots: members.enumerated().map { index, member in
+                        previewSlot(
+                            member, routine: routine, catalog: catalog, label: nil,
+                            nextLabel: index + 1 < members.count
+                                ? catalog.exercises[members[index + 1].exercise]?.name ?? members[index + 1].exercise.rawValue
+                                : nil)
+                    }
+                ))
         }
         return RoutinePreviewPresentation(
             id: routine.id,
@@ -208,9 +217,10 @@ public enum RoutinePresenter {
         )
     }
 
-    static func previewSlot(_ slot: RoutineSlot, routine: Routine, catalog: Catalog, label: String?,
-                            nextLabel: String? = nil) -> RoutinePreviewSlot
-    {
+    static func previewSlot(
+        _ slot: RoutineSlot, routine: Routine, catalog: Catalog, label: String?,
+        nextLabel: String? = nil
+    ) -> RoutinePreviewSlot {
         let exercise = catalog.exercises[slot.exercise]
         let measurement = exercise?.measurement ?? .weightreps
         var lines: [String] = []
@@ -260,8 +270,9 @@ public enum RoutinePresenter {
             lines.append("Rest after set \(index + 1): \(Format.rest(rest))")
         }
         if let tempo = slot.sets.lazy.compactMap(\.tempo).first { lines.append("Tempo \(tempo)") }
-        return RoutinePreviewSlot(id: slot.key, name: exercise?.name ?? slot.exercise.rawValue, groupLabel: label, lines: lines,
-                                  notes: slot.notes)
+        return RoutinePreviewSlot(
+            id: slot.key, name: exercise?.name ?? slot.exercise.rawValue, groupLabel: label, lines: lines,
+            notes: slot.notes)
     }
 
     static func sameShape(_ a: PlannedSet, _ b: PlannedSet) -> Bool {
@@ -277,8 +288,10 @@ public enum RoutinePresenter {
     /// A warm-up's plan as a set: `40 kg × 12`, `× 8`, `0:30`, `500 m`.
     static func plannedText(_ planned: PlannedSet, measurement: MeasurementType) -> String {
         let reps = planned.repsMin == planned.repsMax ? planned.repsMin : nil
-        var text = Format.set(SetValues(load: planned.load, assistance: planned.assistance, reps: reps,
-                                        duration: planned.durationMin, distance: planned.distance), measurement: measurement)
+        var text = Format.set(
+            SetValues(
+                load: planned.load, assistance: planned.assistance, reps: reps,
+                duration: planned.durationMin, distance: planned.distance), measurement: measurement)
         if reps == nil, let min = planned.repsMin, let max = planned.repsMax {
             text += text.isEmpty ? "\(Format.range(min, max)) reps" : " \u{00D7} \(Format.range(min, max))"
         }
@@ -290,11 +303,13 @@ public enum RoutinePresenter {
     /// A run of working sets: `2 sets of 10–15 reps at RPE 8, from 90 kg`.
     static func runText(_ planned: PlannedSet, count: Int, measurement: MeasurementType) -> String {
         let sets = Format.count(count, "set")
-        let load = planned.load != nil || planned.assistance != nil
+        let load =
+            planned.load != nil || planned.assistance != nil
             ? Format.load(SetValues(load: planned.load, assistance: planned.assistance), mode: measurement.loadMode)
             : nil
-        let effortTarget = Format.effort(rpeMin: planned.rpeMin, rpeMax: planned.rpeMax, rirMin: planned.rirMin,
-                                         rirMax: planned.rirMax)
+        let effortTarget = Format.effort(
+            rpeMin: planned.rpeMin, rpeMax: planned.rpeMax, rirMin: planned.rirMin,
+            rirMax: planned.rirMax)
         let effort = effortTarget.map { " at \($0)" } ?? ""
         if measurement.isTimedHold {
             var text = sets

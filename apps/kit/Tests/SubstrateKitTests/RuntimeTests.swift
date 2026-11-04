@@ -45,12 +45,13 @@ struct RuntimeLoopTests {
         await harness.send(.start)
         harness.clearTrace()
         await harness.send(.log("100 kg × 5"))
-        #expect(steps(harness.trace) == [
-            "journaled append logged(\"100 kg × 5\")",
-            "presented",
-            "published",
-            "effect announce(\"100 kg × 5, 1 so far\")",
-        ])
+        #expect(
+            steps(harness.trace) == [
+                "journaled append logged(\"100 kg × 5\")",
+                "presented",
+                "published",
+                "effect announce(\"100 kg × 5, 1 so far\")",
+            ])
         // The effect was decided from the presentation the event made.
         #expect(harness.effects == [.announce("100 kg × 5, 1 so far")])
     }
@@ -193,8 +194,9 @@ struct RuntimeLoopTests {
     }
 
     @Test func theEnvironmentsLocaleAndTimeZoneReachThePresenter() async throws {
-        let input = PresenterInput<Training>(state: Training.State(), transient: Training.Transient(), now: Date(),
-                                             locale: Locale(identifier: "de_DE"), timeZone: TimeZone(identifier: "Europe/Berlin")!)
+        let input = PresenterInput<Training>(
+            state: Training.State(), transient: Training.Transient(), now: Date(),
+            locale: Locale(identifier: "de_DE"), timeZone: TimeZone(identifier: "Europe/Berlin")!)
         #expect(input.calendar.timeZone.identifier == "Europe/Berlin")
         #expect(input.calendar.locale?.identifier == "de_DE")
     }
@@ -376,9 +378,10 @@ struct RuntimeChildTests {
     }
 
     @Test func aCommandReachesAControllerTwoKeysDown() async throws {
-        let link = LinkController(app: Lobby(gates: gates), manifest: ScreenFixtures.manifest,
-                                  sessions: SessionStore(storage: MemoryStorage()),
-                                  words: StatusWords(app: "Lobby", device: "this iPhone", kept: "rooms"))
+        let link = LinkController(
+            app: Lobby(gates: gates), manifest: ScreenFixtures.manifest,
+            sessions: SessionStore(storage: MemoryStorage()),
+            words: StatusWords(app: "Lobby", device: "this iPhone", kept: "rooms"))
         let harness = ControllerHarness(link, performsEffects: false)
         try await harness.runtime.send(Lobby.Command.open("Kitchen"), to: LinkController<Lobby>.appPath)
         let key = ChildKey(SequentialIDs.id(1).uuidString.lowercased())
@@ -444,8 +447,11 @@ struct KeyedListTests {
         next.update([Line(id: "c", text: "C"), Line(id: "a", text: "A, edited"), Line(id: "d", text: "D")])
         #expect(next.revision == 1)
         let delta = next.delta(from: base)
-        #expect(delta == KeyedListDelta(base: 0, revision: 1, inserted: [Line(id: "d", text: "D")],
-                                        changed: [Line(id: "a", text: "A, edited")], removed: ["b"], order: ["c", "a", "d"]))
+        #expect(
+            delta
+                == KeyedListDelta(
+                    base: 0, revision: 1, inserted: [Line(id: "d", text: "D")],
+                    changed: [Line(id: "a", text: "A, edited")], removed: ["b"], order: ["c", "a", "d"]))
         var reader = base
         try reader.apply(delta)
         #expect(reader == next)

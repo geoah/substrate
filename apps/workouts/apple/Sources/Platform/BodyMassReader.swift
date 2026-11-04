@@ -1,7 +1,7 @@
 import Foundation
 import HealthKit
-import os
 import WorkoutsCore
+import os
 
 /// The body mass a session snapshots at Start (DESIGN.md §9.5, open question
 /// 22): the latest Apple Health sample ending on or before now, in kg to

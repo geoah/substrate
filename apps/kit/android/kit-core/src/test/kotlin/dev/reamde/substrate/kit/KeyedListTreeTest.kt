@@ -23,10 +23,14 @@ class KeyedListTreeTest {
         put("revision", revision)
     }
 
-    private fun row(id: String) = ListRow(id, buildJsonObject {
-        put("id", id)
-        put("text", id.uppercase())
-    })
+    private fun row(id: String) =
+        ListRow(
+            id,
+            buildJsonObject {
+                put("id", id)
+                put("text", id.uppercase())
+            },
+        )
 
     private fun tree(revision: Long) = buildJsonObject {
         put("count", "$revision")
@@ -38,15 +42,24 @@ class KeyedListTreeTest {
         val resolved = KeyedListTree.resolve(tree(2), mapOf("app/rows" to listOf(row("a"), row("b"))), mapOf("app/rows" to 2L))
         val expected = buildJsonObject {
             put("count", "2")
-            put("app", buildJsonObject {
-                put("rows", buildJsonObject {
-                    put("revision", 2)
-                    put("rows", buildJsonArray {
-                        add(row("a").value)
-                        add(row("b").value)
-                    })
-                })
-            })
+            put(
+                "app",
+                buildJsonObject {
+                    put(
+                        "rows",
+                        buildJsonObject {
+                            put("revision", 2)
+                            put(
+                                "rows",
+                                buildJsonArray {
+                                    add(row("a").value)
+                                    add(row("b").value)
+                                },
+                            )
+                        },
+                    )
+                },
+            )
         }
         assertEquals(expected, resolved)
         assertEquals(mapOf("app/rows" to 2L), KeyedListTree.references(tree(2)))
@@ -67,11 +80,16 @@ class KeyedListTreeTest {
 
     @Test
     fun theHandleDrawsATreeOnlyOnceItsListsAgreeAndKeepsTheLastOneBetween() = runTest {
-        val core = BridgeCore({ text ->
-            val envelope = BridgeJson.decodeFromString(Envelope.serializer(), text)
-            val reply = if (envelope.op == Op.open) Envelope(1, Op.opened, handle = Handle(1, 1)) else Envelope(1, Op.accepted)
-            BridgeJson.encodeToString(Envelope.serializer(), reply)
-        }, NoDeviceServices, this)
+        val core =
+            BridgeCore(
+                { text ->
+                    val envelope = BridgeJson.decodeFromString(Envelope.serializer(), text)
+                    val reply = if (envelope.op == Op.open) Envelope(1, Op.opened, handle = Handle(1, 1)) else Envelope(1, Op.accepted)
+                    BridgeJson.encodeToString(Envelope.serializer(), reply)
+                },
+                NoDeviceServices,
+                this,
+            )
         val handle = core.open("ledger").getOrThrow()
         fun deliver(op: Op, body: JsonElement) =
             core.receive(BridgeJson.encodeToString(Envelope.serializer(), Envelope(1, op, handle = handle.handle, body = body)))
@@ -80,9 +98,12 @@ class KeyedListTreeTest {
         list(ListMessage.Whole("app/rows", 1, listOf(row("a"))))
         deliver(Op.presentation, tree(1))
         val first = handle.state.value.tree as JsonObject
-        assertEquals(listOf(row("a").value), BridgeJson.parseToJsonElement(first["app"].toString()).let {
-            ((it as JsonObject)["rows"] as JsonObject)["rows"]?.let { rows -> (rows as kotlinx.serialization.json.JsonArray).toList() }
-        })
+        assertEquals(
+            listOf(row("a").value),
+            BridgeJson.parseToJsonElement(first["app"].toString()).let {
+                ((it as JsonObject)["rows"] as JsonObject)["rows"]?.let { rows -> (rows as kotlinx.serialization.json.JsonArray).toList() }
+            },
+        )
         // The next frame's delta arrives before its tree: the last tree stands.
         list(ListMessage.Delta("app/rows", 1, 2, listOf(row("b")), emptyList(), emptyList(), listOf("a", "b")))
         assertEquals(first, handle.state.value.tree)

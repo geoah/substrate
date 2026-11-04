@@ -1,6 +1,6 @@
-import WorkoutsCore
 import SwiftUI
 import UIKit
+import WorkoutsCore
 
 /// A content card: the grouped background's raised surface, never glass (§8).
 struct CardBackground: ViewModifier {

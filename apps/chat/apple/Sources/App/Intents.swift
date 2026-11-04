@@ -92,14 +92,18 @@ struct ChatShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: NewChatIntent(),
-            phrases: ["New chat in \(.applicationName)", "Start a \(.applicationName) chat",
-                      "New chat with \(\.$assistant) in \(.applicationName)"],
+            phrases: [
+                "New chat in \(.applicationName)", "Start a \(.applicationName) chat",
+                "New chat with \(\.$assistant) in \(.applicationName)",
+            ],
             shortTitle: "New Chat",
             systemImageName: "square.and.pencil")
         AppShortcut(
             intent: TalkIntent(),
-            phrases: ["Talk to \(.applicationName)", "Ask \(.applicationName)",
-                      "Ask \(\.$assistant) in \(.applicationName)"],
+            phrases: [
+                "Talk to \(.applicationName)", "Ask \(.applicationName)",
+                "Ask \(\.$assistant) in \(.applicationName)",
+            ],
             shortTitle: "Talk",
             systemImageName: "waveform")
     }

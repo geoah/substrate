@@ -1,5 +1,5 @@
-import WorkoutsCore
 import SwiftUI
+import WorkoutsCore
 
 /// The session (DESIGN.md §7.6, §7.6a): a full-screen cover with the
 /// system's glass toolbar and the session in the content layer, drawn in the
@@ -391,7 +391,7 @@ struct SessionCover: View {
 
     private func focusFirstField(of row: RowID) {
         guard let presentation = session.presentation, let shown = presentation.row(row),
-              let card = presentation.card(shown.slot), let column = card.columns.first(where: { $0.field != nil })
+            let card = presentation.card(shown.slot), let column = card.columns.first(where: { $0.field != nil })
         else { return }
         focus = CoverModel.Field(row: row, column: column)
     }
@@ -486,7 +486,7 @@ struct SessionCover: View {
     /// row is open (a locked drop waits for its set).
     private func fillMissing() {
         guard let presentation = session.presentation,
-              let id = presentation.unticked.first(where: { $0.values == nil })?.row
+            let id = presentation.unticked.first(where: { $0.values == nil })?.row
         else { return }
         if layout == .rows {
             // Rows: the set opens in place, its empty field outlined, and the
@@ -504,8 +504,8 @@ struct SessionCover: View {
             // After the sheet or dialog has gone and the list has scrolled.
             try? await Task.sleep(for: .milliseconds(650))
             guard let shown = session.presentation, let row = shown.row(id), row.state != .locked, !row.isDone,
-                  let card = shown.card(row.slot), let missing = row.missing.first,
-                  let column = card.columns.first(where: { $0.field == missing })
+                let card = shown.card(row.slot), let missing = row.missing.first,
+                let column = card.columns.first(where: { $0.field == missing })
             else { return }
             focus = CoverModel.Field(row: id, column: column)
         }
@@ -602,17 +602,27 @@ struct SessionCover: View {
     private var entryTitle: String { session.entryCheck?.warning.title ?? "" }
 
     private var entryCheckShown: Binding<Bool> {
-        Binding { session.entryCheck != nil } set: { shown in
+        Binding {
+            session.entryCheck != nil
+        } set: { shown in
             if !shown { session.dismissEntryCheck() }
         }
     }
 
     private var removeExerciseShown: Binding<Bool> {
-        Binding { cover.removeExercise != nil } set: { if !$0 { cover.removeExercise = nil } }
+        Binding {
+            cover.removeExercise != nil
+        } set: {
+            if !$0 { cover.removeExercise = nil }
+        }
     }
 
     private var removeDoneRowShown: Binding<Bool> {
-        Binding { cover.removeDoneRow != nil } set: { if !$0 { cover.removeDoneRow = nil } }
+        Binding {
+            cover.removeDoneRow != nil
+        } set: {
+            if !$0 { cover.removeDoneRow = nil }
+        }
     }
 }
 

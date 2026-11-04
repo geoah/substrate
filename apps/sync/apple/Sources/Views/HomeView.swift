@@ -14,21 +14,25 @@ struct HomeView: View {
         List {
             if !model.homeIssues.isEmpty {
                 Section {
-                    AppStatusBanner(issues: model.homeIssues, appName: SyncManifest.appName, host: host, actions: AppStatusActions(
-                        review: { reviewing = true },
-                        signInAgain: { Task { await model.authorize() } },
-                        moveToAppAccess: { Task { await model.authorize() } },
-                        retry: { Task { await model.status.refresh(force: true) } },
-                        openFix: model.session.map { session in { path in ServerAddress.page(session.server, path: path).map { openURL($0) } } }))
-                        .disabled(model.authorizing)
+                    AppStatusBanner(
+                        issues: model.homeIssues, appName: SyncManifest.appName, host: host,
+                        actions: AppStatusActions(
+                            review: { reviewing = true },
+                            signInAgain: { Task { await model.authorize() } },
+                            moveToAppAccess: { Task { await model.authorize() } },
+                            retry: { Task { await model.status.refresh(force: true) } },
+                            openFix: model.session.map { session in { path in ServerAddress.page(session.server, path: path).map { openURL($0) } } })
+                    )
+                    .disabled(model.authorizing)
                 }
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
             }
             if let problem = model.authorizeError {
                 Section {
-                    ProblemBox(title: model.session?.isApp == true ? "The review didn't finish" : "Couldn't move to app access",
-                               message: problem)
+                    ProblemBox(
+                        title: model.session?.isApp == true ? "The review didn't finish" : "Couldn't move to app access",
+                        message: problem)
                 }
             }
             if !model.unrevoked.isEmpty {
@@ -79,13 +83,14 @@ struct HomeView: View {
         .refreshable { await model.syncNow() }
         .task { await model.loadCoverage() }
         .sheet(isPresented: $reviewing) {
-            ReviewChangesSheet(appName: SyncManifest.appName, host: host, changes: model.reviewChanges,
-                               firstSignIn: false,
-                               onContinue: {
-                                   reviewing = false
-                                   Task { await model.authorize() }
-                               },
-                               onCancel: { reviewing = false })
+            ReviewChangesSheet(
+                appName: SyncManifest.appName, host: host, changes: model.reviewChanges,
+                firstSignIn: false,
+                onContinue: {
+                    reviewing = false
+                    Task { await model.authorize() }
+                },
+                onCancel: { reviewing = false })
         }
     }
 
@@ -163,13 +168,15 @@ private struct StatusCard: View {
         }
         if model.serverUnreachable != nil {
             let host = model.session?.server.host() ?? "Your server"
-            return Shown(symbol: "wifi.exclamationmark", color: .orange, headline: "Can't reach the server",
-                         detail: "\(host) didn't answer. Sync Now tries again.")
+            return Shown(
+                symbol: "wifi.exclamationmark", color: .orange, headline: "Can't reach the server",
+                detail: "\(host) didn't answer. Sync Now tries again.")
         }
         let enabled = Source.allCases.filter(Settings.enabled)
         if enabled.isEmpty {
-            return Shown(symbol: "power", color: .secondary, headline: "Nothing is turned on",
-                         detail: "Open a source below and turn it on to start.")
+            return Shown(
+                symbol: "power", color: .secondary, headline: "Nothing is turned on",
+                detail: "Open a source below and turn it on to start.")
         }
         let overviews = enabled.map { ($0, model.overview($0)) }
         func named(_ sources: [Source]) -> String { sources.map(\.title).formatted(.list(type: .and)) }
@@ -182,33 +189,41 @@ private struct StatusCard: View {
         }
         let blocked = overviews.filter { $0.1.badge == "No access" }.map(\.0)
         if !blocked.isEmpty {
-            return Shown(symbol: "hand.raised.fill", color: .orange, headline: "\(named(blocked)) \(blocked.count == 1 ? "needs" : "need") access",
-                         detail: "Open \(blocked.count == 1 ? "it" : "each") below to allow it, or turn \(blocked.count == 1 ? "it" : "them") off.")
+            return Shown(
+                symbol: "hand.raised.fill", color: .orange, headline: "\(named(blocked)) \(blocked.count == 1 ? "needs" : "need") access",
+                detail: "Open \(blocked.count == 1 ? "it" : "each") below to allow it, or turn \(blocked.count == 1 ? "it" : "them") off.")
         }
         if overviews.contains(where: { $0.1.badge == "Stopped" }) {
             return Shown(symbol: "stop.circle.fill", color: .orange, headline: "Sync stopped", detail: "Sync again to carry on where it left off.")
         }
         if overviews.contains(where: { $0.1.badge == "Behind" }), let unsent = model.healthUnsent {
-            return Shown(symbol: "clock.arrow.circlepath", color: .orange, headline: "Health is behind",
-                         detail: "\(unsent.formatted()) \(unsent == 1 ? "day" : "days") of your Health history \(unsent == 1 ? "is" : "are") not on the server yet. Sync Now carries on.")
+            return Shown(
+                symbol: "clock.arrow.circlepath", color: .orange, headline: "Health is behind",
+                detail:
+                    "\(unsent.formatted()) \(unsent == 1 ? "day" : "days") of your Health history \(unsent == 1 ? "is" : "are") not on the server yet. Sync Now carries on."
+            )
         }
         let never = overviews.filter { model.state.status[$0.0]?.lastSync == nil }.map(\.0)
         if never.count == enabled.count {
-            return Shown(symbol: "arrow.triangle.2.circlepath", color: .secondary, headline: "Not synced yet",
-                         detail: "Sync Now sends everything that is turned on below.")
+            return Shown(
+                symbol: "arrow.triangle.2.circlepath", color: .secondary, headline: "Not synced yet",
+                detail: "Sync Now sends everything that is turned on below.")
         }
         if !never.isEmpty {
-            return Shown(symbol: "arrow.triangle.2.circlepath", color: .secondary, headline: "\(named(never)) not synced yet",
-                         detail: "Sync Now sends \(never.count == 1 ? "it" : "them") with the rest.")
+            return Shown(
+                symbol: "arrow.triangle.2.circlepath", color: .secondary, headline: "\(named(never)) not synced yet",
+                detail: "Sync Now sends \(never.count == 1 ? "it" : "them") with the rest.")
         }
         if overviews.contains(where: { $0.1.badge == "Processing" }) {
-            return Shown(symbol: "clock.fill", color: .blue, headline: "Health is being processed",
-                         detail: "\(model.healthWaiting.count) days are waiting for the server. The next sync checks them.")
+            return Shown(
+                symbol: "clock.fill", color: .blue, headline: "Health is being processed",
+                detail: "\(model.healthWaiting.count) days are waiting for the server. The next sync checks them.")
         }
         // Every source synced: as of the one that synced longest ago.
         let oldest = enabled.compactMap { model.state.status[$0]?.lastSync }.min() ?? Date()
-        return Shown(symbol: "checkmark.circle.fill", color: .green, headline: "Up to date",
-                     detail: "Everything synced \(oldest.formatted(.relative(presentation: .named))).")
+        return Shown(
+            symbol: "checkmark.circle.fill", color: .green, headline: "Up to date",
+            detail: "Everything synced \(oldest.formatted(.relative(presentation: .named))).")
     }
 }
 
@@ -236,7 +251,10 @@ private struct SourceRow: View {
             // than squeezing it.
             if typeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 12) { icon; Text(source.title).font(.body.weight(.medium)) }
+                    HStack(spacing: 12) {
+                        icon
+                        Text(source.title).font(.body.weight(.medium))
+                    }
                     subtitle.lineLimit(3)
                     StatusBadge(text: overview.badge, color: overview.tone.color)
                 }

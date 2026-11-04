@@ -1,48 +1,64 @@
 import Foundation
-import Testing
-@testable import ChatKit
 import SubstrateAPI
 import SubstrateAuth
 import SubstrateCore
 import SubstrateDevice
+import Testing
+
+@testable import ChatKit
 
 @Suite(.timeLimit(.minutes(10))) struct MarkdownBlocks {
     @Test func paragraphsHeadingsAndRules() {
         let blocks = Markdown.parse("# Title\n\nOne line\nnext line\n\n---\n\nAfter")
-        #expect(blocks == [
-            .heading(level: 1, text: "Title"),
-            .paragraph("One line\nnext line"),
-            .rule,
-            .paragraph("After"),
-        ])
+        #expect(
+            blocks == [
+                .heading(level: 1, text: "Title"),
+                .paragraph("One line\nnext line"),
+                .rule,
+                .paragraph("After"),
+            ])
     }
 
     @Test func anUnclosedFenceIsStillCode() {
-        #expect(Markdown.parse("Here:\n```swift\nlet a = 1") == [
-            .paragraph("Here:"),
-            .code(language: "swift", text: "let a = 1", closed: false),
-        ])
-        #expect(Markdown.parse("```\nx\n```\ntail") == [
-            .code(language: nil, text: "x", closed: true),
-            .paragraph("tail"),
-        ])
+        #expect(
+            Markdown.parse("Here:\n```swift\nlet a = 1") == [
+                .paragraph("Here:"),
+                .code(language: "swift", text: "let a = 1", closed: false),
+            ])
+        #expect(
+            Markdown.parse("```\nx\n```\ntail") == [
+                .code(language: nil, text: "x", closed: true),
+                .paragraph("tail"),
+            ])
     }
 
     @Test func nestedListsAndTasks() {
         let blocks = Markdown.parse("- one\n  - inner\n- [x] done\n- [ ] todo")
-        guard case let .list(ordered, _, items) = blocks.first else { Issue.record("not a list"); return }
+        guard case let .list(ordered, _, items) = blocks.first else {
+            Issue.record("not a list")
+            return
+        }
         #expect(!ordered)
         #expect(items.count == 3)
-        #expect(items[0].blocks == [.paragraph("one"), .list(ordered: false, start: 0, items: [
-            MarkdownListItem(checked: nil, blocks: [.paragraph("inner")]),
-        ])])
+        #expect(
+            items[0].blocks == [
+                .paragraph("one"),
+                .list(
+                    ordered: false, start: 0,
+                    items: [
+                        MarkdownListItem(checked: nil, blocks: [.paragraph("inner")])
+                    ]),
+            ])
         #expect(items[1].checked == true)
         #expect(items[2].checked == false)
     }
 
     @Test func orderedListsKeepTheirStartAndLooseItems() {
         let blocks = Markdown.parse("3. three\n\n4. four\n\nafter")
-        guard case let .list(ordered, start, items) = blocks.first else { Issue.record("not a list"); return }
+        guard case let .list(ordered, start, items) = blocks.first else {
+            Issue.record("not a list")
+            return
+        }
         #expect(ordered)
         #expect(start == 3)
         #expect(items.count == 2)
@@ -55,8 +71,12 @@ import SubstrateDevice
 
     @Test func tables() {
         let blocks = Markdown.parse("| a | b |\n|:--|--:|\n| 1 | `x|y` |\n| 2 |")
-        #expect(blocks == [.table(header: ["a", "b"], alignments: [.leading, .trailing],
-                                  rows: [["1", "`x|y`"], ["2", ""]])])
+        #expect(
+            blocks == [
+                .table(
+                    header: ["a", "b"], alignments: [.leading, .trailing],
+                    rows: [["1", "`x|y`"], ["2", ""]])
+            ])
     }
 
     @Test func aHalfTableIsText() {
@@ -64,9 +84,17 @@ import SubstrateDevice
     }
 
     @Test func quotes() {
-        #expect(Markdown.parse("> said\n> - item") == [.quote([.paragraph("said"), .list(ordered: false, start: 0, items: [
-            MarkdownListItem(checked: nil, blocks: [.paragraph("item")]),
-        ])])])
+        #expect(
+            Markdown.parse("> said\n> - item") == [
+                .quote([
+                    .paragraph("said"),
+                    .list(
+                        ordered: false, start: 0,
+                        items: [
+                            MarkdownListItem(checked: nil, blocks: [.paragraph("item")])
+                        ]),
+                ])
+            ])
     }
 
     @Test func everyPrefixParses() {
@@ -84,7 +112,8 @@ import SubstrateDevice
     }
 
     @Test func aReplyAlreadyOnOneLineLosesItsMarkersToo() {
-        let line = "Here is what I found, **in Markdown**: ## A heading - First point * Second - [x] done | Name | Value | |:--|--:| | a | 1 | ```swift let x = 1 ``` > quoted"
+        let line =
+            "Here is what I found, **in Markdown**: ## A heading - First point * Second - [x] done | Name | Value | |:--|--:| | a | 1 | ```swift let x = 1 ``` > quoted"
         #expect(plainText(markdown: line) == "Here is what I found, in Markdown: A heading - First point Second done, Name, Value, a, 1, let x = 1 quoted")
     }
 }

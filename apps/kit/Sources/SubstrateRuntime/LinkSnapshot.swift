@@ -32,10 +32,11 @@ public struct LinkSnapshot: Bridged, Equatable {
     public var waiting: Int
     public var refused: Int
 
-    public init(phase: Phase = .signedOut, server: URL? = nil, repository: String? = nil, scopes: [String]? = nil,
-                accessEnds: Date? = nil, generation: Int = 0, online: Bool? = nil, packages: [String: Int] = [:],
-                waiting: Int = 0, refused: Int = 0)
-    {
+    public init(
+        phase: Phase = .signedOut, server: URL? = nil, repository: String? = nil, scopes: [String]? = nil,
+        accessEnds: Date? = nil, generation: Int = 0, online: Bool? = nil, packages: [String: Int] = [:],
+        waiting: Int = 0, refused: Int = 0
+    ) {
         self.phase = phase
         self.server = server
         self.repository = repository

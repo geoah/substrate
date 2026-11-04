@@ -1,9 +1,9 @@
 import Foundation
 import Observation
-import os
 import SubstrateKit
 import UIKit
 import WorkoutsCore
+import os
 
 /// The session's presentation for the views, republished on the main actor
 /// from the runtime's tree, and its commands sent back. Nothing here decides
@@ -33,10 +33,13 @@ final class SessionModel {
     /// A model over a fixed session, for previews.
     init(preview state: SessionState?, catalog: Catalog, history: HistoryIndex, settings: WorkoutsSettings, now: Date = .now) {
         preview = true
-        let controller = SessionController(catalog: catalog, history: history, settings: settings, adapter: "preview", directory: nil,
-                                           preview: state)
-        screen = controller.present(PresenterInput(state: controller.initialState, transient: controller.initialTransient, now: now,
-                                                   locale: .current, timeZone: .current))
+        let controller = SessionController(
+            catalog: catalog, history: history, settings: settings, adapter: "preview", directory: nil,
+            preview: state)
+        screen = controller.present(
+            PresenterInput(
+                state: controller.initialState, transient: controller.initialTransient, now: now,
+                locale: .current, timeZone: .current))
     }
 
     func apply(_ next: SessionScreenPresentation) {
@@ -53,16 +56,20 @@ final class SessionModel {
     func play(_ cue: SessionCue) {
         if cue.onlyOnSessionScreen, !SessionScreen.shared.isVisible { return }
         if [.countdownEnded, .shortCountdownEnded, .targetReached].contains(cue.kind),
-           UIApplication.shared.applicationState != .active { return }
-        let haptic: HapticCue = switch cue.kind {
-        case .tick: .tick
-        case .logged: .logged
-        case .countdownEnded: .countdownEnded
-        case .shortCountdownEnded: .shortCountdownEnded
-        case .targetReached: .targetReached
-        case .warning: .warning
-        case .finishSaved: .finishSaved
+            UIApplication.shared.applicationState != .active
+        {
+            return
         }
+        let haptic: HapticCue =
+            switch cue.kind {
+            case .tick: .tick
+            case .logged: .logged
+            case .countdownEnded: .countdownEnded
+            case .shortCountdownEnded: .shortCountdownEnded
+            case .targetReached: .targetReached
+            case .warning: .warning
+            case .finishSaved: .finishSaved
+            }
         Haptics.shared.play(haptic)
     }
 
@@ -99,8 +106,9 @@ final class SessionModel {
     /// (§7.7): what Save writes with the unticked rows treated as `policy`.
     func finishSummary(start: Date? = nil, end: Date, policy: PendingSetPolicy) -> FinishSummary? {
         guard let state, let presentation else { return nil }
-        return FinishPresenter.summary(state, presentation: presentation, policy: policy, start: start, end: end,
-                                       healthAllowed: healthSharingAllowed)
+        return FinishPresenter.summary(
+            state, presentation: presentation, policy: policy, start: start, end: end,
+            healthAllowed: healthSharingAllowed)
     }
 
     // MARK: Commands
@@ -161,12 +169,13 @@ final class SessionModel {
 
     /// A Live Activity button's action, once the journal is folded (§9.1).
     func handle(_ action: LiveActivityAction) async {
-        let command: SessionCommand = switch action {
-        case let .adjustRest(seconds): .adjustRest(seconds)
-        case .skipRest: .skipRest
-        case let .completeUpNext(rowID): .completeUpNext(RowID(rowID))
-        case let .stopTimedSet(rowID): .stopFromLockScreen(RowID(rowID))
-        }
+        let command: SessionCommand =
+            switch action {
+            case let .adjustRest(seconds): .adjustRest(seconds)
+            case .skipRest: .skipRest
+            case let .completeUpNext(rowID): .completeUpNext(RowID(rowID))
+            case let .stopTimedSet(rowID): .stopFromLockScreen(RowID(rowID))
+            }
         await root?.perform(command)
     }
 

@@ -276,9 +276,9 @@ public struct Suggestion: Codable, Sendable, Equatable, Hashable {
 /// Which rule produced a suggestion (03 §9.5; `backoff` is the app's, DESIGN §5.3).
 public enum Reason: Codable, Sendable, Hashable {
     case warmupAsLastTime, historyAddRep, historyLoadUp, historyLoadDown, historyNewRange,
-         historyAtMax, sessionKeep, sessionUp, sessionDown, sessionCoarse, sessionAtMax, coldStartRoutineLoad,
-         coldStartPickLoad, myoMini, myoStop, drop, dropAtMinimum, timedHistory, timedSession, timedLoadUp,
-         timedColdStart, backoff
+        historyAtMax, sessionKeep, sessionUp, sessionDown, sessionCoarse, sessionAtMax, coldStartRoutineLoad,
+        coldStartPickLoad, myoMini, myoStop, drop, dropAtMinimum, timedHistory, timedSession, timedLoadUp,
+        timedColdStart, backoff
 }
 
 /// Suggests the pending set's load and reps (or duration) from today's sets of
@@ -301,6 +301,8 @@ public func suggest(
     now: Date,
     calendar: Calendar
 ) -> Suggestion? {
-    SuggestRules(pending: pending, exercise: exercise, today: today, history: history,
-          bodyMass: bodyMass, now: now, calendar: calendar).run()
+    SuggestRules(
+        pending: pending, exercise: exercise, today: today, history: history,
+        bodyMass: bodyMass, now: now, calendar: calendar
+    ).run()
 }

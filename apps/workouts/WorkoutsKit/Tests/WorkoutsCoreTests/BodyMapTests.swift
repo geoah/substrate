@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import WorkoutsCore
 
 /// The body map's regions (`BodyMap.sets`): each set counted by the largest
@@ -8,15 +9,18 @@ import Testing
 @Suite("Body map", .timeLimit(.minutes(10)))
 struct BodyMapTests {
     func set(_ exercise: String, role: Role = .working, continues: SetID? = nil) -> PerformedSet {
-        PerformedSet(id: SetID(UUID().uuidString), at: Date(timeIntervalSince1970: 0), session: "s", exercise: ExerciseID(exercise), slot: exercise,
-                     order: 1, role: role, continues: continues)
+        PerformedSet(
+            id: SetID(UUID().uuidString), at: Date(timeIntervalSince1970: 0), session: "s", exercise: ExerciseID(exercise), slot: exercise,
+            order: 1, role: role, continues: continues)
     }
 
     @Test("a library exercise shades its movement's regions by share; warm-ups and drops add nothing")
     func library() throws {
         let exercises = try ExerciseLibrary.bundled().catalog().exercises
-        let sets = [set("chest-press-machine"), set("chest-press-machine"), set("chest-press-machine", role: .warmup),
-                    set("chest-press-machine", continues: "head")]
+        let sets = [
+            set("chest-press-machine"), set("chest-press-machine"), set("chest-press-machine", role: .warmup),
+            set("chest-press-machine", continues: "head"),
+        ]
         let regions = BodyMap.sets(sets, exercises: exercises)
         #expect(regions[.chest] == 2)
         #expect(regions[.frontDelts] == 1 && regions[.triceps] == 1)
@@ -25,8 +29,9 @@ struct BodyMapTests {
 
     @Test("two muscles of one region never count one set twice")
     func largestShare() {
-        let exercise = Exercise(id: "skull", name: "Skull", measurement: .weightreps,
-                                muscles: [MuscleShare(.tricepslong, 1), MuscleShare(.tricepslateral, 1), MuscleShare(.forearmflexors, Decimal(string: "0.25")!)])
+        let exercise = Exercise(
+            id: "skull", name: "Skull", measurement: .weightreps,
+            muscles: [MuscleShare(.tricepslong, 1), MuscleShare(.tricepslateral, 1), MuscleShare(.forearmflexors, Decimal(string: "0.25")!)])
         let regions = BodyMap.sets([set("skull")], exercises: ["skull": exercise])
         #expect(regions[.triceps] == 1 && regions[.forearms] == Decimal(string: "0.25"))
     }
@@ -42,9 +47,12 @@ struct BodyMapTests {
 
     @Test("an exercise shades the same regions whether it names its muscles or only their groups")
     func pathsAgree() {
-        let named = Exercise(id: "named", name: "Named", measurement: .weightreps,
-                             muscles: [MuscleShare(.rhomboids, 1), MuscleShare(.trapsmiddle, 1), MuscleShare(.iliopsoas, 1),
-                                       MuscleShare(.serratus, 1)])
+        let named = Exercise(
+            id: "named", name: "Named", measurement: .weightreps,
+            muscles: [
+                MuscleShare(.rhomboids, 1), MuscleShare(.trapsmiddle, 1), MuscleShare(.iliopsoas, 1),
+                MuscleShare(.serratus, 1),
+            ])
         let grouped = Exercise(id: "grouped", name: "Grouped", measurement: .weightreps, primaryMuscles: [.upperback, .other, .chest])
         let a = BodyMap.sets([set("named")], exercises: ["named": named])
         let b = BodyMap.sets([set("grouped")], exercises: ["grouped": grouped])

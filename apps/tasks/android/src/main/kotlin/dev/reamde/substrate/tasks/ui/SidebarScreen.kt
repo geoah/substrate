@@ -43,10 +43,8 @@ import dev.reamde.substrate.tasks.bridge.TasksApp
 import dev.reamde.substrate.tasks.bridge.TasksPresentation
 
 /**
- * The lists: what is due and the tasks in no list, then the lists in the
- * owner's order, each with how many of its tasks are open, a long press
- * offering its rename and delete. On a phone Today is a section of its own
- * in the App menu, so it is left out here.
+ * The lists: what is due and the tasks in no list, then the lists in the owner's order, each with how many of its tasks are open, a long press offering its
+ * rename and delete. On a phone Today is a section of its own in the App menu, so it is left out here.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,8 +78,12 @@ internal fun SidebarScreen(
                     SidebarRowView(row, row.selection == selected, onOpen = { show(row) }, onAction = {})
                 }
                 item {
-                    Text(sidebar.listsTitle, style = KitText.heading.style, color = MaterialTheme.colorScheme.primary,
-                         modifier = Modifier.padding(start = KitSpacing.content, top = KitSpacing.screen, bottom = KitSpacing.medium))
+                    Text(
+                        sidebar.listsTitle,
+                        style = KitText.heading.style,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = KitSpacing.content, top = KitSpacing.screen, bottom = KitSpacing.medium),
+                    )
                 }
                 items(sidebar.lists.rows, key = { "list-" + it.id }) { row ->
                     SidebarRowView(row, row.selection == selected, onOpen = { show(row) }) { action ->
@@ -93,8 +95,12 @@ internal fun SidebarScreen(
                 }
                 sidebar.noLists?.let { none ->
                     item {
-                        Text(none, style = KitText.footnote.style, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                             modifier = Modifier.padding(horizontal = KitSpacing.content))
+                        Text(
+                            none,
+                            style = KitText.footnote.style,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = KitSpacing.content),
+                        )
                     }
                 }
                 // Room for the button floating over the last row.
@@ -114,12 +120,11 @@ private fun SidebarRowView(row: SidebarRow, chosen: Boolean, onOpen: () -> Unit,
             headlineContent = { Text(row.title) },
             leadingContent = { Icon(menuIcon(row.symbol), contentDescription = null) },
             trailingContent = { Text("${row.open}", style = KitText.body.style, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-            colors = ListItemDefaults.colors(
-                containerColor = if (chosen) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-            ),
-            modifier = Modifier
-                .combinedClickable(onClick = onOpen, onLongClick = { if (row.actions.isNotEmpty()) menu = true })
-                .semantics { contentDescription = "${row.title}, ${row.openWords}" },
+            colors = ListItemDefaults.colors(containerColor = if (chosen) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface),
+            modifier =
+                Modifier.combinedClickable(onClick = onOpen, onLongClick = { if (row.actions.isNotEmpty()) menu = true }).semantics {
+                    contentDescription = "${row.title}, ${row.openWords}"
+                },
         )
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             for (action in row.actions) {

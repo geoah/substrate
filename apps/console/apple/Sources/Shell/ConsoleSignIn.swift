@@ -38,8 +38,9 @@ enum ConsoleSignIn {
     @MainActor
     static func session(_ probe: ServerProbe.Result) async throws -> Session {
         guard let oauth = OAuthClient(manifest: manifest, probe: probe) else { throw URLError(.badServerResponse) }
-        let session = try await oauth.signIn(server: probe.origin, repository: probe.repository,
-                                             keepingRejectedIn: ConsoleSessions.store(for: probe.origin), browser: WebAuthenticator())
+        let session = try await oauth.signIn(
+            server: probe.origin, repository: probe.repository,
+            keepingRejectedIn: ConsoleSessions.store(for: probe.origin), browser: WebAuthenticator())
         guard session.tokenID != nil else {
             try? await session.revoke()
             throw NoTokenID(server: probe.origin)

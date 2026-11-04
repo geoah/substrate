@@ -28,9 +28,12 @@ public struct SignInController: Controller {
     public var initialState: State { State(connect: connect.initialState) }
 
     public func events(for command: Command, in context: Enrichment<SignInController>) -> [Event] {
-        connect.events(for: command, in: Enrichment(state: context.state.connect, transient: NoTransient(),
-                                                    presentation: context.presentation?.connect, now: context.now, link: context.link,
-                                                    environment: context.environment))
+        connect.events(
+            for: command,
+            in: Enrichment(
+                state: context.state.connect, transient: NoTransient(),
+                presentation: context.presentation?.connect, now: context.now, link: context.link,
+                environment: context.environment))
     }
 
     public func apply(_ event: Event, to state: State) throws -> State {
@@ -51,9 +54,12 @@ public struct SignInController: Controller {
     }
 
     public func present(_ input: PresenterInput<SignInController>) -> SignInPresentation {
-        SignInPresentation(connect: connect.present(PresenterInput(state: input.state.connect, transient: NoTransient(), now: input.now,
-                                                                   locale: input.locale, timeZone: input.timeZone, link: input.link)),
-                           signedIn: input.state.signedIn)
+        SignInPresentation(
+            connect: connect.present(
+                PresenterInput(
+                    state: input.state.connect, transient: NoTransient(), now: input.now,
+                    locale: input.locale, timeZone: input.timeZone, link: input.link)),
+            signedIn: input.state.signedIn)
     }
 }
 

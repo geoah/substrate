@@ -13,9 +13,10 @@ public struct Enrichment<C: Controller> {
     public var link: LinkSnapshot?
     public var environment: AppEnvironment
 
-    public init(state: C.State, transient: C.Transient, presentation: C.Presentation?, now: Date, link: LinkSnapshot?,
-                environment: AppEnvironment)
-    {
+    public init(
+        state: C.State, transient: C.Transient, presentation: C.Presentation?, now: Date, link: LinkSnapshot?,
+        environment: AppEnvironment
+    ) {
         self.state = state
         self.transient = transient
         self.presentation = presentation

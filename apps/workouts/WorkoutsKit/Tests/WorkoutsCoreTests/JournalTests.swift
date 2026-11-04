@@ -1,10 +1,11 @@
 import Foundation
-@testable import WorkoutsCore
-import Testing
 import SubstrateCore
 import SubstrateLocal
 import SubstrateRuntime
 import SubstrateTesting
+import Testing
+
+@testable import WorkoutsCore
 
 /// A scratch directory under the system's temporary directory, removed by `remove()`.
 struct TemporaryDirectory {
@@ -207,8 +208,9 @@ struct JournalTests {
         let cached = try #require(stored.cachedState)
         let first = try #require(try JSONValue(data: bytes).objectValue?["events"]?.arrayValue?.first?.objectValue?["at"])
         #expect(first == .number(815_389_200))
-        #expect(stored.events.first.flatMap { if case let .engine(envelope) = $0 { envelope.at } else { nil } }
-            == Date(timeIntervalSinceReferenceDate: 815_389_200))
+        #expect(
+            stored.events.first.flatMap { if case let .engine(envelope) = $0 { envelope.at } else { nil } }
+                == Date(timeIntervalSinceReferenceDate: 815_389_200))
         // Written back, the events are the same text; the state's
         // dictionaries are keyed by values and written in hash order, so it
         // is held as what it decodes to.

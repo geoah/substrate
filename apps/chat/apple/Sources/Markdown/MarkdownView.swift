@@ -40,14 +40,16 @@ struct MarkdownView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .environment(\.missingRecords, missing)
-        .environment(\.openURL, OpenURLAction { url in
-            guard let reference = linkedRecord(url) else {
-                openURL(url)
+        .environment(
+            \.openURL,
+            OpenURLAction { url in
+                guard let reference = linkedRecord(url) else {
+                    openURL(url)
+                    return .handled
+                }
+                openRecord?(reference)
                 return .handled
-            }
-            openRecord?(reference)
-            return .handled
-        })
+            })
     }
 }
 
@@ -69,10 +71,12 @@ func inline(_ text: String, missing: Set<String> = []) -> AttributedString {
 }
 
 func parseInline(_ text: String, missing: Set<String> = []) -> AttributedString {
-    var out = (try? AttributedString(
-        markdown: text,
-        options: .init(allowsExtendedAttributes: false, interpretedSyntax: .inlineOnlyPreservingWhitespace,
-                       failurePolicy: .returnPartiallyParsedIfPossible)))
+    var out =
+        (try? AttributedString(
+            markdown: text,
+            options: .init(
+                allowsExtendedAttributes: false, interpretedSyntax: .inlineOnlyPreservingWhitespace,
+                failurePolicy: .returnPartiallyParsedIfPossible)))
         ?? AttributedString(text)
     for run in out.runs {
         if let link = run.link {

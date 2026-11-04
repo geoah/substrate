@@ -20,7 +20,8 @@ class OverflowTest {
             // A callback that fires five times before anyone reads.
             repeat(5) { sendOrOverflow(it, "too fast") }
             awaitClose { unregistered = true }
-        }.buffer(2)
+        }
+            .buffer(2)
         val seen = mutableListOf<Int>()
         val failure = runCatching { flow.collect { seen += it } }.exceptionOrNull()
         // What fit (the queue, and one a waiting reader took), in order, none skipped.
@@ -35,7 +36,8 @@ class OverflowTest {
             repeat(5) { sendOrOverflow(it, "too fast") }
             close()
             awaitClose {}
-        }.buffer(8)
+        }
+            .buffer(8)
         val seen = mutableListOf<Int>()
         flow.collect { seen += it }
         assertEquals(listOf(0, 1, 2, 3, 4), seen)

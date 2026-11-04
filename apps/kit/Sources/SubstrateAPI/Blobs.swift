@@ -1,9 +1,10 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
-import SubstrateDevice
 
 /// A blob as stored: its digest, the value a `blobref` property takes, and
 /// its size.
@@ -26,8 +27,9 @@ public extension SubstrateClient {
     /// references after that. An app's token stores one when its approval
     /// writes a kind with a `blobref` property.
     func putBlob(_ data: Data, mediaType: String, name: String? = nil) async throws -> StoredBlob {
-        let req = try request("PUT", "api/v1/blobs", query: name.map { [("name", $0)] } ?? [],
-                              body: .bytes(data, contentType: mediaType), timeout: Timeout.upload)
+        let req = try request(
+            "PUT", "api/v1/blobs", query: name.map { [("name", $0)] } ?? [],
+            body: .bytes(data, contentType: mediaType), timeout: Timeout.upload)
         return try await send(req).decode(StoredBlob.self)
     }
 }

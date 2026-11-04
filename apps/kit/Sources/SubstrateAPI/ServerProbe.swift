@@ -1,9 +1,10 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import SubstrateCore
-import SubstrateDevice
 
 /// Asks a server what it is before an app signs in to it or tells the owner
 /// it is out of date: its discovery document, and its OAuth metadata.
@@ -27,9 +28,10 @@ public struct ServerProbe: Sendable {
         /// nil when the person typed the server itself.
         public var repository: String?
 
-        public init(origin: URL, discovery: Discovery, metadata: AuthorizationServerMetadata?,
-                    verdict: ServerRequirement.Verdict, repository: String? = nil)
-        {
+        public init(
+            origin: URL, discovery: Discovery, metadata: AuthorizationServerMetadata?,
+            verdict: ServerRequirement.Verdict, repository: String? = nil
+        ) {
             self.origin = origin
             self.discovery = discovery
             self.metadata = metadata
@@ -67,7 +69,8 @@ public struct ServerProbe: Sendable {
         }
         let metadata = try await client.authorizationServerMetadata()
         if let problem = metadata?.mismatch(server: origin) { throw ServerMismatch(problem) }
-        return Result(origin: origin, discovery: discovery, metadata: metadata,
-                      verdict: requirement.verdict(version: discovery.server.version, metadata: metadata))
+        return Result(
+            origin: origin, discovery: discovery, metadata: metadata,
+            verdict: requirement.verdict(version: discovery.server.version, metadata: metadata))
     }
 }

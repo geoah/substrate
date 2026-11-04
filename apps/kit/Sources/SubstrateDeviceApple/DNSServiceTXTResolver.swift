@@ -109,8 +109,9 @@ private final class TXTQuery: @unchecked Sendable {
         // Unretained: the caller holds this query until it finishes, and the
         // ref, deallocated in finish, is what calls back.
         let context = Unmanaged.passUnretained(self).toOpaque()
-        let status = DNSServiceQueryRecord(&ref, DNSServiceFlags(kDNSServiceFlagsReturnIntermediates), 0, name,
-                                           UInt16(kDNSServiceType_TXT), UInt16(kDNSServiceClass_IN), TXTQuery.reply, context)
+        let status = DNSServiceQueryRecord(
+            &ref, DNSServiceFlags(kDNSServiceFlagsReturnIntermediates), 0, name,
+            UInt16(kDNSServiceType_TXT), UInt16(kDNSServiceClass_IN), TXTQuery.reply, context)
         guard status == DNSServiceErrorType(kDNSServiceErr_NoError), let ref else {
             finish(.failure(DNSServiceTXTResolver.Failed(name: name, code: status)))
             return

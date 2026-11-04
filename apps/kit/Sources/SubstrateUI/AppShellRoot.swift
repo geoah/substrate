@@ -12,9 +12,10 @@ public struct AppShellRoot<App: LinkedApp, Content: View>: View {
     let icon: Image?
     let content: (LinkPresentation<App.Presentation>, App.Presentation) -> Content
 
-    public init(tagline: String, icon: Image? = nil,
-                @ViewBuilder content: @escaping (LinkPresentation<App.Presentation>, App.Presentation) -> Content)
-    {
+    public init(
+        tagline: String, icon: Image? = nil,
+        @ViewBuilder content: @escaping (LinkPresentation<App.Presentation>, App.Presentation) -> Content
+    ) {
         self.tagline = tagline
         self.icon = icon
         self.content = content

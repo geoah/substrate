@@ -26,7 +26,7 @@ let package = Package(
         .library(name: "WorkoutsSync", targets: ["WorkoutsSync"]),
     ],
     dependencies: [
-        .package(path: "../../kit"),
+        .package(path: "../../kit")
     ],
     targets: [
         .target(

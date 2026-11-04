@@ -15,11 +15,13 @@ private let utc = TimeZone(identifier: "UTC")!
 
 @Suite("The Access screen", .timeLimit(.minutes(10)))
 struct AccessScreenTests {
-    func banner(_ issues: [AppIssue], offers: Set<AccessAction.Offer> = Set(AccessAction.Offer.allCases),
-                locale: Locale = enUS) -> AccessBanner?
-    {
-        AccessPresenter.banner(issues: issues, appName: "Substrate Sync", host: "ada.example.com", offers: offers, now: now,
-                               locale: locale, timeZone: utc)
+    func banner(
+        _ issues: [AppIssue], offers: Set<AccessAction.Offer> = Set(AccessAction.Offer.allCases),
+        locale: Locale = enUS
+    ) -> AccessBanner? {
+        AccessPresenter.banner(
+            issues: issues, appName: "Substrate Sync", host: "ada.example.com", offers: offers, now: now,
+            locale: locale, timeZone: utc)
     }
 
     @Test func noIssueIsNoBanner() {
@@ -50,8 +52,11 @@ struct AccessScreenTests {
         #expect(line.tone == .caution)
         #expect(line.lines[0].title == "Something on ada.example.com is in the way")
         #expect(line.lines[0].action == ActionButton("Fix It on ada.example.com", .openFix("/catalog/x")))
-        #expect(line.lines[0].changes[0] == ChangeLine(id: "upgrade|false|Update X", symbol: .warning, tone: .caution, words: "Update X",
-                                                       detail: "Quarantined.", detailStands: true))
+        #expect(
+            line.lines[0].changes[0]
+                == ChangeLine(
+                    id: "upgrade|false|Update X", symbol: .warning, tone: .caution, words: "Update X",
+                    detail: "Quarantined.", detailStands: true))
     }
 
     @Test func theEndOfAccessIsADayInTheEnvironmentsLocale() throws {
@@ -65,26 +70,32 @@ struct AccessScreenTests {
     @Test func aServerTooOldSaysWhatItRunsAndWhatItCannot() throws {
         let line = try #require(banner([.serverTooOld(running: "v0.113.0", needed: "0.114.0", missing: ["give apps access of their own"])]))
             .lines[0]
-        #expect(line.message == "Substrate Sync needs Substrate 0.114.0 or later; ada.example.com runs 0.113.0. "
-            + "It can't yet give apps access of their own. Whoever runs it can update it.")
+        #expect(
+            line.message == "Substrate Sync needs Substrate 0.114.0 or later; ada.example.com runs 0.113.0. "
+                + "It can't yet give apps access of their own. Whoever runs it can update it.")
         #expect(line.action == nil)
     }
 
     @Test func accessEndedSaysWhyInOneSentence() {
-        #expect(AccessPresenter.ended(appName: "Substrate Sync", host: "ada.example.com").message
-            == "ada.example.com no longer accepts Substrate Sync: the time you approved it for is up, or it was revoked in Settings, under Apps.")
+        #expect(
+            AccessPresenter.ended(appName: "Substrate Sync", host: "ada.example.com").message
+                == "ada.example.com no longer accepts Substrate Sync: the time you approved it for is up, or it was revoked in Settings, under Apps.")
     }
 
     @Test func aReviewHeadsItselfAndListsItsSections() {
-        let changes = [Change(kind: .scope, words: "See your places"), Change(kind: .scope, words: "Your contacts", leftOut: true),
-                       Change(kind: .install, words: "Install Apple")]
-        let review = ReviewPresenter.present(appName: "Substrate Sync", host: "ada.example.com", changes: changes,
-                                             heading: ReviewHeading(changes: changes, firstSignIn: false), alreadyAllowed: false, setsUp: true)
+        let changes = [
+            Change(kind: .scope, words: "See your places"), Change(kind: .scope, words: "Your contacts", leftOut: true),
+            Change(kind: .install, words: "Install Apple"),
+        ]
+        let review = ReviewPresenter.present(
+            appName: "Substrate Sync", host: "ada.example.com", changes: changes,
+            heading: ReviewHeading(changes: changes, firstSignIn: false), alreadyAllowed: false, setsUp: true)
         #expect(review.title == "Allow more access and update server setup")
         #expect(review.sections.map(\.title) == ["It asks to also", "You left these out last time", "It will set up on your server"])
         #expect(review.footer.contains("Setting up comes with the request; to refuse it, deny."))
-        let renew = ReviewPresenter.present(appName: "Substrate Sync", host: "ada.example.com", changes: [], heading: .renew,
-                                            alreadyAllowed: false, setsUp: false)
+        let renew = ReviewPresenter.present(
+            appName: "Substrate Sync", host: "ada.example.com", changes: [], heading: .renew,
+            alreadyAllowed: false, setsUp: false)
         #expect(renew.intro == "Nothing new: Substrate Sync asks to keep the access you approved, for another while.")
     }
 }
@@ -97,8 +108,9 @@ struct ConnectScreenTests {
     }[0]
 
     func controller(passwordDoor: Bool = false, opensBrowser: Bool = false) -> ConnectController {
-        ConnectController(manifest: ScreenFixtures.manifest, locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
-                          hasPasswordDoor: passwordDoor, opensBrowser: opensBrowser, signIn: { _ in })
+        ConnectController(
+            manifest: ScreenFixtures.manifest, locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
+            hasPasswordDoor: passwordDoor, opensBrowser: opensBrowser, signIn: { _ in })
     }
 
     @Test func anAddressIsCheckedThenTheServerFoundOffersTheBrowser() async throws {
@@ -136,8 +148,11 @@ struct ConnectScreenTests {
         let harness = ControllerHarness(controller(), performsEffects: false)
         await harness.send(.edit("not an address"))
         await harness.send(.proceed)
-        #expect(await harness.presentation.problem == ProblemPresentation(title: "Couldn't reach that server",
-                                                                          message: "That is not a server address or a repository name."))
+        #expect(
+            await harness.presentation.problem
+                == ProblemPresentation(
+                    title: "Couldn't reach that server",
+                    message: "That is not a server address or a repository name."))
         #expect(harness.effects.isEmpty)
     }
 
@@ -177,15 +192,17 @@ struct ConnectScreenTests {
         old.verdict = .tooOld(running: "v0.113.0", needed: nil, missing: ["give apps access of their own"])
         var manifest = ScreenFixtures.manifest
         manifest.passwordFallback = .withoutAppAuthorization
-        let without = ConnectController(manifest: manifest, locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
-                                        signIn: { _ in })
+        let without = ConnectController(
+            manifest: manifest, locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
+            signIn: { _ in })
         let input = PresenterInput<ConnectController>(state: ConnectState(address: "ada.example.com", phase: .found(old)), now: now)
         let tooOld = without.present(input)
         #expect(tooOld.door == .tooOld)
         #expect(tooOld.tooOld?.summary == "Substrate Tasks needs a newer Substrate. ada.example.com runs 0.113.0.")
         #expect(tooOld.button == nil)
-        let with = ConnectController(manifest: manifest, locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
-                                     hasPasswordDoor: true, signIn: { _ in })
+        let with = ConnectController(
+            manifest: manifest, locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
+            hasPasswordDoor: true, signIn: { _ in })
         let password = with.present(PresenterInput(state: ConnectState(address: "ada.example.com", phase: .found(old)), now: now))
         #expect(password.door == .password)
         #expect(password.button == nil)
@@ -193,9 +210,10 @@ struct ConnectScreenTests {
     }
 
     @Test func theSignInRunsAsAnEffectAndItsCancellationSaysNothing() async throws {
-        let cancelled = ConnectController(manifest: ScreenFixtures.manifest,
-                                          locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
-                                          signIn: { _ in throw SignInCancelled() })
+        let cancelled = ConnectController(
+            manifest: ScreenFixtures.manifest,
+            locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
+            signIn: { _ in throw SignInCancelled() })
         let harness = ControllerHarness(cancelled, performsEffects: true)
         await harness.send(.edit("ada.example.com"))
         await harness.runtime.deliver(.located(probe))
@@ -207,9 +225,10 @@ struct ConnectScreenTests {
     }
 
     @Test func anExpiredSignInSaysSoAndOffersItAgain() async throws {
-        let expired = ConnectController(manifest: ScreenFixtures.manifest,
-                                        locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
-                                        signIn: { _ in throw SignInExpired() })
+        let expired = ConnectController(
+            manifest: ScreenFixtures.manifest,
+            locator: ServerLocator(probe: ServerProbe(), resolver: TableResolver([:])),
+            signIn: { _ in throw SignInExpired() })
         let harness = ControllerHarness(expired, performsEffects: true)
         await harness.send(.edit("ada.example.com"))
         await harness.runtime.deliver(.located(probe))
@@ -231,27 +250,37 @@ struct RepositoryStatusTests {
     }
 
     @Test func anAppSessionListsEachScopeAndWhenItEnds() {
-        let session = SessionFacts(server: URL(string: "https://ada.example.com")!, repository: "ada.example.com",
-                                   scopes: ["read:*", "write:substrate.reamde.dev/tasks/*"], expiresAt: now)
-        let repository = RepositoryPresenter.present(session: session, manifest: nil, serverVersion: "v0.114.0", unrevoked: [],
-                                                     offersChangeAccess: true, locale: enUS, timeZone: utc)
+        let session = SessionFacts(
+            server: URL(string: "https://ada.example.com")!, repository: "ada.example.com",
+            scopes: ["read:*", "write:substrate.reamde.dev/tasks/*"], expiresAt: now)
+        let repository = RepositoryPresenter.present(
+            session: session, manifest: nil, serverVersion: "v0.114.0", unrevoked: [],
+            offersChangeAccess: true, locale: enUS, timeZone: utc)
         #expect(repository.title == "Repository")
-        #expect(repository.rows == [LabeledValue("Server", "ada.example.com"), LabeledValue("Repository", "ada.example.com"),
-                                    LabeledValue("Server version", "0.114.0")])
+        #expect(
+            repository.rows == [
+                LabeledValue("Server", "ada.example.com"), LabeledValue("Repository", "ada.example.com"),
+                LabeledValue("Server version", "0.114.0"),
+            ])
         #expect(repository.approved?.title == "Approved access")
         #expect(repository.approved?.scopes.map(\.scope) == ["read:*", "write:substrate.reamde.dev/tasks/*"])
         #expect(repository.approved?.until.value.hasPrefix("Nov 3, 2026 at 9:00") == true)
         #expect(repository.changeAccess == "Change Access…")
         #expect(repository.footer == "Sign Out: signs out on this device and revokes its access on ada.example.com.")
-        #expect(RepositoryPresenter.present(session: session, manifest: nil, serverVersion: nil, unrevoked: [], offersChangeAccess: true,
-                                            locale: enUS, timeZone: utc).title == "Repository")
+        #expect(
+            RepositoryPresenter.present(
+                session: session, manifest: nil, serverVersion: nil, unrevoked: [], offersChangeAccess: true,
+                locale: enUS, timeZone: utc
+            ).title == "Repository")
     }
 
     @Test func aPasswordSessionReachesEverything() {
-        let repository = RepositoryPresenter.present(session: SessionFacts(server: URL(string: "https://ada.example.com")!,
-                                                                           repository: "ada.example.com"),
-                                                     manifest: nil, serverVersion: nil, unrevoked: [], offersChangeAccess: true, locale: enUS,
-                                                     timeZone: utc)
+        let repository = RepositoryPresenter.present(
+            session: SessionFacts(
+                server: URL(string: "https://ada.example.com")!,
+                repository: "ada.example.com"),
+            manifest: nil, serverVersion: nil, unrevoked: [], offersChangeAccess: true, locale: enUS,
+            timeZone: utc)
         #expect(repository.access == LabeledValue("Access", "Everything, with your password"))
         #expect(repository.changeAccess == nil && repository.approved == nil)
         #expect(repository.footer.contains("revokes its sign-in"))
@@ -261,12 +290,14 @@ struct RepositoryStatusTests {
         let current = [package(.current(held: 2))]
         #expect(LinkStatus.derive(signedIn: false, packages: [package(nil)], outbox: .idle, waiting: 0) == .local)
         #expect(LinkStatus.derive(signedIn: true, packages: current, outbox: .signedOut, waiting: 2) == .signedOut)
-        #expect(LinkStatus.derive(signedIn: true, packages: current, outbox: .idle, waiting: 0, issues: [.needsApproval(changes: [])])
-            == .needsApproval)
+        #expect(
+            LinkStatus.derive(signedIn: true, packages: current, outbox: .idle, waiting: 0, issues: [.needsApproval(changes: [])])
+                == .needsApproval)
         #expect(LinkStatus.derive(signedIn: true, packages: current, outbox: .idle, waiting: 0, notKept: "full") == .notKept("full"))
         #expect(LinkStatus.derive(signedIn: true, packages: [package(nil)], outbox: .idle, waiting: 0) == .preparing(["Tasks"]))
-        #expect(LinkStatus.derive(signedIn: true, packages: [package(.behind(held: 1))], outbox: .idle, waiting: 0)
-            == .packagesBehind([package(.behind(held: 1))]))
+        #expect(
+            LinkStatus.derive(signedIn: true, packages: [package(.behind(held: 1))], outbox: .idle, waiting: 0)
+                == .packagesBehind([package(.behind(held: 1))]))
         #expect(LinkStatus.derive(signedIn: true, packages: current, outbox: .offline("x"), waiting: 3) == .offline(waiting: 3, reason: "x"))
         #expect(LinkStatus.derive(signedIn: true, packages: current, outbox: .sent, waiting: 0) == .ready(waiting: 0))
         #expect(LinkStatus.derive(signedIn: true, packages: [], outbox: .sent, waiting: 0) == .ready(waiting: 0))
@@ -278,27 +309,35 @@ struct RepositoryStatusTests {
         let people = package(.behind(held: 2), "samples.substrate.reamde.dev/people", needs: 3)
         let behind = LinkStatus.derive(signedIn: true, packages: [tasks, people], outbox: .sent, waiting: 0)
         #expect(behind == .packagesBehind([people]))
-        #expect(words.sentence(behind, locale: enUS, timeZone: utc)
-            == "Your substrate has version 2 of the People package and this app needs version 3 or later. "
-            + "The update waits for your approval on your substrate; tasks wait on this iPhone until then.")
+        #expect(
+            words.sentence(behind, locale: enUS, timeZone: utc)
+                == "Your substrate has version 2 of the People package and this app needs version 3 or later. "
+                + "The update waits for your approval on your substrate; tasks wait on this iPhone until then.")
         let both = LinkStatus.derive(signedIn: true, packages: [package(.behind(held: 1)), people], outbox: .sent, waiting: 0)
         #expect(words.sentence(both, locale: enUS, timeZone: utc).hasPrefix("Your substrate has older versions of the Tasks and People packages"))
-        let unread = LinkStatus.derive(signedIn: true, packages: [package(nil), package(nil, "samples.substrate.reamde.dev/people")],
-                                       outbox: .sent, waiting: 0)
+        let unread = LinkStatus.derive(
+            signedIn: true, packages: [package(nil), package(nil, "samples.substrate.reamde.dev/people")],
+            outbox: .sent, waiting: 0)
         #expect(words.sentence(unread, locale: enUS, timeZone: utc) == "Checking the Tasks and People packages on your substrate.")
-        let status = StatusPresenter.present(both, words: words, host: "ada.example.com", packages: [package(.behind(held: 1)), people],
-                                             sending: false, waiting: 0, parked: [], locale: enUS, timeZone: utc)
-        #expect(status.packages.map(\.row) == [LabeledValue("Tasks package", "Version 1, waiting for the update to version 2"),
-                                                LabeledValue("People package", "Version 2, waiting for the update to version 3")])
+        let status = StatusPresenter.present(
+            both, words: words, host: "ada.example.com", packages: [package(.behind(held: 1)), people],
+            sending: false, waiting: 0, parked: [], locale: enUS, timeZone: utc)
+        #expect(
+            status.packages.map(\.row) == [
+                LabeledValue("Tasks package", "Version 1, waiting for the update to version 2"),
+                LabeledValue("People package", "Version 2, waiting for the update to version 3"),
+            ])
     }
 
     @Test func aRefusedWriteIsListedWithRetryAndDiscardAndItsWordsStayApart() {
-        let write = ParkedWrite(id: UUID(), method: .patch, kind: "substrate.reamde.dev/tasks/task", recordID: "t1",
-                                words: "props.status: expected one of todo, doing, done", conflict: false)
-        let status = StatusPresenter.present(.refused(waiting: 1, reason: "props.status: expected one of todo, doing, done"), words: words,
-                                             host: "ada.example.com", packages: [package(.current(held: 2))], sending: false, waiting: 1,
-                                             parked: [write], kindLabels: ["substrate.reamde.dev/tasks/task": "Task"], locale: enUS,
-                                             timeZone: utc)
+        let write = ParkedWrite(
+            id: UUID(), method: .patch, kind: "substrate.reamde.dev/tasks/task", recordID: "t1",
+            words: "props.status: expected one of todo, doing, done", conflict: false)
+        let status = StatusPresenter.present(
+            .refused(waiting: 1, reason: "props.status: expected one of todo, doing, done"), words: words,
+            host: "ada.example.com", packages: [package(.current(held: 2))], sending: false, waiting: 1,
+            parked: [write], kindLabels: ["substrate.reamde.dev/tasks/task": "Task"], locale: enUS,
+            timeZone: utc)
         #expect(status.sentence == "Your substrate refused a change. 1 change waits; retry or discard it below.")
         #expect(status.problem == nil)
         // What the write was of and what was refused are two facts.
@@ -307,8 +346,9 @@ struct RepositoryStatusTests {
         #expect(status.refused?.rows.first?.words == "props.status: expected one of todo, doing, done")
         #expect(status.refused?.rows.first?.retry == ActionButton("Retry", .retry(write.id)))
         #expect(status.actions.map(\.title) == ["Send Now"])
-        let unlisted = StatusPresenter.present(.refused(waiting: 1, reason: "no"), words: words, host: nil, packages: [], sending: false,
-                                               waiting: 1, parked: [], locale: enUS, timeZone: utc)
+        let unlisted = StatusPresenter.present(
+            .refused(waiting: 1, reason: "no"), words: words, host: nil, packages: [], sending: false,
+            waiting: 1, parked: [], locale: enUS, timeZone: utc)
         #expect(unlisted.problem?.message == "no")
     }
 
@@ -316,24 +356,28 @@ struct RepositoryStatusTests {
         var mine = words
         mine.footer = "Sessions are written to {server} when they finish."
         mine.refusedFooter = "Discard gives up the rest of its session's changes."
-        let write = ParkedWrite(id: UUID(), method: .put, kind: "substrate.reamde.dev/training/session", recordID: "s1", words: "no",
-                                conflict: false)
-        let status = StatusPresenter.present(.refused(waiting: 1, reason: "no"), words: mine, host: "ada.example.com", packages: [],
-                                             sending: false, waiting: 1, parked: [write],
-                                             kindLabels: ["substrate.reamde.dev/training/session": "Training session"], locale: enUS,
-                                             timeZone: utc)
+        let write = ParkedWrite(
+            id: UUID(), method: .put, kind: "substrate.reamde.dev/training/session", recordID: "s1", words: "no",
+            conflict: false)
+        let status = StatusPresenter.present(
+            .refused(waiting: 1, reason: "no"), words: mine, host: "ada.example.com", packages: [],
+            sending: false, waiting: 1, parked: [write],
+            kindLabels: ["substrate.reamde.dev/training/session": "Training session"], locale: enUS,
+            timeZone: utc)
         #expect(status.footer == "Sessions are written to ada.example.com when they finish.")
         #expect(status.refused?.footer == "Discard gives up the rest of its session's changes.")
         #expect(status.refused?.rows.map(\.label) == ["Training session"])
         #expect(status.refused?.rows.map(\.status) == ["Write refused"])
-        let plain = StatusPresenter.present(.ready(waiting: 0), words: words, host: nil, packages: [], sending: false, waiting: 0, parked: [],
-                                            locale: enUS, timeZone: utc)
+        let plain = StatusPresenter.present(
+            .ready(waiting: 0), words: words, host: nil, packages: [], sending: false, waiting: 0, parked: [],
+            locale: enUS, timeZone: utc)
         #expect(plain.footer == "Changes are written to your substrate as you make them, and wait on this iPhone while it cannot be reached.")
     }
 
     @Test func aChangeNotKeptSaysWhyApart() {
-        let status = StatusPresenter.present(.notKept("The disk is full."), words: words, host: nil, packages: [], sending: false,
-                                             waiting: 0, parked: [], locale: enUS, timeZone: utc)
+        let status = StatusPresenter.present(
+            .notKept("The disk is full."), words: words, host: nil, packages: [], sending: false,
+            waiting: 0, parked: [], locale: enUS, timeZone: utc)
         #expect(status.sentence == "A change could not be kept on this iPhone. Tasks already kept stay.")
         #expect(status.problem == ProblemPresentation(title: "Not kept on this iPhone", message: "The disk is full."))
     }
@@ -346,9 +390,12 @@ struct RepositoryStatusTests {
         #expect(settings.sections.map(\.id) == [.app("tasks"), .status, .refused, .repository, .approvedAccess, .storage, .about])
         let refused = try #require(settings.sections.first { $0.id == .refused })
         let write = ScreenFixtures.refusedWrite
-        #expect(refused.rows.map(\.id) == [.status(.refused(write.id)), .status(.refusedStatus(write.id)), .status(.refusedKind(write.id)),
-                                            .status(.refusedRecord(write.id)), .status(.action(.retry(write.id))),
-                                            .status(.action(.discard(write.id)))])
+        #expect(
+            refused.rows.map(\.id) == [
+                .status(.refused(write.id)), .status(.refusedStatus(write.id)), .status(.refusedKind(write.id)),
+                .status(.refusedRecord(write.id)), .status(.action(.retry(write.id))),
+                .status(.action(.discard(write.id))),
+            ])
         #expect(refused.rows[0].detail == write.words)
         #expect(refused.rows[2].label == "Kind" && refused.rows[2].control == .value(write.kind, verbatim: true))
         #expect(refused.rows[3].label == "Record ID" && refused.rows[3].control == .value(write.recordID, verbatim: true))
@@ -381,21 +428,24 @@ struct RepositoryStatusTests {
     }
 
     @Test func theBudgetIsSaidOnceUnderEachAreasSize() {
-        let section = SettingsPresenter.storage([AreaUsage(area: .cache, bytes: 512, files: 1), AreaUsage(area: .records, bytes: 85, files: 1)],
-                                                budget: 100 * 1024 * 1024)
+        let section = SettingsPresenter.storage(
+            [AreaUsage(area: .cache, bytes: 512, files: 1), AreaUsage(area: .records, bytes: 85, files: 1)],
+            budget: 100 * 1024 * 1024)
         let values = section.rows.compactMap { row -> String? in if case let .value(value, _) = row.control { value } else { nil } }
         #expect(values == ["512 bytes", "85 bytes", "597 bytes of 105 MB"])
         #expect(section.rows.map(\.id) == [.storage(.area(.cache)), .storage(.area(.records)), .storage(.total), .storage(.clear)])
         #expect(section.rows[2].label == "Total")
-        #expect(SettingsPresenter.storage([AreaUsage(area: .cache, bytes: 512, files: 1)], budget: nil).rows[1].control
-            == .value("512 bytes", verbatim: false))
+        #expect(
+            SettingsPresenter.storage([AreaUsage(area: .cache, bytes: 512, files: 1)], budget: nil).rows[1].control
+                == .value("512 bytes", verbatim: false))
     }
 
     @Test func signOutAsksFromItsOwnRowInTheAppsWords() throws {
         let session = SessionFacts(server: URL(string: "https://ada.example.com")!, repository: "ada.example.com", scopes: ["write:example.com/notes/*"])
-        let repository = RepositoryPresenter.present(session: session, manifest: ScreenFixtures.manifest, serverVersion: nil, unrevoked: [],
-                                                     offersChangeAccess: true, signOutMessage: "This iPhone forgets its saved notes.",
-                                                     locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
+        let repository = RepositoryPresenter.present(
+            session: session, manifest: ScreenFixtures.manifest, serverVersion: nil, unrevoked: [],
+            offersChangeAccess: true, signOutMessage: "This iPhone forgets its saved notes.",
+            locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
         let confirmation = try #require(repository.signOutConfirmation)
         #expect(confirmation.question == .repository(.signOut))
         #expect(confirmation.title == "Sign out of ada.example.com?")
@@ -405,9 +455,10 @@ struct RepositoryStatusTests {
     }
 
     @Test func theStatusIsHeadedByWhatItIsAboutAndTheVersionReadsAsEveryValue() {
-        let status = StatusPresenter.present(.ready(waiting: 0), words: StatusWords(app: "Notes", device: "this iPhone", kept: "notes"), host: "ada.example.com",
-                                             packages: [], sending: false, waiting: 0, parked: [], locale: Locale(identifier: "en_US"),
-                                             timeZone: TimeZone(identifier: "UTC")!)
+        let status = StatusPresenter.present(
+            .ready(waiting: 0), words: StatusWords(app: "Notes", device: "this iPhone", kept: "notes"), host: "ada.example.com",
+            packages: [], sending: false, waiting: 0, parked: [], locale: Locale(identifier: "en_US"),
+            timeZone: TimeZone(identifier: "UTC")!)
         #expect(status.title == "Your Substrate")
         #expect(status.sentence == "Up to date.")
         let about = AboutPresentation.present(appName: "Notes", version: "1.2.0-pre.3 (41)", channel: "pre", offered: nil)
@@ -421,26 +472,30 @@ struct LinkControllerTests {
     let server = URL(string: "https://ada.example.com")!
     let words = StatusWords(app: "Substrate Tasks", device: "this iPhone", kept: "tasks")
 
-    func environment(folder: RepositoryFolder? = nil, transport: any HTTPTransport = StubTransport(),
-                     connectivity: ScriptedConnectivity = ScriptedConnectivity(), clock: TestClock = TestClock()) -> AppEnvironment
-    {
+    func environment(
+        folder: RepositoryFolder? = nil, transport: any HTTPTransport = StubTransport(),
+        connectivity: ScriptedConnectivity = ScriptedConnectivity(), clock: TestClock = TestClock()
+    ) -> AppEnvironment {
         var environment = AppEnvironment.testing(clock: clock, transport: transport)
         environment.devices.connectivity = connectivity
         environment.folder = folder
         return environment
     }
 
-    func link(_ storage: MemoryStorage, packages: [String: Int] = ["substrate.reamde.dev/tasks": 2],
-              outbox: Outbox? = nil) -> LinkController<NoApp>
-    {
-        LinkController(manifest: ScreenFixtures.manifest, sessions: SessionStore(storage: storage), outbox: outbox, packages: packages,
-                       words: words)
+    func link(
+        _ storage: MemoryStorage, packages: [String: Int] = ["substrate.reamde.dev/tasks": 2],
+        outbox: Outbox? = nil
+    ) -> LinkController<NoApp> {
+        LinkController(
+            manifest: ScreenFixtures.manifest, sessions: SessionStore(storage: storage), outbox: outbox, packages: packages,
+            words: words)
     }
 
     func signedIn() throws -> MemoryStorage {
         let storage = MemoryStorage()
-        let session = Session(server: server, repository: "ada.example.com", secret: secret, clientID: "https://tasks.example.com/client.json",
-                              scopes: ["read:*"])
+        let session = Session(
+            server: server, repository: "ada.example.com", secret: secret, clientID: "https://tasks.example.com/client.json",
+            scopes: ["read:*"])
         try SessionStore(storage: storage).save(session)
         return storage
     }
@@ -458,7 +513,8 @@ struct LinkControllerTests {
         #expect(presented.repository?.server == LabeledValue("Server", "ada.example.com"))
         #expect(presented.app == NoApp.State())
         let state = await harness.state
-        let encoded = String(decoding: try JSONEncoder().encode(presented), as: UTF8.self)
+        let encoded =
+            String(decoding: try JSONEncoder().encode(presented), as: UTF8.self)
             + String(decoding: try JSONEncoder().encode(state), as: UTF8.self)
         #expect(!encoded.contains(secret))
     }
@@ -555,8 +611,9 @@ struct LinkControllerTests {
         let folder = try RepositoryFolder(root: temporaryFolder())
         let outbox = Outbox(folder: folder)
         let clock = TestClock()
-        let harness = ControllerHarness(link(try signedIn(), packages: [:], outbox: outbox), clock: clock,
-                                        environment: environment(folder: folder, transport: scripted, clock: clock))
+        let harness = ControllerHarness(
+            link(try signedIn(), packages: [:], outbox: outbox), clock: clock,
+            environment: environment(folder: folder, transport: scripted, clock: clock))
         try await harness.until { await $0.presentation.status.sentence == "Up to date." }
         try await outbox.enqueue([OutboxEntry(method: .put, kind: "substrate.reamde.dev/tasks/task", recordID: "t1")])
         // Queued: the status says so, and a flush started on its own.
@@ -654,8 +711,9 @@ struct LinkTreeTests {
     let words = StatusWords(app: "Substrate Tasks", device: "this iPhone", kept: "notes")
 
     func harness(_ app: Notes) -> ControllerHarness<LinkController<Notes>> {
-        let link = LinkController(app: app, manifest: ScreenFixtures.manifest, sessions: SessionStore(storage: MemoryStorage()),
-                                  words: words)
+        let link = LinkController(
+            app: app, manifest: ScreenFixtures.manifest, sessions: SessionStore(storage: MemoryStorage()),
+            words: words)
         return ControllerHarness(link, performsEffects: false)
     }
 
@@ -664,8 +722,10 @@ struct LinkTreeTests {
         // At open, the app was told the link's first snapshot.
         #expect(await harness.presentation.app?.phases == [.signedOut])
         harness.clearTrace()
-        await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
-                                      unrevoked: [], generation: 2))
+        await harness.deliver(
+            .loaded(
+                session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
+                unrevoked: [], generation: 2))
         let presented = await harness.presentation
         #expect(presented.app?.phases == [.signedOut, .signedIn])
         #expect(presented.app?.generation == 2)
@@ -675,8 +735,10 @@ struct LinkTreeTests {
 
     @Test func aRequestAnswered401InTheAppEndsTheLinksAccess() async throws {
         let harness = harness(Notes(refusal: .accessEnded))
-        await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
-                                      unrevoked: [], generation: 0))
+        await harness.deliver(
+            .loaded(
+                session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
+                unrevoked: [], generation: 0))
         try await harness.runtime.send(Notes.Command.fetch, to: LinkController<Notes>.appPath)
         let presented = await harness.presentation
         #expect(presented.snapshot.phase == .accessEnded)
@@ -685,15 +747,19 @@ struct LinkTreeTests {
         // And the app heard the ended access in the same step.
         #expect(presented.app?.phases.last == .accessEnded)
         // A new sign-in clears it.
-        await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
-                                      unrevoked: [], generation: 0))
+        await harness.deliver(
+            .loaded(
+                session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
+                unrevoked: [], generation: 0))
         #expect(await harness.presentation.snapshot.phase == .signedIn)
     }
 
     @Test func aRequestAnswered403InTheAppAsksForApprovalAndChecksAgain() async throws {
         let harness = harness(Notes(refusal: .needsApproval))
-        await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
-                                      unrevoked: [], generation: 0))
+        await harness.deliver(
+            .loaded(
+                session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
+                unrevoked: [], generation: 0))
         harness.clearTrace()
         try await harness.runtime.send(Notes.Command.fetch, to: LinkController<Notes>.appPath)
         #expect(harness.effects == [.check])
@@ -703,8 +769,10 @@ struct LinkTreeTests {
     @Test func aJournalTheAppCannotWriteIsAChangeNotKept() async throws {
         let journal = MemoryJournal<Notes.Event, Notes.State>()
         let harness = harness(Notes(journal: journal))
-        await harness.deliver(.loaded(session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
-                                      unrevoked: [], generation: 0))
+        await harness.deliver(
+            .loaded(
+                session: SessionFacts(server: server, repository: "ada.example.com", scopes: ["read:*"]),
+                unrevoked: [], generation: 0))
         journal.failWrites(with: Refused(description: "No space left"))
         try await harness.runtime.send(Notes.Command.write("milk"), to: LinkController<Notes>.appPath)
         let status = await harness.presentation.status
@@ -733,9 +801,10 @@ struct ScreenFixtureTests {
 
     @Test func theStatesAnAppShowsAreEachAFixture() {
         let names = Set(ScreenFixtures.all.map(\.name))
-        for name in ["status-ends-soon", "status-not-kept", "status-server-too-old", "status-preparing", "status-packages-behind",
-                     "connect-password", "connect-browser-waiting", "connect-sign-in-failed", "settings-journal-problem"]
-        {
+        for name in [
+            "status-ends-soon", "status-not-kept", "status-server-too-old", "status-preparing", "status-packages-behind",
+            "connect-password", "connect-browser-waiting", "connect-sign-in-failed", "settings-journal-problem",
+        ] {
             #expect(names.contains(name), "\(name)")
         }
     }

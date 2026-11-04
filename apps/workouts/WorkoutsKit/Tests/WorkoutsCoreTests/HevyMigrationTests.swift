@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import WorkoutsCore
 
 /// A migration from Hevy keeps what the account holds: each workout,
@@ -9,34 +10,41 @@ import Testing
 struct HevyMigrationTests {
     let london = TimeZone(identifier: "Europe/London")!
 
-    func set(_ index: Int, _ type: String = "normal", kg: Double? = nil, reps: Int? = nil, seconds: Double? = nil,
-             metric: Double? = nil, range: HevyAPI.RepRange? = nil) -> HevyAPI.Set
-    {
-        HevyAPI.Set(index: index, type: type, weightKg: kg, reps: reps, distanceMeters: nil, durationSeconds: seconds, rpe: nil,
-                    customMetric: metric, repRange: range)
+    func set(
+        _ index: Int, _ type: String = "normal", kg: Double? = nil, reps: Int? = nil, seconds: Double? = nil,
+        metric: Double? = nil, range: HevyAPI.RepRange? = nil
+    ) -> HevyAPI.Set {
+        HevyAPI.Set(
+            index: index, type: type, weightKg: kg, reps: reps, distanceMeters: nil, durationSeconds: seconds, rpe: nil,
+            customMetric: metric, repRange: range)
     }
 
-    func exercise(_ index: Int, _ title: String, _ template: String, superset: Int? = nil, rest: Int? = nil, notes: String? = nil,
-                  _ sets: [HevyAPI.Set]) -> HevyAPI.Exercise
-    {
-        HevyAPI.Exercise(index: index, title: title, notes: notes, exerciseTemplateId: template, supersetId: superset, restSeconds: rest,
-                         sets: sets)
+    func exercise(
+        _ index: Int, _ title: String, _ template: String, superset: Int? = nil, rest: Int? = nil, notes: String? = nil,
+        _ sets: [HevyAPI.Set]
+    ) -> HevyAPI.Exercise {
+        HevyAPI.Exercise(
+            index: index, title: title, notes: notes, exerciseTemplateId: template, supersetId: superset, restSeconds: rest,
+            sets: sets)
     }
 
-    func workout(_ id: String, title: String = "Push", start: String = "2026-10-30T13:43:00+00:00", end: String = "2026-10-30T14:30:00+00:00",
-                 routine: String? = nil, _ exercises: [HevyAPI.Exercise]) -> HevyAPI.Workout
-    {
+    func workout(
+        _ id: String, title: String = "Push", start: String = "2026-10-30T13:43:00+00:00", end: String = "2026-10-30T14:30:00+00:00",
+        routine: String? = nil, _ exercises: [HevyAPI.Exercise]
+    ) -> HevyAPI.Workout {
         HevyAPI.Workout(id: id, title: title, routineId: routine, description: nil, startTime: start, endTime: end, exercises: exercises)
     }
 
-    func plan(_ export: HevyAPI.Export, exercises: [ExerciseID: Exercise] = [:], routines: [RoutineID: Routine] = [:],
-              history: [SessionRecords] = [], pairs: HevyImport.PairedWeights = .each) throws -> HevyImport.Plan
-    {
-        HevyImport.plan(export, exercises: exercises, routines: routines, history: history, deleted: [], timeZone: london, adapter: "x@1",
-                        library: try ExerciseLibrary.bundled().catalog().exercises, pairs: pairs)
+    func plan(
+        _ export: HevyAPI.Export, exercises: [ExerciseID: Exercise] = [:], routines: [RoutineID: Routine] = [:],
+        history: [SessionRecords] = [], pairs: HevyImport.PairedWeights = .each
+    ) throws -> HevyImport.Plan {
+        HevyImport.plan(
+            export, exercises: exercises, routines: routines, history: history, deleted: [], timeZone: london, adapter: "x@1",
+            library: try ExerciseLibrary.bundled().catalog().exercises, pairs: pairs)
     }
 
-    let press = "7EB3F7C3" // Chest Press (Machine) in Hevy
+    let press = "7EB3F7C3"  // Chest Press (Machine) in Hevy
 
     @Test("two workouts in one minute are two sessions, and an import in any order finds what it wrote")
     func workoutIdentity() throws {
@@ -52,8 +60,9 @@ struct HevyMigrationTests {
 
     @Test("the API's instant is kept through the autumn hour that repeats")
     func daylightSaving() throws {
-        let w = workout("D", start: "2026-10-25T01:30:00+00:00", end: "2026-10-25T02:10:00+00:00",
-                        [exercise(0, "Chest Press (Machine)", press, [set(0, kg: 50, reps: 10)])])
+        let w = workout(
+            "D", start: "2026-10-25T01:30:00+00:00", end: "2026-10-25T02:10:00+00:00",
+            [exercise(0, "Chest Press (Machine)", press, [set(0, kg: 50, reps: 10)])])
         let session = try #require(try plan(HevyAPI.Export(workouts: [w])).sessions.first).session
         #expect(session.at == ISO8601DateFormatter().date(from: "2026-10-25T01:30:00Z"))
         #expect(session.endsAt == ISO8601DateFormatter().date(from: "2026-10-25T02:10:00Z"))
@@ -76,10 +85,12 @@ struct HevyMigrationTests {
 
     @Test("two of the account's exercises with one name are two exercises, each with its own sets")
     func templateIdentity() throws {
-        let reps = HevyAPI.Template(id: "c-1", title: "Press", type: "reps_only", primaryMuscleGroup: "chest", secondaryMuscleGroups: [],
-                                    equipment: "none", isCustom: true)
-        let loaded = HevyAPI.Template(id: "c-2", title: "Press", type: "weight_reps", primaryMuscleGroup: "shoulders",
-                                      secondaryMuscleGroups: [], equipment: "dumbbell", isCustom: true)
+        let reps = HevyAPI.Template(
+            id: "c-1", title: "Press", type: "reps_only", primaryMuscleGroup: "chest", secondaryMuscleGroups: [],
+            equipment: "none", isCustom: true)
+        let loaded = HevyAPI.Template(
+            id: "c-2", title: "Press", type: "weight_reps", primaryMuscleGroup: "shoulders",
+            secondaryMuscleGroups: [], equipment: "dumbbell", isCustom: true)
         let w = workout("W", [exercise(0, "Press", "c-1", [set(0, reps: 12)]), exercise(1, "Press", "c-2", [set(0, kg: 50, reps: 8)])])
         let result = try plan(HevyAPI.Export(workouts: [w], templates: ["c-1": reps, "c-2": loaded]))
         #expect(Set(result.exercises.map(\.id.rawValue)) == ["press", "press-2"])
@@ -89,21 +100,26 @@ struct HevyMigrationTests {
 
     @Test("an account's own exercise comes in even when no workout or routine names it")
     func unusedTemplate() throws {
-        let idle = HevyAPI.Template(id: "c-9", title: "Neck Curl", type: "reps_only", primaryMuscleGroup: "neck", secondaryMuscleGroups: [],
-                                    equipment: "none", isCustom: true)
+        let idle = HevyAPI.Template(
+            id: "c-9", title: "Neck Curl", type: "reps_only", primaryMuscleGroup: "neck", secondaryMuscleGroups: [],
+            equipment: "none", isCustom: true)
         let result = try plan(HevyAPI.Export(templates: ["c-9": idle]))
         #expect(result.exercises.map(\.name) == ["Neck Curl"])
     }
 
     @Test("a routine keeps its rep ranges, a drop's reps and step, and a rest of none")
     func routineTargets() throws {
-        let routine = HevyAPI.Routine(id: "R", title: "Push", folderId: nil, notes: nil, exercises: [
-            exercise(0, "Chest Press (Machine)", press, rest: 0, [
-                set(0, kg: 60, range: HevyAPI.RepRange(start: 8, end: 12)),
-                set(1, "dropset", kg: 45, reps: 10),
-                set(2, "dropset", kg: 30, reps: 12),
-            ]),
-        ])
+        let routine = HevyAPI.Routine(
+            id: "R", title: "Push", folderId: nil, notes: nil,
+            exercises: [
+                exercise(
+                    0, "Chest Press (Machine)", press, rest: 0,
+                    [
+                        set(0, kg: 60, range: HevyAPI.RepRange(start: 8, end: 12)),
+                        set(1, "dropset", kg: 45, reps: 10),
+                        set(2, "dropset", kg: 30, reps: 12),
+                    ])
+            ])
         let slot = try #require(try plan(HevyAPI.Export(routines: [routine])).routines.first?.slots.first)
         #expect(slot.setRest == 0)
         let head = try #require(slot.sets.first)
@@ -114,10 +130,12 @@ struct HevyMigrationTests {
     @Test("an empty workout and an exercise with no sets come through, notes and all; floors are kept in the set's notes")
     func emptiesAndMetrics() throws {
         let empty = workout("E", start: "2026-10-01T08:00:00+00:00", end: "2026-10-01T08:30:00+00:00", [])
-        let some = workout("S", [
-            exercise(0, "Chest Press (Machine)", press, notes: "seat 4", []),
-            exercise(1, "Stair Machine (Floors)", "STAIRS", [set(0, seconds: 600, metric: 42)]),
-        ])
+        let some = workout(
+            "S",
+            [
+                exercise(0, "Chest Press (Machine)", press, notes: "seat 4", []),
+                exercise(1, "Stair Machine (Floors)", "STAIRS", [set(0, seconds: 600, metric: 42)]),
+            ])
         let result = try plan(HevyAPI.Export(workouts: [empty, some]))
         #expect(result.sessions.count == 2)
         let blank = try #require(result.sessions.first { $0.session.id == "hevy-e" })
@@ -142,12 +160,14 @@ struct HevyMigrationTests {
     @Test("body measurements come in whole, and a session takes the latest body mass on or before its day")
     func bodyMeasurements() throws {
         let entries = [
-            HevyAPI.BodyMeasurement(id: 7, date: "2026-10-01", weightKg: 71.029, leanMassKg: nil, fatPercent: 13.8, neckCm: nil, shoulderCm: nil,
-                                    chestCm: nil, leftBicepCm: nil, rightBicepCm: nil, leftForearmCm: nil, rightForearmCm: nil, abdomen: nil,
-                                    waist: 85.1, hips: nil, leftThigh: nil, rightThigh: nil, leftCalf: nil, rightCalf: nil),
-            HevyAPI.BodyMeasurement(id: 8, date: "2026-11-01", weightKg: 70, leanMassKg: nil, fatPercent: nil, neckCm: nil, shoulderCm: nil,
-                                    chestCm: nil, leftBicepCm: nil, rightBicepCm: nil, leftForearmCm: nil, rightForearmCm: nil, abdomen: nil,
-                                    waist: nil, hips: nil, leftThigh: nil, rightThigh: nil, leftCalf: nil, rightCalf: nil),
+            HevyAPI.BodyMeasurement(
+                id: 7, date: "2026-10-01", weightKg: 71.029, leanMassKg: nil, fatPercent: 13.8, neckCm: nil, shoulderCm: nil,
+                chestCm: nil, leftBicepCm: nil, rightBicepCm: nil, leftForearmCm: nil, rightForearmCm: nil, abdomen: nil,
+                waist: 85.1, hips: nil, leftThigh: nil, rightThigh: nil, leftCalf: nil, rightCalf: nil),
+            HevyAPI.BodyMeasurement(
+                id: 8, date: "2026-11-01", weightKg: 70, leanMassKg: nil, fatPercent: nil, neckCm: nil, shoulderCm: nil,
+                chestCm: nil, leftBicepCm: nil, rightBicepCm: nil, leftForearmCm: nil, rightForearmCm: nil, abdomen: nil,
+                waist: nil, hips: nil, leftThigh: nil, rightThigh: nil, leftCalf: nil, rightCalf: nil),
         ]
         let w = workout("M", [exercise(0, "Chest Press (Machine)", press, [set(0, kg: 50, reps: 10)])])
         let result = try plan(HevyAPI.Export(workouts: [w], measurements: entries))
@@ -163,12 +183,14 @@ struct HevyMigrationTests {
         let library = try ExerciseLibrary.bundled().catalog().exercises
         var renamed = try #require(library["lat-pulldown-cable"])
         renamed.name = "Pulldown, the blue cable"
-        let file = try HevyCSV.read("""
-        title,start_time,end_time,description,exercise_title,superset_id,exercise_notes,set_index,set_type,weight_kg,reps,distance_km,duration_seconds,rpe
-        "Pull","1 Nov 2026, 09:00","1 Nov 2026, 10:00","","Lat Pulldown (Cable)",,"",0,"normal",40,12,,,
-        """)
-        let result = HevyImport.plan(file, exercises: [renamed.id: renamed], history: [], deleted: [], timeZone: london, adapter: "x@1",
-                                     library: library)
+        let file = try HevyCSV.read(
+            """
+            title,start_time,end_time,description,exercise_title,superset_id,exercise_notes,set_index,set_type,weight_kg,reps,distance_km,duration_seconds,rpe
+            "Pull","1 Nov 2026, 09:00","1 Nov 2026, 10:00","","Lat Pulldown (Cable)",,"",0,"normal",40,12,,,
+            """)
+        let result = HevyImport.plan(
+            file, exercises: [renamed.id: renamed], history: [], deleted: [], timeZone: london, adapter: "x@1",
+            library: library)
         #expect(result.exercises.isEmpty)
         #expect(result.sessions.first?.sets.first?.exercise == "lat-pulldown-cable")
     }

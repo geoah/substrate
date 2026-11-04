@@ -98,11 +98,13 @@ final class ConsoleSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     private func answer(_ task: any WKURLSchemeTask, url: URL, status: Int, type: String, body: Data) {
-        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: [
-            "Content-Type": type,
-            "Content-Length": String(body.count),
-            "Cache-Control": "no-cache",
-        ])!
+        let response = HTTPURLResponse(
+            url: url, statusCode: status, httpVersion: "HTTP/1.1",
+            headerFields: [
+                "Content-Type": type,
+                "Content-Length": String(body.count),
+                "Cache-Control": "no-cache",
+            ])!
         task.didReceive(response)
         task.didReceive(body)
         task.didFinish()

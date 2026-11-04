@@ -35,7 +35,7 @@ extension DoneSet {
         if let rpe { return EffectiveRPE(value: min(max(rpe, 6), 10), logged: true) }
         if kind == .failure || reachedFailure { return EffectiveRPE(value: 10, logged: false) }
         if let repsMin = target.repsMin, let reps = effectiveReps, reps < repsMin {
-            return EffectiveRPE(value: 10, logged: false) // it fell short; assume failure
+            return EffectiveRPE(value: 10, logged: false)  // it fell short; assume failure
         }
         return EffectiveRPE(value: target.rpe ?? defaultRPE, logged: false)
     }
@@ -73,14 +73,15 @@ extension ExerciseConfig {
     /// (03 §10.6). `bodyMass` is in the exercise unit.
     func oneRepMax(of set: DoneSet, bodyMass: Double?) -> OneRepMaxEstimate? {
         guard set.kind != .timed, isUsable(set), let reps = set.effectiveReps,
-              let space = LoadSpace(exercise: self, bodyMass: bodyMass), space.isEffective
+            let space = LoadSpace(exercise: self, bodyMass: bodyMass), space.isEffective
         else { return nil }
         let load = space.value(ofSetting: setting(of: set))
         let rpe = set.effectiveRPE(defaultRPE: defaultRPE)
         let n = Double(reps) + 10 - rpe.value
         guard load > 0, n <= 30 else { return nil }
-        return OneRepMaxEstimate(value: load / RPECurve.p(n), effort: n, effectiveLoad: load,
-                                 effectiveRPE: rpe.value, rpeLogged: rpe.logged)
+        return OneRepMaxEstimate(
+            value: load / RPECurve.p(n), effort: n, effectiveLoad: load,
+            effectiveRPE: rpe.value, rpeLogged: rpe.logged)
     }
 }
 
@@ -134,11 +135,13 @@ struct SuggestEvidence: Sendable {
                     && plausibility.accepts($0.set, inSessionAt: index)
             }
             guard !candidates.isEmpty else { continue }
-            let chosen = candidates.first { $0.ordinal == k }
+            let chosen =
+                candidates.first { $0.ordinal == k }
                 ?? candidates.filter { $0.ordinal < k }.max { $0.ordinal < $1.ordinal }
                 ?? candidates.max { $0.ordinal < $1.ordinal }!
-            return Reference(set: chosen.set, session: session,
-                             days: SuggestMath.days(from: session.start, to: now, calendar: calendar))
+            return Reference(
+                set: chosen.set, session: session,
+                days: SuggestMath.days(from: session.start, to: now, calendar: calendar))
         }
         return nil
     }

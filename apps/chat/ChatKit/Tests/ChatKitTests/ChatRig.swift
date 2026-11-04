@@ -1,5 +1,4 @@
 import Foundation
-@testable import ChatKit
 import SubstrateAPI
 import SubstrateCore
 import SubstrateDevice
@@ -7,6 +6,8 @@ import SubstrateLocal
 import SubstrateRuntime
 import SubstrateTesting
 import Testing
+
+@testable import ChatKit
 
 let origin = URL(string: "https://s.example.com")!
 let repository = "r.example.com"
@@ -18,9 +19,11 @@ func threadJSON(version: Int, status: String = "ok") -> String {
 }
 
 /// The newest-first page the transcript read answers with.
-let rowsJSON = #"{"head":10,"generation":"g","records":[{"id":"m2","kind":"substrate.reamde.dev/llm/message","version":1,"createdAt":"2026-10-31T10:00:04Z","updatedAt":"2026-10-31T10:00:04Z","properties":{"role":"assistant","content":"Hello","turn":1,"thread":{"ref":"substrate.reamde.dev/llm/thread/t1"}}},{"id":"m1","kind":"substrate.reamde.dev/llm/message","version":1,"createdAt":"2026-10-31T10:00:01Z","updatedAt":"2026-10-31T10:00:01Z","properties":{"role":"user","content":"Hi","turn":0,"thread":{"ref":"substrate.reamde.dev/llm/thread/t1"}}}]}"#
+let rowsJSON =
+    #"{"head":10,"generation":"g","records":[{"id":"m2","kind":"substrate.reamde.dev/llm/message","version":1,"createdAt":"2026-10-31T10:00:04Z","updatedAt":"2026-10-31T10:00:04Z","properties":{"role":"assistant","content":"Hello","turn":1,"thread":{"ref":"substrate.reamde.dev/llm/thread/t1"}}},{"id":"m1","kind":"substrate.reamde.dev/llm/message","version":1,"createdAt":"2026-10-31T10:00:01Z","updatedAt":"2026-10-31T10:00:01Z","properties":{"role":"user","content":"Hi","turn":0,"thread":{"ref":"substrate.reamde.dev/llm/thread/t1"}}}]}"#
 
-let agentsJSON = #"{"head":10,"generation":"g","records":[{"id":"x.example.com/pkg/helper","kind":"substrate.reamde.dev/core/agent","version":1,"createdAt":"2026-10-30T10:00:00Z","updatedAt":"2026-10-30T10:00:00Z","properties":{"description":"Helps."}}]}"#
+let agentsJSON =
+    #"{"head":10,"generation":"g","records":[{"id":"x.example.com/pkg/helper","kind":"substrate.reamde.dev/core/agent","version":1,"createdAt":"2026-10-30T10:00:00Z","updatedAt":"2026-10-30T10:00:00Z","properties":{"description":"Helps."}}]}"#
 
 let emptyPage = #"{"head":10,"generation":"g","records":[]}"#
 
@@ -63,11 +66,13 @@ struct ChatRig {
         self.scopes = scopes
         storage = ChatStorage(base: base)
         let client = SubstrateClient(server: origin, token: "secret", transport: server)
-        let environment = AppEnvironment(clock: clock, ids: SequentialIDs(), locale: Locale(identifier: "en_US"),
-                                         timeZone: TimeZone(identifier: "UTC")!, client: .fixed(client),
-                                         devices: DeviceServices(transport: server, notifications: notifications, background: background))
-        harness = ControllerHarness(ChatApp(storage: storage, preferences: preferences, platform: platform), clock: clock,
-                                    environment: environment)
+        let environment = AppEnvironment(
+            clock: clock, ids: SequentialIDs(), locale: Locale(identifier: "en_US"),
+            timeZone: TimeZone(identifier: "UTC")!, client: .fixed(client),
+            devices: DeviceServices(transport: server, notifications: notifications, background: background))
+        harness = ControllerHarness(
+            ChatApp(storage: storage, preferences: preferences, platform: platform), clock: clock,
+            environment: environment)
     }
 
     var runtime: Runtime<ChatApp> { harness.runtime }

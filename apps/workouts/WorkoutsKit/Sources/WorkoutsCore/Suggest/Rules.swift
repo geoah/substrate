@@ -31,14 +31,16 @@ struct SuggestRules: Sendable {
     /// The target RPE `R`: 10 for a failure set (03 §10.8).
     let rpe: Double
 
-    init(pending: PendingSet, exercise: ExerciseConfig, today: [DoneSet], history: [PastSession],
-         bodyMass: Double?, now: Date, calendar: Calendar)
-    {
+    init(
+        pending: PendingSet, exercise: ExerciseConfig, today: [DoneSet], history: [PastSession],
+        bodyMass: Double?, now: Date, calendar: Calendar
+    ) {
         self.pending = pending
         self.exercise = exercise
         self.today = today
-        evidence = SuggestEvidence(exercise: exercise, history: SuggestEvidence.newestFirst(history),
-                            bodyMass: exercise.bodyMassInUnit(bodyMass), now: now, calendar: calendar)
+        evidence = SuggestEvidence(
+            exercise: exercise, history: SuggestEvidence.newestFirst(history),
+            bodyMass: exercise.bodyMassInUnit(bodyMass), now: now, calendar: calendar)
         text = SuggestText(unit: exercise.unit, mode: exercise.mode)
         range = RepRange(target: pending.target, exercise: exercise)
         rpe = pending.kind == .failure ? 10 : pending.target.rpe ?? exercise.defaultRPE
@@ -79,7 +81,7 @@ struct SuggestRules: Sendable {
         let setting = exercise.setting(of: done)
         let prev = text.previous(done, setting: setting, rpe: effort)
         guard let space = LoadSpace(exercise: exercise, bodyMass: evidence.bodyMass), space.isEffective,
-              case let lw = space.value(ofSetting: setting), lw > 0, n <= 30
+            case let lw = space.value(ofSetting: setting), lw > 0, n <= 30
         else {
             // 03 §11.5: no effective load, or too far from failure to estimate.
             let r0 = Int((Double(reps) + rpe - effort.value - fatigue + 1e-6).rounded(.down))
@@ -113,8 +115,9 @@ struct SuggestRules: Sendable {
             (load, newReps, reason) = (down, r, .sessionDown)
         }
         let newSetting = space.setting(ofValue: load)
-        return Suggestion(load: newSetting, reps: newReps, targetRPE: rpe, reason: reason,
-                          text: sessionText(reason, k: k, prev: prev, new: text.set(load: newSetting, reps: newReps)))
+        return Suggestion(
+            load: newSetting, reps: newReps, targetRPE: rpe, reason: reason,
+            text: sessionText(reason, k: k, prev: prev, new: text.set(load: newSetting, reps: newReps)))
     }
 
     /// 03 §11.3: from the same set last time.
@@ -136,9 +139,9 @@ struct SuggestRules: Sendable {
         // With no body mass today, last time's stands in, so the setting keeps its load.
         let nowMass = evidence.bodyMass ?? thenMass
         guard let then = LoadSpace(exercise: exercise, bodyMass: thenMass), then.isEffective,
-              let now = LoadSpace(exercise: exercise, bodyMass: nowMass),
-              case let lp = then.value(ofSetting: setting), case let lpNow = now.value(ofSetting: setting),
-              lp > 0, lpNow > 0, n <= 30
+            let now = LoadSpace(exercise: exercise, bodyMass: nowMass),
+            case let lp = then.value(ofSetting: setting), case let lpNow = now.value(ofSetting: setting),
+            lp > 0, lpNow > 0, n <= 30
         else {
             // 03 §11.5.
             let goal = Int((Double(reps) + rpe - effort.value + 1e-6).rounded(.down)) + gain
@@ -178,15 +181,17 @@ struct SuggestRules: Sendable {
             (load, newReps, reason) = (fresh, r, .historyNewRange)
         }
         let newSetting = now.setting(ofValue: load)
-        return Suggestion(load: newSetting, reps: newReps, targetRPE: rpe, reason: reason,
-                          text: historyText(reason, prev: prev, new: text.set(load: newSetting, reps: newReps)))
+        return Suggestion(
+            load: newSetting, reps: newReps, targetRPE: rpe, reason: reason,
+            text: historyText(reason, prev: prev, new: text.set(load: newSetting, reps: newReps)))
     }
 
     /// 03 §11.5: work on the setting as logged, one step at a time. Its reasons
     /// and texts are 11.2's in session and 11.3's from history.
-    func repsOnly(setting: Double?, predicted: Int, inSession session: Bool,
-                  text explain: (Reason, String) -> String) -> Suggestion
-    {
+    func repsOnly(
+        setting: Double?, predicted: Int, inSession session: Bool,
+        text explain: (Reason, String) -> String
+    ) -> Suggestion {
         let space = LoadSpace(exercise: exercise, bodyMass: nil)
         let value = space?.value(ofSetting: setting)
         var (load, reps, reason) = (setting, predicted, session ? Reason.sessionKeep : .historyAddRep)
@@ -199,44 +204,51 @@ struct SuggestRules: Sendable {
         } else {
             reps = max(1, predicted)
         }
-        return Suggestion(load: load, reps: reps, targetRPE: rpe, reason: reason,
-                          text: explain(reason, text.set(load: load, reps: reps)))
+        return Suggestion(
+            load: load, reps: reps, targetRPE: rpe, reason: reason,
+            text: explain(reason, text.set(load: load, reps: reps)))
     }
 
     /// 03 §11.4: no evidence today and no history.
     func coldStart() -> Suggestion {
         let lo = range.lo
         guard exercise.mode != .none else {
-            return Suggestion(reps: lo, targetRPE: rpe, reason: .coldStartRoutineLoad,
-                              text: "First time; try \(text.set(load: nil, reps: lo))")
+            return Suggestion(
+                reps: lo, targetRPE: rpe, reason: .coldStartRoutineLoad,
+                text: "First time; try \(text.set(load: nil, reps: lo))")
         }
         if let planned = target.load, let space = LoadSpace(exercise: exercise, bodyMass: evidence.bodyMass) {
             let value = space.value(ofSetting: planned)
             let load = space.setting(ofValue: space.grid(around: value).floor(value))
-            return Suggestion(load: load, reps: lo, targetRPE: rpe, reason: .coldStartRoutineLoad,
-                              text: "First time; routine load, try \(text.set(load: load, reps: lo))")
+            return Suggestion(
+                load: load, reps: lo, targetRPE: rpe, reason: .coldStartRoutineLoad,
+                text: "First time; routine load, try \(text.set(load: load, reps: lo))")
         }
         if exercise.mode == .bodyweightAdded, !exercise.canAddLoad {
             // Plain bodyweight: nothing to pick.
-            return Suggestion(load: 0, reps: lo, targetRPE: rpe, reason: .coldStartRoutineLoad,
-                              text: "First time; try \(text.set(load: 0, reps: lo))")
+            return Suggestion(
+                load: 0, reps: lo, targetRPE: rpe, reason: .coldStartRoutineLoad,
+                text: "First time; try \(text.set(load: 0, reps: lo))")
         }
         let about = Int((Double(lo) + 10 - rpe + 1e-6).rounded(.down))
-        return Suggestion(load: nil, reps: lo, targetRPE: rpe, reason: .coldStartPickLoad,
-                          text: "First time: pick a load for about \(about) reps; do \(lo)")
+        return Suggestion(
+            load: nil, reps: lo, targetRPE: rpe, reason: .coldStartPickLoad,
+            text: "First time: pick a load for about \(about) reps; do \(lo)")
     }
 
     /// DESIGN §5.3: a back-off set after the working set it backs off from.
     func backoff() -> Suggestion? {
         guard pending.kind == .normal || pending.kind == .failure, let parent = pending.parent,
-              target.dropPercent != nil || target.dropStep != nil,
-              let space = LoadSpace(exercise: exercise, bodyMass: evidence.bodyMass)
+            target.dropPercent != nil || target.dropStep != nil,
+            let space = LoadSpace(exercise: exercise, bodyMass: evidence.bodyMass)
         else { return nil }
         let parentSetting = exercise.setting(of: parent)
         let parentValue = space.value(ofSetting: parentSetting)
         let grid = space.grid(around: parentValue)
-        var load = grid.floor(lighter(than: parentValue, in: space, step: target.dropStep,
-                                      fraction: target.dropPercent ?? 0))
+        var load = grid.floor(
+            lighter(
+                than: parentValue, in: space, step: target.dropStep,
+                fraction: target.dropPercent ?? 0))
         if load >= parentValue - 1e-9 { load = grid.prev(parentValue) ?? parentValue }
         // Reps from 11.2's in-session estimate of the parent, kept inside the range.
         var reps = range.lo
@@ -250,8 +262,9 @@ struct SuggestRules: Sendable {
         let newSetting = space.setting(ofValue: load)
         let by = target.dropStep.map(text.mass) ?? "\(SuggestText.percent(target.dropPercent ?? 0))%"
         let from = text.load(parentSetting) ?? ""
-        return Suggestion(load: newSetting, reps: reps, targetRPE: rpe, reason: .backoff,
-                          text: "Back-off \(by) from \(from): try \(text.set(load: newSetting, reps: reps))")
+        return Suggestion(
+            load: newSetting, reps: reps, targetRPE: rpe, reason: .backoff,
+            text: "Back-off \(by) from \(from): try \(text.set(load: newSetting, reps: reps))")
     }
 
     /// The raw lighter value a drop or back-off aims at, before rounding to the grid.
@@ -267,23 +280,25 @@ struct SuggestRules: Sendable {
     /// 03 §11.1: last time's warm-up with the same warm-up ordinal, unchanged.
     func warmup() -> Suggestion? {
         guard let newest = evidence.history.first,
-              let match = SuggestEvidence.ordinals(of: newest.sets, warmups: true)
-              .first(where: { $0.ordinal == pending.ordinal })
+            let match = SuggestEvidence.ordinals(of: newest.sets, warmups: true)
+                .first(where: { $0.ordinal == pending.ordinal })
         else { return nil }
         let done = match.set
         let setting = exercise.setting(of: done)
-        let new = done.duration != nil && done.effectiveReps == nil
+        let new =
+            done.duration != nil && done.effectiveReps == nil
             ? text.timed(load: setting, duration: done.duration)
             : text.set(load: setting, reps: done.effectiveReps)
-        return Suggestion(load: setting, reps: done.effectiveReps, duration: done.duration, targetRPE: target.rpe,
-                          reason: .warmupAsLastTime, text: "Warm-up, as last time: \(new)")
+        return Suggestion(
+            load: setting, reps: done.effectiveReps, duration: done.duration, targetRPE: target.rpe,
+            reason: .warmupAsLastTime, text: "Warm-up, as last time: \(new)")
     }
 
     /// 03 §11.7: a drop after its parent (the working set or the previous drop).
     func drop() -> Suggestion? {
         guard let parent = pending.parent,
-              let space = LoadSpace(exercise: exercise, bodyMass: evidence.bodyMass),
-              let parentSetting = exercise.setting(of: parent)
+            let space = LoadSpace(exercise: exercise, bodyMass: evidence.bodyMass),
+            let parentSetting = exercise.setting(of: parent)
         else { return nil }
         // A planned `dropReps` arrives as the drop row's fixed reps; else to failure.
         let reps = target.repsMin != nil && target.repsMin == target.repsMax ? target.repsMin : nil
@@ -292,8 +307,9 @@ struct SuggestRules: Sendable {
             // band, a suspension trainer), so the owner picks it and the
             // planned drops stay; "no lighter load" is only for a known grid.
             let rest = reps.map { "\($0) reps" } ?? "to failure"
-            return Suggestion(reps: reps, targetRPE: target.rpe, reason: .drop,
-                              text: "Drop from \(text.load(parentSetting) ?? ""): a lighter load, \(rest)")
+            return Suggestion(
+                reps: reps, targetRPE: target.rpe, reason: .drop,
+                text: "Drop from \(text.load(parentSetting) ?? ""): a lighter load, \(rest)")
         }
         let parentValue = space.value(ofSetting: parentSetting)
         let grid = space.grid(around: parentValue)
@@ -302,16 +318,18 @@ struct SuggestRules: Sendable {
         var load = grid.floor(lighter(than: parentValue, in: space, step: target.dropStep, fraction: fraction))
         if load >= parentValue - 1e-9 {
             guard let lower = grid.prev(parentValue) else {
-                return Suggestion(targetRPE: target.rpe, stop: true, reason: .dropAtMinimum,
-                                  text: "No lighter load for a drop")
+                return Suggestion(
+                    targetRPE: target.rpe, stop: true, reason: .dropAtMinimum,
+                    text: "No lighter load for a drop")
             }
             load = lower
         }
         let newSetting = space.setting(ofValue: load)
         let by = target.dropStep.map(text.mass) ?? "\(SuggestText.percent(fraction))%"
         let to = reps == nil ? "\(text.load(newSetting) ?? "") to failure" : text.set(load: newSetting, reps: reps)
-        return Suggestion(load: newSetting, reps: reps, targetRPE: target.rpe, reason: .drop,
-                          text: "Drop \(by) from \(text.load(parentSetting) ?? ""): \(to)")
+        return Suggestion(
+            load: newSetting, reps: reps, targetRPE: target.rpe, reason: .drop,
+            text: "Drop \(by) from \(text.load(parentSetting) ?? ""): \(to)")
     }
 
     /// 03 §11.6: a myo-rep mini-set; with the stop rule off (`myoStopRule` nil),
@@ -346,8 +364,9 @@ struct SuggestRules: Sendable {
         var reps = j >= 2 && rule == .repdrop ? m1 : t1
         if let total = target.myoTotalReps { reps = min(reps ?? .max, total - sum) }
         let load = exercise.setting(of: head)
-        return Suggestion(load: load, reps: reps, targetRPE: target.rpe, reason: .myoMini,
-                          text: "Mini-set \(j): \(text.set(load: load, reps: reps))")
+        return Suggestion(
+            load: load, reps: reps, targetRPE: target.rpe, reason: .myoMini,
+            text: "Mini-set \(j): \(text.set(load: load, reps: reps))")
     }
 
     /// 03 §11.8: a timed set.
@@ -359,7 +378,7 @@ struct SuggestRules: Sendable {
         var reason: Reason
         var explanation: String
         if let reference = evidence.reference(ordinal: pending.ordinal, timed: true),
-           let held = reference.set.duration
+            let held = reference.set.duration
         {
             let done = reference.set
             let effort = done.effectiveRPE(defaultRPE: exercise.defaultRPE)
@@ -370,9 +389,9 @@ struct SuggestRules: Sendable {
             let prev = text.previous(done, setting: load, rpe: effort, days: reference.days)
             let takesLoad = exercise.mode == .external || exercise.mode == .bodyweightAdded && exercise.canAddLoad
             if let hi, goal > hi, takesLoad,
-               let space = LoadSpace(exercise: exercise, bodyMass: evidence.bodyMass),
-               case let value = space.value(ofSetting: load),
-               let heavier = space.grid(around: value).next(value)
+                let space = LoadSpace(exercise: exercise, bodyMass: evidence.bodyMass),
+                case let value = space.value(ofSetting: load),
+                let heavier = space.grid(around: value).next(value)
             {
                 load = space.setting(ofValue: heavier)
                 duration = lo ?? held
@@ -388,16 +407,18 @@ struct SuggestRules: Sendable {
             load = exercise.mode == .none ? nil : target.load
             duration = lo
             reason = .timedColdStart
-            explanation = lo.map { "First time: hold for \(SuggestText.duration($0))" }
+            explanation =
+                lo.map { "First time: hold for \(SuggestText.duration($0))" }
                 ?? "First time: hold as long as form allows"
         }
         // The lifter is not asked to hold longer than they just did.
         if let latest = evidence.latest(in: today, timed: true), let heldToday = latest.set.duration,
-           heldToday < duration ?? .max
+            heldToday < duration ?? .max
         {
             duration = heldToday
             reason = .timedSession
-            explanation = "Set \(latest.ordinal) held \(SuggestText.duration(heldToday)); "
+            explanation =
+                "Set \(latest.ordinal) held \(SuggestText.duration(heldToday)); "
                 + "try \(text.timed(load: load, duration: duration))"
         }
         return Suggestion(load: load, duration: duration, targetRPE: target.rpe, reason: reason, text: explanation)

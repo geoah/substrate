@@ -18,13 +18,13 @@ public struct CivilDay: Codable, Hashable, Sendable, Comparable, CustomStringCon
     public init?(_ text: String) {
         let parts = text.split(separator: "-", omittingEmptySubsequences: false)
         guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
-              let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]),
-              (1 ... 12).contains(month), day >= 1
+            let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]),
+            (1 ... 12).contains(month), day >= 1
         else { return nil }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         guard let first = calendar.date(from: DateComponents(year: year, month: month, day: 1)),
-              let days = calendar.range(of: .day, in: .month, for: first), days.contains(day)
+            let days = calendar.range(of: .day, in: .month, for: first), days.contains(day)
         else { return nil }
         self.init(year: year, month: month, day: day)
     }

@@ -1,10 +1,11 @@
 import Foundation
-@testable import ChatKit
 import SubstrateAPI
 import SubstrateLocal
 import SubstrateRuntime
 import SubstrateTesting
 import Testing
+
+@testable import ChatKit
 
 /// What the build before ChatKit kept under `SubstrateChat/<hash>/` is read
 /// after the upgrade, where it is, and drawn before the server is asked.

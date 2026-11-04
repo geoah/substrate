@@ -1,8 +1,8 @@
 import Observation
 import SubstrateCore
-import WorkoutsCore
 import SwiftUI
 import UIKit
+import WorkoutsCore
 
 /// The session cover's own state: what is typed but not yet sent, which
 /// sheet or question is up. The session itself lives in WorkoutsCore's `SessionController`;
@@ -109,7 +109,7 @@ final class CoverModel {
             return
         }
         guard let presentation = session.presentation, let row = presentation.row(field.row),
-              let card = presentation.card(row.slot), let valueField = field.column.field
+            let card = presentation.card(row.slot), let valueField = field.column.field
         else { return }
         let current = row.cell(field.column)
         let shown = current?.isGhost == false ? current?.entered ?? current?.text : nil

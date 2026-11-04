@@ -106,7 +106,7 @@ public enum Markdown {
             }
             // A setext underline turns the paragraph above it into a heading.
             if !paragraph.isEmpty, indent < 4, !trimmed.isEmpty,
-               trimmed.allSatisfy({ $0 == "=" }) || (trimmed.allSatisfy({ $0 == "-" }) && trimmed.count >= 2)
+                trimmed.allSatisfy({ $0 == "=" }) || (trimmed.allSatisfy({ $0 == "-" }) && trimmed.count >= 2)
             {
                 let text = paragraph.joined(separator: " ")
                 paragraph = []
@@ -135,7 +135,7 @@ public enum Markdown {
                 continue
             }
             if indent < 4, let marker = listMarker(line),
-               paragraph.isEmpty || !marker.ordered || marker.number == 1
+                paragraph.isEmpty || !marker.ordered || marker.number == 1
             {
                 flush()
                 let (list, next) = parseList(lines, from: i)
@@ -144,7 +144,7 @@ public enum Markdown {
                 continue
             }
             if indent < 4, paragraph.isEmpty, i + 1 < lines.count, line.contains("|"),
-               let alignments = delimiterRow(lines[i + 1]), !alignments.isEmpty
+                let alignments = delimiterRow(lines[i + 1]), !alignments.isEmpty
             {
                 let header = cells(line)
                 var rows: [[String]] = []
@@ -191,8 +191,9 @@ public enum Markdown {
             // `***` and `- - -` are rules, not items.
             if isRule(String(rest)) { return nil }
             let spaces = rest.dropFirst().prefix(while: { $0 == " " }).count
-            return Marker(indent: indent, ordered: false, number: 0, bullet: first,
-                          content: indent + 1 + (spaces == 0 || spaces > 4 ? 1 : spaces))
+            return Marker(
+                indent: indent, ordered: false, number: 0, bullet: first,
+                content: indent + 1 + (spaces == 0 || spaces > 4 ? 1 : spaces))
         }
         let digits = rest.prefix(while: \.isNumber)
         guard !digits.isEmpty, digits.count <= 9, rest.count > digits.count else { return nil }
@@ -200,8 +201,9 @@ public enum Markdown {
         guard delimiter == "." || delimiter == ")" else { return nil }
         guard rest.count == digits.count + 1 || rest[digits.count + 1] == " " else { return nil }
         let spaces = rest.dropFirst(digits.count + 1).prefix(while: { $0 == " " }).count
-        return Marker(indent: indent, ordered: true, number: Int(String(digits)) ?? 1, bullet: delimiter,
-                      content: indent + digits.count + 1 + (spaces == 0 || spaces > 4 ? 1 : spaces))
+        return Marker(
+            indent: indent, ordered: true, number: Int(String(digits)) ?? 1, bullet: delimiter,
+            content: indent + digits.count + 1 + (spaces == 0 || spaces > 4 ? 1 : spaces))
     }
 
     private static func parseList(_ lines: [String], from start: Int) -> (MarkdownBlock, Int) {
@@ -209,7 +211,7 @@ public enum Markdown {
         var items: [MarkdownListItem] = []
         var i = start
         while i < lines.count, let marker = listMarker(lines[i]), marker.ordered == first.ordered,
-              marker.bullet == first.bullet, marker.indent < first.content
+            marker.bullet == first.bullet, marker.indent < first.content
         {
             var body = [String(lines[i].dropFirst(min(marker.content, lines[i].count)))]
             i += 1
@@ -252,7 +254,7 @@ public enum Markdown {
             var j = i
             while j < lines.count, lines[j].trimmingCharacters(in: .whitespaces).isEmpty { j += 1 }
             if j > i, j < lines.count, let next = listMarker(lines[j]), next.ordered == first.ordered,
-               next.bullet == first.bullet, next.indent < first.content
+                next.bullet == first.bullet, next.indent < first.content
             {
                 i = j
             }
@@ -307,7 +309,8 @@ public enum Markdown {
         var out: [MarkdownAlignment] = []
         for p in parts {
             guard p.contains("-") else { return nil }
-            let left = p.hasPrefix(":"), right = p.hasSuffix(":")
+            let left = p.hasPrefix(":")
+            let right = p.hasSuffix(":")
             out.append(left && right ? .center : right ? .trailing : .leading)
         }
         return out

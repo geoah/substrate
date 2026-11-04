@@ -15,7 +15,7 @@ let package = Package(
     name: "ChatKit",
     platforms: [.iOS("26.0"), .macOS("26.0")],
     products: [
-        .library(name: "ChatKit", targets: ["ChatKit"]),
+        .library(name: "ChatKit", targets: ["ChatKit"])
     ],
     dependencies: [
         .package(path: "../../kit"),
@@ -24,12 +24,15 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1"),
     ],
     targets: [
-        .target(name: "ChatKit", dependencies: kit + [
-            .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .android])),
-        ]),
+        .target(
+            name: "ChatKit",
+            dependencies: kit + [
+                .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .android]))
+            ]),
         // Resources: a cache folder as the build before ChatKit wrote it.
-        .testTarget(name: "ChatKitTests", dependencies: ["ChatKit", .product(name: "SubstrateTesting", package: "kit")] + kit,
-                    resources: [.copy("Fixtures")]),
+        .testTarget(
+            name: "ChatKitTests", dependencies: ["ChatKit", .product(name: "SubstrateTesting", package: "kit")] + kit,
+            resources: [.copy("Fixtures")]),
     ],
     swiftLanguageModes: [.v6]
 )

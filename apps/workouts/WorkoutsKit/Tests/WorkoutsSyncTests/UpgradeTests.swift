@@ -1,12 +1,13 @@
 import Foundation
-import SubstrateLocal
 import SubstrateAPI
 import SubstrateAuth
+import SubstrateCore
 import SubstrateDevice
+import SubstrateLocal
 import Testing
 import WorkoutsCore
+
 @testable import WorkoutsSync
-import SubstrateCore
 
 /// The account folder the last release left on the phone, its outbox and
 /// catalogue cache spelled `~/training/…` (decision T3): read once in the
@@ -50,9 +51,11 @@ struct UpgradeTests {
     /// its sets, its routine and the exercise, each at version 1.
     func copiedServer() throws -> MemoryRecords {
         let memory = MemoryRecords()
-        for record in try records("list-sessions") + records("list-sets") + records("routine-sample") + [WorkoutsAPI.record(try JSONDecoder()
-                .decode(JSONValue.self, from: Fixtures.data("get-exercise")))]
-        {
+        for record in try records("list-sessions") + records("list-sets") + records("routine-sample") + [
+            WorkoutsAPI.record(
+                try JSONDecoder()
+                    .decode(JSONValue.self, from: Fixtures.data("get-exercise")))
+        ] {
             memory.put(record.kind, record.id, record.properties)
         }
         memory.put(codec.kinds.routine, "day-1-strength-foundation", ["name": .string("Day 1 – Strength Foundation")])
@@ -61,8 +64,9 @@ struct UpgradeTests {
 
     func exchange(_ memory: MemoryRecords, local: [SessionRecords], outbox: Outbox) async throws -> HistoryExchange.Plan {
         let snapshot = try await ServerHistory(api: memory.api, codec: codec).snapshot()
-        return HistoryExchange.plan(server: snapshot, local: local, queued: Set(await outbox.entries.compactMap(\.session)),
-                                    versions: await outbox.versions, tombstones: [], codec: codec)
+        return HistoryExchange.plan(
+            server: snapshot, local: local, queued: Set(await outbox.entries.compactMap(\.session)),
+            versions: await outbox.versions, tombstones: [], codec: codec)
     }
 
     @Test("a queued session's writes, and every version and chain of the old package, are dropped; the file is rewritten once at format 2")
@@ -135,7 +139,10 @@ struct UpgradeTests {
         #expect(plan.uploads.map(\.id.rawValue) == [session])
         for records in plan.uploads { try await outbox.enqueue(OutboxPlan.finished(records, codec: codec)) }
 
-        guard case let .refused(words) = await outbox.flush(memory.api) else { Issue.record("not refused"); return }
+        guard case let .refused(words) = await outbox.flush(memory.api) else {
+            Issue.record("not refused")
+            return
+        }
         #expect(words.contains("refused"))
         // The routine edit met nothing to patch and waits for the owner; it holds no session back.
         #expect(await outbox.parked.map(\.recordID) == ["day-1-strength-foundation"])
@@ -169,8 +176,11 @@ struct UpgradeTests {
 
         #expect(await outbox.flush(memory.api) == .sent)
         #expect(await outbox.entries.isEmpty)
-        #expect(memory.writes == ["PUT /api/v1/\(codec.kinds.exercise)/chest-press-machine",
-                                  "PATCH /api/v1/\(codec.kinds.routine)/day-1-strength-foundation"])
+        #expect(
+            memory.writes == [
+                "PUT /api/v1/\(codec.kinds.exercise)/chest-press-machine",
+                "PATCH /api/v1/\(codec.kinds.routine)/day-1-strength-foundation",
+            ])
         let patch = try #require(memory.server.sent.last { $0.method == "PATCH" })
         #expect(patch.body?.objectValue?["ifVersion"] == nil)
         #expect(memory.get(codec.kinds.routine, "day-1-strength-foundation")?.properties["notes"] == .string("Edited on the phone before the update"))

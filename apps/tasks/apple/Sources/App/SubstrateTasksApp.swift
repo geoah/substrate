@@ -39,7 +39,7 @@ struct SubstrateTasksApp: App {
                 .updateOffer(updates)
                 .onChange(of: updates.offer?.version, initial: true) { _, version in Tasks.updateOffered(version) }
                 #if os(macOS)
-                .frame(minWidth: 760, minHeight: 480)
+            .frame(minWidth: 760, minHeight: 480)
                 #endif
         }
         .onChange(of: scenePhase, initial: true) { _, phase in

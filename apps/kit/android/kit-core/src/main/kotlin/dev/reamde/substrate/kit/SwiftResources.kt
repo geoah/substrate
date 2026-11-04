@@ -4,10 +4,8 @@ import android.content.Context
 import java.io.File
 
 /**
- * The Swift packages' resource bundles as a folder `Bundle(path:)` reads.
- * SwiftPM's `Bundle.module` looks beside `Bundle.main`, which on Android is
- * `/system/bin`, so the APK carries the bundles as assets (`swift-resources/`,
- * put there by the Swift build) and they are copied out once per install.
+ * The Swift packages' resource bundles as a folder `Bundle(path:)` reads. SwiftPM's `Bundle.module` looks beside `Bundle.main`, which on Android is
+ * `/system/bin`, so the APK carries the bundles as assets (`swift-resources/`, put there by the Swift build) and they are copied out once per install.
  */
 internal object SwiftResources {
     private const val ASSETS = "swift-resources"

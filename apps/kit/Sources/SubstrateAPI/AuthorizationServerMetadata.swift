@@ -45,10 +45,11 @@ public struct AuthorizationServerMetadata: Codable, Hashable, Sendable {
         case clientIDMetadataDocumentSupported = "client_id_metadata_document_supported"
     }
 
-    public init(issuer: String, authorizationEndpoint: URL, tokenEndpoint: URL, revocationEndpoint: URL? = nil,
-                scopesSupported: [String] = [], authorizationDetailsTypesSupported: [String] = [],
-                authorizationResponseISSParameterSupported: Bool = true)
-    {
+    public init(
+        issuer: String, authorizationEndpoint: URL, tokenEndpoint: URL, revocationEndpoint: URL? = nil,
+        scopesSupported: [String] = [], authorizationDetailsTypesSupported: [String] = [],
+        authorizationResponseISSParameterSupported: Bool = true
+    ) {
         self.issuer = issuer
         self.authorizationEndpoint = authorizationEndpoint
         self.tokenEndpoint = tokenEndpoint
@@ -69,12 +70,13 @@ public struct AuthorizationServerMetadata: Codable, Hashable, Sendable {
     /// fixed paths.
     public init(issuer server: URL, scopesSupported: [String], authorizationDetailsTypesSupported: [String] = []) {
         let base = server.absoluteString.trimmingTrailingSlashes
-        self.init(issuer: base,
-                  authorizationEndpoint: URL(string: base + "/oauth/authorize") ?? server,
-                  tokenEndpoint: URL(string: base + "/oauth/token") ?? server,
-                  revocationEndpoint: URL(string: base + "/oauth/revoke"),
-                  scopesSupported: scopesSupported,
-                  authorizationDetailsTypesSupported: authorizationDetailsTypesSupported)
+        self.init(
+            issuer: base,
+            authorizationEndpoint: URL(string: base + "/oauth/authorize") ?? server,
+            tokenEndpoint: URL(string: base + "/oauth/token") ?? server,
+            revocationEndpoint: URL(string: base + "/oauth/revoke"),
+            scopesSupported: scopesSupported,
+            authorizationDetailsTypesSupported: authorizationDetailsTypesSupported)
     }
 
     public init(from decoder: Decoder) throws {
@@ -129,8 +131,7 @@ public struct AuthorizationServerMetadata: Codable, Hashable, Sendable {
                 + "If \(named) is your server, use that address."
         }
         for endpoint in [authorizationEndpoint, tokenEndpoint] + (revocationEndpoint.map { [$0] } ?? [])
-            where !ServerAddress.sameOrigin(endpoint, issuerOrigin)
-        {
+        where !ServerAddress.sameOrigin(endpoint, issuerOrigin) {
             return "\(ServerAddress.display(issuerOrigin))'s sign-in hands on to \(ServerAddress.display(endpoint)), "
                 + "another server, so nothing is sent to it."
         }

@@ -110,21 +110,21 @@ struct ComposerBar: View {
                     .focused($focused)
                     .padding(.vertical, 11)
                     #if os(macOS)
-                    .onKeyPress(.return, phases: .down) { press in
-                        if press.modifiers.contains(.option) { return .ignored }
-                        if press.modifiers.contains(.shift) {
-                            insertNewline()
-                            return .handled
-                        }
-                        send()
+                .onKeyPress(.return, phases: .down) { press in
+                    if press.modifiers.contains(.option) { return .ignored }
+                    if press.modifiers.contains(.shift) {
+                        insertNewline()
                         return .handled
                     }
+                    send()
+                    return .handled
+                }
                     #else
-                    .onKeyPress(.return, phases: .down) { press in
-                        guard press.modifiers.contains(.command) else { return .ignored }
-                        send()
-                        return .handled
-                    }
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.command) else { return .ignored }
+                    send()
+                    return .handled
+                }
                     #endif
                 if !empty {
                     micButton
@@ -217,7 +217,7 @@ struct ComposerBar: View {
         var lower = text.count
         var upper = text.count
         if case let .selection(range)? = selection?.indices,
-           range.lowerBound >= text.startIndex, range.upperBound <= text.endIndex
+            range.lowerBound >= text.startIndex, range.upperBound <= text.endIndex
         {
             lower = text.distance(from: text.startIndex, to: range.lowerBound)
             upper = text.distance(from: text.startIndex, to: range.upperBound)

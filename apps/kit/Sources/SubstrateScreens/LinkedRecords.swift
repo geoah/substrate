@@ -79,9 +79,10 @@ public struct LinkedRecords: Equatable, Sendable {
     /// The records a read takes unless an app names another limit.
     public static let readLimit = 10000
 
-    public init(kinds: [String], cache: RecordCache?, outbox: Outbox?, words: StatusWords, line: WriteLine = WriteLine(),
-                limit: Int = LinkedRecords.readLimit)
-    {
+    public init(
+        kinds: [String], cache: RecordCache?, outbox: Outbox?, words: StatusWords, line: WriteLine = WriteLine(),
+        limit: Int = LinkedRecords.readLimit
+    ) {
         self.kinds = kinds
         self.cache = cache
         self.outbox = outbox
@@ -425,9 +426,10 @@ public struct LinkedRecords: Equatable, Sendable {
 
     /// One record read again after the watch named it, or a write of it
     /// landed: kept in the cache, its version told to the outbox.
-    private static func read(_ kind: String, _ id: String, client: SubstrateClient, cache: RecordCache?, outbox: Outbox?,
-                             words: StatusWords) async -> Read
-    {
+    private static func read(
+        _ kind: String, _ id: String, client: SubstrateClient, cache: RecordCache?, outbox: Outbox?,
+        words: StatusWords
+    ) async -> Read {
         do {
             let record = try await client.record(kind, id)
             await cache?.refreshed(kind, id, as: record)
@@ -464,7 +466,8 @@ public struct LinkedRecords: Equatable, Sendable {
         default: break
         }
         guard let limit = state.limitReached else { return nil }
-        return NoticeLine("Only the first \(limit) of your \(words.kept) are shown: \(words.app) reads no more.", symbol: .warning,
-                          tone: .caution)
+        return NoticeLine(
+            "Only the first \(limit) of your \(words.kept) are shown: \(words.app) reads no more.", symbol: .warning,
+            tone: .caution)
     }
 }

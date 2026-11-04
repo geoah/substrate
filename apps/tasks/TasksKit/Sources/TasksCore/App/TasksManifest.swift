@@ -28,22 +28,26 @@ public enum TasksManifest {
 
     /// - Parameter version: the package's floor, where the build read its
     ///   closure from a bundle of its own (Android's copied-out resources).
-    public static func manifest(clientID: String, claimedRedirect: URL? = nil, softwareVersion: String = AppManifest.softwareVersion(),
-                                version: Int = version) -> AppManifest
-    {
+    public static func manifest(
+        clientID: String, claimedRedirect: URL? = nil, softwareVersion: String = AppManifest.softwareVersion(),
+        version: Int = version
+    ) -> AppManifest {
         AppManifest(
             appName: TasksApp.appName, clientID: clientID, scopes: scopes,
             details: [AuthorizationDetail.package(TasksKinds.packageID, atLeast: version)], requirement: requirement,
             claimedRedirect: claimedRedirect, passwordFallback: .never, names: [TasksKinds.packageID: "Tasks"],
-            kindLabels: [TasksKinds.task: KindLabel(singular: "Task", plural: "Tasks"),
-                         TasksKinds.list: KindLabel(singular: "Task list", plural: "Task lists")],
+            kindLabels: [
+                TasksKinds.task: KindLabel(singular: "Task", plural: "Tasks"),
+                TasksKinds.list: KindLabel(singular: "Task list", plural: "Task lists"),
+            ],
             softwareVersion: softwareVersion)
     }
 
     /// This build's manifest: a release's stamped client id and claimed
     /// redirect, else the local client id and the loopback receiver.
     public static var current: AppManifest {
-        manifest(clientID: AppManifest.clientID(infoKey: clientIDKey, localDefault: localClientID),
-                 claimedRedirect: AppManifest.claimedRedirect(infoKey: redirectKey))
+        manifest(
+            clientID: AppManifest.clientID(infoKey: clientIDKey, localDefault: localClientID),
+            claimedRedirect: AppManifest.claimedRedirect(infoKey: redirectKey))
     }
 }

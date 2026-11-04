@@ -36,13 +36,14 @@ public struct SessionScreenPresentation: Codable, Equatable, Sendable {
     /// Journals that did not load, set aside (§2.3).
     public var setAside: [UnreadableRecord]
 
-    public init(session: SessionPresentation? = nil, state: SessionState? = nil, starting: Bool = false, finishing: Bool = false,
-                entryCheck: EntryCheckRequest? = nil, scroll: Signal<ScrollTarget> = Signal(), lastRefusal: String? = nil,
-                finishProblem: String? = nil, finishOutcomes: [UUID: String?] = [:], journalProblem: String? = nil,
-                cover: Signal<Bool> = Signal(), coverVisible: Bool = false, cue: Signal<SessionCue> = Signal(), finishFlow: Bool = false,
-                startAfterFinish: StartRequest? = nil, undo: SessionEvent.RestoreSet? = nil, alerts: NotificationPermission? = nil,
-                setAside: [UnreadableRecord] = [])
-    {
+    public init(
+        session: SessionPresentation? = nil, state: SessionState? = nil, starting: Bool = false, finishing: Bool = false,
+        entryCheck: EntryCheckRequest? = nil, scroll: Signal<ScrollTarget> = Signal(), lastRefusal: String? = nil,
+        finishProblem: String? = nil, finishOutcomes: [UUID: String?] = [:], journalProblem: String? = nil,
+        cover: Signal<Bool> = Signal(), coverVisible: Bool = false, cue: Signal<SessionCue> = Signal(), finishFlow: Bool = false,
+        startAfterFinish: StartRequest? = nil, undo: SessionEvent.RestoreSet? = nil, alerts: NotificationPermission? = nil,
+        setAside: [UnreadableRecord] = []
+    ) {
         self.session = session
         self.state = state
         self.starting = starting

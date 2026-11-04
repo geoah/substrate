@@ -49,8 +49,10 @@ public final class LiveActivities<Attributes: OngoingActivityAttributes>: Ongoin
             return
         }
         guard !dismissed.contains(activity.id), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        guard let requested = try? Activity.request(attributes: Attributes(activityID: activity.id, title: activity.title),
-                                                    content: next, pushType: nil)
+        guard
+            let requested = try? Activity.request(
+                attributes: Attributes(activityID: activity.id, title: activity.title),
+                content: next, pushType: nil)
         else { return }
         lock.withLock { lastSent[requested.id] = activity.content }
         watch(requested)
@@ -59,8 +61,7 @@ public final class LiveActivities<Attributes: OngoingActivityAttributes>: Ongoin
     public func end(_ id: String, final data: Data?, dismissAt: Date?) async {
         let state = data.flatMap(content)
         for activity in Activity<Attributes>.activities
-            where activity.attributes.activityID == id && activity.activityState != .ended && activity.activityState != .dismissed
-        {
+        where activity.attributes.activityID == id && activity.activityState != .ended && activity.activityState != .dismissed {
             lock.withLock { _ = endedHere.insert(activity.id) }
             let policy: ActivityUIDismissalPolicy = state != nil ? dismissAt.map { .after($0) } ?? .immediate : .immediate
             await Self.end(activity.id, state.map { ActivityContent(state: $0, staleDate: nil) }, policy: policy)

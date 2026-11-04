@@ -31,11 +31,12 @@ public enum Timestamp {
         }
 
         guard let year = number(0, 4), byte(4, is: "-"), let month = number(5, 2), byte(7, is: "-"),
-              let day = number(8, 2), byte(10, is: "T", "t"), let hour = number(11, 2), byte(13, is: ":"),
-              let minute = number(14, 2), byte(16, is: ":"), let second = number(17, 2)
+            let day = number(8, 2), byte(10, is: "T", "t"), let hour = number(11, 2), byte(13, is: ":"),
+            let minute = number(14, 2), byte(16, is: ":"), let second = number(17, 2)
         else { return nil }
         guard (1 ... 12).contains(month), (1 ... daysIn(month: month, year: year)).contains(day),
-              hour < 24, minute < 60, second < 61 else { return nil }
+            hour < 24, minute < 60, second < 61
+        else { return nil }
 
         var index = 19
         var fraction = 0.0
@@ -53,7 +54,7 @@ public enum Timestamp {
         if byte(index, is: "Z", "z"), index + 1 == chars.count {
             offset = 0
         } else if byte(index, is: "+", "-"), index + 6 == chars.count, byte(index + 3, is: ":"),
-                  let hours = number(index + 1, 2), let minutes = number(index + 4, 2), hours < 24, minutes < 60
+            let hours = number(index + 1, 2), let minutes = number(index + 4, 2), hours < 24, minutes < 60
         {
             offset = (hours * 3600 + minutes * 60) * (byte(index, is: "-") ? -1 : 1)
         } else {

@@ -140,10 +140,11 @@ public struct Discovery: Codable, Hashable, Sendable {
         public var authorize: String?
         public var token: String?
 
-        public init(register: String? = "/register", login: String? = "/login", tokens: String? = "/tokens",
-                    password: String? = "/password", totp: String? = "/totp",
-                    authorize: String? = nil, token: String? = nil)
-        {
+        public init(
+            register: String? = "/register", login: String? = "/login", tokens: String? = "/tokens",
+            password: String? = "/password", totp: String? = "/totp",
+            authorize: String? = nil, token: String? = nil
+        ) {
             self.register = register
             self.login = login
             self.tokens = tokens
@@ -193,11 +194,12 @@ public struct Discovery: Codable, Hashable, Sendable {
     public var endpoints: Endpoints
     public var registration: Registration
 
-    public init(versions: [APIVersion] = [APIVersion(name: "v1", status: "served")], server: Server,
-                changelog: Changelog = Changelog(horizon: 0), features: [Feature] = [],
-                surfaces: Surfaces = Surfaces(rest: Surface(endpoint: "/api/v1", compatibility: "supported")),
-                grammar: Grammar = Grammar(), endpoints: Endpoints = Endpoints(), registration: Registration = Registration())
-    {
+    public init(
+        versions: [APIVersion] = [APIVersion(name: "v1", status: "served")], server: Server,
+        changelog: Changelog = Changelog(horizon: 0), features: [Feature] = [],
+        surfaces: Surfaces = Surfaces(rest: Surface(endpoint: "/api/v1", compatibility: "supported")),
+        grammar: Grammar = Grammar(), endpoints: Endpoints = Endpoints(), registration: Registration = Registration()
+    ) {
         self.versions = versions
         self.server = server
         self.changelog = changelog

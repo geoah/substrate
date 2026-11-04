@@ -1,6 +1,6 @@
-import WorkoutsCore
 import SwiftUI
 import UIKit
+import WorkoutsCore
 
 /// A label stacked over its value, never side by side in fixed columns
 /// (the repository's UI rule; §7.9's facts, the Finish summary).
