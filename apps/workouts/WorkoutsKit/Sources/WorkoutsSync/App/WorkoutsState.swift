@@ -31,7 +31,7 @@ public extension WorkoutsApp {
         /// The account the facts below are about.
         public var account: AccountRef?
         public var package: PackageState?
-        public var syncing = false
+        public var flushing = false
         /// Why the last package check or catalogue read did not finish.
         public var problem: String?
         public var sampleState: SampleInstall.State?

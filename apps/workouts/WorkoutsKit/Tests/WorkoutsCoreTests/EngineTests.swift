@@ -1112,7 +1112,7 @@ struct EngineJournalTests {
     @Test("the V1 sync sink takes the engine's events and state")
     func syncSink() async throws {
         let replay = try ExampleReplay.run(EngineFixtures.session("sessions", EngineFixtures.fullyBody))
-        let sink: any SessionSyncSink<EventEnvelope, SessionState> = NoSync()
+        let sink: any SessionWriteSink<EventEnvelope, SessionState> = NoWrites()
         let state = try replay.script.current
         await sink.applied(try #require(replay.script.events.last), state: state)
         await sink.finished(SessionEngine.records(state, adapter: "substrate-workouts@0.1.0"))

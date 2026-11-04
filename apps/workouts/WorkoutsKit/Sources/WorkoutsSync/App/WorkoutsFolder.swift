@@ -7,7 +7,7 @@ import WorkoutsCore
 /// catalogue, the sample's and the library's standing and the routine edit
 /// not saved. Signing in elsewhere opens another; what one holds stays with
 /// that repository for its next sign-in.
-public final class WorkoutsAccount: Sendable {
+public final class WorkoutsFolder: Sendable {
     public let ref: AccountRef
     public let directory: URL
     public let outbox: Outbox?
@@ -54,24 +54,24 @@ public struct AccountRef: Codable, Hashable, Sendable {
     }
 }
 
-/// The accounts' folders, each opened once, so the outbox the link flushes
-/// and the one the app queues into are the same actor.
-public final class WorkoutsAccounts: @unchecked Sendable {
+/// The signed-in repositories' folders, each opened once, so the outbox
+/// the link flushes and the one the app queues into are the same actor.
+public final class WorkoutsFolders: @unchecked Sendable {
     /// `Application Support/Workouts/`; nil in a preview, which opens none.
     public let base: URL?
     private let lock = NSLock()
-    private var open: [String: WorkoutsAccount] = [:]
+    private var open: [String: WorkoutsFolder] = [:]
 
     public init(base: URL?) {
         self.base = base
     }
 
-    public func account(_ ref: AccountRef) -> WorkoutsAccount? {
+    public func folder(_ ref: AccountRef) -> WorkoutsFolder? {
         guard let base else { return nil }
         return lock.withLock {
             if let held = open[ref.identity] { return held }
             let directory = base.appendingPathComponent("substrate", isDirectory: true).appendingPathComponent(ref.folderName, isDirectory: true)
-            let account = WorkoutsAccount(ref: ref, directory: directory, localExercises: LocalExercises(directory: base))
+            let account = WorkoutsFolder(ref: ref, directory: directory, localExercises: LocalExercises(directory: base))
             open[ref.identity] = account
             return account
         }

@@ -113,7 +113,7 @@ final class SubstrateLink {
     /// A sync once the running one ends: a change made while one runs (an
     /// import) was not in the history it read.
     func syncAfterRunning() async {
-        await root?.until { $0.app?.syncing == false }
+        await root?.until { $0.app?.flushing == false }
         root?.send(.sync)
     }
 

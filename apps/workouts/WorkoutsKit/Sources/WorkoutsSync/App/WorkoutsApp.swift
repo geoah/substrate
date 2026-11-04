@@ -129,7 +129,7 @@ public struct WorkoutsApp: LinkedApp {
                 // Another account, or none: its facts start afresh.
                 next.account = next.signedIn
                 next.problem = nil
-                next.syncing = false
+                next.flushing = false
                 next.sampleState = nil
                 next.sampleProblem = nil
                 next.waitingRoutines = []
@@ -162,7 +162,7 @@ public struct WorkoutsApp: LinkedApp {
             for record in unreadable where !next.syncUnreadable.contains(record) { next.syncUnreadable.append(record) }
         case let .syncStarted(account):
             guard current(account) else { return state }
-            next.syncing = true
+            next.flushing = true
         case let .catalogRead(account, catalog, sample, sampleProblem):
             guard current(account) else { return state }
             show(catalog, in: &next)
@@ -188,10 +188,10 @@ public struct WorkoutsApp: LinkedApp {
             show(catalog, in: &next)
         case let .syncEnded(account, problem):
             guard current(account) else { return state }
-            next.syncing = false
+            next.flushing = false
             if let problem { next.problem = problem }
         case .refused:
-            next.syncing = false
+            next.flushing = false
         case let .outboxRead(account, waiting, conflicts):
             guard current(account) else { return state }
             next.waitingRoutines = waiting
@@ -240,7 +240,7 @@ public struct WorkoutsApp: LinkedApp {
             switch command {
             // Syncing only where the effect runs one: a package not yet
             // writable starts none, and nothing would end it.
-            case .sync: if state.canWrite { next.syncing = true }
+            case .sync: if state.canWrite { next.flushing = true }
             case .addSampleRoutine: if state.canWrite { next.addingSample = true }
             case let .saveRoutine(editor, _): if state.draft?.routine.id == editor.routine.id { next.draft = nil }
             case .dropDraft: next.draft = nil
@@ -288,7 +288,7 @@ public struct WorkoutsApp: LinkedApp {
             catalog: state.catalog, origin: state.origin, catalogFailure: state.catalogFailure, history: state.history, index: state.index,
             historyLoaded: state.historyLoaded, unreadable: unreadable, settings: state.settings, host: state.host,
             signedIn: state.signedIn != nil, canWrite: state.canWrite, writeBlockedReason: blocked,
-            canDeleteRoutines: state.signedIn != nil && (state.package.map(\.writable) ?? true), syncing: state.syncing,
+            canDeleteRoutines: state.signedIn != nil && (state.package.map(\.writable) ?? true), flushing: state.flushing,
             problem: state.problem, sampleState: state.sampleState, sampleProblem: state.sampleProblem, addingSample: state.addingSample,
             waitingRoutines: state.waitingRoutines, conflicts: state.conflicts, draft: state.draft, finished: state.finished,
             outcomes: state.outcomes, hiddenSessions: state.hidden, session: session)

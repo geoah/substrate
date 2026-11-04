@@ -293,8 +293,8 @@ public protocol CatalogSource: Sendable {
 }
 
 /// Told about every change the session controller applies, in order.
-/// V1: `NoSync`, which does nothing. V2: the write planner, which turns each into outbox entries.
-public protocol SessionSyncSink: Sendable {
+/// V1: `NoWrites`, which does nothing. V2: the write planner, which turns each into outbox entries.
+public protocol SessionWriteSink: Sendable {
     func applied(_ event: SessionEvent, state: SessionState) async
     func finished(_ records: SessionRecords) async
     func discarded(_ sessionID: SessionID) async
@@ -336,7 +336,7 @@ apps/apple/
                     the command, event, effect, state, transient and presentation types, one per file
       Settings/     WorkoutsSettings.swift SessionLayout.swift
       Store/        HistoryStore.swift HistoryIndex.swift HealthQueueFile.swift LocalExercises.swift
-      Seams/        CatalogSource.swift SessionSyncSink.swift HistorySource.swift BundledCatalog.swift
+      Seams/        CatalogSource.swift SessionWriteSink.swift HistorySource.swift BundledCatalog.swift
       Resources/Bundled/  exercises.json routines.json          (generated)
     Tests/WorkoutsCoreTests/
       Fixtures/examples/*.json  Fixtures/kinds.json             (generated)

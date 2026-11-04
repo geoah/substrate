@@ -127,12 +127,12 @@ extension WorkoutsApp {
     // MARK: The work
 
     public func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
-        let accounts = environment.accounts
+        let folders = environment.folders
         let client = environment.client
         let directory = directory
         let codec = codec
         @Sendable func api() async -> WorkoutsAPI? { await client.current().map { WorkoutsAPI(client: $0) } }
-        @Sendable func folder(_ ref: AccountRef) -> WorkoutsAccount? { accounts?.account(ref) }
+        @Sendable func folder(_ ref: AccountRef) -> WorkoutsFolder? { folders?.folder(ref) }
 
         switch effect {
         case .loadBundled:
@@ -422,14 +422,14 @@ extension WorkoutsApp {
     }
 
     /// The routines read again into the account's cache, laying what waits over them.
-    static func refresh(_ api: WorkoutsAPI, account: WorkoutsAccount, codec: RecordCodec) async throws -> Catalog {
+    static func refresh(_ api: WorkoutsAPI, account: WorkoutsFolder, codec: RecordCodec) async throws -> Catalog {
         let outbox = account.outbox
         return try await account.remote.refresh(api, hiding: { await outbox?.waitingDeletes ?? [] },
                                                 waiting: { await outbox?.waitingRoutines(codec: codec) ?? [:] })
     }
 
     /// Routines read again from the server, one by one, into the cache.
-    static func reread(_ ids: [RoutineID], api: WorkoutsAPI, account: WorkoutsAccount, codec: RecordCodec) async -> Catalog? {
+    static func reread(_ ids: [RoutineID], api: WorkoutsAPI, account: WorkoutsFolder, codec: RecordCodec) async -> Catalog? {
         var catalog: Catalog?
         for id in ids {
             guard let record = try? await api.get(codec.kinds.routine, id.rawValue) else { continue }
@@ -443,7 +443,7 @@ extension WorkoutsApp {
     /// the server after this phone sent them are removed here, all of it in
     /// the history files first; sessions and exercises the server never held
     /// are queued, and sessions deleted on the phone purged there.
-    static func exchange(_ api: WorkoutsAPI, account: WorkoutsAccount, outbox: Outbox, local: [HistoryEntry], hidden: Set<String>,
+    static func exchange(_ api: WorkoutsAPI, account: WorkoutsFolder, outbox: Outbox, local: [HistoryEntry], hidden: Set<String>,
                          exercises: [Exercise], directory: URL?, codec: RecordCodec) async throws -> Event
     {
         let snapshot = try await ServerHistory(api: api, codec: codec).snapshot()
