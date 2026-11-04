@@ -104,3 +104,9 @@ echo "apps:new: apps/$id, Substrate $upper_first, from apps/template"
 echo "  the core:     swift test --package-path apps/$id/${upper_first}Kit"
 echo "  the app:      mise run apple:project, then its scheme, Substrate${upper_first}"
 echo "  its package:  apps/$id/package (substrate.reamde.dev/$id), published through the authority document"
+# The template's look is grey on purpose, so an app nobody has given its own
+# colour yet is plain to see.
+echo "  its look:     it is the template's grey until you give it its own:"
+echo "                1. its accent: \"accent\" in apps/$id/app.json and apps/$id/apple/Assets.xcassets/AccentColor.colorset, the same light and dark #RRGGBB (lint:apps holds the two equal)"
+echo "                2. its icon: an entry for $id in APPS in apps/xcode/scripts/icons.mjs (a hue no app uses, a glyph in GLYPHS; docs/app-icons.md), then"
+echo "                   node apps/xcode/scripts/icons.mjs appiconset $id apps/$id/apple/Assets.xcassets/AppIcon.appiconset --mac"

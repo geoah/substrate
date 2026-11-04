@@ -43,6 +43,9 @@ export const APPS = {
   sync: { name: 'Substrate Sync', bg: ['#f2fcf8', '#d3f2e5'], hi: '#72e2bb', lo: '#0f936d', glyph: 'cycle' },
   chat: { name: 'Substrate Chat', bg: ['#f8f5ff', '#e4dcfd'], hi: '#bba2ff', lo: '#6a3fe0', glyph: 'chat' },
   tasks: { name: 'Substrate Tasks', bg: ['#fff5f7', '#ffdbe4'], hi: '#ff9bb2', lo: '#d92c58', glyph: 'checklist' },
+  // What `mise run apps:new` copies: grey, so an app nobody has given its own
+  // colour yet looks unfinished rather than like Tasks.
+  template: { name: 'Substrate Template', bg: ['#f7f8fa', '#e1e5ea'], hi: '#aab4c0', lo: '#5f6b7a', glyph: 'box' },
 };
 
 // Glyphs are drawn around (512, 470), about 560 units across. Each part has a
@@ -81,6 +84,9 @@ const GLYPHS = {
     ['front', rect(510, 330, 202, 60, 30)], ['front', rect(510, 462, 202, 60, 30)], ['front', rect(510, 594, 202, 60, 30)],
     ['front', circle(386, 492, 32)], ['front', circle(386, 624, 32)],
     ['spark', 'M332,364 L370,402 L440,322', 70]],
+  // A lidded box with a label: any app's things, until it draws its own.
+  box: () => [['back', rect(276, 330, 472, 380, 64)], ['mid', rect(240, 240, 544, 130, 52)],
+    ['front', rect(420, 450, 184, 64, 32)]],
 };
 
 // Each level's gradient (top, bottom), the rim's opacity and the spark's colour, by appearance.

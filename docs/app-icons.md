@@ -55,9 +55,14 @@ appearance.
 | Substrate Chat | a speech bubble with a spark | purple | `#f8f5ff`, `#e4dcfd` | `#bba2ff`, `#6a3fe0` |
 | Substrate Tasks | a ticked checklist card | rose | `#fff5f7`, `#ffdbe4` | `#ff9bb2`, `#d92c58` |
 | Spotter (a private repository) | a dumbbell | orange | `#fff8f2`, `#ffdfcc` | `#ffab72`, `#e3471f` |
+| The template (`apps:new`) | a lidded box | grey | `#f7f8fa`, `#e1e5ea` | `#aab4c0`, `#5f6b7a` |
 
 A new app takes a hue no other app uses, with a background pale enough that
-the glyph's deep shade reads on it.
+the glyph's deep shade reads on it. The template's grey is no hue: an app
+`mise run apps:new` makes starts with it and the template's box, and takes
+its own entry before it ships. An app's accent, app.json's `accent`, is
+its own choice in the same hue: Tasks' light accent is its deep colour,
+and the template's is too.
 
 ## Appearances
 

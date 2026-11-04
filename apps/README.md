@@ -940,6 +940,13 @@ changing the template runs it, with `apple:test:template`, before the pull
 request. A change to the template is a change to every app made from then
 on; an app already made keeps what it copied.
 
+The template has a look of its own, grey (`#5F6B7A`, dark `#A7B1BE`) and
+a lidded box for its icon, so a new app looks unfinished until it is given
+one, never like another app. `apps:new` says how in its closing lines:
+its `accent` in app.json and its `AccentColor`, one colour, and an entry
+of its own in `xcode/scripts/icons.mjs` ([app icons](../docs/app-icons.md#adding-an-app)),
+from which its AppIcon set is drawn again.
+
 ## Android
 
 The kit runs on Android under a Kotlin UI through one fixed bridge, built by
@@ -1079,7 +1086,7 @@ outside Gradle's resolution and so outside this file.
 <app>/app.json                      what names the app once: its ids, platforms, Info.plist keys, the packages it publishes and asks for, scopes, icon and feed (above)
 xcode/project.yml                   the xcodegen spec, the only project source; it includes each app's apple/targets.yml
 xcode/Shared/Updater.swift          the updater every app compiles in
-xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync, Chat and Tasks
+xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync, Chat, Tasks and the template; the Apple AppIcon sets and the Android adaptive icon
 xcode/scripts/feed.swift            a release's index.json, appcast.xml, install page and manifest, for every platform
 gradle/                             the one Gradle root of the Android build: settings, the version catalog, the wrapper, build-logic's convention plugins, swift-jnilibs.sh
 kit/android/                        the kit on Android: kit-core, kit-device, kit-ui, bridge-check, the Gallery app, the bridge's golden and the fixtures both systems draw ([its README](kit/android/README.md))
