@@ -10,11 +10,13 @@
 # asking whether ci passed for it. A pre-release goes to TestFlight from a
 # Mac, `mise run apps:testflight`.
 #
-# Two jobs, so the App Store Connect key never shares a runner with code
-# from a package registry: `console` runs pnpm and vite with a read-only
-# token and nothing else, and `upload` downloads its dist/ and runs this
-# tree's scripts and Xcode. The key is the `testflight` environment's, which
-# only main's workflows may read (.mise/reposettings.sh):
+# Two jobs, so the App Store Connect key never shares a runner with pnpm's
+# packages: `console` runs pnpm and vite with a read-only token and nothing
+# else, and `upload` downloads its dist/ and runs this tree's scripts and
+# Xcode. `upload` installs xcodegen and resolves the project's Swift packages
+# before the key and the certificates are on the runner, and builds after.
+# The key is the `testflight` environment's, which only main's workflows may
+# read (.mise/reposettings.sh):
 #
 #   SUBSTRATE_APPLE_ASC_KEY      the AuthKey_….p8's contents (Admin role)
 #   SUBSTRATE_APPLE_ASC_KEY_ID   its key id
@@ -23,13 +25,20 @@
 #   SUBSTRATE_APPLE_DISTRIBUTION_P12_PASSWORD  certificate (base64 .p12),
 #                                which signs the exports: an API key may not
 #                                use the cloud-managed one
+#   SUBSTRATE_APPLE_DEVELOPMENT_P12            an Apple Development
+#   SUBSTRATE_APPLE_DEVELOPMENT_P12_PASSWORD   certificate of the team, which
+#                                the archive is signed with before the export
+#                                signs it again; a fresh runner has none
 #
 # and its variables name the deployment, never this tree:
 #
 #   SUBSTRATE_APPLE_TEAM_ID      the team that signs the apps
 #   SUBSTRATE_APPLE_SITE_URL     the site whose callbacks the builds claim
 #   SUBSTRATE_APPLE_RUNNER       optional: the macOS runner's label, for a
-#                                self-hosted Mac (default macos-26)
+#                                self-hosted Mac (default macos-26); one
+#                                that runs nothing else and has no other user,
+#                                since a job that dies before its last step
+#                                leaves the key and the keychain behind
 #   SUBSTRATE_APPLE_XCODE        optional: the Xcode the runner selects,
 #                                /Applications/Xcode_<this>.app
 #
@@ -140,6 +149,15 @@ jobs:
           set -euo pipefail
           if [ -n "$XCODE" ]; then sudo xcode-select -s "/Applications/Xcode_$XCODE.app"; fi
           xcodebuild -version
+      # What the build downloads, before any secret is on the runner:
+      # xcodegen (at the version .mise/apple.sh names) and the project's
+      # Swift packages, into the derived data the build reads.
+      - name: prepare the project and its packages
+        run: |
+          set -euo pipefail
+          .mise/apple.sh project
+          xcodebuild -resolvePackageDependencies -project apps/xcode/Substrate.xcodeproj -scheme Substrate \
+            -derivedDataPath apps/xcode/build/dd -quiet
       # The key as a file only this job's user reads, in the runner's
       # temporary directory, which the runner empties after the job.
       - name: write the App Store Connect key
@@ -153,33 +171,42 @@ jobs:
           fi
           umask 077
           printf '%s\n' "$KEY" >"$RUNNER_TEMP/AuthKey.p8"
-      # The distribution identity in a keychain of the job's own, searched
-      # first and unlocked for codesign, with a random password nothing
-      # else reads; deleted with the key below.
-      - name: import the Apple Distribution certificate
+      # The signing identities in a keychain of the job's own, searched first
+      # and unlocked for codesign, with a random password nothing else reads;
+      # deleted with the key below.
+      - name: import the signing certificates
         env:
-          P12: ${{ secrets.SUBSTRATE_APPLE_DISTRIBUTION_P12 }}
-          P12_PASSWORD: ${{ secrets.SUBSTRATE_APPLE_DISTRIBUTION_P12_PASSWORD
+          DISTRIBUTION_P12: ${{ secrets.SUBSTRATE_APPLE_DISTRIBUTION_P12 }}
+          DISTRIBUTION_P12_PASSWORD: ${{ secrets.SUBSTRATE_APPLE_DISTRIBUTION_P12_PASSWORD
+            }}
+          DEVELOPMENT_P12: ${{ secrets.SUBSTRATE_APPLE_DEVELOPMENT_P12 }}
+          DEVELOPMENT_P12_PASSWORD: ${{ secrets.SUBSTRATE_APPLE_DEVELOPMENT_P12_PASSWORD
             }}
         run: |
           set -euo pipefail
-          if [ -z "$P12" ] || [ -z "$P12_PASSWORD" ]; then
-            echo "the testflight environment has no SUBSTRATE_APPLE_DISTRIBUTION_P12 or its password; see the comment at the top of this workflow" >&2
-            exit 1
-          fi
+          for name in DISTRIBUTION DEVELOPMENT; do
+            p12="${name}_P12" password="${name}_P12_PASSWORD"
+            if [ -z "${!p12}" ] || [ -z "${!password}" ]; then
+              echo "the testflight environment has no SUBSTRATE_APPLE_${name}_P12 or its password; see the comment at the top of this workflow" >&2
+              exit 1
+            fi
+          done
           umask 077
           keychain="$RUNNER_TEMP/signing.keychain-db"
           password="$(openssl rand -hex 24)"
-          printf '%s' "$P12" | base64 -d >"$RUNNER_TEMP/distribution.p12"
           security create-keychain -p "$password" "$keychain"
           security set-keychain-settings -lut 7200 "$keychain"
           security unlock-keychain -p "$password" "$keychain"
-          security import "$RUNNER_TEMP/distribution.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          for name in DISTRIBUTION DEVELOPMENT; do
+            p12="${name}_P12" pass="${name}_P12_PASSWORD"
+            printf '%s' "${!p12}" | base64 -d >"$RUNNER_TEMP/identity.p12"
+            security import "$RUNNER_TEMP/identity.p12" -k "$keychain" -P "${!pass}" -T /usr/bin/codesign -T /usr/bin/security
+            rm -f "$RUNNER_TEMP/identity.p12"
+          done
           security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
           existing=()
           while read -r line; do existing+=("$line"); done < <(security list-keychains -d user | sed -e 's/^ *"//' -e 's/"$//')
           security list-keychains -d user -s "$keychain" "${existing[@]}"
-          rm -f "$RUNNER_TEMP/distribution.p12"
       # The script, not `mise run apps:testflight`, whose console:build
       # would run pnpm beside the key.
       - run: .mise/apps.sh testflight stable
@@ -194,5 +221,5 @@ jobs:
       - name: remove the App Store Connect key and the signing keychain
         if: always()
         run: |
-          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/distribution.p12"
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/identity.p12"
           security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true

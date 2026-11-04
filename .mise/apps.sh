@@ -1903,6 +1903,9 @@ testflight() {
 		[ -f "$(app_json "$app")" ] || die "$app is no app: apps/$app/app.json is not there"
 		app_has "$app" ios || die "$app has no iPhone and iPad UI, so there is nothing of it for TestFlight"
 	done
+	# Every build reaches every tester the group gives it to, at once: never
+	# one of code nobody committed.
+	[ -z "$(git -C "$ROOT" status --porcelain)" ] || die "TestFlight builds are made from a clean tree; commit or set aside what is changed"
 	short="" build="" commit="" commit_full="" version=""
 	stamp "$channel"
 	run_begin

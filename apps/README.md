@@ -492,7 +492,11 @@ extension in its archive, an App Store profile the API makes (or reuses,
 named `<bundle id> App Store <certificate id>`) and installs where Xcode
 reads profiles (`appstoreconnect.swift profiles`). The machine that runs it
 needs that certificate's identity in its keychain: kept with the release's
-secrets as a `.p12`, and imported by the CI job into a keychain of its own.
+secrets as a `.p12`, and imported by the CI job into a keychain of its own,
+beside a team Apple Development certificate: the archive is signed for
+development before the export signs it again, and a fresh runner has no
+development identity of its own. A TestFlight build is made from a clean
+tree only, since every tester the group gives it to receives it at once.
 App Store Connect refuses a build number it already
 has, and the build number is the UTC time, so a rerun builds again rather
 than resume; an upload that failed partway leaves the apps before it sent.

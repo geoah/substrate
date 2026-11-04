@@ -322,12 +322,16 @@ apple_testflight_build() {
 		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build"
 		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit"
 		"SUBSTRATE_$(app_upper "$app")_CLIENT_ID=$APPLE_CLIENT"
+		# The team the site's association file was checked against, so the
+		# build is signed as the team that claims its callback.
+		DEVELOPMENT_TEAM="$SUBSTRATE_APPLE_TEAM_ID"
 		${SITE[@]+"${SITE[@]}"}
 	)
 	apple_archive "$app" "$scheme" iOS "$scratch" app-store-connect
 	APPLE_IPA="$(find "$scratch/iOS" -maxdepth 1 -name '*.ipa' | head -1)"
 	[ -n "$APPLE_IPA" ] || die "$app's App Store Connect export made no IPA"
-	entry="$(zipinfo -1 "$APPLE_IPA" | grep -E '^Payload/[^/]+\.app/Info\.plist$' | head -1)"
+	entry="$(zipinfo -1 "$APPLE_IPA" | grep -E '^Payload/[^/]+\.app/Info\.plist$' | head -1)" ||
+		die "$app's IPA holds no app"
 	unzip -p "$APPLE_IPA" "$entry" >"$plist"
 	apple_check "$app" iOS "$plist"
 }
