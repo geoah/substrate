@@ -59,8 +59,8 @@ public struct OutboxFacts: Codable, Hashable, Sendable {
     public var parked: [ParkedWrite]
     public var flushing: Bool
     public var revision: Int
-    /// Why the outbox could not be saved, or the file it could not read and
-    /// set aside.
+    /// Why the outbox could not be read or saved, or the file it could not
+    /// decode and set aside.
     public var problem: String?
 
     public init(
@@ -80,6 +80,7 @@ public struct OutboxFacts: Codable, Hashable, Sendable {
         self.init(
             state: summary.state, waiting: summary.waiting, sendable: summary.sendable, parked: summary.parked.map(ParkedWrite.init),
             flushing: summary.flushing, revision: summary.revision,
-            problem: summary.saveProblem ?? summary.unreadable.map { "The queue could not be read and was kept aside as \($0.name)." })
+            problem: summary.unavailable ?? summary.saveProblem
+                ?? summary.unreadable.map { "The queue could not be read and was kept aside as \($0.name)." })
     }
 }

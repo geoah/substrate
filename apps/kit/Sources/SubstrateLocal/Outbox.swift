@@ -12,6 +12,15 @@ import SubstrateCore
 /// while a write is in flight: an entry is found again by its id after each
 /// call, never by its position, and `reset` moves a generation the flush
 /// checks before it touches anything.
+///
+/// The file is never written over writes nobody read. At open there is one
+/// of three: no file, an empty queue; a file that does not decode, or of an
+/// older format no upgrade reads, set aside (`unreadable`) and an empty
+/// queue; or a file the device could not read (a lock, an I/O error),
+/// which stays where it is (`unavailable`). The queue then holds nothing
+/// and refuses every change, each of which reads the file again first, as
+/// a flush does, until a read succeeds; only `reset`, which forgets the
+/// queue anyway, keeps the file aside instead.
 public actor Outbox {
     /// The file's `format`. Workouts' outbox wrote this one with each batch
     /// under `session`, which an entry still reads and writes. A file at an
@@ -61,6 +70,7 @@ public actor Outbox {
     public let folder: RepositoryFolder
     public let name: String
     public let area: FolderArea
+    private let upgrade: OutboxUpgrade?
     private var file: File
     private var flushing = false
     /// Moved by `reset`: a flush that finds it moved after a call stops.
@@ -74,6 +84,10 @@ public actor Outbox {
     public private(set) var state: OutboxState = .idle
     /// The file that was there at open and could not be read, set aside.
     public private(set) var unreadable: SetAsideFile?
+    /// Why the file there could not be read, until a read again succeeds:
+    /// every change is refused meanwhile, since one saved would replace the
+    /// writes the file holds.
+    public private(set) var unavailable: String?
     /// Why the last save failed, until one succeeds.
     public private(set) var saveProblem: String?
     /// Moved by every change the app makes to the queue, never by a flush.
@@ -94,25 +108,55 @@ public actor Outbox {
         self.folder = folder
         self.name = name
         self.area = area
-        // Never an empty queue over writes nobody can read: a file that does
-        // not decode is kept beside, and said so.
-        let loaded = try? folder.load(File.self, from: name, in: area, at: now)
-        var file = loaded?.value ?? File()
-        var unreadable = loaded?.aside
-        var upgraded = false
-        if file.format < Outbox.fileFormat {
-            if let upgrade {
-                upgrade.apply(to: &file)
-                upgraded = true
-            } else {
-                unreadable = try? folder.setAside(name, in: area, at: now)
-                file = File()
-            }
+        self.upgrade = upgrade
+        do {
+            let opened = try Self.open(folder, name: name, area: area, at: now, upgrade: upgrade)
+            file = opened.file
+            unreadable = opened.aside
+        } catch {
+            file = File()
+            unavailable = Self.unavailable(error)
         }
-        self.file = file
-        self.unreadable = unreadable
-        // Written back once at this format, so the next open reads it as is.
-        if upgraded { try? Self.write(file, to: folder, name: name, area: area) }
+    }
+
+    /// The queue the file holds: an empty one where there is no file, or
+    /// where it does not decode or no upgrade reads its format, which is set
+    /// aside; one upgraded is written back once at this format, so the next
+    /// open reads it as is. Throws where the file is there and could not be
+    /// read, or could not be set aside: it stays where it is.
+    private static func open(
+        _ folder: RepositoryFolder, name: String, area: FolderArea, at now: Date, upgrade: OutboxUpgrade?
+    ) throws -> (file: File, aside: SetAsideFile?) {
+        let loaded = try folder.load(File.self, from: name, in: area, at: now)
+        guard var file = loaded.value else { return (File(), loaded.aside) }
+        guard file.format < Outbox.fileFormat else { return (file, nil) }
+        guard let upgrade else { return (File(), try folder.setAside(name, in: area, at: now)) }
+        upgrade.apply(to: &file)
+        try? write(file, to: folder, name: name, area: area)
+        return (file, nil)
+    }
+
+    private static func unavailable(_ error: any Error) -> String {
+        "The changes waiting on this device could not be read, so none is changed until they can be: \(error.localizedDescription)"
+    }
+
+    /// Reads the file again where it could not be read: the queue it holds
+    /// becomes the queue, and a flush starts on it. Answers whether the
+    /// queue can be changed now.
+    @discardableResult
+    public func readAgain(at now: Date = Date()) -> Bool {
+        guard unavailable != nil else { return true }
+        do {
+            let opened = try Self.open(folder, name: name, area: area, at: now, upgrade: upgrade)
+            file = opened.file
+            unreadable = opened.aside ?? unreadable
+            unavailable = nil
+            revision += 1
+        } catch {
+            unavailable = Self.unavailable(error)
+        }
+        announce()
+        return unavailable == nil
     }
 
     public var entries: [OutboxEntry] { file.entries }
@@ -142,7 +186,7 @@ public actor Outbox {
     public var summary: OutboxSummary {
         OutboxSummary(
             state: state, waiting: file.entries.count, parked: file.entries.filter(\.parked), sendable: sendable,
-            flushing: flushing, revision: revision, saveProblem: saveProblem, unreadable: unreadable)
+            flushing: flushing, revision: revision, saveProblem: saveProblem, unreadable: unreadable, unavailable: unavailable)
     }
 
     /// The summary now, then again each time the queue, its last flush or a
@@ -187,8 +231,9 @@ public actor Outbox {
 
     // MARK: Queueing
 
-    /// Queues the writes, kept on disk before it returns; on a failed save
-    /// nothing is queued and the error says why.
+    /// Queues the writes, kept on disk before it returns; on a failed save,
+    /// or a file that still cannot be read, nothing is queued and the error
+    /// says why.
     public func enqueue(_ entries: [OutboxEntry]) throws {
         try change { $0.entries += entries }
     }
@@ -356,8 +401,18 @@ public actor Outbox {
     }
 
     /// Forgets everything: another repository's data in this folder. A
-    /// flush in progress stops at its next step without writing.
+    /// flush in progress stops at its next step without writing. A file
+    /// that still cannot be read is set aside first, never written over;
+    /// one that cannot be set aside either stays, and the reset throws.
     public func reset() throws {
+        if !readAgain() {
+            do {
+                unreadable = try folder.setAside(name, in: area)
+                unavailable = nil
+            } catch {
+                throw OutboxNotSaved(reason: unavailable ?? error.localizedDescription)
+            }
+        }
         generation += 1
         state = .idle
         try change { $0 = File() }
@@ -371,7 +426,7 @@ public actor Outbox {
     /// Writes queued while it runs are sent in the same run.
     @discardableResult
     public func flush(_ writer: any RecordWriter) async -> OutboxState {
-        guard !flushing else { return state }
+        guard !flushing, readAgain() else { return state }
         flushing = true
         announce()
         defer {
@@ -561,8 +616,9 @@ public actor Outbox {
     /// A change the caller asked for: saved before it returns, and undone in
     /// memory when the save fails, so the queue never claims what the disk
     /// does not hold. One that `queues` moves the revision a reader starts
-    /// a flush on.
+    /// a flush on. Refused while the file cannot be read.
     private func change(queues: Bool = true, _ edit: (inout File) -> Void) throws {
+        guard readAgain() else { throw OutboxNotSaved(reason: unavailable ?? "") }
         let before = file
         edit(&file)
         do {
@@ -599,6 +655,9 @@ public actor Outbox {
     }
 
     private func save() throws {
+        // The queue in memory is not the file's while the file cannot be
+        // read: nothing saves it over the file.
+        if let unavailable { throw OutboxNotSaved(reason: unavailable) }
         do {
             try Self.write(file, to: folder, name: name, area: area)
             saveProblem = nil

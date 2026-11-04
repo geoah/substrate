@@ -32,12 +32,16 @@ public struct StoredJournal<Event: Sendable, State: Sendable>: Sendable {
 }
 
 /// The journal is there and the device could not read it (a lock, an I/O
-/// error), which a later launch may: it is left where it is, never set
-/// aside.
-public struct JournalUnavailable: Error, Sendable {
+/// error), which a later read may: it is left where it is, never set aside
+/// or written over, and what it would keep waits until it is read.
+public struct JournalUnavailable: Error, CustomStringConvertible, Sendable {
     public var reason: String
 
     public init(reason: String) {
         self.reason = reason
+    }
+
+    public var description: String {
+        "What is in progress could not be read on this device, so nothing is kept until it can be: \(reason). Try again."
     }
 }
