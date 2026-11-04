@@ -330,6 +330,14 @@ import SubstrateTesting
         #expect(browser.finished.count == 1)
         #expect(stub.requests.isEmpty)
     }
+
+    @Test func aSignInNoCallbackCameBackToInTimeIsExpiredAndSpendsNothing() async throws {
+        let stub = StubTransport()
+        let browser = ScriptedBrowser { _, _ in .expired }
+        await #expect(throws: SignInExpired.self) { try await oauth(stub, localManifest()).signIn(server: server, browser: browser) }
+        #expect(browser.finished.count == 1)
+        #expect(stub.requests.isEmpty)
+    }
 }
 
 /// Revoking is one thing for both kinds of session, and it is done only once

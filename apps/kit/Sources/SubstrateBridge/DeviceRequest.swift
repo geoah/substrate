@@ -246,5 +246,7 @@ public enum BrowserPrepared: Bridged, Equatable {
 public enum BrowserAnswer: Bridged, Equatable {
     case callback(query: [String: String])
     case cancelled
+    /// No callback came before the attempt's deadline.
+    case expired
     case failed(reason: String)
 }

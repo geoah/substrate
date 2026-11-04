@@ -28,6 +28,17 @@
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
+        <!-- Where a notification's tap lands: not exported, so no other app
+             can start it with a response of its own making; its own task,
+             so it never sits on the app's (NotificationOpened). -->
+        <activity
+            android:name="dev.reamde.substrate.kit.device.NotificationOpened"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- The sign-in page's way back to the app: browsable, on a scheme
              of the app's own id, carrying nothing (ReturnToApp). -->
         <activity

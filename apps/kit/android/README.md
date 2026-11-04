@@ -60,8 +60,11 @@ command is read with the exact reader and decoded by `ValueCoding`, so a
 **Signing in.** `BrowserSignIn` takes a local build's loopback route: it
 listens on `127.0.0.1` alone, on a port the system picks, for the one path
 Swift named, opens the owner's default browser on the approval page, and
-hands the callback's query back unchecked; `OAuthClient` holds `state`,
-`iss` and PKCE in Swift. The page the browser lands on links back to the
+hands back the query of the request carrying the page's `state`;
+`OAuthClient` holds `state`, `iss` and PKCE in Swift. Every request is
+bounded in size and time, one it cannot read or with another `state` is
+refused without ending the attempt, and an attempt no callback reaches in
+ten minutes answers `expired`. The page the browser lands on links back to the
 app. A release's claimed route is refused until the app takes its
 verified App Link (the Auth Tab), never answered through loopback. The
 kit's `SignInController` is the Connect screen as a root of its own, with
@@ -74,9 +77,11 @@ the app schedule exact alarms), armed again at every start and by
 `NotificationReceiver` after a reboot, so `pending(prefix)` answers across
 launches; one with none shows at once, and one whose instant passed is
 dropped. The permission is asked once, from the activity in front
-(`PermissionActivity`). A tap opens the app's launch activity, which hands
-its intent to `Notifications.handle`; that, an action and a dismissal are
-responses, each once, kept for the first reader. An app names its
+(`PermissionActivity`). A tap lands on `NotificationOpened`, which is not
+exported, so no other app can forge one, and which brings the app's task
+forward; an app's launcher activity reads nothing from its intent. A tap,
+an action and a dismissal are responses, each once, kept for the first
+reader. An app names its
 notifications' channel in `KitDevice.services(context, notificationChannel)`
 and may replace the status bar's mark by declaring
 `@drawable/substrate_notification`.

@@ -42,6 +42,7 @@ public struct BridgeBrowserSignIn: BrowserSignIn {
         }) {
         case let .callback(query): return .callback(query)
         case .cancelled: return .cancelled
+        case .expired: return .expired
         case let .failed(reason): throw TransportError(text: reason)
         }
     }

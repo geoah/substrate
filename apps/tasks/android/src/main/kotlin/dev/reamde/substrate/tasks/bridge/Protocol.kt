@@ -11,7 +11,7 @@ import kotlinx.serialization.json.JsonElement
 
 /** The SHA-256 of this configuration's golden. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "77da100fcdcd65fd0c694c9a0c1d5d5da72438e4201175a85104a58b660055ed"
+    public const val VALUE: String = "0c7bb701806154f26319ccc1693ca753368a239208a4bc45b1113dcd8520da8c"
 }
 
 @Serializable(with = Confirmation.Serializer::class)
@@ -304,6 +304,7 @@ public data class TasksGalleryFixture(
 @Serializable
 public data class TasksOpening(
     val fingerprint: String,
+    val debug: Boolean,
     val clientID: String? = null,
     val redirect: String? = null,
     val version: String,

@@ -2,8 +2,11 @@ package dev.reamde.substrate.kit.device
 
 import android.Manifest
 import android.app.NotificationManager
+import android.app.ActivityOptions
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.reamde.substrate.kit.bridge.NotificationPermission
@@ -15,9 +18,11 @@ import java.util.UUID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -29,7 +34,8 @@ import org.junit.runner.RunWith
  * is pending (across instances: the store is a file under no_backup/) with
  * its alarm set until it fires or is cancelled, a request replaces one of
  * its id, `pending(prefix)` lists only that prefix, and a tap is a response,
- * kept until something reads it.
+ * kept until something reads it, made only from what reached the app's own
+ * unexported `NotificationOpened`, never from an intent another app built.
  */
 @RunWith(AndroidJUnit4::class)
 class NotificationsContractTest {
@@ -56,9 +62,13 @@ class NotificationsContractTest {
 
     private fun isShown(id: String) = manager.activeNotifications.any { it.tag == prefix + id }
 
-    /** Whether [id] is shown, given the moment `notify` and `cancel` take to reach the system. */
+    /**
+     * Whether [id] is shown, given the moment `notify` and `cancel` take to
+     * reach the system: seconds on an emulator still starting the activity
+     * a tap opened.
+     */
     private fun shown(id: String, expected: Boolean = true): Boolean {
-        val until = System.currentTimeMillis() + 5_000
+        val until = System.currentTimeMillis() + 15_000
         while (isShown(id) != expected && System.currentTimeMillis() < until) Thread.sleep(50)
         return isShown(id)
     }
@@ -123,16 +133,56 @@ class NotificationsContractTest {
         assertTrue(file.readText().contains(prefix + "kept"))
     }
 
+    private fun tap(component: ComponentName, id: String) = Intent().setComponent(component)
+        .putExtra(Notifications.EXTRA_ID, prefix + id)
+        .putExtra(Notifications.EXTRA_CATEGORY, "tasks.reminder")
+        .putExtra(Notifications.EXTRA_INFO, android.os.Bundle().apply { putString("task", id) })
+
     @Test
     fun aTapIsAResponseKeptForTheFirstReader() = runBlocking {
-        val tap = Intent()
-            .putExtra(Notifications.EXTRA_ID, prefix + "tapped")
-            .putExtra(Notifications.EXTRA_CATEGORY, "tasks.reminder")
-            .putExtra(Notifications.EXTRA_INFO, android.os.Bundle().apply { putString("task", "tapped") })
-        assertTrue(notifications.handle(tap))
-        assertFalse(notifications.handle(Intent()))
+        assertTrue(notifications.handle(tap(ComponentName(context, NotificationOpened::class.java), "tapped")))
+        assertFalse(notifications.handle(Intent(context, NotificationOpened::class.java)))
         val response = withTimeout(5_000) { notifications.responses().first() }
         assertEquals(NotificationResponse(id = prefix + "tapped", category = "tasks.reminder", action = NotificationResponse.Action.Open,
                                           userInfo = mapOf("task" to "tapped")), response)
+    }
+
+    /**
+     * An app's launcher activity is exported, so any app may start it with
+     * any extras: what reaches it, or any component but the one the
+     * notifications' own intents name, is no response.
+     */
+    @Test
+    fun aTapForgedThroughTheLauncherIsNoResponse() = runBlocking {
+        val launcher = ComponentName(context.packageName, "${context.packageName}.MainActivity")
+        assertFalse(notifications.handle(tap(launcher, "forged")))
+        assertFalse(notifications.handle(tap(ComponentName("com.example.other", NotificationOpened::class.java.name), "forged")))
+        assertFalse(notifications.handle(tap(ComponentName(context, NotificationReceiver::class.java), "forged")))
+        assertNull(withTimeoutOrNull(500) { notifications.responses().first() })
+    }
+
+    @Test
+    fun theActivityATapLandsOnIsNotExported() {
+        val info = context.packageManager.getActivityInfo(ComponentName(context, NotificationOpened::class.java), 0)
+        assertFalse(info.exported)
+    }
+
+    /** A shown notification's own tap, its content intent sent, reaches the process's instance as a response. */
+    @Test
+    fun aShownNotificationsTapIsAResponse() = runBlocking {
+        val shared = Notifications.get(context)
+        shared.schedule(request("shown", null))
+        assertTrue(shown("shown"))
+        val notification = manager.activeNotifications.first { it.tag == prefix + "shown" }.notification
+        val options = if (Build.VERSION.SDK_INT >= 34) {
+            ActivityOptions.makeBasic().setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle()
+        } else {
+            null
+        }
+        notification.contentIntent.send(context, 0, null, null, null, null, options)
+        val response = withTimeout(30_000) { shared.responses().first() }
+        assertEquals(NotificationResponse(id = prefix + "shown", category = "tasks.reminder", action = NotificationResponse.Action.Open,
+                                          userInfo = mapOf("task" to "shown")), response)
+        shared.cancel(prefix + "shown")
     }
 }

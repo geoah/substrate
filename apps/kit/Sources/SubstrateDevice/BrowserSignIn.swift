@@ -28,12 +28,21 @@ public enum SignInAnswer: Hashable, Sendable {
     case callback([String: String])
     /// The person closed the sheet or the browser's page.
     case cancelled
+    /// No callback came before the attempt's deadline, past which the
+    /// server would no longer exchange its code.
+    case expired
 }
 
 /// The person cancelled a sign-in.
 public struct SignInCancelled: LocalizedError, Sendable {
     public init() {}
     public var errorDescription: String? { "Sign-in was cancelled." }
+}
+
+/// A sign-in no callback came back to in time.
+public struct SignInExpired: LocalizedError, Sendable {
+    public init() {}
+    public var errorDescription: String? { "The sign-in waited too long for your browser. Start it again." }
 }
 
 /// The owner's browser on the server's sign-in and approval page, in two

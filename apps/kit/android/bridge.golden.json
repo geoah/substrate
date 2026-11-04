@@ -195,6 +195,10 @@
           "fields": []
         },
         {
+          "name": "expired",
+          "fields": []
+        },
+        {
           "name": "failed",
           "fields": [
             {"name": "reason", "type": "String"}

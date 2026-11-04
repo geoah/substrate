@@ -6,6 +6,7 @@
 // release build of this module is unsigned, and a debug build carries the
 // debug key. Its gallery test draws Tasks' fixtures (fixtures/tasks.json)
 // on the JVM; `-Psubstrate.gallery=<dir>` writes each as a PNG there.
+import dev.reamde.substrate.gradle.requireReleaseSignIn
 import groovy.json.JsonSlurper
 
 plugins {
@@ -34,9 +35,20 @@ android {
         buildConfigField("String", "CHANNEL", quoted(release("channel")))
         buildConfigField("String", "COMMIT", quoted(release("commit")))
         buildConfigField("String", "UPDATES_URL", quoted(release("updatesURL")))
-        buildConfigField("String", "CLIENT_ID", quoted(release("clientID")))
-        buildConfigField("String", "REDIRECT", quoted(release("redirect")))
         buildConfigField("String", "SITE_HOST", quoted(release("siteHost")))
+    }
+    // The sign-in's stamp is a release's alone: a debug build signs in
+    // through loopback with the local client id, and Swift never selects
+    // loopback for a release (TasksOpening).
+    buildTypes {
+        getByName("debug") {
+            buildConfigField("String", "CLIENT_ID", quoted(""))
+            buildConfigField("String", "REDIRECT", quoted(""))
+        }
+        getByName("release") {
+            buildConfigField("String", "CLIENT_ID", quoted(release("clientID")))
+            buildConfigField("String", "REDIRECT", quoted(release("redirect")))
+        }
     }
     buildFeatures {
         compose = true
@@ -58,6 +70,11 @@ android {
         unitTests.isIncludeAndroidResources = true
     }
 }
+
+// A release signs in only through the https callback it claims, so one
+// built without an https client id and callback is refused here rather
+// than found out on a device.
+requireReleaseSignIn(clientID = release("clientID"), redirect = release("redirect"))
 
 substrateSwift {
     packageDir.set(layout.projectDirectory.dir("../TasksKit"))

@@ -81,7 +81,10 @@ whose revisions follow `TasksState.revision`. TasksKit needed nothing but
 - **`android/`** is the Gradle module `:tasks`. Its ids come from
   `app.json`; a release's `-Psubstrate.release.*` stamp sets the version
   name and code and the client id and redirect, and the module never signs
-  a release (`mise run android:release:build tasks` does). `TasksShell`
+  a release (`mise run android:release:build tasks` does). A release-type
+  build without an https client id and redirect fails before anything is
+  built (build-logic's `requireReleaseSignIn`); `mise run android:build`
+  stamps placeholders on `example.com`. `TasksShell`
   says which root a command goes to and opens them; the screens
   (`ui/`) draw the App menu with kit-ui's `AppMenu` (a navigation bar on a
   phone, a rail or a drawer wider, with one, two or three panes), the
@@ -90,10 +93,16 @@ whose revisions follow `TasksState.revision`. TasksKit needed nothing but
   that change them, the editor under the same labels, the delete-list
   question, and Settings, Status, Repository, Storage and About as
   kit-ui's `SettingsScreen` draws them.
-- **Sign-in** is a local build's loopback route, with the local client
-  id: kit-device listens on `127.0.0.1` for the one path, the owner's
-  default browser shows the approval page, and Swift checks the callback
-  (`state`, `iss`, PKCE). Android freezes an app in the background within
+- **Sign-in** is a debug build's loopback route, with the local client id:
+  kit-device listens on `127.0.0.1` for the one path, the owner's default
+  browser shows the approval page, and Swift checks the callback (`state`,
+  `iss`, PKCE). Only a debug build (`BuildConfig.DEBUG`) takes that route;
+  a release-type build never does, whatever it was stamped with. The
+  listener takes as the callback only the request carrying the attempt's
+  `state`, answers anything else (another path, another `state`, a request
+  it cannot read) without ending the attempt, bounds every request in size
+  and time, and gives up after ten minutes, the server's own limit, which
+  the connect screen says. Android freezes an app in the background within
   seconds, and a frozen app's listener takes no callback, so a short
   foreground service ("Waiting for your browser") holds the process while
   the owner approves; Android ends it after about three minutes, and a
@@ -108,9 +117,14 @@ whose revisions follow `TasksState.revision`. TasksKit needed nothing but
 - **Reminders** are kit-device's `Notifications`: each kept under
   `noBackupFilesDir` with an exact alarm (the app holds `USE_EXACT_ALARM`:
   an inexact one may come minutes late, after the app has stopped
-  planning it) until it is shown, a tap reaching the activity and, from
-  it, the app's `reminderTapped`. The permission is asked the first time
-  a task has a due date.
+  planning it) until it is shown, a tap reaching kit-device's unexported
+  `NotificationOpened` and, from it, the app's `reminderTapped`; the
+  exported launcher activity reads nothing from its intent, so no other
+  app can make a tap. The permission is asked the first time a task has a
+  due date. `USE_EXACT_ALARM` suits a sideloaded app; distributing through
+  Google Play would need `SCHEDULE_EXACT_ALARM` with the flow that asks
+  the owner for it, unless Play accepts the app's use as one that
+  qualifies for `USE_EXACT_ALARM`.
 
 `android/fixtures/tasks.json` is `TasksFixtures.all` as Swift writes it
 (`TasksAndroidTests`, `SUBSTRATE_UPDATE_FIXTURES=1` to write it again), and
@@ -128,7 +142,8 @@ mise run android:test        # its gallery check with the kit's tests
 ```
 
 On an emulator, a debug build (`apps/tasks/android/build/outputs/apk/debug/tasks-debug.apk`,
-signed with the debug key; a debug build alone allows plain HTTP) reaches
+signed with the debug key; a debug build alone allows plain HTTP, and only
+to `localhost`, `127.0.0.1` and `10.0.2.2`) reaches
 a local substrate through `adb reverse tcp:<port> tcp:<port>` at
 `http://localhost:<port>`. Not at `10.0.2.2`: a server with no
 `SUBSTRATE_PUBLIC_URL` names itself `http://` only on a loopback host, so

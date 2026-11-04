@@ -181,11 +181,26 @@ test_tasks=(:kit-core:testDebugUnitTest :kit-device:testDebugUnitTest :kit-ui:te
 while IFS= read -r task; do build_tasks+=("$task"); done < <(app_tasks assembleDebug assembleRelease)
 while IFS= read -r task; do test_tasks+=("$task"); done < <(app_tasks testDebugUnitTest)
 device_test_tasks=(:kit-device:assembleDebugAndroidTest :bridge-check:assembleDebugAndroidTest :gallery:assembleDebugAndroidTest)
+# An app's release refuses to build without an https client id and callback
+# (build-logic's requireReleaseSignIn); `build` and `lock` build every
+# release, so they stamp it with these, which name no real app.
+placeholder_stamp=("-Psubstrate.release.clientID=https://example.com/app/client.json"
+  "-Psubstrate.release.redirect=https://example.com/app/callback")
 
 cmd_build() {
   need_sdk
   need_swift
-  gradle "${build_tasks[@]}"
+  gradle "${build_tasks[@]}" "${placeholder_stamp[@]}"
+  # And unstamped, every app's release is refused before any of it is built.
+  local app out
+  for app in $(android_apps); do
+    if out=$(gradle ":$app:preReleaseBuild" 2>&1); then
+      die "apps/$app's release built without its sign-in stamp"
+    fi
+    grep -q 'A release signs in only through its claimed https callback' <<<"$out" ||
+      die "apps/$app's unstamped release failed, but not on its sign-in stamp: $out"
+    printf 'android: %s release refused without its stamp\n' "$app"
+  done
 }
 
 cmd_test() {
@@ -314,7 +329,7 @@ cmd_lock() {
   (cd apps/gradle && ./gradlew --console=plain -p build-logic dependencies --write-locks >/dev/null)
   local metadata=apps/gradle/gradle/verification-metadata.xml
   rm -f "$metadata"
-  gradle --no-configuration-cache --write-verification-metadata sha256 "${build_tasks[@]}" >/dev/null
+  gradle --no-configuration-cache --write-verification-metadata sha256 "${build_tasks[@]}" "${placeholder_stamp[@]}" >/dev/null
   gradle --no-configuration-cache --write-verification-metadata sha256 "${test_tasks[@]}" >/dev/null
   gradle --no-configuration-cache --write-verification-metadata sha256 "${device_test_tasks[@]}" >/dev/null
   local aapt2

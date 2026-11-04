@@ -70,6 +70,7 @@ class TasksShell(context: Context, val start: StartResult) {
 
     private fun opening(address: String? = prefs.getString(ADDRESS, null)) = TasksOpening(
         fingerprint = ProtocolFingerprint.VALUE,
+        debug = BuildConfig.DEBUG,
         clientID = BuildConfig.CLIENT_ID.ifEmpty { null },
         redirect = BuildConfig.REDIRECT.ifEmpty { null },
         version = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
