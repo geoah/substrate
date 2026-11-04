@@ -24,6 +24,12 @@ tasks.withType<Test>().configureEach {
     val screens = layout.projectDirectory.file("../fixtures/screens.json")
     inputs.file(screens)
     systemProperty("substrate.screens.fixtures", screens.asFile.path)
+    // KitSchemeTest reads every app's accent and kit-ui's own.
+    val apps = layout.projectDirectory.dir("../../..")
+    inputs.files(fileTree(apps) { include("*/app.json") })
+    inputs.dir(layout.projectDirectory.dir("src/main/res"))
+    systemProperty("substrate.apps", apps.asFile.canonicalPath)
+    systemProperty("substrate.kitui.res", layout.projectDirectory.dir("src/main/res").asFile.path)
     systemProperty("robolectric.pixelCopyRenderMode", "hardware")
     // Robolectric reaches a FileDescriptor's internals, which JDK 21 keeps
     // closed unless the test's JVM opens them.

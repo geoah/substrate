@@ -143,6 +143,23 @@ made of the same blocks (`KitSection` of `KitRow`s, `KitCard`,
 bar under 600 dp, a rail under 1200 dp, and a drawer of its sections
 above.
 
+**An app's colour is its accent.** `KitTheme` makes the whole Material 3
+scheme from one colour, `substrate_accent` (`KitScheme`): primary is the
+accent itself, the light value in light mode and the dark one in dark
+mode, exactly as iOS tints the app; every other role is a tone of a
+palette made from it, the containers and the secondary roles the accent's
+hue, the tertiary sixty degrees on, the surfaces barely tinted by it. A
+tone is CIELAB lightness, which fixes a colour's luminance, so contrast is
+a function of tones and holds for any accent; `KitSchemeTest` holds every
+app.json's accent to WCAG AA (each `on` role at 4.5:1, the accent as text
+on the screen's surface at 4.5:1, on a container at 3:1). kit-ui declares
+the colour as Substrate's blue (`res/values/` and `res/values-night/`),
+which the Gallery is drawn in; the `substrate.android.application`
+convention writes an app's app.json `accent` over it into
+`build/generated/substrate/accent`, so an app needs no code for its
+colour. There is no wallpaper colour: an app looks the same on every
+phone.
+
 The gallery is a check. `fixtures/screens.json` is `ScreenFixtures.all` as
 Swift writes it (`ScreenFixturesFileTests` fails while it is stale;
 `SUBSTRATE_UPDATE_FIXTURES=1` writes it again). kit-core's
