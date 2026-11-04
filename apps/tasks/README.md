@@ -142,7 +142,8 @@ mise run android:test        # its gallery check with the kit's tests
 ```
 
 On an emulator, a debug build (`apps/tasks/android/build/outputs/apk/debug/tasks-debug.apk`,
-signed with the debug key; a debug build alone allows plain HTTP) reaches
+signed with the debug key; a debug build alone allows plain HTTP, and only
+to `localhost`, `127.0.0.1` and `10.0.2.2`) reaches
 a local substrate through `adb reverse tcp:<port> tcp:<port>` at
 `http://localhost:<port>`. Not at `10.0.2.2`: a server with no
 `SUBSTRATE_PUBLIC_URL` names itself `http://` only on a loopback host, so
