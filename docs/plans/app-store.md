@@ -174,12 +174,23 @@ release environment's (`SUBSTRATE_APPLE_REVIEW_*`), never this tree.
 
 ### 6.2 The privacy policy
 
-Published by `apps:site` at `/privacy`, one page for every app, from a
-Markdown file in the tree (`apps/site/privacy.md`). Its substance: the apps
-send what they read only to the server the user signs in to; the publisher
-runs no service that receives it, keeps no analytics and no crash reports
-beyond Apple's own, and the user's data is governed by whoever runs their
-server; the review server holds synthetic data only.
+Published on the publisher's own website, not the apps' site, written from an
+audit of what the apps send (2026-11-04): what is entered and what the apps
+read on the device goes only to the substrate the user signs in to, and the
+publisher receives none of it. It lists every other recipient by name: Sync
+sends a visited place's coordinates to Apple Maps' reverse geocoder for its
+name and address; Workouts' Hevy import reads from Hevy with a key it does
+not keep; a domain sign-in makes DNS lookups; a build installed from the
+download page checks the release feed; Apple sends opt-in crash reports. It
+also says the review server holds invented data only. Its URL is the
+release environment's (`SUBSTRATE_APPLE_PRIVACY_URL`), never this tree.
+
+Guideline 5.1.1(i) wants the policy reachable inside each app as well as in
+the listing. The kit's settings gain a Privacy Policy row in their About
+section, opening the URL a release stamps into the build (as it stamps the
+site's), so every app on the kit has it; a local build shows none.
+
+A change that sends anything new off the device changes the policy first.
 
 ### 6.3 App Privacy answers
 
@@ -210,7 +221,8 @@ release's (0.x); the store accepts them. A `--submit` flag is later work
 
 ## 8. The work, in order
 
-1. The privacy page in `apps:site`.
+1. The privacy policy (published on the publisher's website, §6.2), and the
+   kit's Privacy Policy row.
 2. The review server (§6.1), decided and seeded.
 3. `asc` pinned in `.mise.toml`, and `apps:store` over it for the texts,
    review details and `--build`; Tasks' listing.
