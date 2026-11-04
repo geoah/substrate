@@ -54,7 +54,14 @@ class NotificationsContractTest {
         category = "tasks.reminder", timeSensitive = false, showsWhileActive = true, userInfo = mapOf("task" to id),
     )
 
-    private fun shown(id: String) = manager.activeNotifications.any { it.tag == prefix + id }
+    private fun isShown(id: String) = manager.activeNotifications.any { it.tag == prefix + id }
+
+    /** Whether [id] is shown, given the moment `notify` and `cancel` take to reach the system. */
+    private fun shown(id: String, expected: Boolean = true): Boolean {
+        val until = System.currentTimeMillis() + 5_000
+        while (isShown(id) != expected && System.currentTimeMillis() < until) Thread.sleep(50)
+        return isShown(id)
+    }
 
     @Test
     fun permissionIsOnOnceGranted() {
@@ -67,10 +74,10 @@ class NotificationsContractTest {
         assertTrue(shown("now"))
         assertFalse(prefix + "now" in notifications.pending(prefix))
         notifications.schedule(request("passed", Instant.now().minusSeconds(60)))
-        assertFalse(shown("passed"))
+        assertFalse(shown("passed", expected = false))
         assertTrue(notifications.pending(prefix).isEmpty())
         notifications.cancel(prefix + "now")
-        assertFalse(shown("now"))
+        assertFalse(shown("now", expected = false))
     }
 
     @Test
@@ -78,7 +85,7 @@ class NotificationsContractTest {
         notifications.schedule(request("later", Instant.now().plusSeconds(3600)))
         assertEquals(listOf(prefix + "later"), notifications.pending(prefix))
         assertTrue(notifications.armed(prefix + "later"))
-        assertFalse(shown("later"))
+        assertFalse(shown("later", expected = false))
         // A process started again reads the same file.
         assertEquals(listOf(prefix + "later"), Notifications(context, "Contract").pending(prefix))
         notifications.cancel(prefix + "later")
