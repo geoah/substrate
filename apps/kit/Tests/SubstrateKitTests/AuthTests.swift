@@ -256,10 +256,18 @@ import SubstrateTesting
         return stub
     }
 
+    /// A local build: a loopback client id, which no document lists a
+    /// claimed callback for.
+    func localManifest() -> AppManifest {
+        var manifest = syncManifest()
+        manifest.clientID = "http://127.0.0.1/substrate-sync"
+        return manifest
+    }
+
     @Test func aLocalBuildSignsInThroughTheLoopbackRedirect() async throws {
         let stub = tokens()
         let browser = approving()
-        let session = try await oauth(stub).signIn(server: server, browser: browser)
+        let session = try await oauth(stub, localManifest()).signIn(server: server, browser: browser)
         #expect(session.secret == "sub_app")
         let redirect = try #require(browser.prepared.first)
         #expect(redirect.route == .loopback(appName: "Substrate Sync", path: syncManifest().loopbackPath))
@@ -279,10 +287,46 @@ import SubstrateTesting
         #expect(browser.finished == browser.prepared)
     }
 
+    /// A release (an https client id) whose claimed callback is missing or
+    /// is not an https one never falls back to a loopback port, where any
+    /// program on the device could take the code: it is refused before the
+    /// browser opens, and nothing is sent.
+    @Test func aReleaseWithoutAClaimedRedirectIsRefusedNotSentToLoopback() async throws {
+        var unstamped = syncManifest()
+        unstamped.claimedRedirect = nil
+        var http = syncManifest()
+        http.claimedRedirect = URL(string: "http://substrate.example.org/apps/sync/callback")
+        var bare = syncManifest()
+        bare.claimedRedirect = URL(string: "https://substrate.example.org")
+        for manifest in [unstamped, http, bare] {
+            let stub = tokens()
+            let browser = approving()
+            await #expect(throws: UnclaimedRedirect(appName: "Substrate Sync"), "\(String(describing: manifest.claimedRedirect))") {
+                try await oauth(stub, manifest).signIn(server: server, browser: browser)
+            }
+            #expect(browser.prepared.isEmpty)
+            #expect(browser.opened.isEmpty)
+            #expect(stub.requests.isEmpty)
+        }
+    }
+
+    @Test func eachBuildsRouteIsItsClientIDs() throws {
+        let claimed = try #require(URL(string: "https://substrate.example.org/apps/sync/callback"))
+        var release = syncManifest()
+        release.claimedRedirect = claimed
+        #expect(try OAuthClient.route(for: release) == .claimed(claimed))
+        // A local build keeps the loopback receiver, whatever it was stamped with.
+        var local = localManifest()
+        #expect(try OAuthClient.route(for: local) == .loopback(appName: "Substrate Sync", path: local.loopbackPath))
+        local.claimedRedirect = claimed
+        #expect(try OAuthClient.route(for: local) == .loopback(appName: "Substrate Sync", path: local.loopbackPath))
+        #expect(throws: UnclaimedRedirect.self) { try OAuthClient.route(for: syncManifest()) }
+    }
+
     @Test func aClosedPageIsACancelledSignInThatSpendsNothing() async throws {
         let stub = StubTransport()
         let browser = ScriptedBrowser()
-        await #expect(throws: SignInCancelled.self) { try await oauth(stub).signIn(server: server, browser: browser) }
+        await #expect(throws: SignInCancelled.self) { try await oauth(stub, localManifest()).signIn(server: server, browser: browser) }
         #expect(browser.finished.count == 1)
         #expect(stub.requests.isEmpty)
     }
