@@ -3,6 +3,7 @@ package dev.reamde.substrate.kit.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -66,7 +67,11 @@ public fun AppMenu(
                         )
                     }
                 }
-            }) { padding -> Box(Modifier.padding(padding)) { selected?.let { content(it) } } }
+            }) { padding ->
+                // Consumed, so a section's own top bar does not count the
+                // status bar the scaffold already made room for.
+                Box(Modifier.padding(padding).consumeWindowInsets(padding)) { selected?.let { content(it) } }
+            }
             AppMenuLayout.Rail -> Row {
                 NavigationRail {
                     for (item in items) {

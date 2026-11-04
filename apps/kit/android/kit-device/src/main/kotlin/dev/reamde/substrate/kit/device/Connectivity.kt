@@ -37,8 +37,11 @@ public class Connectivity(context: Context) {
                 offer(path(capabilities))
             }
 
+            // The default network is gone: `activeNetwork` may still name
+            // it here, and the next default arrives through its own
+            // capabilities.
             override fun onLost(network: Network) {
-                offer(current())
+                offer(path(null))
             }
         }
         offer(current())

@@ -7,6 +7,11 @@
          alarms set again after a reboot. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- The browser sign-in holds the process with a short foreground
+         service while the owner approves, so its loopback listener is not
+         frozen with it (SignInWait). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SHORT_SERVICE" />
 
     <!-- The secure store and the repository's folder live under
          noBackupFilesDir, which no backup reads; the rules exclude it by
@@ -22,6 +27,27 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- The sign-in page's way back to the app: browsable, on a scheme
+             of the app's own id, carrying nothing (ReturnToApp). -->
+        <activity
+            android:name="dev.reamde.substrate.kit.device.ReturnToApp"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${applicationId}.signin" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name="dev.reamde.substrate.kit.device.SignInWait"
+            android:exported="false"
+            android:foregroundServiceType="shortService" />
 
         <receiver
             android:name="dev.reamde.substrate.kit.device.NotificationReceiver"

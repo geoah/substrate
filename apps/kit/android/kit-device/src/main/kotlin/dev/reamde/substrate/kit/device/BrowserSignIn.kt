@@ -31,9 +31,10 @@ import kotlinx.coroutines.withContext
  *
  * The page opens in the owner's default browser, as on a Mac, so the
  * connect screen offers its own Cancel; cancelling the call stops the
- * listener. The page the browser lands on tells the person to go back to
- * the app and links to it, and the app is brought forward where Android
- * lets it.
+ * listener. While the browser is in front, `SignInWait` keeps the process
+ * from being frozen, which would leave the callback unanswered. The page
+ * the browser lands on tells the person to go back to the app and links to
+ * it, and the app is brought forward where Android lets it.
  */
 public class BrowserSignIn internal constructor(context: Context, private val launch: ((String) -> Boolean)?) {
     public constructor(context: Context) : this(context, null)
@@ -72,8 +73,12 @@ public class BrowserSignIn internal constructor(context: Context, private val la
      */
     public suspend fun open(page: String, redirect: String): BrowserAnswer {
         val listener = listeners[redirect] ?: return BrowserAnswer.Failed("The sign-in was not ready to come back. Try again.")
+        if (launch == null) SignInWait.start(ForegroundActivity.current ?: app)
         val opened = launch?.invoke(page) ?: withContext(Dispatchers.Main) { openBrowser(page) }
-        if (!opened) return BrowserAnswer.Failed("No browser on this device could open the sign-in page.")
+        if (!opened) {
+            SignInWait.stop(app)
+            return BrowserAnswer.Failed("No browser on this device could open the sign-in page.")
+        }
         val accepting = Thread({ accept(listener) }, "substrate-signin").apply { isDaemon = true }
         accepting.start()
         val query = listener.callback.await()
@@ -83,6 +88,7 @@ public class BrowserSignIn internal constructor(context: Context, private val la
 
     /** Lets go of what `prepare` took, whatever `open` came to. */
     public fun finish(redirect: String) {
+        if (launch == null) SignInWait.stop(app)
         listeners.remove(redirect)?.let { listener ->
             listener.callback.cancel()
             runCatching { listener.socket.close() }
@@ -144,7 +150,7 @@ public class BrowserSignIn internal constructor(context: Context, private val la
 
     private fun respond(connection: Socket, status: Int, message: String, appName: String? = null) {
         val back = appName?.let {
-            val intent = "intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${app.packageName};end"
+            val intent = ReturnToApp.link(app.packageName)
             "<p><a href=\"${escape(intent)}\" style=\"color:#0a84ff\">Return to ${escape(it)}</a></p>"
         } ?: ""
         val body = """

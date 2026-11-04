@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- A reminder is due at its minute: without exact alarms Android may
+         hold one back for minutes, past the moment the app no longer plans
+         it. Granted at install to an app whose reminders are its purpose. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
     <!-- kit-device's backup rules: no_backup/ (the session, the repository's
          folder, the reminders) never leaves the device. -->
     <application
