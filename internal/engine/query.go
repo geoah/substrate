@@ -1167,11 +1167,17 @@ func condMoney(b *builder, key string, c substrate.Cond) error {
 	case c.Contains != nil:
 		return fmt.Errorf("%w: %s is one money value, and contains is for a list", substrate.ErrValidation, key)
 	}
-	v := `props->(` + b.arg(key) + `::text)`
+	// v binds the key at the first comparison, as condJSON binds its own:
+	// exists and a condition naming no operator compare nothing, and a
+	// placeholder no clause mentions is one Postgres cannot type.
+	v := ""
 	compare := func(op string, raw any) (string, error) {
 		m, err := coerceMoney(&vocabulary.Property{Datatype: vocabulary.DatatypeMoney}, raw)
 		if err != nil {
 			return "", fmt.Errorf("%w: %s compares against a money value: %w", substrate.ErrValidation, key, err)
+		}
+		if v == "" {
+			v = `props->(` + b.arg(key) + `::text)`
 		}
 		mv := m.(map[string]any)
 		// The CASE, not an AND beside the comparison, keeps the cast off an

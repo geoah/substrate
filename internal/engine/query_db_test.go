@@ -964,6 +964,60 @@ func TestKindlessMoneyFilterSkipsAnAmountNumericRefuses(t *testing.T) {
 	}
 }
 
+// A money filter that compares nothing reads presence alone: exists, either
+// way, and a condition naming no operator. The key a comparison reads through
+// was bound whether or not one ran, and Postgres refused the read over a
+// placeholder no clause mentioned. feeNote narrows the read naming no kind to
+// these two rows, since every seeded record has no charge either.
+func TestAMoneyFilterComparingNothingReadsPresence(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "fee"}, map[string]any{"properties": map[string]any{
+			"feeNote":   map[string]any{"type": "string"},
+			"feeCharge": map[string]any{"type": "money"},
+		}}),
+	}); err != nil {
+		t.Fatalf("install the kind: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/fee", Properties: map[string]any{"feeNote": "charged", "feeCharge": moneyValue(950, "EUR")}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/fee", Properties: map[string]any{"feeNote": "waived"}})
+
+	for _, kinds := range [][]string{{kindlessPackage + "/fee"}, nil} {
+		for _, tc := range []struct {
+			name string
+			cond substrate.Cond
+			want []string
+		}{
+			{"exists", substrate.Cond{Exists: new(true)}, []string{"charged"}},
+			{"absent", substrate.Cond{Exists: new(false)}, []string{"waived"}},
+			{"no operator", substrate.Cond{}, []string{"charged", "waived"}},
+		} {
+			page, err := ds.List(ctx, substrate.Query{
+				Filter: substrate.Filter{Kinds: kinds, Properties: map[string]substrate.Cond{
+					"feeCharge": tc.cond,
+					"feeNote":   {Exists: new(true)},
+				}},
+				OrderBy: []substrate.Order{{Property: "feeNote"}},
+				First:   50,
+			})
+			if err != nil {
+				t.Errorf("kinds %v, %s: %v", kinds, tc.name, err)
+				continue
+			}
+			var got []string
+			for _, r := range page.Records {
+				got = append(got, fmt.Sprint(r.Properties["feeNote"]))
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("kinds %v, %s: read %v, want %v", kinds, tc.name, got, tc.want)
+			}
+		}
+	}
+}
+
 // The round trip the datetime cast has to survive: the order expression is
 // projected as the cursor key (a timestamptz rendered to text), passed back as
 // a bound parameter and compared against the native expression in
