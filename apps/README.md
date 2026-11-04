@@ -179,6 +179,30 @@ resumes a dry run's: it looks for stages where a dry run keeps none, and
 refuses one that says it was a dry run's or carries a dry run's update
 signature.
 
+**A release that stops part way says where.** An app's three feeds are
+written one at a time, `index.json` (the iOS and Android apps), then
+`appcast.xml` (the Mac app), then `index.html` (the install page), so a
+release that stops among them leaves that app's platforms on two releases:
+iPhones offered the new one while Macs are not, say. Any run that stops
+after its build started going up prints, last, which apps it made current,
+the feeds of the one it was on that list the new release (written), the one
+whose write stopped the run (not confirmed: a write that timed out may
+still land), the ones that still list the release before (not written), the
+apps it did not reach, and the command that resumes it:
+
+```bash
+SUBSTRATE_APPS_RELEASE_BUILD=<build> mise run apps:release   # and SUBSTRATE_APPS_RELEASE_DRY_RUN=1 for a dry run
+```
+
+Run it from the same checkout at the same commit, with the release folder,
+site and keys the stopped run had, until it ends with `released …`; until
+then the split stays. It takes a new lease, reads every feed again, and
+rewrites each app's feeds from the index published now, so a feed already
+written is written again with the same release and the one not confirmed is
+read before it is replaced. A run that stops before its build started going
+up prints no report: a first run then has published nothing (release
+again), and a rerun's own message says why it stopped.
+
 **A dry run is every step against `build/apps`.**
 `SUBSTRATE_APPS_RELEASE_DRY_RUN=1` builds, stages (under
 `build/apps/dry-run/staged/<build>/`, apart from a release's), publishes and

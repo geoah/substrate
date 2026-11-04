@@ -19,7 +19,10 @@
 #      server's own check admits them, closures before the authority
 #      document and the document last;
 #   5. each app activated last and alone (activate): its release.json, then
-#      the feeds installed apps read today, at the addresses they read.
+#      the feeds installed apps read today, at the addresses they read. A
+#      run that stops after its build started going up says which apps and
+#      feeds it made current and the command that resumes it
+#      (release_report).
 #
 # A rerun of a staged build (SUBSTRATE_APPS_RELEASE_BUILD=<build>) builds
 # nothing: it checks the staged files against their digests and carries on
@@ -701,6 +704,8 @@ run_begin() {
 run_end() {
 	local code=$?
 	trap - EXIT
+	# A report that fails must not keep the lease from being given up.
+	[ "$code" = 0 ] || release_report || true
 	lease_end
 	local holder
 	for holder in ${LOCK_HOLDERS[@]+"${LOCK_HOLDERS[@]}"}; do kill "$holder" 2>/dev/null || true; done
@@ -1598,13 +1603,17 @@ stage_upload() {
 # lease, so a writer that ignored the lease is refused, not overwritten, and
 # one that changed the index since this run first read it stops the
 # release. Per app: a release of three apps can stop with one activated,
-# and a rerun activates the rest.
+# and a rerun activates the rest. The feeds go one at a time, so a run that
+# stops among them leaves the app's platforms on two releases until a
+# rerun; what it has written is kept for release_report, which says so.
 activate() {
-	local app="$1" prefix out base staged
+	local app="$1" prefix out base staged feed
 	prefix="$(feed_prefix "$app")"
 	base="$(feed_url "$app")"
 	staged="$STAGE/${prefix}releases/$build/release.json"
 	out="$REL_DIR/feeds/$app"
+	ACTIVATING="$app"
+	FEEDS_WRITTEN=()
 	rm -rf "$out"
 	mkdir -p "$out"
 	read_published "$app"
@@ -1613,18 +1622,75 @@ activate() {
 	if [ -f "$out/releases/$build/manifest.plist" ]; then
 		put_immutable release "${prefix}releases/$build/manifest.plist" "$out/releases/$build/manifest.plist" "public, max-age=31536000, immutable"
 	fi
-	put_mutable release "${prefix}index.json" "$out/index.json" no-cache
-	put_mutable release "${prefix}appcast.xml" "$out/appcast.xml" no-cache
-	put_mutable release "${prefix}index.html" "$out/index.html" no-cache
+	for feed in "${FEEDS[@]}"; do
+		FEED_WRITING="$prefix$feed"
+		put_mutable release "$prefix$feed" "$out/$feed" no-cache
+		FEEDS_WRITTEN+=("$prefix$feed")
+	done
+	FEED_WRITING=""
+	ACTIVATING=""
+	ACTIVATED+=("$app")
 	say "activated $(app_get "$app" .name) $version: $base/index.html"
 }
 
+# The feeds an app's installed builds and its install page read, in the
+# order activate writes them: index.json (the iOS and Android apps),
+# appcast.xml (Sparkle, the Mac app), index.html (the install page).
+readonly FEEDS=(index.json appcast.xml index.html)
+# How far this run's publishing got, for release_report: PUBLISHING once
+# the staged build starts going up, the apps made current, the one being
+# made current, its feeds written, and the feed whose write is under way.
+PUBLISHING=""
+ACTIVATED=()
+ACTIVATING=""
+FEEDS_WRITTEN=()
+FEED_WRITING=""
+
+# Said when a run stops after its staged build started going up: which apps
+# it made current, which feeds of the app it was making current it wrote,
+# which one's write did not confirm and which it did not write, the apps it
+# did not reach, and the command that resumes it. stderr, last, so it is
+# what the person who started the run reads first.
+release_report() {
+	[ -n "$PUBLISHING" ] || return 0
+	local app feed key written="${FEEDS_WRITTEN[*]-}" unwritten="" rest=""
+	{
+		echo "apps: $version (build $build) stopped before every app was current; a rerun resumes it where it stopped"
+		echo "apps:   made current: ${ACTIVATED[*]:-none}"
+		if [ -n "$ACTIVATING" ]; then
+			for feed in "${FEEDS[@]}"; do
+				key="$(feed_prefix "$ACTIVATING")$feed"
+				case " $written $FEED_WRITING " in
+				*" $key "*) ;;
+				*) unwritten="$unwritten $key" ;;
+				esac
+			done
+			echo "apps:   stopped while making $ACTIVATING current, whose feeds (keys in the release folder) now list:"
+			echo "apps:     this release (written): ${written:-none}"
+			if [ -n "$FEED_WRITING" ]; then
+				echo "apps:     either release (not confirmed): $FEED_WRITING; its write stopped the run, as said above, and one that timed out may still land"
+			fi
+			echo "apps:     the release before (not written):${unwritten:- none}"
+		fi
+		for app in ${RELEASE_APPS[@]+"${RELEASE_APPS[@]}"}; do
+			case " ${ACTIVATED[*]-} $ACTIVATING " in
+			*" $app "*) ;;
+			*) rest="$rest $app" ;;
+			esac
+		done
+		echo "apps:   not reached:${rest:- none}"
+		echo "apps:   resume it from this checkout at ${commit_full:-the commit it built}, with this run's release folder, site and keys:"
+		echo "apps:     SUBSTRATE_APPS_RELEASE_BUILD=$build${DRY:+ SUBSTRATE_APPS_RELEASE_DRY_RUN=$DRY} mise run apps:release"
+	} >&2
+}
+
 # SUBSTRATE_APPS_RELEASE_STOP_AFTER=stage|site|<app> stops a dry run there,
-# as a failure would, to try the rerun that resumes it.
+# as a failure would, to try the rerun that resumes it, which the report
+# then names (release_report).
 stop_point() {
 	if [ "${SUBSTRATE_APPS_RELEASE_STOP_AFTER:-}" = "$1" ]; then
 		[ -n "$DRY" ] || die "SUBSTRATE_APPS_RELEASE_STOP_AFTER is a dry run's"
-		echo "apps: stopping after $1, as SUBSTRATE_APPS_RELEASE_STOP_AFTER asks; SUBSTRATE_APPS_RELEASE_BUILD=$build resumes it" >&2
+		echo "apps: stopping after $1, as SUBSTRATE_APPS_RELEASE_STOP_AFTER asks" >&2
 		exit 3
 	fi
 }
@@ -1714,6 +1780,7 @@ release() {
 	fi
 	[ "$(git -C "$ROOT" rev-parse HEAD)" = "$commit_full" ] || die "HEAD moved while $version was built; nothing is published"
 
+	PUBLISHING=1
 	stage_upload
 	stop_point stage
 	site_publish
