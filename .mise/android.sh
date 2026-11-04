@@ -97,14 +97,20 @@ sdkmanager_bin() {
   command -v sdkmanager || die "no sdkmanager under $ANDROID_HOME/cmdline-tools; install the Android command-line tools"
 }
 
+# Where `swift sdk install` put the bundle: a Mac's folder, else
+# $XDG_CONFIG_HOME's where that is set (SwiftPM moves there, and a CI runner
+# sets it), else ~/.swiftpm's. Nothing found is an empty answer, never a
+# failure, so the caller names what is missing.
 swift_sdks_dir() {
   local dir
-  for dir in "$HOME/Library/org.swift.swiftpm/swift-sdks" "$HOME/.swiftpm/swift-sdks"; do
-    [[ -d $dir/$swift_sdk_bundle ]] && {
+  for dir in "$HOME/Library/org.swift.swiftpm/swift-sdks" "${XDG_CONFIG_HOME:+$XDG_CONFIG_HOME/swiftpm/swift-sdks}" \
+    "$HOME/.swiftpm/swift-sdks"; do
+    [[ -n $dir && -d $dir/$swift_sdk_bundle ]] && {
       printf '%s' "$dir"
       return
     }
   done
+  return 0
 }
 
 cmd_sdk() {

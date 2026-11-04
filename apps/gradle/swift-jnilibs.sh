@@ -57,7 +57,11 @@ fi
 
 bundle=swift-$SWIFT_VERSION-RELEASE_android.artifactbundle
 sdk=""
-for root in "${SWIFT_SDKS_PATH:-}" "$HOME/Library/org.swift.swiftpm/swift-sdks" "$HOME/.swiftpm/swift-sdks"; do
+# SwiftPM keeps its SDKs under $XDG_CONFIG_HOME where that is set, as a CI
+# runner sets it, and under ~/.swiftpm otherwise (.mise/android.sh's
+# swift_sdks_dir looks in the same places).
+for root in "${SWIFT_SDKS_PATH:-}" "$HOME/Library/org.swift.swiftpm/swift-sdks" \
+  "${XDG_CONFIG_HOME:+$XDG_CONFIG_HOME/swiftpm/swift-sdks}" "$HOME/.swiftpm/swift-sdks"; do
   if [[ -n $root && -d $root/$bundle/swift-android ]]; then
     sdk=$root/$bundle/swift-android
     break
