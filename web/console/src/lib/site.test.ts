@@ -114,6 +114,7 @@ describe("the tab", () => {
     expect(brandedTitle("Sign in")).toBe("Sign in · Crane")
     expect(brandedTitle("Crane")).toBe("Crane")
     expect(brandedTitle("Crane: a home")).toBe("Crane: a home")
+    expect(brandedTitle("Cranes")).toBe("Cranes · Crane")
     expect(document.title).toBe("Crane")
     const icon = document.querySelector('link[rel="icon"]')!
     expect(icon.getAttribute("href")).toBe("/site/logo.png")

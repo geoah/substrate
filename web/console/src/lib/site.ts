@@ -105,9 +105,9 @@ export function useSite(): SiteInfo | null | undefined {
 /** A page's tab title, followed by the site's name where one is set. */
 export function brandedTitle(title: string): string {
   const name = known?.name
-  // A title that already opens with the name (the landing page's) is left
-  // as it is, so the tab never names the site twice.
-  if (!name || title.startsWith(name)) return title
+  // The landing page's own title opens with the name (`Crane: tagline`), and
+  // the tab never names the site twice.
+  if (!name || title === name || title.startsWith(`${name}: `)) return title
   return title ? `${title} · ${name}` : name
 }
 

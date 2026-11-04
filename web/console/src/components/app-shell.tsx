@@ -53,7 +53,7 @@ import {
 } from "@/lib/kind-names"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import { toolName } from "@/lib/tools"
-import { brandedTitle } from "@/lib/site"
+import { brandedTitle, onSite } from "@/lib/site"
 import { cn } from "@/lib/utils"
 
 export interface Crumb {
@@ -306,7 +306,12 @@ function usePageTitle(pathname: string): string {
   const text = pageTitle(crumbs, title.data || undefined)
   const settled = !record || (!kinds.isPending && (!known || !title.isPending))
   useEffect(() => {
-    if (settled) document.title = brandedTitle(text)
+    if (!settled) return
+    document.title = brandedTitle(text)
+    // The site can land after the first page names the tab.
+    return onSite(() => {
+      document.title = brandedTitle(text)
+    })
   }, [settled, text])
   const [start] = useState(pathname)
   const [moved, setMoved] = useState(false)

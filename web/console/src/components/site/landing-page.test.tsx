@@ -44,7 +44,8 @@ const FRAGMENT = `<style>h1{color:var(--primary)}</style>
 <h1>Your own corner</h1>
 <script>window.ran = true</script>
 <a id="join" href="/register">Create your Crane</a>
-<a id="about" href="https://elsewhere.example/">Read more</a>`
+<a id="about" href="https://elsewhere.example/">Read more</a>
+<a id="help" href="/login" target="help">Help</a>`
 
 function fragmentRoot(): ShadowRoot {
   const host = document.querySelector('[data-slot="landing-fragment"]')
@@ -126,6 +127,19 @@ describe("LandingPage", () => {
     about.addEventListener("click", (e) => e.preventDefault())
     navigate.mockClear()
     about.dispatchEvent(away)
+    expect(navigate).not.toHaveBeenCalled()
+
+    // A door link meant for another window stays the browser's.
+    const help = fragmentRoot().querySelector<HTMLAnchorElement>("#help")!
+    help.addEventListener("click", (e) => e.preventDefault())
+    help.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        button: 0,
+      })
+    )
     expect(navigate).not.toHaveBeenCalled()
   })
 

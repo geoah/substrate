@@ -45,7 +45,7 @@ function useLanding(path: string): Load {
 /** The fragment, mounted in a shadow root so its styles stay its own. A click
  * on a link to `/login` or `/register` opens that door inside the console
  * instead of reloading the page. */
-function LandingFragment({ html }: { html: string }) {
+function LandingFragment({ html, source }: { html: string; source: string }) {
   const host = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   useEffect(() => {
@@ -54,7 +54,7 @@ function LandingFragment({ html }: { html: string }) {
     const root = el.shadowRoot ?? el.attachShadow({ mode: "open" })
     const style = document.createElement("style")
     style.textContent = HOST_STYLE
-    root.replaceChildren(style, landingFragment(html))
+    root.replaceChildren(style, landingFragment(html, source))
     function onClick(event: Event) {
       const e = event as MouseEvent
       if (e.defaultPrevented || e.button !== 0) return
@@ -62,7 +62,9 @@ function LandingFragment({ html }: { html: string }) {
       const anchor = e
         .composedPath()
         .find((n): n is HTMLAnchorElement => n instanceof HTMLAnchorElement)
-      if (!anchor || anchor.target === "_blank") return
+      // A download, or a link meant for another window, stays the browser's.
+      if (!anchor || anchor.hasAttribute("download")) return
+      if (anchor.target && anchor.target !== "_self") return
       const path = doorPath(
         anchor.getAttribute("href") ?? "",
         window.location.origin
@@ -73,7 +75,7 @@ function LandingFragment({ html }: { html: string }) {
     }
     root.addEventListener("click", onClick)
     return () => root.removeEventListener("click", onClick)
-  }, [html, navigate])
+  }, [html, source, navigate])
   return <div ref={host} data-slot="landing-fragment" />
 }
 
@@ -111,7 +113,9 @@ export function LandingPage({ site }: { site: SiteInfo }) {
         </div>
       </header>
       <main>
-        {load.state === "ready" && <LandingFragment html={load.html} />}
+        {load.state === "ready" && (
+          <LandingFragment html={load.html} source={site.landing ?? "/"} />
+        )}
         {load.state === "failed" && (
           <section className="mx-auto flex max-w-xl flex-col items-center gap-4 px-4 py-24 text-center">
             <h1 className="text-3xl font-semibold tracking-tight">

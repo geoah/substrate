@@ -28,7 +28,21 @@ describe("landingFragment", () => {
       )
     )
     expect(out).not.toMatch(/script|onerror|javascript:|iframe|base/i)
-    expect(out).toContain('<img src="x">')
+    expect(out).toContain('<img src="/x">')
+  })
+
+  it("resolves relative URLs against the landing file", () => {
+    const out = html(
+      landingFragment(
+        '<img src="logo.svg"><img src="../up.png"><a href="#top">t</a><a href="/login">in</a><a href="https://elsewhere.example/">x</a>',
+        "/site/pages/landing.html"
+      )
+    )
+    expect(out).toContain('<img src="/site/pages/logo.svg">')
+    expect(out).toContain('<img src="/site/up.png">')
+    expect(out).toContain('<a href="#top">t</a>')
+    expect(out).toContain('<a href="/login">in</a>')
+    expect(out).toContain('<a href="https://elsewhere.example/">x</a>')
   })
 })
 

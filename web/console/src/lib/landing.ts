@@ -9,12 +9,29 @@ const DROPPED = "script, iframe, frame, object, embed, base, meta, link, form"
 
 const URL_ATTRS = ["href", "src", "xlink:href", "action", "formaction"]
 
+/** A relative URL in the fragment, resolved against the landing file the way
+ * the browser would resolve it there: mounted into the console's page,
+ * `logo.svg` would otherwise mean `/logo.svg`. A CSS `url()` is not
+ * rewritten, so a fragment's stylesheet names its files from `/site/`. */
+function resolveAgainst(value: string, base: URL): string {
+  const v = value.trim()
+  if (!v || v.startsWith("#") || v.startsWith("/")) return value
+  if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return value
+  const url = new URL(v, base)
+  return url.origin === base.origin
+    ? url.pathname + url.search + url.hash
+    : url.href
+}
+
 /** Parse `html` into an inert fragment with no scripts, no event handlers and
- * no `javascript:` URLs. */
+ * no `javascript:` URLs, its relative URLs resolved against `source`, the
+ * landing file's path on this server. */
 export function landingFragment(
   html: string,
+  source = "/",
   doc: Document = document
 ): DocumentFragment {
+  const base = new URL(source, doc.location?.origin ?? "http://localhost")
   const template = doc.createElement("template")
   template.innerHTML = html
   const content = template.content
@@ -26,12 +43,13 @@ export function landingFragment(
         el.removeAttribute(attr.name)
         continue
       }
-      if (
-        URL_ATTRS.includes(name) &&
-        /^\s*(javascript|vbscript):/i.test(attr.value)
-      ) {
+      if (!URL_ATTRS.includes(name)) continue
+      if (/^\s*(javascript|vbscript):/i.test(attr.value)) {
         el.removeAttribute(attr.name)
+        continue
       }
+      const resolved = resolveAgainst(attr.value, base)
+      if (resolved !== attr.value) el.setAttribute(attr.name, resolved)
     }
   }
   return content
