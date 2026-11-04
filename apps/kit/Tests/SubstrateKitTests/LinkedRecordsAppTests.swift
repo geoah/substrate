@@ -29,11 +29,19 @@ private struct Shelf: LinkedRecordsApp {
         case editing(ChildKey)
         case closed(ChildKey)
         case problemDismissed
+
+        var recordsEvent: LinkedRecords.Event? {
+            if case let .records(event) = self { event } else { nil }
+        }
     }
 
     enum Effect: Equatable, Sendable, LinkedRecordsEffect {
         case records(LinkedRecords.Effect)
         case count(Int)
+
+        var recordsEffect: LinkedRecords.Effect? {
+            if case let .records(effect) = self { effect } else { nil }
+        }
     }
 
     struct State: Codable, Equatable, Sendable, LinkedRecordsHolding {

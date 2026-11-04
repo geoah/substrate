@@ -71,14 +71,17 @@ public extension LinkedRecordsApp {
 }
 
 /// An app's event that carries the records' as `case records(LinkedRecords.Event)`:
-/// the case is the constructor, and the case read back is `recordsEvent`.
+/// the case is the constructor, and the case read back is `recordsEvent`,
+/// which the app writes as a `switch` over its own cases, so a case renamed
+/// fails to compile rather than leaving the records' events unread.
 public protocol LinkedRecordsEvent: Sendable {
     static func records(_ event: LinkedRecords.Event) -> Self
     /// The records' event this one carries, nil for the app's own.
     var recordsEvent: LinkedRecords.Event? { get }
 }
 
-/// An app's effect that carries the records' as `case records(LinkedRecords.Effect)`.
+/// An app's effect that carries the records' as `case records(LinkedRecords.Effect)`,
+/// read back as `recordsEffect`, which the app writes as `recordsEvent` is.
 public protocol LinkedRecordsEffect: Sendable {
     static func records(_ effect: LinkedRecords.Effect) -> Self
     /// The records' effect this one carries, nil for the app's own.
@@ -88,22 +91,4 @@ public protocol LinkedRecordsEffect: Sendable {
 /// An app's state that keeps the records' as `linked`.
 public protocol LinkedRecordsHolding {
     var linked: LinkedRecordsState { get set }
-}
-
-// The case read back by its name, so an enum whose case is `records(_:)`
-// writes nothing: the one payload of that case is the value, and no other
-// case is named so. An enum that names it otherwise answers it itself.
-public extension LinkedRecordsEvent {
-    var recordsEvent: LinkedRecords.Event? { RecordsCase.payload(of: self) }
-}
-
-public extension LinkedRecordsEffect {
-    var recordsEffect: LinkedRecords.Effect? { RecordsCase.payload(of: self) }
-}
-
-enum RecordsCase {
-    static func payload<Value>(of value: some Any) -> Value? {
-        guard let child = Mirror(reflecting: value).children.first, child.label == "records" else { return nil }
-        return child.value as? Value
-    }
 }
