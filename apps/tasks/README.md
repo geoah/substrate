@@ -16,7 +16,7 @@ draws it and sends commands, nothing else.
 | `apple/UI/` | `SubstrateTasksUI`: the kit's `AppShell` over the app's root, and the SwiftUI views |
 | `apple/Tests/` | the views drawn from TasksKit's fixtures, on the Mac |
 | `android/` | the Android app: the Gradle module `:tasks`, its Compose UI, its bridge configuration and generated Kotlin, and its gallery test over `fixtures/tasks.json` |
-| `docs/screenshots/` | the app on an iPhone simulator against a local substrate, and the Mac's split layout drawn offscreen; `android/`, the app on an Android emulator against one |
+| `docs/screenshots/` | the app on an iPhone simulator against a local substrate, and the Mac's split layout drawn offscreen; `android/`, the app on an Android emulator against one (sign-in, a list, a task, offline, Settings, a reminder) |
 
 ## TasksKit
 
@@ -90,14 +90,27 @@ whose revisions follow `TasksState.revision`. TasksKit needed nothing but
   that change them, the editor under the same labels, the delete-list
   question, and Settings, Status, Repository, Storage and About as
   kit-ui's `SettingsScreen` draws them.
-- **Sign-in** is a local build's loopback route: kit-device listens on
-  `127.0.0.1` for the one path, the owner's default browser shows the
-  approval page, and Swift checks the callback. A release's claimed
-  callback (an App Link verified by the site) is not taken yet, and a
-  release refuses to sign in rather than fall back to loopback.
+- **Sign-in** is a local build's loopback route, with the local client
+  id: kit-device listens on `127.0.0.1` for the one path, the owner's
+  default browser shows the approval page, and Swift checks the callback
+  (`state`, `iss`, PKCE). Android freezes an app in the background within
+  seconds, and a frozen app's listener takes no callback, so a short
+  foreground service ("Waiting for your browser") holds the process while
+  the owner approves; Android ends it after about three minutes, and a
+  callback that waited longer than the server keeps its code is refused
+  and asked for again. The app brings itself forward once the callback is
+  in where Android lets it, and the page the browser lands on links back
+  to it either way.
+- **A release does not sign in yet.** Its claimed callback, an App Link
+  the site's `assetlinks.json` verifies, received through an Auth Tab, is
+  a follow-up; until then a release refuses to sign in rather than fall
+  back to loopback, which is the contract (docs/plans/app-kit.md §5.4).
 - **Reminders** are kit-device's `Notifications`: each kept under
-  `noBackupFilesDir` with an alarm until it is shown, a tap reaching the
-  activity and, from it, the app's `reminderTapped`.
+  `noBackupFilesDir` with an exact alarm (the app holds `USE_EXACT_ALARM`:
+  an inexact one may come minutes late, after the app has stopped
+  planning it) until it is shown, a tap reaching the activity and, from
+  it, the app's `reminderTapped`. The permission is asked the first time
+  a task has a due date.
 
 `android/fixtures/tasks.json` is `TasksFixtures.all` as Swift writes it
 (`TasksAndroidTests`, `SUBSTRATE_UPDATE_FIXTURES=1` to write it again), and
@@ -115,8 +128,12 @@ mise run android:test        # its gallery check with the kit's tests
 ```
 
 On an emulator, a debug build (`apps/tasks/android/build/outputs/apk/debug/tasks-debug.apk`,
-signed with the debug key) reaches a local substrate on the host at
-`http://10.0.2.2:<port>`; a debug build alone allows plain HTTP.
+signed with the debug key; a debug build alone allows plain HTTP) reaches
+a local substrate through `adb reverse tcp:<port> tcp:<port>` at
+`http://localhost:<port>`. Not at `10.0.2.2`: a server with no
+`SUBSTRATE_PUBLIC_URL` names itself `http://` only on a loopback host, so
+from `10.0.2.2` it answers as `https://10.0.2.2:<port>` and the app
+refuses the mismatch.
 
 The Mac build is signed with the machine's development certificate and no
 provisioning profile, so it runs on the machine that built it.
