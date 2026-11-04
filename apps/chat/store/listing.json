@@ -1,7 +1,7 @@
 {
   "subtitle": "Chat with your own AI agents",
   "promotionalText": "Talk to the agents on your own substrate: streaming replies, voice input transcribed on your device.",
-  "description": "Substrate Chat is a native chat for the agents on your substrate, the personal server you run or choose. Your conversations stay on that server.\n\n• Streaming replies, instant from a warm cache\n• Voice input, transcribed on your device\n• Notifications when an agent answers\n• An Action Button shortcut to start a chat\n• On iPhone, iPad and Mac\n\nThe agents run on your substrate, with the AI model provider whoever runs it has chosen. Substrate Chat is a client for a substrate: sign in with your server's address and approve what the app may do there.",
+  "description": "Substrate Chat is a native chat for the agents on your substrate, the personal server you run or choose. Your conversations are kept on that server. Its agents answer through the AI provider you set up on it, which receives what a conversation sends it; the app sends nothing to any provider itself.\n\n• Streaming replies, instant from a warm cache\n• Voice input, transcribed on your device\n• Notifications when an agent answers\n• An Action Button shortcut to start a chat\n• On iPhone, iPad and Mac\n\nThe agents run on your substrate, with the AI model provider whoever runs it has chosen. Substrate Chat is a client for a substrate: sign in with your server's address and approve what the app may do there.",
   "keywords": [
     "assistant",
     "llm",
