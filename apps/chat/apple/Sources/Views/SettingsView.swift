@@ -63,7 +63,8 @@ struct SettingsView: View {
     private var about: AboutPresentation {
         AboutPresentation.present(
             appName: ChatManifest.appName, version: updates.build.version,
-            channel: updates.enabled ? updates.build.channel : nil, offered: nil)
+            channel: updates.enabled ? updates.build.channel : nil, offered: nil,
+            privacyPolicy: updates.build.privacyPolicy)
     }
 
     private func send(_ command: SettingsCommand) {

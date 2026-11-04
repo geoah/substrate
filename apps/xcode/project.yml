@@ -54,6 +54,9 @@ settings:
     SUBSTRATE_COMMIT: ""
     SUBSTRATE_UPDATES_URL: ""
     SUBSTRATE_SPARKLE_KEY: ""
+    # The publisher's privacy policy, which About opens; stamped by a release
+    # (SUBSTRATE_APPLE_PRIVACY_URL), so a local build names none.
+    SUBSTRATE_PRIVACY_POLICY: ""
     # The console app's OAuth client id, the same way: empty is a local
     # build's loopback id (ConsoleSignIn.localClientID).
     SUBSTRATE_CONSOLE_CLIENT_ID: ""

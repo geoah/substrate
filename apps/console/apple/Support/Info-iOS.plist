@@ -59,6 +59,8 @@
 	<string>$(SUBSTRATE_COMMIT)</string>
 	<key>SubstrateUpdates</key>
 	<string>$(SUBSTRATE_UPDATES_URL)</string>
+	<key>SubstratePrivacyPolicy</key>
+	<string>$(SUBSTRATE_PRIVACY_POLICY)</string>
 	<key>SubstrateConsoleClientID</key>
 	<string>$(SUBSTRATE_CONSOLE_CLIENT_ID)</string>
 	<key>SubstrateConsoleRedirect</key>

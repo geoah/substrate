@@ -34,6 +34,7 @@
 #
 #   SUBSTRATE_APPLE_TEAM_ID      the team that signs the apps
 #   SUBSTRATE_APPLE_SITE_URL     the site whose callbacks the builds claim
+#   SUBSTRATE_APPLE_PRIVACY_URL  the privacy policy every build's About opens
 #   SUBSTRATE_APPLE_RUNNER       optional: the macOS runner's label, for a
 #                                self-hosted Mac (default macos-26); one
 #                                that runs nothing else and has no other user,
@@ -218,6 +219,8 @@ jobs:
             }}
           SUBSTRATE_APPLE_TEAM_ID: ${{ vars.SUBSTRATE_APPLE_TEAM_ID }}
           SUBSTRATE_APPLE_SITE_URL: ${{ vars.SUBSTRATE_APPLE_SITE_URL }}
+          SUBSTRATE_APPLE_PRIVACY_URL: ${{ vars.SUBSTRATE_APPLE_PRIVACY_URL
+            }}
       - name: remove the App Store Connect key and the signing keychain
         if: always()
         run: |

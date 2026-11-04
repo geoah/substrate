@@ -103,6 +103,13 @@ struct SettingsView: View {
                     .buttonRow()
                 }
             }
+            // App Review wants the privacy policy inside the app (5.1.1(i)):
+            // the address a release stamped, and none in a local build.
+            if let policy = privacyPolicy {
+                Section("About") {
+                    Link("Privacy Policy", destination: policy)
+                }
+            }
         }
         .readableWidth()
         .navigationTitle("Settings")
@@ -117,6 +124,11 @@ struct SettingsView: View {
                     onCancel: { changingAccess = false })
             }
         }
+    }
+
+    private var privacyPolicy: URL? {
+        (Bundle.main.object(forInfoDictionaryKey: "SubstratePrivacyPolicy") as? String)
+            .flatMap { $0.isEmpty ? nil : URL(string: $0) }
     }
 
     /// The server status in a word: the status screen's own. A server that

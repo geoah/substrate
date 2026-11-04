@@ -106,7 +106,7 @@ final class TasksRoot: BridgeRoot {
             switch SettingsRoute<TasksApp>.route(row, settings: { .settings($0) }, clearSaved: .clearSaved) {
             case let .app(command): try await runtime.send(command, to: Link.appPath)
             case let .link(command): await runtime.send(command)
-            case .changeAccess, .checkForUpdates, .signIn, .none: break
+            case .changeAccess, .checkForUpdates, .privacyPolicy, .signIn, .none: break
             }
         }
     }

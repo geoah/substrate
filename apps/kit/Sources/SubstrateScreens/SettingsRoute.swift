@@ -10,6 +10,8 @@ public enum SettingsRoute<App: LinkedApp>: Equatable, Sendable {
     case changeAccess
     /// The updater's own check.
     case checkForUpdates
+    /// The privacy policy the build names, in the browser.
+    case privacyPolicy
     /// The connect screen.
     case signIn
     case none
@@ -33,6 +35,7 @@ public enum SettingsRoute<App: LinkedApp>: Equatable, Sendable {
         case .perform(.repository(.signOut)): .link(.signOut)
         case .perform(.status(.action(.signIn))): .signIn
         case .perform(.about(.check)): .checkForUpdates
+        case .perform(.about(.privacyPolicy)): .privacyPolicy
         default: .none
         }
     }

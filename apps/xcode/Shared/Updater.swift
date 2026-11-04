@@ -19,6 +19,9 @@ struct BuildInfo: Sendable {
     /// The release folder: `index.json` and `appcast.xml` sit at its root, and
     /// every path in them is relative to it.
     let updates: URL?
+    /// The publisher's privacy policy, which About opens (App Review
+    /// guideline 5.1.1(i)); nil for a local build.
+    let privacyPolicy: String?
 
     static let current = BuildInfo(Bundle.main.infoDictionary ?? [:])
 
@@ -34,6 +37,8 @@ struct BuildInfo: Sendable {
         commit = value("SubstrateCommit")
         let base = value("SubstrateUpdates")
         updates = base.isEmpty ? nil : URL(string: base.hasSuffix("/") ? base : base + "/")
+        let policy = value("SubstratePrivacyPolicy")
+        privacyPolicy = policy.isEmpty ? nil : policy
     }
 
     /// The app's full name (`Substrate Workouts`), not the home screen's

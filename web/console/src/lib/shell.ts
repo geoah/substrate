@@ -15,6 +15,9 @@ export interface ShellInfo {
   /** The app was released and checks for newer releases itself; a local
    * build was not and never looks. */
   updates?: boolean
+  /** The publisher's privacy policy, as the release stamped it; absent in a
+   * local build. App Review wants it reachable inside the app. */
+  privacyPolicy?: string
   /** The sign-in the app holds for this server, given to the page before
    * any script runs (decision 0204). The page reads its session here and
    * keeps none of its own; signing out tells the app. Absent where the app

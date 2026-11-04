@@ -149,7 +149,7 @@ struct TemplateRootTests {
         await harness.send(.offered("0.2.0"))
         let offered = await harness.presentation.about
         #expect(offered != before)
-        #expect(offered == AboutPresentation.present(appName: TemplateApp.appName, version: "0.1.0 (1)", channel: nil, offered: "0.2.0"))
+        #expect(offered == AboutPresentation.present(appName: TemplateApp.appName, version: "0.1.0 (1)", channel: nil, offered: "0.2.0", privacyPolicy: nil))
         await harness.send(.offered(nil))
         #expect(await harness.presentation.about == before)
     }

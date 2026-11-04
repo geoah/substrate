@@ -270,6 +270,7 @@ apple_release_build() {
 		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build"
 		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit"
 		SUBSTRATE_UPDATES_URL="$(feed_url "$app")/" "SUBSTRATE_$(app_upper "$app")_CLIENT_ID=$APPLE_CLIENT"
+		SUBSTRATE_PRIVACY_POLICY="${SUBSTRATE_APPLE_PRIVACY_URL:-}"
 		${SITE[@]+"${SITE[@]}"}
 	)
 	if app_has "$app" macos; then SETTINGS+=(SUBSTRATE_SPARKLE_KEY="$SPARKLE_KEY"); fi
@@ -325,6 +326,7 @@ apple_testflight_build() {
 		# The team the site's association file was checked against, so the
 		# build is signed as the team that claims its callback.
 		DEVELOPMENT_TEAM="$SUBSTRATE_APPLE_TEAM_ID"
+		SUBSTRATE_PRIVACY_POLICY="$SUBSTRATE_APPLE_PRIVACY_URL"
 		${SITE[@]+"${SITE[@]}"}
 	)
 	apple_archive "$app" "$scheme" iOS "$scratch" app-store-connect
@@ -334,6 +336,10 @@ apple_testflight_build() {
 		die "$app's IPA holds no app"
 	unzip -p "$APPLE_IPA" "$entry" >"$plist"
 	apple_check "$app" iOS "$plist"
+	# App Review wants the privacy policy inside the app (5.1.1(i)): About
+	# opens the address the build carries.
+	[ "$(plutil -extract SubstratePrivacyPolicy raw -o - "$plist" 2>/dev/null || true)" = "$SUBSTRATE_APPLE_PRIVACY_URL" ] ||
+		die "$app's iOS build does not carry the privacy policy $SUBSTRATE_APPLE_PRIVACY_URL; its Info.plist needs SubstratePrivacyPolicy = \$(SUBSTRATE_PRIVACY_POLICY)"
 }
 
 # An exported IPA sent to App Store Connect with the release's API key.

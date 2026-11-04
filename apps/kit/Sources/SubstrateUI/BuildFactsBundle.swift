@@ -11,9 +11,11 @@ public extension BuildFacts {
         func value(_ key: String) -> String { (info[key] as? String)?.trimmingCharacters(in: .whitespaces) ?? "" }
         let stamped = value("SubstrateVersion")
         let channel = value("SubstrateChannel")
+        let privacy = value("SubstratePrivacyPolicy")
         return BuildFacts(
             version: stamped.isEmpty ? "\(value("CFBundleShortVersionString")) (\(value("CFBundleVersion")))" : stamped,
-            channel: channel.isEmpty ? nil : channel)
+            channel: channel.isEmpty ? nil : channel,
+            privacyPolicy: privacy.isEmpty ? nil : privacy)
     }
 }
 #endif

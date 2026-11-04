@@ -38,7 +38,7 @@ public enum TasksPresenter {
             storage: SettingsPresenter.storage(state.usage ?? [], budget: nil),
             about: AboutPresentation.present(
                 appName: TasksApp.appName, version: build.version, channel: build.channel,
-                offered: state.offered),
+                offered: state.offered, privacyPolicy: build.privacyPolicy),
             notices: linked.notice(state.linked).map { [$0] } ?? [],
             problem: state.problem.map { ProblemPresentation(title: "A change was not kept", message: $0) },
             reminders: plan,
