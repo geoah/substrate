@@ -16,5 +16,5 @@
   "ageRating": {
     "all-none": true
   },
-  "reviewNotes": "The Substrate console is a client for Substrate, a personal server its user runs; the app does nothing without one. We run a demonstration server for review with no real user's data.\n\nTo sign in, open the app, enter {server} as the server, and sign in with the repository and password below on the server's page.\n\nRepository: {user}\nPassword: {password}\n\nAccounts live on the user's own server and are never created in the app. Privacy policy: {privacy}"
+  "reviewNotes": "The Substrate console is a client for Substrate, a personal server its user runs; the app does nothing without one. We run a demonstration server for review with no real user's data.\n\nTo sign in:\n1. Open the app. Under Repository or server, enter {server} and tap Continue.\n2. Tap Sign In with Your Substrate.\n3. On the server's Sign in to your Substrate page, enter the repository and password below and tap Sign in.\n4. Scroll down and tap Approve. The app returns signed in.\n\nRepository: {user}\nPassword: {password}\n\nAccounts live on the user's own server and are never created in the app. Privacy policy: {privacy}"
 }
