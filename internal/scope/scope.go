@@ -165,10 +165,9 @@ func KindOf(ref string, definition map[string]any) Kind {
 	return k
 }
 
-// binds reports whether the kind's declaration binds trait.
-func (k Kind) binds(trait string) bool {
-	return slices.ContainsFunc(k.Traits, func(t string) bool { return strings.EqualFold(t, trait) })
-}
+// binds reports whether the kind's declaration binds trait, matched in its
+// canonical spelling, so no other casing stands for it.
+func (k Kind) binds(trait string) bool { return slices.Contains(k.Traits, trait) }
 
 // unwritable are the packages no scope writes, whatever it says: they hold
 // the machinery that runs code (functions, agents, triggers), spends the
@@ -640,12 +639,24 @@ func Covers(held, want Scope, internal bool) bool {
 // `<authority>/` for `<authority>/*`, `<authority>/<package>/` for a package.
 func globPrefix(glob string) string { return strings.TrimSuffix(glob, "*") }
 
-// Writes reports whether the grant writes records of kind.
+// Writes reports whether the grant writes records of kind. A trait scope
+// never writes an account, a kind that binds `accountconfig`: the engine
+// refuses an app's token that write already, and ReachCovered reads Writes,
+// so neither does a trait scope cover code an approval installs that would
+// (decision 0225).
 func (g Grant) Writes(kind Kind) bool {
 	if inUnwritable(kind.Ref) {
 		return false
 	}
-	return slices.ContainsFunc(g.scopes, func(s Scope) bool { return s.Verb == Write && matches(s.Pattern, kind) })
+	return slices.ContainsFunc(g.scopes, func(s Scope) bool {
+		if s.Verb != Write {
+			return false
+		}
+		if _, ok := traitOf(s.Pattern); ok && kind.binds(vocabulary.TraitAccountConfigCore) {
+			return false
+		}
+		return matches(s.Pattern, kind)
+	})
 }
 
 // Calls reports whether the grant calls the function whose id is function,

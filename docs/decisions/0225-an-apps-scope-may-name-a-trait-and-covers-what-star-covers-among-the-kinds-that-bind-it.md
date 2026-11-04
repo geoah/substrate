@@ -47,18 +47,28 @@ The rules this binds:
 
 - **The trait is named in full**, as
   [0101](0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)
-  holds on every surface, spelled as the records filter spells it. `~` stands
-  for the repository's authority as it does in a kind pattern, and the token
-  stores the resolved form. A binding's variant and arguments are no part of
-  the match: a kind that binds `temporal(point: dueAt)` implements
+  holds on every surface, spelled as the records filter spells it, and is
+  matched in that canonical spelling alone. `~` stands for the repository's
+  authority as it does in a kind pattern, and the token stores the resolved
+  form. A binding's variant and arguments are no part of the match: a kind
+  that binds `temporal(point: dueAt)` implements
   `substrate.reamde.dev/core/temporal`.
-- **Membership is the declaration's, read per request.** A kind declared or
-  upgraded later that binds the trait is covered from then on, and one that
-  stops binding it is not.
+- **Membership is the declaration's, read once per request.** A kind declared
+  or upgraded later that binds the trait is covered from the next request,
+  and one that stops binding it is not. A feed stream keeps the membership it
+  opened with until it reconnects, as it keeps a glob's kinds, and still reads
+  the token again before every batch, so revoking the token ends it. At
+  approval, a declaration the approval installs decides membership before the
+  one the repository holds.
 - **It reaches no further than `*`.** The auth kinds are never reached, nor is
   an `internal` kind. No trait scope writes the `core` or `llm` package, and no
-  app's token writes an account or a bundle input, whatever binds the trait:
+  app's token writes an account or a bundle input, whatever binds the trait.
+  A trait scope writes no account, a kind that binds `accountconfig`, so it
+  covers no code that would either:
   `write:implements(substrate.reamde.dev/core/accountconfig)` writes nothing.
+- **Installed code keeps its grants.** A binding removed later narrows the
+  token, not the code an approval installed while the binding held, which
+  keeps its own grants as 0215 accepts for any code that runs on its own.
 - **A trait nothing binds yet is admitted**, as a glob that matches nothing is.
   The approval page lists the kinds that bind it at approval, or says none do
   yet, and says that kinds that bind it later are covered too.
@@ -87,12 +97,18 @@ The rules this binds:
 - Bad, because 0080's lattice gains a member that is no prefix: a package glob
   never covers a trait scope, so an app that already holds one may be asked
   again for what it reaches in practice.
+- Bad, because an open feed stream does not follow a binding added or removed
+  while it runs: it sees the change when it reconnects.
+- Bad, because the scope layer cannot tell a bundle input from any other kind:
+  the engine refuses an app's token every write to one, but an approval holds
+  code's reach to one as it holds any kind's, for a trait scope as for every
+  other, a gap 0215 leaves open.
 
 ### Confirmation
 
 `internal/scope`'s tests hold the grammar, the resolution of `~` and that a
 trait scope never reaches an auth, `internal`, `core` or `llm` kind or writes
-an account. `internal/api`'s scoped tests hold reads, writes and search
+an account, directly or as code's reach. `internal/api`'s scoped tests hold reads, writes and search
 through a trait scope, including for a kind that binds the trait after the
 token was minted, and the console's scope fixture holds the approval page's
 words.

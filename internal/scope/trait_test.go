@@ -9,8 +9,9 @@ import (
 // declaration binds the trait.
 
 const (
-	completable = "substrate.reamde.dev/core/completable"
-	temporal    = "substrate.reamde.dev/core/temporal"
+	completable   = "substrate.reamde.dev/core/completable"
+	temporal      = "substrate.reamde.dev/core/temporal"
+	accountconfig = "substrate.reamde.dev/core/accountconfig"
 )
 
 func TestATraitScopeNamesOneTraitInFull(t *testing.T) {
@@ -90,7 +91,10 @@ func TestATraitScopeReachesWhatStarReachesAmongTheKindsThatBindIt(t *testing.T) 
 		read, written bool
 	}{
 		{"a kind that binds it", Kind{Ref: "ada.example.com/tasks/task", Traits: []string{temporal, completable}}, true, true},
-		{"a kind that binds it in another case", Kind{Ref: "ada.example.com/tasks/chore", Traits: []string{"substrate.reamde.dev/core/Completable"}}, true, true},
+		// The trait is matched in its canonical spelling alone.
+		{"a kind that binds another casing of it", Kind{Ref: "ada.example.com/tasks/chore", Traits: []string{"substrate.reamde.dev/core/Completable"}}, false, false},
+		// An account is the owner's connection, whatever else it binds.
+		{"an account that binds it", Kind{Ref: "providers.example.com/mail/account", Traits: []string{accountconfig, completable}}, true, false},
 		{"a kind that binds another trait", Kind{Ref: "ada.example.com/notes/note", Traits: []string{temporal}}, false, false},
 		{"a kind that binds none", Kind{Ref: "ada.example.com/people/person"}, false, false},
 		{"an internal kind that binds it", Kind{Ref: "ada.example.com/tasks/log", Internal: true, Traits: []string{completable}}, false, false},
@@ -164,6 +168,16 @@ func TestATraitScopeCoversTheReachOfAnExactKindThatBindsIt(t *testing.T) {
 	}
 	if g.ReachCovered(Read, "ada.example.com/tasks/*", binds) {
 		t.Error("a glob reach is covered by a trait scope")
+	}
+	if g.ReachCovered(Write, "providers.example.com/mail/account", Kind{Traits: []string{accountconfig, completable}}) {
+		t.Error("code that writes an account is covered by a trait scope")
+	}
+	accounts, err := NewGrant([]string{"write:" + TraitPattern(accountconfig)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accounts.Writes(Kind{Ref: "providers.example.com/mail/account", Traits: []string{accountconfig}}) {
+		t.Error("write:implements(accountconfig) writes an account")
 	}
 	approved, err := ApprovalOf([]string{"write:" + TraitPattern(completable)})
 	if err != nil {
