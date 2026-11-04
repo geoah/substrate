@@ -11,6 +11,7 @@
     <application
         android:name=".TasksApplication"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <!-- singleTop: a reminder's tap and the sign-in's return bring the

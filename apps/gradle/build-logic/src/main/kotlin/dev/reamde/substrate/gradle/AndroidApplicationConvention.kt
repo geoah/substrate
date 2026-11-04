@@ -7,8 +7,9 @@ import org.gradle.api.Project
 import org.gradle.kotlin.dsl.configure
 
 /**
- * An Android app: the SDK levels from the catalog, the ABIs Swift was built for, and a release that is minified and shrunk, since that is the build the
- * bridge's runtime checks must pass under (R8 renames what JNI looks up by name unless the kit's consumer rules keep it).
+ * An Android app: the SDK levels from the catalog, the ABIs Swift was built for, a release that is minified and shrunk, since that is the build the bridge's
+ * runtime checks must pass under (R8 renames what JNI looks up by name unless the kit's consumer rules keep it), and the accent its app.json names as the
+ * colour kit-ui draws it in ([generateAppAccent]).
  */
 class AndroidApplicationConvention : Plugin<Project> {
     override fun apply(project: Project) =
@@ -44,6 +45,7 @@ class AndroidApplicationConvention : Plugin<Project> {
                     jniLibs.useLegacyPackaging = false
                 }
             }
+            generateAppAccent()
             lockDependencies()
         }
 }

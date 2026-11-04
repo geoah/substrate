@@ -21,5 +21,9 @@
     "read:*"
   ],
   "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "accent": {
+    "light": "#6A3FE0",
+    "dark": "#A286FF"
+  },
   "feed": "chat"
 }

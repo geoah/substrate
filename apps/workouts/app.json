@@ -41,5 +41,9 @@
     "agents:substrate.reamde.dev/trainingcoach/*"
   ],
   "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "accent": {
+    "light": "#4F3FE0",
+    "dark": "#8F84FF"
+  },
   "feed": "workouts"
 }
