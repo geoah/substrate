@@ -24,7 +24,7 @@ struct HevyAPITests {
         let export = HevyAPI.Export(workouts: fixture.workouts, routines: fixture.routines, folders: fixture.folders, templates: fixture.templates)
         return HevyImport.plan(
             export, exercises: [:], routines: held, history: [], deleted: [], timeZone: london, adapter: "x@1",
-            library: try ExerciseLibrary.bundled().catalog().exercises)
+            library: try Library.catalog.get().exercises)
     }
 
     @Test("a workout lands at Hevy's id, linked to its routine, its exercises by template id")

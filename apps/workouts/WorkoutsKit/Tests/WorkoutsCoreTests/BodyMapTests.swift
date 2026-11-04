@@ -16,7 +16,7 @@ struct BodyMapTests {
 
     @Test("a library exercise shades its movement's regions by share; warm-ups and drops add nothing")
     func library() throws {
-        let exercises = try ExerciseLibrary.bundled().catalog().exercises
+        let exercises = try Library.catalog.get().exercises
         let sets = [
             set("chest-press-machine"), set("chest-press-machine"), set("chest-press-machine", role: .warmup),
             set("chest-press-machine", continues: "head"),

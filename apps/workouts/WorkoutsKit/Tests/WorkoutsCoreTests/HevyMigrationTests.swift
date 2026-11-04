@@ -41,7 +41,7 @@ struct HevyMigrationTests {
     ) throws -> HevyImport.Plan {
         HevyImport.plan(
             export, exercises: exercises, routines: routines, history: history, deleted: [], timeZone: london, adapter: "x@1",
-            library: try ExerciseLibrary.bundled().catalog().exercises, pairs: pairs)
+            library: try Library.catalog.get().exercises, pairs: pairs)
     }
 
     let press = "7EB3F7C3"  // Chest Press (Machine) in Hevy
@@ -147,7 +147,7 @@ struct HevyMigrationTests {
 
     @Test("a pair of dumbbells logged together is halved onto one, as the library counts it")
     func pairedWeights() throws {
-        let library = try ExerciseLibrary.bundled().catalog().exercises
+        let library = try Library.catalog.get().exercises
         let dumbbell = try #require(library.values.first { $0.loadBasis == .perimplement && $0.implements == 2 && $0.codes.contains { $0.system == "hevy" } })
         let template = try #require(dumbbell.codes.first { $0.system == "hevy" }?.code)
         let w = workout("P", [exercise(0, dumbbell.name, template, [set(0, kg: 40, reps: 10)])])
@@ -180,7 +180,7 @@ struct HevyMigrationTests {
 
     @Test("a CSV title finds the library exercise the owner renamed, at its id, instead of making a second")
     func renamedLibraryExercise() throws {
-        let library = try ExerciseLibrary.bundled().catalog().exercises
+        let library = try Library.catalog.get().exercises
         var renamed = try #require(library["lat-pulldown-cable"])
         renamed.name = "Pulldown, the blue cable"
         let file = try HevyCSV.read(
@@ -197,7 +197,7 @@ struct HevyMigrationTests {
 
     @Test("an exercise counts from its movement's shares unless its own group lists say otherwise")
     func ownListsWin() throws {
-        var catalog = try ExerciseLibrary.bundled().catalog()
+        var catalog = try Library.catalog.get()
         var press = try #require(catalog.exercises["chest-press-machine"])
         #expect(!press.inheritedMuscles.isEmpty)
         press.primaryMuscles = [.triceps]

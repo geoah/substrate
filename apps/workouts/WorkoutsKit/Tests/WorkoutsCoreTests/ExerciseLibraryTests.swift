@@ -3,6 +3,15 @@ import Testing
 
 @testable import WorkoutsCore
 
+/// The bundled library, decoded once for the whole run. It is a megabyte of
+/// records: decoded again in every test that reads it, it kept every thread
+/// of a four-core Linux runner busy for over a minute, long enough for the
+/// controller tests waiting beside them to time out.
+enum Library {
+    static let bundled = Result { try ExerciseLibrary.bundled() }
+    static let catalog = Result { try bundled.get().catalog() }
+}
+
 /// The exercise library this build carries (`Resources/Bundled/library.json`,
 /// from `apps/workouts/scripts/exercise-library.py`).
 @Suite("Exercise library", .timeLimit(.minutes(10)))
@@ -11,7 +20,7 @@ struct ExerciseLibraryTests {
 
     @Test("every record decodes, movements before the exercises that name them")
     func decodes() throws {
-        let library = try ExerciseLibrary.bundled()
+        let library = try Library.bundled.get()
         #expect(library.version >= 1)
         var movements = Set<String>()
         for record in library.records {
@@ -31,7 +40,7 @@ struct ExerciseLibraryTests {
 
     @Test("a movement's group lists are the ones its muscles imply, as the app reckons them")
     func groupLists() throws {
-        let catalog = try ExerciseLibrary.bundled().catalog()
+        let catalog = try Library.catalog.get()
         let shared = catalog.movements.values.filter { !$0.muscles.isEmpty }
         #expect(shared.count >= 300)
         for movement in shared {
@@ -43,7 +52,7 @@ struct ExerciseLibraryTests {
 
     @Test("an exercise counts from its movement's muscles unless it names its own")
     func inherited() throws {
-        let catalog = try ExerciseLibrary.bundled().catalog()
+        let catalog = try Library.catalog.get()
         let press = try #require(catalog.exercises["chest-press-machine"])
         #expect(press.movement == "chest-press" && press.muscles.isEmpty)
         #expect(press.groupShares[.chest] == 1 && press.groupShares[.triceps] == Decimal(string: "0.5"))
@@ -57,7 +66,7 @@ struct ExerciseLibraryTests {
 
     @Test("an owner's Hevy exercises resolve to library exercises by name")
     func hevyNames() throws {
-        let library = try ExerciseLibrary.bundled().catalog().exercises
+        let library = try Library.catalog.get().exercises
         let file = try HevyCSV.read(
             """
             title,start_time,end_time,description,exercise_title,superset_id,exercise_notes,set_index,set_type,weight_kg,reps,distance_km,duration_seconds,rpe
