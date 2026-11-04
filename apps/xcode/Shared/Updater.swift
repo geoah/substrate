@@ -23,6 +23,10 @@ struct BuildInfo: Sendable {
     /// guideline 5.1.1(i)); nil for a local build.
     let privacyPolicy: String?
 
+    /// A TestFlight or App Store build: released (it has a channel) but
+    /// with no feed of its own, because Apple updates it.
+    var fromAppStore: Bool { !channel.isEmpty && updates == nil }
+
     static let current = BuildInfo(Bundle.main.infoDictionary ?? [:])
 
     init(_ info: [String: Any]) {

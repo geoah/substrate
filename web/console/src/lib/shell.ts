@@ -15,6 +15,10 @@ export interface ShellInfo {
   /** The app was released and checks for newer releases itself; a local
    * build was not and never looks. */
   updates?: boolean
+  /** The app came from TestFlight or the App Store, which updates it. Such
+   * an app opens no account creation: one that did would owe a way to
+   * delete the account too (App Review guideline 5.1.1(v)). */
+  appStore?: boolean
   /** The publisher's privacy policy, as the release stamped it; absent in a
    * local build. App Review wants it reachable inside the app. */
   privacyPolicy?: string

@@ -114,6 +114,7 @@ final class ConsoleController: NSObject, ObservableObject {
             "server": server.absoluteString.trimmingCharacters(in: ["/"]),
             "version": build.version,
             "updates": build.updates != nil,
+            "appStore": build.fromAppStore,
         ]
         if let policy = build.privacyPolicy { info["privacyPolicy"] = policy }
         // The app's sign-in, which the page reads (`shellSession` in
