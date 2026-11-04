@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-03
 decision-makers: George Antoniadis
 ---
@@ -33,12 +33,26 @@ the design and its three rounds of review.
 ## Decision Outcome
 
 Chosen: Workouts' shape for every screen, with Android receiving
-presentations as JSON over one fixed bridge whose Kotlin is generated. The
-engine is pure and replayable, so effects are decided after it on the live
-path only and a replay runs none, which a reducer returning effects cannot
-promise; one presenter writes every label, so read and edit views and the two
-platforms cannot disagree on words; and the journal is written before any
-suspension, so a crash replays to a state the app can stand behind. Composing
+presentations as JSON over one fixed bridge whose Kotlin is generated.
+
+- **The engine is pure and replayable.** Effects are decided after it, on the
+  live path only, so a replay runs none. A runtime could replay a reducer that
+  returns its effects the same way, by dropping them. Here the engine never
+  sees an effect, so that rule lives in the runtime once, not in every
+  reducer.
+- **One presenter writes every label,** so read and edit views and the two
+  platforms cannot disagree on words.
+- **The journal is written before any suspension,** so a crash replays to the
+  last state the journal kept.
+  - That holds where the write succeeded. After a failed write the change
+    stands in memory and the runtime reports the journal's problem for the
+    app to show. The next write that succeeds keeps it.
+  - A journal the device cannot read is never taken for an empty one. The
+    runtime refuses every event it would journal, says why, and reads it
+    again before the next, so nothing is written over what it could not
+    read.
+
+Composing
 screens under one root (the link) keeps one presentation tree, so a parent
 and child update in one step on both systems. A fixed bridge puts every
 lifetime, threading and error rule in one place instead of one per value,
@@ -46,12 +60,24 @@ never grows when an app adds a screen, and leaves Kotlin with plain data the
 JVM tests and screenshots use without loading Swift. Generated JNI objects
 would work for one call and grow with every app.
 
+The bridge holds three rules for every device call:
+- **A call and its cancel are ordered.** A cancel either stops a request
+  before it is sent or follows it, so Kotlin never starts work a Swift
+  caller has already left.
+- **Each side releases what it opens, on every end.** A handle's close ends
+  its calls and streams. A sign-in attempt's listener or callback is let go
+  whether it was answered, cancelled, expired or replaced.
+- **No device call blocks one of Swift's executors.** The device services are
+  asynchronous, so a call waiting on Kotlin holds no thread of Swift's pool.
+
 ### Consequences
 
 - Good, because a screen is tested once, by value, and both UIs draw the
   same presentations.
-- Good, because the bridge is one protocol with one fingerprint: a Kotlin
-  build against a different Swift refuses to start.
+- Good, because the bridge is one protocol with one fingerprint over its wire
+  declarations. A Kotlin build whose declarations differ from the Swift it
+  loads refuses to start, and two builds with the same declarations start
+  together.
 - Bad, because every app writes its screens in this shape, including where a
   plain model would be shorter, and the runtime grows requirements as apps
   need them (three were added for Chat).
@@ -66,6 +92,12 @@ would work for one call and grow with every app.
 The runtime's tests hold the order, replay, epochs, coalescing and
 composition by value (the suites in `RuntimeTests.swift` and
 `RuntimeCompositionTests.swift` under `apps/kit/Tests/SubstrateKitTests`).
+The journal's refusals are held by the runtime's tests over a journal that
+cannot be read. The bridge's tests (`apps/kit/Tests/SubstrateBridgeTests`)
+hold a cancel's order against its request, a stream's cancel after its
+channel is gone, and a secure-store read that holds no thread while it
+waits. The instrumented `BrowserSignInContractTest`, run by
+`mise run android:smoke`, holds the sign-in's release of what it opened.
 `mise run android:generate:check` fails when the bridge's golden or Kotlin is
 stale, and the protocol fingerprint is checked at the bridge's start. The
 gallery fails a fixture that has no renderer on either platform.
