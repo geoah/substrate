@@ -202,7 +202,9 @@ struct BridgeTests {
         let handle = try open(runtime)
         outlet.hold()
         _ = try post(runtime, Envelope(op: .command, handle: handle, body: ["present": 500]))
-        try await Task.sleep(for: .milliseconds(100))
+        // Released once all but two were replaced while Kotlin was held:
+        // one in its hands, at most one waiting, every other coalesced.
+        while runtime.stats.coalesced < 498 { try await Task.sleep(for: .milliseconds(1)) }
         outlet.release()
         let last = try await outlet.next { $0.op == .presentation && $0.body?["step"]?.int == 500 }
         #expect(last.body?["step"] == 500)

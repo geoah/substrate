@@ -251,6 +251,9 @@ struct StoppedReadTests {
         #expect(events.last == .readLimitReached(2))
         guard case let .listed(listed, _) = events.first else { throw Unexpected() }
         #expect(listed.map(\.id) == ["a", "b"])
+        // The page after the limit is never asked for.
+        #expect(server.sent.count == 1)
+        #expect(!server.sent.contains { ($0.query ?? "").contains("after=") })
     }
 }
 

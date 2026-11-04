@@ -229,22 +229,19 @@ class BridgeCoreTest {
         val swift = FakeSwift()
         val dispatcher = StandardTestDispatcher(testScheduler)
         val discarded = CopyOnWriteArrayList<JsonElement>()
-        val made = CompletableDeferred<Unit>()
-        val core = core(swift) {
+        lateinit var core: BridgeCore
+        core = core(swift) {
             DeviceAnswer.Value(dispatcher, discard = { discarded += it }) {
-                made.complete(Unit)
+                // Cancelled while the block makes its value: the block
+                // returns it, and the call ends before the reply.
+                deliver(core, Envelope(1, Op.cancel, id = 5))
                 JsonPrimitive("made")
             }
         }
         deliver(core, Envelope(1, Op.request, id = 5, body = request(DeviceRequest.ConnectivityCurrent)))
-        // Cancelled between the block's return and the reply.
-        testScheduler.runCurrent()
-        deliver(core, Envelope(1, Op.cancel, id = 5))
         advanceUntilIdle()
-        assertTrue(made.isCompleted)
-        if (swift.posted.none { it.id == 5L && it.op == Op.reply }) {
-            assertEquals(listOf<JsonElement>(JsonPrimitive("made")), discarded.toList())
-        }
+        assertTrue(swift.posted.none { it.id == 5L && it.op == Op.reply })
+        assertEquals(listOf<JsonElement>(JsonPrimitive("made")), discarded.toList())
         assertEquals(0, core.runningCalls)
     }
 

@@ -113,9 +113,11 @@ struct OutboxTests {
         let server = ScriptedServer()
         server.on { _ in (401, #"{"error":{"code":"auth","message":"invalid token"}}"#) }
         let outbox = try openOutbox()
-        try await outbox.enqueue([entry(.put, entryKind, "a")])
+        try await outbox.enqueue([entry(.put, entryKind, "a"), entry(.put, entryKind, "b"), entry(.put, entryKind, "c")])
         #expect(await outbox.flush(writer(server)) == .signedOut)
-        #expect(await outbox.entries.count == 1)
+        // The first refused, the rest are never sent, and all three wait.
+        #expect(server.methodsAndPaths == ["PUT \(path(entryKind, "a"))"])
+        #expect(await outbox.entries.map(\.recordID) == ["a", "b", "c"])
     }
 
     @Test func aDiscardDropsTheBatchAndABatchTheServerHoldsIsPurgedAtItsVersion() async throws {

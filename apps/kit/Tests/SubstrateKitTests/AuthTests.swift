@@ -501,13 +501,17 @@ extension Retention {
         ok.on("POST", "/oauth/revoke", json: "")
         let replacing = Task { try await store.save(new, replacing: old, transport: ok) }
         // Room for the replacement to run ahead of the sign-out, as it would
-        // if nothing held it back: it revokes the old token through `ok`.
+        // if nothing held it back: it would revoke the old token through `ok`.
         for _ in 0 ..< 50 where revoked(ok).isEmpty {
             try await Task.sleep(for: .milliseconds(10))
         }
+        #expect(revoked(ok).isEmpty, "the replacement ran while the sign-out waited on the server")
         await paused.release()
         try await signingOut.value
         try await replacing.value
+        // Once the sign-out is done, the replacement runs and revokes the
+        // token it replaced.
+        #expect(revoked(ok).map { $0.hasPrefix("token=sub_app_old&") } == [true])
         #expect(store.load() == new)
     }
 
