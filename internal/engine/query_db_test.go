@@ -813,6 +813,161 @@ func TestKindlessMoneyOperandIsRefusedWhereTheKindsDisagree(t *testing.T) {
 	}
 }
 
+const statusPackage = "status.example.substrate.reamde.dev/status"
+
+// One name, a state machine on two kinds and an enum on two others, is kept
+// in two columns: a state's value in states, an enum's in props. A filter and
+// an order read each kind's rows where that kind keeps it; they used to read
+// states for every row once any kind read declared the name a state, which
+// left every enum row out of a filter and sorted it as NULL. A read naming no
+// kind reads every loaded kind declaring the name, the seeded and imported
+// ones among them, none of which has a row here, so these rows are its whole
+// answer.
+func TestAStateAndAnEnumOfOneNameAreEachReadWhereTheyAreStored(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	status := func(singular string, def map[string]any) map[string]any {
+		return vocabulary.KindManifest(statusPackage, map[string]any{"singular": singular},
+			map[string]any{"properties": map[string]any{"status": def}})
+	}
+	machine := func(settled string) map[string]any {
+		return map[string]any{
+			"type": "state", "states": []any{"open", settled}, "initial": "open",
+			"transitions": []any{map[string]any{"from": "open", "to": settled}},
+		}
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(statusPackage, 0),
+		status("ticket", machine("closed")),
+		status("job", machine("done")),
+		status("issue", map[string]any{"type": "enum", "values": []any{"open", "blocked"}}),
+		status("note", map[string]any{"type": "enum", "values": []any{"open", "archived"}}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	var all []string
+	for _, row := range []struct{ singular, status string }{
+		{"ticket", "open"},
+		{"ticket", "closed"},
+		{"job", "open"},
+		{"job", "done"},
+		{"issue", "open"},
+		{"issue", "blocked"},
+		{"note", "open"},
+		{"note", "archived"},
+	} {
+		id := row.singular + "-" + row.status
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: statusPackage + "/" + row.singular, ID: id, Properties: map[string]any{"status": row.status},
+		})
+		all = append(all, id)
+	}
+	kinds := func(singulars ...string) []string {
+		out := make([]string, 0, len(singulars))
+		for _, s := range singulars {
+			out = append(out, statusPackage+"/"+s)
+		}
+		return out
+	}
+	settled := []any{"closed", "done", "blocked", "archived"}
+
+	for _, tc := range []struct {
+		name  string
+		kinds []string
+		cond  substrate.Cond
+		want  []string
+	}{
+		{"eq over a state and an enum", kinds("ticket", "issue"), substrate.Cond{Eq: "open"}, []string{"issue-open", "ticket-open"}},
+		{"in over a state and an enum", kinds("ticket", "issue"), substrate.Cond{In: settled}, []string{"issue-blocked", "ticket-closed"}},
+		{"eq naming no kind", nil, substrate.Cond{Eq: "open"}, []string{"issue-open", "job-open", "note-open", "ticket-open"}},
+		{"in naming no kind", nil, substrate.Cond{In: settled}, []string{"issue-blocked", "job-done", "note-archived", "ticket-closed"}},
+		{"eq over two states", kinds("ticket", "job"), substrate.Cond{Eq: "open"}, []string{"job-open", "ticket-open"}},
+		{"in over two states", kinds("ticket", "job"), substrate.Cond{In: settled}, []string{"job-done", "ticket-closed"}},
+		{"eq over two enums", kinds("issue", "note"), substrate.Cond{Eq: "open"}, []string{"issue-open", "note-open"}},
+		{"in over two enums", kinds("issue", "note"), substrate.Cond{In: settled}, []string{"issue-blocked", "note-archived"}},
+	} {
+		t.Run("filter "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := listIDs(t, ds, substrate.Query{
+				Filter: substrate.Filter{Kinds: tc.kinds, Properties: map[string]substrate.Cond{"status": tc.cond}},
+				First:  50,
+			})
+			if !equalStrings(got, tc.want) {
+				t.Fatalf("filtered to %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	// Ascending by status, a tie by kind: issue, job, note, ticket. Pages of
+	// three put a cursor on the key, so the seek compares the same expression
+	// the order sorts by.
+	for _, tc := range []struct {
+		name   string
+		filter substrate.Filter
+		want   []string
+	}{
+		{
+			"over a state and an enum",
+			substrate.Filter{Kinds: kinds("ticket", "issue")},
+			[]string{"issue-blocked", "ticket-closed", "issue-open", "ticket-open"},
+		},
+		{
+			"naming no kind",
+			substrate.Filter{IDs: all},
+			[]string{"note-archived", "issue-blocked", "ticket-closed", "job-done", "issue-open", "job-open", "note-open", "ticket-open"},
+		},
+		{
+			"over two states",
+			substrate.Filter{Kinds: kinds("ticket", "job")},
+			[]string{"ticket-closed", "job-done", "job-open", "ticket-open"},
+		},
+		{
+			"over two enums",
+			substrate.Filter{Kinds: kinds("issue", "note")},
+			[]string{"note-archived", "issue-blocked", "issue-open", "note-open"},
+		},
+	} {
+		t.Run("orderBy "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			var got []string
+			after := ""
+			for pages := 0; ; pages++ {
+				if pages > 10 {
+					t.Fatal("walk did not terminate")
+				}
+				page, err := ds.List(ctx, substrate.Query{
+					Filter: tc.filter, OrderBy: []substrate.Order{{Property: "status"}}, First: 3, After: after,
+				})
+				if err != nil {
+					t.Fatalf("page %d: %v", pages, err)
+				}
+				got = append(got, ids(page.Records)...)
+				if page.Cursor == "" {
+					break
+				}
+				after = page.Cursor
+			}
+			if !equalStrings(got, tc.want) {
+				t.Fatalf("ordered %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	// match stays refused where any kind the read spans declares the name a
+	// state: matched on the enum rows alone, it would answer without the
+	// state rows and not say so.
+	for name, named := range map[string][]string{"over a state and an enum": kinds("ticket", "issue"), "naming no kind": nil} {
+		t.Run("match "+name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
+				Kinds: named, Properties: map[string]substrate.Cond{"status": {Match: "open"}},
+			}})
+			wantRefusal(t, err, substrate.ErrValidation, "status is a state")
+		})
+	}
+}
+
 // Every value the write path accepts reaches a typed read whole: an offset
 // carries a written 9999 into a five-digit year the timestamptz cast reads,
 // and `decimal` is unbounded. Both compare by value, in a read naming the kind

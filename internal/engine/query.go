@@ -494,6 +494,25 @@ func (b *builder) textArray(vals []string) string {
 	return b.arg(vals) + `::text[]`
 }
 
+// kindIn binds the kinds' identities once for two predicates on the kind
+// column: the row is of one of them, and it is of none. ONE kind binds as a
+// scalar: the declared and reference indexes are partial on
+// `kind = '<kind>'` (indices.go), and a scalar equality is the predicate the
+// planner proves them from in every plan shape, custom or generic; the list
+// form stays for several.
+func (b *builder) kindIn(kinds []*vocabulary.Kind) (in, notIn string) {
+	if len(kinds) == 1 {
+		k := b.arg(kinds[0].Identity)
+		return `kind = ` + k, `kind <> ` + k
+	}
+	idents := make([]string, 0, len(kinds))
+	for _, t := range kinds {
+		idents = append(idents, t.Identity)
+	}
+	k := b.textArray(idents)
+	return `kind = ANY(` + k + `)`, `kind <> ALL(` + k + `)`
+}
+
 func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
 	// A read-only REPEATABLE READ snapshot pins the page AND the head seq to
 	// one point in time: head = MAX(seq) in this snapshot, so every
@@ -815,19 +834,8 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		b.add(`FALSE`)
 	}
 	if len(types) > 0 {
-		idents := make([]string, 0, len(types))
-		for _, t := range types {
-			idents = append(idents, t.Identity)
-		}
-		// ONE kind binds as a scalar: the declared and reference indexes are
-		// partial on `kind = '<kind>'` (indices.go), and a scalar equality is
-		// the predicate the planner proves them from in every plan shape,
-		// custom or generic; the list form stays for a filter spanning kinds.
-		if len(idents) == 1 {
-			b.add(`kind = ` + b.arg(idents[0]))
-		} else {
-			b.add(`kind = ANY(` + b.textArray(idents) + `)`)
-		}
+		in, _ := b.kindIn(types)
+		b.add(in)
 	}
 	if len(f.IDs) > 0 {
 		b.add(`id = ANY(` + b.textArray(f.IDs) + `)`)
@@ -929,7 +937,7 @@ func (ds *dataset) quantityCond(types []*vocabulary.Kind, name string) bool {
 	if col, err := columnFor(name); err != nil || col != "" {
 		return false
 	}
-	if ds.stateProp(types, name) || ds.sensitiveProp(types, name) || len(ds.referenceShapes(types, name)) > 0 {
+	if states, _ := ds.stateKinds(types, name); len(states) > 0 || ds.sensitiveProp(types, name) || len(ds.referenceShapes(types, name)) > 0 {
 		return false
 	}
 	if len(types) == 0 {
@@ -1012,12 +1020,23 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 		}
 	}
 	// A state property filters like any other property; only its STORAGE is
-	// the states column.
-	if ds.stateProp(types, name) {
+	// the states column, and where the candidate kinds disagree on whether
+	// the name is a state, each kind's rows are read where that kind keeps
+	// the value (condStateSplit).
+	if states, others := ds.stateKinds(types, name); len(states) > 0 {
+		// match stays refused while any candidate declares the name a state,
+		// the way matchRefusal refuses it while any candidate's datatype has
+		// no words to match. Applied to the props half alone it would answer
+		// for the other kinds and leave every row of the state kinds out
+		// without a word, the wrong answer the halves exist to stop.
 		if c.Match != "" {
-			return fmt.Errorf("%w: %s is a state — match needs a text property, use eq or in", substrate.ErrValidation, name)
+			return fmt.Errorf("%w: %s is a state on %s — match needs a text property, use eq or in",
+				substrate.ErrValidation, name, states[0].Identity)
 		}
-		return condJSON(b, `states`, name, c, vocabulary.DatatypeString, nil)
+		if len(others) == 0 {
+			return condJSON(b, `states`, name, c, vocabulary.DatatypeString, nil)
+		}
+		return ds.condStateSplit(ctx, x, b, states, others, name, c)
 	}
 	if ds.sensitiveProp(types, name) {
 		return fmt.Errorf("%w: %s is sensitive and cannot be filtered", substrate.ErrValidation, name)
@@ -1067,6 +1086,45 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 		return ds.condQuantity(ctx, x, b, types, name, c)
 	}
 	return condJSON(b, `props`, name, c, kind, declaring)
+}
+
+// condStateSplit filters a name the state kinds declare a state and the other
+// kinds declare as something else, in one clause of two halves joined by OR:
+// a row of a state kind compares its states value, and every other row its
+// props value, compiled as condProp compiles the name over the other kinds
+// alone. Every other row and not only the other kinds': a read naming no kind
+// also reaches the rows of kinds that do not declare the name, and those are
+// read where they would be if no kind declared it a state.
+func (ds *dataset) condStateSplit(ctx context.Context, x dbx, b *builder, states, others []*vocabulary.Kind, name string, c substrate.Cond) error {
+	// Each half compiles into b itself, so its arguments are numbered in b's
+	// one list, and its clauses are then taken back off b's where to be ANDed
+	// under the half's kind test.
+	half := func(compile func() error) ([]string, error) {
+		n := len(b.where)
+		if err := compile(); err != nil {
+			return nil, err
+		}
+		clauses := slices.Clone(b.where[n:])
+		b.where = b.where[:n]
+		return clauses, nil
+	}
+	onStates, err := half(func() error { return condJSON(b, `states`, name, c, vocabulary.DatatypeString, nil) })
+	if err != nil {
+		return err
+	}
+	onProps, err := half(func() error { return ds.condProp(ctx, x, b, others, name, c) })
+	if err != nil {
+		return err
+	}
+	// A condition that compiles to no clause over one kind compiles to none
+	// over these either.
+	if len(onStates) == 0 && len(onProps) == 0 {
+		return nil
+	}
+	in, notIn := b.kindIn(states)
+	b.add(`((` + strings.Join(append([]string{in}, onStates...), ` AND `) + `) OR (` +
+		strings.Join(append([]string{notIn}, onProps...), ` AND `) + `))`)
+	return nil
 }
 
 // kindlessDatatype is the datatype a filter naming no kind compares `name`
@@ -1713,18 +1771,23 @@ func (ds *dataset) referenceProp(types []*vocabulary.Kind, name string) bool {
 	return found
 }
 
-// stateProp reports whether name is a state property on any candidate type —
-// every loaded type when the query names none, the same way sensitiveProp asks.
-func (ds *dataset) stateProp(types []*vocabulary.Kind, name string) bool {
+// stateKinds splits the candidate kinds declaring name — every loaded kind
+// when the query names none, the same way sensitiveProp asks — by where a row
+// of each keeps the value: the kinds declaring it a state keep it in the
+// states column, the others in props. A kind that does not declare the name
+// keeps it nowhere and is in neither.
+func (ds *dataset) stateKinds(types []*vocabulary.Kind, name string) (states, others []*vocabulary.Kind) {
 	if len(types) == 0 {
 		types = ds.registry().Kinds()
 	}
 	for _, t := range types {
 		if _, ok := t.StateProp(name); ok {
-			return true
+			states = append(states, t)
+		} else if _, ok := t.Prop(name); ok {
+			others = append(others, t)
 		}
 	}
-	return false
+	return states, others
 }
 
 // sensitiveProp reports whether name is sensitive on any candidate type —
@@ -2022,10 +2085,11 @@ func (ds *dataset) orderExpr(ctx context.Context, x dbx, b *builder, types []*vo
 	if err != nil {
 		return "", err
 	}
+	states, others := ds.stateKinds(types, property)
 	switch {
 	case col != "":
 		return col, nil
-	case ds.stateProp(types, property):
+	case len(states) > 0 && len(others) == 0:
 		// Built by concatenation, so escaped the same way indices.go builds its
 		// jsonb paths: the ValidCamel load-time invariant already forbids a
 		// quote, and sqlLiteral is the defense-in-depth that does not rely on it.
@@ -2034,6 +2098,21 @@ func (ds *dataset) orderExpr(ctx context.Context, x dbx, b *builder, types []*vo
 		if ds.sensitiveProp(types, property) {
 			return "", fmt.Errorf("%w: %s is sensitive and cannot be ordered by",
 				substrate.ErrValidation, property)
+		}
+		// A name only some candidate kinds declare a state sorts by a CASE on
+		// the kind: a row of a state kind by its states value, every other row
+		// by its props value. A key has one type and a state is text, so the
+		// props value sorts as text whatever the other kinds declare: the
+		// every-not-any rule numericProp states, with the state kinds among
+		// the candidates. The state kinds are spelled inline for
+		// typedOrderSQL's reason: the order's text is the cursor's signature.
+		if len(states) > 0 {
+			lits := make([]string, 0, len(states))
+			for _, t := range states {
+				lits = append(lits, sqlLiteral(t.Identity))
+			}
+			return `(CASE WHEN kind = ANY(ARRAY[` + strings.Join(lits, `, `) + `]::text[]) THEN states->>` +
+				sqlLiteral(property) + ` ELSE props->>` + sqlLiteral(property) + ` END)`, nil
 		}
 		// A NUMBER sorts as a number. `props->>` is text, so ordering by an
 		// int-typed property sorted it lexicographically — 0, 1, 10, 11, 2 —
