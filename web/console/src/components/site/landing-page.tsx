@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 
+import { ColorSchemeMenu } from "@/components/color-scheme-menu"
 import { DoorBrand } from "@/components/door/door-layout"
 import { buttonVariants } from "@/components/ui/button"
 import { doorPath, landingFragment } from "@/lib/landing"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import type { SiteInfo } from "@/lib/site"
+import { cn } from "@/lib/utils"
 
 /** What the fragment's shadow root starts with. The console's tokens are
  * custom properties on the document, and custom properties inherit through
@@ -91,11 +93,17 @@ export function LandingPage({ site }: { site: SiteInfo }) {
           <Link to="/" className="rounded-lg" aria-label={site.name}>
             <DoorBrand site={site} size="sm" />
           </Link>
-          <nav className="flex items-center gap-1.5 sm:gap-2">
+          {/* Tighter on a phone, where the brand, the switch and both doors
+            share 358 px. */}
+          <nav className="flex items-center gap-0.5 sm:gap-2">
+            <ColorSchemeMenu className="size-8 sm:size-9" />
             <Link
               to="/login"
               search={{}}
-              className={buttonVariants({ variant: "ghost", size: "lg" })}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "lg" }),
+                "px-2 sm:px-2.5"
+              )}
             >
               Sign in
             </Link>

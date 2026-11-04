@@ -200,6 +200,39 @@ export function writeLocalSetting(action: SettingAction): void {
   }
 }
 
+const SIGNED_OUT_THEME_KEY = "substrate.console.signedOutTheme"
+
+/** Note a theme chosen on a signed-out page. The theme provider already
+ * keeps the value under `theme`; this mark tells the next signed-in console
+ * that the choice is newer than the repository's stored one, so it saves it
+ * rather than following the record. */
+export function markSignedOutTheme(theme: ThemePreference): void {
+  try {
+    storage()?.setItem(SIGNED_OUT_THEME_KEY, theme)
+  } catch {
+    // A full or refused storage loses a convenience, never the page.
+  }
+}
+
+/** The theme a signed-out page chose and no signed-in console has saved
+ * yet, if any. */
+export function readSignedOutTheme(): ThemePreference | undefined {
+  try {
+    const value = storage()?.getItem(SIGNED_OUT_THEME_KEY)
+    return valid("theme", value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function clearSignedOutTheme(): void {
+  try {
+    storage()?.removeItem(SIGNED_OUT_THEME_KEY)
+  } catch {
+    // Left in place, the mark is carried again at the next sign-in.
+  }
+}
+
 // ── the record ──────────────────────────────────────────────────────────────
 
 const strings = (value: unknown): string[] =>
