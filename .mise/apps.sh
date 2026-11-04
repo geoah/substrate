@@ -1822,6 +1822,121 @@ site() {
 	[ -z "$DRY" ] || say "dry run: what the site published is under build/apps/dry-run/site"
 }
 
+# --- TestFlight ------------------------------------------------------------
+#
+# `mise run apps:testflight [prerelease|stable] [app…]`: every app with an
+# iPhone and iPad UI (or the ones named) built from one commit under one
+# version, as a release stamps it, exported for App Store Connect and
+# uploaded there, where TestFlight gives each build to the groups that take
+# every build. The Mac builds stay with Sparkle and the feeds, since an App
+# Store build cannot carry an updater of its own. Nothing is written to the
+# release folder or the site, so it takes no lease and needs no bucket key;
+# what it needs of the site is already published (testflight_site).
+
+# Every iPhone app the run uploads must have its App Store Connect record,
+# which the API reads and cannot create: refused before anything is built,
+# naming each missing one with what makes it.
+testflight_records() {
+	local bundles=() app found missing=""
+	for app in "${RELEASE_APPS[@]}"; do bundles+=("$(app_get "$app" .apple.bundleID)"); done
+	found="$(xcrun swift "$APPS_DIR/xcode/scripts/appstoreconnect.swift" records "${bundles[@]}")" ||
+		die "App Store Connect's records could not be read with the API key"
+	for app in "${RELEASE_APPS[@]}"; do
+		grep -q "^$(app_get "$app" .apple.bundleID) " <<<"$found" && continue
+		missing="$missing
+  $(app_get "$app" .name): New App, platform iOS, bundle ID $(app_get "$app" .apple.bundleID), SKU substrate-$app"
+	done
+	[ -z "$missing" ] || die "App Store Connect has no record for these apps, and its API cannot make one. In App Store Connect → Apps, make each once:$missing
+then add it to the internal TestFlight group that takes every build, and run this again"
+	say "App Store Connect has a record for ${RELEASE_APPS[*]}"
+}
+
+# What a TestFlight build signs in through must already be on the site: the
+# association file naming its app id for its callback, and its client
+# document naming that callback. Without them the build installs and can
+# never sign in, so it is refused here; `mise run apps:site` publishes both.
+testflight_site() {
+	local site file="$RUN/aasa.json" app id path
+	site="$(site_url)" || exit 1
+	curl -fsS --max-time 60 -o "$file" "$site/.well-known/apple-app-site-association" ||
+		die "$site/.well-known/apple-app-site-association could not be read; publish the site with mise run apps:site"
+	for app in "${RELEASE_APPS[@]}"; do
+		id="$SUBSTRATE_APPLE_TEAM_ID.$(app_get "$app" .apple.bundleID)"
+		path="/apps/$app/callback"
+		jq -e --arg id "$id" --arg path "$path" '
+			(.webcredentials.apps | index($id)) != null and
+			any(.applinks.details[]; (.appIDs | index($id)) != null and any(.components[]; .["/"] == $path))' "$file" >/dev/null ||
+			die "the site's association file does not give $id its callback $path; publish the site with mise run apps:site"
+		curl -fsS --max-time 60 -o "$RUN/client-$app.json" "$(client_url "$app")" ||
+			die "$(client_url "$app") could not be read; publish the site with mise run apps:site"
+		jq -e --arg uri "$(apple_callback "$app")" '.redirect_uris | index($uri) != null' "$RUN/client-$app.json" >/dev/null ||
+			die "$(client_url "$app") does not name $(apple_callback "$app"); publish the site with mise run apps:site"
+	done
+	say "the site claims every callback for ${RELEASE_APPS[*]}"
+}
+
+testflight() {
+	local channel="prerelease"
+	case "${1:-}" in
+	prerelease | stable)
+		channel="$1"
+		shift
+		;;
+	esac
+	[ -z "$DRY" ] || die "TestFlight has no dry run: apps:release's dry run builds and checks the same apps without signing them"
+	dry_only
+	: "${SUBSTRATE_APPLE_ASC_KEY_PATH:?set SUBSTRATE_APPLE_ASC_KEY_PATH to the App Store Connect API key (AuthKey_….p8) that signs and uploads the builds}"
+	: "${SUBSTRATE_APPLE_ASC_KEY_ID:?set SUBSTRATE_APPLE_ASC_KEY_ID beside the key path}"
+	: "${SUBSTRATE_APPLE_ASC_ISSUER_ID:?set SUBSTRATE_APPLE_ASC_ISSUER_ID beside the key path}"
+	[ -r "$SUBSTRATE_APPLE_ASC_KEY_PATH" ] || die "$SUBSTRATE_APPLE_ASC_KEY_PATH cannot be read"
+	: "${SUBSTRATE_APPLE_TEAM_ID:?set SUBSTRATE_APPLE_TEAM_ID to the team id that signs the apps}"
+	: "${SUBSTRATE_APPLE_SITE_URL:?set SUBSTRATE_APPLE_SITE_URL to the https origin of the site: a TestFlight build signs in through the callback it claims there, and never through a loopback port}"
+	site_url >/dev/null || exit 1
+	RELEASE_APPS=("$@")
+	local app
+	if [ "${#RELEASE_APPS[@]}" -eq 0 ]; then
+		for app in $(ui_apps); do
+			if app_has "$app" ios; then RELEASE_APPS+=("$app"); fi
+		done
+	fi
+	for app in "${RELEASE_APPS[@]}"; do
+		[ -f "$(app_json "$app")" ] || die "$app is no app: apps/$app/app.json is not there"
+		app_has "$app" ios || die "$app has no iPhone and iPad UI, so there is nothing of it for TestFlight"
+	done
+	# Every build reaches every tester the group gives it to, at once: never
+	# one of code nobody committed.
+	[ -z "$(git -C "$ROOT" status --porcelain)" ] || die "TestFlight builds are made from a clean tree; commit or set aside what is changed"
+	short="" build="" commit="" commit_full="" version=""
+	stamp "$channel"
+	run_begin
+	say "sending ${RELEASE_APPS[*]} to TestFlight as $short ($build), $version"
+	testflight_records
+	testflight_site
+
+	local_lock builds wait "this checkout's builds"
+	project
+	PROVISION=(-allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"})
+	local ipas=()
+	for app in "${RELEASE_APPS[@]}"; do
+		mkdir -p "$RUN/work/$app"
+		say "building $app for TestFlight"
+		apple_testflight_build "$app" "$RUN/work/$app"
+		ipas+=("$APPLE_IPA")
+	done
+	local_unlock builds
+	[ "$(git -C "$ROOT" rev-parse HEAD)" = "$commit_full" ] || die "HEAD moved while $version was built; nothing is uploaded"
+
+	# Every build passed before the first goes up. App Store Connect refuses
+	# a build number it already has for the version, so a rerun builds again
+	# under a new one rather than resume.
+	local i
+	for i in "${!RELEASE_APPS[@]}"; do
+		say "uploading $(app_get "${RELEASE_APPS[$i]}" .name) $short ($build)"
+		apple_upload "${ipas[$i]}" || die "$(app_get "${RELEASE_APPS[$i]}" .name)'s upload was refused; the apps before it went up, and a rerun sends every app again under a new build number"
+	done
+	say "sent ${RELEASE_APPS[*]} to TestFlight as $short ($build); App Store Connect processes each before TestFlight offers it"
+}
+
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 	case "${1:-}" in
 	release)
@@ -1829,8 +1944,12 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 		release "$@"
 		;;
 	site) site ;;
+	testflight)
+		shift
+		testflight "$@"
+		;;
 	*)
-		echo "usage: $0 release [prerelease|stable] [app…] | site" >&2
+		echo "usage: $0 release [prerelease|stable] [app…] | site | testflight [prerelease|stable] [app…]" >&2
 		exit 2
 		;;
 	esac

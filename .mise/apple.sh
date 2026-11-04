@@ -304,6 +304,46 @@ apple_release_build() {
 	echo "$entries" >"$scratch/apple.json"
 }
 
+# One app's iPhone and iPad build for TestFlight, archived and exported for
+# App Store Connect into $2/iOS and checked as a release's is, with the same
+# client id, claimed redirect and associated domain. It carries no feed
+# address (SUBSTRATE_UPDATES_URL stays empty), so it never offers the feed's
+# development-signed build over itself: TestFlight is what updates it.
+# Sets APPLE_IPA, the IPA's path.
+# shellcheck disable=SC2154
+apple_testflight_build() {
+	local app="$1" scratch="$2" scheme entry plist="$2/iOS-Info.plist"
+	scheme="$(app_get "$app" .apple.scheme)"
+	APPLE_BUNDLE="$(app_get "$app" .apple.bundleID)"
+	APPLE_CLIENT="$(client_url "$app")" || exit 1
+	APPLE_REDIRECT="$(apple_callback "$app")" || exit 1
+	site_settings "$app" || exit 1
+	SETTINGS=(
+		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build"
+		SUBSTRATE_VERSION="$version" SUBSTRATE_CHANNEL="$channel" SUBSTRATE_COMMIT="$commit"
+		"SUBSTRATE_$(app_upper "$app")_CLIENT_ID=$APPLE_CLIENT"
+		# The team the site's association file was checked against, so the
+		# build is signed as the team that claims its callback.
+		DEVELOPMENT_TEAM="$SUBSTRATE_APPLE_TEAM_ID"
+		${SITE[@]+"${SITE[@]}"}
+	)
+	apple_archive "$app" "$scheme" iOS "$scratch" app-store-connect
+	APPLE_IPA="$(find "$scratch/iOS" -maxdepth 1 -name '*.ipa' | head -1)"
+	[ -n "$APPLE_IPA" ] || die "$app's App Store Connect export made no IPA"
+	entry="$(zipinfo -1 "$APPLE_IPA" | grep -E '^Payload/[^/]+\.app/Info\.plist$' | head -1)" ||
+		die "$app's IPA holds no app"
+	unzip -p "$APPLE_IPA" "$entry" >"$plist"
+	apple_check "$app" iOS "$plist"
+}
+
+# An exported IPA sent to App Store Connect with the release's API key.
+# App Store Connect processes it after this returns, and gives it to the
+# TestFlight groups that take every build.
+apple_upload() {
+	xcrun altool --upload-package "$1" --api-key "$SUBSTRATE_APPLE_ASC_KEY_ID" \
+		--api-issuer "$SUBSTRATE_APPLE_ASC_ISSUER_ID" --p8-file-path "$SUBSTRATE_APPLE_ASC_KEY_PATH"
+}
+
 # One platform's archive and export, to $4/<platform>. A dry run archives
 # unsigned and takes the app out of the archive in place of an export
 # (UNSIGNED, unsigned_export), and one that cannot archive stands a
@@ -446,13 +486,45 @@ export_archive() {
 	local platform="$1" method="$2" out="$3"
 	plutil -create xml1 "$out/$platform-export.plist"
 	plutil -insert method -string "$method" "$out/$platform-export.plist"
-	plutil -insert signingStyle -string automatic "$out/$platform-export.plist"
+	if [ "$method" = app-store-connect ]; then
+		# An App Store Connect export may otherwise give the build a number of
+		# its own, and the build the checks and the upload hold is the stamped one.
+		plutil -insert manageAppVersionAndBuildNumber -bool NO "$out/$platform-export.plist"
+		store_profiles "$out/$platform.xcarchive" "$out/$platform-export.plist" || return 1
+	else
+		plutil -insert signingStyle -string automatic "$out/$platform-export.plist"
+	fi
 	xcodebuild -exportArchive -archivePath "$out/$platform.xcarchive" -exportPath "$out/$platform" \
 		-exportOptionsPlist "$out/$platform-export.plist" ${PROVISION[@]+"${PROVISION[@]}"} -quiet || return 1
 	# A release claims its sign-in callback on the site, which needs the
 	# associated domain in its signed entitlements, and a profile without
 	# the capability drops it: such a build could never receive a sign-in.
 	require_associated_domains "$out/$platform"
+}
+
+# An App Store export signed by hand, into the export plist $2, for every
+# bundle the archive $1 holds (the app and each extension inside it): the
+# keychain's Apple Distribution identity and an App Store profile each, made
+# or reused through the API (appstoreconnect.swift profiles) and installed
+# where Xcode reads profiles. Automatic signing would sign with the team's
+# cloud-managed certificate, which an API key may not use.
+store_profiles() {
+	local archive="$1" plist="$2" hashes bundle uuid bundles=() mapping='{}' dir lines
+	hashes="$(security find-identity -v -p codesigning | awk '/"Apple Distribution: / {print $2}' | paste -sd, -)"
+	[ -n "$hashes" ] || { echo "apple: no Apple Distribution identity is in the keychain; import the one in the release secrets" >&2; return 1; }
+	while IFS= read -r -d '' path; do
+		bundles+=("$(plutil -extract CFBundleIdentifier raw -o - "$path/Info.plist")")
+	done < <(find "$archive/Products/Applications" \( -name '*.app' -o -name '*.appex' \) -type d -print0)
+	dir="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+	mkdir -p "$dir"
+	lines="$(xcrun swift "$APPLE_ROOT/apps/xcode/scripts/appstoreconnect.swift" profiles "$dir" "$hashes" "${bundles[@]}")" || return 1
+	while read -r bundle uuid; do
+		mapping="$(jq -c --arg b "$bundle" --arg u "$uuid" '. + {($b): $u}' <<<"$mapping")"
+	done <<<"$lines"
+	plutil -insert signingStyle -string manual "$plist"
+	plutil -insert signingCertificate -string "Apple Distribution" "$plist"
+	plutil -insert teamID -string "${SUBSTRATE_APPLE_TEAM_ID:?set SUBSTRATE_APPLE_TEAM_ID}" "$plist"
+	plutil -insert provisioningProfiles -json "$mapping" "$plist"
 }
 
 # Refuses an exported app (an .ipa, or a Mac .app) whose signature carries no

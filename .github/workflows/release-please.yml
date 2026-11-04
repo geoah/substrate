@@ -140,3 +140,16 @@ jobs:
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
       sha: ${{ needs.release-please.outputs.sha }}
+
+  # The release's iPhone and iPad apps to TestFlight, beside the release and
+  # apart from it: a refused upload leaves the CLI and the image published.
+  testflight:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/testflight.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+      sha: ${{ needs.release-please.outputs.sha }}

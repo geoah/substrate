@@ -934,6 +934,11 @@ description = "Build every app (or the ones named) on every platform it has a UI
 depends = ["console:build"]
 run = ".mise/apps.sh release"
 
+[tasks."apps:testflight"]
+description = "Build every app with an iPhone and iPad UI (or the ones named) from one commit, export each for App Store Connect and upload it to TestFlight; [prerelease|stable] [app…]; refuses an app with no App Store Connect record, or whose callback the site does not claim yet"
+depends = ["console:build"]
+run = ".mise/apps.sh testflight"
+
 [tasks."apps:site"]
 description = "Publish the apps' site alone, under the release lease: the association files, the authority document with every published package version, the closures and every app's client document, and print the _substrate record its DNS needs; SUBSTRATE_APPS_RELEASE_DRY_RUN=1 builds it under build/apps and uploads nothing"
 run = ".mise/apps.sh site"

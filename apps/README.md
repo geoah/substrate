@@ -450,6 +450,68 @@ Mode on) and the Mac app opens after Privacy & Security → Open Anyway once.
 `SUBSTRATE_APPLE_EXPORT_MACOS=developer-id` switch to ad hoc and Developer ID
 signing once those certificates exist.
 
+### TestFlight
+
+`mise run apps:testflight` (`apps:testflight stable` for a stable one;
+`apps:testflight prerelease tasks` for one app) builds every app with an
+iPhone and iPad UI from one commit, stamped as a release stamps it (the
+version, the build number, the client id and the claimed callback),
+exports each for App Store Connect, holds it to the same checks as a
+release's build, and uploads it. TestFlight then gives it to every group set
+to take each build, once App Store Connect has processed it. The Mac builds
+stay on Sparkle and the feeds: an App Store build may not carry an updater
+of its own.
+
+```bash
+SUBSTRATE_APPLE_ASC_KEY_PATH=…/AuthKey_….p8 SUBSTRATE_APPLE_ASC_KEY_ID=… \
+SUBSTRATE_APPLE_ASC_ISSUER_ID=… SUBSTRATE_APPLE_TEAM_ID=… \
+SUBSTRATE_APPLE_SITE_URL=https://apps.example.com mise run apps:testflight
+```
+
+It writes nothing to the release folder or the site, so it takes no lease
+and needs no bucket key. A TestFlight build carries no feed address, so it
+never offers the feed's development-signed build over itself. It still
+signs in only through the callback it claims on the site, so before it
+builds anything it reads the site's association file and each app's
+`client.json`, and refuses an app the site does not claim yet: run
+`mise run apps:site` (or a release) first. It has no dry run;
+`apps:release`'s dry run builds the same apps unsigned.
+
+Every release sends its apps too: after release-please tags a release,
+`.github/workflows/testflight.yml` runs `apps:testflight stable` from the
+tagged commit on a macOS runner, with the key and the site from the
+`testflight` environment (the workflow's header names each). A pre-release
+goes from a Mac.
+
+The App Store Connect key provisions and uploads; it needs the Admin role,
+as above. It signs nothing itself: an API key may not use the team's
+cloud-managed distribution certificate, so an automatic App Store export is
+refused. The export signs by hand instead, with the team's Apple
+Distribution certificate from the keychain and, for the app and every
+extension in its archive, an App Store profile the API makes (or reuses,
+named `<bundle id> App Store <certificate id>`) and installs where Xcode
+reads profiles (`appstoreconnect.swift profiles`). The machine that runs it
+needs that certificate's identity in its keychain: kept with the release's
+secrets as a `.p12`, and imported by the CI job into a keychain of its own,
+beside a team Apple Development certificate: the archive is signed for
+development before the export signs it again, and a fresh runner has no
+development identity of its own. A TestFlight build is made from a clean
+tree only, since every tester the group gives it to receives it at once.
+App Store Connect refuses a build number it already
+has, and the build number is the UTC time, so a rerun builds again rather
+than resume; an upload that failed partway leaves the apps before it sent.
+
+**Every app needs its App Store Connect record, made once by hand.** The
+API reads records and cannot create them, so `apps:testflight` looks each
+app's bundle id up first and, for any with no record, stops before it
+builds and names what to make. In App Store Connect → Apps → New App: platform
+iOS (and macOS where the app has a Mac UI, for later), the app's `name`
+from app.json, its `apple.bundleID` (registered already by the first
+signed build, or by `mise run apple:build:device`), and `substrate-<id>` as the SKU (unique in the account; nothing reads it).
+Then add it to the internal TestFlight group that takes every build.
+Everything else about a new app (its bundle id, capabilities, profiles and
+extensions) the key registers on its own.
+
 ## Driving a debug build
 
 A debug build carries `DebugDriver`: it watches `automation/` in the app's
@@ -993,6 +1055,11 @@ holding the text tone (and a `BrandAccent` holding the accent, where the
 two differ), and an entry of its own in `xcode/scripts/icons.mjs`
 ([app icons](../docs/app-icons.md#adding-an-app)), from which its AppIcon
 set is drawn again.
+
+Before its first TestFlight build, an app needs one thing no task can
+make: its record in App Store Connect, and its place in the TestFlight
+group ([TestFlight](#testflight)). `apps:new` names it last, and
+`apps:testflight` refuses the app until it is there.
 
 ## Android
 

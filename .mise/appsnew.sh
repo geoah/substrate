@@ -111,3 +111,5 @@ echo "                1. its accent: \"accent\" in apps/$id/app.json, light and 
 echo "                   the text tone in apps/$id/apple/Assets.xcassets/AccentColor.colorset and, where the two differ, the accent in a BrandAccent.colorset beside it (lint:apps holds them equal)"
 echo "                2. its icon: an entry for $id in APPS in apps/xcode/scripts/icons.mjs (a hue no app uses, a glyph in GLYPHS; docs/app-icons.md), then"
 echo "                   node apps/xcode/scripts/icons.mjs appiconset $id apps/$id/apple/Assets.xcassets/AppIcon.appiconset --mac"
+echo "  TestFlight:   once, by hand, as the API cannot: in App Store Connect, New App for dev.reamde.substrate.$id"
+echo "                (name Substrate $upper_first, SKU substrate-$id), and add it to the TestFlight group; then mise run apps:testflight prerelease $id"
