@@ -93,10 +93,10 @@ Two refinements exist, both introduced by core's `temporal` and covered in
 binding may **rename** where a property lands (`temporal(point: dueAt)` is
 how a task's moment is its due date while the task still answers every
 temporal query). A trait without variants takes a rename of the one property
-it contracts, as [`stateful(status: state)`](#a-kinds-status-stateful) binds
+it contracts, as [`lifecycle(status: state)`](#a-kinds-status-lifecycle) binds
 a kind whose status is called `state`; core's other traits refuse it, since
 the engine reads their properties by name
-([record 0226](decisions/0226-a-kinds-status-is-the-core-stateful-trait-and-names-its-done-and-dropped-states.md)).
+([record 0226](decisions/0226-a-kinds-status-is-the-core-lifecycle-trait-and-names-its-done-and-dropped-states.md)).
 
 ## Declaring your own
 
@@ -318,11 +318,11 @@ opt into twice:
   [Connections](bundles.md#connections) has the worked example and the
   migration from a bundle's own status strings.
 
-## A kind's status: `stateful`
+## A kind's status: `lifecycle`
 
-Core's `stateful` is for a kind whose records move through states (a task,
+Core's `lifecycle` is for a kind whose records move through states (a task,
 an issue, a chore), so an app works over all of them at once
-([record 0226](decisions/0226-a-kinds-status-is-the-core-stateful-trait-and-names-its-done-and-dropped-states.md)).
+([record 0226](decisions/0226-a-kinds-status-is-the-core-lifecycle-trait-and-names-its-done-and-dropped-states.md)).
 It contracts one property, `status: enum`, which an enum or a state machine
 meets, and the status lists the values that close a record in `done:` and
 `dropped:` ([the reserved keys](vocabulary.md#the-reserved-keys)); every
@@ -331,7 +331,7 @@ so no app guesses.
 
 ```yaml
 traits:
-  - "substrate.reamde.dev/core/stateful(status: state)"
+  - "substrate.reamde.dev/core/lifecycle(status: state)"
 properties:
   state:
     type: enum
@@ -340,13 +340,13 @@ properties:
       - closed
 ```
 
-The status may go by another name: `stateful(status: state)` binds a kind
-whose status is `state`, as GitHub's issue does. To work over every
-implementor, an app:
+The status may go by another name: `lifecycle(status: state)` binds a kind
+whose status is called `state`. To work over every implementor, an app:
 
 - reads each implementor's declaration for the property, its values and
   the two lists;
-- reads a kind's open records as those whose status is in neither list;
+- reads a kind's open records as those whose status is in neither list. A
+  record with no status is open;
 - filters each implementor on its own, under that kind's name for the
   status. A renamed status is not called `status`, and a machine's state is
   stored apart from an enum's value;
@@ -355,6 +355,12 @@ implementor, an app:
   which a put never makes, so it offers a record the moves its current
   state has.
 
+Binding gives the status its meaning, not a way to write it. A write
+follows the kind's own rules, so a status its provider's sync owns stays
+read-only to an app. A kind binds only where its status says what closed
+the work: GitHub's issue does not, since its `state` reads "closed as not
+planned" as closed, and binds once its sync derives a finer status.
+
 An app's [trait scope](apps.md#scopes),
-`write:implements(substrate.reamde.dev/core/stateful)`, reaches every kind
+`write:implements(substrate.reamde.dev/core/lifecycle)`, reaches every kind
 that binds it.

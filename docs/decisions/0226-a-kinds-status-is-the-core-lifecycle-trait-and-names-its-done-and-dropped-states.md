@@ -4,7 +4,7 @@ date: 2026-11-04
 decision-makers: George Antoniadis
 ---
 
-# 0226. A kind's status is the core `stateful` trait, and names its done and dropped states
+# 0226. A kind's status is the core `lifecycle` trait, and names its done and dropped states
 
 ## Context and Problem Statement
 
@@ -20,17 +20,17 @@ app which of a kind's states mean the work is over.
 
 ## Considered Options
 
-- A `stateful` trait over the status itself, the kind naming which of its
+- A `lifecycle` trait over the status itself, the kind naming which of its
   states are done and which dropped.
 - A `completable` trait over the outcome, `completedAt` and `canceledAt`,
   the status left to each kind.
-- A `stateful` trait whose done states every app maps for itself.
+- A `lifecycle` trait whose done states every app maps for itself.
 - Fixed state names every binder spells alike, as Mneme's `attention` trait
   is held.
 
 ## Decision Outcome
 
-Chosen: `substrate.reamde.dev/core/stateful`, over the status itself, the
+Chosen: `substrate.reamde.dev/core/lifecycle`, over the status itself, the
 kind naming which of its states are done and which dropped. An app draws
 each kind's own states and moves it between them, any number and any names,
 and every app reads the same meaning of open and closed from the kind
@@ -41,7 +41,9 @@ owner writes every kind, and GitHub's names are GitHub's.
 
 It is core's because the loader holds its shape, as it holds every trait
 whose shape the engine reads, and because a provider, a sample and an app
-must all be able to bind it without requiring a package for it.
+must all be able to bind it without requiring a package for it. It is named
+`lifecycle`, not `stateful`: every kind with a state machine is stateful in
+plain English, and what the trait adds is which of its states end the work.
 
 The rules this binds:
 
@@ -60,7 +62,7 @@ The rules this binds:
   examples: GitHub's `state` beside its `stateReason`, and Linear's
   reference to a workflow state, whose type says what kind of state it is.
 - **A binding may rename the property it contracts**:
-  `stateful(status: state)` binds a kind whose status is called `state`.
+  `lifecycle(status: state)` binds a kind whose status is called `state`.
   One property, for a trait without variants that the engine does not read
   by name: core's other traits refuse it. The time properties' remap
   (`temporal(point: dueAt)`) is unchanged. Both use one spelling. After the
@@ -76,14 +78,26 @@ The rules this binds:
   - They sit on a kind's own property that holds one value. A field, link
     data, a list or a map refuses them.
 
-  Every state in neither list is open. A kind that binds `stateful` lists
+  Every state in neither list is open. A kind that binds `lifecycle` lists
   at least one done state, so no app guesses. The lists change no stored
   record, so editing them is not a narrowing.
+- **A record with no status is open.** An enum status the kind does not
+  require may be absent, and absence closes nothing.
+- **Binding gives a status its meaning, not a way to write it.** A write
+  still follows the kind's own rules: a machine's transitions, and the
+  property's writer. A status its provider's sync owns stays the
+  provider's, and an app reads it.
+- **A kind binds only where its status says what closed the work.** A
+  status coarser than that waits for a finer one its sync derives. GitHub's
+  issue is the case: its `state` reads an issue closed as not planned as
+  closed, so it binds once its sync fills a status from `state` and
+  `stateReason`.
 
 ### Consequences
 
-- Good, because a kind of any status keeps its own states: an enum as
-  GitHub's is, a state machine as Tasks', the sample's or an owner's own.
+- Good, because a kind of any status keeps its own states: an enum, as a
+  provider's often is, or a state machine, as Tasks', the sample's or an
+  owner's own.
 - Good, because what is closed is said once, beside the states, for every
   app, agent and query that reads the kind.
 - Bad, because a status that is a reference cannot meet the contract:
@@ -93,9 +107,9 @@ The rules this binds:
   query across implementors reads each binding to find it.
 - Bad, because an app writes a machine and an enum differently, and a
   machine's transitions may refuse a move the trait alone does not show.
-- Bad, because a status coarser than its reasons lists them coarse: a
-  GitHub issue closed as not planned reads as done until its sync fills a
-  finer status from `stateReason`.
+- Bad, because a provider whose status is coarser than what closed the work
+  binds only once its sync derives a finer one: GitHub's issue does not
+  bind yet.
 - Bad, because three dialect additions land at once, each an upgrade of
   every binary that reads the closures
   ([0020](0020-dialect-keys-are-reserved-not-tolerated.md)), and every
@@ -111,13 +125,13 @@ The vocabulary tests hold each rule:
   state, and refused on a field, link data or a list;
 - a binding without a done state is refused.
 
-`mise run kinds:check` holds the shipped bindings (the tasks sample,
-GitHub's issue) to their versions.
+`mise run kinds:check` holds the shipped binding, the tasks sample's, to
+its version.
 
 ## More Information
 
 Follows the app's side of
 [0225](0225-an-apps-scope-may-name-a-trait-and-covers-what-star-covers-among-the-kinds-that-bind-it.md):
-Tasks asks for `write:implements(substrate.reamde.dev/core/stateful)`. Reopen
+Tasks asks for `write:implements(substrate.reamde.dev/core/lifecycle)`. Reopen
 if a status needs a third closed meaning, or if the engine should answer
 "open" across kinds itself.

@@ -1610,7 +1610,7 @@ func bindCapability(typeIdent, capName, variant, cols string, c *Trait) (*TraitB
 			to := strings.TrimSpace(cols)
 			_, contracted := props[variant]
 			switch {
-			case KindPackage(c.Identity()) == PackageCore && c.Identity() != TraitStatefulCore:
+			case KindPackage(c.Identity()) == PackageCore && c.Identity() != TraitLifecycleCore:
 				errf("%s: %s declares no variants, and the engine reads its properties by name, so a binding renames none", where, capName)
 				return nil, nil, problems
 			case !contracted || isHot(variant):

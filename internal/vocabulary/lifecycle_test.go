@@ -11,7 +11,7 @@ import (
 	"github.com/geoah/substrate/kinds"
 )
 
-// The stateful trait (decision 0226): a kind's status, an enum or a state
+// The lifecycle trait (decision 0226): a kind's status, an enum or a state
 // machine, lists the values that close a record, and a binding may rename
 // it.
 
@@ -69,9 +69,9 @@ func documents(docs []string) string {
 }
 
 const (
-	bindsStateful = "    - substrate.reamde.dev/core/stateful\n"
-	renamesState  = "    - \"substrate.reamde.dev/core/stateful(status: state)\"\n"
-	choreMachine  = `    status:
+	bindsLifecycle = "    - substrate.reamde.dev/core/lifecycle\n"
+	renamesState   = "    - \"substrate.reamde.dev/core/lifecycle(status: state)\"\n"
+	choreMachine   = `    status:
       type: state
       states: [pending, doing, completed, skipped]
       initial: pending
@@ -95,15 +95,15 @@ func chore(t *testing.T, reg *vocabulary.Registry) *vocabulary.Kind {
 }
 
 func TestAStateMachineAnEnumOrARenamedEnumIsAStatus(t *testing.T) {
-	reg, err := overSeed(t, workPackage(bindsStateful, choreMachine+"      done: [completed]\n      dropped: [skipped]\n"))
+	reg, err := overSeed(t, workPackage(bindsLifecycle, choreMachine+"      done: [completed]\n      dropped: [skipped]\n"))
 	if err != nil {
 		t.Fatalf("a state machine with its done and dropped states: %v", err)
 	}
 	k := chore(t, reg)
-	status := k.Props[vocabulary.StatefulStatus]
-	if !k.Implements(vocabulary.TraitStatefulCore) || !slices.Equal(status.Done, []string{"completed"}) ||
+	status := k.Props[vocabulary.LifecycleStatus]
+	if !k.Implements(vocabulary.TraitLifecycleCore) || !slices.Equal(status.Done, []string{"completed"}) ||
 		!slices.Equal(status.Dropped, []string{"skipped"}) {
-		t.Fatalf("implements %v, done %v, dropped %v", k.Implements(vocabulary.TraitStatefulCore), status.Done, status.Dropped)
+		t.Fatalf("implements %v, done %v, dropped %v", k.Implements(vocabulary.TraitLifecycleCore), status.Done, status.Dropped)
 	}
 
 	enum := `    status:
@@ -111,11 +111,11 @@ func TestAStateMachineAnEnumOrARenamedEnumIsAStatus(t *testing.T) {
       values: [open, closed]
       done: [closed]
 `
-	if _, err := overSeed(t, workPackage(bindsStateful, enum)); err != nil {
+	if _, err := overSeed(t, workPackage(bindsLifecycle, enum)); err != nil {
 		t.Fatalf("an enum with its done value: %v", err)
 	}
 
-	// GitHub's issue calls its status `state`: the binding renames it.
+	// A kind whose status is called `state`: the binding renames it.
 	renamed := `    state:
       type: enum
       values: [open, closed]
@@ -126,7 +126,7 @@ func TestAStateMachineAnEnumOrARenamedEnumIsAStatus(t *testing.T) {
 		t.Fatalf("a renamed status: %v", err)
 	}
 	for _, b := range chore(t, reg).Traits {
-		if b.Identity == vocabulary.TraitStatefulCore && b.Renames[vocabulary.StatefulStatus] != "state" {
+		if b.Identity == vocabulary.TraitLifecycleCore && b.Renames[vocabulary.LifecycleStatus] != "state" {
 			t.Fatalf("the binding's renames are %v, want status to state", b.Renames)
 		}
 	}
@@ -134,24 +134,24 @@ func TestAStateMachineAnEnumOrARenamedEnumIsAStatus(t *testing.T) {
 
 func TestAStatusListsWhatClosesARecordAndNothingElse(t *testing.T) {
 	cases := map[string]struct{ traits, properties, want string }{
-		"a stateful kind names its done values": {
-			bindsStateful, choreMachine,
-			"trait substrate.reamde.dev/core/stateful requires status to list the values that mean done",
+		"a lifecycle kind names its done values": {
+			bindsLifecycle, choreMachine,
+			"trait substrate.reamde.dev/core/lifecycle requires status to list the values that mean done",
 		},
 		"a listed value is one of its own": {
-			bindsStateful, choreMachine + "      done: [finished]\n",
+			bindsLifecycle, choreMachine + "      done: [finished]\n",
 			`"finished" is not one of the property's values`,
 		},
 		"no value is listed twice": {
-			bindsStateful, choreMachine + "      done: [completed]\n      dropped: [completed]\n",
+			bindsLifecycle, choreMachine + "      done: [completed]\n      dropped: [completed]\n",
 			`"completed" is already listed in done`,
 		},
 		"one value at least stays open": {
-			bindsStateful, "    status:\n      type: enum\n      values: [open, closed]\n      done: [closed]\n      dropped: [open]\n",
+			bindsLifecycle, "    status:\n      type: enum\n      values: [open, closed]\n      done: [closed]\n      dropped: [open]\n",
 			"done and dropped leave no value open",
 		},
 		"the lists are lists": {
-			bindsStateful, choreMachine + "      done: completed\n",
+			bindsLifecycle, choreMachine + "      done: completed\n",
 			"a list of the property's own values",
 		},
 		"only an enum or a machine lists them": {
@@ -159,7 +159,7 @@ func TestAStatusListsWhatClosesARecordAndNothingElse(t *testing.T) {
 			"done and dropped name an enum's values or a state machine's states",
 		},
 		"a machine starts open": {
-			bindsStateful, choreMachine + "      done: [completed]\n      dropped: [pending]\n",
+			bindsLifecycle, choreMachine + "      done: [completed]\n      dropped: [pending]\n",
 			`the initial state "pending" is listed in dropped`,
 		},
 		"a list closes nothing": {
@@ -176,18 +176,18 @@ func TestAStatusListsWhatClosesARecordAndNothingElse(t *testing.T) {
 		},
 		"a renamed status's shape names the kind's property": {
 			renamesState, "    state:\n      type: enum\n      repeated: true\n      values: [open, closed]\n",
-			"data.properties.state: trait substrate.reamde.dev/core/stateful requires state to hold one value",
+			"data.properties.state: trait substrate.reamde.dev/core/lifecycle requires state to hold one value",
 		},
 		"the status is an enum or a machine": {
-			bindsStateful, "    status:\n      type: string\n",
-			"trait substrate.reamde.dev/core/stateful requires type enum, got string",
+			bindsLifecycle, "    status:\n      type: string\n",
+			"trait substrate.reamde.dev/core/lifecycle requires type enum, got string",
 		},
 		"a renamed status is declared under its new name": {
 			renamesState, choreMachine + "      done: [completed]\n",
 			"requires property status, renamed to state",
 		},
 		"a binding renames only what the trait contracts": {
-			"    - \"substrate.reamde.dev/core/stateful(phase: state)\"\n", choreMachine + "      done: [completed]\n",
+			"    - \"substrate.reamde.dev/core/lifecycle(phase: state)\"\n", choreMachine + "      done: [completed]\n",
 			`contracts no property "phase"`,
 		},
 		"the engine's own traits keep their names": {
@@ -210,7 +210,7 @@ func TestAStatusListsWhatClosesARecordAndNothingElse(t *testing.T) {
 }
 
 // A trait of the owner's own, which no engine path reads, may be renamed as
-// stateful is.
+// lifecycle is.
 func TestATraitOutsideCoreMayBeRenamed(t *testing.T) {
 	flagged := `kind: substrate.reamde.dev/core/trait
 metadata:

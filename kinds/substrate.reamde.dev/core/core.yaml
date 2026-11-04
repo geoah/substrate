@@ -78,7 +78,7 @@ data:
   # that ships records and declares nothing installs (decision record 0192).
   # version 47: the `wait` host function, and a function's `execution`
   # (decision record 0200).
-  # version 48: the `stateful` trait, a kind's status naming the values that
+  # version 48: the `lifecycle` trait, a kind's status naming the values that
   # close a record (decision record 0226).
   version: 48
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
@@ -549,11 +549,11 @@ data:
 # which meets an enum contract. The status lists the values that close a
 # record, `done` and `dropped`, and every other value is open, so an app draws
 # a kind's own states and still knows which of them end the work. A binding
-# may rename the status (`stateful(status: state)`), the one core trait that
+# may rename the status (`lifecycle(status: state)`), the one core trait that
 # allows it, since no engine path reads it by name.
 kind: substrate.reamde.dev/core/trait
 metadata:
-  id: substrate.reamde.dev/core/stateful
+  id: substrate.reamde.dev/core/lifecycle
 data:
   authority: substrate.reamde.dev
   package: core

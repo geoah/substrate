@@ -937,14 +937,14 @@ not a property named `purpose` — a kind may declare one of those too, under
 **`done:` and `dropped:` say which values close a record.** An enum or a
 state property lists, among its own values, the ones that mean the work was
 done and the ones that mean it was dropped, and every other value is open
-([record 0226](decisions/0226-a-kinds-status-is-the-core-stateful-trait-and-names-its-done-and-dropped-states.md)).
-A kind that binds core's [`stateful`](traits.md#a-kinds-status-stateful)
+([record 0226](decisions/0226-a-kinds-status-is-the-core-lifecycle-trait-and-names-its-done-and-dropped-states.md)).
+A kind that binds core's [`lifecycle`](traits.md#a-kinds-status-lifecycle)
 lists at least one done value, so an app that draws the kind's own states
 still knows which of them end the work:
 
 ```yaml
 traits:
-  - substrate.reamde.dev/core/stateful
+  - substrate.reamde.dev/core/lifecycle
 properties:
   status:
     type: state

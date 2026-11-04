@@ -380,4 +380,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0220](0220-outside-code-is-confined-and-reviewed.md) | Code from an outside authority reaches only the hosts it declares, waits for review when it changes, and needs a sandbox that confines it | proposed |
 | [0221](0221-first-party-apps-publish-under-substrate-reamde-dev.md) | First-party apps publish under substrate.reamde.dev, and the binary wins for what it ships | proposed |
 | [0225](0225-an-apps-scope-may-name-a-trait-and-covers-what-star-covers-among-the-kinds-that-bind-it.md) | An app's scope may name a trait, and covers what `*` covers among the kinds that bind it | proposed |
-| [0226](0226-a-kinds-status-is-the-core-stateful-trait-and-names-its-done-and-dropped-states.md) | A kind's status is the core `stateful` trait, and names its done and dropped states | proposed |
+| [0226](0226-a-kinds-status-is-the-core-lifecycle-trait-and-names-its-done-and-dropped-states.md) | A kind's status is the core `lifecycle` trait, and names its done and dropped states | proposed |

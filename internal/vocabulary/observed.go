@@ -184,8 +184,8 @@ var contractShapes = map[string]map[string]contractShape{
 			"low": DatatypeQuantity, "high": DatatypeQuantity, "text": DatatypeString,
 		}},
 	},
-	TraitStatefulCore: {
-		StatefulStatus: {done: true},
+	TraitLifecycleCore: {
+		LifecycleStatus: {done: true},
 	},
 }
 

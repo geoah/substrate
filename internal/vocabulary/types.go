@@ -667,7 +667,7 @@ type TraitBinding struct {
 	// property (`at`, `endsAt`, `dueAt`) it occupies on this type.
 	Columns map[string]string
 	// Renames maps the trait's contract property to the kind's own property
-	// that meets it, where the binding renamed it (`stateful(status: state)`,
+	// that meets it, where the binding renamed it (`lifecycle(status: state)`,
 	// decision 0226). A contract property not here is met under its own name.
 	Renames map[string]string
 }
