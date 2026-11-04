@@ -1057,7 +1057,9 @@ or module file the file does not list with a matching sha256, plugins and
 `gradle/libs.versions.toml`, a new library, an AGP or Kotlin bump) is
 followed by `mise run android:lock`, which rewrites the locks and then the
 metadata from nothing, from what `android:build`, `android:test` and the
-device tests resolve here, plus aapt2 for Linux, macOS and Windows, since
+device tests resolve here in an empty Gradle home, as CI's runner resolves
+them (Gradle verifies what it fetches, and a warm cache skips metadata a
+cold resolution fetches), plus aapt2 for Linux, macOS and Windows, since
 the Android plugin fetches the one for its host; commit both and read the
 metadata's diff as a lock's: a changed checksum for a version that did not
 change is a dependency that changed under its name. `mise run

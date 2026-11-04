@@ -318,7 +318,11 @@ cmd_gallery() {
 # dropped, then once more for aapt2, which the Android plugin fetches for
 # the host it runs on: CI builds on Linux, a laptop on macOS, and the file
 # must hold both. One Gradle run per set, each adding to the file, because
-# the whole set in one run outgrows the daemon's heap.
+# the whole set in one run outgrows the daemon's heap. The runs share an
+# empty Gradle home, because Gradle verifies what it fetches and CI's runner
+# starts with nothing: a cold resolution fetches metadata a warm cache never
+# reads again (kotlinx-coroutines-bom 1.8.0's POM, under build-logic's
+# classpath), so a file written from a warm home passes here and fails there.
 cmd_lock() {
   need_sdk
   need_swift
@@ -328,6 +332,11 @@ cmd_lock() {
     "${apps[@]}" --write-locks >/dev/null
   (cd apps/gradle && ./gradlew --console=plain -p build-logic dependencies --write-locks >/dev/null)
   local metadata=apps/gradle/gradle/verification-metadata.xml
+  # Stopped and removed on any exit: a failed run leaves the home's daemon
+  # running and its downloads on disk.
+  lock_home=$(mktemp -d)
+  export GRADLE_USER_HOME=$lock_home
+  trap '(cd apps/gradle && ./gradlew --stop >/dev/null 2>&1) || true; rm -rf "$lock_home"' EXIT
   rm -f "$metadata"
   gradle --no-configuration-cache --write-verification-metadata sha256 "${build_tasks[@]}" "${placeholder_stamp[@]}" >/dev/null
   gradle --no-configuration-cache --write-verification-metadata sha256 "${test_tasks[@]}" >/dev/null
