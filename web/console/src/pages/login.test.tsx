@@ -146,10 +146,25 @@ describe("LoginPage", () => {
     }
     render(<LoginPage />)
     expect(screen.getByText("Crane")).toBeTruthy()
-    expect(screen.getByText("A home for your people")).toBeTruthy()
     expect(screen.getByText("Welcome back to Crane.")).toBeTruthy()
     expect(document.querySelector('img[src="/site/logo.svg"]')).not.toBeNull()
     expect(document.querySelector('img[src="/substrate.svg"]')).toBeNull()
+  })
+
+  it("says a branded deployment is a Substrate provider, and only then", () => {
+    door.site = { name: "Crane" }
+    render(<LoginPage />)
+    expect(screen.getByText("A Substrate provider")).toBeTruthy()
+    expect(
+      screen.getByRole("heading", { name: "Sign in to your Substrate" })
+    ).toBeTruthy()
+    cleanup()
+    door.site = null
+    render(<LoginPage />)
+    expect(screen.queryByText(/provider/i)).toBeNull()
+    expect(
+      screen.getByRole("heading", { name: "Sign in to your Substrate" })
+    ).toBeTruthy()
   })
 
   it("keeps the substrate's brand where no site is set", () => {
@@ -221,7 +236,7 @@ describe("LoginPage", () => {
     render(<LoginPage />)
     expect(
       screen
-        .getByRole("link", { name: "Create an account" })
+        .getByRole("link", { name: "Create your Substrate" })
         .getAttribute("href")
     ).toBe("/register?redirect=%2Fauthorize%2FAbC123")
     cleanup()
@@ -229,7 +244,7 @@ describe("LoginPage", () => {
     render(<LoginPage />)
     expect(
       screen
-        .getByRole("link", { name: "Create an account" })
+        .getByRole("link", { name: "Create your Substrate" })
         .getAttribute("href")
     ).toBe("/register")
   })

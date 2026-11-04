@@ -524,7 +524,11 @@ landing: landing.html       # optional: a file in the directory
 ```
 
 `name` is the brand on the sign-in and register pages and on the landing.
-`tagline` is a line under it. `logo` is an image shown beside the name.
+Under it the sign-in and register pages say "A Substrate provider": a site
+names who hosts the Substrates on this server, and the doors keep calling
+what a visitor signs in to "your Substrate". `tagline` is the line under the
+name on a landing whose fragment cannot load, and the second half of the
+landing's page title. `logo` is an image shown beside the name.
 `landing` is an HTML fragment the console renders at `/` for a visitor who is
 not signed in, in place of sending them straight to sign in. Without
 `SUBSTRATE_SITE_DIR` none of this exists: `/site/` is the console's like

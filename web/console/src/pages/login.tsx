@@ -116,7 +116,7 @@ export function LoginPage() {
 
   return (
     <DoorLayout
-      title="Sign in"
+      title="Sign in to your Substrate"
       description={site ? `Welcome back to ${site.name}.` : "Welcome back."}
       footer={
         <>
@@ -126,7 +126,7 @@ export function LoginPage() {
             search={{ redirect: returnTo }}
             className={doorLinkClass}
           >
-            Create an account
+            Create your Substrate
           </Link>
         </>
       }

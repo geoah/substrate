@@ -156,7 +156,9 @@ describe("RegisterPage", () => {
   it("shows the full address the name becomes, as it is typed", () => {
     render(<RegisterPage />)
     const name = screen.getByLabelText("Choose your address")
-    expect(screen.getByText(/Your name becomes your address/)).toBeTruthy()
+    expect(
+      screen.getByText(/Your name becomes your Substrate’s address/)
+    ).toBeTruthy()
     fireEvent.change(name, { target: { value: "Mum" } })
     // jsdom serves the console from localhost, so a bare name lands there.
     expect(screen.getByText("mum.localhost")).toBeTruthy()
@@ -170,6 +172,10 @@ describe("RegisterPage", () => {
     door.site = { name: "Crane", logo: "/site/logo.svg" }
     render(<RegisterPage />)
     expect(screen.getByText("Crane")).toBeTruthy()
+    expect(screen.getByText("A Substrate provider")).toBeTruthy()
+    expect(
+      screen.getByRole("heading", { name: "Create your Substrate" })
+    ).toBeTruthy()
     expect(
       screen.getByText("Choose your address on Crane and a password.")
     ).toBeTruthy()
@@ -178,6 +184,7 @@ describe("RegisterPage", () => {
     door.site = null
     render(<RegisterPage />)
     expect(screen.getByText("substrate")).toBeTruthy()
+    expect(screen.queryByText(/provider/i)).toBeNull()
     expect(document.querySelector('img[src="/substrate.svg"]')).not.toBeNull()
   })
 
@@ -216,7 +223,9 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("One-time code"), {
       target: { value: "123 456" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create your Substrate" })
+    )
 
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
     expect(getRepository()).toBe("geoah.localhost")
@@ -247,7 +256,9 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("One-time code"), {
       target: { value: "123456" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create your Substrate" })
+    )
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
         to: "/authorize/AbC123",
@@ -268,7 +279,9 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("One-time code"), {
       target: { value: "123456" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create your Substrate" })
+    )
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
     )
@@ -289,7 +302,9 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("One-time code"), {
       target: { value: "123456" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create your Substrate" })
+    )
 
     // Logged in, but NOT navigated: the recovery key arrives only on this
     // response, and the page holds the reader until they carry it off.
@@ -323,7 +338,9 @@ describe("RegisterPage", () => {
       target: { value: PASSWORD },
     })
     expect(screen.queryByLabelText("One-time code")).toBeNull()
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create your Substrate" })
+    )
 
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
     expect(fetchMock.mock.calls.length).toBe(1)
@@ -359,7 +376,9 @@ describe("RegisterPage", () => {
     fireEvent.change(screen.getByLabelText("Confirm password"), {
       target: { value: PASSWORD },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create your Substrate" })
+    )
 
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
     const [url, init] = fetchMock.mock.calls[0]
@@ -403,7 +422,7 @@ describe("RegisterPage", () => {
     expect(screen.getByLabelText("Invite code")).toBeTruthy()
     expect(
       screen
-        .getByRole("button", { name: "Create account" })
+        .getByRole("button", { name: "Create your Substrate" })
         .hasAttribute("disabled")
     ).toBe(true)
   })
@@ -468,7 +487,9 @@ describe("RegisterPage and the door's own answer", () => {
     await waitFor(() => expect(screen.queryByText("SEED")).toBeNull())
     expect(screen.queryByLabelText("One-time code")).toBeNull()
 
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create your Substrate" })
+    )
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
     const call = fetchMock.mock.calls.find(
       ([url]) => String(url) === "/register"

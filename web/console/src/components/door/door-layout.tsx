@@ -20,15 +20,19 @@ function DefaultMark({ className }: { className?: string }) {
 /** The brand at the top of a door or the landing page: the site's logo and
  * name where the deployment sets one, the substrate's otherwise. Renders an
  * empty block of the same height while the answer is in flight, so a branded
- * deployment never flashes the default brand first. */
+ * deployment never flashes the default brand first.
+ *
+ * `showProvider` adds the line that says what a branded deployment is: a
+ * provider hosting Substrates, not a product of its own. Without a site the
+ * door is Substrate's own and the line is never shown. */
 export function DoorBrand({
   site,
   size = "lg",
-  showTagline = false,
+  showProvider = false,
 }: {
   site: SiteInfo | null | undefined
   size?: "sm" | "lg"
-  showTagline?: boolean
+  showProvider?: boolean
 }) {
   const mark = size === "lg" ? "size-12" : "size-7"
   if (site === undefined) {
@@ -57,8 +61,10 @@ export function DoorBrand({
         >
           {name}
         </span>
-        {showTagline && site?.tagline && (
-          <span className="text-sm text-muted-foreground">{site.tagline}</span>
+        {showProvider && site && (
+          <span className="text-sm text-muted-foreground">
+            A Substrate provider
+          </span>
         )}
       </div>
     </div>
@@ -92,7 +98,7 @@ export function DoorLayout({
       <main className="relative mx-auto flex min-h-svh w-full max-w-[420px] flex-col px-4 pt-10 pb-10 sm:justify-center sm:px-6 sm:pt-10">
         <div className="mb-6 flex justify-center sm:mb-8">
           <Link to="/" aria-label={site?.name ?? "Home"} className="rounded-lg">
-            <DoorBrand site={site} showTagline />
+            <DoorBrand site={site} showProvider />
           </Link>
         </div>
         <section className="rounded-2xl border bg-card p-5 shadow-card sm:p-8">

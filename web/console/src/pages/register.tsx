@@ -147,7 +147,7 @@ function repositoryAuthority(name: string, host: string): string {
  * Where the substrate verifies no second factor there IS no step two: the one
  * form commits, and the seed is minted server-side and enrolled nowhere. */
 export function RegisterPage() {
-  useDocumentTitle("Create an account")
+  useDocumentTitle("Create your Substrate")
   const { inviteRequired, totpRequired } = useAuthPolicy()
   const site = useSite()
   const host = substrateHostname().replace(/\.$/, "").toLowerCase()
@@ -300,7 +300,7 @@ export function RegisterPage() {
   if (recoveryKey !== null) {
     return (
       <DoorLayout
-        eyebrow="Account created"
+        eyebrow="Substrate created"
         title="Save your recovery key"
         description="It is shown once and never again. Put it in your password manager now."
       >
@@ -340,7 +340,7 @@ export function RegisterPage() {
       eyebrow={
         twoSteps ? (enrollment ? "Step 2 of 2" : "Step 1 of 2") : undefined
       }
-      title={enrollment ? "Connect an authenticator" : "Create your account"}
+      title={enrollment ? "Connect an authenticator" : "Create your Substrate"}
       description={
         enrollment
           ? "Scan the code with your authenticator app or password manager, then type the code it shows. Nothing is saved until you finish."
@@ -350,7 +350,7 @@ export function RegisterPage() {
       }
       footer={
         <>
-          Already have an account?{" "}
+          Already have a Substrate?{" "}
           <Link
             to="/login"
             search={{ redirect: returnTo }}
@@ -420,14 +420,14 @@ export function RegisterPage() {
             >
               {authority ? (
                 <>
-                  Your address will be{" "}
+                  Your Substrate&rsquo;s address will be{" "}
                   <span className="font-medium [overflow-wrap:anywhere] text-foreground">
                     {authority}
                   </span>
                   . You sign in with it, and it can&rsquo;t be changed later.
                 </>
               ) : (
-                "Your name becomes your address, and you sign in with it. It can’t be changed later."
+                "Your name becomes your Substrate’s address, and you sign in with it. It can’t be changed later."
               )}
             </p>
           </Field>
@@ -476,7 +476,7 @@ export function RegisterPage() {
                 disabled={!canEnroll || isBusy}
               >
                 {isBusy && <Spinner />}
-                {totpRequired ? "Continue" : "Create account"}
+                {totpRequired ? "Continue" : "Create your Substrate"}
               </Button>
             </Field>
           )}
@@ -488,7 +488,7 @@ export function RegisterPage() {
           <div className="flex items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2.5">
             <div className="flex min-w-0 flex-col">
               <span className="text-xs text-muted-foreground">
-                Your address
+                Your Substrate&rsquo;s address
               </span>
               <span className="text-sm font-medium [overflow-wrap:anywhere]">
                 {authority}
@@ -555,7 +555,7 @@ export function RegisterPage() {
                   disabled={!canFinish || isBusy}
                 >
                   {isBusy && <Spinner />}
-                  Create account
+                  Create your Substrate
                 </Button>
               </Field>
             </FieldGroup>

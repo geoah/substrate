@@ -3,7 +3,6 @@ import { Link, useNavigate } from "@tanstack/react-router"
 
 import { DoorBrand } from "@/components/door/door-layout"
 import { buttonVariants } from "@/components/ui/button"
-import { useAuthPolicy } from "@/lib/api/discovery"
 import { doorPath, landingFragment } from "@/lib/landing"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import type { SiteInfo } from "@/lib/site"
@@ -84,9 +83,7 @@ function LandingFragment({ html, source }: { html: string; source: string }) {
  * the operator's fragment. */
 export function LandingPage({ site }: { site: SiteInfo }) {
   useDocumentTitle(site.tagline ? `${site.name}: ${site.tagline}` : site.name)
-  const { inviteRequired } = useAuthPolicy()
   const load = useLanding(site.landing ?? "")
-  const join = inviteRequired ? "Join with an invite" : "Create account"
   return (
     <div className="min-h-svh bg-background">
       <header className="sticky top-0 z-10 border-b border-transparent bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
@@ -107,7 +104,7 @@ export function LandingPage({ site }: { site: SiteInfo }) {
               search={{}}
               className={buttonVariants({ size: "lg" })}
             >
-              {join}
+              Create your Substrate
             </Link>
           </nav>
         </div>
@@ -130,7 +127,7 @@ export function LandingPage({ site }: { site: SiteInfo }) {
                 search={{}}
                 className={buttonVariants({ size: "lg" })}
               >
-                {join}
+                Create your Substrate
               </Link>
               <Link
                 to="/login"

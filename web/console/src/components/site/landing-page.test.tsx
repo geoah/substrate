@@ -25,12 +25,6 @@ vi.mock("@tanstack/react-router", () => ({
   },
 }))
 
-const policy = vi.hoisted(() => ({ inviteRequired: true, totpRequired: true }))
-vi.mock("@/lib/api/discovery", async (importOriginal) => {
-  const real = await importOriginal<typeof import("@/lib/api/discovery")>()
-  return { ...real, useAuthPolicy: () => policy }
-})
-
 import { LandingPage } from "./landing-page"
 
 const SITE = {
@@ -43,7 +37,7 @@ const SITE = {
 const FRAGMENT = `<style>h1{color:var(--primary)}</style>
 <h1>Your own corner</h1>
 <script>window.ran = true</script>
-<a id="join" href="/register">Create your Crane</a>
+<a id="join" href="/register">Create your Substrate</a>
 <a id="about" href="https://elsewhere.example/">Read more</a>
 <a id="help" href="/login" target="help">Help</a>`
 
@@ -58,7 +52,6 @@ describe("LandingPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock)
     navigate.mockClear()
-    policy.inviteRequired = true
   })
 
   afterEach(() => {
@@ -77,7 +70,7 @@ describe("LandingPage", () => {
     ).toBe("/login")
     expect(
       screen
-        .getByRole("link", { name: "Join with an invite" })
+        .getByRole("link", { name: "Create your Substrate" })
         .getAttribute("href")
     ).toBe("/register")
     await waitFor(() =>
@@ -90,13 +83,6 @@ describe("LandingPage", () => {
     // Mounted as markup: the fragment's script is gone and never ran.
     expect(fragmentRoot().querySelector("script")).toBeNull()
     expect((window as unknown as { ran?: boolean }).ran).toBeUndefined()
-  })
-
-  it("says Create account where no invite is needed", () => {
-    policy.inviteRequired = false
-    fetchMock.mockResolvedValue(new Response(FRAGMENT, { status: 200 }))
-    render(<LandingPage site={SITE} />)
-    expect(screen.getByRole("link", { name: "Create account" })).toBeTruthy()
   })
 
   it("opens a door the fragment links to inside the console", async () => {
@@ -149,5 +135,8 @@ describe("LandingPage", () => {
     await screen.findByRole("heading", { name: "Crane" })
     expect(screen.getByText("A home for your people")).toBeTruthy()
     expect(screen.getAllByRole("link", { name: "Sign in" }).length).toBe(2)
+    expect(
+      screen.getAllByRole("link", { name: "Create your Substrate" }).length
+    ).toBe(2)
   })
 })
