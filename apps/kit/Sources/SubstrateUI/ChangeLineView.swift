@@ -33,17 +33,4 @@ public struct ChangeLineView: View {
         .accessibilityElement(children: .combine)
     }
 }
-
-/// One change, as `ChangeLine` words it.
-public struct ChangeRow: View {
-    public let change: Change
-
-    public init(_ change: Change) {
-        self.change = change
-    }
-
-    public var body: some View {
-        ChangeLineView(ChangeLine(change))
-    }
-}
 #endif

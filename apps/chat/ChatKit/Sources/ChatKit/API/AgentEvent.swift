@@ -88,7 +88,7 @@ struct AgentEvent: Codable, Sendable, Equatable {
         event.error = string("error")
         event.turn = int("turn")
         event.status = string("status")
-        if let result = object["result"] { event.result = try? result.decode(AgentResult.self) }
+        if let result = object["result"] { event.result = try? ValueCoding.decode(AgentResult.self, from: result) }
         return event
     }
 

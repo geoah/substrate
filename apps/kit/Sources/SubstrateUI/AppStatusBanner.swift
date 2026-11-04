@@ -50,11 +50,6 @@ public struct AppStatusActions {
     }
 }
 
-/// Why an app's access ended, in one sentence every screen says it with.
-public func accessEndedWords(appName: String, host: String) -> String {
-    AccessPresenter.endedWords(appName: appName, host: host)
-}
-
 /// The Access screen's banner: one line per issue, with its action.
 public struct AccessBannerView: View {
     let banner: AccessBanner
@@ -103,26 +98,6 @@ public struct AppStatusBanner: View {
         {
             AccessBannerView(banner, perform: actions.perform)
         }
-    }
-}
-
-/// One access ending soon, on its own: the date and the way to renew.
-public struct AccessEndingBanner: View {
-    let appName: String
-    let host: String
-    let date: Date
-    let onRenew: (() -> Void)?
-
-    public init(appName: String, host: String, date: Date, onRenew: (() -> Void)?) {
-        self.appName = appName
-        self.host = host
-        self.date = date
-        self.onRenew = onRenew
-    }
-
-    public var body: some View {
-        AppStatusBanner(issues: [.accessEndsSoon(date)], appName: appName, host: host,
-                        actions: AppStatusActions(review: onRenew))
     }
 }
 

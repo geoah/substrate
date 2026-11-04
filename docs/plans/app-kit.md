@@ -518,7 +518,7 @@ view in `SubstrateUI` and a composable in `kit-ui`.
 
 | Screen | What it shows | Today |
 | --- | --- | --- |
-| Connect | address or repository name, finding the server, the door (browser, password, too old), unrevoked tokens | `ConnectView`, `ServerTooOldView`, `UnrevokedNotices` |
+| Connect | address or repository name, finding the server, the door (browser, password, too old), unrevoked tokens | `ConnectView`, `ServerTooOldScreen`, `UnrevokedNotices` |
 | Access | the status banner's issues; the approval review; access ended | `AppStatusBanner`, `ReviewChangesSheet`, `AccessEndedView` |
 | Repository | server, repository, access, change access, sign out | `AccountSection` |
 | Status | a sentence (up to date, sending, offline, needs approval, signed out), the writes waiting and the ones refused, each with retry and discard | Workouts' `SubstrateSection`, `SyncStatus` |

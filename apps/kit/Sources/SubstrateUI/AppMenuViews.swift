@@ -3,10 +3,9 @@ import SubstrateScreens
 import SwiftUI
 
 /// The App menu (§5.6) as the window's width draws it, for an app whose wide
-/// layout is a split view of its own rather than `AppMenuView`'s sidebar of
-/// sections: the tabs (`AppMenuView` with `.tabs`) on a phone, the split
-/// view on an iPad and a Mac. Both are drawn from the same presentation;
-/// which section is open is its `selected`, never the view's.
+/// layout is a split view of its own: the tabs (`AppMenuView`) on a phone,
+/// the split view on an iPad and a Mac. Both are drawn from the same
+/// presentation; which section is open is its `selected`, never the view's.
 public struct AppMenuRoot<Tabs: View, Split: View>: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     let tabs: Tabs

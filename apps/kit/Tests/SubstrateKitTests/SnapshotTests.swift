@@ -78,12 +78,6 @@ struct Snapshots {
         func draw(_ name: String, _ view: some View) async throws { try await self.draw(name, view, in: directory) }
 
         try await draw("connect-view", ConnectView(manifest: manifest, address: .constant(""), header: { header }, onSignIn: { _ in }))
-        try await draw("server-too-old", ScrollView {
-            ServerTooOldView(appName: "Substrate Sync", host: "ada.example.com", running: "v0.113.0", needed: "0.114.0",
-                             missing: [ServerRequirement.detailWords("account"), ServerRequirement.detailWords("webhook")],
-                             onTryAgain: {}, onChangeServer: {})
-                .padding(24)
-        })
         let shipsOld = AuthorizationSetup.Block(reason: "server-update", problem: Blocks.serverUpdate(shipped: 2, need: 3))
         let needsFirst = AuthorizationSetup.Block(reason: "server-update", problem: Blocks.serverUpdateFirst(need: 2, shipped: 1))
         let serverBlocked = [
@@ -124,9 +118,6 @@ struct Snapshots {
                 .serverTooOld(running: "v0.114.0", needed: nil, missing: [], blocked: [serverBlocked[1]]),
                 .needsApproval(changes: update), .accessEndsSoon(now.addingTimeInterval(3 * 86400)),
             ], appName: "Substrate Sync", host: "ada.example.com", actions: actions)
-        })
-        try await draw("access-ending-banner", screen {
-            AccessEndingBanner(appName: "Substrate Sync", host: "ada.example.com", date: now.addingTimeInterval(86400), onRenew: {})
         })
         try await draw("review-first-sign-in", ReviewChangesSheet(
             appName: "Substrate Sync", host: "ada.example.com", changes: manifest.plannedChanges(), firstSignIn: true,

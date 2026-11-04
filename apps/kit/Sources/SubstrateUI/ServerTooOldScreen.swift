@@ -67,27 +67,4 @@ public struct ServerTooOldScreen: View {
         .frame(maxWidth: 440)
     }
 }
-
-/// A server that cannot do what the app needs: which release it runs, which
-/// the app needs, what it cannot do yet, and who can change that.
-public struct ServerTooOldView: View {
-    let presentation: ServerTooOldPresentation
-    var onTryAgain: (() -> Void)?
-    var onChangeServer: (() -> Void)?
-
-    /// - Parameter blocked: the package rows only a newer server sets up,
-    ///   each with the server's sentence.
-    public init(appName: String, host: String, running: String?, needed: String?, missing: [String], blocked: [Change] = [],
-                onTryAgain: (() -> Void)? = nil, onChangeServer: (() -> Void)? = nil)
-    {
-        presentation = .present(appName: appName, host: host, running: running, needed: needed, missing: missing, blocked: blocked,
-                                tryAgain: onTryAgain != nil, changeServer: onChangeServer != nil)
-        self.onTryAgain = onTryAgain
-        self.onChangeServer = onChangeServer
-    }
-
-    public var body: some View {
-        ServerTooOldScreen(presentation, onTryAgain: onTryAgain, onChangeServer: onChangeServer)
-    }
-}
 #endif

@@ -7,9 +7,6 @@ import SubstrateScreens
 /// yet, as `UnrevokedPresenter` words them: one `ProblemBox` each, so a form
 /// section lists them as rows.
 public struct UnrevokedNotices: View {
-    /// The one title every screen says it under.
-    public nonisolated static let title = UnrevokedPresenter.title
-
     let notices: [ProblemPresentation]
 
     public init(appName: String, unrevoked: [Session]) {
