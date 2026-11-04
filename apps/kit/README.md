@@ -395,7 +395,8 @@ directory, `swift test --filter Snapshots` also draws every fixture of
 states (under `apps/`), to PNG files there, at an iPhone's size in light
 mode, for a person to look at; `mise run apps:gallery` does it into
 `build/gallery/apple`, beside kit-ui's Compose renderings of the same
-fixtures in `build/gallery/android`. A screen without a renderer in
+fixtures in `build/gallery/android` ([a sample of eight](docs/gallery/README.md)
+is kept in this tree). A screen without a renderer in
 `Gallery` fails the suite either way. The fixtures cross to Android as
 `android/fixtures/screens.json`, and SubstrateUI's tokens as kit-ui's
 `KitTokens.kt`; `SUBSTRATE_UPDATE_FIXTURES=1 swift test` writes both again
