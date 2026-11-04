@@ -667,7 +667,7 @@ adds to the app id.
 project.yml                 the xcodegen spec, the only project source
 Support/                    Info.plist per platform and per app, the entitlements
 Substrate/Assets.xcassets   the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../../docs/app-icons.md))
-scripts/icons.mjs           draws every icon in the family: Substrate, Sync and Chat
+scripts/icons.mjs           draws every icon in the family: Substrate, Sync, Chat and Workouts
 Substrate/Sources/App/      the app, its macOS menus, ServerStore, ConsoleSessions, the updater
 scripts/feed.swift          a release's index.json, appcast.xml, install page and manifest
 Substrate/Sources/Shell/    the scheme handler, the web view's controller, the connect screen and sign-in, the debug driver
