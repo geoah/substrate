@@ -14,6 +14,7 @@ import { useEffect, useState } from "react"
 import { queryOptions } from "@tanstack/react-query"
 
 import { request } from "./http"
+import type { SiteInfo } from "./types"
 
 export interface AuthPolicy {
   /** False only where no invite code is configured, so the door reads none. */
@@ -32,8 +33,8 @@ interface DiscoveryDoc {
   features?: { name: string; stability: string }[]
   surfaces?: Record<string, { endpoint?: string }>
   /** The deployment's own name, logo and landing page, where it sets one.
-   * Held as the server wrote it; `readSite` (lib/site.ts) is what checks it. */
-  site?: unknown
+   * `readSite` (lib/site.ts) checks it before anything uses it. */
+  site?: SiteInfo
 }
 
 const DISCOVERY_PATH = "/.well-known/substrate/server.json"

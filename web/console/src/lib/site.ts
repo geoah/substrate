@@ -7,15 +7,9 @@
 import { useEffect, useState } from "react"
 
 import { fetchDiscoveryDoc } from "@/lib/api/discovery"
+import type { SiteInfo } from "@/lib/api/types"
 
-/** What `GET /.well-known/substrate/server.json` says under `site`. `logo` and
- * `landing` are paths on this server, such as `/site/logo.svg`. */
-export interface SiteInfo {
-  name: string
-  tagline?: string
-  logo?: string
-  landing?: string
-}
+export type { SiteInfo }
 
 /** A path on this server and nothing else: the landing is mounted into the
  * console's own page and the logo becomes its icon, so a value that names
