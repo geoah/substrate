@@ -11,9 +11,8 @@ import {
 } from "@tanstack/react-router"
 import { NuqsAdapter } from "nuqs/adapters/tanstack-router"
 
-import { AppShell } from "@/components/app-shell"
 import { PageError } from "@/components/page-error"
-import { LandingPage } from "@/components/site/landing-page"
+import { ShellOrLanding } from "@/components/site/shell-or-landing"
 import { hasSession } from "@/lib/api/session"
 import { ActorPage } from "@/pages/actor"
 import { AgentPage } from "@/pages/agent"
@@ -44,7 +43,7 @@ import {
 import { loginHint } from "@/lib/login-hint"
 import { safeReturnPath } from "@/lib/return-path"
 import { searchText } from "@/lib/search-params"
-import { loadSite, peekSite } from "@/lib/site"
+import { loadSite } from "@/lib/site"
 import { ProviderPage } from "@/pages/provider"
 import { ConsoleSettingsPage } from "@/pages/console-settings"
 
@@ -145,15 +144,6 @@ export async function shellGate(location: {
     to: "/login",
     search: { redirect: location.href === "/" ? undefined : location.href },
   })
-}
-
-/** The shell, or the landing page for the signed-out reader the gate let
- * through at `/`. Nothing under the shell mounts in the second case, so no
- * page asks the API for anything without a token. */
-function ShellOrLanding() {
-  const site = peekSite()
-  if (!hasSession() && site?.landing) return <LandingPage site={site} />
-  return <AppShell />
 }
 
 const shellRoute = createRoute({

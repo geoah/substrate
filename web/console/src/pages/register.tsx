@@ -407,7 +407,9 @@ export function RegisterPage() {
               />
               {host && !repository.includes(".") && (
                 <InputGroupAddon align="inline-end">
-                  <InputGroupText className="data">.{host}</InputGroupText>
+                  <InputGroupText className="text-base text-muted-foreground md:text-sm">
+                    .{host}
+                  </InputGroupText>
                 </InputGroupAddon>
               )}
             </InputGroup>
@@ -509,9 +511,9 @@ export function RegisterPage() {
             </div>
             <a
               href={enrollment.otpauthUri}
-              className={doorLinkClass + " text-sm"}
+              className={doorLinkClass + " text-center text-sm"}
             >
-              On this phone? Open it in your authenticator app
+              On this phone? Open it in your authenticator
             </a>
           </div>
 
@@ -540,7 +542,6 @@ export function RegisterPage() {
                   className="h-10 data text-base tracking-[0.25em]"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  autoFocus
                 />
                 <FieldDescription>
                   The {CODE_DIGITS}-digit code your app shows now.

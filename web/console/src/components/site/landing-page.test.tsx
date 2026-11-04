@@ -18,7 +18,7 @@ vi.mock("@tanstack/react-router", () => ({
     const props = { ...rest }
     delete props.search
     return (
-      <a href={to} {...(props as object)}>
+      <a href={to} {...props}>
         {children}
       </a>
     )

@@ -89,8 +89,8 @@ export function DoorLayout({
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-[radial-gradient(60%_100%_at_50%_0%,var(--primary-soft),transparent)]"
       />
-      <main className="relative mx-auto flex min-h-svh w-full max-w-[420px] flex-col px-4 pt-12 pb-10 sm:justify-center sm:px-6 sm:pt-10">
-        <div className="mb-8 flex justify-center">
+      <main className="relative mx-auto flex min-h-svh w-full max-w-[420px] flex-col px-4 pt-10 pb-10 sm:justify-center sm:px-6 sm:pt-10">
+        <div className="mb-6 flex justify-center sm:mb-8">
           <Link to="/" aria-label={site?.name ?? "Home"} className="rounded-lg">
             <DoorBrand site={site} showTagline />
           </Link>

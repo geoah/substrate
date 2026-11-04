@@ -147,10 +147,7 @@ export function LoginPage() {
               aria-invalid={!!errors.repository || !!apiError}
               {...form.register("repository")}
             />
-            <FieldDescription>
-              The address you chose when you joined. Your name on its own works
-              too.
-            </FieldDescription>
+            <FieldDescription>Your name on its own works too.</FieldDescription>
             <FieldError errors={[errors.repository]} />
           </Field>
           <Field data-invalid={!!errors.password || undefined}>
@@ -179,7 +176,7 @@ export function LoginPage() {
                 {...form.register("code")}
               />
               <FieldDescription>
-                The {CODE_DIGITS}-digit code your authenticator app shows now.
+                The {CODE_DIGITS}-digit code from your authenticator app.
               </FieldDescription>
               <FieldError errors={[errors.code]} />
             </Field>
