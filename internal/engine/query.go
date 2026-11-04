@@ -513,6 +513,19 @@ func (b *builder) kindIn(kinds []*vocabulary.Kind) (in, notIn string) {
 	return `kind = ANY(` + k + `)`, `kind <> ALL(` + k + `)`
 }
 
+// clauses compiles one half of a split condition into b itself, so its
+// arguments are numbered in b's one list, and takes its clauses back off b's
+// where, for the split to place under the half's kind test.
+func (b *builder) clauses(compile func() error) ([]string, error) {
+	n := len(b.where)
+	if err := compile(); err != nil {
+		return nil, err
+	}
+	out := slices.Clone(b.where[n:])
+	b.where = b.where[:n]
+	return out, nil
+}
+
 func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
 	// A read-only REPEATABLE READ snapshot pins the page AND the head seq to
 	// one point in time: head = MAX(seq) in this snapshot, so every
@@ -1052,8 +1065,13 @@ func (ds *dataset) condOrdinary(ctx context.Context, x dbx, b *builder, types []
 	// path string a pre-0044 row still holds. A scalar one on a list filters
 	// through refs (condReference says why), elsewhere by EQUALITY on the path
 	// expression its kind's reference index is built on (indices.go); a
-	// repeated one by CONTAINMENT, which reaches inside the array.
+	// repeated one by CONTAINMENT, which reaches inside the array. Where the
+	// candidate kinds disagree on whether the name is a reference, each kind's
+	// rows are compared as that kind declares the value (condReferenceSplit).
 	if shapes := ds.referenceShapes(types, name); len(shapes) > 0 {
+		if refs, others := ds.referenceSplit(types, name); len(others) > 0 {
+			return ds.condReferenceSplit(ctx, x, b, refs, others, name, shapes, c)
+		}
 		return ds.condReference(ctx, x, b, types, name, shapes, c)
 	}
 	if c.Match != "" {
@@ -1103,19 +1121,7 @@ func (ds *dataset) condOrdinary(ctx context.Context, x dbx, b *builder, types []
 // also reaches the rows of kinds that do not declare the name, and those are
 // read where they would be if no kind declared it a state.
 func (ds *dataset) condStateSplit(ctx context.Context, x dbx, b *builder, types, states, others []*vocabulary.Kind, name string, c substrate.Cond) error {
-	// Each half compiles into b itself, so its arguments are numbered in b's
-	// one list, and its clauses are then taken back off b's where to be ANDed
-	// under the half's kind test.
-	half := func(compile func() error) ([]string, error) {
-		n := len(b.where)
-		if err := compile(); err != nil {
-			return nil, err
-		}
-		clauses := slices.Clone(b.where[n:])
-		b.where = b.where[:n]
-		return clauses, nil
-	}
-	onStates, err := half(func() error { return condJSON(b, `states`, name, c, vocabulary.DatatypeString, nil) })
+	onStates, err := b.clauses(func() error { return condJSON(b, `states`, name, c, vocabulary.DatatypeString, nil) })
 	if err != nil {
 		return err
 	}
@@ -1127,7 +1133,7 @@ func (ds *dataset) condStateSplit(ctx context.Context, x dbx, b *builder, types,
 	if len(types) == 0 {
 		ordinary = nil
 	}
-	onProps, err := half(func() error { return ds.condOrdinary(ctx, x, b, ordinary, name, c) })
+	onProps, err := b.clauses(func() error { return ds.condOrdinary(ctx, x, b, ordinary, name, c) })
 	if err != nil {
 		return err
 	}
@@ -1139,6 +1145,50 @@ func (ds *dataset) condStateSplit(ctx context.Context, x dbx, b *builder, types,
 	in, notIn := b.kindIn(states)
 	b.add(`((` + strings.Join(append([]string{in}, onStates...), ` AND `) + `) OR (` +
 		strings.Join(append([]string{notIn}, onProps...), ` AND `) + `))`)
+	return nil
+}
+
+// condReferenceSplit filters a name the reference kinds declare a reference
+// and the other kinds declare as something else, as two halves a row
+// answers either of: a row of a reference kind is compared as condReference
+// compares the name over those kinds alone, and a row of another kind by the
+// text it holds. Only the first half reads the operand as a pointer,
+// completing a bare id with the declaration's `kind:` and following the
+// record's former ids (referenceFilterPath, referenceFilterIDs), and refs
+// holds rows for its kinds alone: a row of another kind holds a value, and is
+// compared with the operand as given. As text whatever the other kinds
+// declare, the way the order sorts them: the first half refuses every operand
+// but a string, and a typed comparison of the path or id a read spanning a
+// reference names would fail the read where they declare a number, an
+// instant, a bool, money or a quantity.
+//
+// The halves are one semi-join over their UNION ALL, not an OR. Under an OR
+// Postgres cannot drive the first half from refs, and scans every row the
+// read spans to probe it, every row of the repository for a read naming no
+// kind, where the first half alone walks refs_dst_idx to the rows that point.
+// For the same reason the second half reads the rows of the other kinds, not
+// every other row: a value is held by the rows of a kind declaring it, and a
+// row no loaded declaration speaks for is out of a read naming no kind's
+// typed comparison too (kindlessDatatype). `exists: false` holds for a row
+// holding no value, so it reads every other row.
+func (ds *dataset) condReferenceSplit(ctx context.Context, x dbx, b *builder, refs, others []*vocabulary.Kind, name string, shapes []*vocabulary.Property, c substrate.Cond) error {
+	pointers, err := b.clauses(func() error { return ds.condReference(ctx, x, b, refs, name, shapes, c) })
+	if err != nil {
+		return err
+	}
+	values, err := b.clauses(func() error { return condJSON(b, `props`, name, c, "", nil) })
+	if err != nil {
+		return err
+	}
+	if len(pointers) == 0 && len(values) == 0 {
+		return nil
+	}
+	ofRefs, ofValues := b.kindIn(refs)
+	if c.Exists == nil || *c.Exists {
+		ofValues, _ = b.kindIn(others)
+	}
+	b.add(`(kind, id) IN (SELECT kind, id FROM records WHERE ` + strings.Join(append([]string{ofRefs}, pointers...), ` AND `) +
+		` UNION ALL SELECT kind, id FROM records WHERE ` + strings.Join(append([]string{ofValues}, values...), ` AND `) + `)`)
 	return nil
 }
 
@@ -1358,7 +1408,7 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 
 // referenceKinds is the identities of the candidate kinds (every loaded kind
 // when the filter names none) whose declaration of `name` has the shape
-// asked about (scalarReference, listReference, notReference), sorted.
+// asked about (scalarReference, listReference), sorted.
 func (ds *dataset) referenceKinds(types []*vocabulary.Kind, name string, shape func(*vocabulary.Property) bool) []string {
 	if len(types) == 0 {
 		types = ds.registry().Kinds()
@@ -1419,13 +1469,6 @@ func scalarReference(p *vocabulary.Property) bool {
 // scalar one. A keyed map addresses its values by key, in the path.
 func listReference(p *vocabulary.Property) bool {
 	return p != nil && p.Datatype == vocabulary.DatatypeReference && p.Repeated && !p.Keyed
-}
-
-// notReference reports whether a declaration of the name is anything but a
-// reference: a list of strings may hold a path's text, and no refs row
-// records it.
-func notReference(p *vocabulary.Property) bool {
-	return p != nil && p.Datatype != vocabulary.DatatypeReference
 }
 
 // referenceFilterIDs expands one filter path into every path the same record is
@@ -1555,7 +1598,6 @@ func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, types [
 	// (refsAtSiteSQL).
 	scalarKinds := ds.referenceKinds(types, name, scalarReference)
 	listKinds := ds.referenceKinds(types, name, listReference)
-	plainKinds := ds.referenceKinds(types, name, notReference)
 	viaRefs := false
 	if b.overRecords && len(scalarKinds)+len(listKinds) > 0 {
 		pending, err := refsPending(ctx, x, slices.Concat(scalarKinds, listKinds), name)
@@ -1636,40 +1678,19 @@ func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, types [
 			}
 		}
 		if len(list) > 0 {
-			listProbes := func() ([]string, error) {
-				var out []string
-				for _, one := range list {
-					probes, err := referenceValue(name, listShape, one)
-					if err != nil {
-						return nil, err
-					}
-					for _, probe := range probes {
-						out = append(out, `props @> `+b.arg(probe)+`::jsonb`)
-					}
-				}
-				return out, nil
-			}
 			if targets, ok := refTargetsOf(list); viaRefs && ok {
 				b.viaRefs = true
 				clauses = append(clauses, refsAtSiteSQL(b, "records", listKinds, name, false, targets))
-				// A candidate kind declaring `name` as something other than a
-				// reference derives no refs rows for it, and the containment
-				// probes matched its rows holding the path's text: they keep
-				// that answer, over those kinds alone, so it does not turn
-				// on whether a re-derivation is owed.
-				if len(plainKinds) > 0 {
-					probes, err := listProbes()
+			} else {
+				for _, one := range list {
+					probes, err := referenceValue(name, listShape, one)
 					if err != nil {
 						return "", err
 					}
-					clauses = append(clauses, `(kind = ANY(`+b.textArray(plainKinds)+`) AND (`+strings.Join(probes, " OR ")+`))`)
+					for _, probe := range probes {
+						clauses = append(clauses, `props @> `+b.arg(probe)+`::jsonb`)
+					}
 				}
-			} else {
-				probes, err := listProbes()
-				if err != nil {
-					return "", err
-				}
-				clauses = append(clauses, probes...)
 			}
 		}
 		clauses = append(clauses, keyed...)
@@ -1775,8 +1796,8 @@ func (ds *dataset) datetimeProp(types []*vocabulary.Kind, name string) bool {
 
 // referenceProp reports whether EVERY candidate kind that declares this property
 // declares it as a single reference, under numericProp's every-not-any rule: a
-// name that is a reference on one kind and text on another has no one
-// expression that reads both, so a disagreement keeps the text ordering.
+// name that is a reference on one kind and text on another sorts by a CASE on
+// the kind instead (pathOrderArm).
 //
 // Repeated and keyed are excluded because there is no single path to order by.
 func (ds *dataset) referenceProp(types []*vocabulary.Kind, name string) bool {
@@ -1811,6 +1832,30 @@ func (ds *dataset) stateKinds(types []*vocabulary.Kind, name string) (states, ot
 		}
 	}
 	return states, others
+}
+
+// referenceSplit splits the candidate kinds declaring name — every loaded kind
+// when the query names none, the same way sensitiveProp asks — by how a row of
+// each holds the value: the kinds declaring it a reference hold a pointer,
+// read through refs or the path it names, and the others a value of another
+// datatype. A kind declaring it a state is in neither, as one that does not
+// declare it is: its rows are compared in the states column, in the state
+// split's own half (condStateSplit).
+func (ds *dataset) referenceSplit(types []*vocabulary.Kind, name string) (refs, others []*vocabulary.Kind) {
+	if len(types) == 0 {
+		types = ds.registry().Kinds()
+	}
+	for _, t := range types {
+		p, ok := t.Prop(name)
+		switch {
+		case !ok, p.Datatype == vocabulary.DatatypeState:
+		case p.Datatype == vocabulary.DatatypeReference:
+			refs = append(refs, t)
+		default:
+			others = append(others, t)
+		}
+	}
+	return refs, others
 }
 
 // sensitiveProp reports whether name is sensitive on any candidate type —
@@ -2130,12 +2175,8 @@ func (ds *dataset) orderExpr(ctx context.Context, x dbx, b *builder, types []*vo
 		// the candidates. The state kinds are spelled inline for
 		// typedOrderSQL's reason: the order's text is the cursor's signature.
 		if len(states) > 0 {
-			lits := make([]string, 0, len(states))
-			for _, t := range states {
-				lits = append(lits, sqlLiteral(t.Identity))
-			}
-			return `(CASE WHEN kind = ANY(ARRAY[` + strings.Join(lits, `, `) + `]::text[]) THEN states->>` +
-				sqlLiteral(property) + ` ELSE props->>` + sqlLiteral(property) + ` END)`, nil
+			return `(CASE WHEN kind = ANY(` + kindsLiteral(states) + `) THEN states->>` +
+				sqlLiteral(property) + pathOrderArm(others, property) + ` ELSE props->>` + sqlLiteral(property) + ` END)`, nil
 		}
 		// A NUMBER sorts as a number. `props->>` is text, so ordering by an
 		// int-typed property sorted it lexicographically — 0, 1, 10, 11, 2 —
@@ -2178,10 +2219,46 @@ func (ds *dataset) orderExpr(ctx context.Context, x dbx, b *builder, types []*vo
 		if ds.referenceProp(types, property) {
 			return referencePathSQL("props", property), nil
 		}
+		// A name only some candidate kinds declare a single reference sorts by
+		// a CASE on the kind, as a state does: a row of one of them by its
+		// path, every other row by its props value as text, because a key has
+		// one type and a path is text.
+		if arm := pathOrderArm(ds.readKinds(types), property); arm != `` {
+			return `(CASE` + arm + ` ELSE props->>` + sqlLiteral(property) + ` END)`, nil
+		}
 		return `props->>` + sqlLiteral(property), nil
 	default:
 		return "", fmt.Errorf("%w: cannot order by %q", substrate.ErrValidation, property)
 	}
+}
+
+// pathOrderArm is the CASE arm an order key sorts the rows of the kinds
+// declaring property a single reference by: the path each points at, read out
+// of either stored shape (referencePathSQL). The `{ref}` object's props->>
+// text would sort them by a JSON spelling nobody asked for. Empty where none
+// of kinds declares one. The kinds are spelled inline for typedOrderSQL's
+// reason: the order's text is the cursor's signature.
+func pathOrderArm(kinds []*vocabulary.Kind, property string) string {
+	var refs []*vocabulary.Kind
+	for _, t := range kinds {
+		if p, ok := t.Prop(property); ok && scalarReference(p) {
+			refs = append(refs, t)
+		}
+	}
+	if len(refs) == 0 {
+		return ``
+	}
+	return ` WHEN kind = ANY(` + kindsLiteral(refs) + `) THEN ` + referencePathSQL("props", property)
+}
+
+// kindsLiteral spells the kinds' identities as one text[] literal, for an
+// order key, whose text is the cursor's signature (typedOrderSQL).
+func kindsLiteral(kinds []*vocabulary.Kind) string {
+	lits := make([]string, 0, len(kinds))
+	for _, t := range kinds {
+		lits = append(lits, sqlLiteral(t.Identity))
+	}
+	return `ARRAY[` + strings.Join(lits, `, `) + `]::text[]`
 }
 
 // typedOrderSQL is the order key of a property every candidate kind declares

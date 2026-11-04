@@ -774,9 +774,12 @@ func TestReadPlanListHydratesAPageInOneStatementPerFact(t *testing.T) {
 }
 
 // A filter naming a kind that declares the repeated reference and one that
-// declares the same name a list of strings matches the string list's rows
-// that hold the path's text, as the containment probes did, and answers the
-// same whether refs decide or a re-derivation is owed.
+// declares the same name a list of strings reads the string list's rows as a
+// list of strings: `contains` finds the one holding the path's text and the
+// one holding the bare id, and `eq` is not membership, as it is on a repeated
+// reference. The pointer's reading of the operand, a bare id completed by the
+// declaration's `kind:`, is the reference kind's alone. Each answers the same
+// whether refs decide or a re-derivation is owed.
 func TestReadPlanRepeatedReferenceFilterKeepsAStringListsRows(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -795,7 +798,7 @@ func TestReadPlanRepeatedReferenceFilterKeepsAStringListsRows(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	// s1 holds c's path, s2 b's, s3 c's bare id, which names no path.
+	// s1 holds c's path, s2 b's, s3 c's bare id.
 	for id, seen := range map[string][]any{
 		"s1": {vocabulary.RecordPath(target, "c"), "other"},
 		"s2": {vocabulary.RecordPath(target, "b")},
@@ -822,14 +825,20 @@ func TestReadPlanRepeatedReferenceFilterKeepsAStringListsRows(t *testing.T) {
 			f    substrate.Filter
 			want string
 		}{
+			{"alsoSeen contains c over both kinds", substrate.Filter{
+				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {Contains: "c"}},
+			}, "p3,s3"},
+			{"alsoSeen contains c's path over both kinds", substrate.Filter{
+				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {Contains: vocabulary.RecordPath(target, "c")}},
+			}, "p3,s1"},
 			{"alsoSeen c over both kinds", substrate.Filter{
 				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {Eq: "c"}},
-			}, "p3,s1"},
+			}, "p3"},
 			{"alsoSeen in [b, c] over both kinds", substrate.Filter{
 				Kinds: []string{pointer, tagged}, Properties: map[string]substrate.Cond{"alsoSeen": {In: []any{"b", "c"}}},
-			}, "p2,p3,s1,s2"},
-			{"a kindless alsoSeen c", substrate.Filter{
-				Properties: map[string]substrate.Cond{"alsoSeen": {Eq: vocabulary.RecordPath(target, "c")}},
+			}, "p2,p3"},
+			{"a kindless alsoSeen contains c's path", substrate.Filter{
+				Properties: map[string]substrate.Cond{"alsoSeen": {Contains: vocabulary.RecordPath(target, "c")}},
 			}, "p3,s1"},
 		} {
 			if got := list(c.f); got != c.want {
@@ -841,6 +850,76 @@ func TestReadPlanRepeatedReferenceFilterKeepsAStringListsRows(t *testing.T) {
 	undo := oweRefs(t, ds, pointer, "alsoSeen")
 	answers("refs owed")
 	undo()
+}
+
+// A filter on a name one kind declares a reference and another a string
+// still seeks the refs index for the pointers, named or naming no kind: the
+// two halves are one semi-join, and joined by OR they read every row the
+// filter spans, every row of the repository for one naming no kind, to probe
+// refs for each. The string kind's rows are read by their kind.
+func TestReadPlanAReferenceSplitSeeksTheRefsIndex(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	log := &queryLog{}
+	ds, target, pointer := refIndexDataset(t, WithTestQueryTracer(log))
+	const pkg = "readplan.test.dev/split"
+	plain := pkg + "/plain"
+	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+		Name: "split", Authority: pkg,
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(pkg, 0),
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "plain"},
+				map[string]any{"properties": map[string]any{"target": map[string]any{"type": "string"}}}),
+		},
+	}); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	// Every bulk pointer points at a; q1 holds c's path, q2 c's bare id and
+	// q3 a's.
+	if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+		for i := range 400 {
+			if _, err := tx.put(substrate.PutInput{
+				Kind: pointer, ID: fmt.Sprintf("bulk%03d", i), Properties: map[string]any{"target": "a"},
+			}); err != nil {
+				return err
+			}
+		}
+		for id, at := range map[string]string{"q1": vocabulary.RecordPath(target, "c"), "q2": "c", "q3": "a"} {
+			if _, err := tx.put(substrate.PutInput{Kind: plain, ID: id, Properties: map[string]any{"target": at}}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("plant: %v", err)
+	}
+	analyzeTables(t, ds)
+	list := func(f substrate.Filter) string {
+		t.Helper()
+		page, err := ds.List(ctx, substrate.Query{First: 500, Filter: f})
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		return recordIDs(page)
+	}
+	for _, c := range []struct {
+		name string
+		f    substrate.Filter
+		want string
+	}{
+		{"naming no kind", substrate.Filter{
+			Properties: map[string]substrate.Cond{"target": {Eq: vocabulary.RecordPath(target, "c")}},
+		}, "p3,q1"},
+		{"naming both kinds", substrate.Filter{
+			Kinds: []string{pointer, plain}, Properties: map[string]substrate.Cond{"target": {Eq: "c"}},
+		}, "p3,q2"},
+	} {
+		q := log.sent(t, "FROM refs r", func() { list(c.f) })
+		assertSeeksRefs(t, "a reference split "+c.name, analyzedPlan(t, ds, q), 3, "refs_dst_idx")
+		if got := list(c.f); got != c.want {
+			t.Fatalf("a reference split %s answered %q, want %q", c.name, got, c.want)
+		}
+	}
 }
 
 // A window read finds the overrides of its series through refs_dst_idx, by
