@@ -20,7 +20,7 @@ import {
 } from "@/components/settings-page/setting-row"
 import { SpendCapRow } from "@/components/settings-page/spend-cap-row"
 import { VerifyDomainRow } from "@/components/settings-page/verify-domain-row"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Segmented } from "@/components/ui/segmented"
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
@@ -250,6 +250,28 @@ function ShellAppRow() {
   )
 }
 
+/** The app's privacy policy, as its release names it: in the browser. */
+function ShellPrivacyRow() {
+  const shell = nativeShell()
+  if (!shell?.privacyPolicy) return null
+  return (
+    <SettingRow
+      title="Privacy policy"
+      description="What the app does with your data."
+      control={
+        <a
+          href={shell.privacyPolicy}
+          target="_blank"
+          rel="noreferrer"
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          Open
+        </a>
+      }
+    />
+  )
+}
+
 function DeveloperRows() {
   const kinds = useQuery(kindsQueryOptions)
   const system = (kinds.data ?? []).filter((k) =>
@@ -337,6 +359,7 @@ export function ConsoleSettingsPage() {
       <SettingsSection title="Signed in">
         <ShellServerRow />
         <ShellAppRow />
+        <ShellPrivacyRow />
         <SignedInRows />
       </SettingsSection>
       <SettingsSection

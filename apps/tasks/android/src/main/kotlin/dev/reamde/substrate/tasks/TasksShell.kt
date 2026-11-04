@@ -1,6 +1,8 @@
 package dev.reamde.substrate.tasks
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import dev.reamde.substrate.kit.Bridge
 import dev.reamde.substrate.kit.BridgeHandle
 import dev.reamde.substrate.kit.StartResult
@@ -150,17 +152,24 @@ class TasksShell(context: Context, val start: StartResult) {
 
     /**
      * A Settings row's command: the app's and the link's go to Swift, which routes them as `SettingsRoute` does; what only the UI can run (the browser for
-     * Change Access, the connect screen) runs here.
+     * Change Access and the privacy policy, the connect screen) runs here.
      */
     fun settings(command: SettingsCommand) {
         val row = (command as? SettingsCommand.Perform)?.row
         val action = ((row as? SettingsRowID.Status)?.value as? SettingsRowID.StatusRow.Action)?.value
         val repository = (row as? SettingsRowID.Repository)?.value
+        val about = (row as? SettingsRowID.About)?.value
         when {
             action == StatusAction.Review || action == StatusAction.Renew || repository == SettingsRowID.RepositoryRow.ChangeAccess -> changeAccess()
             action == StatusAction.SignIn -> openConnect()
+            about == SettingsRowID.AboutRow.PrivacyPolicy -> _frame.value?.link?.app?.about?.privacyPolicy?.let { open(it.url) }
             else -> link?.send(TasksShellCommand.Serializer, TasksShellCommand.Settings(command))
         }
+    }
+
+    /** A page outside the app, in the browser. */
+    private fun open(url: String) {
+        runCatching { app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
 
     /** The Access banner's actions. */

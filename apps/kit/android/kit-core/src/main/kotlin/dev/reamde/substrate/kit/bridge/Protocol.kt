@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "c5ba7f2dc60b953bb1734bb0a5abc4ba65d17fcc91bc0b56abd1c30fb3919b4c"
+    public const val VALUE: String = "13d581c309a0bff997887211476ddf9bd1e5884b287ff14cd387d1da754b75a0"
 }
 
 /**
@@ -108,12 +108,19 @@ public class SwiftEnumSerializer<T : Any>(
 }
 
 @Serializable
+public data class AboutLink(
+    val title: String,
+    val url: String,
+)
+
+@Serializable
 public data class AboutPresentation(
     val title: String,
     val version: LabeledValue,
     val channel: LabeledValue? = null,
     val update: UpdateOffer? = null,
     val check: String? = null,
+    val privacyPolicy: AboutLink? = null,
 )
 
 @Serializable(with = AccessAction.Serializer::class)
@@ -328,6 +335,7 @@ public sealed interface BrowserRoute {
 public data class BuildFacts(
     val version: String,
     val channel: String? = null,
+    val privacyPolicy: String? = null,
 )
 
 @Serializable
@@ -1367,6 +1375,9 @@ public sealed interface SettingsRowID {
         @Serializable
         public data object Update : AboutRow
 
+        @Serializable
+        public data object PrivacyPolicy : AboutRow
+
         public object Serializer : KSerializer<SettingsRowID.AboutRow> by SwiftEnumSerializer(
             "SettingsRowID.AboutRow",
             listOf(
@@ -1374,6 +1385,7 @@ public sealed interface SettingsRowID {
                 SwiftEnumSerializer.Case("channel", Channel::class, Channel.serializer()),
                 SwiftEnumSerializer.Case("check", Check::class, Check.serializer()),
                 SwiftEnumSerializer.Case("update", Update::class, Update.serializer()),
+                SwiftEnumSerializer.Case("privacyPolicy", PrivacyPolicy::class, PrivacyPolicy.serializer()),
             ),
         )
     }
@@ -1916,6 +1928,7 @@ public object LinkController {
 
 /** Every bridged value's serializer by its Swift name, for the round-trip fixtures. */
 public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
+    "AboutLink" to AboutLink.serializer(),
     "AboutPresentation" to AboutPresentation.serializer(),
     "AccessAction" to AccessAction.Serializer,
     "AccessAction.Offer" to AccessAction.Offer.serializer(),

@@ -288,13 +288,15 @@ public final class AppShell<App: LinkedApp> {
     }
 
     /// A settings row's command, to whatever answers it; the updater's check
-    /// is the scene's, which holds the updater.
-    public func perform(_ command: SettingsCommand, checkForUpdates: () -> Void) {
+    /// is the scene's, which holds the updater, and a page is the browser's.
+    public func perform(_ command: SettingsCommand, checkForUpdates: () -> Void, openURL: (URL) -> Void) {
         switch route(command) {
         case let .app(command): send(command)
         case let .link(command): send(command)
         case .changeAccess: Task { try? await changeAccess() }
         case .checkForUpdates: checkForUpdates()
+        case .privacyPolicy:
+            if let url = BuildFacts.bundle().privacyPolicy.flatMap(URL.init(string:)) { openURL(url) }
         case .signIn, .none: break
         }
     }

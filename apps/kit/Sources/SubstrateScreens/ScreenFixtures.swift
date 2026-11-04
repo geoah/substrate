@@ -286,7 +286,9 @@ public enum ScreenFixtures {
     // MARK: Settings, problems and about
 
     static var settings: [ScreenFixture] {
-        let about = AboutPresentation.present(appName: app, version: "0.120.0-pre.20261103.090000+ac85863e", channel: "pre", offered: nil)
+        let about = AboutPresentation.present(
+            appName: app, version: "0.120.0-pre.20261103.090000+ac85863e", channel: "pre", offered: nil,
+            privacyPolicy: "https://example.com/privacy")
         let values = SettingsValues(toggles: ["reminders": true], choices: ["sort": "due"])
         let app = SettingsSection(
             id: .app("tasks"), title: "Tasks",
@@ -360,13 +362,18 @@ public enum ScreenFixtures {
 
     static var about: [ScreenFixture] {
         [
-            ScreenFixture("about", .about(.present(appName: app, version: "0.120.0", channel: "release", offered: nil))),
+            ScreenFixture(
+                "about",
+                .about(
+                    .present(
+                        appName: app, version: "0.120.0", channel: "release", offered: nil,
+                        privacyPolicy: "https://example.com/privacy"))),
             ScreenFixture(
                 "about-update",
                 .about(
                     .present(
                         appName: app, version: "0.120.0-pre.20261103.090000+ac85863e", channel: "pre",
-                        offered: "0.121.0-pre.20261104.090000+9f1e2d3c"))),
+                        offered: "0.121.0-pre.20261104.090000+9f1e2d3c", privacyPolicy: "https://example.com/privacy"))),
         ]
     }
 }

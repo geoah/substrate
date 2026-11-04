@@ -115,6 +115,7 @@ final class ConsoleController: NSObject, ObservableObject {
             "version": build.version,
             "updates": build.updates != nil,
         ]
+        if let policy = build.privacyPolicy { info["privacyPolicy"] = policy }
         // The app's sign-in, which the page reads (`shellSession` in
         // web/console/src/lib/shell.ts) and never stores.
         if let session, let tokenID = session.tokenID {

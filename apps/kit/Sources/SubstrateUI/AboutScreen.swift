@@ -2,7 +2,8 @@
 import SwiftUI
 import SubstrateScreens
 
-/// The build, its channel and an update offered, as a section of a form.
+/// The build, its channel, an update offered and the privacy policy, as a
+/// section of a form.
 public struct AboutScreen: View {
     let presentation: AboutPresentation
     let onCheck: () -> Void
@@ -39,6 +40,9 @@ public struct AboutScreen: View {
             }
             if let check = presentation.check {
                 Button(check, action: onCheck)
+            }
+            if let policy = presentation.privacyPolicy, let url = URL(string: policy.url) {
+                Link(policy.title, destination: url)
             }
         }
     }

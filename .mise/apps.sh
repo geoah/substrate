@@ -1734,6 +1734,8 @@ release_env() {
 	# program on the device may listen on.
 	: "${SUBSTRATE_APPLE_SITE_URL:?set SUBSTRATE_APPLE_SITE_URL to the https origin of the site: every released app signs in through the callback it claims there, and never through a loopback port}"
 	site_url >/dev/null || exit 1
+	# Stamped into every build, whose About opens it.
+	case "${SUBSTRATE_APPLE_PRIVACY_URL:-https://x}" in https://?*) ;; *) die "SUBSTRATE_APPLE_PRIVACY_URL is an https address: $SUBSTRATE_APPLE_PRIVACY_URL" ;; esac
 }
 
 release() {
@@ -1891,6 +1893,8 @@ testflight() {
 	[ -r "$SUBSTRATE_APPLE_ASC_KEY_PATH" ] || die "$SUBSTRATE_APPLE_ASC_KEY_PATH cannot be read"
 	: "${SUBSTRATE_APPLE_TEAM_ID:?set SUBSTRATE_APPLE_TEAM_ID to the team id that signs the apps}"
 	: "${SUBSTRATE_APPLE_SITE_URL:?set SUBSTRATE_APPLE_SITE_URL to the https origin of the site: a TestFlight build signs in through the callback it claims there, and never through a loopback port}"
+	: "${SUBSTRATE_APPLE_PRIVACY_URL:?set SUBSTRATE_APPLE_PRIVACY_URL to the privacy policy of the publisher, which About opens in every build (App Review guideline 5.1.1(i))}"
+	case "$SUBSTRATE_APPLE_PRIVACY_URL" in https://?*) ;; *) die "SUBSTRATE_APPLE_PRIVACY_URL is an https address: $SUBSTRATE_APPLE_PRIVACY_URL" ;; esac
 	site_url >/dev/null || exit 1
 	RELEASE_APPS=("$@")
 	local app

@@ -86,7 +86,8 @@ struct SettingsView: View {
                 AboutScreen(
                     AboutPresentation.present(
                         appName: WorkoutsManifest.appName, version: updates.build.version,
-                        channel: updates.enabled ? updates.build.channel : nil, offered: nil),
+                        channel: updates.enabled ? updates.build.channel : nil, offered: nil,
+                        privacyPolicy: updates.build.privacyPolicy),
                     onCheck: { updates.checkNow() })
             }
             .navigationTitle("Settings")

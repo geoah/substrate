@@ -2397,6 +2397,22 @@
                     }
                   },
                   "label": "Check for Updates"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "privacyPolicy": {}
+                      }
+                    }
+                  },
+                  "label": "Privacy Policy"
                 }
               ],
               "title": "About"
@@ -2864,6 +2880,22 @@
                     }
                   },
                   "label": "Check for Updates"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "privacyPolicy": {}
+                      }
+                    }
+                  },
+                  "label": "Privacy Policy"
                 }
               ],
               "title": "About"
@@ -3435,6 +3467,22 @@
                     }
                   },
                   "label": "Check for Updates"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "privacyPolicy": {}
+                      }
+                    }
+                  },
+                  "label": "Privacy Policy"
                 }
               ],
               "title": "About"
@@ -3598,6 +3646,22 @@
                     }
                   },
                   "label": "Check for Updates"
+                },
+                {
+                  "control": {
+                    "action": {
+                      "destructive": false,
+                      "enabled": true
+                    }
+                  },
+                  "id": {
+                    "about": {
+                      "_0": {
+                        "privacyPolicy": {}
+                      }
+                    }
+                  },
+                  "label": "Privacy Policy"
                 }
               ],
               "title": "About"
@@ -3666,6 +3730,10 @@
             "verbatim": false
           },
           "check": "Check for Updates",
+          "privacyPolicy": {
+            "title": "Privacy Policy",
+            "url": "https://example.com/privacy"
+          },
           "title": "About",
           "version": {
             "label": "Version",
@@ -3687,6 +3755,10 @@
             "verbatim": false
           },
           "check": "Check for Updates",
+          "privacyPolicy": {
+            "title": "Privacy Policy",
+            "url": "https://example.com/privacy"
+          },
           "title": "About",
           "update": {
             "install": "Install",

@@ -84,6 +84,8 @@
 	<string>$(SUBSTRATE_COMMIT)</string>
 	<key>SubstrateUpdates</key>
 	<string>$(SUBSTRATE_UPDATES_URL)</string>
+	<key>SubstratePrivacyPolicy</key>
+	<string>$(SUBSTRATE_PRIVACY_POLICY)</string>
 	<key>SubstrateSyncClientID</key>
 	<string>$(SUBSTRATE_SYNC_CLIENT_ID)</string>
 	<key>SubstrateSyncRedirect</key>

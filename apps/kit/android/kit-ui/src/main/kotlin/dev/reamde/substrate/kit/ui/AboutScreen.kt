@@ -7,9 +7,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import dev.reamde.substrate.kit.bridge.AboutPresentation
 
-/** The build, its channel and an update offered, as a section of a settings screen. A pre-release's version is long: it goes under its label, whole. */
+/**
+ * The build, its channel, an update offered and the privacy policy, as a section of a settings screen. A pre-release's version is long: it goes under its
+ * label, whole.
+ */
 @Composable
 public fun AboutScreen(presentation: AboutPresentation, modifier: Modifier = Modifier, onCheck: () -> Unit = {}, onInstall: () -> Unit = {}) {
     KitSection(presentation.title, modifier) {
@@ -29,6 +33,11 @@ public fun AboutScreen(presentation: AboutPresentation, modifier: Modifier = Mod
         presentation.check?.let {
             KitRowDivider()
             KitRow(it, onClick = onCheck)
+        }
+        presentation.privacyPolicy?.let { policy ->
+            val uris = LocalUriHandler.current
+            KitRowDivider()
+            KitRow(policy.title, onClick = { runCatching { uris.openUri(policy.url) } })
         }
     }
 }

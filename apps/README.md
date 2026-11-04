@@ -465,8 +465,15 @@ of its own.
 ```bash
 SUBSTRATE_APPLE_ASC_KEY_PATH=…/AuthKey_….p8 SUBSTRATE_APPLE_ASC_KEY_ID=… \
 SUBSTRATE_APPLE_ASC_ISSUER_ID=… SUBSTRATE_APPLE_TEAM_ID=… \
-SUBSTRATE_APPLE_SITE_URL=https://apps.example.com mise run apps:testflight
+SUBSTRATE_APPLE_SITE_URL=https://apps.example.com \
+SUBSTRATE_APPLE_PRIVACY_URL=https://example.com/privacy mise run apps:testflight
 ```
+
+`SUBSTRATE_APPLE_PRIVACY_URL` is the publisher's privacy policy. A release
+stamps it into every app (`SubstratePrivacyPolicy` in its Info.plist), whose
+About opens it, as App Review's guideline 5.1.1(i) wants; `apps:testflight`
+requires it and checks each build carries it, and `apps:release` stamps it
+where it is set. A local build carries none and shows no row.
 
 It writes nothing to the release folder or the site, so it takes no lease
 and needs no bucket key. A TestFlight build carries no feed address, so it

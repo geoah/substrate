@@ -10,12 +10,13 @@ import SwiftUI
 public struct AppSettingsView<App: LinkedApp>: View {
     @Environment(AppShell<App>.self) private var shell
     @Environment(\.checkForUpdates) private var checkForUpdates
+    @Environment(\.openURL) private var openURL
 
     public init() {}
 
     public var body: some View {
         if let screen = shell.settingsScreen {
-            SettingsScreen(screen) { shell.perform($0, checkForUpdates: checkForUpdates) }
+            SettingsScreen(screen) { shell.perform($0, checkForUpdates: checkForUpdates, openURL: { openURL($0) }) }
                 .navigationTitle(screen.title)
         }
     }

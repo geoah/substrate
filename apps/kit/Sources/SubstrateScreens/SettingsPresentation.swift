@@ -156,5 +156,6 @@ public enum SettingsRowID: Bridged, Hashable, Sendable {
         case channel
         case check
         case update
+        case privacyPolicy
     }
 }

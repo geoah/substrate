@@ -461,8 +461,25 @@ struct RepositoryStatusTests {
             timeZone: TimeZone(identifier: "UTC")!)
         #expect(status.title == "Your Substrate")
         #expect(status.sentence == "Up to date.")
-        let about = AboutPresentation.present(appName: "Notes", version: "1.2.0-pre.3 (41)", channel: "pre", offered: nil)
+        let about = AboutPresentation.present(appName: "Notes", version: "1.2.0-pre.3 (41)", channel: "pre", offered: nil, privacyPolicy: nil)
         #expect(SettingsPresenter.about(about).rows[0].control == .value("1.2.0-pre.3 (41)", verbatim: false))
+    }
+
+    /// App Review wants the privacy policy inside the app (5.1.1(i)): a
+    /// released build names it in About and opens it; a local build names none.
+    @Test func aReleasedBuildsAboutOpensItsPrivacyPolicy() {
+        let released = AboutPresentation.present(
+            appName: "Notes", version: "1.2.0", channel: "stable", offered: nil, privacyPolicy: "https://example.com/privacy")
+        #expect(released.privacyPolicy == AboutLink(title: "Privacy Policy", url: "https://example.com/privacy"))
+        let row = SettingsPresenter.about(released).rows.last
+        #expect(row?.id == .about(.privacyPolicy))
+        #expect(row?.control == .action(destructive: false, enabled: true))
+        #expect(
+            SettingsRoute<NoApp>.route(.perform(row: .about(.privacyPolicy)), settings: { _ in nil }, clearSaved: nil) == .privacyPolicy)
+
+        let local = AboutPresentation.present(appName: "Notes", version: "1.2.0 (3)", channel: nil, offered: nil, privacyPolicy: nil)
+        #expect(local.privacyPolicy == nil)
+        #expect(!SettingsPresenter.about(local).rows.contains { $0.id == .about(.privacyPolicy) })
     }
 }
 

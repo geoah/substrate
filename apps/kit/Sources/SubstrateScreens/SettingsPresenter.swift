@@ -130,6 +130,9 @@ public enum SettingsPresenter {
         if let update = about.update {
             rows.append(SettingsRow(id: .about(.update), label: update.title, detail: update.message, control: .note(.informative)))
         }
+        if let policy = about.privacyPolicy {
+            rows.append(SettingsRow(id: .about(.privacyPolicy), label: policy.title, control: .action(destructive: false, enabled: true)))
+        }
         return SettingsSection(id: .about, title: about.title, rows: rows)
     }
 

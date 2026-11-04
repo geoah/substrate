@@ -26,7 +26,7 @@ struct ShellPartsTests {
             settingsScreen: { link, _ in SettingsPresenter.screen([], link: link, storage: nil, about: Self.about) })
     }
 
-    static let about = AboutPresentation.present(appName: "Notes", version: "1.0", channel: nil, offered: nil)
+    static let about = AboutPresentation.present(appName: "Notes", version: "1.0", channel: nil, offered: nil, privacyPolicy: nil)
 
     @Test func aWorkoutsStyleOutboxPerAccountIsTheOneTheLinkSendsFrom() throws {
         let root = temporaryFolder("shell")

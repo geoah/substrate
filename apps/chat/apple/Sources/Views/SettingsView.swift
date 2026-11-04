@@ -63,7 +63,8 @@ struct SettingsView: View {
     private var about: AboutPresentation {
         AboutPresentation.present(
             appName: ChatManifest.appName, version: updates.build.version,
-            channel: updates.enabled ? updates.build.channel : nil, offered: nil)
+            channel: updates.enabled ? updates.build.channel : nil, offered: nil,
+            privacyPolicy: updates.build.privacyPolicy)
     }
 
     private func send(_ command: SettingsCommand) {
@@ -74,6 +75,8 @@ struct SettingsView: View {
             host.signOut()
         case .perform(.repository(.changeAccess)): changingAccess = true
         case .perform(.about(.check)): updates.checkNow()
+        case .perform(.about(.privacyPolicy)):
+            if let url = updates.build.privacyPolicy.flatMap(URL.init(string:)) { openURL(url) }
         case let .perform(.status(.action(action))): perform(action)
         case .perform(.app("allowNotifications")): openNotificationSettings()
         default: host.send(.settings(command))
