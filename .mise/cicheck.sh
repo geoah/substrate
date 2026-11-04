@@ -77,6 +77,9 @@ imagemain="$PWD/.mise/imagemain.sh"
 releasegate="$PWD/.mise/releasegate.sh"
 cipostgres="$PWD/.mise/cipostgres.sh"
 toolchaincheck="$PWD/.mise/toolchaincheck.sh"
+# The checks below read .mise.toml with tomllib, which is Python 3.11's, and
+# a Mac's own python3 is older: they run in the tree's environment instead.
+python="$PWD/.mise/python.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -416,8 +419,9 @@ PATH="$fakebin:$PATH" FAKE_GH_LOG="$tmp/gh.log" GITHUB_SERVER_URL=https://exampl
 # CI splits `lint` and `fmt:check` across `ci:lint` and `ci:lint:go`, and
 # the apps' format checks, which want a Swift and a JDK, are steps of
 # `ci:android`. A linter added to the aggregate and to none of them would run
-# on a laptop and never on a pull request.
-missing="$(python3 - <<'PY'
+# on a laptop and never on a pull request. A run that fails says so, rather
+# than reading as nothing missing.
+if missing="$("$python" - 2>"$tmp/lint-jobs.err" <<'PY'
 import re, tomllib
 t = tomllib.load(open(".mise.toml", "rb"))["tasks"]
 want = set(t["lint"]["depends"]) | set(t["fmt:check"]["depends"])
@@ -425,8 +429,11 @@ have = set(t["ci:lint"]["depends"]) | set(t["ci:lint:go"]["depends"])
 have |= {m for step in t["ci:android"]["run"] for m in re.findall(r"mise run (\S+)", step)}
 print(" ".join(sorted(want - have)))
 PY
-)"
-[ -z "$missing" ] || flag "in lint or fmt:check but in none of ci:lint, ci:lint:go and ci:android: ${missing}"
+)"; then
+  [ -z "$missing" ] || flag "in lint or fmt:check but in none of ci:lint, ci:lint:go and ci:android: ${missing}"
+else
+  flag "the lint jobs' coverage was not checked: $(cat "$tmp/lint-jobs.err")"
+fi
 
 # --- the pipeline the ruleset and `mise run ci` describe --------------------
 
@@ -508,7 +515,7 @@ PY
 # that succeeded reports its findings on stdout.
 pipeline() {
   local out
-  if out="$(python3 "$tmp/pipeline.py" "$1" "$2" "$3" 2>"$tmp/pipeline.err")"; then
+  if out="$("$python" "$tmp/pipeline.py" "$1" "$2" "$3" 2>"$tmp/pipeline.err")"; then
     printf '%s' "$out"
   else
     printf '%s\n%s' "$out" "$(cat "$tmp/pipeline.err")"
@@ -640,7 +647,7 @@ PY
 # stderr only when the run fails: a mise shim's version warning is not a finding.
 dbslot() {
   local out
-  if out="$(python3 "$tmp/dbslot.py" "$1" 2>"$tmp/dbslot.err")"; then
+  if out="$("$python" "$tmp/dbslot.py" "$1" 2>"$tmp/dbslot.err")"; then
     printf '%s' "$out"
   else
     printf '%s\n%s' "$out" "$(cat "$tmp/dbslot.err")"
@@ -1097,6 +1104,18 @@ decisions tie-bbb 1 '0004 is already 0004-aaa.md on tie-aaa, added first'
 # entries, one entry a `go run` executable's directory, two files and a fuzz
 # corpus at the top. `age`, then a stand-in for the run (touch what the go
 # command would read or write), then `prune`: only the untouched entries go.
+#
+# aged <minutes> <path…>: each path's mtime that many minutes back. `touch -d
+# '3 hours ago'` is GNU's alone and this runs on a Mac too, so the time goes
+# through -t, which both read, from the epoch either date prints, in UTC so
+# no clock change falls inside the span.
+aged() {
+  local at stamp
+  at=$(($(date +%s) - $1 * 60))
+  shift
+  stamp="$(TZ=UTC0 date -d "@$at" +%Y%m%d%H%M.%S 2>/dev/null || TZ=UTC0 date -r "$at" +%Y%m%d%H%M.%S)"
+  TZ=UTC0 touch -m -t "$stamp" "$@"
+}
 gc="$tmp/go-build"
 mkdir -p "$gc/aa" "$gc/bb/exe-d" "$gc/cc/used-exe-d" "$gc/fuzz/corpus"
 for f in aa/unused-a aa/read-a aa/read-d bb/exe-d/tool cc/used-exe-d/tool README trim.txt fuzz/corpus/seed; do
@@ -1104,7 +1123,7 @@ for f in aa/unused-a aa/read-a aa/read-d bb/exe-d/tool cc/used-exe-d/tool README
 done
 # Old before the run: what is not an entry must survive the cut by its place,
 # not by its age.
-touch -m -d '3 hours ago' "$gc/cc/used-exe-d/tool" "$gc/README" "$gc/trim.txt" "$gc/fuzz/corpus" "$gc/fuzz/corpus/seed"
+aged 180 "$gc/cc/used-exe-d/tool" "$gc/README" "$gc/trim.txt" "$gc/fuzz/corpus" "$gc/fuzz/corpus/seed"
 "$gocache" age "$gc" >/dev/null || flag "gocache age: exit $?"
 [ -n "$(find "$gc/aa/unused-a" -mmin +100)" ] || flag "gocache age: aa/unused-a is not older than 100 minutes"
 # The run reads two entries and an executable's directory, and writes one.
@@ -1117,10 +1136,10 @@ stale="de$(printf '%062d' 0)"
 mkdir -p "$gc/dd" "$gc/de" "$gc/ee" "$gc/ef"
 : >"$gc/dd/${shared}-d"
 : >"$gc/de/${stale}-d"
-touch -m -d '3 hours ago' "$gc/dd/${shared}-d" "$gc/de/${stale}-d"
+aged 180 "$gc/dd/${shared}-d" "$gc/de/${stale}-d"
 printf 'v1 ee%062d %s %20d %20d\n' 0 "$shared" 0 0 >"$gc/ee/fresh-a"
 printf 'v1 ef%062d %s %20d %20d\n' 0 "$stale" 0 0 >"$gc/ef/stale-a"
-touch -m -d '3 hours ago' "$gc/ef/stale-a"
+aged 180 "$gc/ef/stale-a"
 "$gocache" prune "$gc" >/dev/null || flag "gocache prune: exit $?"
 for gone in aa/unused-a bb/exe-d ef/stale-a "de/${stale}-d"; do
   [ ! -e "$gc/$gone" ] || flag "gocache prune kept ${gone}, which the run never touched"
