@@ -2,13 +2,14 @@
 
 bodyunit_test.go writes the `messagessync` function body of
 kinds/providers.substrate.reamde.dev/beeper/bundle.yaml into the directory
-named by SUBSTRATE_BODIES_DIR and runs this file under `python3 -I`. The body's
-top level is exec'd into its own namespace, exactly the code the runner
-registers, so a case calls the shipped helper and not a copy of it.
+named by SUBSTRATE_BODIES_DIR and runs this file with `-I`, under a Python the
+body's `requires-python` admits, which uv finds. The body's top level is
+exec'd into its own namespace, exactly the code the runner registers, so a
+case calls the shipped helper and not a copy of it.
 
-The body imports `requests`, which `python3 -I` does not have, so a stub with
-requests' exception tree is installed in `sys.modules` first. The classifier
-reads only that tree and the standard library's socket errors.
+The body imports `requests`, which that interpreter need not have, so a stub
+with requests' exception tree is installed in `sys.modules` first. The
+classifier reads only that tree and the standard library's socket errors.
 """
 
 import errno
