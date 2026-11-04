@@ -1135,7 +1135,7 @@ outside Gradle's resolution and so outside this file.
 <app>/app.json                      what names the app once: its ids, platforms, Info.plist keys, the packages it publishes and asks for, scopes, icon and feed (above)
 xcode/project.yml                   the xcodegen spec, the only project source; it includes each app's apple/targets.yml
 xcode/Shared/Updater.swift          the updater every app compiles in
-xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync, Chat, Tasks and the template; the Apple AppIcon sets and the Android adaptive icon
+xcode/scripts/icons.mjs             draws every icon in the family: Substrate, Sync, Chat, Workouts, Tasks and the template; the Apple AppIcon sets and the Android adaptive icon
 xcode/scripts/feed.swift            a release's index.json, appcast.xml, install page and manifest, for every platform
 gradle/                             the one Gradle root of the Android build: settings, the version catalog, the wrapper, build-logic's convention plugins, swift-jnilibs.sh
 kit/android/                        the kit on Android: kit-core, kit-device, kit-ui, bridge-check, the Gallery app, the bridge's golden and the fixtures both systems draw ([its README](kit/android/README.md))

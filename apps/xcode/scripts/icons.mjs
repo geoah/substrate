@@ -1,12 +1,12 @@
 // Draws the Substrate family's app icons: Substrate, Substrate Sync,
-// Substrate Chat, Substrate Tasks and the template's. Apps built on a
+// Substrate Chat, Substrate Workouts, Substrate Tasks and the template's. Apps built on a
 // substrate elsewhere copy this file and add
 // their own entry to APPS (and a glyph to GLYPHS), so their icons share the
 // frame.
 //
 // Every icon shares one frame: the app's glyph on a pale gradient, and a band
 // across the bottom, a deeper shade of the background, that carries the
-// substrate infinity mark in the app's colour. Glyphs are close shades of the
+// substrate mark, three stacked layers, in the app's colour. Glyphs are close shades of the
 // app's colour with a light frosting. Each app has three iOS appearances:
 // light, dark and tinted (greyscale, which iOS colours); an app on Android
 // has an adaptive icon made of the same parts (below).
@@ -26,22 +26,12 @@ const mix = (h1, h2, t) => {
   return '#' + [16, 8, 0].map((sh) => Math.round(((x >> sh) & 255) * (1 - t) + ((y >> sh) & 255) * t).toString(16).padStart(2, '0')).join('');
 };
 
-// Bernoulli lemniscate with taller lobes, unit half-width.
-function infinityPath(k = 1.5, n = 160) {
-  let d = '';
-  for (let i = 0; i <= n; i++) {
-    const t = (i / n) * 2 * Math.PI, s = Math.sin(t), c = Math.cos(t), q = 1 + s * s;
-    d += (i ? 'L' : 'M') + (c / q).toFixed(4) + ',' + ((k * s * c) / q).toFixed(4);
-  }
-  return d + 'Z';
-}
-const INF = infinityPath();
-
 // Per app: pale background (top, bottom) and the glyph's light and deep colour.
 export const APPS = {
-  substrate: { name: 'Substrate', bg: ['#f5f9ff', '#d9e7ff'], hi: '#86bbff', lo: '#2d5fe6', glyph: 'strata' },
+  substrate: { name: 'Substrate', bg: ['#f5f9ff', '#d9e7ff'], hi: '#86bbff', lo: '#2d5fe6', glyph: 'console' },
   sync: { name: 'Substrate Sync', bg: ['#f2fcf8', '#d3f2e5'], hi: '#72e2bb', lo: '#0f936d', glyph: 'cycle' },
   chat: { name: 'Substrate Chat', bg: ['#f8f5ff', '#e4dcfd'], hi: '#bba2ff', lo: '#6a3fe0', glyph: 'chat' },
+  workouts: { name: 'Substrate Workouts', bg: ['#fff8f2', '#ffdfcc'], hi: '#ffab72', lo: '#e3471f', glyph: 'dumbbell' },
   tasks: { name: 'Substrate Tasks', bg: ['#fff5f7', '#ffdbe4'], hi: '#ff9bb2', lo: '#d92c58', glyph: 'checklist' },
   // What `mise run apps:new` copies: grey, so an app nobody has given its own
   // colour yet looks unfinished rather than like Tasks.
@@ -60,8 +50,9 @@ const spark = (cx, cy, s) => `M${cx},${cy - s} C${cx + s * 0.12},${cy - s * 0.12
 // "spark" is a small mark drawn on top in a contrasting colour, filled or
 // stroked.
 const GLYPHS = {
-  // Three layers: the substrate.
-  strata: () => [['back', rhombus(560)], ['mid', rhombus(440)], ['front', rhombus(320)]],
+  // A window of records: the console, where everything in a substrate is seen.
+  console: () => [['back', rect(232, 246, 560, 448, 72)],
+    ...[370, 470, 570].flatMap((y, i) => [['mid', circle(326, y, 36)], ['front', rect(390, y - 34, i < 2 ? 340 : 240, 68, 34)]])],
   // Two arrows chasing round a core: records carried in.
   cycle() {
     const cx = 512, cy = 470, R = 210, at = (a, rr = R) => [cx + rr * Math.cos((a * Math.PI) / 180), cy + rr * Math.sin((a * Math.PI) / 180)];
@@ -73,6 +64,9 @@ const GLYPHS = {
     }
     return parts;
   },
+  // A dumbbell: two plates a side on a bar.
+  dumbbell: () => [['back', rect(300, 446, 424, 48, 12)], ['mid', rect(166, 370, 74, 200, 24)], ['mid', rect(784, 370, 74, 200, 24)],
+    ['front', rect(250, 300, 124, 340, 28)], ['front', rect(650, 300, 124, 340, 28)]],
   // A speech bubble with a spark: the agent you talk to.
   chat: () => [['back', rect(392, 236, 370, 260, 110)],
     ['front', 'M358,278 L638,278 C710,278 758,326 758,398 L758,518 C758,590 710,638 638,638 L456,638 L352,712 L374,638 L358,638 C286,638 238,590 238,518 L238,398 C238,326 286,278 358,278 Z'],
@@ -111,6 +105,19 @@ function drawGlyph(name, mode, p, id) {
   return `<defs>${defs}</defs><g filter="url(#${id}sh)">${body}</g>`;
 }
 
+// The substrate mark in the band: three stacked layers in the band's ink,
+// each cut away where the one above it sits, so the band shows between them.
+function bandMark(id) {
+  const layers = [805, 845, 885].map((y) => rhombus(y, 90, 45));
+  const cut = (n, ls) => `<mask id="${id}${n}" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024"><rect width="1024" height="1024" fill="#fff"/>${ls.map((d) => `<path d="${d}" fill="#000" stroke="#000" stroke-width="14" stroke-linejoin="round"/>`).join('')}</mask>`;
+  return {
+    defs: cut('c1', layers.slice(0, 1)) + cut('c2', layers.slice(0, 2)),
+    body: `<path d="${layers[2]}" fill="url(#${id}in)" opacity="0.55" mask="url(#${id}c2)"/>` +
+      `<path d="${layers[1]}" fill="url(#${id}in)" opacity="0.78" mask="url(#${id}c1)"/>` +
+      `<path d="${layers[0]}" fill="url(#${id}in)"/>`,
+  };
+}
+
 let uid = 0;
 
 /**
@@ -120,7 +127,7 @@ let uid = 0;
 export function iconSVG(app, mode = 'light', { size = 1024, mask = false } = {}) {
   const a = APPS[app], id = 'i' + uid++;
   let bg0 = a.bg[0], bg1 = a.bg[1], glow = a.hi;
-  // The band is a deeper shade of the background, the infinity in the app's colour.
+  // The band is a deeper shade of the background, the mark in the app's colour.
   let band0 = mix(a.bg[1], a.hi, 0.35), band1 = mix(a.bg[1], a.hi, 0.55), ink0 = a.lo, ink1 = mix(a.lo, '#000000', 0.25), edge = 0.7;
   if (mode === 'dark' || mode === 'tinted') {
     bg0 = '#2a2a30'; bg1 = '#0b0b0d';
@@ -134,13 +141,14 @@ export function iconSVG(app, mode = 'light', { size = 1024, mask = false } = {})
     `<linearGradient id="${id}bg" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="${bg0}"/><stop offset="1" stop-color="${bg1}"/></linearGradient>`,
     `<radialGradient id="${id}gw" cx=".5" cy=".3" r=".62"><stop offset="0" stop-color="${glow}" stop-opacity="${mode === 'light' ? 0.35 : 0.22}"/><stop offset="1" stop-color="${glow}" stop-opacity="0"/></radialGradient>`,
     `<linearGradient id="${id}bd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${band0}"/><stop offset="1" stop-color="${band1}"/></linearGradient>`,
-    `<linearGradient id="${id}in" gradientUnits="userSpaceOnUse" x1="0" y1="800" x2="0" y2="890"><stop offset="0" stop-color="${ink0}"/><stop offset="1" stop-color="${ink1}"/></linearGradient>`,
+    `<linearGradient id="${id}in" gradientUnits="userSpaceOnUse" x1="0" y1="760" x2="0" y2="930"><stop offset="0" stop-color="${ink0}"/><stop offset="1" stop-color="${ink1}"/></linearGradient>`,
   ];
+  const mark = bandMark(id);
+  defs.push(mark.defs);
   if (mask) defs.push(`<clipPath id="${id}m"><rect width="1024" height="1024" rx="230"/></clipPath>`);
   const glyph = `<g transform="translate(512 352) scale(0.86) translate(-512 -470)">${drawGlyph(a.glyph, mode, { hi: a.hi, lo: a.lo }, id + 'g')}</g>`;
   const band = `<rect x="-20" y="690" width="1064" height="400" fill="url(#${id}bd)"/><rect x="-20" y="690" width="1064" height="3" fill="#fff" opacity="${edge}"/>`;
-  const inf = `<path d="${INF}" transform="translate(512 845) scale(72)" fill="none" stroke="url(#${id}in)" stroke-width="0.30" stroke-linejoin="round"/>`;
-  const body = `<rect width="1024" height="1024" fill="url(#${id}bg)"/><rect width="1024" height="1024" fill="url(#${id}gw)"/>${glyph}${band}${inf}`;
+  const body = `<rect width="1024" height="1024" fill="url(#${id}bg)"/><rect width="1024" height="1024" fill="url(#${id}gw)"/>${glyph}${band}${mark.body}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 1024 1024"><defs>${defs.join('')}</defs>${mask ? `<g clip-path="url(#${id}m)">${body}</g>` : body}</svg>`;
 }
 
@@ -200,9 +208,9 @@ export function writeAppIconSet(app, dir, { mac = false } = {}) {
 // Android 13 and later tint for themed icons. The 1024 px frame maps onto
 // that inner 72 dp, so the masked icon is the light iOS icon: the background
 // layer is the pale gradient, its glow and the band, full bleed; the
-// foreground is the glyph and the infinity, which sit inside the 66 dp safe
+// foreground is the glyph and the mark, which sit inside the 66 dp safe
 // zone every mask keeps. The monochrome layer is the glyph's silhouette (its
-// back level faint, the rest whole) and the infinity. All three are vector
+// back level faint, the rest whole) and the mark. All three are vector
 // drawables, written from one model of shapes that previewSVG draws too, so
 // a preview is what the XML holds. A vector drawable has no blur, so the
 // glyph's soft shadow is three widening silhouettes at a low opacity.
@@ -254,9 +262,9 @@ const ALL = { tx: 0, ty: 0, s: 1, px: 0, py: 0 };
 const group = (g, kids) => ({ g: { ...ALL, ...g }, kids });
 // The glyph's place in the frame: translate(512 352) scale(0.86) translate(-512 -470).
 const glyphGroup = (kids) => group({ px: 512, py: 470, s: 0.86, ty: 352 - 470 }, kids);
-// The glyph and the infinity, drawn a little smaller about the centre than
+// The glyph and the mark, drawn a little smaller about the centre than
 // on iOS: a circle cuts the corners a rounded square keeps, and the glyph's
-// top corners must stay inside the 66 dp safe zone. The infinity stays in
+// top corners must stay inside the 66 dp safe zone. The mark stays in
 // the band.
 const FIT = { px: 512, py: 512, s: 0.88 };
 
@@ -283,9 +291,20 @@ function adaptiveLayers(app) {
     if (w) { glyph.push({ d, stroke: paint, sw: w, cap: 'round' }); continue; }
     glyph.push({ d, fill: paint, stroke: paint, sw: 10, join: 'round' }, { d, stroke: { color: '#ffffff', a: sh.rim }, sw: 3, join: 'round' });
   }
-  const infinity = (paint) => group({ tx: 512, ty: 845, s: 72 }, [{ d: INF, stroke: paint, sw: 0.3, join: 'round' }]);
-  const ink = { lin: [0, -45 / 72, 0, 45 / 72], stops: [[0, a.lo, 1], [1, mix(a.lo, '#000000', 0.25), 1]] };
-  const foreground = group({ tx: INSET, ty: INSET }, [group(FIT, [glyphGroup(glyph), infinity(ink)])]);
+  // The mark as bandMark draws it, top layer solid and the two under it
+  // lighter. A vector drawable has no masks, so each layer is cut from the
+  // one below by an outline in the band's colour where it sits.
+  const layers = [805, 845, 885].map((y) => rhombus(y, 90, 45));
+  const ink = (alpha) => ({ lin: [0, 760, 0, 930], stops: [[0, a.lo, alpha], [1, mix(a.lo, '#000000', 0.25), alpha]] });
+  const cut = mix(band0, band1, 0.39);
+  const mark = [
+    { d: layers[2], fill: ink(0.55) },
+    { d: layers[1], stroke: cut, sw: 14, join: 'round' },
+    { d: layers[1], fill: ink(0.78) },
+    { d: layers[0], stroke: cut, sw: 14, join: 'round' },
+    { d: layers[0], fill: ink(1) },
+  ];
+  const foreground = group({ tx: INSET, ty: INSET }, [group(FIT, [glyphGroup(glyph), ...mark])]);
   // The silhouette: whatever the system tints it, the back level reads as the
   // card behind the marks, and a spark is cut back to the tint like the rest.
   const mono = [];
@@ -293,7 +312,12 @@ function adaptiveLayers(app) {
     const paint = lv === 'back' ? { color: '#ffffff', a: 0.42 } : '#ffffff';
     mono.push(w ? { d, stroke: paint, sw: w, cap: 'round', join: 'round' } : { d, fill: paint, stroke: paint, sw: 10, join: 'round' });
   }
-  const monochrome = group({ tx: INSET, ty: INSET }, [group(FIT, [glyphGroup(mono), infinity('#ffffff')])]);
+  const monoMark = [
+    { d: layers[2], fill: { color: '#ffffff', a: 0.55 } },
+    { d: layers[1], fill: { color: '#ffffff', a: 0.78 } },
+    { d: layers[0], fill: '#ffffff' },
+  ];
+  const monochrome = group({ tx: INSET, ty: INSET }, [group(FIT, [glyphGroup(mono), ...monoMark])]);
   return { background, foreground, monochrome };
 }
 
