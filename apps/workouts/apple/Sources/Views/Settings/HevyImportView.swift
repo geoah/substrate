@@ -30,7 +30,7 @@ struct HevyImportView: View {
         case reading(String)
         case ready(source: String, plan: HevyImport.Plan)
         case importing(source: String, plan: HevyImport.Plan)
-        case done(imported: Int, exercises: Int, routines: Int, routineProblem: String?)
+        case done(HevyImport.Imported)
         case failed(String)
     }
 
@@ -92,8 +92,8 @@ struct HevyImportView: View {
             case let .ready(source, plan), let .importing(source, plan):
                 summary(source: source, plan: plan)
                 importSection(plan)
-            case let .done(imported, exercises, routines, problem):
-                doneSection(imported: imported, exercises: exercises, routines: routines, problem: problem)
+            case let .done(imported):
+                doneSection(imported)
             case let .failed(reason):
                 Section {
                     Label(reason, systemImage: "exclamationmark.triangle")
@@ -172,9 +172,7 @@ struct HevyImportView: View {
                 Text("Routines")
             } footer: {
                 Text(
-                    !link.isSignedIn
-                        ? "Routines and body measurements live on your substrate: sign in to one, then import again to add them."
-                        : "Each routine keeps its folder, exercises, supersets, sets and rests. A routine here already is left as it is. Workouts started from a routine are linked to it."
+                    "Each routine keeps its folder, exercises, supersets, sets and rests. A routine here already is left as it is. Workouts started from a routine are linked to it."
                 )
             }
         }
@@ -244,43 +242,38 @@ struct HevyImportView: View {
 
     @ViewBuilder
     private func importSection(_ plan: HevyImport.Plan) -> some View {
-        let routines = !link.isSignedIn ? 0 : plan.routines.count
+        let offer = plan.offer(signedIn: link.isSignedIn)
         Section {
             Button {
                 run(plan)
             } label: {
                 HStack {
-                    Text(title(workouts: plan.sessions.count, routines: routines))
+                    Text(offer.title)
                     Spacer()
                     if case .importing = stage { ProgressView() }
                 }
             }
-            .disabled((plan.sessions.isEmpty && routines == 0) || isBusy)
+            .disabled(offer.isEmpty || isBusy)
         } footer: {
-            Text("Imported workouts join History and the suggestions. They are not saved to Apple Health; Hevy may have saved its own. \(destination)")
+            VStack(alignment: .leading, spacing: 8) {
+                if offer.waitsForSignIn {
+                    Text("Routines and body measurements live on your substrate: sign in to one, then import again to add them.")
+                }
+                Text("Imported workouts join History and the suggestions. They are not saved to Apple Health; Hevy may have saved its own. \(destination)")
+            }
         }
     }
 
-    private func title(workouts: Int, routines: Int) -> String {
-        switch (workouts, routines) {
-        case (0, 0): "Nothing new to import"
-        case (_, 0): "Import \(Format.count(workouts, "workout"))"
-        case (0, _): "Import \(Format.count(routines, "routine"))"
-        default: "Import \(Format.count(workouts, "workout")) and \(Format.count(routines, "routine"))"
-        }
-    }
-
-    private func doneSection(imported: Int, exercises: Int, routines: Int, problem: String?) -> some View {
+    private func doneSection(_ imported: HevyImport.Imported) -> some View {
         Section {
-            Label("Imported \(Format.count(imported, "workout"))", systemImage: "checkmark.circle")
-            if routines > 0 {
-                LabeledContent("Routines added", value: "\(routines)")
+            if let headline = imported.headline {
+                Label(headline, systemImage: "checkmark.circle")
             }
-            if exercises > 0 {
-                LabeledContent("Exercises added", value: "\(exercises)")
+            if imported.exercises > 0 {
+                LabeledContent("Exercises added", value: "\(imported.exercises)")
             }
-            if let problem {
-                Label("Routines not added: \(problem)", systemImage: "exclamationmark.triangle")
+            if let notAdded = imported.notAdded {
+                Label(notAdded, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             }
         } footer: {
@@ -374,21 +367,20 @@ struct HevyImportView: View {
 
     private func run(_ plan: HevyImport.Plan) {
         guard case let .ready(source, _) = stage else { return }
+        let offer = plan.offer(signedIn: link.isSignedIn)
         stage = .importing(source: source, plan: plan)
         Task {
             do {
                 try await app.importSessions(plan.sessions, exercises: plan.exercises)
-                var routines = 0
                 var problem: String?
-                if link.isSignedIn, !plan.routines.isEmpty || !plan.measurements.isEmpty {
+                if offer.routines > 0 || offer.measurements > 0 {
                     do {
                         try await link.importRecords(routines: plan.routines, measurements: plan.measurements, exercises: plan.exercises)
-                        routines = plan.routines.count
                     } catch {
                         problem = error.localizedDescription
                     }
                 }
-                stage = .done(imported: plan.sessions.count, exercises: plan.exercises.count, routines: routines, routineProblem: problem)
+                stage = .done(offer.imported(exercises: plan.exercises.count, problem: problem))
             } catch {
                 stage = .failed(error.localizedDescription)
             }
