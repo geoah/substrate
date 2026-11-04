@@ -34,6 +34,19 @@ failure and fails a run in which no case ran. Each suite prints how many
 cases ran past those gates, with `-v` or on a failure, and writes the count
 to the job summary on GitHub Actions.
 
+Python has two floors. The host every body is exec'd into,
+`internal/runner/host.py`, holds to 3.9, `.ruff.toml`'s `target-version`,
+because a body with no PEP 723 block runs on whatever `python3` a deployment
+has. A body with a block may ask for more in its `requires-python` (the
+shipped ones ask for `>=3.11`). The runner builds that body's environment
+over the same `python3`, so a deployment's `python3` has to meet every
+installed body's floor; the image ships 3.14. The short suite's body helpers
+(`internal/providertest/bodyunit_test.go`) run a body that declares a floor
+under an installed Python that meets it, which `uv python find` picks, and
+any other body under `python3`. Where no such Python is installed they skip
+and name the floor (`uv python install '>=3.11'` adds one); under
+`SUBSTRATE_TEST_REQUIRE_SANDBOX`, which `ci:go` sets, they fail instead.
+
 **The short suite** is everything that needs no database: the API against its
 hand-written fake (`internal/api/fake_test.go`), the CLI's commands, the
 vocabulary, the sandbox, the runner's protocol. It is fast enough to run on
