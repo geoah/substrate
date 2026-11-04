@@ -64,8 +64,13 @@ export function ThemeProvider({
   React.useEffect(() => {
     const root = document.documentElement
     const apply = (nextTheme: Theme) => {
+      const resolved = nextTheme === "system" ? getSystemTheme() : nextTheme
       root.classList.remove("light", "dark")
-      root.classList.add(nextTheme === "system" ? getSystemTheme() : nextTheme)
+      root.classList.add(resolved)
+      // The class styles the console; `color-scheme` is what the browser's
+      // own parts read: scrollbars, form controls, and an SVG logo shown as
+      // an image that picks its palette by `prefers-color-scheme`.
+      root.style.colorScheme = resolved
     }
 
     apply(theme)

@@ -88,6 +88,18 @@ const (
 	TraitRevisedCore = PackageCore + "/" + TraitRevised
 )
 
+// The lifecycle trait (decision 0226): a kind whose status, an enum or a
+// state machine, names the values that close a record (`done` and
+// `dropped`); every other one is open. It is the one core trait a binding
+// may rename (`lifecycle(status: state)`), since no engine path reads its
+// property by name.
+const (
+	TraitLifecycle     = "lifecycle"
+	TraitLifecycleCore = PackageCore + "/" + TraitLifecycle
+	// LifecycleStatus is the property the trait contracts.
+	LifecycleStatus = "status"
+)
+
 // The traits beside `observed` that contract what the engine and the console
 // read from the records an observed value points at, and from a lab result
 // (decision 0154): `metric` on the catalogue entry a value's `metric`

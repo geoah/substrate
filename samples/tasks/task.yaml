@@ -10,7 +10,10 @@ data:
     from a Linear issue, or proposed by an agent. Status carries the whole
     lifecycle — a proposal waits for the owner, an open task is due, and completing
     it stamps the time by itself.
-  version: 12
+  # 13: `lifecycle` (decision record 0226): `done` closes a task done and
+  # `abandoned` closes it dropped, so an app over every lifecycle kind lists a
+  # proposed or open task as open.
+  version: 13
   names:
     singular: task
   # `recurring` (core's) is the repeat rule seeded off dueAt; `override`
@@ -21,6 +24,7 @@ data:
     - "substrate.reamde.dev/core/temporal(point: dueAt)"
     - substrate.reamde.dev/core/recurring
     - substrate.reamde.dev/core/override
+    - substrate.reamde.dev/core/lifecycle
   # `title` is the LEGACY alternative, not a second spelling to write: tasks
   # written before `name` existed hold their heading in the built-in title
   # column, and reading it keeps them titled instead of blanking them on their
@@ -103,6 +107,10 @@ data:
         - done
         - abandoned
       initial: open
+      done:
+        - done
+      dropped:
+        - abandoned
       transitions:
         - from: proposed
           to: open

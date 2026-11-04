@@ -813,6 +813,218 @@ func TestKindlessMoneyOperandIsRefusedWhereTheKindsDisagree(t *testing.T) {
 	}
 }
 
+const statusPackage = "status.example.substrate.reamde.dev/status"
+
+// One name, a state machine on two kinds and an enum on two others, is kept
+// in two columns: a state's value in states, an enum's in props. A filter and
+// an order read each kind's rows where that kind keeps it; they used to read
+// states for every row once any kind read declared the name a state, which
+// left every enum row out of a filter and sorted it as NULL. A read naming no
+// kind reads every loaded kind declaring the name, the seeded and imported
+// ones among them, none of which has a row here, so these rows are its whole
+// answer.
+func TestAStateAndAnEnumOfOneNameAreEachReadWhereTheyAreStored(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	status := func(singular string, def map[string]any) map[string]any {
+		return vocabulary.KindManifest(statusPackage, map[string]any{"singular": singular},
+			map[string]any{"properties": map[string]any{"status": def}})
+	}
+	machine := func(settled string) map[string]any {
+		return map[string]any{
+			"type": "state", "states": []any{"open", settled}, "initial": "open",
+			"transitions": []any{map[string]any{"from": "open", "to": settled}},
+		}
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(statusPackage, 0),
+		status("ticket", machine("closed")),
+		status("job", machine("done")),
+		status("issue", map[string]any{"type": "enum", "values": []any{"open", "blocked"}}),
+		status("note", map[string]any{"type": "enum", "values": []any{"open", "archived"}}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	var all []string
+	for _, row := range []struct{ singular, status string }{
+		{"ticket", "open"},
+		{"ticket", "closed"},
+		{"job", "open"},
+		{"job", "done"},
+		{"issue", "open"},
+		{"issue", "blocked"},
+		{"note", "open"},
+		{"note", "archived"},
+	} {
+		id := row.singular + "-" + row.status
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: statusPackage + "/" + row.singular, ID: id, Properties: map[string]any{"status": row.status},
+		})
+		all = append(all, id)
+	}
+	kinds := func(singulars ...string) []string {
+		out := make([]string, 0, len(singulars))
+		for _, s := range singulars {
+			out = append(out, statusPackage+"/"+s)
+		}
+		return out
+	}
+	settled := []any{"closed", "done", "blocked", "archived"}
+
+	for _, tc := range []struct {
+		name  string
+		kinds []string
+		cond  substrate.Cond
+		want  []string
+	}{
+		{"eq over a state and an enum", kinds("ticket", "issue"), substrate.Cond{Eq: "open"}, []string{"issue-open", "ticket-open"}},
+		{"in over a state and an enum", kinds("ticket", "issue"), substrate.Cond{In: settled}, []string{"issue-blocked", "ticket-closed"}},
+		{"eq naming no kind", nil, substrate.Cond{Eq: "open"}, []string{"issue-open", "job-open", "note-open", "ticket-open"}},
+		{"in naming no kind", nil, substrate.Cond{In: settled}, []string{"issue-blocked", "job-done", "note-archived", "ticket-closed"}},
+		{"eq over two states", kinds("ticket", "job"), substrate.Cond{Eq: "open"}, []string{"job-open", "ticket-open"}},
+		{"in over two states", kinds("ticket", "job"), substrate.Cond{In: settled}, []string{"job-done", "ticket-closed"}},
+		{"eq over two enums", kinds("issue", "note"), substrate.Cond{Eq: "open"}, []string{"issue-open", "note-open"}},
+		{"in over two enums", kinds("issue", "note"), substrate.Cond{In: settled}, []string{"issue-blocked", "note-archived"}},
+	} {
+		t.Run("filter "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := listIDs(t, ds, substrate.Query{
+				Filter: substrate.Filter{Kinds: tc.kinds, Properties: map[string]substrate.Cond{"status": tc.cond}},
+				First:  50,
+			})
+			if !equalStrings(got, tc.want) {
+				t.Fatalf("filtered to %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	// Ascending by status, a tie by kind: issue, job, note, ticket. Pages of
+	// three put a cursor on the key, so the seek compares the same expression
+	// the order sorts by.
+	for _, tc := range []struct {
+		name   string
+		filter substrate.Filter
+		want   []string
+	}{
+		{
+			"over a state and an enum",
+			substrate.Filter{Kinds: kinds("ticket", "issue")},
+			[]string{"issue-blocked", "ticket-closed", "issue-open", "ticket-open"},
+		},
+		{
+			"naming no kind",
+			substrate.Filter{IDs: all},
+			[]string{"note-archived", "issue-blocked", "ticket-closed", "job-done", "issue-open", "job-open", "note-open", "ticket-open"},
+		},
+		{
+			"over two states",
+			substrate.Filter{Kinds: kinds("ticket", "job")},
+			[]string{"ticket-closed", "job-done", "job-open", "ticket-open"},
+		},
+		{
+			"over two enums",
+			substrate.Filter{Kinds: kinds("issue", "note")},
+			[]string{"note-archived", "issue-blocked", "issue-open", "note-open"},
+		},
+	} {
+		t.Run("orderBy "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			var got []string
+			after := ""
+			for pages := 0; ; pages++ {
+				if pages > 10 {
+					t.Fatal("walk did not terminate")
+				}
+				page, err := ds.List(ctx, substrate.Query{
+					Filter: tc.filter, OrderBy: []substrate.Order{{Property: "status"}}, First: 3, After: after,
+				})
+				if err != nil {
+					t.Fatalf("page %d: %v", pages, err)
+				}
+				got = append(got, ids(page.Records)...)
+				if page.Cursor == "" {
+					break
+				}
+				after = page.Cursor
+			}
+			if !equalStrings(got, tc.want) {
+				t.Fatalf("ordered %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	// match stays refused where any kind the read spans declares the name a
+	// state: matched on the enum rows alone, it would answer without the
+	// state rows and not say so.
+	for name, named := range map[string][]string{"over a state and an enum": kinds("ticket", "issue"), "naming no kind": nil} {
+		t.Run("match "+name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
+				Kinds: named, Properties: map[string]substrate.Cond{"status": {Match: "open"}},
+			}})
+			wantRefusal(t, err, substrate.ErrValidation, "status is a state")
+		})
+	}
+}
+
+// A read naming no kind compares a name some kinds declare a state by the
+// other kinds' vote, as it does when no kind does: an int on one kind and a
+// string on another disagree, so their rows compare as text, and the first of
+// them must not cast the operand for both (kindlessDatatype).
+func TestAStateSplitNamingNoKindComparesTheOtherKindsByTheirVote(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	const pkg = "tier.example.substrate.reamde.dev/tier"
+	tier := func(singular string, def map[string]any) map[string]any {
+		return vocabulary.KindManifest(pkg, map[string]any{"singular": singular},
+			map[string]any{"properties": map[string]any{"tierLevel": def}})
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		tier("alpha", map[string]any{"type": "int"}),
+		tier("beta", map[string]any{"type": "string"}),
+		tier("gamma", map[string]any{
+			"type": "state", "states": []any{"low", "high"}, "initial": "low",
+			"transitions": []any{map[string]any{"from": "low", "to": "high"}},
+		}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	for _, row := range []struct {
+		singular string
+		value    any
+	}{{"alpha", 1}, {"beta", "1"}, {"gamma", "low"}} {
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: pkg + "/" + row.singular, ID: row.singular, Properties: map[string]any{"tierLevel": row.value},
+		})
+	}
+	for _, tc := range []struct {
+		name string
+		cond substrate.Cond
+		want []string
+	}{
+		// As text "01" is neither row's "1"; cast to the int kind's number,
+		// it was both of them.
+		{"text that reads as a number", substrate.Cond{Eq: "01"}, []string{}},
+		{"the text both rows hold", substrate.Cond{Eq: "1"}, []string{"alpha", "beta"}},
+		// A state's value, which a number cast could not take.
+		{"a state's value", substrate.Cond{Eq: "low"}, []string{"gamma"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := listIDs(t, ds, substrate.Query{
+				Filter: substrate.Filter{Properties: map[string]substrate.Cond{"tierLevel": tc.cond}},
+				First:  50,
+			})
+			if !equalStrings(got, tc.want) {
+				t.Fatalf("filtered to %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // Every value the write path accepts reaches a typed read whole: an offset
 // carries a written 9999 into a five-digit year the timestamptz cast reads,
 // and `decimal` is unbounded. Both compare by value, in a read naming the kind
@@ -960,6 +1172,60 @@ func TestKindlessMoneyFilterSkipsAnAmountNumericRefuses(t *testing.T) {
 		}
 		if len(page.Records) != 1 || page.Records[0].Kind != kindlessPackage+"/fee" {
 			t.Fatalf("order %v: filtered to %d records, want the one fee of 12.00 EUR", order, len(page.Records))
+		}
+	}
+}
+
+// A money filter that compares nothing reads presence alone: exists, either
+// way, and a condition naming no operator. The key a comparison reads through
+// was bound whether or not one ran, and Postgres refused the read over a
+// placeholder no clause mentioned. feeNote narrows the read naming no kind to
+// these two rows, since every seeded record has no charge either.
+func TestAMoneyFilterComparingNothingReadsPresence(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(kindlessPackage, 0),
+		vocabulary.KindManifest(kindlessPackage, map[string]any{"singular": "fee"}, map[string]any{"properties": map[string]any{
+			"feeNote":   map[string]any{"type": "string"},
+			"feeCharge": map[string]any{"type": "money"},
+		}}),
+	}); err != nil {
+		t.Fatalf("install the kind: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/fee", Properties: map[string]any{"feeNote": "charged", "feeCharge": moneyValue(950, "EUR")}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kindlessPackage + "/fee", Properties: map[string]any{"feeNote": "waived"}})
+
+	for _, kinds := range [][]string{{kindlessPackage + "/fee"}, nil} {
+		for _, tc := range []struct {
+			name string
+			cond substrate.Cond
+			want []string
+		}{
+			{"exists", substrate.Cond{Exists: new(true)}, []string{"charged"}},
+			{"absent", substrate.Cond{Exists: new(false)}, []string{"waived"}},
+			{"no operator", substrate.Cond{}, []string{"charged", "waived"}},
+		} {
+			page, err := ds.List(ctx, substrate.Query{
+				Filter: substrate.Filter{Kinds: kinds, Properties: map[string]substrate.Cond{
+					"feeCharge": tc.cond,
+					"feeNote":   {Exists: new(true)},
+				}},
+				OrderBy: []substrate.Order{{Property: "feeNote"}},
+				First:   50,
+			})
+			if err != nil {
+				t.Errorf("kinds %v, %s: %v", kinds, tc.name, err)
+				continue
+			}
+			var got []string
+			for _, r := range page.Records {
+				got = append(got, fmt.Sprint(r.Properties["feeNote"]))
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("kinds %v, %s: read %v, want %v", kinds, tc.name, got, tc.want)
+			}
 		}
 	}
 }
