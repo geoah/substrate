@@ -101,7 +101,10 @@ anyone can register a domain they do not hold. **Verify domain** proves it
 afterwards
 ([decision record 0208](decisions/0208-a-repository-proves-its-name-with-a-txt-record-after-registration.md)).
 Until it passes, the console marks the name unverified beside it and on an
-app's approval page.
+app's approval page. The console's register page completes a label under the
+server's host and takes a domain of the reader's own only through its
+advanced option, which says to use a domain they own and previews the record
+below; a registration under such a domain lands on Settings, Verify domain.
 
 ```http
 POST /api/v1/repository/domain

@@ -157,15 +157,148 @@ describe("RegisterPage", () => {
     render(<RegisterPage />)
     const name = screen.getByLabelText("Choose your address")
     expect(
-      screen.getByText(/Your name becomes your Substrate’s address/)
+      screen.getByText(/Your Substrate’s address and sign-in name/)
     ).toBeTruthy()
     fireEvent.change(name, { target: { value: "Mum" } })
     // jsdom serves the console from localhost, so a bare name lands there.
     expect(screen.getByText("mum.localhost")).toBeTruthy()
     expect(screen.getByText(".localhost")).toBeTruthy()
+    // The server's host stays fixed: a domain is the advanced option's, so
+    // typing one here claims nothing.
     fireEvent.change(name, { target: { value: "ada.example.org" } })
-    expect(screen.getByText("ada.example.org")).toBeTruthy()
+    expect(screen.getByText(".localhost")).toBeTruthy()
+    expect(screen.queryByText("ada.example.org")).toBeNull()
+    expect(
+      screen.getByText("To use your own domain, choose Advanced below.")
+    ).toBeTruthy()
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Continue" })
+        .disabled
+    ).toBe(true)
+    fireEvent.change(name, { target: { value: "-ada" } })
+    expect(
+      screen.getByText(
+        "Use letters, numbers and hyphens, starting and ending with a letter or number."
+      )
+    ).toBeTruthy()
+  })
+
+  it("takes the reader's own domain only through the advanced option, and says what owning it means", () => {
+    render(<RegisterPage />)
+    expect(screen.queryByText(/Only use a domain you own/)).toBeNull()
+    fireEvent.change(screen.getByLabelText("Choose your address"), {
+      target: { value: "Ada.Example.org" },
+    })
+    const advanced = screen.getByRole("button", {
+      name: "Advanced: use your own domain",
+    })
+    expect(advanced.getAttribute("aria-expanded")).toBe("false")
+    fireEvent.click(advanced)
+
+    // The pasted domain carries over, and the suffix is gone.
+    const domain = screen.getByLabelText<HTMLInputElement>("Your domain")
+    expect(domain.value).toBe("ada.example.org")
     expect(screen.queryByText(".localhost")).toBeNull()
+    expect(screen.getByText("ada.example.org")).toBeTruthy()
+    expect(screen.getByText(/Only use a domain you own/)).toBeTruthy()
+    // The record Settings will ask for, in its shape: no proof yet.
+    expect(screen.getByText("_substrate.ada.example.org")).toBeTruthy()
+    expect(screen.getByText("TXT")).toBeTruthy()
+    expect(
+      screen.getByText("v=substrate1 server=http://localhost:3000 proof=…")
+    ).toBeTruthy()
+
+    // Half a domain is not an error until the reader leaves the field.
+    fireEvent.change(domain, { target: { value: "ada" } })
+    expect(screen.queryByText(/Enter a full domain/)).toBeNull()
+    fireEvent.blur(domain)
+    expect(
+      screen.getByText("Enter a full domain, like home.example.org.")
+    ).toBeTruthy()
+
+    // Back to this server's address: a domain does not cross back.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Use an address on localhost instead",
+      })
+    )
+    expect(
+      screen.getByLabelText<HTMLInputElement>("Choose your address").value
+    ).toBe("ada")
+    expect(screen.queryByText(/Only use a domain you own/)).toBeNull()
+  })
+
+  it("registers the reader's own domain and lands on Settings' Verify domain", async () => {
+    policy.totpRequired = false
+    fetchMock.mockResolvedValue(
+      jsonResponse(201, { ...MINT, repository: "ada.example.org" })
+    )
+    render(<RegisterPage />)
+    fireEvent.change(screen.getByLabelText("Invite code"), {
+      target: { value: "INV-1" },
+    })
+    fireEvent.click(
+      screen.getByRole("button", { name: "Advanced: use your own domain" })
+    )
+    fireEvent.change(screen.getByLabelText("Your domain"), {
+      target: { value: "ada.example.org." },
+    })
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create your Substrate" })
+    )
+
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/settings",
+        hash: "verify-domain",
+        replace: true,
+      })
+    )
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse((init as RequestInit).body as string).repository).toBe(
+      "ada.example.org"
+    )
+    expect(getRepository()).toBe("ada.example.org")
+  })
+
+  it("returns to an app's approval page before Verify domain", async () => {
+    registerSearch.redirect = "/authorize/AbC123"
+    policy.totpRequired = false
+    fetchMock.mockResolvedValue(
+      jsonResponse(201, { ...MINT, repository: "ada.example.org" })
+    )
+    render(<RegisterPage />)
+    fireEvent.change(screen.getByLabelText("Invite code"), {
+      target: { value: "INV-1" },
+    })
+    fireEvent.click(
+      screen.getByRole("button", { name: "Advanced: use your own domain" })
+    )
+    fireEvent.change(screen.getByLabelText("Your domain"), {
+      target: { value: "ada.example.org." },
+    })
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create your Substrate" })
+    )
+
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/authorize/AbC123",
+        replace: true,
+      })
+    )
   })
 
   it("shows the deployment's brand, or the substrate's without a site", () => {

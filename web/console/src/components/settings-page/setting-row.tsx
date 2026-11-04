@@ -35,6 +35,7 @@ export function SettingRow({
   control,
   children,
   className,
+  id,
 }: {
   title: ReactNode
   description?: ReactNode
@@ -42,9 +43,12 @@ export function SettingRow({
   /** What opens under the row: a form, a table. */
   children?: ReactNode
   className?: string
+  /** An anchor another page links to, `/settings#<id>`. */
+  id?: string
 }) {
   return (
     <div
+      id={id}
       data-slot="setting-row"
       className={cn("border-b border-border last:border-b-0", className)}
     >
