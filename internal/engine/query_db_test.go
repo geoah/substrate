@@ -968,6 +968,63 @@ func TestAStateAndAnEnumOfOneNameAreEachReadWhereTheyAreStored(t *testing.T) {
 	}
 }
 
+// A read naming no kind compares a name some kinds declare a state by the
+// other kinds' vote, as it does when no kind does: an int on one kind and a
+// string on another disagree, so their rows compare as text, and the first of
+// them must not cast the operand for both (kindlessDatatype).
+func TestAStateSplitNamingNoKindComparesTheOtherKindsByTheirVote(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	const pkg = "tier.example.substrate.reamde.dev/tier"
+	tier := func(singular string, def map[string]any) map[string]any {
+		return vocabulary.KindManifest(pkg, map[string]any{"singular": singular},
+			map[string]any{"properties": map[string]any{"tierLevel": def}})
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		tier("alpha", map[string]any{"type": "int"}),
+		tier("beta", map[string]any{"type": "string"}),
+		tier("gamma", map[string]any{
+			"type": "state", "states": []any{"low", "high"}, "initial": "low",
+			"transitions": []any{map[string]any{"from": "low", "to": "high"}},
+		}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	for _, row := range []struct {
+		singular string
+		value    any
+	}{{"alpha", 1}, {"beta", "1"}, {"gamma", "low"}} {
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: pkg + "/" + row.singular, ID: row.singular, Properties: map[string]any{"tierLevel": row.value},
+		})
+	}
+	for _, tc := range []struct {
+		name string
+		cond substrate.Cond
+		want []string
+	}{
+		// As text "01" is neither row's "1"; cast to the int kind's number,
+		// it was both of them.
+		{"text that reads as a number", substrate.Cond{Eq: "01"}, []string{}},
+		{"the text both rows hold", substrate.Cond{Eq: "1"}, []string{"alpha", "beta"}},
+		// A state's value, which a number cast could not take.
+		{"a state's value", substrate.Cond{Eq: "low"}, []string{"gamma"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := listIDs(t, ds, substrate.Query{
+				Filter: substrate.Filter{Properties: map[string]substrate.Cond{"tierLevel": tc.cond}},
+				First:  50,
+			})
+			if !equalStrings(got, tc.want) {
+				t.Fatalf("filtered to %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // Every value the write path accepts reaches a typed read whole: an offset
 // carries a written 9999 into a five-digit year the timestamptz cast reads,
 // and `decimal` is unbounded. Both compare by value, in a read naming the kind

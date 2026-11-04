@@ -1036,8 +1036,15 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 		if len(others) == 0 {
 			return condJSON(b, `states`, name, c, vocabulary.DatatypeString, nil)
 		}
-		return ds.condStateSplit(ctx, x, b, states, others, name, c)
+		return ds.condStateSplit(ctx, x, b, types, states, others, name, c)
 	}
+	return ds.condOrdinary(ctx, x, b, types, name, c)
+}
+
+// condOrdinary filters a name no candidate kind declares a state: the value is
+// in props. types is condProp's: empty for a read naming no kind, which
+// decides the datatype by every declaring kind's vote (kindlessDatatype).
+func (ds *dataset) condOrdinary(ctx context.Context, x dbx, b *builder, types []*vocabulary.Kind, name string, c substrate.Cond) error {
 	if ds.sensitiveProp(types, name) {
 		return fmt.Errorf("%w: %s is sensitive and cannot be filtered", substrate.ErrValidation, name)
 	}
@@ -1095,7 +1102,7 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 // alone. Every other row and not only the other kinds': a read naming no kind
 // also reaches the rows of kinds that do not declare the name, and those are
 // read where they would be if no kind declared it a state.
-func (ds *dataset) condStateSplit(ctx context.Context, x dbx, b *builder, states, others []*vocabulary.Kind, name string, c substrate.Cond) error {
+func (ds *dataset) condStateSplit(ctx context.Context, x dbx, b *builder, types, states, others []*vocabulary.Kind, name string, c substrate.Cond) error {
 	// Each half compiles into b itself, so its arguments are numbered in b's
 	// one list, and its clauses are then taken back off b's where to be ANDed
 	// under the half's kind test.
@@ -1112,7 +1119,15 @@ func (ds *dataset) condStateSplit(ctx context.Context, x dbx, b *builder, states
 	if err != nil {
 		return err
 	}
-	onProps, err := half(func() error { return ds.condProp(ctx, x, b, others, name, c) })
+	// A read naming kinds compiles the props half over the other kinds it
+	// names. A read naming none keeps naming none: the datatype is then the
+	// one every kind declaring the name in props agrees on, and the first of
+	// them must not decide it for the rest (kindlessDatatype).
+	ordinary := others
+	if len(types) == 0 {
+		ordinary = nil
+	}
+	onProps, err := half(func() error { return ds.condOrdinary(ctx, x, b, ordinary, name, c) })
 	if err != nil {
 		return err
 	}
@@ -1128,8 +1143,8 @@ func (ds *dataset) condStateSplit(ctx context.Context, x dbx, b *builder, states
 }
 
 // kindlessDatatype is the datatype a filter naming no kind compares `name`
-// as: the one every loaded kind declaring it agrees on, scalar and unkeyed,
-// under numericProp's every-not-any rule. The first declaration cannot decide
+// as: the one every loaded kind declaring it in props agrees on, scalar and
+// unkeyed, under numericProp's every-not-any rule. The first declaration cannot decide
 // it the way it does over named kinds, because the read spans every kind, and
 // a cast one kind's text rows would fail must not run. An int, a float and a
 // decimal agree as a number, compared through the decimal cast, which reads
@@ -1144,7 +1159,9 @@ func (ds *dataset) kindlessDatatype(name string) (_ vocabulary.Datatype, kinds [
 	var out vocabulary.Datatype
 	for _, t := range ds.registry().Kinds() {
 		p, ok := t.Prop(name)
-		if !ok {
+		// A state is kept in the states column and compared there, in its
+		// own half (condStateSplit), so it has no vote on how props compares.
+		if !ok || p.Datatype == vocabulary.DatatypeState {
 			continue
 		}
 		if p.Repeated || p.Keyed {
