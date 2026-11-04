@@ -29,9 +29,16 @@ plan](../plans/app-kit.md) (§6, §7) has the layout and the rules.
 Chosen: one folder per app named once by its `app.json`, with the layering
 checked by `mise run lint:apps`. Everything one app is sits together, so
 adding an app is a folder and no edit to the release, the site or the server's
-tests; the Xcode project, the Gradle settings, the release and site tooling,
-the Swift manifest tests and the server's first-party reach test all read the
-same file. JSON over YAML because every reader parses it without a
+tests. `app.json` is the authority on an app's facts:
+- These read it directly: the Gradle settings, the release and site tooling,
+  and the server's first-party reach test.
+- Its Swift manifest repeats some values, and a test holds them equal to it.
+- The Xcode project includes each app's own `apple/targets.yml`, which
+  `apps:new` writes.
+
+So a copy is either generated or checked, never a second source. An icon of
+the app's own is the one entry kept elsewhere, a line in
+`apps/xcode/scripts/icons.mjs`. JSON over YAML because every reader parses it without a
 dependency: Swift and Go tests, Gradle, `jq` in the release scripts and
 Python. An app's core package is named for the app (`WorkoutsKit`,
 `TasksKit`), because SwiftPM names a local package by its folder and one
@@ -39,8 +46,8 @@ Xcode project resolves every app's.
 
 ### Consequences
 
-- Good, because a new app is `mise run apps:new <id>`, and nothing else in
-  the tree needs to know its name.
+- Good, because a new app is `mise run apps:new <id>`. Beyond what that
+  writes, only an icon of the app's own needs its name.
 - Good, because a portable library or an app's core that imports a UI or an
   Apple-only framework, or a dependency pointing up the kit's order, fails
   `lint:apps` before it fails an Android build.

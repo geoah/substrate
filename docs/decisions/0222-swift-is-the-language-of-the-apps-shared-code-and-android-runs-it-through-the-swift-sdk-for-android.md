@@ -64,6 +64,13 @@ Android. `lint:apps` refuses an Apple-only import in portable code.
 `lint:toolchain` holds the Swift pin, the Swift SDK for Android's version and
 Gradle's NDK equal.
 
+Cross-compiling proves the code builds for Android, not that it runs there.
+ART attaching and detaching threads, JNI frames, the Keystore and the main
+looper show only on a device. So a change to the bridge or to a device
+service is held to `mise run android:smoke` on an emulator before it ships.
+That task runs the release build's runtime checks, cold starts and the
+instrumented contract tests.
+
 ## More Information
 
 [The plan](../plans/app-kit.md) has the comparison, the spike's measurements
