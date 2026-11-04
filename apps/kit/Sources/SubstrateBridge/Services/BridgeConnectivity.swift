@@ -25,7 +25,10 @@ public struct BridgeConnectivity: Connectivity {
     /// Every path Kotlin sends, in order and none skipped: a device answer
     /// is never coalesced. A reader `capacity` behind ends the answer, as
     /// the bridge's own queue does, and the call on Kotlin's side with it,
-    /// rather than drop a change it would never learn of.
+    /// rather than drop a change it would never learn of. Which of the two
+    /// queues overflows first is the scheduler's, so neither adds a path:
+    /// the device never said it was offline. Any other failure ends the
+    /// watch on offline, the cautious reading of a device that cannot tell.
     public func paths(capacity: Int) -> AsyncStream<NetworkPath> {
         let values = channel.chunks(.connectivityWatch, capacity: capacity)
         let (paths, continuation) = AsyncStream<NetworkPath>.makeStream(bufferingPolicy: .bufferingOldest(capacity))
@@ -34,6 +37,7 @@ public struct BridgeConnectivity: Connectivity {
                 for try await value in values {
                     if case .dropped = continuation.yield(try BridgeCodec.decode(NetworkPath.self, from: value)) { break }
                 }
+            } catch let failure as BridgeFailure where failure.code == .overflow {
             } catch {
                 continuation.yield(.offline)
             }
