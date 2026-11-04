@@ -21,7 +21,9 @@
 #   pgvector  every pgvector/pgvector image in the tree against compose.yaml's
 #   mise      every jdx/mise-action `version:` input against each other and
 #             against .mise.toml's min_version
-#   android   every android:* task's `tools` against each other; their swift
+#   android   every android:* task's `tools` against each other, and every
+#             other task's swift and JDK (the apps' formatters, the gallery)
+#             against theirs; their swift
 #             against the Gradle catalog's and the Swift SDK for Android
 #             .mise/android.sh installs, the catalog's NDK against the one it
 #             installs, the compile SDK and build tools against its package
@@ -317,7 +319,20 @@ if [ -f "$catalog" ] && [ -f "$android_sh" ]; then
     flag "the android:* tasks pin more than one set of tools: $(printf '%s' "$task_tools" | tr '\n' ' ')"
   fi
   task_swift="$(printf '%s' "$task_tools" | sed -n 's/.*swift = "\([^"]*\)".*/\1/p' | head -1)"
-  task_java="$(printf '%s' "$task_tools" | sed -n 's/.*java = "temurin-\([0-9]*\)[^"]*".*/\1/p' | head -1)"
+  task_jdk="$(printf '%s' "$task_tools" | sed -n 's/.*java = "\([^"]*\)".*/\1/p' | head -1)"
+  task_java="$(printf '%s' "$task_jdk" | sed -n 's/^temurin-\([0-9]*\).*/\1/p')"
+  # Any other task naming a swift or a JDK names the same one: fmt:swift's
+  # swift-format is its toolchain's, so a second swift is a second formatter,
+  # and the gallery draws with the Swift the Android build compiles.
+  while IFS=$'\t' read -r task tools; do
+    [ -n "$task" ] || continue
+    swift="$(printf '%s' "$tools" | sed -n 's/.*swift = "\([^"]*\)".*/\1/p')"
+    jdk="$(printf '%s' "$tools" | sed -n 's/.*java = "\([^"]*\)".*/\1/p')"
+    [ -z "$swift" ] || [ "$swift" = "$task_swift" ] ||
+      flag "${task} runs swift ${swift}, and the android:* tasks ${task_swift:-none}"
+    [ -z "$jdk" ] || [ "$jdk" = "$task_jdk" ] ||
+      flag "${task} runs java ${jdk}, and the android:* tasks ${task_jdk:-none}"
+  done < <(awk '/^\[tasks\./ { name = $0; gsub(/^\[tasks\.|\]$|"/, "", name); inside = name !~ /^android:/; next } /^\[/ { inside = 0 } inside && /^tools = / { print name "\t" $0 }' .mise.toml)
   catalog_swift="$(catalog_pin swift)"
   sh_swift="$(sh_pin swift_version)"
   [ -n "$task_swift" ] && [ "$task_swift" = "$catalog_swift" ] && [ "$task_swift" = "$sh_swift" ] ||

@@ -870,7 +870,9 @@ jobs:
           install: false
       - run: mise run ci:apps
 
-  # The Android build on Linux: the toolchain android:sdk pins (Swift 6.4.2,
+  # The apps' Swift and Kotlin format checks (fmt:swift:check and
+  # fmt:kotlin:check, on the Swift and the JDK this job installs anyway),
+  # then the Android build on Linux: the toolchain android:sdk pins (Swift 6.4.2,
   # the Swift SDK for Android by URL and checksum, NDK r30 through the
   # runner's sdkmanager), the generator's check, the bridge's tests on the
   # host and in Kotlin with the round trip between them, and the kit

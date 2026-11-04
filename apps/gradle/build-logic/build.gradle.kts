@@ -28,5 +28,9 @@ gradlePlugin {
             id = "substrate.swift"
             implementationClass = "dev.reamde.substrate.gradle.SwiftConvention"
         }
+        register("ktfmt") {
+            id = "substrate.ktfmt"
+            implementationClass = "dev.reamde.substrate.gradle.KtfmtConvention"
+        }
     }
 }

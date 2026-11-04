@@ -324,7 +324,7 @@ cmd_lock() {
   need_swift
   local apps=()
   while IFS= read -r task; do apps+=("$task"); done < <(app_tasks dependencies)
-  gradle :kit-core:dependencies :kit-device:dependencies :kit-ui:dependencies :bridge-check:dependencies :gallery:dependencies \
+  gradle :dependencies :kit-core:dependencies :kit-device:dependencies :kit-ui:dependencies :bridge-check:dependencies :gallery:dependencies \
     "${apps[@]}" --write-locks >/dev/null
   (cd apps/gradle && ./gradlew --console=plain -p build-logic dependencies --write-locks >/dev/null)
   local metadata=apps/gradle/gradle/verification-metadata.xml
@@ -332,6 +332,8 @@ cmd_lock() {
   gradle --no-configuration-cache --write-verification-metadata sha256 "${build_tasks[@]}" "${placeholder_stamp[@]}" >/dev/null
   gradle --no-configuration-cache --write-verification-metadata sha256 "${test_tasks[@]}" >/dev/null
   gradle --no-configuration-cache --write-verification-metadata sha256 "${device_test_tasks[@]}" >/dev/null
+  # The root's ktfmt, which `fmt:kotlin` runs (.mise/appsfmt.sh).
+  gradle --no-configuration-cache --write-verification-metadata sha256 :ktfmt --args=--version >/dev/null
   local aapt2
   aapt2=$(sed -n 's|.*<component group="com.android.tools.build" name="aapt2" version="\([^"]*\)">.*|\1|p' "$metadata" | head -1)
   [[ -n $aapt2 ]] || die "the build resolved no aapt2, so its other hosts' artifacts cannot be added to $metadata"

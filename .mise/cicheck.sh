@@ -193,6 +193,8 @@ scenario apps-the-tasks true seed .mise.toml '[tasks]'
 scenario apps-the-android-script true seed .mise/android.sh '#!/bin/sh'
 scenario apps-the-scaffold true seed .mise/appsnew.sh '#!/bin/sh'
 scenario apps-the-scaffold-check true seed .mise/appsnewcheck.sh '#!/bin/sh'
+scenario apps-the-formatters true seed .mise/appsfmt.sh '#!/bin/sh'
+scenario apps-the-editorconfig true seed .editorconfig 'root = true'
 gate GITHUB_EVENT_NAME=push
 case "$gate_out" in *"apps=true"*) ;; *) flag "apps push: expected apps=true, got '${gate_out}'" ;; esac
 question=nonsense
@@ -411,18 +413,20 @@ PATH="$fakebin:$PATH" FAKE_GH_LOG="$tmp/gh.log" GITHUB_SERVER_URL=https://exampl
 
 # --- the lint jobs cover every linter --------------------------------------
 
-# CI splits `lint` and `fmt:check` across `ci:lint` and `ci:lint:go`. A linter
-# added to the aggregate and to neither job would run on a laptop and never on
-# a pull request.
+# CI splits `lint` and `fmt:check` across `ci:lint` and `ci:lint:go`, and
+# the apps' format checks, which want a Swift and a JDK, are steps of
+# `ci:android`. A linter added to the aggregate and to none of them would run
+# on a laptop and never on a pull request.
 missing="$(python3 - <<'PY'
-import tomllib
+import re, tomllib
 t = tomllib.load(open(".mise.toml", "rb"))["tasks"]
 want = set(t["lint"]["depends"]) | set(t["fmt:check"]["depends"])
 have = set(t["ci:lint"]["depends"]) | set(t["ci:lint:go"]["depends"])
+have |= {m for step in t["ci:android"]["run"] for m in re.findall(r"mise run (\S+)", step)}
 print(" ".join(sorted(want - have)))
 PY
 )"
-[ -z "$missing" ] || flag "in lint or fmt:check but in neither ci:lint nor ci:lint:go: ${missing}"
+[ -z "$missing" ] || flag "in lint or fmt:check but in none of ci:lint, ci:lint:go and ci:android: ${missing}"
 
 # --- the pipeline the ruleset and `mise run ci` describe --------------------
 
@@ -1447,6 +1451,13 @@ toolchain mise-none 1 'no jdx/mise-action step' '.github/workflows/*.yml' '/jdx\
 # min_version moved alone, and missing.
 toolchain mise-min 1 "min_version is 2000.1.1" .mise.toml 's/soft = "[^"]*"/soft = "2000.1.1"/'
 toolchain mise-min-none 1 'sets no min_version' .mise.toml '/^min_version/d'
+
+# The apps' formatters on another Swift or JDK than the android:* tasks: a
+# second swift-format is a second formatter.
+toolchain fmt-swift 1 'fmt:swift runs swift 0.0.1, and the android:* tasks' .mise.toml \
+  's/^tools = { swift = "[^"]*" }$/tools = { swift = "0.0.1" }/'
+toolchain fmt-kotlin 1 'fmt:kotlin runs java temurin-0.0.1, and the android:* tasks' .mise.toml \
+  's/^tools = { java = "[^"]*" }$/tools = { java = "temurin-0.0.1" }/'
 
 # The Gradle dependency verification against the locks: a locked module the
 # metadata does not list, an artifact with no sha256, a trusted one, metadata

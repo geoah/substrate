@@ -650,9 +650,16 @@ that touches the kit, and a kit change fixes every app it breaks in the same
 pull request: `mise run apps:build` builds all of them on a Mac, and CI
 builds every core on Linux and for Android.
 
-**As built.** Formatters: the next commit, `fmt:swift` (swift-format) and
-`fmt:kotlin` (ktfmt) in `fmt` and `fmt:check`, with the existing code
-reformatted in that commit alone. Deferred: `detekt`, a second Kotlin
+**As built.** Formatters: `fmt:swift` (swift-format, configured in
+`apps/.swift-format`, from the open-source Swift the `android:*` tasks pin)
+and `fmt:kotlin` (ktfmt in the kotlinlang style, the Gradle root's `:ktfmt`
+task, locked and verified, its width in `apps/.editorconfig`) are in `fmt`,
+and their checks, the writer run over a copy and diffed, in `fmt:check`;
+the CI job `android build` runs both, since `lint`'s runner has no Swift or
+JDK. Generated files are their generators' and left alone. The existing
+Swift and Kotlin were reformatted in a commit of their own. No `lint:swift`
+or `lint:kotlin`: with the formatters the only Swift and Kotlin checks, a
+lint task would be the format check a second time. Deferred: `detekt`, a second Kotlin
 configuration and Gradle plugin for a Kotlin side that is still the kit and
 one app, where the compiler's warnings, `lint:apps` and the review hold it;
 the API-break check, since the kit has no consumer outside this tree and
