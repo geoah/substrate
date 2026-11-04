@@ -31,7 +31,11 @@
   "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
   "accent": {
     "light": "#D92C58",
-    "dark": "#FF5E86"
+    "dark": "#FF5E86",
+    "text": {
+      "light": "#C7114A",
+      "dark": "#FF698C"
+    }
   },
   "feed": "tasks"
 }

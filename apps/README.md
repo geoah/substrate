@@ -943,9 +943,11 @@ on; an app already made keeps what it copied.
 The template has a look of its own, grey (`#5F6B7A`, dark `#A7B1BE`) and
 a lidded box for its icon, so a new app looks unfinished until it is given
 one, never like another app. `apps:new` says how in its closing lines:
-its `accent` in app.json and its `AccentColor`, one colour, and an entry
-of its own in `xcode/scripts/icons.mjs` ([app icons](../docs/app-icons.md#adding-an-app)),
-from which its AppIcon set is drawn again.
+its `accent` in app.json with the accent's text tone, its `AccentColor`
+holding the text tone (and a `BrandAccent` holding the accent, where the
+two differ), and an entry of its own in `xcode/scripts/icons.mjs`
+([app icons](../docs/app-icons.md#adding-an-app)), from which its AppIcon
+set is drawn again.
 
 ## Android
 
@@ -1019,7 +1021,7 @@ app folder without one, or one missing a field below.
 | `asks` | the packages its approval asks to have set up, each `{"package": <id>, "atLeast": <version>}` as the manifest's `package` details send them, in the manifest's order: the floor is the version the build was written against |
 | `scopes` | the scopes it asks for, in the manifest's order |
 | `icon` | its 1024-pixel icon, relative to the app's folder |
-| `accent` | its accent, `{"light": "#RRGGBB", "dark": "#RRGGBB"}`, the colour its controls and links are drawn in: every `AccentColor` in its asset catalogs holds the same two values, and the Android build writes them as the app's `substrate_accent` (kit-ui's `KitTheme` draws its whole scheme from it). Required on Android; an app with no `AccentColor` and no Android has none and is drawn in the system's blue |
+| `accent` | its accent and the accent's text tone, `{"light": "#RRGGBB", "dark": "#RRGGBB", "text": {"light": "#RRGGBB", "dark": "#RRGGBB"}}`. The accent is the app's colour as its icon has it, which its own fills and graphics are drawn in; the text tone is what the system draws its text, links and controls in, so it reads at 4.5:1 on every background they sit on: the accent itself where it does, else the accent's hue a tone darker in light mode and lighter in dark (`lint:apps` holds Apple's backgrounds and names the tone, `KitSchemeTest` Android's surfaces). Every `AccentColor` in its asset catalogs holds the text tone and every `BrandAccent` the accent, which an app whose two differ has beside each `AccentColor` (SubstrateUI's `Color.brandAccent`); the Android build writes them as `substrate_accent_text`, Material's primary, and `substrate_accent` (kit-ui's `KitTheme`, `MaterialTheme.brandAccent`). Required on Android; an app with no `AccentColor` and no Android has none and is drawn in the system's blue |
 | `feed` | the folder `.mise/apps.sh` publishes its releases and feeds under, relative to `SUBSTRATE_APPLE_RELEASE_URL`; empty is the root, where the console's are, and no two apps share one |
 
 An app publishes a package and asks for one apart: Workouts asks for

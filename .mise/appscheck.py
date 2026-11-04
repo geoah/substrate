@@ -22,6 +22,7 @@ shape by yamlfmt.
 """
 
 import json
+import math
 import os
 import re
 import sys
@@ -663,16 +664,28 @@ for app in apps:
 
 # --- an app's accent is named once, in app.json --------------------------
 #
-# The accent is the colour an app's controls and links are drawn in. Apple
-# reads it from an asset catalog's AccentColor, Android from the resource
-# build-logic writes out of app.json (kit-ui's `substrate_accent`), so the
-# two systems agree only while app.json and every AccentColor under the app
-# hold the same two values: light and dark, exact. An AccentColor without an
-# accent is a colour Android never draws, an accent without one a colour
-# Apple never draws, and an app on Android without one is drawn in kit-ui's
-# Substrate blue, which says another app.
+# The accent is the app's colour, as its icon has it: what its own fills and
+# graphics are drawn in. Its text tone, `accent.text`, is the colour the
+# system draws its text, links and controls in, the accent itself where it
+# reads as text and a tone of it where it does not (the rule after this
+# one). Apple reads the text tone from an asset catalog's AccentColor, the
+# global accent, and the accent from its BrandAccent; Android from the two
+# resources build-logic writes out of app.json (kit-ui's
+# `substrate_accent_text`, which is Material's primary, and
+# `substrate_accent`). So the systems agree only while app.json and every
+# colour set under the app hold the same values, light and dark, exact. An
+# AccentColor without an accent is a colour Android never draws, an accent
+# without one a colour Apple never draws, and an app on Android without one
+# is drawn in kit-ui's Substrate blue, which says another app. An app whose
+# text tone is its accent needs no BrandAccent; one whose text tone differs
+# has one beside every AccentColor, or its graphics are drawn in the text
+# tone.
 
 HEX = re.compile(r"#[0-9A-Fa-f]{6}")
+
+
+def is_pair(value):
+    return isinstance(value, dict) and set(value) == {"light", "dark"} and all(isinstance(v, str) and HEX.fullmatch(v) for v in value.values())
 
 
 def colorset_value(color):
@@ -698,7 +711,7 @@ def colorset_value(color):
 
 
 def colorset_accent(path):
-    """An AccentColor colorset as {"light", "dark"}, or the reason it is not one."""
+    """A colorset as {"light", "dark"}, or the reason it is not one."""
     try:
         doc = json.loads(read(path))
     except ValueError as e:
@@ -723,6 +736,7 @@ def colorset_accent(path):
     return found
 
 
+accents = {}
 for app in apps:
     path = os.path.join(APPS, app, "app.json")
     try:
@@ -732,29 +746,159 @@ for app in apps:
     if not isinstance(doc, dict):
         continue
     accent = doc.get("accent")
-    if "accent" in doc and (
-        not isinstance(accent, dict)
-        or set(accent) != {"light", "dark"}
-        or not all(isinstance(v, str) and HEX.fullmatch(v) for v in accent.values())
+    if "accent" in doc and not (
+        isinstance(accent, dict) and set(accent) == {"light", "dark", "text"} and is_pair({m: accent[m] for m in ("light", "dark")}) and is_pair(accent["text"])
     ):
-        flag(f'{rel(path)}: accent is {accent!r}, and it is {{"light": "#RRGGBB", "dark": "#RRGGBB"}}')
+        flag(f'{rel(path)}: accent is {accent!r}, and it is {{"light": "#RRGGBB", "dark": "#RRGGBB", "text": {{"light": "#RRGGBB", "dark": "#RRGGBB"}}}}')
         accent = None
     platforms = doc.get("platforms") if isinstance(doc.get("platforms"), list) else []
     if "android" in platforms and "accent" not in doc:
         flag(f"{rel(path)}: platforms names android and there is no accent, which the Android build draws the app in")
-    colorsets = [p for p in walk(os.path.join(APPS, app)) if p.endswith(os.path.join("AccentColor.colorset", "Contents.json"))]
-    for colorset in colorsets:
-        read_back = colorset_accent(colorset)
-        if isinstance(read_back, str):
-            flag(f"{rel(colorset)} {read_back}")
-        elif "accent" not in doc:
-            flag(f"{rel(colorset)} is an accent ({read_back['light']}, dark {read_back['dark']}) that {rel(path)} does not name")
-        elif accent:
-            for mode in ("light", "dark"):
-                if read_back[mode] != accent[mode].upper():
-                    flag(f"{rel(colorset)}: the {mode} accent is {read_back[mode]}, and {rel(path)} names {accent[mode]}")
-    if "accent" in doc and not colorsets and {"ios", "macos"} & set(platforms):
+    if accent:
+        accents[app] = (path, platforms, accent)
+    sets = [p for p in walk(os.path.join(APPS, app)) if p.endswith(os.path.join(".colorset", "Contents.json"))]
+    named = {"AccentColor": "text tone", "BrandAccent": "accent"}
+    for name, what in named.items():
+        for colorset in (p for p in sets if os.path.basename(os.path.dirname(p)) == f"{name}.colorset"):
+            read_back = colorset_accent(colorset)
+            if isinstance(read_back, str):
+                flag(f"{rel(colorset)} {read_back}")
+            elif "accent" not in doc:
+                flag(f"{rel(colorset)} is a colour ({read_back['light']}, dark {read_back['dark']}) that {rel(path)} names no accent for")
+            elif accent:
+                values = accent["text"] if name == "AccentColor" else accent
+                for mode in ("light", "dark"):
+                    if read_back[mode] != values[mode].upper():
+                        field = f"accent.text.{mode}" if name == "AccentColor" else f"accent.{mode}"
+                        flag(f"{rel(colorset)}: the {mode} {what} is {read_back[mode]}, and {rel(path)}'s {field} is {values[mode]}")
+    accent_colors = [p for p in sets if os.path.basename(os.path.dirname(p)) == "AccentColor.colorset"]
+    if "accent" in doc and not accent_colors and {"ios", "macos"} & set(platforms):
         flag(f"{rel(path)}: accent is there, and apps/{app} has no AccentColor in an asset catalog to draw it on Apple systems")
+    if accent and any(accent["text"][m].upper() != accent[m].upper() for m in ("light", "dark")):
+        for colorset in accent_colors:
+            catalog = os.path.dirname(os.path.dirname(colorset))
+            if not os.path.exists(os.path.join(catalog, "BrandAccent.colorset", "Contents.json")):
+                flag(f"{rel(catalog)} has no BrandAccent, and {rel(path)}'s text tone is not its accent, so its graphics would be drawn in the text tone")
+
+
+# --- an app's text tone reads at 4.5:1 on Apple's backgrounds ------------
+#
+# Accent text is as small as body text (a toolbar's Save, a link, a
+# picker's value, New List), so WCAG AA asks 4.5:1 of it, not a control's
+# 3:1. These are the backgrounds an Apple system draws that text on: a
+# screen, a grouped list's background and, in dark mode, its rows and a
+# sheet's rows (elevated); macOS's window, under-page and grouped fills
+# fall between them. The text tone is the accent where the accent reads on
+# every one; elsewhere it is the accent's hue at the nearest tone that
+# does, darker in light mode and lighter in dark, which the failure names.
+# The tones are Material's and KitScheme's: CIELAB lightness at the
+# accent's OKLCH hue and chroma, the chroma lowered where sRGB ends.
+# Android's surfaces are KitSchemeTest's, which makes the scheme they are.
+
+APPLE_BACKGROUNDS = {
+    "light": {"systemBackground": "#FFFFFF", "systemGroupedBackground": "#F2F2F7"},
+    "dark": {"systemBackground": "#000000", "secondarySystemGroupedBackground": "#1C1C1E", "a sheet's grouped rows": "#2C2C2E"},
+}
+
+
+def linear(channel):
+    return channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+
+
+def channels(hex_):
+    return [int(hex_[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+
+
+def luminance(hex_):
+    r, g, b = (linear(c) for c in channels(hex_))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast(a, b):
+    la, lb = luminance(a), luminance(b)
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+
+def oklch(hex_):
+    r, g, b = (linear(c) for c in channels(hex_))
+    l, m, s = (
+        (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b) ** (1 / 3),
+        (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b) ** (1 / 3),
+        (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b) ** (1 / 3),
+    )
+    a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+    bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    return math.hypot(a, bb), math.degrees(math.atan2(bb, a))
+
+
+def oklab_rgb(lightness, chroma, hue):
+    a, b = chroma * math.cos(math.radians(hue)), chroma * math.sin(math.radians(hue))
+    l3, m3, s3 = (
+        (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3,
+        (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3,
+        (lightness - 0.0894841775 * a - 1.2914855480 * b) ** 3,
+    )
+    return [
+        4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3,
+        -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3,
+        -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3,
+    ]
+
+
+def tone(value, chroma, hue):
+    """KitScheme's `Oklch.tone`: CIELAB tone `value` at an OKLCH hue and
+    chroma, or at the most chroma sRGB holds there, as #RRGGBB."""
+
+    def at(chroma):
+        target = ((value + 16) / 116) ** 3 if value > 8 else value / 903.2962962
+        lo, hi = 0.0, 1.0
+        for _ in range(40):
+            mid = (lo + hi) / 2
+            rgb = oklab_rgb(mid, chroma, hue)
+            lo, hi = (mid, hi) if 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] < target else (lo, mid)
+        return oklab_rgb((lo + hi) / 2, chroma, hue)
+
+    rgb = at(chroma)
+    if not all(-1e-4 <= c <= 1.0001 for c in rgb):
+        lo, hi = 0.0, chroma
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if all(-1e-4 <= c <= 1.0001 for c in at(mid)) else (lo, mid)
+        rgb = at(lo)
+    encoded = [12.92 * c if c <= 0.0031308 else 1.055 * c ** (1 / 2.4) - 0.055 for c in (min(max(c, 0.0), 1.0) for c in rgb)]
+    return "#" + "".join(f"{int(c * 255 + 0.5):02X}" for c in encoded)
+
+
+def readable_tone(accent, mode, backgrounds):
+    """The accent's hue at the tone nearest its own that reads 4.5:1 on
+    every background: darker in light mode, lighter in dark."""
+    chroma, hue = oklch(accent)
+    y = luminance(accent)
+    value = 116 * y ** (1 / 3) - 16 if y > 0.008856 else 903.2962962 * y
+    step = 0.05 if mode == "dark" else -0.05
+    while 0 < value < 100:
+        candidate = tone(value, chroma, hue)
+        if all(contrast(candidate, b) >= 4.5 for b in backgrounds):
+            return candidate
+        value += step
+    return "#FFFFFF" if mode == "dark" else "#000000"
+
+
+for path, platforms, accent in accents.values():
+    if not {"ios", "macos"} & set(platforms):
+        continue
+    for mode in ("light", "dark"):
+        text, brand = accent["text"][mode], accent[mode]
+        if (luminance(text) > luminance(brand)) if mode == "light" else (luminance(text) < luminance(brand)):
+            flag(f"{rel(path)}: accent.text.{mode} {text} is {'lighter' if mode == 'light' else 'darker'} than the accent {brand}, and a {mode} text tone is the accent or {'darker' if mode == 'light' else 'lighter'}")
+        for name, background in APPLE_BACKGROUNDS[mode].items():
+            ratio = contrast(text, background)
+            if ratio < 4.5:
+                derived = readable_tone(brand, mode, APPLE_BACKGROUNDS[mode].values())
+                flag(
+                    f"{rel(path)}: accent.text.{mode} {text} reads {ratio:.2f}:1 on {name} ({background}), under 4.5:1;"
+                    f" {derived} is the accent's hue at the nearest tone that reads on each of Apple's {mode} backgrounds"
+                )
 
 
 # --- every third-party package is listed with its reason -----------------

@@ -107,6 +107,7 @@ echo "  its package:  apps/$id/package (substrate.reamde.dev/$id), published thr
 # The template's look is grey on purpose, so an app nobody has given its own
 # colour yet is plain to see.
 echo "  its look:     it is the template's grey until you give it its own:"
-echo "                1. its accent: \"accent\" in apps/$id/app.json and apps/$id/apple/Assets.xcassets/AccentColor.colorset, the same light and dark #RRGGBB (lint:apps holds the two equal)"
+echo "                1. its accent: \"accent\" in apps/$id/app.json, light and dark #RRGGBB, with its text tone as \"text\" (the accent where it reads at 4.5:1; lint:apps names the tone where it does not),"
+echo "                   the text tone in apps/$id/apple/Assets.xcassets/AccentColor.colorset and, where the two differ, the accent in a BrandAccent.colorset beside it (lint:apps holds them equal)"
 echo "                2. its icon: an entry for $id in APPS in apps/xcode/scripts/icons.mjs (a hue no app uses, a glyph in GLYPHS; docs/app-icons.md), then"
 echo "                   node apps/xcode/scripts/icons.mjs appiconset $id apps/$id/apple/Assets.xcassets/AppIcon.appiconset --mac"

@@ -12,8 +12,10 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * The Material 3 scheme an app's accent makes. Primary is the accent itself, exactly, so a button on Android is the colour iOS tints it; every other role is a
- * tone of a palette made from it.
+ * The Material 3 scheme an app's accent makes. Primary is the accent's text tone, exactly, which iOS draws the app's text, links and controls in too: the
+ * accent where it reads at 4.5:1 on every surface text is drawn on ([textSurfaces]), else a darker tone of it in a light scheme and a lighter one in a dark
+ * scheme (app.json's `accent.text`). Every other role is a tone of a palette made from the accent, and the accent itself is the app's own fills and graphics
+ * (`MaterialTheme.brandAccent`).
  *
  * A tone is Material's: CIELAB lightness, 0 black to 100 white, which fixes a colour's luminance whatever its hue, so the contrast of two roles is a function
  * of their tones alone and holds for any accent. Hue and chroma are OKLCH's, which keeps a hue as it lightens (CIELAB's blue turns purple), and a tone the hue
@@ -22,8 +24,8 @@ import kotlin.math.sin
  * no wallpaper colour: an app looks the same on every phone.
  */
 public object KitScheme {
-    /** The scheme for an accent, which is the light accent in a light scheme and the dark one in a dark one. */
-    public fun of(accent: Color, dark: Boolean): ColorScheme {
+    /** The scheme for an accent and its text tone, the light values in a light scheme and the dark ones in a dark one. */
+    public fun of(accent: Color, text: Color, dark: Boolean): ColorScheme {
         val hue = Oklch.of(accent)
         val p = Palette(hue.h, hue.c)
         val s = Palette(hue.h, hue.c / 3)
@@ -31,11 +33,11 @@ public object KitScheme {
         val n = Palette(hue.h, max(hue.c, 0.1) * 0.04)
         val nv = Palette(hue.h, max(hue.c, 0.1) * 0.08)
         val e = Palette(ERROR.h, ERROR.c)
-        val onAccent = onColor(accent, p)
+        val onText = onColor(text, p)
         return if (!dark) {
             ColorScheme(
-                primary = accent,
-                onPrimary = onAccent,
+                primary = text,
+                onPrimary = onText,
                 primaryContainer = p(90),
                 onPrimaryContainer = p(10),
                 inversePrimary = p(80),
@@ -47,8 +49,8 @@ public object KitScheme {
                 onTertiary = t(100),
                 tertiaryContainer = t(90),
                 onTertiaryContainer = t(10),
-                // Tone 99, not Material's 98: the accent is drawn as text on the screen's surface (a section's heading), and a mid-tone accent
-                // such as Tasks' rose reads at 4.5:1 only on a surface this light.
+                // Tone 99, not Material's 98: every app's text tone (app.json's `accent.text`) is chosen to read on these surfaces, so moving one is
+                // every app's text tone to choose again.
                 background = n(99),
                 onBackground = n(10),
                 surface = n(99),
@@ -87,8 +89,8 @@ public object KitScheme {
             )
         } else {
             ColorScheme(
-                primary = accent,
-                onPrimary = onAccent,
+                primary = text,
+                onPrimary = onText,
                 primaryContainer = p(30),
                 onPrimaryContainer = p(90),
                 inversePrimary = p(40),
@@ -139,6 +141,36 @@ public object KitScheme {
         }
     }
 
+    /** What text in the text tone is drawn on: the screen's surface, and every container's (a card, a menu, a sheet, a dialog). */
+    internal fun textSurfaces(scheme: ColorScheme): Map<String, Color> =
+        linkedMapOf(
+            "surface" to scheme.surface,
+            "background" to scheme.background,
+            "surfaceContainerLowest" to scheme.surfaceContainerLowest,
+            "surfaceContainerLow" to scheme.surfaceContainerLow,
+            "surfaceContainer" to scheme.surfaceContainer,
+            "surfaceContainerHigh" to scheme.surfaceContainerHigh,
+            "surfaceContainerHighest" to scheme.surfaceContainerHighest,
+        )
+
+    /**
+     * The text tone an accent's scheme reads in: the accent where it reads at 4.5:1 on every one of [textSurfaces], else its hue at the nearest tone that does,
+     * darker in a light scheme and lighter in a dark one. What app.json's `accent.text` is chosen from; an app on Apple systems too takes the stricter of this
+     * and lint:apps' tone for Apple's backgrounds.
+     */
+    internal fun textTone(accent: Color, dark: Boolean): Color {
+        val surfaces = textSurfaces(of(accent, accent, dark)).values
+        val hue = Oklch.of(accent)
+        val y = luminance(accent)
+        var tone = if (y > 216.0 / 24389) 116 * cbrt(y) - 16 else y * 24389 / 27
+        var colour = accent
+        while (surfaces.any { contrast(colour, it) < 4.5 } && tone in 0.0..100.0) {
+            tone += if (dark) 0.05 else -0.05
+            colour = Oklch.tone(tone, hue.c, hue.h)
+        }
+        return colour
+    }
+
     /** WCAG's contrast ratio of two colours, 1 to 21. */
     public fun contrast(a: Color, b: Color): Double {
         val la = luminance(a)
@@ -147,12 +179,12 @@ public object KitScheme {
     }
 
     /**
-     * What is drawn on the accent: white or the palette's tone 10, whichever reads the better, and black where neither reaches 4.5:1 (an accent of middle
-     * luminance, which black alone clears).
+     * What is drawn on the text tone, where Material fills with it (a switch, a filled button): white or the palette's tone 10, whichever reads the better, and
+     * black where neither reaches 4.5:1 (a tone of middle luminance, which black alone clears).
      */
-    private fun onColor(accent: Color, p: Palette): Color {
-        val best = listOf(Color.White, p(10)).maxBy { contrast(it, accent) }
-        return if (contrast(best, accent) >= 4.5) best else Color.Black
+    private fun onColor(text: Color, p: Palette): Color {
+        val best = listOf(Color.White, p(10)).maxBy { contrast(it, text) }
+        return if (contrast(best, text) >= 4.5) best else Color.Black
     }
 
     private val ERROR = Oklch.of(Color(0xFFB3261E))

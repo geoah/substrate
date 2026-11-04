@@ -102,7 +102,7 @@ struct TaskListView: View {
 
     private var quickAdd: some View {
         HStack(spacing: 10) {
-            Image(systemName: "plus.circle.fill").foregroundStyle(.tint).font(.title3)
+            Image(systemName: "plus.circle.fill").foregroundStyle(Color.brandAccent).font(.title3)
             TextField(list.quickAdd, text: $draft)
                 .focused($adding)
                 .submitLabel(.done)

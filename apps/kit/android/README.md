@@ -144,21 +144,27 @@ bar under 600 dp, a rail under 1200 dp, and a drawer of its sections
 above.
 
 **An app's colour is its accent.** `KitTheme` makes the whole Material 3
-scheme from one colour, `substrate_accent` (`KitScheme`): primary is the
-accent itself, the light value in light mode and the dark one in dark
-mode, exactly as iOS tints the app; every other role is a tone of a
-palette made from it, the containers and the secondary roles the accent's
-hue, the tertiary sixty degrees on, the surfaces barely tinted by it. A
-tone is CIELAB lightness, which fixes a colour's luminance, so contrast is
-a function of tones and holds for any accent; `KitSchemeTest` holds every
-app.json's accent to WCAG AA (each `on` role at 4.5:1, the accent as text
-on the screen's surface at 4.5:1, on a container at 3:1). kit-ui declares
-the colour as Substrate's blue (`res/values/` and `res/values-night/`),
-which the Gallery is drawn in; the `substrate.android.application`
-convention writes an app's app.json `accent` over it into
-`build/generated/substrate/accent`, so an app needs no code for its
-colour. There is no wallpaper colour: an app looks the same on every
-phone.
+scheme from two colours (`KitScheme`), `substrate_accent` and its text
+tone, `substrate_accent_text`, each the light value in light mode and the
+dark one in dark mode. Primary is the text tone, exactly as iOS tints the
+app's text, links and controls: the accent where it reads at 4.5:1 on
+every surface text sits on, else the accent's hue a tone darker in light
+mode and lighter in dark, since accent text is as small as body text
+(app.json's `accent.text`). Every other role is a tone of a palette made
+from the accent, the containers and the secondary roles the accent's hue,
+the tertiary sixty degrees on, the surfaces barely tinted by it; the
+accent itself is `MaterialTheme.brandAccent`, which an app's own fills and
+graphics are drawn in. A tone is CIELAB lightness, which fixes a colour's
+luminance, so contrast is a function of tones and holds for any accent;
+`KitSchemeTest` holds every app.json's accent to WCAG AA (each `on` role at
+4.5:1) and the text tone of kit-ui and of every app on Android at 4.5:1 on
+the screen's surface and every container's, naming the tone that reads
+where one does not. kit-ui declares both colours as Substrate's blue
+(`res/values/` and `res/values-night/`), which the Gallery is drawn in; the
+`substrate.android.application` convention writes an app's app.json
+`accent` over them into `build/generated/substrate/accent`, so an app needs
+no code for its colour. There is no wallpaper colour: an app looks the
+same on every phone.
 
 The gallery is a check. `fixtures/screens.json` is `ScreenFixtures.all` as
 Swift writes it (`ScreenFixturesFileTests` fails while it is stale;
