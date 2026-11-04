@@ -82,7 +82,7 @@ final class ConsoleSessions: ObservableObject {
             forgetIfUnused(server)
             throw error
         }
-        let old = store(for: server).load()
+        let old = await store(for: server).load()
         try await store(for: server).save(session, replacing: old)
         changed(server)
         ended.remove(server)
@@ -120,14 +120,14 @@ final class ConsoleSessions: ObservableObject {
     /// Signs out of `server` and forgets it: the sign-in revoked, the page's
     /// own sign-in door and the server's console state dropped.
     func forget(_ server: URL) async {
-        if let session = store(for: server).load() {
+        if let session = await store(for: server).load() {
             try? await store(for: server).signOut(session)
         }
         setPageSignIn(false, for: server)
         ended.remove(server)
         changed(server)
         await revokePending(on: [server])
-        if store(for: server).pendingRevocations().isEmpty {
+        if (try? await store(for: server).pendingRevocations())?.isEmpty == true {
             known.removeAll { $0 == server }
             defaults.set(known.map(\.absoluteString), forKey: Self.knownKey)
         }
@@ -136,12 +136,12 @@ final class ConsoleSessions: ObservableObject {
     /// Tokens the app stopped using that their server has not revoked yet;
     /// each is tried again at every start.
     var unrevoked: [Session] {
-        known.flatMap { store(for: $0).pendingRevocations() }
+        known.flatMap { (try? store(for: $0).pendingRevocations()) ?? [] }
     }
 
     func revokePending(on servers: [URL]? = nil) async {
         for server in servers ?? known {
-            _ = await store(for: server).revokePending(current: store(for: server).load())
+            _ = try? await store(for: server).revokePending()
         }
         revision += 1
     }
@@ -160,8 +160,8 @@ final class ConsoleSessions: ObservableObject {
     /// sign-in, no page sign-in and no token waiting to be revoked, as after
     /// a sign-in that failed before the server minted anything.
     private func forgetIfUnused(_ server: URL) {
-        guard store(for: server).load() == nil, !pageSignIn.contains(server.absoluteString),
-            store(for: server).pendingRevocations().isEmpty
+        guard store(for: server).read() == .missing, !pageSignIn.contains(server.absoluteString),
+            (try? store(for: server).pendingRevocations())?.isEmpty == true
         else { return }
         known.removeAll { $0 == server }
         defaults.set(known.map(\.absoluteString), forKey: Self.knownKey)

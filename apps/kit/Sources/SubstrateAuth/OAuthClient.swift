@@ -292,10 +292,13 @@ public struct OAuthClient: Sendable {
     /// confirms. The answer says which of the three it came to.
     func reject(_ session: Session, _ mismatch: RepositoryMismatch, keepingIn store: SessionStore?) async -> RepositoryMismatch {
         var mismatch = mismatch
-        let kept = store.map { (try? $0.keepForRevocation(session)) != nil } ?? false
+        var kept = false
+        if let store { kept = (try? await store.keepForRevocation(session)) != nil }
         do {
             try await session.revoke(transport: transport)
-            if kept { store?.revoked(session) }
+            // One the queue still holds is revoked again at the next try,
+            // which the server answers as done.
+            if kept { try? await store?.revoked(session) }
             mismatch.revocation = .revoked
         } catch {
             mismatch.revocation = kept ? .pending : .live

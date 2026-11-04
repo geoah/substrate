@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "976ecd6f040b8aa26a9a7668850f44661ef4f15759e2a00529b98e5f5a081a1b"
+    public const val VALUE: String = "c5ba7f2dc60b953bb1734bb0a5abc4ba65d17fcc91bc0b56abd1c30fb3919b4c"
 }
 
 /**
@@ -1409,6 +1409,9 @@ public sealed interface SettingsRowID {
         ) : RepositoryRow
 
         @Serializable
+        public data object SignOutProblem : RepositoryRow
+
+        @Serializable
         public data object SignOut : RepositoryRow
 
         public object Serializer : KSerializer<SettingsRowID.RepositoryRow> by SwiftEnumSerializer(
@@ -1422,6 +1425,7 @@ public sealed interface SettingsRowID {
                 SwiftEnumSerializer.Case("access", Access::class, Access.serializer()),
                 SwiftEnumSerializer.Case("changeAccess", ChangeAccess::class, ChangeAccess.serializer()),
                 SwiftEnumSerializer.Case("unrevoked", Unrevoked::class, Unrevoked.serializer()),
+                SwiftEnumSerializer.Case("signOutProblem", SignOutProblem::class, SignOutProblem.serializer()),
                 SwiftEnumSerializer.Case("signOut", SignOut::class, SignOut.serializer()),
             ),
         )
@@ -1614,6 +1618,9 @@ public sealed interface StatusAction {
         @SerialName("_0") val value: String,
     ) : StatusAction
 
+    @Serializable
+    public data object ReadAgain : StatusAction
+
     public object Serializer : KSerializer<StatusAction> by SwiftEnumSerializer(
         "StatusAction",
         listOf(
@@ -1623,6 +1630,7 @@ public sealed interface StatusAction {
             SwiftEnumSerializer.Case("renew", Renew::class, Renew.serializer()),
             SwiftEnumSerializer.Case("retry", Retry::class, Retry.serializer()),
             SwiftEnumSerializer.Case("discard", Discard::class, Discard.serializer()),
+            SwiftEnumSerializer.Case("readAgain", ReadAgain::class, ReadAgain.serializer()),
         ),
     )
 }
@@ -1888,6 +1896,9 @@ public object LinkController {
         @Serializable
         public data object SignOut : Command
 
+        @Serializable
+        public data object ReadAgain : Command
+
         public object Serializer : KSerializer<LinkController.Command> by SwiftEnumSerializer(
             "LinkController.Command",
             listOf(
@@ -1897,6 +1908,7 @@ public object LinkController {
                 SwiftEnumSerializer.Case("retry", Retry::class, Retry.serializer()),
                 SwiftEnumSerializer.Case("discard", Discard::class, Discard.serializer()),
                 SwiftEnumSerializer.Case("signOut", SignOut::class, SignOut.serializer()),
+                SwiftEnumSerializer.Case("readAgain", ReadAgain::class, ReadAgain.serializer()),
             ),
         )
     }

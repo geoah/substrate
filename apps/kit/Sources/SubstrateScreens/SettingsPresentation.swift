@@ -139,6 +139,8 @@ public enum SettingsRowID: Bridged, Hashable, Sendable {
         /// A token this device stopped using that its server has not
         /// revoked yet, by its place in the list.
         case unrevoked(Int)
+        /// Why the last sign-out did not happen.
+        case signOutProblem
         case signOut
     }
 

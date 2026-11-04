@@ -23,6 +23,7 @@ struct RootView: View {
         }
         .animation(.default, value: link.app?.signedIn)
         .alert("Couldn't sign out", isPresented: Binding(get: { link.signOutProblem != nil }, set: { _ in })) {
+            if let fix = link.signOutProblem?.fix { Button(fix.title) { host.signOut() } }
             Button("OK", role: .cancel) {}
         } message: {
             Text(link.signOutProblem?.message ?? "")

@@ -411,13 +411,13 @@ import FoundationNetworking
     /// A store keeps its items where its storage does and nowhere else:
     /// two stores over one storage share them, and two over two storages
     /// never meet, whatever account each names.
-    @Test func aStoreIsItsStoragesAndNoOneElses() throws {
+    @Test func aStoreIsItsStoragesAndNoOneElses() async throws {
         let one = MemoryStorage()
         let other = MemoryStorage()
-        try SessionStore(storage: one).save(app())
-        #expect(SessionStore(storage: one).load() == app())
-        #expect(SessionStore(storage: other).load() == nil)
-        #expect(SessionStore(account: "elsewhere", storage: one).load() == nil)
+        try await SessionStore(storage: one).save(app())
+        #expect(await SessionStore(storage: one).load() == app())
+        #expect(await SessionStore(storage: other).load() == nil)
+        #expect(await SessionStore(account: "elsewhere", storage: one).load() == nil)
         #expect(one.location != other.location)
     }
 
@@ -439,28 +439,43 @@ import FoundationNetworking
 
     @Test func aSignOutKeepsTheTokenUntilTheServerRevokesIt() async throws {
         let store = SessionStore(service: "dev.reamde.substrate.kit.tests", account: "test-\(UUID().uuidString)")
+        let keychain = try #require(store.storage as? KeychainStorage)
         defer {
-            for old in store.pendingRevocations() { store.revoked(old) }
-            store.clear()
+            try? keychain.delete(account: store.revocationsAccount)
+            try? keychain.delete(account: store.account)
         }
         let session = app()
-        try store.save(session)
+        try await store.save(session)
         let offline = StubTransport()
         try await store.signOut(session, transport: offline)
         #expect(offline.requests.isEmpty)
-        #expect(store.load() == nil)
+        #expect(await store.load() == nil)
         let busy = StubTransport()
         busy.on("POST", "/oauth/revoke", status: 503, json: "")
-        #expect(await store.revokePending(current: nil, transport: busy) == [session])
-        #expect(store.pendingRevocations() == [session])
+        #expect(try await store.revokePending(transport: busy) == [session])
+        #expect(try await store.pendingRevocations() == [session])
         let ok = StubTransport()
         ok.on("POST", "/oauth/revoke", json: "")
-        #expect(await store.revokePending(current: nil, transport: ok) == [])
-        #expect(store.pendingRevocations().isEmpty)
+        #expect(try await store.revokePending(transport: ok) == [])
+        #expect(try await store.pendingRevocations().isEmpty)
         // The session in use is never revoked, only forgotten from the list.
-        try store.keepForRevocation(session)
-        #expect(await store.revokePending(current: session, transport: busy) == [])
-        #expect(store.pendingRevocations().isEmpty)
+        try await store.save(session)
+        try await store.keepForRevocation(session)
+        #expect(try await store.revokePending(transport: busy) == [])
+        #expect(try await store.pendingRevocations().isEmpty)
+        #expect(await store.load() == session)
+    }
+
+    /// The Keychain says a removal failed, and only an item already gone
+    /// counts as removed: a sign-out never reads as done while its item
+    /// stays.
+    @Test func aKeychainRemovalThatFailsSaysSo() throws {
+        let store = KeychainStorage(service: "dev.reamde.substrate.kit.tests")
+        try store.delete(account: "test-never-written-\(UUID().uuidString)")
+        // An access group this process holds no entitlement to: the
+        // Keychain refuses the call itself, and the refusal comes back.
+        let refusing = KeychainStorage(service: "dev.reamde.substrate.kit.tests", accessGroup: "NOTEAM.dev.reamde.substrate.kit", dataProtection: true)
+        #expect(throws: SecureStoreNotRemoved.self) { try refusing.delete(account: "session") }
     }
     #endif
 }
@@ -490,47 +505,47 @@ import FoundationNetworking
     @Test func aSignOutTheKeychainWillNotKeepIsRevokedBeforeItIsForgotten() async throws {
         let store = store()
         let session = app("sub_app_old")
-        try store.save(session)
+        try await store.save(session)
         let ok = StubTransport()
         ok.on("POST", "/oauth/revoke", json: "")
         try await store.signOut(session, transport: ok)
         #expect(revoked(ok).map { $0.hasPrefix("token=sub_app_old&") } == [true])
-        #expect(store.load() == nil)
+        #expect(await store.load() == nil)
     }
 
     @Test func aSignOutNeitherKeptNorRevokedStaysSignedIn() async throws {
         let store = store()
         let session = app("sub_app_old")
-        try store.save(session)
+        try await store.save(session)
         let busy = StubTransport()
         busy.on("POST", "/oauth/revoke", status: 503, json: "")
         await #expect(throws: SessionStore.NotRetired.self) { try await store.signOut(session, transport: busy) }
-        #expect(store.load() == session)
-        #expect(store.pendingRevocations().isEmpty)
+        #expect(await store.load() == session)
+        #expect(try await store.pendingRevocations().isEmpty)
     }
 
     @Test func aReplacementKeepsTheOldTokenBeforeItIsSavedOver() async throws {
         let store = store(refusing: [])
         let old = app("sub_app_old")
         let new = app("sub_app_new")
-        try store.save(old)
+        try await store.save(old)
         let offline = StubTransport()
         try await store.save(new, replacing: old, transport: offline)
         #expect(offline.requests.isEmpty)
-        #expect(store.load() == new)
-        #expect(store.pendingRevocations() == [old])
+        #expect(await store.load() == new)
+        #expect(try await store.pendingRevocations() == [old])
     }
 
     @Test func aReplacementTheKeychainWillNotKeepRevokesTheOldTokenFirst() async throws {
         let store = store()
         let old = app("sub_app_old")
         let new = app("sub_app_new")
-        try store.save(old)
+        try await store.save(old)
         let ok = StubTransport()
         ok.on("POST", "/oauth/revoke", json: "")
         try await store.save(new, replacing: old, transport: ok)
         #expect(revoked(ok).map { $0.hasPrefix("token=sub_app_old&") } == [true])
-        #expect(store.load() == new)
+        #expect(await store.load() == new)
     }
 
     /// Neither kept nor revoked: the old session stays in use, and the new
@@ -539,11 +554,11 @@ import FoundationNetworking
         let store = store()
         let old = app("sub_app_old")
         let new = app("sub_app_new")
-        try store.save(old)
+        try await store.save(old)
         let busy = StubTransport()
         busy.on("POST", "/oauth/revoke", status: 503, json: "")
         await #expect(throws: SessionStore.NotRetired.self) { try await store.save(new, replacing: old, transport: busy) }
-        #expect(store.load() == old)
+        #expect(await store.load() == old)
         #expect(revoked(busy).map { String($0.prefix(18)) } == ["token=sub_app_old&", "token=sub_app_new&"])
     }
 
@@ -558,8 +573,8 @@ import FoundationNetworking
         let ok = StubTransport()
         ok.on("POST", "/oauth/revoke", json: "")
         await #expect(throws: SessionStore.NotSaved.self) { try await store.save(new, replacing: old, transport: ok) }
-        #expect(store.load() == old)
-        #expect(store.pendingRevocations().isEmpty)
+        #expect(await store.load() == old)
+        #expect(try await store.pendingRevocations().isEmpty)
         #expect(revoked(ok).map { $0.hasPrefix("token=sub_app_new&") } == [true])
     }
 }
@@ -572,7 +587,7 @@ extension Retention {
         let store = SessionStore(storage: MemoryStorage(refusing: ["session.revocations"]))
         let old = app("sub_app_old")
         let new = app("sub_app_new")
-        try store.save(old)
+        try await store.save(old)
         let paused = PausedTransport()
         let signingOut = Task { try await store.signOut(old, transport: paused) }
         await paused.started()
@@ -591,7 +606,7 @@ extension Retention {
         // Once the sign-out is done, the replacement runs and revokes the
         // token it replaced.
         #expect(revoked(ok).map { $0.hasPrefix("token=sub_app_old&") } == [true])
-        #expect(store.load() == new)
+        #expect(await store.load() == new)
     }
 
     /// A replacement whose save the Keychain refuses and whose revocation
@@ -605,8 +620,162 @@ extension Retention {
         let busy = StubTransport()
         busy.on("POST", "/oauth/revoke", status: 503, json: "")
         await #expect(throws: SessionStore.NotSaved.self) { try await store.save(new, replacing: old, transport: busy) }
-        #expect(store.load() == old)
-        #expect(store.pendingRevocations().contains(new))
+        #expect(await store.load() == old)
+        #expect(try await store.pendingRevocations().contains(new))
+    }
+}
+
+/// A store that could not answer is never read as an empty one: what a read
+/// could not see is never written over, removed, revoked or taken for
+/// signed out.
+@Suite(.timeLimit(.minutes(10))) struct UnreadableStorage {
+    let server = URL(string: "https://ada.example.com")!
+
+    func app(_ secret: String) -> Session {
+        Session(
+            server: server, repository: "ada.example.com", secret: secret, clientID: "http://127.0.0.1/substrate-sync",
+            scopes: ["read:*"])
+    }
+
+    func revoked(_ transport: StubTransport) -> [String] {
+        transport.sent("POST", "/oauth/revoke").map { String(decoding: $0.httpBody ?? Data(), as: UTF8.self) }
+    }
+
+    /// Tokens A and B wait, and the queue cannot be read: keeping C fails
+    /// rather than write [C] over them, so do forgetting and revoking, a
+    /// sign-out revokes its own token now instead, and once the queue reads
+    /// A and B are both there.
+    @Test func aQueueThatCannotBeReadIsNeverWrittenOver() async throws {
+        let storage = MemoryStorage()
+        let store = SessionStore(storage: storage)
+        let (a, b, c) = (app("sub_app_a"), app("sub_app_b"), app("sub_app_c"))
+        try await store.keepForRevocation(a)
+        try await store.keepForRevocation(b)
+        storage.failReads(of: store.revocationsAccount, with: MemoryStorage.locked)
+        await #expect(throws: RevocationsUnreadable.self) { try await store.pendingRevocations() }
+        await #expect(throws: RevocationsUnreadable.self) { try await store.keepForRevocation(c) }
+        await #expect(throws: RevocationsUnreadable.self) { try await store.revoked(a) }
+        let ok = StubTransport().on("POST", "/oauth/revoke")
+        await #expect(throws: RevocationsUnreadable.self) { try await store.revokePending(transport: ok) }
+        #expect(ok.requests.isEmpty)
+        try await store.save(c)
+        try await store.signOut(c, transport: ok)
+        #expect(revoked(ok).map { $0.hasPrefix("token=sub_app_c&") } == [true])
+        #expect(await store.load() == nil)
+        storage.failReads(of: store.revocationsAccount, with: nil)
+        #expect(try await store.pendingRevocations() == [a, b])
+    }
+
+    /// A queue another build wrote, which this one does not decode, is not
+    /// an empty one either.
+    @Test func aQueueThatDoesNotDecodeIsNeverWrittenOver() async throws {
+        let storage = MemoryStorage()
+        let store = SessionStore(storage: storage)
+        storage.writeUnchecked(Data("[{".utf8), account: store.revocationsAccount)
+        await #expect(throws: RevocationsUnreadable.self) { try await store.keepForRevocation(app("sub_app_c")) }
+        await #expect(throws: RevocationsUnreadable.self) { try await store.revoked(app("sub_app_c")) }
+        #expect(storage.stored(account: store.revocationsAccount) == Data("[{".utf8))
+    }
+
+    /// Each read-modify-write of the queue runs after the one before it,
+    /// whoever makes it: keeps and forgets made at once, over a store that
+    /// answers slowly, lose no token and bring none back.
+    @Test func everyChangeToTheQueueRunsInTurn() async throws {
+        let store = SessionStore(storage: SlowStorage())
+        let kept = (0 ..< 12).map { app("sub_app_\($0)") }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for session in kept { group.addTask { try await store.keepForRevocation(session) } }
+            try await group.waitForAll()
+        }
+        #expect(Set(try await store.pendingRevocations().map(\.secret)) == Set(kept.map(\.secret)))
+        let later = (12 ..< 18).map { app("sub_app_\($0)") }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for session in kept.prefix(6) { group.addTask { try await store.revoked(session) } }
+            for session in later { group.addTask { try await store.keepForRevocation(session) } }
+            try await group.waitForAll()
+        }
+        #expect(Set(try await store.pendingRevocations().map(\.secret)) == Set((kept.dropFirst(6) + later).map(\.secret)))
+    }
+
+    /// A removal the storage refuses is no sign-out: the session stays,
+    /// signed in, with its token kept to revoke; the queue forgets it while
+    /// it is the one in use, never revoking it, and a removal that works
+    /// signs out.
+    @Test func aSignOutWhoseRemovalFailsStaysSignedIn() async throws {
+        let storage = MemoryStorage()
+        let store = SessionStore(storage: storage)
+        let session = app("sub_app_old")
+        try await store.save(session)
+        storage.failDeletes(of: store.account, with: MemoryStorage.locked)
+        let offline = StubTransport()
+        await #expect(throws: SecureStoreNotRemoved.self) { try await store.signOut(session, transport: offline) }
+        #expect(await store.load() == session)
+        #expect(try await store.pendingRevocations() == [session])
+        #expect(try await store.revokePending(transport: offline) == [])
+        #expect(offline.requests.isEmpty)
+        storage.failDeletes(of: store.account, with: nil)
+        try await store.signOut(session, transport: offline)
+        #expect(await store.load() == nil)
+        #expect(try await store.pendingRevocations() == [session])
+    }
+
+    /// With the session in use unreadable, no token kept beside it is
+    /// revoked as though none were in use: the live one among them stays
+    /// kept, and once the session reads it is forgotten, never revoked.
+    @Test func nothingIsRevokedWhileTheSessionInUseCannotBeRead() async throws {
+        let storage = MemoryStorage()
+        let store = SessionStore(storage: storage)
+        let live = app("sub_app_live")
+        try await store.save(live)
+        try await store.keepForRevocation(live)
+        storage.failReads(of: store.account, with: MemoryStorage.locked)
+        let ok = StubTransport().on("POST", "/oauth/revoke")
+        await #expect(throws: SessionUnreadable.self) { try await store.revokePending(transport: ok) }
+        #expect(ok.requests.isEmpty)
+        #expect(try await store.pendingRevocations() == [live])
+        storage.failReads(of: store.account, with: nil)
+        #expect(try await store.revokePending(transport: ok) == [])
+        #expect(ok.requests.isEmpty)
+        #expect(await store.load() == live)
+        #expect(try await store.pendingRevocations().isEmpty)
+    }
+
+    /// A sign-in never saves over a session it could not read, which may be
+    /// the one in use: the new token, which nothing holds then, is revoked.
+    @Test func aSignInNeverSavesOverASessionThatCouldNotBeRead() async throws {
+        let storage = MemoryStorage()
+        let store = SessionStore(storage: storage)
+        let (old, new) = (app("sub_app_old"), app("sub_app_new"))
+        try await store.save(old)
+        storage.failReads(of: store.account, with: MemoryStorage.locked)
+        let ok = StubTransport().on("POST", "/oauth/revoke")
+        await #expect(throws: SessionUnreadable.self) { try await store.save(new, replacing: nil, transport: ok) }
+        storage.failReads(of: store.account, with: nil)
+        #expect(await store.load() == old)
+        #expect(revoked(ok).map { $0.hasPrefix("token=sub_app_new&") } == [true])
+        #expect(try await store.pendingRevocations().isEmpty)
+    }
+}
+
+/// Memory that answers each read after a pause, as a store over the bridge
+/// does: two changes that each read and then write would interleave if
+/// nothing ran them in turn.
+final class SlowStorage: SessionStorage, @unchecked Sendable {
+    let memory = MemoryStorage()
+
+    var location: String { memory.location }
+
+    func read(account: String) async -> StoredItem {
+        try? await Task.sleep(for: .milliseconds(2))
+        return memory.read(account: account)
+    }
+
+    func write(_ data: Data, account: String) async throws {
+        try memory.write(data, account: account)
+    }
+
+    func delete(account: String) async throws {
+        try memory.delete(account: account)
     }
 }
 

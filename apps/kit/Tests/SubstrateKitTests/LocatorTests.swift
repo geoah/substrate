@@ -418,21 +418,21 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
             .reject(session, mismatch, keepingIn: store)
         #expect(failing.sent("POST", "/oauth/revoke").count == 1)
         #expect(pending.revocation == .pending)
-        #expect(store.pendingRevocations() == [session])
-        #expect(store.load() == nil)
+        #expect(try await store.pendingRevocations() == [session])
+        #expect(await store.load() == nil)
         #expect(pending.errorDescription?.contains("You signed in to bob.example.com, not ada.example.com.") == true)
         #expect(pending.errorDescription?.contains("ada.example.com didn't confirm revoking the access it gave for bob.example.com") == true)
 
         // The next try revokes it and forgets it.
         let answering = StubTransport().on("POST", "/oauth/revoke", status: 200, json: "")
-        #expect(await store.revokePending(current: nil, transport: answering) == [])
-        #expect(store.pendingRevocations().isEmpty)
+        #expect(try await store.revokePending(transport: answering) == [])
+        #expect(try await store.pendingRevocations().isEmpty)
 
         // Revoked at once: nothing is left kept.
         let revoked = await OAuthClient(manifest: syncManifest(), metadata: meta, transport: answering)
             .reject(session, mismatch, keepingIn: store)
         #expect(revoked.revocation == .revoked)
-        #expect(store.pendingRevocations().isEmpty)
+        #expect(try await store.pendingRevocations().isEmpty)
         #expect(revoked.errorDescription?.contains("didn't confirm") == false)
 
         // Neither kept nor revoked: the person is told to revoke it.

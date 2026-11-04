@@ -177,7 +177,7 @@ struct SevenRules {
         let storage = MemoryStorage()
         let sessions = SessionStore(storage: storage)
         let manifest = ChatManifest.manifest
-        try sessions.save(
+        try await sessions.save(
             Session(
                 server: origin, repository: repository, secret: "secret", clientID: manifest.clientID,
                 scopes: manifest.scopes))
@@ -194,7 +194,7 @@ struct SevenRules {
         try await harness.until { await $0.presentation.snapshot.phase == .signedIn }
         await harness.send(.signOut)
         try await harness.until { await $0.presentation.snapshot.phase == .signedOut }
-        #expect(sessions.load() == nil)
+        #expect(await sessions.load() == nil)
         #expect(server.count("/oauth/revoke") == 1)
     }
 

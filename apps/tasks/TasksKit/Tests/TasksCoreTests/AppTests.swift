@@ -422,10 +422,12 @@ struct LinkedTests {
         let rig = try Rig()
         rig.server.answer("GET", "/api/v1/records", 401, #"{"error":{"code":"unauthorized","message":"token expired"}}"#)
         let storage = MemoryStorage()
-        try SessionStore(storage: storage).save(
-            Session(
-                server: server, repository: "ada.example.com", secret: "sub_app_x",
-                clientID: TasksManifest.localClientID, scopes: TasksManifest.scopes))
+        try storage.write(
+            JSONEncoder().encode(
+                Session(
+                    server: server, repository: "ada.example.com", secret: "sub_app_x",
+                    clientID: TasksManifest.localClientID, scopes: TasksManifest.scopes)),
+            account: "session")
         let link = LinkController(
             app: rig.app, manifest: TasksManifest.manifest(clientID: TasksManifest.localClientID),
             sessions: SessionStore(storage: storage), outbox: rig.outbox, packages: TasksManifest.packages,

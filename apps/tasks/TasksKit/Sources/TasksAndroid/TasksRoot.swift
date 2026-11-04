@@ -31,9 +31,9 @@ final class TasksRoot: BridgeRoot {
 
     init(opening: TasksOpening, context: BridgeContext) {
         let started = Task<Runtime<Link>?, Never> {
-            // The store answers through the bridge and blocks while it does,
-            // so it is read here, on Swift's executors, never in `open`.
-            let (runtime, stored) = Self.make(opening, context: context)
+            // The store answers through the bridge, so it is awaited here,
+            // never in `open`.
+            let (runtime, stored) = await Self.make(opening, context: context)
             Self.forward(runtime, stored: stored, to: context)
             return runtime
         }
@@ -46,14 +46,15 @@ final class TasksRoot: BridgeRoot {
         }
     }
 
-    private static func make(_ opening: TasksOpening, context: BridgeContext) -> (Runtime<Link>, Bool) {
+    private static func make(_ opening: TasksOpening, context: BridgeContext) async -> (Runtime<Link>, Bool) {
         let sessions = SessionStore(storage: BridgeSecureStore(channel: context.device, store: TasksRoots.secureStore))
         var environment = context.appEnvironment(secureStore: TasksRoots.secureStore)
         let transport = environment.devices.transport
         environment.client = ClientSource {
-            sessions.load().map { SubstrateClient(server: $0.server, token: $0.secret, transport: transport) }
+            await sessions.load().map { SubstrateClient(server: $0.server, token: $0.secret, transport: transport) }
         }
-        let session = sessions.load()
+        let read = await sessions.read()
+        let session: Session? = if case let .found(session) = read { session } else { nil }
         let folder = session.flatMap { session in
             try? RepositoryFolder(
                 root: context.environment.data.appendingPathComponent(TasksRoots.folder, isDirectory: true)
@@ -68,7 +69,9 @@ final class TasksRoot: BridgeRoot {
         let link = Link(
             app: app, manifest: opening.manifest(in: context.environment), sessions: sessions, outbox: outbox, packages: packages,
             words: words)
-        return (Runtime(link, environment: environment), session != nil)
+        // One that could not be read is stored too: the sign-in is not the
+        // screen to open over it.
+        return (Runtime(link, environment: environment), read != .missing)
     }
 
     /// Each frame's keyed lists first, whole then as deltas, then its tree

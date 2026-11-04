@@ -33,6 +33,10 @@ public struct LinkState: Codable, Equatable, Sendable {
     public var generation = 0
     public var signingOut = false
     public var signOutProblem: String?
+    /// Why the session could not be read, until it is read again: not
+    /// signed out, so the facts last read stay and nothing that needs the
+    /// token runs meanwhile.
+    public var sessionProblem: String?
 
     public init() {}
 
@@ -44,7 +48,7 @@ public struct LinkState: Codable, Equatable, Sendable {
     /// Writes may go now: signed in with access, not known to be offline,
     /// no flush running, and the last one not stopped by the token.
     public var canSend: Bool {
-        guard session != nil, !accessEnded, !sending, network?.online != false else { return false }
+        guard session != nil, sessionProblem == nil, !accessEnded, !sending, network?.online != false else { return false }
         return outbox.state != .needsApproval
     }
 }

@@ -49,9 +49,7 @@ public enum TasksRoots {
                 let session = try await oauth.signIn(
                     server: probe.origin, repository: probe.repository, keepingRejectedIn: sessions,
                     browser: browser)
-                // The store answers through the bridge and blocks while it does:
-                // never on the main thread, which Kotlin's answers may need.
-                let previous = await Task.detached { sessions.load() }.value
+                let previous = await sessions.load()
                 try await sessions.save(session, replacing: previous, transport: transport)
             })
     }

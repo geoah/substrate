@@ -26,6 +26,7 @@ public enum SettingsRoute<App: LinkedApp>: Equatable, Sendable {
         case .toggle(.app, _), .choose(.app, _), .open(.app), .perform(.app): settings(command).map(SettingsRoute.app) ?? .none
         case .perform(.storage(.clear)): clearSaved.map(SettingsRoute.app) ?? .none
         case .perform(.status(.action(.sendNow))): .link(.sendNow)
+        case .perform(.status(.action(.readAgain))): .link(.readAgain)
         case let .perform(.status(.action(.retry(id)))): .link(.retry(id))
         case let .perform(.status(.action(.discard(id)))): .link(.discard(id))
         case .perform(.status(.action(.review))), .perform(.status(.action(.renew))), .perform(.repository(.changeAccess)): .changeAccess

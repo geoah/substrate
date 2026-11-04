@@ -8,11 +8,9 @@ import SubstrateDevice
 /// dropped, or that would not decrypt, is cleared by Kotlin and reads as
 /// missing, so the app signs in again.
 ///
-/// `SessionStorage` is synchronous, so a call blocks its thread until Kotlin
-/// answers, which it does off the main thread: never call it on Android's
-/// main thread. The answer wakes it from the thread that delivers it
-/// (DeviceChannel.callBlocking), so callers blocked on Swift's executors
-/// never wait for one of those executors to come free.
+/// Every call suspends until Kotlin answers, holding no thread: a caller on
+/// one of Swift's executors gives it back while it waits, so however many
+/// wait at once, the answers never queue behind them.
 public struct BridgeSecureStore: SessionStorage {
     public let channel: DeviceChannel
     /// The store's name: one DataStore file and one keyset per name.
@@ -33,8 +31,8 @@ public struct BridgeSecureStore: SessionStorage {
     /// `noBackupFilesDir`: two storages of one name hold the same items.
     public var location: String { "android-secure-store:\(store)" }
 
-    public func read(account: String) -> StoredItem {
-        switch wait(.secureRead(store: store, account: account), as: SecureItem.self) {
+    public func read(account: String) async -> StoredItem {
+        switch await answer(.secureRead(store: store, account: account), as: SecureItem.self) {
         case let .success(.found(value)):
             guard let data = Data(base64Encoded: value) else { return .failed(Self.unavailableStatus) }
             return .found(data)
@@ -45,18 +43,35 @@ public struct BridgeSecureStore: SessionStorage {
         }
     }
 
-    public func write(_ data: Data, account: String) throws {
-        let outcome = wait(.secureWrite(store: store, account: account, value: data.base64EncodedString()), as: SecureOutcome.self)
+    public func write(_ data: Data, account: String) async throws {
+        let outcome = await answer(.secureWrite(store: store, account: account, value: data.base64EncodedString()), as: SecureOutcome.self)
         guard case .success(.done) = outcome else { throw SecureStoreRefused(status: Self.unavailableStatus) }
     }
 
-    public func delete(account: String) {
-        _ = wait(.secureDelete(store: store, account: account), as: SecureOutcome.self)
+    public func delete(account: String) async throws {
+        let outcome = await answer(.secureDelete(store: store, account: account), as: SecureOutcome.self)
+        guard case .success(.done) = outcome else { throw SecureStoreNotRemoved(status: Self.unavailableStatus) }
     }
 
-    private func wait<Answer: Decodable & Sendable>(_ request: DeviceRequest, as _: Answer.Type) -> Result<Answer, Error> {
-        channel.callBlocking(request, timeout: timeout).flatMap { body in
-            Result { try BridgeCodec.decode(Answer.self, from: body) }
+    /// Kotlin's answer, or a failure once `timeout` passes without one: the
+    /// call is cancelled on both sides then, as a cancelled caller's is.
+    private func answer<Answer: Decodable & Sendable>(_ request: DeviceRequest, as _: Answer.Type) async -> Result<Answer, Error> {
+        let (channel, timeout) = (channel, timeout)
+        return await withTaskGroup(of: Result<Answer, Error>?.self) { group in
+            group.addTask {
+                do {
+                    return .success(try await channel.call(request, as: Answer.self))
+                } catch {
+                    return .failure(error)
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(timeout))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first ?? .failure(BridgeFailure(.unavailable, "the secure store did not answer in \(Int(timeout)) seconds"))
         }
     }
 }

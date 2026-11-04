@@ -156,6 +156,7 @@ struct SettingsView: View {
         case .signIn: host.signInAgain()
         case let .retry(id): host.model.send(.retry(id))
         case let .discard(id): host.model.send(.discard(id))
+        case .readAgain: host.model.send(.readAgain)
         }
     }
 

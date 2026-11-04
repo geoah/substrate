@@ -164,8 +164,9 @@ public final class AppShell<App: LinkedApp> {
     /// None for a shell that only draws.
     @ObservationIgnored private let notifications: SystemNotifications?
     public private(set) var model: PresentationModel<Link>
-    /// A session is in the Keychain: the link's first presentation, before
-    /// it has read it, is not a sign-in screen.
+    /// A session is in the Keychain, or something the Keychain could not
+    /// read is: the link's first presentation, before it has read it, is
+    /// not a sign-in screen, which would save a new session over it.
     public private(set) var stored: Bool
     @ObservationIgnored private var folderName: String?
     @ObservationIgnored private var following: [Task<Void, Never>] = []
@@ -175,8 +176,9 @@ public final class AppShell<App: LinkedApp> {
         sessions = SessionStore(storage: KeychainStorage(service: configuration.keychainService))
         notifications = configuration.respond == nil ? nil : SystemNotifications()
         if notifications != nil { SystemNotifications.installDelegate() }
-        let session = sessions.load()
-        stored = session != nil
+        let read = sessions.read()
+        stored = read != .missing
+        let session: Session? = if case let .found(session) = read { session } else { nil }
         (model, folderName) = Self.make(configuration, session: session, sessions: sessions, notifications: notifications)
         follow()
     }
@@ -196,7 +198,7 @@ public final class AppShell<App: LinkedApp> {
         notifications: SystemNotifications?
     ) -> (PresentationModel<Link>, String?) {
         var environment = AppEnvironment.apple()
-        environment.client = ClientSource { sessions.load().map { SubstrateClient($0) } }
+        environment.client = ClientSource { await sessions.load().map { SubstrateClient($0) } }
         environment.devices.notifications = notifications
         let parts = parts(configuration, session: session, device: DeviceWords.current, build: .bundle())
         environment.folder = parts.folder
@@ -313,7 +315,7 @@ public final class AppShell<App: LinkedApp> {
     /// The whole request again on the same server: a change of access, a
     /// renewal, or signing in after the access ended.
     public func changeAccess() async throws {
-        guard let session = sessions.load() else { return }
+        guard let session = await sessions.load() else { return }
         let probe = try await ServerProbe().probe(session.server, requirement: manifest.requirement, app: manifest.appName)
         try await signIn(probe)
     }
@@ -330,9 +332,15 @@ public final class AppShell<App: LinkedApp> {
         (model, folderName) = Self.make(configuration, session: session, sessions: sessions, notifications: notifications)
     }
 
-    /// The link signed out: the sign-in screen is the one to show.
+    /// The link's phase moved: signed out, the sign-in screen is the one to
+    /// show; a session read at last that the launch could not read has the
+    /// app made again over its repository's folder.
     public func refreshStored() {
-        stored = sessions.load() != nil
+        let read = sessions.read()
+        stored = read != .missing
+        if case let .found(session) = read, RepositoryFolder.name(server: session.server, repository: session.repository) != folderName {
+            adopt(session)
+        }
     }
 
     isolated deinit {

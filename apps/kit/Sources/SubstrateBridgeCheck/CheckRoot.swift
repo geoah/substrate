@@ -146,14 +146,14 @@ public actor CheckRoot: BridgeRoot {
             return ok("\(head.statusCode) \(count) lines")
         case let .secure(account, value):
             let store = BridgeSecureStore(channel: context.device, store: "bridge-check")
-            if let value { try store.write(Data(value.utf8), account: account) }
-            switch store.read(account: account) {
+            if let value { try await store.write(Data(value.utf8), account: account) }
+            switch await store.read(account: account) {
             case let .found(data): return ok("found \(String(decoding: data, as: UTF8.self))")
             case .missing: return ok("missing")
             case let .failed(status): return .failed(name: name, detail: "failed \(status)")
             }
         case let .secureDelete(account):
-            BridgeSecureStore(channel: context.device, store: "bridge-check").delete(account: account)
+            try await BridgeSecureStore(channel: context.device, store: "bridge-check").delete(account: account)
             return ok("deleted")
         case let .txt(host):
             switch try await BridgeTXTResolver(channel: context.device).txt(host) {
