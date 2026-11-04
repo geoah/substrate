@@ -1,5 +1,102 @@
 # Changelog
 
+## [0.115.0](https://github.com/geoah/substrate/compare/v0.114.1...v0.115.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **apple:** a repository holding Workouts' package under its own authority (`<authority>/training`) is not read or written by this build; the new build's approval installs `substrate.reamde.dev/training` from the authority document, and the owner takes the old package over and copies or deletes its records.
+* **apple:** an app built on SubstrateKit no longer asks for `declare:` scopes or `agent` details; a package it brings is published under its authority document and asked for as a `package` detail at the version the build was written against.
+* **appsetup:** an app whose approval installs a package with code (functions, agents, triggers, mappings) must ask for scopes that cover what that code reads and writes, or the package's row is blocked `reaches-past-scopes` on the approval page and in the app's set up check. Upgrading: update the app first so its request covers its packages' reach (Substrate Sync's new build asks for the apple and applehealth providers' kinds, health sleep and workouts, and observations; the owner approves it once), then roll the server. A token approved before keeps working for what it reaches; its app's next check reports the blocked row until it is approved again with the wider scopes. Rolling the server back lifts the check.
+* **auth:** an app that asked for `declare:~/<package>` or sent an `agent` authorization detail is refused at `/oauth/authorize` and at `POST /api/v1/authorizations/check`; a token already carrying a `declare:` scope no longer authenticates, so the app signs in again. Publish the package under your authority's document and ask for it with a `package` detail instead; an agent ships in such a package. Send `software_version` with the authorization request and `softwareVersion` in the check body. A rollback refuses nothing: an older binary reads the new tokens as before, without the build facts.
+* **vocabulary:** a token can no longer create a package under another authority. `POST /api/v1/vocabulary/apply` (and `substratectl apply -f`) of declarations that would create a package under any authority but the repository's own answers 403, and so does `substratectl apply -f` of a shipped provider's or catalogue's files. Instead: 1. Take a provider or a catalogue with `substratectl install <package>`    (`POST /api/v1/catalog/{id}/install`). 2. Take a sample with `substratectl import <sample>`, or rehome its files    with `substratectl apply --as-mine`. 3. Declare your own kinds under your repository's authority (the name you    log in with). Packages a repository already holds under another authority are unaffected and stay writable under their existing source rules. Nothing is stored or migrated, so a rollback to the previous binary restores the old rule with no other change.
+
+### Added
+
+* **agents:** resolve published agents through provider inputs ([c90b0d5](https://github.com/geoah/substrate/commit/c90b0d594d75bf5619269fb8651fc74da783da6b))
+* **api:** open window, aggregate, semantic, blob, call and the feed's history to an app's token ([61ae414](https://github.com/geoah/substrate/commit/61ae414a950e50fe29cc153b1e7d08c049ed6649))
+* **apple:** import Hevy into Substrate Workouts, seed an exercise library with movements and muscle shares, and add stats ([d72e00d](https://github.com/geoah/substrate/commit/d72e00d9fb2f3ec8fa680a81d86a46212eef7c44))
+* **apple:** import Hevy into Substrate Workouts, seed an exercise library with movements and muscle shares, and add stats ([#1156](https://github.com/geoah/substrate/issues/1156)) ([d72e00d](https://github.com/geoah/substrate/commit/d72e00d9fb2f3ec8fa680a81d86a46212eef7c44))
+* **apple:** mirror the call scope and the embedding clause in SubstrateKit's sentences ([72ba967](https://github.com/geoah/substrate/commit/72ba967eb7e2bbce12f52f2e6a0a5715b4d2a9ce))
+* **apple:** publish Workouts' package closures on the site and keep every published version ([3041530](https://github.com/geoah/substrate/commit/30415307cf46f51be75306157448e1d62966b97a))
+* **apple:** publish Workouts' training and trainingcoach packages under substrate.reamde.dev ([140c3f3](https://github.com/geoah/substrate/commit/140c3f30cd3679b73497fbae1abb77b8f5e39456))
+* **apple:** retire the declare verb and the agent detail from SubstrateKit and send the build's version ([5f2eaa8](https://github.com/geoah/substrate/commit/5f2eaa8ef874d88f034959a102a0ef555157043a))
+* **apple:** serve a page at each claimed callback and refuse a release signed without its associated domain ([66c294c](https://github.com/geoah/substrate/commit/66c294caa95850ba50a63f96b01d2a79a104534e))
+* **apple:** show a routine's plan as a session draws it, edit it in place, and tidy its progress ([6ae32de](https://github.com/geoah/substrate/commit/6ae32de309de32071960cee574de8c716d9cc6a4))
+* **apple:** sign in through a claimed https callback and find a server from a repository name ([5cb3902](https://github.com/geoah/substrate/commit/5cb39026910be6bcc622737d7fb723caf62a304c))
+* **apple:** widen Substrate Sync's scopes to what its packages' code reaches ([8bee3c5](https://github.com/geoah/substrate/commit/8bee3c530885307177044ef6f578acbecd4aa913))
+* **appsetup:** hold the code an approval installs to the scopes it approves ([fccea7a](https://github.com/geoah/substrate/commit/fccea7a71a28fd9d6d9b97d1052c578a241dcfb0))
+* **auth:** install published packages at approval and retire declare and the agent detail ([dce37a4](https://github.com/geoah/substrate/commit/dce37a4381612e92142afecff5dde78a2f67665f))
+* **auth:** name the add-ons a token keeps waiting for their provider ([132fb51](https://github.com/geoah/substrate/commit/132fb51c9479a7831530385ac74f9abbbe0001dd))
+* **authorities:** confine and review document-published code ([a848e8f](https://github.com/geoah/substrate/commit/a848e8f04bf1cbe8a43ef868037bf699bb58c7aa)), closes [#1144](https://github.com/geoah/substrate/issues/1144)
+* **authorize:** collect package settings and defer optional add-ons ([2b1ed55](https://github.com/geoah/substrate/commit/2b1ed55f42f3763c95c85384e3480c0f75c3120c))
+* **auth:** verify an app's publisher through its domain's TXT record ([f4d4883](https://github.com/geoah/substrate/commit/f4d4883cd194a9194cdece27d5b24460c9c08bbf))
+* **catalog:** install and refresh authority-published packages ([5e489ce](https://github.com/geoah/substrate/commit/5e489cec531dc3f20c25adf5990573a9652ca3c3))
+* **catalog:** name the contracts of published packages and app builds ([6a99c3f](https://github.com/geoah/substrate/commit/6a99c3ff54d74e0a01e0f702a226259790a8de5b))
+* **console:** group the collections by package ([#1158](https://github.com/geoah/substrate/issues/1158)) ([f334dd8](https://github.com/geoah/substrate/commit/f334dd8273b1ece7c530312bfe2a71d8df663d56))
+* **console:** plan the approval again with the scopes left checked and show what a package's code reaches ([1a1a6e6](https://github.com/geoah/substrate/commit/1a1a6e61f5baecb6cacedf0080afb0f186834cd8))
+* **console:** say on each app who publishes it, what it writes as, its build and the packages it needs ([d347760](https://github.com/geoah/substrate/commit/d347760876d6b2c8b9565ed973921cb4be656b04))
+* **console:** say on the approval page when an app asked for another repository than the one signed in ([9492fc2](https://github.com/geoah/substrate/commit/9492fc2cac4950511cfb69469db29574e9f3a2b9))
+* **console:** say what a call scope runs and what a read scope spends ([6bb5d3a](https://github.com/geoah/substrate/commit/6bb5d3a8b9aec16b6a40b31ebec11a406f772076))
+* **console:** show who publishes a package on the approval page and drop the declare and agent rows ([574076a](https://github.com/geoah/substrate/commit/574076a4c9e37f05e08e3389383d5c037854bf98))
+* **domains:** bound every _substrate lookup and let the operator name the resolver ([425a933](https://github.com/geoah/substrate/commit/425a9337220f24a836f509ec7365a8fd145a6fc0))
+* **domains:** read the _substrate TXT record a domain publishes ([0e8d1d3](https://github.com/geoah/substrate/commit/0e8d1d30609703c716818d34c5f9f25653ac3af4))
+* **repository:** verify a repository's name with its domain's TXT record ([e72a5e6](https://github.com/geoah/substrate/commit/e72a5e6cfadaf6a33d042e49a047a5ddbe62b980))
+* **scope:** add the call verb and hold a function's reach to the grant ([10e8132](https://github.com/geoah/substrate/commit/10e813242d7be42e8179fbcfa30fd856174aa36d))
+* **vocabulary:** declare new packages only under the repository's own authority ([7d23377](https://github.com/geoah/substrate/commit/7d23377e6f7b5ff8df77b905dd5d04e8b6ca8326))
+
+
+### Fixed
+
+* **api:** count every callee in an app's reach, and bind a published upgrade to the code reviewed ([79854b3](https://github.com/geoah/substrate/commit/79854b381257ed672c1b5b70004cf3e21e0988f7))
+* **api:** grow a scoped history page as rows are kept, not from the size the caller asked for ([92899ed](https://github.com/geoah/substrate/commit/92899edea1e58b7eb2c82612a2ce3b30540ad5ba))
+* **api:** keep a caller's package or request id to one log line ([feb00e3](https://github.com/geoah/substrate/commit/feb00e3f91c6b969e3fe10199786f266c25d4b0a))
+* **api:** keep a refresh's error and reason to one log line ([8976502](https://github.com/geoah/substrate/commit/89765022da5d576d0fda7de1cdb1a36292f5b910))
+* **api:** let an app read its own package's row, and keep a package the binary ships out of a document's refresh ([bdf7113](https://github.com/geoah/substrate/commit/bdf711373e9ee3ccbff2ce0a693125cb37e57d6f))
+* **api:** list an app's three actor forms in the discovery document ([be662a4](https://github.com/geoah/substrate/commit/be662a4b5311723e7852870f9d5c14ec308bfd44))
+* **apple:** check each closure the site publishes with the server's own parser, and keep every document entry whole ([5b8b049](https://github.com/geoah/substrate/commit/5b8b0499770df78c6b63fdc0e60c5778385703ac))
+* **apple:** close Workouts' sign-in as soon as the session is kept ([7b2ab57](https://github.com/geoah/substrate/commit/7b2ab573591a0e8c4585e0e0fe44820f26b8430c))
+* **apple:** find a server from a repository name typed as an https:// origin ([2f55d9d](https://github.com/geoah/substrate/commit/2f55d9d1d514f981775353a383978f39c9bdfeea))
+* **apple:** keep the Console's rejected first sign-in where its retry looks ([8a4ecf5](https://github.com/geoah/substrate/commit/8a4ecf559f744208fe048d78297e649484e5b004))
+* **apple:** keep Workouts users' data safe on upgrade and make the Hevy import lossless ([c7d9070](https://github.com/geoah/substrate/commit/c7d9070db11a3e2e53b939c484f19c7723030d37))
+* **apple:** let a negative answer the plain resolver cannot confirm still find the parent server ([d653fba](https://github.com/geoah/substrate/commit/d653fba098bcdd9f17e434fc68a9703278a132a7))
+* **apple:** make a routine's plan plainly read only and tidy its progress ([#1168](https://github.com/geoah/substrate/issues/1168)) ([7560c8a](https://github.com/geoah/substrate/commit/7560c8ac221a082bf656c90fe669f8e4daaa8da0))
+* **apple:** name workout sets by exercise and number, mark done sets, fit the watch ([#1153](https://github.com/geoah/substrate/issues/1153)) ([a8ee65e](https://github.com/geoah/substrate/commit/a8ee65ee0ba09231e0d9ecb602c99980d366cc19))
+* **apple:** read a _substrate record with any whitespace after its version ([b114cb1](https://github.com/geoah/substrate/commit/b114cb135eb63bdf3d05177c0c33c942e2b19d02))
+* **apple:** say an enable row is set up, as the console does ([7d830b7](https://github.com/geoah/substrate/commit/7d830b72797f532329131f64b8d3d7071affd379))
+* **apple:** say what the sign-in field takes in words a person reads ([64ce2f3](https://github.com/geoah/substrate/commit/64ce2f35b3f6efcbeaccc1f6bea909bb247a2e56))
+* **apple:** stop discovery on a failed DNS lookup and keep a rejected token to revoke ([2cd0cb4](https://github.com/geoah/substrate/commit/2cd0cb4c6b7028b23c7e5517805ef113d6cf149a))
+* **apple:** tell a SERVFAIL from a name without a _substrate record ([69e825d](https://github.com/geoah/substrate/commit/69e825d609843a4345bbafb7afd2facc3f59a3e1))
+* **apple:** upload a phone's history after the update instead of deleting it ([0b82628](https://github.com/geoah/substrate/commit/0b8262866106abb0eb400fecf30ff01fa78c23c4))
+* **appsetup:** bind an approval's set up to the closures it showed ([a064186](https://github.com/geoah/substrate/commit/a0641865d7023175351b774362c5d4ff29821a80))
+* **appsetup:** bind deferred addons to checked candidates ([a0900e4](https://github.com/geoah/substrate/commit/a0900e49b14f37493d6cf4bc201d6c236535b315))
+* **appsetup:** hold published agents to the owner's provider choice and deferred add-ons to live consent ([1e1082f](https://github.com/geoah/substrate/commit/1e1082f916066b94d8f55f9c66d2e07e8024186d))
+* **appsetup:** install a deferred agent add-on only where its provider input resolves ([3116c23](https://github.com/geoah/substrate/commit/3116c239e2f9e967e4964c36386a6b7420bb4c05))
+* **appsetup:** reconcile the approval with the catalog that reads authority documents ([8959286](https://github.com/geoah/substrate/commit/895928697be1b41e5bfedaaf07ef474f4d76c4c1))
+* **auth:** distinguish and revoke retired app tokens ([b8873ae](https://github.com/geoah/substrate/commit/b8873ae5178c622370c161d350b983813014f03a))
+* **authorities:** hold only outside function bodies to the sandbox's confinement ([1c558cd](https://github.com/geoah/substrate/commit/1c558cdfe2000350693c2f7a6b3262b51d319d13))
+* **auth:** read an app's publisher only after the owner signs in, and end a request whose publisher moved ([d07d70e](https://github.com/geoah/substrate/commit/d07d70ec7a8b489fed4f907c7a99a7706e00d4af))
+* **auth:** refuse an approval or exchange whose publisher moved ([5991928](https://github.com/geoah/substrate/commit/59919287d440bfbe5a3ad81da1eb99361e6fd582))
+* **catalog:** bind installs to every approved dependency ([cdeca55](https://github.com/geoah/substrate/commit/cdeca55c57489ebbbdc07e7ae8cfd7bfb418ef4e))
+* **catalog:** clear waiting add-ons after installation ([b27f373](https://github.com/geoah/substrate/commit/b27f37332d4ad70523e54cf57004cb535772fab7))
+* **catalog:** count an asking agent's interactions as no reach ([b101249](https://github.com/geoah/substrate/commit/b101249e2b6ef06bf63959917e502634520af40d))
+* **catalog:** expose add-on provenance and build hold reasons ([7979f46](https://github.com/geoah/substrate/commit/7979f468625bcef127986b1e9e04f96ab90103f5))
+* **catalog:** hold a published package's upgrades when its document moves ([c6cb706](https://github.com/geoah/substrate/commit/c6cb70611a86b0e5570a52945693746f13dbe061))
+* **catalog:** leave an unmet requirement to the engine's refusal outside an approval ([57cfa0f](https://github.com/geoah/substrate/commit/57cfa0f0bb4598a5915b6ab9b7dd41458f45d4de))
+* **catalog:** never resolve or install a document's package over what the binary ships ([8fe01e3](https://github.com/geoah/substrate/commit/8fe01e331637441c050f61e1a4a372a958897afa))
+* **catalog:** place a requirement the binary ships below its floor, as before ([1e8bd60](https://github.com/geoah/substrate/commit/1e8bd6052ef71562c17fcdc74f107ac2e1d54f45))
+* **catalog:** send a published upgrade whose reach grows to review ([635d66c](https://github.com/geoah/substrate/commit/635d66c09ee1920e8abbe60c142de258311f6857))
+* **console:** explain a held Approve, review a published upgrade before taking it, and say what waits ([d6f58e8](https://github.com/geoah/substrate/commit/d6f58e8b54c2ef5adc1157d0447c8dfa0b6a766e))
+* **console:** head each app by its name and say when its token is retired ([fa3c18a](https://github.com/geoah/substrate/commit/fa3c18a39897c3dbcfac0ed9ee2b865fa65a0677))
+* **console:** label an unverified app's heading and give its versions and holders their roles ([9fb737b](https://github.com/geoah/substrate/commit/9fb737bd59d48bbf1810c426c315fed02cfea471))
+* **engine:** limit unchanged app check-ins to daily writes ([e6b0b7e](https://github.com/geoah/substrate/commit/e6b0b7e4183568c93ee130f79fcc121c2f528040))
+* **engine:** list a token whose grant a later decision retired, instead of failing the owner's token list ([58d3733](https://github.com/geoah/substrate/commit/58d37338d99ed1554a87a359d853a34d8c5367ae))
+* **repository:** bind a domain check to the proof it read, and keep what the name already publishes ([2bb3f6f](https://github.com/geoah/substrate/commit/2bb3f6f5a98a82b8e502caab3d79a933e32c039b))
+* **repository:** read only the public URL when verifying a domain ([2787e50](https://github.com/geoah/substrate/commit/2787e5003ce368f59f6fe07640620d9d48fcf1af))
+* **scope:** hold code globs to effective app access ([e33e675](https://github.com/geoah/substrate/commit/e33e6755a85569db3fc4d5b784044d2485be415e))
+* **server:** clarify approval and authority wording ([96c7644](https://github.com/geoah/substrate/commit/96c7644b2d2282b8e8db75287af37f1feb17df03))
+* **vocabulary:** let the owner repair a quarantined package of another authority ([35c10fb](https://github.com/geoah/substrate/commit/35c10fbd86a60fac6404142eb774f6ac4848aa23))
+
 ## [0.114.1](https://github.com/geoah/substrate/compare/v0.114.0...v0.114.1) (2026-11-02)
 
 

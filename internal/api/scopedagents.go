@@ -57,7 +57,7 @@ func (s *scopedDataset) rowGated(ctx context.Context, kind string) (bool, error)
 		return false, err
 	}
 	k, ok := reg[kind]
-	return ok && !s.grant.Reads(kind, internalKind(k)), nil
+	return ok && !s.grant.Reads(scope.KindOf(kind, k.Definition)), nil
 }
 
 // reaches reports whether the grant reaches any record of kind, whole or row
@@ -523,7 +523,7 @@ func (s *scopedDataset) changeFilter(ctx context.Context, f substrate.ChangeFilt
 	}
 	var kinds []string
 	for id, k := range reg {
-		if s.grant.Reads(id, internalKind(k)) || s.rowKind(id) {
+		if s.grant.Reads(scope.KindOf(id, k.Definition)) || s.rowKind(id) {
 			kinds = append(kinds, id)
 		}
 	}
@@ -715,9 +715,7 @@ func (s *scopedDataset) coversAgentReads(ctx context.Context, agent string) (boo
 		if r.Write {
 			continue
 		}
-		info, held := reg[r.Pattern]
-		internal := !vocabulary.IsTypeGlob(r.Pattern) && (!held || internalKind(info))
-		if !s.grant.ReachCovered(scope.Read, r.Pattern, internal, internalKinds(reg)...) {
+		if !s.grant.ReachCovered(scope.Read, r.Pattern, scopeKind(r.Pattern, reg), internalKinds(reg)...) {
 			return false, nil
 		}
 	}

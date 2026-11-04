@@ -885,6 +885,18 @@ A scope is a verb and a pattern:
 | `<authority>/<package>/*` | every kind, agent or function of one package |
 | `<authority>/*` | every kind, agent or function of one authority |
 | `*` | every kind, agent or function the owner has |
+| `implements(<trait>)` | `read` and `write` only: every kind whose declaration binds the trait |
+
+A trait pattern
+([0225](decisions/0225-an-apps-scope-may-name-a-trait-and-covers-what-star-covers-among-the-kinds-that-bind-it.md))
+asks for a meaning rather than for names an app cannot know in advance:
+`write:implements(substrate.reamde.dev/core/temporal)` reads and writes
+every kind that sits on the timeline, whoever published it. It reaches what
+`*` would, narrowed to the kinds that bind the trait when each request is
+checked, so a kind installed later that binds it is covered from then on,
+and the approval page lists the kinds that bind it today. The trait is
+named in full, and `~` may stand for its authority. How a kind binds it,
+`temporal(point: dueAt)` say, does not matter, only that it does.
 
 An agent's id is its authority, package and name,
 `ada.example.com/llm/substrate`.
@@ -896,8 +908,8 @@ scope reaches:
 
 - the auth kinds (`substrate.reamde.dev/core/token`, `…/credential`,
   `…/secret`, `…/recoverykey`), read or write;
-- an `internal` kind through a pattern ending in `*`; an exact scope such as
-  `read:substrate.reamde.dev/core/kind` may read one;
+- an `internal` kind through a pattern ending in `*` or a trait pattern; an
+  exact scope such as `read:substrate.reamde.dev/core/kind` may read one;
 - a write to `substrate.reamde.dev/core` or `substrate.reamde.dev/llm`, which
   hold the functions, triggers, agents, providers and policies, beyond the
   few writes `agents:` and `decide:` carry, and a call of a function of

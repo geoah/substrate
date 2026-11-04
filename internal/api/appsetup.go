@@ -135,10 +135,13 @@ func scopeKinds(s scope.Scope, kinds []substrate.KindInfo, rows []substrate.Auth
 			all = append(all, step.Kinds...)
 		}
 		for _, k := range all {
-			internal := k.Purpose == vocabulary.PurposeInternal
-			ok := g.Reads(k.Identity, internal)
+			// A kind an approval installs is listed by its name alone: the
+			// kinds a trait scope reaches are listed from the registry once
+			// they are installed (reachedKinds).
+			kind := scope.Kind{Ref: k.Identity, Internal: k.Purpose == vocabulary.PurposeInternal}
+			ok := g.Reads(kind)
 			if s.Verb == scope.Write {
-				ok = g.Writes(k.Identity, internal)
+				ok = g.Writes(kind)
 			}
 			if ok && !seen[k.Identity] {
 				seen[k.Identity] = true
@@ -155,6 +158,9 @@ func scopeKinds(s scope.Scope, kinds []substrate.KindInfo, rows []substrate.Auth
 // not hold yet is read as internal, so only its exact scope covers it.
 func scopeInternal(s scope.Scope, registry map[string]substrate.KindInfo) bool {
 	if s.OverAgents() || s.Verb == scope.Webhook || s.Verb == scope.Call || vocabulary.IsTypeGlob(s.Pattern) {
+		return false
+	}
+	if _, ok := s.Trait(); ok {
 		return false
 	}
 	k, held := registry[s.Pattern]
@@ -365,8 +371,7 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 			case substrate.DetailAccount:
 				// A kind the registry does not hold yet is read as internal,
 				// which a glob never reaches.
-				k, held := registry[row.Account.Kind]
-				visible = grant.Reads(row.Account.Kind, !held || internalKind(k))
+				visible = grant.Reads(scopeKind(row.Account.Kind, registry))
 			case substrate.DetailWebhook:
 				visible = grant.Delivers(row.Webhook.Trigger)
 			}

@@ -106,7 +106,7 @@ func TestReachCoveredHoldsAFunctionsReachToTheGrant(t *testing.T) {
 		{Read, "other.example.com/tasks/task", false, false},
 	}
 	for _, c := range cases {
-		if got := g.ReachCovered(c.verb, c.pattern, c.internal); got != c.want {
+		if got := g.ReachCovered(c.verb, c.pattern, Kind{Internal: c.internal}); got != c.want {
 			t.Errorf("ReachCovered(%s, %q, %v) = %v, want %v", c.verb, c.pattern, c.internal, got, c.want)
 		}
 	}
@@ -114,11 +114,11 @@ func TestReachCoveredHoldsAFunctionsReachToTheGrant(t *testing.T) {
 	// that reaches them, is never covered, whatever the grant holds.
 	everything, _ := NewGrant([]string{"write:*"})
 	for _, pattern := range []string{"*", "substrate.reamde.dev/*", "substrate.reamde.dev/core/*", "substrate.reamde.dev/core/trigger", "substrate.reamde.dev/llm/provider"} {
-		if everything.ReachCovered(Write, pattern, false) {
+		if everything.ReachCovered(Write, pattern, Kind{Internal: false}) {
 			t.Errorf("write:* covers a function's write of %q", pattern)
 		}
 	}
-	if !everything.ReachCovered(Write, "a.example.com/*", false) || everything.ReachCovered(Read, "*", false) {
+	if !everything.ReachCovered(Write, "a.example.com/*", Kind{Internal: false}) || everything.ReachCovered(Read, "*", Kind{Internal: false}) {
 		t.Fatal("write:* does not cover a function's write of a.example.com/* and read of *")
 	}
 }

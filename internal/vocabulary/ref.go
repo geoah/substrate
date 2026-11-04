@@ -104,6 +104,21 @@ func Qualified(ref string) bool {
 	return authority != ""
 }
 
+// TraitBindingRef is the trait one `traits:` entry binds, by its full
+// identity: `substrate.reamde.dev/core/temporal` for
+// `substrate.reamde.dev/core/temporal(point: dueAt)`. The variant and the
+// remap say how the kind binds it, not what it binds, so they are not read.
+// ok is false for an entry whose trait does not parse or is named by a bare
+// word, which no loaded declaration holds (decision 0098).
+func TraitBindingRef(entry string) (string, bool) {
+	ref, _, _ := strings.Cut(strings.TrimSpace(entry), "(")
+	m := reCapBinding.FindStringSubmatch(strings.TrimSpace(ref))
+	if m == nil || !Qualified(m[1]) {
+		return "", false
+	}
+	return m[1], true
+}
+
 // ValidKindReference reports whether a string is a kind REFERENCE — bare
 // (`task`) or authority-qualified (`samples.substrate.reamde.dev/tasks/task`) — and not a glob.
 // It is ValidTypeGlob's non-glob half on purpose: a trigger source and a

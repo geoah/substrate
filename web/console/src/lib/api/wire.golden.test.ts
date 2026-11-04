@@ -100,6 +100,7 @@ import type {
   BlobInfo,
   DomainCheck,
   DomainProof,
+  SiteInfo,
   BundleClosure,
   BundlePurged,
   BundleStatus,
@@ -336,6 +337,13 @@ const domainCheck: Shape<DomainCheck> = {
   verified: true,
   verifiedAt: false,
   reason: false,
+}
+
+const siteInfo: Shape<SiteInfo> = {
+  name: true,
+  tagline: false,
+  logo: false,
+  landing: false,
 }
 
 const change: Shape<Change> = {
@@ -1271,6 +1279,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   BlobInfo: blobInfo,
   DomainProof: domainProof,
   DomainCheck: domainCheck,
+  SiteInfo: siteInfo,
   Change: change,
   AffectedRecord: affectedRecord,
   PropertyChange: propertyChange,
