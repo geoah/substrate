@@ -6,7 +6,7 @@ import SubstrateTesting
 import Testing
 @testable import TasksCore
 
-@Suite("A reminder's tap")
+@Suite("A reminder's tap", .timeLimit(.minutes(10)))
 struct TapTests {
     func rig() throws -> (Rig, ControllerHarness<TasksApp>) {
         let rig = try Rig()

@@ -10,7 +10,7 @@ import SubstrateCore
 /// The workout coach as its published package declares it (decision records
 /// 0214, 0215 and 0217): the closure this build carries, the agent in it,
 /// and the app's scopes held to what that closure reaches.
-@Suite("The workout coach")
+@Suite("The workout coach", .timeLimit(.minutes(10)))
 struct CoachTests {
     let coach = try! PackageManifest.coach()
 

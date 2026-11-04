@@ -5,7 +5,7 @@ import Testing
 /// The one JSON value both the kit's callers and WorkoutsCore read: a
 /// number keeps its digits, an object its order, and each reads the way it
 /// did on its side.
-@Suite struct JSONValues {
+@Suite(.timeLimit(.minutes(10))) struct JSONValues {
     @Test func aNumberKeepsItsDigitsAndAnObjectItsOrder() throws {
         let value = try JSONValue(data: Data(#"{"b":83.9146,"a":1e-7,"c":12345678901234567890}"#.utf8))
         var object = try #require(value.objectValue)
@@ -40,7 +40,7 @@ import Testing
 /// A JSON number is kept as its digits, so any number read is written back
 /// as the number it was: past a Double's digits, past a Decimal's
 /// exponents, past both.
-@Suite struct JSONNumbers {
+@Suite(.timeLimit(.minutes(10))) struct JSONNumbers {
     @Test(arguments: [
         ("9007199254740993", "9007199254740993"), ("1e200", "1e200"), ("-1e-200", "-1e-200"), ("1e400", "1e400"),
         ("1.5e-400", "1.5e-400"), ("2.5E+300", "2.5e300"), ("1E+2", "100"), ("-0", "0"), ("0.0000001", "0.0000001"),
@@ -128,7 +128,7 @@ import Testing
 
 /// One RFC 3339 reader and writer for the server's stamps and every
 /// datetime property.
-@Suite struct Timestamps {
+@Suite(.timeLimit(.minutes(10))) struct Timestamps {
     @Test func aStampReadsWithEveryFractionalDigitAndAnyOffset() throws {
         let nanos = try #require(Timestamp.parse("2026-10-31T14:12:03.123456789Z"))
         #expect(abs(nanos.timeIntervalSince1970 - 1_793_455_923.123456789) < 1e-6)

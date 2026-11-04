@@ -7,7 +7,7 @@ import SubstrateTesting
 import Testing
 @testable import TemplateCore
 
-@Suite("Substrate Template")
+@Suite("Substrate Template", .timeLimit(.minutes(10)))
 struct TemplateAppTests {
     func harness() throws -> ControllerHarness<TemplateApp> {
         let folder = try RepositoryFolder(root: temporaryFolder("template"))
@@ -57,7 +57,7 @@ struct TemplateAppTests {
     }
 }
 
-@Suite("Substrate Template's root")
+@Suite("Substrate Template's root", .timeLimit(.minutes(10)))
 struct TemplateRootTests {
     @Test func storageIsReadAtOpenAndShownInSettings() async throws {
         let folder = try RepositoryFolder(root: temporaryFolder("template"))

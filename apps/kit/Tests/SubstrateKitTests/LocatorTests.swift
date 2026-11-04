@@ -14,7 +14,7 @@ import SubstrateTesting
 
 /// The cases internal/domains/record_test.go holds the server's parser to,
 /// so the app reads one record as the server does.
-@Suite struct DomainRecords {
+@Suite(.timeLimit(.minutes(10))) struct DomainRecords {
     @Test func readsTheKeysItKnowsAndKeepsTheRest() throws {
         let record = try #require(try DomainRecord.parse([
             "google-site-verification=abc",
@@ -130,7 +130,7 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     }
 }
 
-@Suite struct Locating {
+@Suite(.timeLimit(.minutes(10))) struct Locating {
     let requirement = ServerRequirement()
 
     func locator(_ transport: HostTransport, _ resolver: TableResolver) -> ServerLocator {
@@ -334,7 +334,7 @@ final class HostTransport: HTTPTransport, @unchecked Sendable {
     }
 }
 
-@Suite struct ClaimedCallback {
+@Suite(.timeLimit(.minutes(10))) struct ClaimedCallback {
     let redirect = URL(string: "https://substrate.example.org/apps/workouts/callback")!
 
     @Test func aReleaseClaimsItsRedirectAndALocalBuildDoesNot() {

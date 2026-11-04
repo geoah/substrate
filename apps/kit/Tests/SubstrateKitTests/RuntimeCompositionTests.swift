@@ -3,7 +3,7 @@ import SubstrateRuntime
 import SubstrateTesting
 import Testing
 
-@Suite("A parent and its children, both ways")
+@Suite("A parent and its children, both ways", .timeLimit(.minutes(10)))
 struct RuntimeCompositionTests {
     let gates = Gates()
 

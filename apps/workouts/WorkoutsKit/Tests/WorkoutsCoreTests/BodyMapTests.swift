@@ -5,7 +5,7 @@ import Testing
 /// The body map's regions (`BodyMap.sets`): each set counted by the largest
 /// share among a region's muscles, its movement's when the exercise names
 /// none, else by its groups.
-@Suite("Body map")
+@Suite("Body map", .timeLimit(.minutes(10)))
 struct BodyMapTests {
     func set(_ exercise: String, role: Role = .working, continues: SetID? = nil) -> PerformedSet {
         PerformedSet(id: SetID(UUID().uuidString), at: Date(timeIntervalSince1970: 0), session: "s", exercise: ExerciseID(exercise), slot: exercise,

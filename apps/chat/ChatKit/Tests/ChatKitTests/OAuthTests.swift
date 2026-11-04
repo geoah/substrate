@@ -44,7 +44,7 @@ private func metadataJSON(scopes: [String], details: [String] = []) -> String {
 /// Substrate Chat signs in through the kit's flow under its own manifest:
 /// the request it sends, the door each server takes, and the sessions
 /// earlier builds kept.
-@Suite struct OAuthFlow {
+@Suite(.timeLimit(.minutes(10))) struct OAuthFlow {
     private let metadata = AuthorizationServerMetadata(issuer: origin, scopesSupported: agentVerbs,
                                                        authorizationDetailsTypesSupported: AuthorizationDetail.Types.all)
 
@@ -160,7 +160,7 @@ private struct LegacySession: Codable {
     var revocation: URL?
 }
 
-@Suite struct KeptSessions {
+@Suite(.timeLimit(.minutes(10))) struct KeptSessions {
     private let ends = Date(timeIntervalSinceReferenceDate: 815_000_000)
 
     private var app: LegacySession {
@@ -204,7 +204,7 @@ private struct LegacySession: Codable {
     }
 }
 
-@Suite struct GrantReach {
+@Suite(.timeLimit(.minutes(10))) struct GrantReach {
     @Test func aReadScopeReachesItsKindsAndAGlobStopsAtTheInternalPackages() {
         let all = Grants(["agents:*", "read:*"])
         #expect(all.reads("a.example.com/people/person"))
@@ -251,7 +251,7 @@ private struct LegacySession: Codable {
     }
 }
 
-@Suite struct StillSetUp {
+@Suite(.timeLimit(.minutes(10))) struct StillSetUp {
     private func session(_ scopes: [String], requested: [String]? = ChatManifest.scopes) -> Session {
         Session(server: origin, repository: "r.example.com", secret: "x", clientID: ChatManifest.localClientID, scopes: scopes,
                 requestedScopes: requested)
@@ -308,7 +308,7 @@ private struct LegacySession: Codable {
 /// tests, so it holds what this manifest asks for: the name, the scopes in
 /// order, no packages asked for or published, and the Info.plist keys a
 /// release stamps.
-@Suite struct AppJSON {
+@Suite(.timeLimit(.minutes(10))) struct AppJSON {
     struct Apple: Decodable {
         var clientIDKey: String
         var redirectKey: String

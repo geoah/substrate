@@ -124,7 +124,7 @@ struct ControllerWalk {
     var upNext: RowID? { presentation?.upNext?.row }
 }
 
-@Suite("A session end to end, as the controller drives it")
+@Suite("A session end to end, as the controller drives it", .timeLimit(.minutes(10)))
 struct ControllerWalkTests {
     /// Fri 30 Oct 2026, 12:00 in London (GMT).
     static let friday = Date(timeIntervalSince1970: 1_793_361_600)

@@ -20,7 +20,7 @@ final class Network: @unchecked Sendable {
     }
 }
 
-@Suite("Substrate Tasks, live")
+@Suite("Substrate Tasks, live", .timeLimit(.minutes(10)))
 struct LiveAppTests {
     /// The server holds one list, Groceries, and one task in it.
     func serve(_ rig: Rig, network: Network = Network(), extra: [Record] = [], watch: Bool = true) {
@@ -166,7 +166,7 @@ struct LiveAppTests {
     }
 }
 
-@Suite("Substrate Tasks, by value")
+@Suite("Substrate Tasks, by value", .timeLimit(.minutes(10)))
 struct AppTests {
     func loaded(_ records: [Record], selection: ListSelection? = .inbox) async throws -> (Rig, ControllerHarness<TasksApp>) {
         let rig = try Rig()
@@ -386,7 +386,7 @@ struct AppTests {
     }
 }
 
-@Suite("Substrate Tasks under the link")
+@Suite("Substrate Tasks under the link", .timeLimit(.minutes(10)))
 struct LinkedTests {
     @Test func aReadAnswered401EndsTheAccessOnTheLink() async throws {
         let rig = try Rig()

@@ -58,7 +58,7 @@ final class TransportBox: @unchecked Sendable {
     init(_ transport: any HTTPTransport) { self.transport = transport }
 }
 
-@Suite struct Status {
+@Suite(.timeLimit(.minutes(10))) struct Status {
     static let now = Date(timeIntervalSince1970: 1_800_000_000)
     let server = URL(string: "https://ada.example.com")!
 
@@ -504,7 +504,7 @@ final class TransportBox: @unchecked Sendable {
 #if canImport(SwiftUI)
 /// What a device says of the tokens it stopped using: each server and
 /// repository in its own words, never the session in use's.
-@Suite struct Unrevoked {
+@Suite(.timeLimit(.minutes(10))) struct Unrevoked {
     @Test func eachServerAndRepositoryIsSaidOnce() throws {
         let ada = try #require(URL(string: "https://ada.example.com"))
         let other = try #require(URL(string: "https://substrate.example.org"))
@@ -528,7 +528,7 @@ final class TransportBox: @unchecked Sendable {
 
 #if canImport(SwiftUI)
 /// Change Access names only the controls the approval page will show.
-@MainActor @Suite struct ChangeAccess {
+@MainActor @Suite(.timeLimit(.minutes(10))) struct ChangeAccess {
     let server = URL(string: "https://ada.example.com")!
 
     func sheet(_ manifest: AppManifest, clientID: String? = nil) -> ReviewChangesSheet {

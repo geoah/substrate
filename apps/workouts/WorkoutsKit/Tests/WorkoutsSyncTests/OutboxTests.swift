@@ -13,7 +13,7 @@ import SubstrateCore
 /// sets, a chain's head before its members, Finish under `ifVersion` raising
 /// `revision`, a conflict read and sent again, a stale revision dropped, the
 /// network waited out and a refusal held with its session.
-@Suite("Outbox")
+@Suite("Outbox", .timeLimit(.minutes(10)))
 struct OutboxTests {
     let codec = RecordCodec()
 
@@ -200,7 +200,7 @@ struct OutboxTests {
     }
 }
 
-@Suite("The package")
+@Suite("The package", .timeLimit(.minutes(10)))
 struct PackageTests {
     @Test("a repository without the package, or whose row the token cannot see, is missing; nothing is applied")
     func missing() async throws {
@@ -258,7 +258,7 @@ struct PackageTests {
     }
 }
 
-@Suite("Sign-in")
+@Suite("Sign-in", .timeLimit(.minutes(10)))
 struct SignInTests {
     @Test("the request asks for the published packages at this build's versions, the writes, the reads and the coach")
     func theRequest() throws {

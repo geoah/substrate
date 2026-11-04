@@ -124,7 +124,7 @@ private func shelf() -> Shelf {
     Shelf(linked: LinkedRecords(kinds: [shelfKind], cache: nil, outbox: nil, words: StatusWords(app: "Shelf", device: "this iPhone", kept: "books")))
 }
 
-@Suite("An app over linked records")
+@Suite("An app over linked records", .timeLimit(.minutes(10)))
 struct LinkedRecordsAppTests {
     @Test func theRecordsStagesAreTheKitsAndTheAppWritesItsOwnAlone() async throws {
         let harness = ControllerHarness(shelf(), performsEffects: false)
@@ -169,7 +169,7 @@ struct LinkedRecordsAppTests {
     }
 }
 
-@Suite("A stopped read")
+@Suite("A stopped read", .timeLimit(.minutes(10)))
 struct StoppedReadTests {
     private struct Stepper {
         let records = LinkedRecords(kinds: [shelfKind], cache: nil, outbox: nil, words: StatusWords(app: "Shelf", device: "this iPhone", kept: "books"),
@@ -257,7 +257,7 @@ struct StoppedReadTests {
     }
 }
 
-@Suite("The harness's bounds")
+@Suite("The harness's bounds", .timeLimit(.minutes(10)))
 struct HarnessBoundsTests {
     @Test func aWaitIsBoundedInAllEvenWhileTheRuntimeKeepsMoving() async throws {
         let harness = ControllerHarness(shelf(), performsEffects: false)

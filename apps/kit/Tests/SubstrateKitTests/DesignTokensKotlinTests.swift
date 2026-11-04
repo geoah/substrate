@@ -8,7 +8,7 @@ import Testing
 /// golden pattern the bridge's generator follows: the file in the tree is
 /// what the tokens are today, and SUBSTRATE_UPDATE_FIXTURES=1 writes it
 /// again after a change to one.
-@Suite("The design tokens as Kotlin")
+@Suite("The design tokens as Kotlin", .timeLimit(.minutes(10)))
 struct DesignTokensKotlinTests {
     static let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent("../../android/kit-ui/src/main/kotlin/dev/reamde/substrate/kit/ui/KitTokens.kt").standardizedFileURL

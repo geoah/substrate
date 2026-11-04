@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TasksCore
 
-@Suite("The fixtures")
+@Suite("The fixtures", .timeLimit(.minutes(10)))
 struct FixtureTests {
     @Test func everyFixtureHasWhatItsScreenDraws() throws {
         let fixtures = TasksFixtures.all

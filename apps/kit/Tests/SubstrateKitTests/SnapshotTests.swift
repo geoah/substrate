@@ -20,7 +20,7 @@ import SubstrateTesting
 /// directory SUBSTRATEKIT_SNAPSHOTS names (`mise run apps:gallery`), for a
 /// person to look at; skipped without it, drawn by `OffscreenDrawing` as an
 /// app's gallery draws its own.
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATEKIT_SNAPSHOTS"] != nil))
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATEKIT_SNAPSHOTS"] != nil), .timeLimit(.minutes(10)))
 @MainActor
 struct Snapshots {
     static let size = CGSize(width: 393, height: 852)
@@ -165,7 +165,7 @@ import SubstrateScreens
 /// The gallery's check (§7.4): a fixture whose screen has no renderer
 /// fails here, so a presentation never ships without its view.
 @MainActor
-@Suite struct GalleryRenderers {
+@Suite(.timeLimit(.minutes(10))) struct GalleryRenderers {
     @Test func everyScreenHasARenderer() {
         for screen in ScreenKind.allCases {
             #expect(Gallery.renderers[screen] != nil, "\(screen) has no renderer")

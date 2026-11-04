@@ -69,7 +69,7 @@ struct Gauge: Controller {
     }
 }
 
-@Suite("The kit's additions: effects that see the state before, signals, notification responses")
+@Suite("The kit's additions: effects that see the state before, signals, notification responses", .timeLimit(.minutes(10)))
 struct KitAdditionsTests {
     @Test func anEffectSeesTheStateBeforeItsEvent() async {
         let harness = ControllerHarness(Gauge(), performsEffects: false)

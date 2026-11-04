@@ -4,7 +4,7 @@ import SubstrateLocal
 import Testing
 @testable import TasksCore
 
-@Suite("The codec")
+@Suite("The codec", .timeLimit(.minutes(10)))
 struct CodecTests {
     @Test func aTaskReadsEveryPropertyAndAReferenceInEitherSpelling() {
         let record = taskRecord("t1", "Buy milk", list: "home", position: "1.5", dueDay: "2026-11-06", dueAt: "2026-11-06T14:00:00Z",

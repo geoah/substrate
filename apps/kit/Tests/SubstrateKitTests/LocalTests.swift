@@ -6,7 +6,7 @@ import SubstrateRuntime
 import SubstrateTesting
 import Testing
 
-@Suite("A repository's folder")
+@Suite("A repository's folder", .timeLimit(.minutes(10)))
 struct RepositoryFolderTests {
     let now = Date(timeIntervalSince1970: 1_793_696_400)
 
@@ -92,7 +92,7 @@ struct RepositoryFolderTests {
     }
 }
 
-@Suite("A journal in the folder")
+@Suite("A journal in the folder", .timeLimit(.minutes(10)))
 struct JournalFileTests {
     @Test func theRuntimeReplaysWhatItWroteAcrossALaunch() async throws {
         let folder = try RepositoryFolder(root: temporaryFolder())
@@ -117,7 +117,7 @@ struct JournalFileTests {
     }
 }
 
-@Suite("The record cache")
+@Suite("The record cache", .timeLimit(.minutes(10)))
 struct RecordCacheTests {
     func record(_ id: String, version: Int) -> Record {
         Record(id: id, kind: "example.com/tasks/task", properties: ["name": .string(id)], version: version)
@@ -155,7 +155,7 @@ struct RecordCacheTests {
     }
 }
 
-@Suite("A package the repository holds")
+@Suite("A package the repository holds", .timeLimit(.minutes(10)))
 struct HeldPackageTests {
     func client(_ server: ScriptedServer) -> SubstrateClient {
         var client = SubstrateClient(server: URL(string: "http://localhost:8080")!, token: "t", transport: server)

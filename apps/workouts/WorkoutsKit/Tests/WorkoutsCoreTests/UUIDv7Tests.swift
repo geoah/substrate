@@ -20,7 +20,7 @@ struct SeededGenerator: RandomNumberGenerator {
     }
 }
 
-@Suite("UUIDv7")
+@Suite("UUIDv7", .timeLimit(.minutes(10)))
 struct UUIDv7Tests {
     @Test("version 7, variant 10, lowercase and hyphenated")
     func versionAndVariant() throws {
@@ -94,7 +94,7 @@ struct UUIDv7Tests {
     }
 }
 
-@Suite("Exercise slugs")
+@Suite("Exercise slugs", .timeLimit(.minutes(10)))
 struct ExerciseSlugTests {
     @Test("a new exercise's id is its name's slug", arguments: [
         ("Chest Press (Machine)", "chest-press-machine"),

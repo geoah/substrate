@@ -20,7 +20,7 @@ import SubstrateCore
 /// flush landed and it queued a new exercise and a routine edit, and
 /// `Fixtures/legacy-history.json` is the session's history file as that
 /// build wrote it at Finish.
-@Suite("Upgrading an account folder from the ~/training spelling")
+@Suite("Upgrading an account folder from the ~/training spelling", .timeLimit(.minutes(10)))
 struct UpgradeTests {
     let codec = RecordCodec()
     let session = "01a16363-cf80-73ed-85fd-704f6ce38d73"

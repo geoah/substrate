@@ -18,7 +18,7 @@ private func dock(open: RowID) -> RowsDock {
     return dock
 }
 
-@Suite("Rows dock: when the island docks the open set")
+@Suite("Rows dock: when the island docks the open set", .timeLimit(.minutes(10)))
 struct RowsDockTests {
     @Test("the open set docks only once its Log button is reported out of view")
     func docksOnReport() {
@@ -266,7 +266,7 @@ struct RowsDockTests {
     }
 }
 
-@Suite("Rows island: \"Then\" takes the list to the set, never opens it")
+@Suite("Rows island: \"Then\" takes the list to the set, never opens it", .timeLimit(.minutes(10)))
 struct RowsAfterActionTests {
     /// Every "Then" line that names a row names one the list shows, so a tap lands on it.
     private func expectEveryLineLands(_ start: RowsSession, logs: Int) throws {
@@ -360,7 +360,7 @@ struct RowsAfterActionTests {
     }
 }
 
-@Suite("Rows: taking a logged set back")
+@Suite("Rows: taking a logged set back", .timeLimit(.minutes(10)))
 struct RowsTakeBackTests {
     @Test("Undo after an out-of-order Log reopens the set taken back, with its values, not the plan's next set")
     func undoOutOfOrder() throws {
@@ -402,7 +402,7 @@ struct RowsTakeBackTests {
     }
 }
 
-@Suite("Rows island: words in a group and the minimised bar")
+@Suite("Rows island: words in a group and the minimised bar", .timeLimit(.minutes(10)))
 struct RowsIslandWordsTests {
     @Test("a group's warm-up shows its orange W in the island, never Round 1 or a group letter")
     func groupWarmup() throws {

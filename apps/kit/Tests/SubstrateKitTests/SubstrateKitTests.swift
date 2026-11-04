@@ -12,7 +12,7 @@ import FoundationNetworking
 @testable import SubstrateUI
 import SubstrateTesting
 
-@Suite struct KindWords {
+@Suite(.timeLimit(.minutes(10))) struct KindWords {
     @Test func aKindNameSplitsIntoTheConsolesWords() {
         #expect(kindDisplayName("substrate.reamde.dev/core/recordpatchrequest") == "Record patch request")
         #expect(kindDisplayName("substrate.reamde.dev/llm/provider") == "Provider")
@@ -29,7 +29,7 @@ import SubstrateTesting
     }
 }
 
-@Suite struct Glyphs {
+@Suite(.timeLimit(.minutes(10))) struct Glyphs {
     @Test func theNamesWordsPickTheSymbolLastWordFirst() {
         let task = KindGlyphSpec(kind: "samples.substrate.reamde.dev/tasks/task")
         #expect(task.symbol == "checkmark.circle")
@@ -46,7 +46,7 @@ import SubstrateTesting
     }
 }
 
-@Suite struct References {
+@Suite(.timeLimit(.minutes(10))) struct References {
     @Test func aPathSplitsIntoKindAndAnIdThatMayHoldSlashes() throws {
         let agent = try #require(RecordReference(path: "substrate.reamde.dev/core/agent/x.example.com/llm/helper"))
         #expect(agent.kind == "substrate.reamde.dev/core/agent")
@@ -62,7 +62,7 @@ import SubstrateTesting
     }
 }
 
-@Suite struct Shapes {
+@Suite(.timeLimit(.minutes(10))) struct Shapes {
     @Test func aValueIsDrawnByItsShape() {
         let ref: JSONValue = ["ref": "a.example.com/commerce/category/x"]
         #expect(ValueShape(ref) == .reference(RecordReference(kind: "a.example.com/commerce/category", id: "x")))
@@ -86,7 +86,7 @@ import SubstrateTesting
     }
 }
 
-@Suite @MainActor struct Directory {
+@Suite(.timeLimit(.minutes(10))) @MainActor struct Directory {
     struct Fake: RecordReader {
         let records: [String: Record]
         let denied: Set<String>

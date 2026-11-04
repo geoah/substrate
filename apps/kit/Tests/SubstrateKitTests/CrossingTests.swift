@@ -7,7 +7,7 @@ import Testing
 /// How a runtime's presentations cross to Android (§5.5): keyed lists apart
 /// and by reference, a new locale or time zone presented in, and commands
 /// read with every digit.
-@Suite("The runtime's crossing")
+@Suite("The runtime's crossing", .timeLimit(.minutes(10)))
 struct CrossingTests {
     struct Row: Codable, Equatable, Sendable, Identifiable {
         var id: String

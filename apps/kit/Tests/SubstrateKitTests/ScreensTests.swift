@@ -13,7 +13,7 @@ private let now = ScreenFixtures.now
 private let enUS = Locale(identifier: "en_US")
 private let utc = TimeZone(identifier: "UTC")!
 
-@Suite("The Access screen")
+@Suite("The Access screen", .timeLimit(.minutes(10)))
 struct AccessScreenTests {
     func banner(_ issues: [AppIssue], offers: Set<AccessAction.Offer> = Set(AccessAction.Offer.allCases),
                 locale: Locale = enUS) -> AccessBanner?
@@ -89,7 +89,7 @@ struct AccessScreenTests {
     }
 }
 
-@Suite("The Connect screen")
+@Suite("The Connect screen", .timeLimit(.minutes(10)))
 struct ConnectScreenTests {
     let probe = ScreenFixtures.all.compactMap { fixture -> ServerProbe.Result? in
         if case let .connect(presentation) = fixture.presentation, fixture.name == "connect-found" { return presentation.found }
@@ -207,7 +207,7 @@ struct ConnectScreenTests {
     }
 }
 
-@Suite("The Repository and Status screens")
+@Suite("The Repository and Status screens", .timeLimit(.minutes(10)))
 struct RepositoryStatusTests {
     let words = StatusWords(app: "Tasks", device: "this iPhone", kept: "tasks")
 
@@ -400,7 +400,7 @@ struct RepositoryStatusTests {
     }
 }
 
-@Suite("The link")
+@Suite("The link", .timeLimit(.minutes(10)))
 struct LinkControllerTests {
     let secret = "sub_app_never_shown_9f1e"
     let server = URL(string: "https://ada.example.com")!
@@ -633,7 +633,7 @@ struct Notes: LinkedApp {
     func journal(in environment: AppEnvironment) -> (any JournalStore<Event, State>)? { journal }
 }
 
-@Suite("The link and its app, one tree")
+@Suite("The link and its app, one tree", .timeLimit(.minutes(10)))
 struct LinkTreeTests {
     let server = URL(string: "https://ada.example.com")!
     let words = StatusWords(app: "Substrate Tasks", device: "this iPhone", kept: "notes")
@@ -708,7 +708,7 @@ struct LinkTreeTests {
     }
 }
 
-@Suite("The fixtures")
+@Suite("The fixtures", .timeLimit(.minutes(10)))
 struct ScreenFixtureTests {
     @Test func everyScreenHasAFixtureAndEveryNameIsUnique() {
         let fixtures = ScreenFixtures.all

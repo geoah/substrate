@@ -4,7 +4,7 @@ import Testing
 
 /// The exercise library this build carries (`Resources/Bundled/library.json`,
 /// from `apps/workouts/scripts/exercise-library.py`).
-@Suite("Exercise library")
+@Suite("Exercise library", .timeLimit(.minutes(10)))
 struct ExerciseLibraryTests {
     let codec = RecordCodec()
 

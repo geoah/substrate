@@ -6,7 +6,7 @@ import SubstrateCore
 
 /// The exercise library's seeding (`LibraryInstall`): the server's marker,
 /// what a run writes and what it never touches.
-@Suite("Library install")
+@Suite("Library install", .timeLimit(.minutes(10)))
 struct LibraryInstallTests {
     let movement = "substrate.reamde.dev/training/movement"
     let exercise = "substrate.reamde.dev/training/exercise"

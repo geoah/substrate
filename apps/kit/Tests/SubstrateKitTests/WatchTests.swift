@@ -34,7 +34,7 @@ private func take(_ count: Int, from stream: AsyncStream<WatchEvent>) async -> [
     return out
 }
 
-@Suite("The watch")
+@Suite("The watch", .timeLimit(.minutes(10)))
 struct WatchTests {
     @Test func aLineIsABookmarkARowOrATerminalFrameAndAHeartbeatIsNothing() {
         #expect(WatchFrame.parse(#"{"bookmark":41,"generation":"g1"}"#) == .bookmark(WatchCursor(seq: 41, generation: "g1")))

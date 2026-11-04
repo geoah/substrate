@@ -28,7 +28,7 @@ private enum Plan {
     }
 }
 
-@Suite("Routine plan presenter")
+@Suite("Routine plan presenter", .timeLimit(.minutes(10)))
 struct RoutinePlanPresenterTests {
     @Test("A plain exercise reads as a session's card: warm-ups, then each set's targets, last time beside it")
     func plainBlock() throws {

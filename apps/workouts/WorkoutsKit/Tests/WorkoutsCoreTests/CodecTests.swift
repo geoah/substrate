@@ -127,7 +127,7 @@ private func setProperties(_ changes: [String: JSONValue?] = [:]) -> JSONObject 
     return properties
 }
 
-@Suite("Record codec: the examples")
+@Suite("Record codec: the examples", .timeLimit(.minutes(10)))
 struct CodecExampleTests {
     let codec = RecordCodec()
 
@@ -237,7 +237,7 @@ struct CodecExampleTests {
     }
 }
 
-@Suite("Record codec: drift against the kind files")
+@Suite("Record codec: drift against the kind files", .timeLimit(.minutes(10)))
 struct CodecDriftTests {
     let codec = RecordCodec()
 
@@ -313,7 +313,7 @@ struct CodecDriftTests {
     }
 }
 
-@Suite("Record codec: types")
+@Suite("Record codec: types", .timeLimit(.minutes(10)))
 struct CodecTypeTests {
     let codec = RecordCodec()
 
@@ -475,7 +475,7 @@ struct CodecTypeTests {
     }
 }
 
-@Suite("Record codec: defaults, status and forward compatibility")
+@Suite("Record codec: defaults, status and forward compatibility", .timeLimit(.minutes(10)))
 struct CodecRuleTests {
     let codec = RecordCodec()
 
@@ -632,7 +632,7 @@ struct CodecRuleTests {
     }
 }
 
-@Suite("Model helpers for the session record")
+@Suite("Model helpers for the session record", .timeLimit(.minutes(10)))
 struct SessionRecordHelperTests {
     @Test("the name and the offsets match every session the app wrote in the examples")
     func namesAndOffsets() throws {

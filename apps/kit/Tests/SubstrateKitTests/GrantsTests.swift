@@ -14,7 +14,7 @@ import SubstrateTesting
 
 /// The cases of internal/scope's scope_test.go, so the app's answer is the
 /// server's.
-@Suite struct GrantReach {
+@Suite(.timeLimit(.minutes(10))) struct GrantReach {
     @Test func aGrantReachesWhatItNamesAndNeverTheMachinery() {
         let g = Grants(["read:ada.example.com/people/*", "write:ada.example.com/tasks/task", "read:substrate.reamde.dev/core/kind"])
         let cases: [(kind: String, purpose: String?, reads: Bool, writes: Bool)] = [
@@ -93,7 +93,7 @@ import SubstrateTesting
     }
 }
 
-@Suite struct FullAccess {
+@Suite(.timeLimit(.minutes(10))) struct FullAccess {
     @Test func fullReachesEverythingButAWebhook() {
         let g = Grants(["full"])
         #expect(g.full)
@@ -122,7 +122,7 @@ import SubstrateTesting
 }
 
 /// The console's sentences (web/console's app-scopes.ts), word for word.
-@Suite struct GrantWords {
+@Suite(.timeLimit(.minutes(10))) struct GrantWords {
     @Test func aKindScopeSaysEveryPowerItHolds() {
         #expect(ScopeWords.sentence("write:providers.substrate.reamde.dev/apple/place") == "See, add, change and delete your Apple places, and search them by meaning, which spends your embedding budget")
         #expect(ScopeWords.sentence("read:*") == "See all your records, including kinds added later, and search them by meaning, which spends your embedding budget")
@@ -185,7 +185,7 @@ import SubstrateTesting
 
 /// The console's own sentences, from the fixture its tests generate from
 /// app-scopes.ts: a change to either side's words fails the other's suite.
-@Suite struct ConsoleSentences {
+@Suite(.timeLimit(.minutes(10))) struct ConsoleSentences {
     struct Entry: Decodable {
         struct Kind: Decodable {
             struct Label: Decodable { let plural: String }

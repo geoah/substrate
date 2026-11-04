@@ -12,7 +12,7 @@ import FoundationNetworking
 @testable import SubstrateUI
 import SubstrateTesting
 
-@Suite struct Addresses {
+@Suite(.timeLimit(.minutes(10))) struct Addresses {
     @Test(arguments: [
         ("ada.example.com", "https://ada.example.com"),
         ("  Ada.Example.COM/path?q=1#top  ", "https://ada.example.com"),
@@ -47,7 +47,7 @@ import SubstrateTesting
     }
 }
 
-@Suite struct DiscoveryDocument {
+@Suite(.timeLimit(.minutes(10))) struct DiscoveryDocument {
     @Test func theServersDocumentDecodesWhole() throws {
         let doc = try JSONDecoder().decode(Discovery.self, from: Data(discoveryJSON(version: "v0.114.0", totp: false).utf8))
         #expect(doc.versions == [Discovery.APIVersion(name: "v1", status: "served")])
@@ -95,7 +95,7 @@ import SubstrateTesting
     }
 }
 
-@Suite struct Versions {
+@Suite(.timeLimit(.minutes(10))) struct Versions {
     @Test func everyFormTheServerReportsParses() throws {
         #expect(ServerVersion("v0.113.0") == ServerVersion(0, 113, 0))
         #expect(ServerVersion("0.113.0") == ServerVersion(0, 113, 0))
@@ -127,7 +127,7 @@ import SubstrateTesting
     }
 }
 
-@Suite struct Requirements {
+@Suite(.timeLimit(.minutes(10))) struct Requirements {
     let chat = ServerRequirement(minimumVersion: "0.114.0", scopeVerbs: ["agents", "decide"])
     let sync = ServerRequirement(minimumVersion: "0.114.0", detailTypes: ["package", "account", "webhook"])
 

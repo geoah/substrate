@@ -10,7 +10,7 @@ import Testing
 /// presenter, effects), the Finish that is two events, the open that checks
 /// a replayed session against History, and the ticks that stand in for a
 /// view's timer.
-@Suite("Session controller")
+@Suite("Session controller", .timeLimit(.minutes(10)))
 struct SessionControllerTests {
     /// A runtime over the session in `directory`, with the device services
     /// recorded.

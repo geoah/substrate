@@ -36,7 +36,7 @@ private func edit(_ id: String, _ patch: JSONObject, base: Int) -> OutboxEntry {
     OutboxEntry(method: .patch, kind: noteKind, recordID: id, properties: patch, guarded: true, baseVersion: base)
 }
 
-@Suite("The outbox")
+@Suite("The outbox", .timeLimit(.minutes(10)))
 struct OutboxTests {
     @Test func aConflictOnAGuardedPatchReadsTheRecordAndSendsTheChangeAgainOnTop() async throws {
         let server = ScriptedServer()
@@ -178,7 +178,7 @@ struct OutboxTests {
     }
 }
 
-@Suite("The outbox while a write is in flight")
+@Suite("The outbox while a write is in flight", .timeLimit(.minutes(10)))
 struct OutboxInFlightTests {
     @Test func aBatchPurgedWhileAnothersCreateIsInFlightLosesNoneOfTheOthersWrites() async throws {
         let server = ScriptedServer()
@@ -236,7 +236,7 @@ struct OutboxInFlightTests {
     }
 }
 
-@Suite("Guarded edits in the outbox")
+@Suite("Guarded edits in the outbox", .timeLimit(.minutes(10)))
 struct OutboxEditTests {
     let notePath = path(noteKind, "day-1")
 
@@ -405,7 +405,7 @@ private func respellValue(_ value: JSONValue) -> JSONValue {
     }
 }
 
-@Suite("The outbox's files and reports")
+@Suite("The outbox's files and reports", .timeLimit(.minutes(10)))
 struct OutboxFileTests {
     let session = "01a16363-cf80-73ed-85fd-704f6ce38d73"
 

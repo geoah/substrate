@@ -10,7 +10,7 @@ import WorkoutsCore
 /// Workouts' root under the link: what the link's snapshot starts, what a
 /// sync step for another account changes (nothing), and what the session
 /// hands the outbox.
-@Suite("Workouts app under the link")
+@Suite("Workouts app under the link", .timeLimit(.minutes(10)))
 struct WorkoutsAppTests {
     static let server = URL(string: "http://127.0.0.1:8092")!
     static let account = AccountRef(server: server, repository: "ada")

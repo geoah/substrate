@@ -18,7 +18,7 @@ private func sequence(_ state: SessionState) -> [String] {
     UpNext.sequence(state).map { name($0, state) }
 }
 
-@Suite("Up next")
+@Suite("Up next", .timeLimit(.minutes(10)))
 struct UpNextTests {
     @Test("plain slots contribute their rows in display order, each head followed by its segments")
     func plainSlots() throws {

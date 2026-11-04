@@ -11,7 +11,7 @@ import SubstrateTesting
 /// the device never moves (docs/plans/app-kit.md §6), so an app hands the
 /// shell its folder and outboxes, and the link sends from them.
 @MainActor
-@Suite("The shell's parts")
+@Suite("The shell's parts", .timeLimit(.minutes(10)))
 struct ShellPartsTests {
     typealias Shell = AppShell<NoApp>
 

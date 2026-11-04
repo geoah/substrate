@@ -12,7 +12,7 @@ private func keylessRoutes(threads: String = emptyPage, status: String = "ok") -
     ] + baseRoutes(threads: threads, status: status)
 }
 
-@Suite("A failed run's card")
+@Suite("A failed run's card", .timeLimit(.minutes(10)))
 struct FailureWordsTests {
     /// What the agent loop sends after a provider's 401: its own wrapping
     /// first, the provider's answer inside.
@@ -65,7 +65,7 @@ struct FailureWordsTests {
     }
 }
 
-@Suite("A new chat on a keyless provider")
+@Suite("A new chat on a keyless provider", .timeLimit(.minutes(10)))
 struct KeylessHeroTests {
     @Test func theCalloutSitsAboveTheOpenersAndNotOverThem() async throws {
         let rig = ChatRig(keylessRoutes())

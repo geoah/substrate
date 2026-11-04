@@ -8,7 +8,7 @@ import SubstrateDevice
 
 /// What a change panel shows comes from the transcript alone: a token that
 /// cannot read the records still sees what was written to them.
-@Suite struct ChangePanels {
+@Suite(.timeLimit(.minutes(10))) struct ChangePanels {
     private let pad = "a.example.com/llm/scratchpad"
 
     @Test func aWriteShowsTheValuesItWasAskedForAndTheTitleItAnsweredWith() throws {

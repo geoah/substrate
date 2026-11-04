@@ -12,7 +12,7 @@ import SubstrateCore
 /// across a read, an edit and the write; the write is a guarded PATCH of
 /// what changed; a conflict is parked for the owner, never merged over; an
 /// edit made offline waits, and edits queued together go as one.
-@Suite("Routine edits")
+@Suite("Routine edits", .timeLimit(.minutes(10)))
 struct RoutineEditTests {
     let codec = RecordCodec()
 

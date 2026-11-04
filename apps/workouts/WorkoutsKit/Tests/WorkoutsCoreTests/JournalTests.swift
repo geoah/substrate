@@ -115,7 +115,7 @@ private func events(_ count: Int) -> [TallyEvent] {
     }
 }
 
-@Suite("Session journal")
+@Suite("Session journal", .timeLimit(.minutes(10)))
 struct JournalTests {
     @Test("a write reloads exactly: events, decimals and instants")
     func writeAndReload() throws {

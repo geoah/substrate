@@ -12,7 +12,7 @@ import FoundationNetworking
 @testable import SubstrateUI
 import SubstrateTesting
 
-@Suite struct Proofs {
+@Suite(.timeLimit(.minutes(10))) struct Proofs {
     /// RFC 7636, appendix B.
     @Test func theChallengeIsTheVerifiersSHA256() {
         let pkce = PKCE(verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
@@ -28,7 +28,7 @@ import SubstrateTesting
     }
 }
 
-@Suite struct Authorization {
+@Suite(.timeLimit(.minutes(10))) struct Authorization {
     func client(details: [String] = ["package", "account", "webhook"], iss: Bool = true) throws -> OAuthClient {
         var meta = try JSONDecoder().decode(AuthorizationServerMetadata.self, from: Data(metadataJSON(details: details).utf8))
         meta.authorizationResponseISSParameterSupported = iss
@@ -234,7 +234,7 @@ import SubstrateTesting
 /// The sign-in reaches the browser through the device service: the route
 /// made ready, the page opened on its redirect, and the route let go of once
 /// the callback is in, whatever it came to.
-@MainActor @Suite struct BrowserSignIns {
+@MainActor @Suite(.timeLimit(.minutes(10))) struct BrowserSignIns {
     let server = URL(string: "https://ada.example.com")!
 
     func oauth(_ stub: StubTransport, _ manifest: AppManifest = syncManifest()) throws -> OAuthClient {
@@ -290,7 +290,7 @@ import SubstrateTesting
 
 /// Revoking is one thing for both kinds of session, and it is done only once
 /// the server says so.
-@Suite struct Revocation {
+@Suite(.timeLimit(.minutes(10))) struct Revocation {
     let server = URL(string: "https://ada.example.com")!
 
     func app(clientID: String? = "http://127.0.0.1/substrate-sync", revocation: URL? = nil) -> Session {
@@ -395,7 +395,7 @@ import SubstrateTesting
 /// A token stops being used on this device only once it is kept to revoke
 /// later or the server revoked it: one that is neither stays where it was,
 /// never dropped.
-@Suite struct Retention {
+@Suite(.timeLimit(.minutes(10))) struct Retention {
     let server = URL(string: "https://ada.example.com")!
 
     func app(_ secret: String) -> Session {
@@ -558,7 +558,7 @@ actor PausedTransport: HTTPTransport {
     }
 }
 
-@Suite struct Sessions {
+@Suite(.timeLimit(.minutes(10))) struct Sessions {
     @Test func syncsSessionStillDecodes() throws {
         let old = #"{"server":"https://ada.example.com","repository":"ada.example.com","secret":"sub_x","tokenID":"tok_1"}"#
         let session = try JSONDecoder().decode(Session.self, from: Data(old.utf8))
