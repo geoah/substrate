@@ -21,6 +21,8 @@
 #
 # and the signing key's SUBSTRATE_ANDROID_KEYSTORE, _KEYSTORE_PASSWORD,
 # _KEY_ALIAS and _KEY_PASSWORD, which never enter the tree (apps/README.md).
+# A dry run has none of them (.mise/apps.sh unsets them first) and signs
+# with a key of its own instead (android_dry_key).
 # Everything after it is read back from the APK: the signature, the
 # certificate it was signed with (what assetlinks.json names), the package,
 # the versionCode and versionName, and the minimum SDK.
@@ -62,6 +64,55 @@ android_tools_path() {
 		[ -d "$entry" ] || die "$entry is not there; install android:release:build's tools with \`mise install ${tools//$'\n'/ }\`"
 	done <<<"$paths"
 	printf '%s\n' "$paths" | paste -sd: -
+}
+
+# Whether any app this release builds ships on Android.
+android_needed() {
+	local app
+	for app in "${RELEASE_APPS[@]}"; do
+		app_has "$app" android && return 0
+	done
+	return 1
+}
+
+# A dry run's signing key, in place of the release key it never reads: a
+# throwaway key made by keytool into this invocation's directory, which
+# goes with it, and exported under the release key's names, with its
+# fingerprint as SUBSTRATE_ANDROID_CERT_SHA256, so the build is signed,
+# checked (android_check) and named in the dry run's assetlinks.json as a
+# release's is, and nothing the dry run makes can be installed over a
+# released app.
+android_dry_key() {
+	[ -n "$DRY" ] || die "android_dry_key is a dry run's"
+	local dir="$RUN/android-key" keytool
+	keytool="$(android_java_home)/bin/keytool"
+	[ -x "$keytool" ] || die "no keytool in $(android_java_home), to make the dry run's signing key"
+	mkdir -p "$dir"
+	chmod 700 "$dir"
+	SUBSTRATE_ANDROID_KEYSTORE="$dir/dry-run.p12"
+	SUBSTRATE_ANDROID_KEY_ALIAS=dry-run
+	SUBSTRATE_ANDROID_KEYSTORE_PASSWORD="$(openssl rand -hex 16)"
+	SUBSTRATE_ANDROID_KEY_PASSWORD="$SUBSTRATE_ANDROID_KEYSTORE_PASSWORD"
+	export SUBSTRATE_ANDROID_KEYSTORE SUBSTRATE_ANDROID_KEY_ALIAS SUBSTRATE_ANDROID_KEYSTORE_PASSWORD SUBSTRATE_ANDROID_KEY_PASSWORD
+	"$keytool" -genkeypair -keystore "$SUBSTRATE_ANDROID_KEYSTORE" -storetype PKCS12 -alias dry-run \
+		-storepass:env SUBSTRATE_ANDROID_KEYSTORE_PASSWORD -keypass:env SUBSTRATE_ANDROID_KEY_PASSWORD \
+		-keyalg RSA -keysize 2048 -validity 2 -dname "CN=Substrate dry run" >/dev/null 2>&1 ||
+		die "keytool could not make the dry run's signing key"
+	SUBSTRATE_ANDROID_CERT_SHA256="$("$keytool" -list -v -keystore "$SUBSTRATE_ANDROID_KEYSTORE" -alias dry-run \
+		-storepass:env SUBSTRATE_ANDROID_KEYSTORE_PASSWORD 2>/dev/null | sed -n 's/^[[:space:]]*SHA256: *//p' | head -1)"
+	[ -n "$SUBSTRATE_ANDROID_CERT_SHA256" ] || die "keytool did not print the dry run's key fingerprint"
+	export SUBSTRATE_ANDROID_CERT_SHA256
+	say "dry run: Android builds are signed with a throwaway key, $SUBSTRATE_ANDROID_CERT_SHA256"
+}
+
+# The JDK among android:release:build's tools, whose java apksigner runs on
+# and whose keytool makes a dry run's key: this shell's PATH need not have
+# one.
+android_java_home() {
+	local bin
+	bin="$(printf '%s\n' "$(android_tools_path)" | tr ':' '\n' | grep '/java/' | head -1)"
+	[ -x "$bin/java" ] || die "no java among android:release:build's tools; install them with \`mise install\`"
+	echo "${bin%/bin}"
 }
 
 # Runs android:release:build's program, or $SUBSTRATE_APPS_RELEASE_ANDROID_BUILD
@@ -142,8 +193,10 @@ android_release_build() {
 # allocated, the release's version, and not debuggable. Sets
 # ANDROID_CERTIFICATE, read from the signed APK itself, and ANDROID_MINIMUM.
 android_check() {
-	local app="$1" apk="$2" code="$3" certs badging digest
-	certs="$("$(android_tool apksigner)" verify --print-certs "$apk" 2>&1)" ||
+	local app="$1" apk="$2" code="$3" certs badging digest java
+	java="$(android_java_home)"
+	# apksigner is a shell script that runs the `java` on its PATH.
+	certs="$(env JAVA_HOME="$java" PATH="$java/bin:/usr/bin:/bin" "$(android_tool apksigner)" verify --print-certs "$apk" 2>&1)" ||
 		die "$app's APK does not verify: $(printf '%s' "$certs" | tail -1)"
 	[ "$(printf '%s\n' "$certs" | grep -c 'certificate SHA-256 digest:')" = 1 ] ||
 		die "$app's APK is signed by $(printf '%s\n' "$certs" | grep -c 'certificate SHA-256 digest:') signers, and a release by one"
