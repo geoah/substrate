@@ -43,7 +43,11 @@
   "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
   "accent": {
     "light": "#4F3FE0",
-    "dark": "#8F84FF"
+    "dark": "#8F84FF",
+    "text": {
+      "light": "#4F3FE0",
+      "dark": "#8F84FF"
+    }
   },
   "feed": "workouts"
 }

@@ -74,4 +74,19 @@ public struct TaskDraft: Codable, Hashable, Sendable {
         next.priority = priority
         return next
     }
+
+    /// `task` with the fields the owner changed since `opened` over it: a
+    /// field left as it was is never written, even where the draft would
+    /// spell it otherwise (a name with spaces around it).
+    public func applied(to task: TaskItem, changedFrom opened: TaskDraft) -> TaskItem {
+        let changed = applied(to: task)
+        var next = task
+        if name != opened.name { next.name = changed.name }
+        if notes != opened.notes { next.notes = changed.notes }
+        if link != opened.link { next.url = changed.url }
+        if list != opened.list { next.list = changed.list }
+        if due != opened.due { next.due = changed.due }
+        if priority != opened.priority { next.priority = changed.priority }
+        return next
+    }
 }

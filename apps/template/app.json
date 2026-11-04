@@ -27,7 +27,11 @@
   "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
   "accent": {
     "light": "#5F6B7A",
-    "dark": "#A7B1BE"
+    "dark": "#A7B1BE",
+    "text": {
+      "light": "#5F6B7A",
+      "dark": "#A7B1BE"
+    }
   },
   "feed": "template"
 }

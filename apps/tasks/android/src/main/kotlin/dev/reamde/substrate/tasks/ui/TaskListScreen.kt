@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import dev.reamde.substrate.kit.bridge.AccessBanner
 import dev.reamde.substrate.kit.ui.KitSpacing
 import dev.reamde.substrate.kit.ui.KitText
+import dev.reamde.substrate.kit.ui.brandAccent
 import dev.reamde.substrate.kit.ui.style
 import dev.reamde.substrate.tasks.bridge.ListAction
 import dev.reamde.substrate.tasks.bridge.ListPresentation
@@ -176,7 +177,7 @@ private fun QuickAdd(prompt: String, add: (String) -> Unit) {
             value = draft,
             onValueChange = { draft = it },
             placeholder = { Text(prompt) },
-            leadingIcon = { Icon(Icons.Rounded.AddCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            leadingIcon = { Icon(Icons.Rounded.AddCircle, contentDescription = null, tint = MaterialTheme.brandAccent) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions =
@@ -207,7 +208,7 @@ internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, ap
                     Icon(
                         TasksMarks.mark(row.status),
                         contentDescription = row.toggle,
-                        tint = if (open) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                        tint = if (open) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.brandAccent,
                     )
                 }
             },

@@ -4,12 +4,12 @@ import SwiftUI
 import TemplateCore
 
 /// The app's one screen: what stands in the way, the items, and the field
-/// that adds one. Every change is a command.
+/// that adds one, whose text is the core's until the item it adds is kept.
+/// Every change is a command.
 struct ItemsView: View {
     @Environment(TemplateShell.self) private var shell
     let link: LinkPresentation<TemplatePresentation>
     let app: TemplatePresentation
-    @State private var draft = ""
 
     var body: some View {
         NavigationStack {
@@ -26,13 +26,16 @@ struct ItemsView: View {
             }
             .safeAreaInset(edge: .top) { LinkNotices<TemplateApp>(link: link, lines: app.notices).padding(.horizontal) }
             .safeAreaInset(edge: .bottom) {
-                TextField(app.add, text: $draft)
-                    .onSubmit {
-                        shell.send(.add(draft))
-                        draft = ""
+                VStack(alignment: .leading, spacing: 12) {
+                    if let notKept = app.add.notKept {
+                        ProblemView(notKept) { _ in shell.send(.add) }
                     }
-                    .textFieldStyle(.roundedBorder)
-                    .padding()
+                    TextField(app.add.prompt, text: Binding(get: { app.add.text }, set: { shell.send(.setDraft($0)) }))
+                        .onSubmit { shell.send(.add) }
+                        .textFieldStyle(.roundedBorder)
+                }
+                .padding()
+                .background(.bar)
             }
             .refreshable { shell.send(.refresh) }
             .navigationTitle(app.title)

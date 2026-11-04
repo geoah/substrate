@@ -15,8 +15,10 @@ public enum TemplateFixtures {
 
     static let app = TemplateApp(cache: nil, outbox: nil, words: TemplateApp.words(device: "this iPhone"), build: BuildFacts(version: "0.1.0 (1)"))
 
-    static func present(_ records: [Record]) -> TemplatePresentation {
+    static func present(_ records: [Record], draft: String = "", adding: TemplateApp.Adding? = nil) -> TemplatePresentation {
         var state = TemplateApp.State()
+        state.draft = draft
+        state.adding = adding
         state.linked.loaded = true
         for record in records { state.linked.records[RecordFold.key(record.kind, record.id)] = record }
         return TemplatePresenter.present(state, linked: app.linked, build: app.build)
@@ -29,6 +31,9 @@ public enum TemplateFixtures {
         return [
             Fixture(name: "template-items", app: present(items)),
             Fixture(name: "template-empty", app: present([])),
+            Fixture(
+                name: "template-add-not-kept",
+                app: present(items, draft: "Eggs", adding: .notKept("This iPhone could not keep the change: the disk is full."))),
         ]
     }
 }

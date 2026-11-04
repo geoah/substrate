@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- The colour KitTheme makes its scheme from: Substrate's own blue
+    <!-- The colours KitTheme makes its scheme from: Substrate's own blue
          (icons.mjs' `substrate` lo), which the kit's Gallery and an app
-         without an accent are drawn in. An app's build overrides it with
-         its app.json `accent` (build-logic's AndroidApplicationConvention),
-         so no app sets it by hand. -->
+         without an accent are drawn in, and its text tone, which is
+         primary: the blue a tone darker, to read at 4.5:1 on every
+         surface. An app's build overrides both with its app.json `accent`
+         (build-logic's AndroidApplicationConvention), so no app sets them
+         by hand. -->
     <color name="substrate_accent">#2D5FE6</color>
+    <color name="substrate_accent_text">#2959E0</color>
 </resources>

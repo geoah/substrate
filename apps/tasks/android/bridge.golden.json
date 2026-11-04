@@ -293,7 +293,8 @@
         {"name": "save", "type": "String"},
         {"name": "canSave", "type": "Bool"},
         {"name": "cancel", "type": "String"},
-        {"name": "problem", "type": "String?"}
+        {"name": "problem", "type": "String?"},
+        {"name": "notKept", "type": "ProblemPresentation?"}
       ]
     },
     {

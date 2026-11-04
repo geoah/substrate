@@ -11,8 +11,18 @@ public extension TasksApp {
     func apply(_ event: Event, to state: TasksState, from previous: TasksState) throws -> TasksState {
         var next = state
         switch event {
-        case let .records(.notQueued(_, words)):
-            next.problem = words
+        case let .records(.enqueued(ids, _, _)):
+            // The outbox has an editor's write: its editor closes.
+            for (key, save) in state.saves where save.writes(ids) {
+                next.editors[key] = nil
+                next.saves[key] = nil
+            }
+        case let .records(.notQueued(ids, words)):
+            // An editor's write is said in the editor, beside its draft;
+            // any other in the app's problem.
+            let editors = state.saves.filter { $0.value.writes(ids) }.keys
+            for key in editors { next.saves[key] = .notKept(words) }
+            if editors.isEmpty { next.problem = words }
         case .records:
             break
         case let .settingsRead(settings, usage):
@@ -40,8 +50,11 @@ public extension TasksApp {
             next.tapped = nil
         case let .editorOpened(key, seed):
             next.editors[key] = seed
+        case let .editorSaving(key, ids):
+            next.saves[key] = .sending(ids)
         case let .editorClosed(key):
             next.editors[key] = nil
+            next.saves[key] = nil
         case let .asked(confirmation):
             next.confirmation = confirmation
         case .answered:
@@ -76,5 +89,12 @@ public extension TasksApp {
         state.selection = TasksCodec.listID(record.properties["list"]).map(ListSelection.list) ?? .inbox
         state.openTask = id
         state.tapped = nil
+    }
+}
+
+extension EditorSave {
+    /// A save on its way whose write has one of `ids`.
+    func writes(_ ids: Set<UUID>) -> Bool {
+        if case let .sending(entries) = self { !entries.isDisjoint(with: ids) } else { false }
     }
 }

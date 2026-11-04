@@ -37,6 +37,12 @@ The items are a `KeyedList` whose revision is the root's own counter
 otherwise, never a count of them: a rename keeps the count and must still
 move the revision, or the Android bridge sends no delta.
 
+What the add field holds is the root's (`State.draft`), and it is cleared
+only once the outbox has the item it adds (`.records(.enqueued)`): a write
+the device could not keep (`.records(.notQueued)`, a full disk) is undone
+and leaves the text where it was, with why beside it and Retry, so nothing
+typed is lost before it is kept. Every write the owner fills in is held so.
+
 ## Growing it
 
 What an app adds next, each as Substrate Tasks does it
@@ -58,8 +64,13 @@ What an app adds next, each as Substrate Tasks does it
 
 - **An editor.** A child controller the root keeps under a key it mints
   (`children(in:)`), its save handed up as the root's own events with
-  `events(fromChild:_:)` (`[.editorClosed(key), .records(.wrote(write))]`),
-  and drawn over the screen with `.childSheet(app.editors, dismiss:)`.
+  `events(fromChild:_:)`: the write, and the editor kept open with its
+  draft until the outbox has it, as the add field is, so `.records(.enqueued)`
+  closes it and `.records(.notQueued)` hands it why, with Save as Retry
+  (Tasks' `TaskEditor` and `EditorSave`). It holds the record as it was when
+  it opened and patches what the owner changed on that version, so a change
+  made elsewhere meanwhile comes back as a conflict. Drawn over the screen
+  with `.childSheet(app.editors, dismiss:)`.
 - **A question first.** A `ConfirmationPresentation` in the presentation and
   `.confirmation(app.confirmation, confirm:, dismiss:)` on the view; a
   settings row asks its own (`SettingsRow.confirmation`), from its button.

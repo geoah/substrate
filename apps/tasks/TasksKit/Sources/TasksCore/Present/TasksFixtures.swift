@@ -143,6 +143,9 @@ public enum TasksFixtures {
         let key = ChildKey("editor")
         let editState = state(.list("home"), open: "plumber", editors: [key: .task("plumber")])
         let edit = present(editState, children: editor(.task("plumber"), in: editState).map { [key: $0] } ?? [:])
+        var notKeptState = editState
+        notKeptState.saves = [key: .notKept("This iPhone could not keep the change: the disk is full.")]
+        let notKept = present(notKeptState, children: editor(.task("plumber"), in: notKeptState).map { [key: $0] } ?? [:])
         let newState = state(.list("groceries"), editors: [key: .new(list: "groceries", day: nil)])
         let new = present(newState, children: editor(.new(list: "groceries", day: nil), in: newState).map { [key: $0] } ?? [:])
         let confirm = present(state(.list("home"), confirmation: .deleteList(id: "home")))
@@ -156,6 +159,7 @@ public enum TasksFixtures {
             Fixture(name: "tasks-empty-inbox", app: nothing, screen: .list),
             Fixture(name: "tasks-detail", app: detail, screen: .detail),
             Fixture(name: "tasks-edit", app: edit, screen: .editor(key)),
+            Fixture(name: "tasks-edit-not-kept", app: notKept, screen: .editor(key)),
             Fixture(name: "tasks-new", app: new, screen: .editor(key)),
             Fixture(name: "tasks-delete-list", app: confirm, screen: .confirmation),
             Fixture(name: "tasks-settings", app: lists, screen: .settings(settings(lists))),

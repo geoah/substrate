@@ -1,3 +1,4 @@
+import SubstrateUI
 import SwiftUI
 import TasksCore
 
@@ -15,7 +16,7 @@ struct TaskRowView: View {
             } label: {
                 Image(systemName: TasksSymbols.mark(row.status))
                     .font(.title3)
-                    .foregroundStyle(row.status == .open ? Color.secondary : Color.accentColor)
+                    .foregroundStyle(row.status == .open ? Color.secondary : Color.brandAccent)
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.borderless)

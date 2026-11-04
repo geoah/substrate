@@ -5,6 +5,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import java.io.File
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
@@ -12,16 +14,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The scheme every accent makes, held to WCAG AA: each `on` role reads at 4.5:1 on what it is drawn on, the accent reads at 4.5:1 as text on the screen's
- * surface (a section's heading, the completed count), and at 3:1 on the containers it marks (a link in a card, a dialog's buttons). The accents are kit-ui's
- * own and every app.json's, so an app whose accent cannot make a readable scheme fails here, not on a phone.
+ * The scheme every accent makes, held to WCAG AA: each `on` role reads at 4.5:1 on what it is drawn on, and primary, the accent's text tone, reads at 4.5:1 as
+ * text on every surface it is drawn on (a section's heading, a link in a card, a dialog's buttons), since accent text is as small as body text. The accents are
+ * kit-ui's own and every app.json's, so an app whose accent cannot make a readable scheme fails here, not on a phone; the text tones of kit-ui and of every app
+ * on Android are held here, and every app's on Apple's backgrounds by lint:apps.
  */
 class KitSchemeTest {
     @Test
-    fun primaryIsTheAccentExactly() {
+    fun primaryIsTheTextToneExactly() {
         for ((name, accent) in accents) {
-            assertEquals("$name light", accent.light.toArgb(), KitScheme.of(accent.light, dark = false).primary.toArgb())
-            assertEquals("$name dark", accent.dark.toArgb(), KitScheme.of(accent.dark, dark = true).primary.toArgb())
+            assertEquals("$name light", accent.textLight.toArgb(), scheme(accent, dark = false).primary.toArgb())
+            assertEquals("$name dark", accent.textDark.toArgb(), scheme(accent, dark = true).primary.toArgb())
         }
     }
 
@@ -30,11 +33,29 @@ class KitSchemeTest {
         val failures = mutableListOf<String>()
         for ((name, accent) in accents) {
             for (dark in listOf(false, true)) {
-                val scheme = KitScheme.of(if (dark) accent.dark else accent.light, dark)
-                for ((pair, ratio) in pairs(scheme)) {
+                for ((pair, ratio) in pairs(scheme(accent, dark))) {
                     val (text, on, floor) = pair
                     val measured = KitScheme.contrast(text, on)
                     if (measured < floor) failures += "$name ${if (dark) "dark" else "light"}: $ratio is ${"%.2f".format(measured)}:1, under $floor:1"
+                }
+            }
+        }
+        assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
+
+    @Test
+    fun theTextToneReadsOnEverySurface() {
+        val failures = mutableListOf<String>()
+        for ((name, accent) in accents.filterValues { it.android }) {
+            for (dark in listOf(false, true)) {
+                val scheme = scheme(accent, dark)
+                for ((surface, colour) in KitScheme.textSurfaces(scheme)) {
+                    val measured = KitScheme.contrast(scheme.primary, colour)
+                    if (measured >= 4.5) continue
+                    val derived = KitScheme.textTone(if (dark) accent.dark else accent.light, dark)
+                    failures +=
+                        "$name ${if (dark) "dark" else "light"}: the text tone ${hex(scheme.primary)} is ${"%.2f".format(measured)}:1 on $surface, under 4.5:1;" +
+                            " ${hex(derived)} is the accent's hue at the nearest tone that reads on every surface"
                 }
             }
         }
@@ -46,13 +67,19 @@ class KitSchemeTest {
         // Material's baseline surface is #FEF7FF, tinted violet whatever the app: a neutral tone here carries the accent's hue so faintly that each
         // channel stays within a few steps of grey.
         for ((name, accent) in accents) {
-            val surface = KitScheme.of(accent.light, dark = false).surface
+            val surface = scheme(accent, dark = false).surface
             val channels = listOf(surface.red, surface.green, surface.blue).map { (it * 255).toInt() }
             assertTrue("$name's surface $channels is tinted", channels.max() - channels.min() <= 6)
         }
     }
 
-    private class Accent(val light: Color, val dark: Color)
+    /** An accent and its text tone, and whether an Android build draws them. */
+    private class Accent(val light: Color, val dark: Color, val textLight: Color, val textDark: Color, val android: Boolean)
+
+    private fun scheme(accent: Accent, dark: Boolean) =
+        if (dark) KitScheme.of(accent.dark, accent.textDark, dark = true) else KitScheme.of(accent.light, accent.textLight, dark = false)
+
+    private fun hex(color: Color) = "#%06X".format(color.toArgb() and 0xFFFFFF)
 
     /** Each pair: the text's colour, what it is drawn on, and its floor; named for the failure message. */
     private fun pairs(s: ColorScheme): Map<Triple<Color, Color, Double>, String> {
@@ -96,29 +123,40 @@ class KitSchemeTest {
             text(s.onSurfaceVariant, surface, "onSurfaceVariant on $name")
             text(s.error, surface, "error on $name")
         }
-        text(s.primary, s.surface, "primary on surface")
-        text(s.primary, s.background, "primary on background")
-        text(s.primary, s.surfaceContainerLowest, "primary on surfaceContainerLowest")
-        for (name in listOf("surfaceContainerLow", "surfaceContainer", "surfaceContainerHigh", "surfaceContainerHighest")) {
-            text(s.primary, surfaces.getValue(name), "primary on $name", floor = 3.0)
-        }
         return out
     }
 
     private val accents: Map<String, Accent> by lazy {
         val out = linkedMapOf<String, Accent>()
         val res = File(System.getProperty("substrate.kitui.res"))
-        fun resource(folder: String) =
-            Regex("""<color name="substrate_accent">(#[0-9A-Fa-f]{6})</color>""").find(res.resolve("$folder/substrate_accent.xml").readText())!!.groupValues[1]
-        out["kit-ui"] = Accent(hex(resource("values")), hex(resource("values-night")))
+        fun resource(folder: String, name: String) =
+            color(Regex("""<color name="$name">(#[0-9A-Fa-f]{6})</color>""").find(res.resolve("$folder/substrate_accent.xml").readText())!!.groupValues[1])
+        out["kit-ui"] =
+            Accent(
+                resource("values", "substrate_accent"),
+                resource("values-night", "substrate_accent"),
+                resource("values", "substrate_accent_text"),
+                resource("values-night", "substrate_accent_text"),
+                android = true,
+            )
         val apps = File(System.getProperty("substrate.apps"))
         for (json in apps.listFiles().orEmpty().map { it.resolve("app.json") }.filter { it.isFile }.sortedBy { it.path }) {
-            val accent = Json.parseToJsonElement(json.readText()).jsonObject["accent"]?.jsonObject ?: continue
-            out[json.parentFile.name] = Accent(hex(accent.getValue("light").jsonPrimitive.content), hex(accent.getValue("dark").jsonPrimitive.content))
+            val doc = Json.parseToJsonElement(json.readText()).jsonObject
+            val accent = doc["accent"]?.jsonObject ?: continue
+            val text = accent.getValue("text").jsonObject
+            fun named(value: JsonObject, mode: String) = color(value.getValue(mode).jsonPrimitive.content)
+            out[json.parentFile.name] =
+                Accent(
+                    named(accent, "light"),
+                    named(accent, "dark"),
+                    named(text, "light"),
+                    named(text, "dark"),
+                    android = doc["platforms"]?.jsonArray.orEmpty().any { it.jsonPrimitive.content == "android" },
+                )
         }
         assertTrue("no app names an accent under $apps", out.size > 1)
         out
     }
 
-    private fun hex(value: String) = Color(0xFF000000 or value.removePrefix("#").toLong(16))
+    private fun color(value: String) = Color(0xFF000000 or value.removePrefix("#").toLong(16))
 }
