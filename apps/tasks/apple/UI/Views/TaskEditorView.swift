@@ -6,7 +6,8 @@ import SwiftUI
 import TasksCore
 
 /// The edit form: each field under the label the read view gives it,
-/// every keystroke a command to the editor, Save and Cancel in the toolbar.
+/// every keystroke a command to the editor, Save and Cancel in the toolbar,
+/// and above them why the last save was not kept, when it was not.
 struct TaskEditorView: View {
     @Environment(TasksShell.self) private var shell
     let key: ChildKey
@@ -15,6 +16,9 @@ struct TaskEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if let notKept = editor.notKept {
+                    Section { ProblemBox(notKept) }
+                }
                 Section {
                     field(editor.name) { shell.send(.setName($0), to: key) }
                     field(editor.notes, lines: true) { shell.send(.setNotes($0), to: key) }

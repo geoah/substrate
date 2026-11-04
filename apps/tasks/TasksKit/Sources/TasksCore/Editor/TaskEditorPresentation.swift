@@ -1,5 +1,6 @@
 import Foundation
 import SubstrateCore
+import SubstrateScreens
 
 /// The edit form: each field under the label the read view gives it, with
 /// what it holds, and Save and Cancel.
@@ -16,6 +17,9 @@ public struct TaskEditorPresentation: Bridged, Equatable, Sendable {
     public var cancel: String
     /// Why Save is off, once the owner has typed.
     public var problem: String?
+    /// Why the last save was not kept on the device: the draft is still
+    /// here, and Save (now Retry) sends it again.
+    public var notKept: ProblemPresentation?
 
     /// Each field's label, by the fact it edits: what the read view's
     /// labels are held to.

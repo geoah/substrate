@@ -45,6 +45,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.reamde.substrate.kit.ui.KitSpacing
 import dev.reamde.substrate.kit.ui.KitText
+import dev.reamde.substrate.kit.ui.ProblemBox
 import dev.reamde.substrate.kit.ui.style
 import dev.reamde.substrate.tasks.bridge.DueKind
 import dev.reamde.substrate.tasks.bridge.EditorChoice
@@ -69,7 +70,10 @@ internal fun TaskEditorDialog(editor: TaskEditorPresentation, send: (TaskEditor.
     }
 }
 
-/** The edit form: each field under the label the read view gives it, every keystroke a command to the editor, Cancel and Save in the top bar. */
+/**
+ * The edit form: each field under the label the read view gives it, every keystroke a command to the editor, Cancel and Save in the top bar, and above them why
+ * the last save was not kept, when it was not.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TaskEditorForm(editor: TaskEditorPresentation, send: (TaskEditor.Command) -> Unit, zone: ZoneId = ZoneId.systemDefault()) {
@@ -88,6 +92,7 @@ internal fun TaskEditorForm(editor: TaskEditorPresentation, send: (TaskEditor.Co
             Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(KitSpacing.content),
             verticalArrangement = Arrangement.spacedBy(KitSpacing.content),
         ) {
+            editor.notKept?.let { ProblemBox(it) }
             TextField(editor.name, isError = editor.problem != null, supporting = editor.problem) { send(TaskEditor.Command.SetName(it)) }
             TextField(editor.notes, lines = true) { send(TaskEditor.Command.SetNotes(it)) }
             TextField(editor.link) { send(TaskEditor.Command.SetLink(it)) }

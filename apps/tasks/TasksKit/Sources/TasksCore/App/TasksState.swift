@@ -28,6 +28,9 @@ public struct TasksState: Codable, Equatable, Sendable, LinkedRecordsHolding {
     /// What each open editor edits: a task's id, or nil for a new task in
     /// the list it names.
     public var editors: [ChildKey: EditorSeed] = [:]
+    /// Each editor's last save, until the outbox has its write: the editor
+    /// stays open with its draft until then.
+    public var saves: [ChildKey: EditorSave] = [:]
     public var confirmation: Confirmation?
     public var permission: NotificationPermission?
     /// What this device was last told to remind of.
@@ -47,4 +50,13 @@ public struct TasksState: Codable, Equatable, Sendable, LinkedRecordsHolding {
 public enum EditorSeed: Codable, Hashable, Sendable {
     case task(String)
     case new(list: String?, day: CivilDay?)
+}
+
+/// An editor's save, as the root follows its write to the outbox.
+public enum EditorSave: Codable, Hashable, Sendable {
+    /// The write's entries, on their way to the outbox.
+    case sending(Set<UUID>)
+    /// The device could not keep the write, and why: the draft stays, and
+    /// Save sends it again.
+    case notKept(String)
 }

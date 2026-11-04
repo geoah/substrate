@@ -44,12 +44,14 @@ is the kit's ([its README](../kit/README.md)):
   record is there (`TasksState.tapped`), and keeps the settings in the
   repository's folder.
 - **`TaskEditor`**, a child kept by the root under a key it minted, made in
-  the device's time zone: one task's form, or a new one's, whose Save is two
-  of the root's events (`events(fromChild:_:)`): the editor closed, and the
-  write, as any other the owner makes. It keeps the task as it was when it
-  opened (`State.seen`), and Save patches the fields the owner changed on
-  that version, so a change made on another device meanwhile is a conflict
-  the outbox parks for the owner, never written over.
+  the device's time zone: one task's form, or a new one's. It keeps the task
+  as it was when it opened (`State.seen`), and Save patches the fields the
+  owner changed on that version, so a change made on another device
+  meanwhile is a conflict the outbox parks for the owner, never written over.
+  Save is the root's write, as any other the owner makes
+  (`events(fromChild:_:)`), and the editor stays open with its draft until
+  the outbox has it (`TasksState.saves`): a write the device could not keep
+  is undone and said in the editor, whose Save becomes Retry.
 - **The presenters**: `TasksPresenter` writes every word the screens show
   (the App menu, the lists column, a list's keyed rows and their menus, the
   open task with its list and priority as the choices that change them, the

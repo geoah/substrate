@@ -55,6 +55,8 @@ public struct TasksApp: LinkedRecordsApp {
         case shown(ListSelection?)
         case opened(String?)
         case editorOpened(ChildKey, EditorSeed)
+        /// An editor's save: its write's entries, on their way to the outbox.
+        case editorSaving(ChildKey, Set<UUID>)
         case editorClosed(ChildKey)
         case asked(Confirmation)
         case answered
@@ -116,12 +118,17 @@ public struct TasksApp: LinkedRecordsApp {
 
     public var initialState: TasksState { TasksState() }
 
-    /// A save closes its editor and is the owner's write, as any other.
+    /// A save is the owner's write, as any other, and its editor stays open
+    /// until the outbox has it, so a write the device could not keep leaves
+    /// the draft to send again. With nothing to send, or no outbox to answer,
+    /// the editor closes at once.
     public func events(fromChild key: ChildKey, _ event: TaskEditor.Event) -> [Event] {
         switch event {
-        case let .saved(write, _): [.editorClosed(key), .records(.wrote(write))]
-        case .cancelled: [.editorClosed(key)]
-        default: []
+        case let .saved(write, _):
+            guard linked.outbox != nil, !write.entries.isEmpty else { return [.editorClosed(key), .records(.wrote(write))] }
+            return [.editorSaving(key, Set(write.entries.map(\.id))), .records(.wrote(write))]
+        case .cancelled: return [.editorClosed(key)]
+        default: return []
         }
     }
 
@@ -148,9 +155,9 @@ public struct TasksApp: LinkedRecordsApp {
             case let .task(id):
                 // A task deleted while it was being edited closes its editor.
                 guard let task = model.tasks[id] else { continue }
-                out[key] = TaskEditor(original: task, lists: lists, lastPositions: last)
+                out[key] = TaskEditor(original: task, lists: lists, lastPositions: last, saving: state.saves[key])
             case let .new(list, day):
-                out[key] = TaskEditor(original: nil, seedList: list, seedDay: day, lists: lists, lastPositions: last)
+                out[key] = TaskEditor(original: nil, seedList: list, seedDay: day, lists: lists, lastPositions: last, saving: state.saves[key])
             }
         }
         return out

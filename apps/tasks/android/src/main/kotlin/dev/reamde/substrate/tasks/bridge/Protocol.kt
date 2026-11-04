@@ -11,7 +11,7 @@ import kotlinx.serialization.json.JsonElement
 
 /** The SHA-256 of this configuration's golden. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "0c7bb701806154f26319ccc1693ca753368a239208a4bc45b1113dcd8520da8c"
+    public const val VALUE: String = "0543fb5b7a8dadcde8d225c9ddd4c153a5ba6f742fcd92daa4ec642d1e3b18a8"
 }
 
 @Serializable(with = Confirmation.Serializer::class)
@@ -219,6 +219,7 @@ public data class TaskEditorPresentation(
     val canSave: Boolean,
     val cancel: String,
     val problem: String? = null,
+    val notKept: ProblemPresentation? = null,
 )
 
 @Serializable

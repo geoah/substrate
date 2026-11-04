@@ -362,6 +362,8 @@ struct AppTests {
         #expect(entry.method == .patch)
         #expect(entry.properties == ["name": "Pay the rent", "priority": "urgent"])
         #expect(entry.baseVersion == 1)
+        // The editor closes once the outbox has the write.
+        await harness.deliver(.records(.enqueued([entry.id], queue: [entry], landed: [])))
         let presented = await harness.presentation
         #expect(presented.editors.isEmpty)
         #expect(presented.detail?.title == "Pay the rent")
@@ -382,6 +384,41 @@ struct AppTests {
         #expect(entry.method == .patch)
         #expect(entry.properties == ["description": "Before the 6th."])
         #expect(entry.baseVersion == 1)
+        #expect(await harness.presentation.detail?.title == "Pay the rent")
+    }
+
+    @Test func aSaveTheDeviceCouldNotKeepLeavesTheEditorOpenWithItsDraftToRetry() async throws {
+        let (_, harness) = try await loaded([taskRecord("a", "Pay rent", version: 1)])
+        await harness.send(.open(task: "a"))
+        await harness.send(.edit("a"))
+        let (key, _) = try #require(await harness.presentation.editors.first)
+        try await harness.runtime.send(TaskEditor.Command.setName("Pay the rent"), to: [key])
+        try await harness.runtime.send(TaskEditor.Command.save, to: [key])
+        let first = try #require(enqueued(harness).last)
+        // On its way to the outbox: the editor stays, and Save sends nothing more.
+        #expect(await harness.presentation.editors[key]?.canSave == false)
+        try await harness.runtime.send(TaskEditor.Command.save, to: [key])
+        #expect(enqueued(harness).count == 1)
+
+        // The device could not keep it: the change is undone, and the editor
+        // says why over the draft, which is still there to send again.
+        let words = "This iPhone could not keep the change: the disk is full."
+        await harness.deliver(.records(.notQueued([first.id], words)))
+        let presented = await harness.presentation
+        #expect(presented.detail?.title == "Pay rent")
+        #expect(presented.problem == nil)
+        let editor = try #require(presented.editors[key])
+        #expect(editor.name.value == "Pay the rent")
+        #expect(editor.notKept == ProblemPresentation(title: "A change was not kept", message: words))
+        #expect(editor.save == "Retry")
+        #expect(editor.canSave)
+
+        try await harness.runtime.send(TaskEditor.Command.save, to: [key])
+        let second = try #require(enqueued(harness).last)
+        #expect(second.id != first.id)
+        #expect(second.properties == ["name": "Pay the rent"])
+        await harness.deliver(.records(.enqueued([second.id], queue: [second], landed: [])))
+        #expect(await harness.presentation.editors.isEmpty)
         #expect(await harness.presentation.detail?.title == "Pay the rent")
     }
 

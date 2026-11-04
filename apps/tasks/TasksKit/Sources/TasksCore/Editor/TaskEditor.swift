@@ -2,16 +2,17 @@ import Foundation
 import SubstrateCore
 import SubstrateLocal
 import SubstrateRuntime
+import SubstrateScreens
 
 /// One task's edit form, or a new task's, kept by the app's root under a
 /// key it minted. The value carries what the root hands it (the task as it
-/// stands, the lists, where a new task goes); the draft and the task as it
-/// was when the editor opened are its own state, so a change to the task
-/// on the server while the owner types leaves the typing alone, and Save
-/// patches only what the owner changed, on the version they saw: a change
-/// made elsewhere meanwhile is a conflict, never written over. Save makes
-/// the write and hands it up; Cancel hands up nothing to write. Either way
-/// the root closes it.
+/// stands, the lists, where a new task goes, how its save is going); the
+/// draft and the task as it was when the editor opened are its own state,
+/// so a change to the task on the server while the owner types leaves the
+/// typing alone, and Save patches only what the owner changed, on the
+/// version they saw: a change made elsewhere meanwhile is a conflict, never
+/// written over. The root closes the editor once the outbox has the write,
+/// or at Cancel.
 public struct TaskEditor: Controller, Equatable {
     public enum Command: Bridged, Equatable {
         case setName(String)
@@ -60,19 +61,30 @@ public struct TaskEditor: Controller, Equatable {
     /// The highest position in each list ("" for no list): a new or moved
     /// task goes after it.
     public let lastPositions: [String: Decimal]
+    /// The last save, as the root follows it to the outbox; nil before one.
+    public let saving: EditorSave?
 
-    public init(original: TaskItem?, seedList: String? = nil, seedDay: CivilDay? = nil, lists: [EditorOption], lastPositions: [String: Decimal]) {
+    public init(
+        original: TaskItem?, seedList: String? = nil, seedDay: CivilDay? = nil, lists: [EditorOption], lastPositions: [String: Decimal],
+        saving: EditorSave? = nil
+    ) {
         self.original = original
         self.seedList = seedList
         self.seedDay = seedDay
         self.lists = lists
         self.lastPositions = lastPositions
+        self.saving = saving
     }
 
     public var initialState: State {
         State(
             draft: original.map(TaskDraft.init) ?? TaskDraft(list: seedList, dueKind: seedDay == nil ? .none : .day, day: seedDay),
             seen: original)
+    }
+
+    /// A save is on its way to the outbox: Save waits for it.
+    var sending: Bool {
+        if case .sending = saving { true } else { false }
     }
 
     // MARK: Events
@@ -106,7 +118,7 @@ public struct TaskEditor: Controller, Equatable {
         case .cancel:
             return [.cancelled]
         case .save:
-            guard !draft.trimmedName.isEmpty else { return [] }
+            guard !draft.trimmedName.isEmpty, !sending else { return [] }
             return [save(context.state, writes: TaskWrites(mint: { context.mint() }))]
         }
     }
@@ -157,6 +169,7 @@ public struct TaskEditor: Controller, Equatable {
             case .time: draft.at
             }
         let named = !draft.trimmedName.isEmpty
+        let notKept: String? = if case let .notKept(words) = saving { words } else { nil }
         return TaskEditorPresentation(
             title: original == nil ? "New Task" : "Edit Task",
             name: EditorText(label: TaskField.taskName.label, value: draft.name, prompt: "What to do"),
@@ -172,7 +185,8 @@ public struct TaskEditor: Controller, Equatable {
             priority: EditorChoice(
                 label: TaskField.priority.label, selected: draft.priority.rawValue,
                 options: TasksPresenter.priorities),
-            save: original == nil ? "Add" : "Save", canSave: named, cancel: "Cancel",
-            problem: input.state.touched && !named ? "A task needs a name." : nil)
+            save: notKept != nil ? "Retry" : original == nil ? "Add" : "Save", canSave: named && !sending, cancel: "Cancel",
+            problem: input.state.touched && !named ? "A task needs a name." : nil,
+            notKept: notKept.map { ProblemPresentation(title: "A change was not kept", message: $0) })
     }
 }
