@@ -10,9 +10,10 @@
 //
 //   swift scripts/appstoreconnect.swift profiles <dir> <sha1,…> <bundle-id>…
 //
-// One App Store profile per bundle id, signed by the team's Apple
-// Distribution certificate whose SHA-1 is one of <sha1,…> (an identity in this
-// machine's keychain), written to <dir>/<uuid>.mobileprovision; one line per
+// One App Store profile per bundle id (registered first where it is not),
+// signed by the team's Apple Distribution certificate whose SHA-1 is one of
+// <sha1,…> (an identity in this machine's keychain), written to
+// <dir>/<uuid>.mobileprovision; one line per
 // bundle id, its bundle id and the profile's UUID. An active profile of that
 // name and certificate is reused, and one the bundle id's capabilities have
 // since invalidated is replaced. The key may not use the cloud-managed
@@ -115,9 +116,23 @@ func profiles(_ dir: String, _ hashes: Set<String>, _ bundles: [String]) async t
     }
     for bundle in bundles {
         let ids = rows(try await call("GET", "/v1/bundleIds", query: ["filter[identifier]": bundle, "fields[bundleIds]": "identifier"]))
-        guard let bundleID = ids.first(where: { attributes($0)["identifier"] as? String == bundle })?["id"] as? String else {
-            fail("\(bundle) is not registered with the team; a signed development build registers it")
+        var bundleID = ids.first(where: { attributes($0)["identifier"] as? String == bundle })?["id"] as? String
+        if bundleID == nil {
+            // An extension with no capability of its own is signed in
+            // development by the team's wildcard profile, so no build ever
+            // registered it. Named from its labels past the organisation's
+            // reverse domain, "Substrate Sync Share", in place of Xcode's "XC …".
+            let label = bundle.split(separator: ".").dropFirst(2).map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            let body: [String: Any] = [
+                "data": [
+                    "type": "bundleIds",
+                    "attributes": ["identifier": bundle, "name": label.joined(separator: " "), "platform": "UNIVERSAL"],
+                ]
+            ]
+            bundleID = ((try await call("POST", "/v1/bundleIds", body: body, expect: 201))["data"] as? [String: Any])?["id"] as? String
+            FileHandle.standardError.write(Data("appstoreconnect: registered \(bundle)\n".utf8))
         }
+        guard let bundleID else { fail("\(bundle) could not be registered with the team") }
         let name = "\(bundle) App Store \(certificateID)"
         let existing = rows(
             try await call(
