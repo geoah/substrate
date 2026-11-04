@@ -54,7 +54,7 @@ appearance.
 | Substrate Sync | two arrows round a core | green | `#f2fcf8`, `#d3f2e5` | `#72e2bb`, `#0f936d` |
 | Substrate Chat | a speech bubble with a spark | purple | `#f8f5ff`, `#e4dcfd` | `#bba2ff`, `#6a3fe0` |
 | Substrate Tasks | a ticked checklist card | rose | `#fff5f7`, `#ffdbe4` | `#ff9bb2`, `#d92c58` |
-| Spotter (geoah/rxtx.dev) | a dumbbell | orange | `#fff8f2`, `#ffdfcc` | `#ffab72`, `#e3471f` |
+| Spotter (a private repository) | a dumbbell | orange | `#fff8f2`, `#ffdfcc` | `#ffab72`, `#e3471f` |
 
 A new app takes a hue no other app uses, with a background pale enough that
 the glyph's deep shade reads on it.
@@ -91,7 +91,7 @@ adds its own.
    (add `--mac` for a Mac app).
 
 An app in another repository copies `icons.mjs` and adds its own entry, as
-geoah/rxtx.dev does for Spotter. Frame changes are made here first, then
+a private repository does for Spotter. Frame changes are made here first, then
 copied.
 
 ## Directions that were rejected

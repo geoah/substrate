@@ -14,7 +14,8 @@
 #                   runtime checks, three cold starts, the instrumented tests
 #                   (the Gallery's: every fixture Swift makes there decodes)
 #   gallery <dir>   kit-ui's gallery test, keeping each fixture's PNG in <dir>
-#   lock            rewrite the Gradle dependency locks
+#   lock            rewrite the Gradle dependency locks and the dependency
+#                   verification metadata (every artifact's sha256)
 #   release:build   one app's release APK, signed, for .mise/apps.sh
 #
 # The tasks run with the open-source Swift and the JDK as task tools
@@ -145,12 +146,18 @@ bridgegen() {
   "$(host_swift build --package-path apps/kit/Tools/BridgeGen --show-bin-path)/bridgegen" "$@" apps/kit/android/bridge.json
 }
 
+# What `build`, `test` and `smoke` ask Gradle for, named once, since the
+# verification metadata `lock` writes must cover every artifact they resolve.
+build_tasks=(:kit-core:assembleDebug :kit-core:assembleRelease :kit-device:assembleDebug :kit-device:assembleRelease
+  :kit-ui:assembleDebug :kit-ui:assembleRelease :bridge-check:assembleDebug :bridge-check:assembleRelease
+  :gallery:assembleDebug :gallery:assembleRelease)
+test_tasks=(:kit-core:testDebugUnitTest :kit-device:testDebugUnitTest :kit-ui:testDebugUnitTest)
+device_test_tasks=(:kit-device:assembleDebugAndroidTest :bridge-check:assembleDebugAndroidTest :gallery:assembleDebugAndroidTest)
+
 cmd_build() {
   need_sdk
   need_swift
-  gradle :kit-core:assembleDebug :kit-core:assembleRelease :kit-device:assembleDebug :kit-device:assembleRelease \
-    :kit-ui:assembleDebug :kit-ui:assembleRelease :bridge-check:assembleDebug :bridge-check:assembleRelease \
-    :gallery:assembleDebug :gallery:assembleRelease
+  gradle "${build_tasks[@]}"
 }
 
 cmd_test() {
@@ -165,7 +172,7 @@ cmd_test() {
   local screens_out=$root/apps/kit/android/kit-core/build/roundtrip/testDebugUnitTest/screens.json
   # kit-core's RoundTripTest and ScreenFixturesTest write Kotlin's encoding
   # of the fixtures there.
-  gradle :kit-core:testDebugUnitTest :kit-device:testDebugUnitTest :kit-ui:testDebugUnitTest
+  gradle "${test_tasks[@]}"
   [[ -f $kotlin_out ]] || die "the Kotlin round trip wrote nothing to $kotlin_out"
   [[ -f $screens_out ]] || die "the screens' round trip wrote nothing to $screens_out"
   SUBSTRATE_ROUNDTRIP_KOTLIN=$kotlin_out SUBSTRATE_ROUNDTRIP_KOTLIN_SCREENS=$screens_out \
@@ -255,12 +262,48 @@ cmd_gallery() {
   gradle :kit-ui:testDebugUnitTest --tests '*KitGalleryTest' "-Psubstrate.gallery=$folder"
 }
 
+# The locks pin every version; the verification metadata
+# (apps/gradle/gradle/verification-metadata.xml) pins every artifact's
+# sha256, and Gradle refuses, in its default strict mode, any artifact or
+# metadata file the file does not list. Written fresh from what the build,
+# the tests and the device tests resolve here, so an entry nothing uses is
+# dropped, then once more for aapt2, which the Android plugin fetches for
+# the host it runs on: CI builds on Linux, a laptop on macOS, and the file
+# must hold both. One Gradle run per set, each adding to the file, because
+# the whole set in one run outgrows the daemon's heap.
 cmd_lock() {
   need_sdk
   need_swift
   gradle :kit-core:dependencies :kit-device:dependencies :kit-ui:dependencies :bridge-check:dependencies :gallery:dependencies \
     --write-locks >/dev/null
   (cd apps/gradle && ./gradlew --console=plain -p build-logic dependencies --write-locks >/dev/null)
+  local metadata=apps/gradle/gradle/verification-metadata.xml
+  rm -f "$metadata"
+  gradle --no-configuration-cache --write-verification-metadata sha256 "${build_tasks[@]}" >/dev/null
+  gradle --no-configuration-cache --write-verification-metadata sha256 "${test_tasks[@]}" >/dev/null
+  gradle --no-configuration-cache --write-verification-metadata sha256 "${device_test_tasks[@]}" >/dev/null
+  local aapt2
+  aapt2=$(sed -n 's|.*<component group="com.android.tools.build" name="aapt2" version="\([^"]*\)">.*|\1|p' "$metadata" | head -1)
+  [[ -n $aapt2 ]] || die "the build resolved no aapt2, so its other hosts' artifacts cannot be added to $metadata"
+  local init
+  init=$(mktemp -d)/aapt2-hosts.gradle.kts
+  cat >"$init" <<'KTS'
+gradle.rootProject {
+    tasks.register("resolveAapt2Hosts") {
+        val version = providers.gradleProperty("substrate.aapt2").get()
+        val hosts = listOf("linux", "osx", "windows").map {
+            project.dependencies.create("com.android.tools.build:aapt2:$version:$it")
+        }
+        val files = project.configurations.detachedConfiguration(*hosts.toTypedArray())
+        doLast { files.resolve() }
+    }
+}
+KTS
+  gradle --no-configuration-cache --write-verification-metadata sha256 -I "$init" "-Psubstrate.aapt2=$aapt2" \
+    resolveAapt2Hosts >/dev/null
+  rm -rf "$(dirname "$init")"
+  grep -q '<verify-metadata>true</verify-metadata>' "$metadata" || die "$metadata does not verify metadata files"
+  printf 'android: %s written; review its diff like a lock file\n' "$metadata"
 }
 
 case ${1:-} in

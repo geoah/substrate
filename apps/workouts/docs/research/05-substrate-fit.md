@@ -1,14 +1,14 @@
 # Spotter on substrate: where the data lives
 
-> **Where this came from.** Written on 2026-10-30 in rxtx.dev, as `research/workouts/`, for
+> **Where this came from.** Written on 2026-10-30 in the owner's private repository, as `research/workouts/`, for
 > the app then called Spotter (Substrate Workouts now); the version here is the one the
-> app's second build used (geoah/rxtx.dev#118). It was carried into this repository on
+> app's second build used (the private repository's #118). It was carried into this repository on
 > 2026-11-02 as written, with two changes. The links resolve inside this repository. The
-> draft kind paths `mneme.rxtx.dev/training/<kind>` now read as the app-owned
+> draft kind paths `mneme.example.org/training/<kind>` now read as the app-owned
 > `~/training/<kind>` they became (decision record [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)). Where the
-> text names the package home it recommended, a Mneme package `mneme.rxtx.dev/training`,
+> text names the package home it recommended, a Mneme package `mneme.example.org/training`,
 > that name is left as written: the home changed later, and the reasons are in
-> [decisions.md](../decisions.md). Mentions of Mneme, rxtx.dev paths or
+> [decisions.md](../decisions.md). Mentions of Mneme, private repository paths or
 > `apps/apple/spotter` describe the plan at the time. The package now lives in
 > [`Package/`](../../package/README.md), and the app's spec is [DESIGN.md](../../DESIGN.md).
 
@@ -30,7 +30,7 @@ scratch directory, not files in this repository.
 Evidence markers:
 
 - **[src]** checked today in source code, manifests or docs in this machine's
-  checkouts (substrate at `ffd7b967`, this rxtx.dev worktree, the substrate
+  checkouts (substrate at `ffd7b967`, the private repository's worktree, the substrate
   git history read with `git show`).
 - **[sdk]** checked today in the iOS 27.2 SDK headers.
 - **[web]** checked today on the web.
@@ -74,7 +74,7 @@ those documents say something the engine has since changed, this one says so.
   request per set (there is no batch write), and after about two years the
   set kind passes the 10,000-record ceiling on in-place vocabulary
   conversions, so later renames go through expand-and-contract.
-- **Package home: a Mneme package now, `mneme.rxtx.dev/training`**, shaped to
+- **Package home: a Mneme package now, `mneme.example.org/training`**, shaped to
   the first-party conventions (`about`, `source`, `origin`, `revision`,
   `utcOffsetStart`, quantities with declared units, FHIR-style enum spelling)
   so that a later move into a first-party `substrate.reamde.dev` catalogue
@@ -251,8 +251,8 @@ canonical envelope) unless marked.
   roles, no ACLs" [src: `docs/auth.md`]. A lost phone's token is revoked with
   `DELETE /tokens/{id}`.
 - There is no repository segment in any URL: the bearer token names the
-  repository [src: `docs/api.md`]. Production is `https://substrate.rxtx.dev`,
-  repository `geoah.me` [src: `svc/mneme-v6/CLAUDE.md`].
+  repository [src: `docs/api.md`]. Production is `https://substrate.example.com`,
+  repository `ada.example.com` [src: `svc/mneme-v6/CLAUDE.md`].
 - Writes under a token are actor `api` at the owner tier; each token is its
   own principal in the changelog [src: `docs/changelog.md`].
 
@@ -323,7 +323,7 @@ Two lessons were paid for there (quoted in `06-substrate-fit.md`):
 - **#275**: `workout` was both the plan and the session; "tracker totals on
   a plan row mean nothing". Plan and session must be two kinds.
 
-Mneme's own copy (`mneme.rxtx.dev/health/workoutset`, removed in T-110,
+Mneme's own copy (`mneme.example.org/health/workoutset`, removed in T-110,
 commit `311b7fee`) kept the same split: one record per set, `weight: float`
 "in kg", `durationSeconds` and `distanceMeters` floats, a declared index on
 `[workout, order]`, `purpose: supporting` [src: `git show 311b7fee^:…`]. Both
@@ -379,13 +379,13 @@ From `svc/mneme-v6/CLAUDE.md`, `docs/kind-design.md`, `docs/plan.md` and
 
 - **Package names are one plain domain word** (`memory`, `capture`,
   `health`, `commerce`, `places`, `coffee`); the authority is literally
-  `mneme.rxtx.dev`.
+  `mneme.example.org`.
 - **"Declare as little as possible. A kind we declare is a kind we own
   forever"**, and narrowing is refused once records hold the old shape.
 - **"Version every declaration you change. A changed declaration shipping
   the same version reaches no repository."** Production stores its own
   number per package, so a new version must exceed it (health went to 17
-  "because geoah.me stores 16").
+  "because ada.example.com stores 16").
 - **Root and log**: `health/routine` (a rule, `temporal(point)` +
   `recurring`, `status` state active, paused, archived) and
   `health/routinelog` (one occurrence, `temporal(point)`, `occurrencelog`,
@@ -550,7 +550,7 @@ and add seconds a year to `verify`. Volume does not choose the shape.
 
 ### 3.2 Query paths
 
-Kind paths below use the recommended package, `mneme.rxtx.dev/training`
+Kind paths below use the recommended package, `mneme.example.org/training`
 (written `T/` in the table for brevity, meaning `~/training/`).
 
 | Question                                                             | Shape A                                                                                                                                     | Shape B                                                                                                                                                                                          | Shape C                                                                                 |
@@ -663,7 +663,7 @@ property. This passed the offline validator with
 `substrate.reamde.dev/health` beside it [src].
 
 ```yaml
-# mneme.rxtx.dev/training, version 1: exercise, routine, session, set
+# mneme.example.org/training, version 1: exercise, routine, session, set
 session:   # purpose primary; temporal(range) + core/revised
   name: string                      # heading on the local clock, written by the app
   status: state [active, finished]  # active -> finished, finished -> active
@@ -705,10 +705,10 @@ live. Notes on the sketch:
 
 ## 4. Package home
 
-### 4.1 Now: `mneme.rxtx.dev/training`
+### 4.1 Now: `mneme.example.org/training`
 
 - **The owner applies it.** A Mneme package is applied with `substratectl
-  apply -f` to `geoah.me` when the owner says, tested first in a scratch
+  apply -f` to `ada.example.com` when the owner says, tested first in a scratch
   repository (`svc/mneme-v6/CLAUDE.md`). A first-party package ships in the
   substrate binary: a substrate PR, a release and an engine roll through
   `docs/substrate-upgrade.md`, for every change while the model settles.
@@ -752,7 +752,7 @@ How the move would go:
 - `movedFrom:` (decision 0078) moves rows declaratively only through the
   shipped tree's boot upgrade, requires identical properties, and leaves the
   old kind declared and empty forever [src: `docs/vocabulary.md`]. A
-  first-party package naming a `mneme.rxtx.dev` kind is unlikely, so expect a
+  first-party package naming a `mneme.example.org` kind is unlikely, so expect a
   T-119-style copy.
 - **To keep the copy mechanical**, the Mneme kinds should use the first-party
   property names where they overlap (`about`, `source`, `origin`,
@@ -890,7 +890,7 @@ function) is optional.
 ## Design implications for Spotter
 
 - Use Shape B: kinds `exercise`, `routine`, `session` and `set` in one new
-  Mneme package, `mneme.rxtx.dev/training`, version 1, applied by the owner
+  Mneme package, `mneme.example.org/training`, version 1, applied by the owner
   after a scratch-repository test.
 - Sets are their own kind. Do not rely on filtering inside an embedded list;
   it is outside the contract.
@@ -989,7 +989,7 @@ In this machine's checkouts (substrate at `ffd7b967`, read-only at
   `Sources/Sync/HealthReader.swift`, `Sources/Sync/HealthEncoder.swift`
 - `git -C ~/src/github.com/geoah/substrate show f47c21f5^:samples/fitness/{bundle,exercise,workout,workoutlog,workoutset,workouttemplate}.yaml`
 
-In this rxtx.dev worktree:
+In the private repository's worktree:
 
 - `svc/mneme-v6/CLAUDE.md`, `svc/mneme-v6/docs/kind-design.md`,
   `svc/mneme-v6/docs/kind-design-amendments.md`, `svc/mneme-v6/docs/plan.md`,

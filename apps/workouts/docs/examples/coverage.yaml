@@ -1,6 +1,6 @@
-# Carried into substrate on 2026-11-02 from rxtx.dev, where it was
+# Carried into substrate on 2026-11-02 from the owner's private repository, where it was
 # research/workouts/substrate/examples/coverage.yaml, the kinds were the draft
-# mneme.rxtx.dev/training and the app was called Spotter. The kinds are now
+# mneme.example.org/training and the app was called Spotter. The kinds are now
 # the app's own substrate.reamde.dev/training (decision record 0203) and the adapter is
 # substrate-workouts; nothing else changed, so where the comments below
 # mention Mneme they describe the plan of the time. README.md beside this

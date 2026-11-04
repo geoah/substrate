@@ -4,7 +4,7 @@ import SwiftUI
 
 @main
 struct SubstrateWorkoutsApp: App {
-    /// Keeps a released build current from apps.internal.rxtx.dev
+    /// Keeps a released build current from the release feed
     /// (apps/README.md). A local build has no update address and
     /// never checks.
     @StateObject private var updates = Updater()

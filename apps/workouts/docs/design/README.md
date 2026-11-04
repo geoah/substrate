@@ -40,7 +40,7 @@ Who decided what, and the owner's words, are in [decisions.md](../decisions.md#t
   ([the comparison page](#the-comparison-page)).
 - **2026-10-31, 15:09.** The owner: "let's get fable and astra to review the data model …
   then start with option c (rows) and let's get it implemented." Rows was built that
-  evening, as the default, with the Table kept as a second layout (geoah/rxtx.dev#118).
+  evening, as the default, with the Table kept as a second layout (the private repository's #118).
 
 ## The second round
 
@@ -90,8 +90,8 @@ stored as `rpeMethod: prefilled`, and suggestions, PRs and exports read it as no
 
 ## The comparison page
 
-The owner asked for the options on one page to share with a friend. It is published at
-<https://plans.rxtx.dev/users/geoah/tpihi7hg5oe6t2hekucwcruphm/spotter-workout-screen.html>.
+The owner asked for the options on one page to share with a friend. It was published
+on a private page, which is not linked here.
 Published pages cannot be edited, so this is the second version, with A and B added. It is
 self-contained (4.9 MB, its images inlined) and titled "Spotter: six options for the workout
 screen". For each option it gives the idea, what it does well, what to watch for and all its

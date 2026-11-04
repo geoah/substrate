@@ -238,10 +238,11 @@ apple_prepare() {
 # The build settings that make a release claim its site's redirect, for the
 # app named in $1, in the global SITE (an array, since bash 3.2 has no
 # mapfile): the redirect the manifest reads, the site host its entitlements
-# name, and the switch to the `-site` entitlements. Empty without a site.
+# name, and the switch to the `-site` entitlements. Every release sets them
+# (release_env requires the site), so no released build signs in through a
+# loopback port.
 site_settings() {
 	SITE=()
-	[ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ] || return 0
 	local site
 	site="$(site_url)" || return 1
 	SITE=("SUBSTRATE_$(app_upper "$1")_REDIRECT=$(apple_callback "$1")" "SUBSTRATE_SITE_HOST=${site#https://}"
@@ -263,8 +264,7 @@ apple_release_build() {
 	scheme="$(app_get "$app" .apple.scheme)"
 	APPLE_BUNDLE="$(app_get "$app" .apple.bundleID)"
 	APPLE_CLIENT="$(client_url "$app")" || exit 1
-	APPLE_REDIRECT=""
-	[ -z "${SUBSTRATE_APPLE_SITE_URL:-}" ] || APPLE_REDIRECT="$(apple_callback "$app")"
+	APPLE_REDIRECT="$(apple_callback "$app")" || exit 1
 	site_settings "$app" || exit 1
 	SETTINGS=(
 		MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build"
@@ -419,6 +419,10 @@ apple_check() {
 	local app="$1" platform="$2" plist="$3" client_key redirect_key key expected got
 	client_key="$(app_get "$app" .apple.clientIDKey)"
 	redirect_key="$(app_get "$app" .apple.redirectKey)"
+	# A released build's sign-in is its https client id and the https
+	# callback it claims; with either missing the kit would refuse to sign in.
+	case "$APPLE_CLIENT" in https://?*/*) ;; *) die "$app's $platform build was stamped with client id '$APPLE_CLIENT', and a release's is an https URL" ;; esac
+	case "$APPLE_REDIRECT" in https://?*/?*) ;; *) die "$app's $platform build was stamped with redirect '$APPLE_REDIRECT', and a release claims an https callback" ;; esac
 	for key in CFBundleIdentifier CFBundleShortVersionString CFBundleVersion "$client_key" "$redirect_key"; do
 		case "$key" in
 		CFBundleIdentifier) expected="$APPLE_BUNDLE" ;;
@@ -442,12 +446,10 @@ export_archive() {
 	plutil -insert signingStyle -string automatic "$out/$platform-export.plist"
 	xcodebuild -exportArchive -archivePath "$out/$platform.xcarchive" -exportPath "$out/$platform" \
 		-exportOptionsPlist "$out/$platform-export.plist" ${PROVISION[@]+"${PROVISION[@]}"} -quiet || return 1
-	# A release that claims its sign-in callback on the site needs the
-	# associated domain in its signed entitlements, which a profile without
-	# the capability drops: such a build could never receive a sign-in.
-	if [ -n "${SUBSTRATE_APPLE_SITE_URL:-}" ]; then
-		require_associated_domains "$out/$platform"
-	fi
+	# A release claims its sign-in callback on the site, which needs the
+	# associated domain in its signed entitlements, and a profile without
+	# the capability drops it: such a build could never receive a sign-in.
+	require_associated_domains "$out/$platform"
 }
 
 # Refuses an exported app (an .ipa, or a Mac .app) whose signature carries no

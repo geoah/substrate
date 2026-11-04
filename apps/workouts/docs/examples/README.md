@@ -1,24 +1,24 @@
 # Example records for substrate.reamde.dev/training
 
-> **Where this came from.** Written on 2026-10-30 and revised on 2026-10-31 in rxtx.dev,
+> **Where this came from.** Written on 2026-10-30 and revised on 2026-10-31 in the owner's private repository,
 > as `research/workouts/substrate/examples/`, for the app then called Spotter; carried
 > here on 2026-11-02. The records and this page now use the app's own kind names,
 > `substrate.reamde.dev/training/<kind>` (decision record
 > [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)),
-> where they said `mneme.rxtx.dev/training/<kind>`. The YAML was also rewritten in block
+> where they said `mneme.example.org/training/<kind>`. The YAML was also rewritten in block
 > style for this repository's `lint:yaml` and `fmt:check`; the values did not change. The
 > rest of the page is as written: where it talks of applying the package to Mneme or of
-> `geoah.me`, it describes the plan at the time.
+> `ada.example.com`, it describes the plan at the time.
 
 Records in the shape `substratectl apply -f` takes, for the training package,
-now [`Package/`](../../package/README.md) and then a draft in rxtx.dev's
+now [`Package/`](../../package/README.md) and then a draft in the private repository's
 `research/workouts/substrate/training/`. Three files are built from the
 owner's 13 Hevy screenshots; a fourth, `coverage.yaml`, adds the methods the
 screenshots do not show. Date: 2026-10-30, revised 2026-10-31 after three
 reviews, and again on 2026-10-31 for the data-model review's decisions
 (package README, "Data-model review, 2026-10-31").
 
-Nothing here has been applied to production (`geoah.me`) or to the shared
+Nothing here has been applied to production (`ada.example.com`) or to the shared
 dev server. The files pass the offline checker, and on 2026-10-31 a private,
 throwaway substrate built from the commit production runs took all 163
 records with no refusal ([Verification](#verification)).
@@ -93,10 +93,10 @@ coverage file.
 ## Applying them to a scratch repository
 
 Use a repository of your own on a substrate at main `ffd7b967` (the commit
-production runs) or later. Never use `geoah.me`, nor the owner's
-`mneme.rxtx.dev` repository on the dev server, and never a database or
+production runs) or later. Never use `ada.example.com`, nor the owner's
+`mneme.example.org` repository on the dev server, and never a database or
 port another session holds. Mneme's guide
-(`svc/mneme-v6/CLAUDE.md` in rxtx.dev, "A scratch
+(`svc/mneme-v6/CLAUDE.md` in the owner's private repository, "A scratch
 repository") says how to get one. Substrate's `docs/getting-started.md`
 covers `substratectl register` on a local server of your own.
 
@@ -560,7 +560,7 @@ duration):
 
 Run on 2026-10-31 on a private, throwaway substrate built from
 `ffd7b967`, with a Postgres of its own; the package README's
-"On a running substrate" (a section of the draft's README in rxtx.dev,
+"On a running substrate" (a section of the draft's README in the owner's private repository,
 not carried into this repository)
 says how it was set up and lists every refusal it gave. In a repository
 holding the health catalogue and the package, the files applied in order

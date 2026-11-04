@@ -1,6 +1,6 @@
 # Review of the Rows build and the data-model decisions (2026-10-31)
 
-The second build in rxtx.dev (geoah/rxtx.dev#118) applied the
+The second build in the owner's private repository (its #118) applied the
 [data-model decisions](data-model-2026-10-31/DECISIONS.md) to the training package and
 the app's core, then built the [Rows](../design/rows/README.md) session layout. Before
 the PR opened, the same workflow ran two independent reviewers, one reading the data
@@ -9,7 +9,7 @@ and one reading the Rows UI, and then a fixer. Between them they raised 20 findi
 numbered F1 to F20.
 
 The workflow kept only each reviewer's summary verdict, not its full numbered list, so
-what follows is those verdicts and the fixer's account, verbatim. Paths are the rxtx.dev
+what follows is those verdicts and the fixer's account, verbatim. Paths are the private repository's
 worktree's at the time: `apps/apple/spotter/SpotterKit` became
 `apps/apple/WorkoutsKit` here, and `research/workouts/substrate` became
 [`Package/`](../../package/README.md) and [`examples/`](../examples/README.md).
@@ -81,8 +81,8 @@ The Rows screen is in good shape: no blockers, two major findings and five minor
 **The Table layout** is unchanged apart from the intended parts. Its tick still plays `.tick` and it pre-fills nothing. `SetMenuItems`, `GroupMenuItems` and `ExerciseMenuItems` were moved out of the Table's views word for word. One change you will notice in the Table comes from a data-model decision, not from this work: PREVIOUS now copies last time's RPE, marked `copied`.
 
 #### Verification
-1. `cd /Users/geoah/.t3/worktrees/rxtx.dev/t3-9e79ae4f/apps/apple/spotter/SpotterKit && swift test`: 348 tests in 57 suites passed.
-2. `cd /Users/geoah/.t3/worktrees/rxtx.dev/t3-9e79ae4f/apps/apple/spotter && mise x xcodegen -- xcodegen generate && xcodebuild -project Spotter.xcodeproj -scheme Spotter -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/spotter-uireview-dd build`: BUILD SUCCEEDED, 0 warnings. I used a fresh derived-data folder in /tmp instead of `build/dd` so I would not collide with other agents; it was a full clean build.
+1. `cd apps/apple/spotter/SpotterKit && swift test`: 348 tests in 57 suites passed.
+2. `cd apps/apple/spotter && mise x xcodegen -- xcodegen generate && xcodebuild -project Spotter.xcodeproj -scheme Spotter -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/spotter-uireview-dd build`: BUILD SUCCEEDED, 0 warnings. I used a fresh derived-data folder in /tmp instead of `build/dd` so I would not collide with other agents; it was a full clean build.
 3. The same command with `-destination 'generic/platform=iOS'`: BUILD SUCCEEDED, 0 warnings.
 4. Scratch Swift Testing cases in a throwaway copy of SpotterKit under /tmp (now deleted) covered three things:
    - undo then Log again;
@@ -93,7 +93,7 @@ The Rows screen is in good shape: no blockers, two major findings and five minor
 - I did not drive the simulator; the findings come from reading the code and the scratch tests.
 - The VoiceOver finding follows from how `.combine` plus `.accessibilityLabel` behaves; I did not hear it with VoiceOver on a device.
 
-I edited no files in the tree and did not touch git state, geoah.me, port 8081 or substrate-dev-db. `xcodegen` regenerated `Spotter.xcodeproj`, which git ignores.
+I edited no files in the tree and did not touch git state, ada.example.com, port 8081 or substrate-dev-db. `xcodegen` regenerated `Spotter.xcodeproj`, which git ignores.
 
 ## The fixer's report
 

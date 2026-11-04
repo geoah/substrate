@@ -1,8 +1,8 @@
 # Data-model review: Spotter's training package
 
 > **Where this came from.** Part of the data-model review of 2026-10-31, kept verbatim
-> ([the index](../../README.md#reviews)). It reviewed the draft package `mneme.rxtx.dev/training`
-> in rxtx.dev's `research/workouts/substrate/training/`, the package that became the
+> ([the index](../../README.md#reviews)). It reviewed the draft package `mneme.example.org/training`
+> in the private repository's `research/workouts/substrate/training/`, the package that became the
 > app's own `~/training` in [`Package/`](../../../package/README.md). The worktree paths
 > and `/tmp` paths it cites were on the build Mac and are not in this repository.
 
@@ -11,7 +11,7 @@ server). Do NOT edit the repository. Write your report to the file named in your
 /tmp to test ideas.
 
 ## What to read
-Repository worktree: /Users/geoah/.t3/worktrees/rxtx.dev/t3-9e79ae4f
+Repository worktree: a worktree of the owner's private repository
 - The package (draft, not applied anywhere yet): research/workouts/substrate/training/ (bundle.yaml, exercise.yaml,
   routine.yaml, session.yaml, set.yaml, and README.md, which maps every property to a requirement and holds the field
   mappings to HealthKit, Health Connect, FIT, Hevy and Strong).

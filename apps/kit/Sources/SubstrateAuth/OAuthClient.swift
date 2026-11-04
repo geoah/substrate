@@ -97,6 +97,16 @@ public struct RepositoryMismatch: LocalizedError, Sendable, Equatable {
     }
 }
 
+/// A released build with no sign-in callback of its own: its client id is
+/// an https one, and the redirect it claims through its site is missing or
+/// not an https URL, so it has nowhere the code can come back to it alone.
+public struct UnclaimedRedirect: LocalizedError, Sendable, Equatable {
+    public let appName: String
+    public var errorDescription: String? {
+        "This build of \(appName) can't sign in: it has no sign-in address of its own. Install it again from its release page."
+    }
+}
+
 /// The substrate's app authorization (decision 0194) for one app and one
 /// server: OAuth 2.1's code flow with PKCE for a public client whose
 /// `client_id` is a URL, plus the details its approval sets up. The owner
@@ -208,9 +218,8 @@ public struct OAuthClient: Sendable {
     }
 
     /// The whole flow: the browser on the server's own sign-in and approval
-    /// page, the redirect taken through the app's claimed https callback
-    /// where its manifest names one and a loopback receiver (RFC 8252)
-    /// otherwise, the redirect checked and the code exchanged. `server` is
+    /// page, the redirect taken through the route the manifest signs in by
+    /// (`route(for:)`), the redirect checked and the code exchanged. `server` is
     /// the one the owner chose, and the metadata must be its own: an issuer
     /// or an endpoint elsewhere is refused before the browser opens.
     /// `repository` is the name the app found the server from: it is sent as
@@ -226,8 +235,7 @@ public struct OAuthClient: Sendable {
         if let problem = metadata.mismatch(server: server) { throw ServerMismatch(problem) }
         let pkce = try PKCE()
         let state = try PKCE.state()
-        let route: SignInRoute = manifest.signInRedirect.map(SignInRoute.claimed)
-            ?? .loopback(appName: manifest.appName, path: manifest.loopbackPath)
+        let route = try Self.route(for: manifest)
         let (redirect, query) = try await approve(route, browser: browser) { redirect in
             try authorizeURL(redirect: redirect, pkce: pkce, state: state, loginHint: repository)
         }
@@ -237,6 +245,20 @@ public struct OAuthClient: Sendable {
             throw await reject(session, mismatch, keepingIn: rejected)
         }
         return session
+    }
+
+    /// How a build signs in: a release (an https client id) through the
+    /// https callback it claims, which the system hands to this signed app
+    /// alone; a local build (a loopback client id) through a loopback
+    /// receiver (RFC 8252). A release whose claimed callback is missing or
+    /// not one is refused rather than sent to a loopback port, where any
+    /// program on the device could take the code it carries.
+    static func route(for manifest: AppManifest) throws -> SignInRoute {
+        if manifest.isLocal { return .loopback(appName: manifest.appName, path: manifest.loopbackPath) }
+        guard let claimed = manifest.claimedRedirect, AppManifest.claimedRedirect(claimed.absoluteString) == claimed else {
+            throw UnclaimedRedirect(appName: manifest.appName)
+        }
+        return .claimed(claimed)
     }
 
     /// The browser's part: the route made ready, the page opened on its

@@ -1,14 +1,14 @@
 # Spotter app teardown: what the app must do in the gym
 
-> **Where this came from.** Written on 2026-10-30 in rxtx.dev, as `research/workouts/`, for
+> **Where this came from.** Written on 2026-10-30 in the owner's private repository, as `research/workouts/`, for
 > the app then called Spotter (Substrate Workouts now); the version here is the one the
-> app's second build used (geoah/rxtx.dev#118). It was carried into this repository on
+> app's second build used (the private repository's #118). It was carried into this repository on
 > 2026-11-02 as written, with two changes. The links resolve inside this repository. The
-> draft kind paths `mneme.rxtx.dev/training/<kind>` now read as the app-owned
+> draft kind paths `mneme.example.org/training/<kind>` now read as the app-owned
 > `~/training/<kind>` they became (decision record [0203](../../../../docs/decisions/0203-an-app-keeps-its-own-package-under-a-declare-scope.md)). Where the
-> text names the package home it recommended, a Mneme package `mneme.rxtx.dev/training`,
+> text names the package home it recommended, a Mneme package `mneme.example.org/training`,
 > that name is left as written: the home changed later, and the reasons are in
-> [decisions.md](../decisions.md). Mentions of Mneme, rxtx.dev paths or
+> [decisions.md](../decisions.md). Mentions of Mneme, private repository paths or
 > `apps/apple/spotter` describe the plan at the time. The package now lives in
 > [`Package/`](../../package/README.md), and the app's spec is [DESIGN.md](../../DESIGN.md).
 
@@ -496,7 +496,7 @@ Apple's rule: Liquid Glass "forms a distinct functional layer for controls and n
 7. **The Live Activity is a V1 surface, not polish.** Design its states (working, resting, rest over, timed set running, finished) at the same time as the session screen. Use `staleDate` or background runtime so "rest over" never shows 0:00 with live buttons.
 8. **Watch, when it comes, is a remote.** The `.small` Live Activity layout gives a watch countdown in V1.1 for little work. A watch app later sends idempotent set events to the phone's session. It never starts its own session record or asks for a separate sign-in.
 9. **Expect the workout back from Apple Health.** Substrate's Apple Health provider receives what the Health Auto Export app posts and writes each workout as a `workout` mirror row keyed `applehealth/<account>/<id>`, "the id HealthKit gives the workout"; "Workouts carry no `source`" [src: `kinds/providers.substrate.reamde.dev/applehealth/README.md`, `bundle.yaml`]. Its adapter then writes a `substrate.reamde.dev/health/workout`, maps "traditional strength training" and "functional strength training" to `strength`, and fills `source` from the label most common on the workout's heart rate, step, distance and energy rows, which names a device such as the watch, not the app that wrote the workout [src: same `bundle.yaml`, `workout_outputs`]. A Spotter session written to Health will return as a second record. The data-model slice needs a join (time overlap plus sport `strength`) or a marker.
-10. **Naming in substrate.** In Mneme v6, `routine` already means a recurring habit (floss, stretch), and `routinelog.evidence` can point at "the workout that satisfied the training routine" [src: `svc/mneme-v6/kinds/health/routine.yaml`, `routinelog.yaml`]. Mneme v4 first called the gym template `routine` and renamed it `workouttemplate` when the habit scheduler took the word [src: same comment]. Mneme v6 itself carried `mneme.rxtx.dev/health/workouttemplate`, `workoutset` and `exercise` from T-068 until T-110 deleted them as empty kinds on 2026-10-19 (commit `311b7fee`); `svc/mneme-v6/docs/not-ported.md` still lists them [src: git history]. They are prior art for the data-model slice. The UI can say "Routines"; the kind should not be named `routine`. Substrate's first-party `substrate.reamde.dev/health/workout` already has `sport: strength`, duration, energy and heart rate, but no sets [src: `/tmp/spotter-substrate-main/kinds/substrate.reamde.dev/health/workout.yaml`].
+10. **Naming in substrate.** In Mneme v6, `routine` already means a recurring habit (floss, stretch), and `routinelog.evidence` can point at "the workout that satisfied the training routine" [src: `svc/mneme-v6/kinds/health/routine.yaml`, `routinelog.yaml`]. Mneme v4 first called the gym template `routine` and renamed it `workouttemplate` when the habit scheduler took the word [src: same comment]. Mneme v6 itself carried `mneme.example.org/health/workouttemplate`, `workoutset` and `exercise` from T-068 until T-110 deleted them as empty kinds on 2026-10-19 (commit `311b7fee`); `svc/mneme-v6/docs/not-ported.md` still lists them [src: git history]. They are prior art for the data-model slice. The UI can say "Routines"; the kind should not be named `routine`. Substrate's first-party `substrate.reamde.dev/health/workout` already has `sport: strength`, duration, energy and heart rate, but no sets [src: `/tmp/spotter-substrate-main/kinds/substrate.reamde.dev/health/workout.yaml`].
 11. **Offline first.** Writes go to a local queue and the UI never waits for the server. The only sync UI is a glyph.
 
 ## 8. Open questions for the owner
@@ -520,7 +520,7 @@ Apple's rule: Liquid Glass "forms a distinct functional layer for controls and n
 
 ## Sources
 
-Owner's screenshots (local, read today): the 13 files under `/Users/geoah/.t3/userdata/attachments/` listed in section 1.
+Owner's screenshots (local, read today): the 13 attachments the owner shared, listed in section 1 and not kept in this repository.
 
 Prior research and local source:
 

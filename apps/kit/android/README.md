@@ -124,7 +124,7 @@ mise run android:sdk     # once: the SDK packages, NDK r30, the Swift SDK for An
 mise run android:build   # every module, the Gallery app included, debug and release
 mise run android:test    # the generator, the bridge on this host, the Kotlin tests, the round trip
 mise run android:smoke   # on a booted emulator: the release build's checks, cold starts, the APK's libraries, the contract tests
-mise run android:lock    # after a change to gradle/libs.versions.toml
+mise run android:lock    # after a change to gradle/libs.versions.toml: the locks and the verification metadata
 ```
 
 `SUBSTRATE_ABIS=arm64-v8a` builds one ABI (the default is `arm64-v8a` and
