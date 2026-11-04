@@ -7,11 +7,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { ThemeProvider } from "@/components/theme-provider"
 import { useConsolePreferences } from "@/hooks/use-console-preferences"
 import { ConsolePreferencesProvider } from "./console-preferences"
 
 let stored: Record<string, unknown> = {}
 let version = 0
+/** The kinds the registry answers with: none, unless a case declares the
+ * preference kind. */
+let registry: unknown[] = []
 const puts: Array<Record<string, unknown>> = []
 
 beforeEach(() => {
@@ -30,6 +34,7 @@ beforeEach(() => {
     }) as MediaQueryList
   stored = {}
   version = 0
+  registry = []
   puts.length = 0
   localStorage.clear()
   vi.stubGlobal(
@@ -37,7 +42,9 @@ beforeEach(() => {
     vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/v1/records")) {
         // the kind registry: this repository's preference kind is version 1
-        return new Response(JSON.stringify({ records: [] }), { status: 200 })
+        return new Response(JSON.stringify({ records: [], kinds: registry }), {
+          status: 200,
+        })
       }
       if (init?.method === "PUT") {
         const body = JSON.parse(String(init.body))
@@ -84,9 +91,11 @@ function renderProvider() {
   })
   return render(
     <QueryClientProvider client={client}>
-      <ConsolePreferencesProvider>
-        <Probe />
-      </ConsolePreferencesProvider>
+      <ThemeProvider>
+        <ConsolePreferencesProvider>
+          <Probe />
+        </ConsolePreferencesProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   )
 }
@@ -140,5 +149,48 @@ describe("ConsolePreferencesProvider", () => {
     )
     await waitFor(() => expect(puts).toHaveLength(1))
     expect(puts[0]).not.toHaveProperty("sidebarOpen")
+  })
+})
+
+describe("a theme chosen while signed out", () => {
+  const html = document.documentElement
+
+  beforeEach(() => {
+    // The repository's record holds Light, and its kind declares the theme.
+    stored = { theme: "light" }
+    version = 1
+    registry = [
+      {
+        identity: "substrate.reamde.dev/core/consolepreference",
+        name: "consolepreference",
+        authority: "substrate.reamde.dev",
+        package: "core",
+        version: 2,
+        source: "builtin",
+        description: "",
+        definition: { properties: { theme: {} } },
+      },
+    ]
+    // This browser chose Dark.
+    localStorage.setItem("theme", "dark")
+  })
+
+  it("is saved to the record instead of replaced by it", async () => {
+    localStorage.setItem("substrate.console.signedOutTheme", "dark")
+    renderProvider()
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0].theme).toBe("dark")
+    expect(probe.handle!.preferences.theme).toBe("dark")
+    expect(html.className).toBe("dark")
+    expect(localStorage.getItem("theme")).toBe("dark")
+    expect(localStorage.getItem("substrate.console.signedOutTheme")).toBeNull()
+  })
+
+  it("gives way to the record when it was not chosen signed out", async () => {
+    renderProvider()
+    await waitFor(() => expect(html.className).toBe("light"))
+    expect(probe.handle!.preferences.theme).toBe("light")
+    expect(localStorage.getItem("theme")).toBe("light")
+    expect(puts).toHaveLength(0)
   })
 })

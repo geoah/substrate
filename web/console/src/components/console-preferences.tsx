@@ -11,10 +11,12 @@ import {
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import {
   applyConsoleAction,
+  clearSignedOutTheme,
   consolePreferencesOptions,
   declaredSettings,
   preferencesOf,
   readLocalSettings,
+  readSignedOutTheme,
   saveConsoleAction,
   writeLocalSidebar,
   type ConsoleAction,
@@ -42,6 +44,10 @@ export function ConsolePreferencesProvider({
   const [local, setLocal] = useState(readLocalSettings)
   const [pending, setPending] = useState<Pending[]>([])
   const [failed, setFailed] = useState<ConsoleAction | null>(null)
+  // A theme chosen on a signed-out page is newer than the record's: it is
+  // saved once the record has loaded, and the stored theme never replaces it.
+  const [signedOutTheme] = useState(readSignedOutTheme)
+  const carried = useRef(signedOutTheme)
   // Actions save one at a time, in the order they were made: each is a
   // read-modify-CAS, so running two at once would only race into conflicts.
   const queue = useRef<Promise<void>>(Promise.resolve())
@@ -106,12 +112,22 @@ export function ConsolePreferencesProvider({
   )
 
   // A theme the record holds outranks this browser's: another session chose
-  // it, and this one follows.
+  // it, and this one follows. A signed-out choice not yet saved is the one
+  // exception: it is kept while the record loads, then saved over it.
   const shownTheme = preferences.theme
   useEffect(() => {
-    if (theme && theme.theme !== shownTheme) theme.setTheme(shownTheme)
+    if (!theme) return
+    const chosen = carried.current
+    if (chosen) {
+      if (!query.isSuccess) return
+      carried.current = undefined
+      clearSignedOutTheme()
+      change({ type: "set", key: "theme", value: chosen })
+      return
+    }
+    if (theme.theme !== shownTheme) theme.setTheme(shownTheme)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shownTheme])
+  }, [shownTheme, query.isSuccess])
 
   const busy = query.isPending || query.isError
   const value = useMemo<ConsolePreferencesContextValue>(
