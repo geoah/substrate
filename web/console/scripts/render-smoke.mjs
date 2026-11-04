@@ -344,7 +344,10 @@ const routes = [
         '"Create your Substrate" heading',
         pageTitle(page, "Create your Substrate")
       )
-      const repository = `render-${randomBytes(4).toString("hex")}.example.com`
+      // A label, the form's default: it completes under this host, and the
+      // form lands on "/". A full domain is the advanced option, which lands
+      // on Settings to verify it.
+      const repository = `render-${randomBytes(4).toString("hex")}`
       const password = randomBytes(12).toString("hex")
       await page.locator("#repository").fill(repository)
       await page.locator("#password").fill(password)
