@@ -1413,11 +1413,13 @@ depends = [
 ]
 
 [tasks."ci:quick"]
-description = "The required checks that need no database or Docker: lint, lint go, console, console test, go test"
+description = "The required checks that need no database, Docker or Android toolchain: lint, lint go, console, console test, go test"
 # The fast answer before a push: the jobs a pull request's verdict waits on,
 # less the database half of `go gate` (the engine shards and the `db` jobs),
-# which `mise run test:db` runs under the machine-wide slot. No workflow runs
-# it; each of its parts is a job of its own there.
+# which `mise run test:db` runs under the machine-wide slot, and the apps'
+# jobs behind `apps gate` (ci:apps, a swift container; ci:android, the
+# Android SDK). No workflow runs it; each of its parts is a job of its own
+# there.
 depends = [
   "ci:lint",
   "ci:lint:go",

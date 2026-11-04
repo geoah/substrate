@@ -2,6 +2,11 @@
 #
 # The CI scripts' own tests.
 #
+# .mise/appsgate.sh is the thirteenth: it is the one required check over the
+# apps' jobs, so a wrong pass is an app change merged with its build or its
+# tests red, or never run. Its verdicts run after the pipeline's rules, one
+# of which holds every job the `apps` answer gates to being one it holds.
+#
 # .mise/reposettings.sh is the twelfth: an admin runs it against the live
 # repository, so a wrong call is a setting nobody sees change. It runs
 # against a fake gh at the end, and the `release` environment must end with
@@ -77,6 +82,7 @@ imagemain="$PWD/.mise/imagemain.sh"
 releasegate="$PWD/.mise/releasegate.sh"
 cipostgres="$PWD/.mise/cipostgres.sh"
 toolchaincheck="$PWD/.mise/toolchaincheck.sh"
+appsgate="$PWD/.mise/appsgate.sh"
 # The checks below read .mise.toml with tomllib, which is Python 3.11's, and
 # a Mac's own python3 is older: they run in the tree's environment instead.
 python="$PWD/.mise/python.sh"
@@ -437,15 +443,20 @@ fi
 
 # --- the pipeline the ruleset and `mise run ci` describe --------------------
 
-# Two promises no workflow run checks. A required context in
+# Three promises no workflow run checks. A required context in
 # .github/rulesets/main.json that names no job, or two, is a check that stays
 # pending forever or passes on the wrong job, and renaming a job is all it
-# takes. And `mise run ci` is the whole pipeline only while every `ci:*` task
+# takes. A required job that needs others is a gate, and GitHub passes a
+# required check whose job was skipped, which a job is when one it needs
+# failed: so a gate runs `if: always()`, and a gate that reads an answer
+# (`needs.<job>.outputs.<name>`) needs every job that answer gates and
+# reads its result, or a job gated on it later runs with nothing holding
+# it. And `mise run ci` is the whole pipeline only while every `ci:*` task
 # a workflow runs is one of its dependencies, or is run inside one of them.
 #
-# Job names are read by indentation, which yamlfmt holds: a job is a
-# two-space key under `jobs:` and its name the four-space `name:` under it,
-# else its key, as GitHub names it.
+# Jobs are read by indentation, which yamlfmt holds: a job is a two-space
+# key under `jobs:`, its name the four-space `name:` under it, else its key,
+# as GitHub names it, and its `needs:` and `if:` four-space keys beside it.
 cat >"$tmp/pipeline.py" <<'PY'
 import json, pathlib, re, sys, tomllib
 
@@ -467,9 +478,12 @@ excluded = {"ci:llm"}
 findings = []
 jobs = {}
 runs = {}
+# By "<workflow>:<job>": what the job needs, its `if:` (with the lines it
+# wraps onto) and its text.
+needs, conditions, bodies = {}, {}, {}
 for wf in sorted(pathlib.Path(workflows).glob("*.yml")):
     text = wf.read_text()
-    names, job, in_jobs = {}, None, False
+    names, job, in_jobs, key = {}, None, False, None
     for line in text.splitlines():
         if re.match(r"\S", line):
             in_jobs, job = line.rstrip() == "jobs:", None
@@ -478,18 +492,34 @@ for wf in sorted(pathlib.Path(workflows).glob("*.yml")):
             continue
         m = re.match(r"  ([A-Za-z0-9_-]+):\s*$", line)
         if m:
-            job = m.group(1)
+            job, key = m.group(1), None
             names[job] = job
+            ref = f"{wf.name}:{job}"
+            needs[ref], conditions[ref], bodies[ref] = [], "", ""
             continue
-        m = re.match(r"    name:\s*(.+?)\s*$", line)
-        if m and job:
-            names[job] = m.group(1).strip("'\"")
+        if not job:
+            continue
+        bodies[ref] += line + "\n"
+        m = re.match(r"    ([a-z-]+):\s*(.*?)\s*$", line)
+        if m:
+            key, value = m.groups()
+            if key == "name" and value:
+                names[job] = value.strip("'\"")
+            elif key == "needs":
+                needs[ref] = re.findall(r"[A-Za-z0-9_-]+", value)
+            elif key == "if":
+                conditions[ref] = value
+        elif key == "if" and re.match(r"     ", line):
+            conditions[ref] += " " + line.strip()
+        elif key == "needs" and re.match(r"      - ", line):
+            needs[ref] += re.findall(r"[A-Za-z0-9_-]+", line)
     for job, name in names.items():
         jobs.setdefault(name, []).append(f"{wf.name}:{job}")
     for m in re.finditer(r'(?:mise run|task:)\s*"?(ci:[a-z0-9:]+)', text):
         runs.setdefault(m.group(1), wf.name)
 
 rules = json.load(open(ruleset))["rules"]
+required = []
 for rule in rules:
     if rule["type"] != "required_status_checks":
         continue
@@ -497,6 +527,22 @@ for rule in rules:
         found = jobs.get(check["context"], [])
         if len(found) != 1:
             findings.append(f"required check '{check['context']}' names {len(found)} jobs ({', '.join(found) or 'none'}), expected exactly one")
+        else:
+            required.append(found[0])
+
+for gate in required:
+    if not needs[gate]:
+        continue
+    if "always()" not in conditions[gate]:
+        findings.append(f"{gate} is a required check that needs {', '.join(needs[gate])} and does not run `if: always()`, so a skip of one passes it")
+    wf = gate.split(":", 1)[0]
+    for answer in sorted(set(re.findall(r"needs\.[A-Za-z0-9_-]+\.outputs\.[A-Za-z0-9_-]+", bodies[gate]))):
+        for ref, condition in sorted(conditions.items()):
+            if ref == gate or not ref.startswith(wf + ":") or not re.search(re.escape(answer) + r"\b", condition):
+                continue
+            other = ref.split(":", 1)[1]
+            if other not in needs[gate] or f"needs.{other}.result" not in bodies[gate]:
+                findings.append(f"{ref} runs on {answer}, and {gate}, the required check that reads it, does not both need it and read its result")
 
 for task, wf in sorted(runs.items()):
     if task not in tasks:
@@ -545,6 +591,54 @@ case "$(pipeline "$tmp/mise-no-providers.toml" .github/workflows .github/ruleset
 *"runs ci:providers, which \`mise run ci\` neither"*) ;;
 *) flag "the pipeline: ci:providers missing from \`ci\` was not reported" ;;
 esac
+# And the gates: `apps gate` without `if: always()`, `android build` dropped
+# from what it needs, and two more jobs moved onto the apps answer with
+# nothing holding them.
+scratch "$tmp/wf-gate-skipped" '/^  apps-gate:$/,/^    if: always()$/{/^    if: always()$/d;}'
+case "$(pipeline .mise.toml "$tmp/wf-gate-skipped" .github/rulesets/main.json)" in
+*"ci.yml:apps-gate is a required check that needs changes, apps-linux, android and does not run"*) ;;
+*) flag "the pipeline: an \`apps gate\` a skip passes was not reported" ;;
+esac
+scratch "$tmp/wf-gate-unheld" 's/^    needs: \[changes, apps-linux, android\]$/    needs: [changes, apps-linux]/'
+case "$(pipeline .mise.toml "$tmp/wf-gate-unheld" .github/rulesets/main.json)" in
+*"ci.yml:android runs on needs.changes.outputs.apps, and ci.yml:apps-gate"*) ;;
+*) flag "the pipeline: \`android build\` outside what \`apps gate\` needs was not reported" ;;
+esac
+scratch "$tmp/wf-gate-third" 's/^\(    if: needs\.changes\.outputs\.\)go\( == .true.\)$/\1apps\2/'
+case "$(pipeline .mise.toml "$tmp/wf-gate-third" .github/rulesets/main.json)" in
+*"ci.yml:drill runs on needs.changes.outputs.apps, and ci.yml:apps-gate"*) ;;
+*) flag "the pipeline: a job gated on the apps answer that \`apps gate\` does not hold was not reported" ;;
+esac
+
+# --- the apps gate ------------------------------------------------------------
+
+# .mise/appsgate.sh is the one required check over the apps' jobs, so a wrong
+# pass is an app change merged with its build or its tests red, or never run.
+# apps_gate <name> <expected exit> <APPS, or - for unset> <job=result…>
+apps_gate() {
+  local name="$1" expected="$2" answer="$3" status
+  shift 3
+  if [ "$answer" = - ]; then
+    env -u APPS "$appsgate" "$@" >/dev/null 2>"$tmp/stderr"
+  else
+    APPS="$answer" "$appsgate" "$@" >/dev/null 2>"$tmp/stderr"
+  fi
+  status=$?
+  [ "$status" -eq "$expected" ] || flag "apps gate ${name}: exit ${status}, expected ${expected}: $(cat "$tmp/stderr")"
+}
+apps_gate built 0 true 'apps linux=success' 'android build=success'
+apps_gate one-red 1 true 'apps linux=success' 'android build=failure'
+apps_gate one-cancelled 1 true 'apps linux=cancelled' 'android build=success'
+apps_gate skipped-on-a-change 1 true 'apps linux=skipped' 'android build=success'
+apps_gate untouched 0 false 'apps linux=skipped' 'android build=skipped'
+apps_gate untouched-ran-anyway 0 false 'apps linux=success' 'android build=skipped'
+apps_gate untouched-red 1 false 'apps linux=failure' 'android build=skipped'
+apps_gate untouched-cancelled 1 false 'apps linux=skipped' 'android build=cancelled'
+apps_gate no-answer 1 '' 'apps linux=skipped' 'android build=skipped'
+apps_gate answer-unset 1 - 'apps linux=skipped' 'android build=skipped'
+apps_gate odd-answer 1 yes 'apps linux=success' 'android build=success'
+apps_gate no-result 1 true 'apps linux=success' 'android build='
+apps_gate no-jobs 2 true
 
 # --- the database slot --------------------------------------------------------
 

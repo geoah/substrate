@@ -32,7 +32,8 @@ app id and the device profile with. CI builds no Apple app: its `apps linux`
 job builds and tests the kit and every app's core on Linux, then the core of
 an app `apps:new` makes, and its `android build` job builds the kit for
 Android ([Android](#android)); the SwiftUI side is a Mac's, through the
-`apple:test:*` tasks.
+`apple:test:*` tasks. The two run on a change to what they build, and a pull
+request waits for both through the required `apps gate` check.
 
 ## How the console runs in it
 

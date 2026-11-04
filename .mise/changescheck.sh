@@ -28,7 +28,8 @@
 #
 # Every failure here is a non-zero exit and no `go=` line, never `go=false`:
 # a base this cannot resolve or a diff git refuses is a change nobody looked
-# at, and the workflow's `go gate` turns the missing answer into a red check.
+# at, and the workflow's `go gate` turns the missing answer into a red check,
+# as its `apps gate` does a missing `apps=` (.mise/appsgate.sh).
 #
 # The same diff answers a second question, `apps` (the first argument;
 # none is `go`): does the change touch what the `apps linux` and `android

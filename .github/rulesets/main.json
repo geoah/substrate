@@ -65,6 +65,10 @@
           {
             "context": "go gate",
             "integration_id": 15368
+          },
+          {
+            "context": "apps gate",
+            "integration_id": 15368
           }
         ]
       }
