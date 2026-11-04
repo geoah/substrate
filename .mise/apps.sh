@@ -8,7 +8,8 @@
 # them:
 #
 #   1. one publisher at a time: a lease, taken with a conditional write
-#      (lease_take), and the published state read after it;
+#      (lease_take), and the published state read after it, which stops a
+#      stable version another commit already published (stable_unpublished);
 #   2. every selected app built and checked on every platform it has a UI
 #      for, from one commit under one version (build_all); nothing goes up
 #      before all of them passed;
@@ -142,8 +143,9 @@ app_upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
 # (the UTC time, YYYYMMDD.HHMMSS); a pre-release is the next patch after the
 # last released version, so it sorts after that one and before the next:
 # 0.113.1-pre.20261021.153012+ac85863e. A stable release is the released
-# version itself and needs a clean tree. Every app and platform of one
-# release carries the one version.
+# version itself, built from a clean tree at the commit release-please
+# tagged for it (stable_tagged). Every app and platform of one release
+# carries the one version.
 #
 # Sets the caller's `short`, `build`, `commit`, `commit_full` and `version`.
 stamp() {
@@ -162,12 +164,48 @@ stamp() {
 	commit_full="$(git -C "$ROOT" rev-parse HEAD)"
 	commit="${commit_full:0:8}$dirty"
 	if [ "$channel" = stable ]; then
+		stable_tagged "$released" "$commit_full"
 		short="$released"
 		version="$released"
 	else
 		short="$major.$minor.$((patch + 1))"
 		version="$short-pre.$build+$commit"
 	fi
+}
+
+# stable_tagged <version> <commit>: a stable version names one commit, the
+# one release-please tagged v<version> on main when it released it. So the
+# tag must be here, name <commit>, and be on main's history as origin/main
+# was last fetched; otherwise the version would go out for a commit after
+# the tag, a branch's, or a tag nobody merged.
+stable_tagged() {
+	local released="$1" head="$2" tag="v$1" tagged main
+	tagged="$(git -C "$ROOT" rev-parse -q --verify "refs/tags/$tag^{commit}")" ||
+		die "a stable release of $released is built from its release-please tag, $tag, and this checkout has none; fetch the tags (git fetch origin --tags) and check $tag out"
+	[ "$tagged" = "$head" ] ||
+		die "a stable release of $released is built from $tag, which is $tagged, and this tree is at $head; check $tag out"
+	main="$(git -C "$ROOT" rev-parse -q --verify refs/remotes/origin/main)" ||
+		die "a stable release is built from a commit on main's history, and this checkout has no origin/main; fetch it (git fetch origin main)"
+	git -C "$ROOT" merge-base --is-ancestor "$tagged" "$main" ||
+		die "$tag ($tagged) is not on main's history as origin/main was last fetched; a stable release is built from the commit release-please tagged on main"
+}
+
+# Under the lease, before anything is built: a stable version already
+# listed in any app's feed from another commit is refused, since one
+# version for two commits is two releases nobody could tell apart. A rerun
+# of the staged build finds its own entries, from its own commit, and
+# carries on, as does a release of the tagged commit again.
+stable_unpublished() {
+	[ "$channel" = stable ] || return 0
+	local app others
+	for app in $(ui_apps); do
+		[ -f "$RUN/published/$app.json" ] || read_published "$app"
+		others="$(jq -r --arg version "$version" --arg commit "$commit" \
+			'[.releases[]? | select(.version == $version and .commit != $commit) | .commit] | unique | join(", ")' \
+			"$RUN/published/$app.json")"
+		[ -z "$others" ] ||
+			die "$version is already published from commit $others in $app's feed ($(feed_url "$app")/index.json), and this release is commit $commit; a stable version names one commit, so nothing is built or published"
+	done
 }
 
 # --- where things go -------------------------------------------------------
@@ -1647,6 +1685,7 @@ release() {
 			die "build $build was staged for ${RELEASE_APPS[*]}, not ${asked[*]}; a rerun releases what was staged"
 		fi
 		[ "$(git -C "$ROOT" rev-parse HEAD)" = "$commit_full" ] || die "build $build was built from $commit_full, and this tree is at $(git -C "$ROOT" rev-parse HEAD); a rerun runs from the commit it built"
+		[ "$channel" != stable ] || stable_tagged "$short" "$commit_full"
 	else
 		if [ "${#RELEASE_APPS[@]}" -eq 0 ]; then
 			for app in $(ui_apps); do RELEASE_APPS+=("$app"); done
@@ -1664,8 +1703,9 @@ release() {
 	say "releasing ${RELEASE_APPS[*]} as $version ($channel)${DRY:+, a dry run}"
 
 	lease_take "$version" site
-	[ -n "$resume" ] || mkdir -p "$STAGE" "$REL_DIR/work"
 	for app in "${RELEASE_APPS[@]}"; do read_published "$app"; done
+	stable_unpublished
+	[ -n "$resume" ] || mkdir -p "$STAGE" "$REL_DIR/work"
 	if [ -z "$resume" ]; then
 		build_all
 	else

@@ -71,8 +71,9 @@ outside the sandbox, for the driver below.
 ## Releases and updates
 
 `mise run apps:release` (a pre-release; `apps:release stable` for a stable
-one, from a clean tree) releases every app with a UI, on every platform it
-has a UI for; `apps:release prerelease chat sync` releases those two alone.
+one, from a clean checkout of its release-please tag, below) releases every
+app with a UI, on every platform it has a UI for; `apps:release prerelease
+chat sync` releases those two alone.
 It publishes to `SUBSTRATE_APPLE_RELEASE_URL`: the path-style address of a
 folder on an S3 bucket that anyone may read and the key in
 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` may write, with its site at
@@ -313,7 +314,15 @@ The release builds stay in the release folder.
 The version is the next patch after the last released one, plus the build
 number and the commit, `0.113.1-pre.20261021.153012+ac85863e` (`.dirty`
 when the tree was); the build number is the UTC time, so it only rises, and
-it is what one release is compared to another by. The folder holds:
+it is what one release is compared to another by. A stable release is the
+released version itself (`.release-please-manifest.json`), and a stable
+version names one commit: it is built only from a clean tree whose `HEAD`
+is the commit release-please tagged `v<version>`, on main's history as
+`origin/main` was last fetched (`git fetch origin --tags` and check the tag
+out first), and a rerun of its stage is held to the same. Under the lease,
+before anything is built, it is refused if any app's feed already lists
+that version from another commit; a rerun of the staged build, or a
+release of the tagged commit again, finds only its own. The folder holds:
 
 | Path                | What                                                                    |
 | ------------------- | ----------------------------------------------------------------------- |
