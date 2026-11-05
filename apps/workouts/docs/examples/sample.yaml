@@ -13,10 +13,12 @@
 #
 # ONE EXERCISE PER IDEA, OR A FEW. Each slot's `notes` says what it shows, so
 # the routine explains itself in the app. What each part shows:
-#   row            a warm-up over a distance, timed (distance and time)
-#   bird-dog       a reps-only warm-up, one side then the other (alternating)
+#   row, bird-dog  a warm-up circuit of two rounds: a warm-up over a
+#                  distance, timed (distance and time), and a reps-only
+#                  warm-up, one side then the other (alternating)
 #   leg-press      a warm-up at a percentage of body mass, a top set and a
-#                  back-off set 10 % lighter; its own warm-up and set rests
+#                  back-off set 10 % lighter; its own warm-up and set rests;
+#                  a cue beside the set
 #   chest-press    a per-side load; straight sets with rep and RPE ranges at
 #                  a tempo; one set's own rest; a drop set whose drops are a
 #                  fixed 5 kg a side and 6 reps each
@@ -335,6 +337,9 @@ data:
       on this screen. The exercises it added stay, since your sessions name
       them.
     groups:
+      - key: w
+        groupKind: circuit
+        roundRest: PT30S
       - key: a
         groupKind: superset
         roundRest: PT1M30S
@@ -345,23 +350,38 @@ data:
     slots:
       - key: row
         exercise: substrate.reamde.dev/training/exercise/rowing-machine
+        group: w
+        transition: PT15S
+        cue: Easy pace, long strokes
         notes: >-
-          A warm-up over a distance: row 500 m at an easy pace. The app keeps
-          your time with the distance.
+          A warm-up circuit with the bird dog, two rounds: row 250 m at an
+          easy pace, then the bird dog. The app keeps your time with the
+          distance.
         sets:
           - key: w1
             role: warmup
             termination: distance
             distance:
-              value: "500"
+              value: "250"
+              unit: m
+          - key: w2
+            role: warmup
+            termination: distance
+            distance:
+              value: "250"
               unit: m
       - key: bird-dog
         exercise: substrate.reamde.dev/training/exercise/bird-dog
+        group: w
         notes: >-
           A warm-up counted in reps only, one side then the other: 8 reps
-          a side.
+          a side, after each row.
         sets:
           - key: w1
+            role: warmup
+            repsMin: 8
+            repsMax: 8
+          - key: w2
             role: warmup
             repsMin: 8
             repsMax: 8
@@ -369,6 +389,7 @@ data:
         exercise: substrate.reamde.dev/training/exercise/leg-press-machine
         setRest: PT2M30S
         warmupRest: PT1M
+        cue: Feet flat, knees track your toes
         notes: >-
           A warm-up (W) at 50 % of your body mass, from Apple Health or typed
           in Settings; with neither, the warm-up has no load and you enter
@@ -400,11 +421,12 @@ data:
       - key: chest-press
         exercise: substrate.reamde.dev/training/exercise/iso-lateral-chest-press-machine
         setRest: PT2M
+        cue: Three seconds down, no bounce at the chest
         notes: >-
           Each arm has its own plates, so the load is per side. Straight sets
-          of 8 to 12 at RPE 7 to 8, lowered over three seconds (tempo 3-0-1-0).
-          Set 2 rests 3 min, a rest of its own. Set 3 is a drop set: two drops,
-          each 5 kg a side lighter, of 6 reps each.
+          of 8 to 12 with 2 to 3 reps left, lowered over three seconds (tempo
+          3-0-1-0). Set 2 rests 3 min, a rest of its own. Set 3 is a drop set:
+          two drops, each 5 kg a side lighter, of 6 reps each.
         sets:
           - key: s1
             load:
@@ -468,8 +490,8 @@ data:
         exercise: substrate.reamde.dev/training/exercise/push-up
         group: a
         notes: >-
-          A2, your body weight: stop round 1 with two to three reps in reserve,
-          and do round 2 for as many reps as possible (AMRAP).
+          A2, your body weight: stop round 1 with two to three reps left, and
+          do round 2 for as many reps as possible (AMRAP).
         sets:
           - key: s1
             termination: rirstop
@@ -560,8 +582,8 @@ data:
         exercise: substrate.reamde.dev/training/exercise/triceps-pushdown
         setRest: PT1M30S
         notes: >-
-          A cluster set (4 reps, 15 s, three more clusters, two reps in reserve),
-          then a last set to failure.
+          A cluster set (4 reps, 15 s, three more clusters, two reps left), then
+          a last set to failure.
         sets:
           - key: s1
             structure: cluster
