@@ -550,12 +550,21 @@ func installTriggers(t *testing.T, ds substrate.Dataset, dir string, ids ...stri
 // would.
 func putDataDoc(t *testing.T, ds substrate.Dataset, m map[string]any) *substrate.Record {
 	t.Helper()
+	return putDataDocAs(t, ds, substrate.ActorAPI, m)
+}
+
+// putDataDocAs is putDataDoc under another hand: a record a provider's
+// install lays beside its declarations is written as that package's bundle,
+// as the catalog's install writes it, and keeps the id it ships under
+// (decision 0228).
+func putDataDocAs(t *testing.T, ds substrate.Dataset, actor substrate.Actor, m map[string]any) *substrate.Record {
+	t.Helper()
 	kind, _ := m["kind"].(string)
 	meta, _ := m["metadata"].(map[string]any)
 	id, _ := meta["id"].(string)
 	data, _ := m["data"].(map[string]any)
 	props, _ := data["properties"].(map[string]any)
-	row, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	row, err := ds.Put(context.Background(), actor, substrate.PutInput{
 		Kind: kind, ID: id, Properties: props,
 	})
 	if err != nil {
@@ -1243,3 +1252,8 @@ func millisAgo(d time.Duration) string {
 func sortedKeys[V any](m map[string]V) []string {
 	return slices.Sorted(maps.Keys(m))
 }
+
+// fid is the minted id a fixture gives the record it would have named
+// name: a new record of a kind the repository does not keep internal takes
+// a minted id (decision 0228).
+func fid(name string) string { return vocabulary.DerivedMintedID("fixture", name) }

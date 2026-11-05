@@ -125,9 +125,9 @@ func TestClinicalRecordsLand(t *testing.T) {
 			t.Fatalf("put %s/%s: %v", k, id, err)
 		}
 	}
-	practice := kind("organization") + "/ods/A12345"
-	consultation := kind("encounter") + "/gp/c1"
-	put(kind("organization"), "ods/A12345", map[string]any{
+	practice := kind("organization") + "/" + fid("ods/A12345")
+	consultation := kind("encounter") + "/" + fid("gp/c1")
+	put(kind("organization"), fid("ods/A12345"), map[string]any{
 		"name": "Riverside Medical Practice", "type": "gppractice",
 		"identifiers": []any{map[string]any{
 			"system": "https://fhir.nhs.uk/Id/ods-organization-code", "value": "A12345", "label": "ODS code",
@@ -135,13 +135,13 @@ func TestClinicalRecordsLand(t *testing.T) {
 		"address": map[string]any{"lines": []any{"1 River Road"}, "city": "London", "postalCode": "N1 1AA"},
 		"phone":   "(020) 7946 0958",
 	})
-	put(kind("patient"), "nhs", map[string]any{
+	put(kind("patient"), fid("nhs"), map[string]any{
 		"service": "NHS England", "name": "Ada Example", "birthDate": "1990-01-01", "gender": "female",
 		"identifiers": []any{map[string]any{"system": "https://fhir.nhs.uk/Id/nhs-number", "value": "9990000000", "label": "NHS number"}},
 		"practice":    practice, "pharmacy": practice, "registeredAt": "2024-01-10",
 	})
-	put(labsID+"/labreport", "gp/r1", map[string]any{"lab": "Riverside Medical Practice", "at": "2026-03-02T09:30:00Z"})
-	put(kind("encounter"), "gp/c1", map[string]any{
+	put(labsID+"/labreport", fid("gp/r1"), map[string]any{"lab": "Riverside Medical Practice", "at": "2026-03-02T09:30:00Z"})
+	put(kind("encounter"), fid("gp/c1"), map[string]any{
 		"at": "2026-03-02T09:30:00Z", "summary": "Blood pressure review", "type": "Face to face consultation",
 		"class": "inperson", "status": "finished", "precision": "time", "organization": practice,
 		"participants": []any{map[string]any{"name": "Dr Example", "role": "Dr"}},
@@ -153,51 +153,51 @@ func TestClinicalRecordsLand(t *testing.T) {
 			},
 		}},
 		"text":        "**Examination**\n\nO/E - blood pressure reading: 128/82",
-		"reports":     []any{labsID + "/labreport/gp/r1"},
-		"appointment": kind("appointment") + "/gp/ap1",
+		"reports":     []any{labsID + "/labreport/" + fid("gp/r1")},
+		"appointment": kind("appointment") + "/" + fid("gp/ap1"),
 		"revision":    1,
 	})
-	put(kind("condition"), "gp/p1", map[string]any{
+	put(kind("condition"), fid("gp/p1"), map[string]any{
 		"name": "Essential hypertension", "at": "2026-03-02T00:00:00Z", "precision": "day", "clinicalStatus": "active",
 		"category": "problemlistitem", "verificationStatus": "confirmed", "significance": "major",
 		"encounter": consultation, "organization": practice,
 	})
-	put(kind("allergy"), "gp/a1", map[string]any{
+	put(kind("allergy"), fid("gp/a1"), map[string]any{
 		"name": "Allergy to penicillin", "substance": "penicillin", "type": "allergy", "category": "medication",
 		"criticality": "high", "clinicalStatus": "active", "at": "2015-06-01T00:00:00Z", "precision": "year",
 		"reactions": []any{map[string]any{"manifestation": "Hives", "severity": "moderate"}},
 	})
-	put(kind("immunization"), "gp/i1", map[string]any{
+	put(kind("immunization"), fid("gp/i1"), map[string]any{
 		"name": "Influenza vaccination", "status": "completed", "doseNumber": "1", "at": "2025-10-01T10:00:00Z",
 	})
-	put(kind("medicationrequest"), "gp/m1", map[string]any{
+	put(kind("medicationrequest"), fid("gp/m1"), map[string]any{
 		"medication": "Amlodipine 5mg tablets", "dosage": "One tablet once a day", "quantity": "28 tablets",
 		"course": "continuous", "intent": "plan", "status": "active", "at": "2026-03-02T09:40:00Z",
 		"organization": practice,
 	})
-	put(kind("medicationdispense"), "eps/X1/1", map[string]any{
+	put(kind("medicationdispense"), fid("eps/X1/1"), map[string]any{
 		"medication": "Amlodipine 5mg tablets", "quantity": "28 tablets", "status": "completed", "sourceStatus": "Dispensed",
-		"prescription": "X1", "request": kind("medicationrequest") + "/gp/m1", "pharmacy": practice,
+		"prescription": "X1", "request": kind("medicationrequest") + "/" + fid("gp/m1"), "pharmacy": practice,
 		"at": "2026-03-04T12:00:00Z", "issuedAt": "2026-03-03T10:00:00Z", "statusAt": "2026-03-04T12:00:00Z",
 	})
-	put(kind("appointment"), "gp/ap1", map[string]any{
+	put(kind("appointment"), fid("gp/ap1"), map[string]any{
 		"name": "Telephone appointment", "status": "fulfilled", "channel": "telephone",
 		"at": "2026-03-02T09:30:00Z", "endsAt": "2026-03-02T09:40:00Z", "phone": "07700 900123",
 	})
-	put(kind("referral"), "ers/1", map[string]any{
+	put(kind("referral"), fid("ers/1"), map[string]any{
 		"specialty": "Cardiology", "status": "active", "priority": "routine", "at": "2026-03-02T10:00:00Z",
 		"plannedWait": "P18W", "typicalWait": "P20W", "estimatedTreatmentAt": "2026-07-01", "waitsAsOf": "2026-03-01",
 	})
-	put(kind("document"), "gp/d1", map[string]any{
+	put(kind("document"), fid("gp/d1"), map[string]any{
 		"name": "Discharge summary", "type": "Letter", "at": "2026-02-20T00:00:00Z", "precision": "day",
 		"text": "Discharged home.", "status": "current", "encounter": consultation,
 	})
-	put(kind("communication"), "app/1", map[string]any{
+	put(kind("communication"), fid("app/1"), map[string]any{
 		"sender": "Riverside Medical Practice", "topic": "Blood test results",
 		"body": "Your blood test results are back.", "at": "2026-03-05T08:00:00Z",
 	})
 
-	row, err := ds.Get(ctx, kind("encounter"), "gp/c1")
+	row, err := ds.Get(ctx, kind("encounter"), fid("gp/c1"))
 	if err != nil {
 		t.Fatalf("read the consultation back: %v", err)
 	}
@@ -490,3 +490,8 @@ func TestAnUpgradePreviewCountsTheRequirementsTheInstallBrings(t *testing.T) {
 		t.Errorf("the upgrade did not bring %s: %v", needed, err)
 	}
 }
+
+// fid is the minted id a fixture gives the record it would have named
+// name: a new record of a kind the repository does not keep internal takes
+// a minted id (decision 0228).
+func fid(name string) string { return vocabulary.DerivedMintedID("fixture", name) }

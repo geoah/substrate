@@ -138,7 +138,7 @@ func TestASuggestedMappingWaitsThenIsReadyThenLands(t *testing.T) {
 		t.Fatalf("installing the provider landed the sample's mapping: %v", err)
 	}
 	user, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: githubUser, ID: "before",
+		Kind: githubUser, ID: fid("before"),
 		Properties: map[string]any{
 			"account": githubAccount + "/" + mustAccount(t, ds, githubAccount),
 			"login":   "grace", "email": "grace@example.com",
@@ -172,7 +172,7 @@ func TestASuggestedMappingWaitsThenIsReadyThenLands(t *testing.T) {
 	// project onto it: the name, the login as the friendly name, and the
 	// address unioned onto the person's own list.
 	fresh, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: githubUser, ID: "user-ada",
+		Kind: githubUser, ID: fid("user-ada"),
 		Properties: map[string]any{
 			"account": githubAccount + "/acct",
 			"login":   "ada",
@@ -236,7 +236,7 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 	}
 
 	issue, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: linearIssue, ID: "issue-1",
+		Kind: linearIssue, ID: fid("issue-1"),
 		Properties: map[string]any{
 			"account":    linearAccount + "/" + mustAccount(t, ds, linearAccount),
 			"issueTitle": "Ship the mappings",
