@@ -76,10 +76,10 @@ func fallBackSearch(t *testing.T, ds *dataset, q string) []string {
 func TestLexicalSearchFallsBackWhenScoringRunsOutOfBudget(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
-	putScoreTask(t, ds, "whole", "errand", "flight booking "+longRepetitive("w"))
-	putScoreTask(t, ds, "short", "flight", "")
-	putScoreTask(t, ds, "long", "errand", "booking "+longRepetitive("booking"))
-	if got := fallBackSearch(t, ds, "flight booking"); strings.Join(got, ",") != "whole,short,long" {
+	putScoreTask(t, ds, fid("whole"), "errand", "flight booking "+longRepetitive("w"))
+	putScoreTask(t, ds, fid("short"), "flight", "")
+	putScoreTask(t, ds, fid("long"), "errand", "booking "+longRepetitive("booking"))
+	if got := fallBackSearch(t, ds, "flight booking"); strings.Join(got, ",") != strings.Join([]string{fid("whole"), fid("short"), fid("long")}, ",") {
 		t.Fatalf("hits = %v, want the whole match, then the short relaxed match above the long one", got)
 	}
 }
@@ -90,10 +90,10 @@ func TestLexicalSearchFallsBackWhenScoringRunsOutOfBudget(t *testing.T) {
 func TestLexicalSearchFallbackRanksAnExclusionQueryByItsWords(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
-	putScoreTask(t, ds, "prose", "errand", "flight")
-	putScoreTask(t, ds, "title", "flight plan for the lisbon trip", "")
-	putScoreTask(t, ds, "gone", "flight delayed", "")
-	if got := fallBackSearch(t, ds, "flight -delayed"); strings.Join(got, ",") != "title,prose" {
+	putScoreTask(t, ds, fid("prose"), "errand", "flight")
+	putScoreTask(t, ds, fid("title"), "flight plan for the lisbon trip", "")
+	putScoreTask(t, ds, fid("gone"), "flight delayed", "")
+	if got := fallBackSearch(t, ds, "flight -delayed"); strings.Join(got, ",") != strings.Join([]string{fid("title"), fid("prose")}, ",") {
 		t.Fatalf("hits = %v, want the title match above the prose one, the excluded record absent", got)
 	}
 }
@@ -103,7 +103,7 @@ func TestLexicalSearchFallbackRanksAnExclusionQueryByItsWords(t *testing.T) {
 func TestLexicalSearchFailsWhenTheCallerCancelsDuringScoring(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
-	putScoreTask(t, ds, "a", "flight booking", "")
+	putScoreTask(t, ds, fid("a"), "flight booking", "")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ds.svc.searchScoreHook = cancel
@@ -120,15 +120,15 @@ func TestLexicalPreRankDoesNotRewardLength(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := openInternalDataset(t)
-	// "long" sorts before "short", so a tie would pick it.
-	putScoreTask(t, ds, "long", "errand", longRepetitive("flight"))
-	putScoreTask(t, ds, "short", "errand", "flight")
+	// fid("long-task") sorts before fid("short-task"), so a tie would pick it.
+	putScoreTask(t, ds, fid("long-task"), "errand", longRepetitive("flight"))
+	putScoreTask(t, ds, fid("short-task"), "errand", "flight")
 	pass := lexicalPass{plan: parseSearch("flight"), readMax: searchReadMax, matchMax: searchReadMax}
 	cands, _, _, err := ds.lexicalCandidates(ctx, pass, false, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cands) != 2 || cands[0].id.ID != "short" {
+	if len(cands) != 2 || cands[0].id.ID != fid("short-task") {
 		t.Fatalf("candidates = %+v, want short first", cands)
 	}
 	if cands[0].rank <= cands[1].rank {
@@ -155,8 +155,8 @@ func coldRead(t *testing.T, ds *dataset) func(context.Context) {
 func TestLexicalSearchScoresTheNewestWhenThePreRankRunsOutOfBudget(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
-	putScoreTask(t, ds, "old", "flight", "")
-	putScoreTask(t, ds, "new", "errand", "flight "+longRepetitive("w"))
+	putScoreTask(t, ds, fid("old"), "flight", "")
+	putScoreTask(t, ds, fid("new"), "errand", "flight "+longRepetitive("w"))
 	const budget = 2 * time.Second
 	ds.svc.searchBudget = budget
 	ds.svc.searchPreRankHook = coldRead(t, ds)
@@ -164,7 +164,7 @@ func TestLexicalSearchScoresTheNewestWhenThePreRankRunsOutOfBudget(t *testing.T)
 	if err != nil {
 		t.Fatalf("a pre-rank past the budget failed the search: %v", err)
 	}
-	if len(res.Hits) != 1 || res.Hits[0].Record.ID != "old" {
+	if len(res.Hits) != 1 || res.Hits[0].Record.ID != fid("old") {
 		t.Fatalf("hits = %+v, want BM25F to rank the title match first", res.Hits)
 	}
 	if !res.Capped || !strings.Contains(res.Note, "so the newest matches were ranked instead of the closest ones") {
@@ -177,8 +177,8 @@ func TestLexicalSearchScoresTheNewestWhenThePreRankRunsOutOfBudget(t *testing.T)
 func TestLexicalSearchAnswersNewestFirstWhenPreRankAndScoringRunOut(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
-	putScoreTask(t, ds, "old", "flight", "")
-	putScoreTask(t, ds, "new", "errand", "flight "+longRepetitive("w"))
+	putScoreTask(t, ds, fid("old"), "flight", "")
+	putScoreTask(t, ds, fid("new"), "errand", "flight "+longRepetitive("w"))
 	const budget = 2 * time.Second
 	ds.svc.searchBudget = budget
 	ds.svc.searchPreRankHook = func(ctx context.Context) { <-ctx.Done() }
@@ -191,7 +191,7 @@ func TestLexicalSearchAnswersNewestFirstWhenPreRankAndScoringRunOut(t *testing.T
 	for _, h := range res.Hits {
 		got = append(got, h.Record.ID)
 	}
-	if strings.Join(got, ",") != "new,old" {
+	if strings.Join(got, ",") != strings.Join([]string{fid("new"), fid("old")}, ",") {
 		t.Fatalf("hits = %v, want newest first", got)
 	}
 	if !res.Capped || !strings.Contains(res.Note, "ordered newest first") {
@@ -207,9 +207,9 @@ func TestLexicalSearchAnswersNewestFirstWhenPreRankAndScoringRunOut(t *testing.T
 func TestLexicalSearchTakesIndexedMatchesWhenTheIdentityReadRunsOutOfBudget(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t, WithSearchMatchMax(0))
-	putScoreTask(t, ds, "old", "flight", "")
-	putScoreTask(t, ds, "new", "errand", "flight "+longRepetitive("w"))
-	putScoreTask(t, ds, "partial", "flight", "nothing about it")
+	putScoreTask(t, ds, fid("old"), "flight", "")
+	putScoreTask(t, ds, fid("new"), "errand", "flight "+longRepetitive("w"))
+	putScoreTask(t, ds, fid("partial"), "flight", "nothing about it")
 	const budget = 2 * time.Second
 	ds.svc.searchBudget = budget
 	ds.svc.searchIdentityHook = coldRead(t, ds)
@@ -250,8 +250,8 @@ func TestLexicalSearchTakesIndexedMatchesWhenTheIdentityReadRunsOutOfBudget(t *t
 func TestLexicalSearchTakesIndexedMatchesWhenTheCountRunsOutOfBudget(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
-	putScoreTask(t, ds, "both", "flight booking", "")
-	putScoreTask(t, ds, "partial", "flight", "")
+	putScoreTask(t, ds, fid("both"), "flight booking", "")
+	putScoreTask(t, ds, fid("partial"), "flight", "")
 	const budget = 2 * time.Second
 	ds.svc.searchBudget = budget
 	ds.svc.searchCountHook = coldRead(t, ds)
@@ -259,7 +259,7 @@ func TestLexicalSearchTakesIndexedMatchesWhenTheCountRunsOutOfBudget(t *testing.
 	if err != nil {
 		t.Fatalf("a count past the budget failed the search: %v", err)
 	}
-	if len(res.Hits) != 1 || res.Hits[0].Record.ID != "both" {
+	if len(res.Hits) != 1 || res.Hits[0].Record.ID != fid("both") {
 		t.Fatalf("hits = %+v, want the strict match alone", res.Hits)
 	}
 	if !res.Capped || !strings.Contains(res.Note, "were not searched") {
@@ -274,7 +274,7 @@ func TestLexicalCandidatesPastTheCountSampleOrReadEveryMatch(t *testing.T) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	for i := range 3 {
-		putScoreTask(t, ds, fmt.Sprintf("t%d", i), "flight", "")
+		putScoreTask(t, ds, fid(fmt.Sprintf("t%d", i)), "flight", "")
 	}
 	ds.svc.searchCountHook = coldRead(t, ds)
 	for _, tc := range []struct {
@@ -301,7 +301,7 @@ func TestLexicalCandidatesPastTheCountSampleOrReadEveryMatch(t *testing.T) {
 func TestLexicalSearchAnswersCappedWhenTheIndexedReadRunsOutOfBudget(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
-	putScoreTask(t, ds, "a", "flight", "")
+	putScoreTask(t, ds, fid("a"), "flight", "")
 	const budget = 2 * time.Second
 	ds.svc.searchBudget = budget
 	ds.svc.searchCountHook = coldRead(t, ds)
@@ -371,7 +371,7 @@ func TestLexicalSearchFailsOnAStatementErrorThatArrivesPastADeadline(t *testing.
 			t.Parallel()
 			late := &lateError{}
 			ds := openInternalDataset(t, WithTestQueryTracer(late))
-			putScoreTask(t, ds, "a", "flight", "")
+			putScoreTask(t, ds, fid("a"), "flight", "")
 			ds.svc.searchBudget = budget
 			ds.svc.searchReadMax = -5
 			late.hold("2201W", time.Now().Add(tc.after))
@@ -389,7 +389,7 @@ func TestLexicalSearchFailsOnAStatementErrorThatArrivesPastADeadline(t *testing.
 func TestLexicalSearchFailsOnAClosedPoolPastTheIndexedReadsDeadline(t *testing.T) {
 	t.Parallel()
 	ds := openInternalDataset(t)
-	putScoreTask(t, ds, "a", "flight", "")
+	putScoreTask(t, ds, fid("a"), "flight", "")
 	ds.svc.searchBudget = 2 * time.Second
 	ds.svc.searchCountHook = coldRead(t, ds)
 	ds.svc.searchSampleHook = func(ctx context.Context) {
@@ -409,11 +409,11 @@ func TestIndexedCandidatesApplyTheKindsBeforeTheCap(t *testing.T) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	for i := range 5 {
-		putScoreTask(t, ds, fmt.Sprintf("t%d", i), "flight", "")
+		putScoreTask(t, ds, fid(fmt.Sprintf("t%d", i)), "flight", "")
 	}
 	const person = "samples.substrate.reamde.dev/people/person"
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: person, ID: "pilot", Properties: map[string]any{"name": "flight"},
+		Kind: person, ID: fid("pilot"), Properties: map[string]any{"name": "flight"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +422,7 @@ func TestIndexedCandidatesApplyTheKindsBeforeTheCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cands) != 1 || cands[0].id.Kind != person || cands[0].id.ID != "pilot" {
+	if len(cands) != 1 || cands[0].id.Kind != person || cands[0].id.ID != fid("pilot") {
 		t.Fatalf("candidates = %+v, want the person", cands)
 	}
 	// The count applies them too: one person, six matches.

@@ -58,14 +58,14 @@ func TestTurnContextRidesTheUserMessageAndReplaysVerbatim(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	widget := crewPackage + "/widget"
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: widget, ID: "w1", Properties: map[string]any{"name": "the <blue> widget"},
+		Kind: widget, ID: fid("w1"), Properties: map[string]any{"name": "the <blue> widget"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("lib", fakeTurn{content: "it is blue"}, fakeTurn{content: "still blue"})
 	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/librarian", substrate.ChatInput{
 		Message: "what color is this?", Timezone: "Europe/London",
-		Context: []string{vocabulary.RecordPath(widget, "w1"), vocabulary.RecordPath(widget, "w1")},
+		Context: []string{vocabulary.RecordPath(widget, fid("w1")), vocabulary.RecordPath(widget, fid("w1"))},
 	}, nil)
 	if err != nil {
 		t.Fatalf("chat: %v", err)
@@ -81,7 +81,7 @@ func TestTurnContextRidesTheUserMessageAndReplaysVerbatim(t *testing.T) {
 	if !strings.HasPrefix(block, "<turn_context>\n") || !strings.HasSuffix(block, "\n</turn_context>") || !now.MatchString(block) {
 		t.Fatalf("the block's frame or clock line is wrong:\n%s", block)
 	}
-	about := "about: substrate://" + vocabulary.RecordPath(widget, "w1")
+	about := "about: substrate://" + vocabulary.RecordPath(widget, fid("w1"))
 	if strings.Count(block, about) != 1 || !strings.Contains(block, `"name":"the <blue> widget"`) {
 		t.Fatalf("the block does not render the record once, unescaped:\n%s", block)
 	}
@@ -96,7 +96,7 @@ func TestTurnContextRidesTheUserMessageAndReplaysVerbatim(t *testing.T) {
 	if row[propMsgContext] != block {
 		t.Fatalf("the user row's context = %v, want the block sent", row[propMsgContext])
 	}
-	wantRefs := []any{map[string]any{"kind": widget, "id": "w1"}}
+	wantRefs := []any{map[string]any{"kind": widget, "id": fid("w1")}}
 	if !reflect.DeepEqual(row[propMsgContextRecords], wantRefs) {
 		t.Fatalf("contextRecords = %v, want %v", row[propMsgContextRecords], wantRefs)
 	}

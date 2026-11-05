@@ -89,12 +89,12 @@ func TestProposalDecisionReportsAndResumesThread(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-loop", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-loop"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-loop","diff":{"properties":{"name":"better"}},"rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-loop") + `","diff":{"properties":{"name":"better"}},"rationale":"tidy"}`}}},
 		fakeTurn{content: "proposed."},
 		// The RESUME's completion: the loop replays the decision envelope and
 		// the model acknowledges.
@@ -129,7 +129,7 @@ func TestProposalDecisionReportsAndResumesThread(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	widget, err := ds.Get(ctx, crewPackage+"/widget", "w-loop")
+	widget, err := ds.Get(ctx, crewPackage+"/widget", fid("w-loop"))
 	if err != nil || widget.Properties["name"] != "better" {
 		t.Fatalf("the accepted diff did not land: %+v %v", widget, err)
 	}
@@ -213,12 +213,12 @@ func TestProposalRejectionReportsBack(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-kept", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-kept"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-kept","diff":{"properties":{"name":"worse"}},"rationale":"meh"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-kept") + `","diff":{"properties":{"name":"worse"}},"rationale":"meh"}`}}},
 		fakeTurn{content: "proposed."},
 		fakeTurn{content: "understood, dropping it."},
 	)
@@ -233,7 +233,7 @@ func TestProposalRejectionReportsBack(t *testing.T) {
 		t.Fatalf("reject: %v", err)
 	}
 	// Nothing applied.
-	if got, err := ds.Get(ctx, crewPackage+"/widget", "w-kept"); err != nil || got.Properties["name"] != "raw" {
+	if got, err := ds.Get(ctx, crewPackage+"/widget", fid("w-kept")); err != nil || got.Properties["name"] != "raw" {
 		t.Fatalf("the rejected diff applied: %+v %v", got, err)
 	}
 	system := systemMessages(t, ds, res.Thread)
@@ -276,7 +276,7 @@ func TestWriteStampsChangesOnToolRow(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-stamped", map[string]any{"name": "made"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-stamped"), map[string]any{"name": "made"})}}},
 		fakeTurn{content: "made it"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget")
@@ -292,13 +292,13 @@ func TestWriteStampsChangesOnToolRow(t *testing.T) {
 		t.Fatalf("changes entries: %d, want 1 (%+v)", len(entries), entries)
 	}
 	e := entries[0]
-	if e["kind"] != crewPackage+"/widget" || e["id"] != "w-stamped" || e["op"] != "put" {
+	if e["kind"] != crewPackage+"/widget" || e["id"] != fid("w-stamped") || e["op"] != "put" {
 		t.Fatalf("entry: %+v", e)
 	}
 	seq, _ := anyFloat(e["seq"])
 	// The seq addresses the real entry: the changelog row at that seq is the
 	// widget's put.
-	changes, err := ds.Changes(ctx, int64(seq)-1, substrate.ChangeFilter{RecordID: "w-stamped"}, 1)
+	changes, err := ds.Changes(ctx, int64(seq)-1, substrate.ChangeFilter{RecordID: fid("w-stamped")}, 1)
 	if err != nil || len(changes) != 1 || changes[0].Seq != int64(seq) {
 		t.Fatalf("the stamped seq does not address the entry: %v %v", changes, err)
 	}
@@ -333,12 +333,12 @@ func TestAdjustedAcceptReportsTheAppliedValues(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-adjusted", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-adjusted"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-adjusted","diff":{"properties":{"name":"better"}},"rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-adjusted") + `","diff":{"properties":{"name":"better"}},"rationale":"tidy"}`}}},
 		fakeTurn{content: "proposed."},
 		fakeTurn{content: "noted the adjustment."},
 	)
@@ -356,7 +356,7 @@ func TestAdjustedAcceptReportsTheAppliedValues(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("adjusted accept: %v", err)
 	}
-	if got, err := ds.Get(ctx, crewPackage+"/widget", "w-adjusted"); err != nil || got.Properties["name"] != "best" {
+	if got, err := ds.Get(ctx, crewPackage+"/widget", fid("w-adjusted")); err != nil || got.Properties["name"] != "best" {
 		t.Fatalf("the adjusted diff did not land: %+v %v", got, err)
 	}
 	system := systemMessages(t, ds, res.Thread)

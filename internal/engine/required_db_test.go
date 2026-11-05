@@ -85,19 +85,19 @@ func TestRequiredScalarIsRefusedNamingTheProperty(t *testing.T) {
 	_, ds := newDataset(t)
 	requiredVocabulary(t, ds)
 
-	_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: requiredTicket, ID: "t1"})
+	_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: requiredTicket, ID: fid("t1")})
 	wantProblem(t, err, "props.name")
 
 	// An empty string is the unfilled form field the declaration refuses.
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: requiredTicket, ID: "t1", Properties: map[string]any{"name": ""},
+		Kind: requiredTicket, ID: fid("t1"), Properties: map[string]any{"name": ""},
 	})
 	wantProblem(t, err, "props.name")
 
 	// An EXPLICIT null is the writer saying this record has no value here, so
 	// the declared default does not refill it.
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: requiredTicket, ID: "t1",
+		Kind: requiredTicket, ID: fid("t1"),
 		Properties: map[string]any{"name": "ship it", "priority": nil},
 	})
 	wantProblem(t, err, "props.priority")
@@ -110,7 +110,7 @@ func TestDeclaredDefaultLandsInTheRecordAndSurvivesARebuild(t *testing.T) {
 	requiredVocabulary(t, ds)
 
 	created := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: requiredTicket, ID: "t1", Properties: map[string]any{"name": "ship it"},
+		Kind: requiredTicket, ID: fid("t1"), Properties: map[string]any{"name": "ship it"},
 	})
 	if created.Properties["priority"] != "none" {
 		t.Fatalf("the declared default must be the stored value, got %v", created.Properties["priority"])
@@ -127,17 +127,17 @@ func TestDeclaredDefaultLandsInTheRecordAndSurvivesARebuild(t *testing.T) {
 	if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
-	if rebuilt := mustGet(t, ds, requiredTicket, "t1"); rebuilt.Properties["priority"] != "none" {
+	if rebuilt := mustGet(t, ds, requiredTicket, fid("t1")); rebuilt.Properties["priority"] != "none" {
 		t.Fatalf("the default must ride the changelog, got %v after the rebuild", rebuilt.Properties["priority"])
 	}
 
 	// A default seeds a create and never re-asserts itself: a later write that
 	// does not name the property leaves what the record holds.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: requiredTicket, ID: "t1", Properties: map[string]any{"priority": "high"},
+		Kind: requiredTicket, ID: fid("t1"), Properties: map[string]any{"priority": "high"},
 	})
 	after := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: requiredTicket, ID: "t1", Properties: map[string]any{"note": "later"},
+		Kind: requiredTicket, ID: fid("t1"), Properties: map[string]any{"note": "later"},
 	})
 	if after.Properties["priority"] != "high" {
 		t.Fatalf("a default must not overwrite a value on update, got %v", after.Properties["priority"])
@@ -154,14 +154,14 @@ func TestRequiredIsCheckedOnTheMergedRow(t *testing.T) {
 	requiredVocabulary(t, ds)
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: requiredTicket, ID: "t1", Properties: map[string]any{"name": "ship it"},
+		Kind: requiredTicket, ID: fid("t1"), Properties: map[string]any{"name": "ship it"},
 	})
-	_, err := ds.Patch(ctx, owner, requiredTicket, "t1", substrate.PatchInput{
+	_, err := ds.Patch(ctx, owner, requiredTicket, fid("t1"), substrate.PatchInput{
 		Properties: map[string]any{"name": nil},
 	})
 	wantProblem(t, err, "props.name")
 
-	patched := mustPatch(t, ds, owner, requiredTicket, "t1", substrate.PatchInput{
+	patched := mustPatch(t, ds, owner, requiredTicket, fid("t1"), substrate.PatchInput{
 		Properties: map[string]any{"note": "still here"},
 	})
 	if patched.Properties["name"] != "ship it" {
@@ -226,7 +226,7 @@ func TestAddingRequiredCountsAnEmptyValueAsMissing(t *testing.T) {
 		"list":    {"name": "held", "tags": []any{}},
 	} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: narrowingPackage + "/note", ID: id, Properties: props,
+			Kind: narrowingPackage + "/note", ID: fid(id), Properties: props,
 		})
 	}
 
@@ -275,7 +275,7 @@ func TestRequiredObjectFieldIsEnforced(t *testing.T) {
 		"an item of a list":      {map[string]any{"seen": []any{map[string]any{}}}, "props.seen: [0]: .stamp"},
 		"the second item of one": {map[string]any{"seen": []any{map[string]any{"stamp": "2026-08-17T00:00:00Z"}, map[string]any{}}}, "props.seen: [1]: .stamp"},
 	} {
-		_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: kind, ID: "p1", Properties: tc.props})
+		_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: kind, ID: fid("p1"), Properties: tc.props})
 		if err == nil {
 			t.Fatalf("%s: a required field must be refused when the written object lacks it", name)
 		}
@@ -283,7 +283,7 @@ func TestRequiredObjectFieldIsEnforced(t *testing.T) {
 	}
 
 	// The whole object, satisfied, still writes.
-	mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: "p1", Properties: map[string]any{
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: fid("p1"), Properties: map[string]any{
 		"contact": map[string]any{"email": "ada@example.com"},
 		"seen":    []any{map[string]any{"stamp": "2026-08-17T00:00:00Z"}},
 	}})
@@ -322,17 +322,17 @@ func TestClearingARequiredReferenceIsRefused(t *testing.T) {
 		t.Fatalf("apply the reference declaration: %v", err)
 	}
 	ownerKind, assetKind := narrowingAuthority+"/refs/owner", narrowingAuthority+"/refs/asset"
-	mustPut(t, ds, owner, substrate.PutInput{Kind: ownerKind, ID: "ada", Properties: map[string]any{"name": "Ada"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: ownerKind, ID: fid("ada"), Properties: map[string]any{"name": "Ada"}})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: assetKind, ID: "a1",
+		Kind: assetKind, ID: fid("a1"),
 		Properties: map[string]any{
 			"name":   "press",
-			"holder": "ada",
-			"seenBy": []any{"ada"},
+			"holder": fid("ada"),
+			"seenBy": []any{fid("ada")},
 		},
 	})
 
-	_, err := ds.Patch(ctx, owner, assetKind, "a1", substrate.PatchInput{
+	_, err := ds.Patch(ctx, owner, assetKind, fid("a1"), substrate.PatchInput{
 		Properties: map[string]any{"holder": nil},
 	})
 	if err == nil {
@@ -341,7 +341,7 @@ func TestClearingARequiredReferenceIsRefused(t *testing.T) {
 	wantProblem(t, err, "holder")
 
 	// A reference that is not required still clears.
-	if _, err := ds.Patch(ctx, owner, assetKind, "a1", substrate.PatchInput{
+	if _, err := ds.Patch(ctx, owner, assetKind, fid("a1"), substrate.PatchInput{
 		Properties: map[string]any{"seenBy": nil},
 	}); err != nil {
 		t.Fatalf("clear an optional reference: %v", err)
@@ -381,14 +381,14 @@ func TestAddingARequiredFieldIsRefusedWhileObjectsLackIt(t *testing.T) {
 	// One object without the field, one with it, and one record with no object
 	// at all: only the first is stranded.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: kind, ID: "bare",
+		Kind: kind, ID: fid("bare"),
 		Properties: map[string]any{"contact": map[string]any{"label": "home"}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: kind, ID: "held",
+		Kind: kind, ID: fid("held"),
 		Properties: map[string]any{"contact": map[string]any{"email": "ada@example.com"}},
 	})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: "none"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: fid("none")})
 
 	_, err := ds.ApplyVocabularyDocuments(ctx, owner, docs(true))
 	if err == nil {
@@ -400,7 +400,7 @@ func TestAddingARequiredFieldIsRefusedWhileObjectsLackIt(t *testing.T) {
 
 	// With the stranded object backfilled, the same declaration lands.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: kind, ID: "bare",
+		Kind: kind, ID: fid("bare"),
 		Properties: map[string]any{"contact": map[string]any{"email": "bare@example.com", "label": "home"}},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs(true)); err != nil {
@@ -428,7 +428,7 @@ func TestDefaultFillsACreateThatNamesNoProperties(t *testing.T) {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("apply the knob declaration: %v", err)
 	}
-	created := mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/knob", ID: "k1"})
+	created := mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/knob", ID: fid("k1")})
 	if created.Properties["mode"] != "off" {
 		t.Fatalf("a default must fill a create that names nothing, got %v", created.Properties["mode"])
 	}

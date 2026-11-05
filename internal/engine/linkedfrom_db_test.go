@@ -39,11 +39,11 @@ func TestLinkedFromListsEverySourceThatMapsOntoTheRecord(t *testing.T) {
 	sam := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Sam", "emails": []any{"sam@acme.com"}},
 	})
-	g := syncSource(t, ds, people, typeGoogleContact, "g-sam", map[string]any{
+	g := syncSource(t, ds, people, typeGoogleContact, fid("g-sam"), map[string]any{
 		"name":   map[string]any{"displayName": "Samuel Jones"},
 		"emails": gemails("sam@acme.com"),
 	})
-	s := syncSource(t, ds, slack, typeSlackUser, "s-sam", map[string]any{
+	s := syncSource(t, ds, slack, typeSlackUser, fid("s-sam"), map[string]any{
 		"realName": "Samuel Jones", "displayName": "sam", "email": "sam@acme.com",
 	})
 	if got := personOf(t, ds, g); got != sam.ID {
@@ -104,10 +104,10 @@ func TestLinkedFromAnswersForAMergedFormerID(t *testing.T) {
 	loser := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "A. Lovelace", "emails": []any{"al@acme.com"}},
 	})
-	kept := syncSource(t, ds, people, typeGoogleContact, "g-ada", map[string]any{
+	kept := syncSource(t, ds, people, typeGoogleContact, fid("g-ada"), map[string]any{
 		"name": map[string]any{"displayName": "Ada Lovelace"}, "emails": gemails("ada@acme.com"),
 	})
-	moved := syncSource(t, ds, slack, typeSlackUser, "s-ada", map[string]any{
+	moved := syncSource(t, ds, slack, typeSlackUser, fid("s-ada"), map[string]any{
 		"realName": "Ada Lovelace", "displayName": "ada", "email": "al@acme.com",
 	})
 	if got := personOf(t, ds, kept); got != winner.ID {

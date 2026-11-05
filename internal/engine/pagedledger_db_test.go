@@ -255,7 +255,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 	const task = "samples.substrate.reamde.dev/tasks/task"
 
 	// Chain A parks at the cap with cursor 2.
-	a, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widget, ID: "a", Properties: map[string]any{"name": "a"}})
+	a, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widget, ID: fid("a"), Properties: map[string]any{"name": "a"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 	// followed. Its tasks are absent, so a resume from cursor 3 would leave
 	// b-p-0 missing. Its cursor holds numbers jsonb respells (a negative zero,
 	// a trailing zero), which the rebuild must still match to their digest.
-	b, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widget, ID: "b", Properties: map[string]any{"name": "b"}})
+	b, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widget, ID: fid("b"), Properties: map[string]any{"name": "b"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +360,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 		t.Fatalf("process after the import: %v", err)
 	}
 	for page := range 2 {
-		if id := fmt.Sprintf("b-p-%d", page); !liveExists(t, d2, id) {
+		if id := fid("b") + fmt.Sprintf("-p-%d", page); !liveExists(t, d2, id) {
 			t.Fatalf("%s is missing: the interrupted chain did not start over", id)
 		}
 	}
@@ -382,7 +382,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 		t.Fatalf("retry chain b: %v", err)
 	}
 	for page := range 5 {
-		if id := fmt.Sprintf("b-p-%d", page); !liveExists(t, d2, id) {
+		if id := fid("b") + fmt.Sprintf("-p-%d", page); !liveExists(t, d2, id) {
 			t.Fatalf("%s is missing after chain b's retry", id)
 		}
 	}
@@ -391,7 +391,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 	}
 
 	// A's retry resumes from page 2: pages 0 and 1 are erased first.
-	for _, id := range []string{"a-p-0", "a-p-1"} {
+	for _, id := range []string{fid("a") + "-p-0", fid("a") + "-p-1"} {
 		if _, err := d2.Delete(ctx, substrate.ActorAPI, task, id, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", id, err)
 		}
@@ -399,12 +399,12 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 	if _, err := d2.RetryTriggerFailure(ctx, triggerID, failures[0].ID); err != nil {
 		t.Fatalf("retry chain a: %v", err)
 	}
-	for _, id := range []string{"a-p-2", "a-p-3", "a-p-4"} {
+	for _, id := range []string{fid("a") + "-p-2", fid("a") + "-p-3", fid("a") + "-p-4"} {
 		if !liveExists(t, d2, id) {
 			t.Fatalf("resumed page %s missing", id)
 		}
 	}
-	for _, id := range []string{"a-p-0", "a-p-1"} {
+	for _, id := range []string{fid("a") + "-p-0", fid("a") + "-p-1"} {
 		if liveExists(t, d2, id) {
 			t.Fatalf("%s was re-run: the parked chain restarted instead of resuming", id)
 		}

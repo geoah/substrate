@@ -28,7 +28,7 @@ func TestAggregateRecordedLocalDatesHoldEveryOffset(t *testing.T) {
 		{"w/athens", "2026-10-03T22:00:00Z", 3 * 60},
 		{"w/lima", "2026-10-01T04:00:00Z", -5 * 60},
 	} {
-		f.mustPut(t, f.observation, x.id, map[string]any{
+		f.mustPut(t, f.observation, fid(x.id), map[string]any{
 			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("scale"), "form": "gauge",
 			"value": quantity("70", "kg"), "at": x.at, "utcOffset": x.offset, "hold": "PT0S",
 		})
@@ -105,7 +105,7 @@ func TestAggregateRecordedLocalDatesCountOnlyTheirDays(t *testing.T) {
 		{"w/on", "2026-10-01T08:00:00Z", 180},
 		{"w/after", "2026-10-02T04:00:00Z", 0},
 	} {
-		f.mustPut(t, f.observation, x.id, map[string]any{
+		f.mustPut(t, f.observation, fid(x.id), map[string]any{
 			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("scale"), "form": "gauge",
 			"value": quantity("70", "kg"), "at": x.at, "utcOffset": x.offset, "hold": "PT0S",
 		})
@@ -148,14 +148,14 @@ func TestAggregateRecordedLocalDatesCountOnlyTheirSources(t *testing.T) {
 		{"w/a", "a", "2026-09-30T20:00:00Z"},
 		{"w/b", "b", "2026-10-01T08:00:00Z"},
 	} {
-		f.mustPut(t, f.observation, x.id, map[string]any{
+		f.mustPut(t, f.observation, fid(x.id), map[string]any{
 			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef(x.source), "form": "gauge",
 			"value": quantity("70", "kg"), "at": x.at, "utcOffset": 0, "hold": "PT0S",
 		})
 	}
 	plus3 := time.FixedZone("", 3*3600)
-	f.workout("run/a", "a", "running", time.Date(2026, 9, 30, 23, 0, 0, 0, plus3), 30*time.Minute, "5")
-	f.workout("run/b", "b", "running", time.Date(2026, 10, 1, 10, 0, 0, 0, plus3), 30*time.Minute, "5")
+	f.workout(fid("run/a"), "a", "running", time.Date(2026, 9, 30, 23, 0, 0, 0, plus3), 30*time.Minute, "5")
+	f.workout(fid("run/b"), "b", "running", time.Date(2026, 10, 1, 10, 0, 0, 0, plus3), 30*time.Minute, "5")
 	weighings := func(budget substrate.AggregateBudget, fill string) substrate.AggregateQuery {
 		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
 			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
@@ -195,11 +195,11 @@ func TestAggregateRecordedLocalDatesCountOnlyTheirSources(t *testing.T) {
 		}
 	}
 
-	f.mustPut(t, f.observation, "w/c", map[string]any{
+	f.mustPut(t, f.observation, fid("w/c"), map[string]any{
 		"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("c"), "form": "gauge",
 		"value": quantity("71", "kg"), "at": "2026-10-01T09:00:00Z", "utcOffset": 0, "hold": "PT0S",
 	})
-	f.workout("run/c", "c", "running", time.Date(2026, 10, 1, 12, 0, 0, 0, plus3), 30*time.Minute, "5")
+	f.workout(fid("run/c"), "c", "running", time.Date(2026, 10, 1, 12, 0, 0, 0, plus3), 30*time.Minute, "5")
 	f.refusedAgg(weighings(budgets[0], ""), "aggregate.budget.maxBuckets")
 	f.refusedAgg(weighings(budgets[1], ""), "aggregate.budget.maxGroups")
 	f.refusedAgg(runs(budgets[0], ""), "aggregate.budget.maxBuckets")

@@ -31,15 +31,15 @@ func TestLexicalSearch(t *testing.T) {
 	}
 
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "gcal-account:a",
+		Kind: enginetest.AccountType, ID: fid("gcal-account:a"),
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: "gcal-cal:primary",
+		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: fid("gcal-cal:primary"),
 		Properties: map[string]any{"name": "Primary", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	titled := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: "gcal-event:e1",
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: fid("gcal-event:e1"),
 		Properties: map[string]any{
 			"at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T14:00:00Z",
 			"summary": "Rack layout review", "description": "Weekly sync",
@@ -47,7 +47,7 @@ func TestLexicalSearch(t *testing.T) {
 		},
 	})
 	bodied := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: "gcal-event:e2",
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: fid("gcal-event:e2"),
 		Properties: map[string]any{
 			"at": "2026-08-06T13:00:00Z", "endsAt": "2026-08-06T14:00:00Z",
 			"summary": "Standup", "description": "we will discuss the rack layout",
@@ -55,7 +55,7 @@ func TestLexicalSearch(t *testing.T) {
 		},
 	})
 	mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: "gcal-event:e3",
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: fid("gcal-event:e3"),
 		Properties: map[string]any{
 			"at": "2026-08-07T13:00:00Z", "endsAt": "2026-08-07T14:00:00Z",
 			"summary": "Lunch", "description": "food",
@@ -108,16 +108,16 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 	}
 
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "gcal-account:a",
+		Kind: enginetest.AccountType, ID: fid("gcal-account:a"),
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: "gcal-cal:primary",
+		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: fid("gcal-cal:primary"),
 		Properties: map[string]any{"name": "Primary", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	newEvent := func(ext, summary, desc, day string) *substrate.Record {
 		return mustPut(t, ds, gcal, substrate.PutInput{
-			Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: extID("gcal.event", ext),
+			Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: fid(extID("gcal.event", ext)),
 			Properties: map[string]any{
 				"at": "2026-08-" + day + "T13:00:00Z", "endsAt": "2026-08-" + day + "T14:00:00Z",
 				"summary": summary, "description": desc,
@@ -290,7 +290,7 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 	// (b) A default-fts body indexes: the article is found by a word only its
 	// body holds.
 	article := mustPut(t, ds, act, substrate.PutInput{
-		Kind: pkg + "/article", ID: "a1",
+		Kind: pkg + "/article", ID: fid("a1"),
 		Properties: map[string]any{"body": "the peregrine falcon dives"},
 	})
 	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{
@@ -305,7 +305,7 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 
 	// (a) `fts: false` stores and serves the body but never indexes it.
 	memo := mustPut(t, ds, act, substrate.PutInput{
-		Kind: pkg + "/memo", ID: "m1",
+		Kind: pkg + "/memo", ID: fid("m1"),
 		Properties: map[string]any{"body": "the peregrine falcon dives"},
 	})
 	full := mustGet(t, ds, memo.Kind, memo.ID)
@@ -324,7 +324,7 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 
 	// (c) A kind that declares no body refuses a body write.
 	if _, err := ds.Put(ctx, act, substrate.PutInput{
-		Kind: pkg + "/tag", ID: "t1",
+		Kind: pkg + "/tag", ID: fid("t1"),
 		Properties: map[string]any{"label": "x", "body": "nope"},
 	}); err == nil {
 		t.Fatal("body on a kind that declares none must be refused")
@@ -406,23 +406,23 @@ func TestAKindEditReindexesItsRowsAndTheRebuildAgrees(t *testing.T) {
 	declareNotes(t, ds, false)
 
 	titled := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: ftsNote, ID: "titled",
+		Kind: ftsNote, ID: fid("titled"),
 		Properties: map[string]any{"name": "quokka in the title", "remark": "nothing to see"},
 	})
 	remarked := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: ftsNote, ID: "remarked",
+		Kind: ftsNote, ID: fid("remarked"),
 		Properties: map[string]any{"name": "plain", "remark": "a quokka in the remark"},
 	})
 	// A tombstone is indexed too, and search never sees it: the rebuild must
 	// still agree on its bands.
 	gone := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: ftsNote, ID: "gone",
+		Kind: ftsNote, ID: fid("gone"),
 		Properties: map[string]any{"name": "deleted", "remark": "a quokka nobody finds"},
 	})
 	if _, err := ds.Delete(ctx, owner, gone.Kind, gone.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if got := idsOfHits(lexicalHits(t, ds, "quokka")); !reflect.DeepEqual(got, []string{"titled"}) {
+	if got := idsOfHits(lexicalHits(t, ds, "quokka")); !reflect.DeepEqual(got, []string{fid("titled")}) {
 		t.Fatalf("with remark opted out, search finds %v, want [titled]", got)
 	}
 
@@ -464,11 +464,11 @@ func TestAKindEditReindexesItsRowsAndTheRebuildAgrees(t *testing.T) {
 		}
 	}
 	// The title (band A) outranks the remark (band C), so the order is fixed.
-	rebuildAgrees("after indexing remark", []string{"titled", "remarked"})
+	rebuildAgrees("after indexing remark", []string{fid("titled"), fid("remarked")})
 
 	// And back: the word drops out of the index again, live and rebuilt alike.
 	declareNotes(t, ds, false)
-	rebuildAgrees("after opting remark out again", []string{"titled"})
+	rebuildAgrees("after opting remark out again", []string{fid("titled")})
 }
 
 // TestARebuildAgreesAfterAnUninstallLeavesTombstones: a package uninstall

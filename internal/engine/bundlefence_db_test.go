@@ -124,7 +124,7 @@ func TestDisableDrainsABundledAgentTriggerDelivery(t *testing.T) {
 	}
 	// The change the trigger delivers on.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: abPackage + "/abconfig", ID: "ab-cfg", Properties: map[string]any{"note": "x"},
+		Kind: abPackage + "/abconfig", ID: fid("ab-cfg"), Properties: map[string]any{"note": "x"},
 	}); err != nil {
 		t.Fatalf("put config: %v", err)
 	}

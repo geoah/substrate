@@ -41,7 +41,7 @@ func TestSyncScheduledRunClearsAnOlderError(t *testing.T) {
 			installScheduledJobSync(t, ds, pkg, jobKind,
 				"import datetime\n"+
 					"def main(input, host):\n"+
-					"    return {\"effects\": [{\"action\": \"patch\", \"kind\": \""+jobKind+"\", \"id\": \"inbox\",\n"+
+					"    return {\"effects\": [{\"action\": \"patch\", \"kind\": \""+jobKind+"\", \"id\": \""+fid("inbox")+"\",\n"+
 					"        \"properties\": {\"syncState\": \""+tc.state+"\", \"lastSyncedAt\": "+syncedAt+"}}]}\n")
 			seedSyncError(t, ds, pkg, jobKind, errAt)
 			fireScheduleOnce(t, ds)
@@ -79,7 +79,7 @@ func TestSyncForeignWriteKeepsTheError(t *testing.T) {
 	} {
 		err := ds.inTx(ctx, actor, false, func(t *txn) error {
 			return t.asSyncWriter(actor, func() error {
-				_, err := t.patch(eref{Kind: jobKind, ID: "inbox"}, substrate.PatchInput{Properties: map[string]any{
+				_, err := t.patch(eref{Kind: jobKind, ID: fid("inbox")}, substrate.PatchInput{Properties: map[string]any{
 					"syncState":    substrate.SyncStateOK,
 					"lastSyncedAt": t.now.Format(time.RFC3339Nano),
 				}})
@@ -155,7 +155,7 @@ func installScheduledJobSync(t *testing.T, ds *dataset, pkg, jobKind, source str
 		t.Fatalf("install: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: jobKind, ID: "inbox", Properties: map[string]any{"name": "inbox"},
+		Kind: jobKind, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
 	}
@@ -175,7 +175,7 @@ func seedSyncError(t *testing.T, ds *dataset, pkg, jobKind string, at time.Time)
 	actor := substrate.BundleActor(authority, name)
 	err := ds.inTx(context.Background(), actor, false, func(t *txn) error {
 		return t.asSyncWriter(actor, func() error {
-			_, err := t.patch(eref{Kind: jobKind, ID: "inbox"}, substrate.PatchInput{Properties: map[string]any{
+			_, err := t.patch(eref{Kind: jobKind, ID: fid("inbox")}, substrate.PatchInput{Properties: map[string]any{
 				"syncState":   substrate.SyncStateErroring,
 				"syncError":   "upstream returned HTTP 500",
 				"syncErrorAt": at.Format(time.RFC3339Nano),
@@ -204,7 +204,7 @@ func fireScheduleOnce(t *testing.T, ds *dataset) {
 
 func mustReadJob(t *testing.T, ds *dataset, jobKind string) *substrate.Record {
 	t.Helper()
-	got, err := ds.Get(context.Background(), jobKind, "inbox")
+	got, err := ds.Get(context.Background(), jobKind, fid("inbox"))
 	if err != nil {
 		t.Fatalf("get job: %v", err)
 	}

@@ -214,7 +214,7 @@ def main(input, host):
 func TestIdempotencyKeyFunctionCallRunsTheBodyOnce(t *testing.T) {
 	t.Parallel()
 	ds := newFnDataset(t, nil, gatedFn())
-	args := map[string]any{"flag": "open-the-gate"}
+	args := map[string]any{"flag": fid("open-the-gate")}
 
 	type answer struct {
 		out any
@@ -236,7 +236,7 @@ func TestIdempotencyKeyFunctionCallRunsTheBodyOnce(t *testing.T) {
 			t.Fatalf("attempt %d while the first is in flight: %v, want ErrConflict naming the running request", i, a.err)
 		}
 	}
-	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: "open-the-gate", Properties: map[string]any{"name": "gate"}})
+	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: fid("open-the-gate"), Properties: map[string]any{"name": "gate"}})
 	winner := <-answers
 	if winner.err != nil {
 		t.Fatalf("the attempt holding the reservation: %v", winner.err)

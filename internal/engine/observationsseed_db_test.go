@@ -50,11 +50,11 @@ func requireObservationsSeeded(t *testing.T, ds substrate.Dataset) {
 	}
 
 	putShippedUnits(t, ds, "1/min")
-	mustPut(t, ds, owner, substrate.PutInput{Kind: kindMetric, ID: "mine/pulse", Properties: map[string]any{
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kindMetric, ID: fid("mine/pulse"), Properties: map[string]any{
 		"name": "Pulse", "unit": unitRef("1/min"), "form": "gauge",
 	}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: kindObservation, ID: "pulse/1", Properties: map[string]any{
-		"metric": map[string]any{"ref": kindMetric + "/mine/pulse"}, "form": "gauge", "hold": "PT0S",
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kindObservation, ID: fid("pulse/1"), Properties: map[string]any{
+		"metric": map[string]any{"ref": kindMetric + "/" + fid("mine/pulse")}, "form": "gauge", "hold": "PT0S",
 		"value": quantity("61", "/min"), "at": "2026-10-07T06:41:12Z",
 	}})
 

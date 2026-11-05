@@ -583,7 +583,7 @@ func TestWebhookSignatureDeclaredLaterRefusesAStoredUnsignedRequest(t *testing.T
 	// waits on opens, so only the signature stands between a request and a
 	// run.
 	putHookTrigger(t, ds, "hook-later", "hookgated", keptSignatureSource(true, "PT5M"))
-	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: "gate", Properties: map[string]any{"name": "open"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: fid("gate"), Properties: map[string]any{"name": "open"}})
 
 	rows := failuresByFire(t, ds, "hook-later")
 	for _, fid := range []string{retried, parked} {
@@ -703,19 +703,19 @@ func TestWebhookSignatureMarkSurvivesAParkAndARetry(t *testing.T) {
 	putHookTrigger(t, ds, "hook-unkept", "hookgated", source)
 	authority := testdb.Repository(t)
 
-	fid, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-unkept", "", signedHook(`{"n":"marked"}`, hookSigningSecret, received))
+	fireID, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-unkept", "", signedHook(`{"n":"marked"}`, hookSigningSecret, received))
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
-	row, ok := failuresByFire(t, ds, "hook-unkept")[fid]
+	row, ok := failuresByFire(t, ds, "hook-unkept")[fireID]
 	if !ok || !strings.Contains(row.LastError, "gate closed") {
 		t.Fatalf("the first fire left %+v (present %v), want parked on the closed gate", row, ok)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: "gate", Properties: map[string]any{"name": "open"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: fid("gate"), Properties: map[string]any{"name": "open"}})
 	if _, err := ds.RetryTriggerFailure(ctx, "hook-unkept", row.ID); err != nil {
 		t.Fatalf("a verified request with no kept signature, retried past maxSkew: %v", err)
 	}
-	if got := hookEcho(t, ds, "gated-echo"); got["record"] != fid {
+	if got := hookEcho(t, ds, "gated-echo"); got["record"] != fireID {
 		t.Fatalf("the retry echoed %v", got)
 	}
 }

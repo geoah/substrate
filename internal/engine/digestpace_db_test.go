@@ -148,7 +148,7 @@ func digestHistory(t *testing.T) (dsn, root, repo string, unread int64) {
 	prose := strings.Repeat("the quick brown fox jumps over the lazy dog ", digestNoteBytes/44)
 	for i := range mb << 20 / digestNoteBytes {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: digestNoteType, ID: "n" + strconv.Itoa(i), Properties: map[string]any{"prose": prose},
+			Kind: digestNoteType, ID: fid("n" + strconv.Itoa(i)), Properties: map[string]any{"prose": prose},
 		})
 	}
 	dir := repoDirOf(t, svc, ds)

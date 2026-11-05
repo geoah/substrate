@@ -40,7 +40,7 @@ func TestAggregateRecordedLocalPlacesAnOffsetlessValueByTheFallbackZone(t *testi
 		if x.offset != nil {
 			props["utcOffset"] = x.offset
 		}
-		f.mustPut(t, f.observation, x.id, props)
+		f.mustPut(t, f.observation, fid(x.id), props)
 	}
 	plus3 := time.FixedZone("", 3*3600)
 	day := time.Date(2026, 10, 1, 0, 0, 0, 0, plus3)
@@ -98,9 +98,9 @@ func TestAggregatePlacesANightByItsEnd(t *testing.T) {
 		{time.Date(2026, 9, 5, 1, 0, 0, 0, plus3), time.Date(2026, 9, 5, 9, 0, 0, 0, plus3)},
 	}
 	for i, n := range nights {
-		f.summary(fmt.Sprintf("hrv/%d", i), "health/hrv_rmssd", "ring", "avg", fmt.Sprint(60+i), "ms", n.start, n.end.Sub(n.start))
+		f.summary(fid(fmt.Sprintf("hrv/%d", i)), "health/hrv_rmssd", "ring", "avg", fmt.Sprint(60+i), "ms", n.start, n.end.Sub(n.start))
 	}
-	f.mustPut(t, f.observation, "steps/night", map[string]any{
+	f.mustPut(t, f.observation, fid("steps/night"), map[string]any{
 		"metric": f.metricRef("health/steps"), "source": f.sourceRef("ring"), "form": "amount",
 		"value": quantity("100", "{steps}"), "utcOffset": 180,
 		"at": time.Date(2026, 9, 2, 23, 0, 0, 0, plus3).Format(time.RFC3339), "endsAt": time.Date(2026, 9, 3, 1, 0, 0, 0, plus3).Format(time.RFC3339),
@@ -139,7 +139,7 @@ func TestAggregatePlacesANightByItsEnd(t *testing.T) {
 		}
 	}
 	gauge := read("health/body_mass", "", substrate.AggregateBucket{Calendar: "day", Place: "end"}, "count")
-	f.weighing("w/1", "ring", "70", day.Add(time.Hour), nil)
+	f.weighing(fid("w/1"), "ring", "70", day.Add(time.Hour), nil)
 	f.refusedAgg(substrate.AggregateQuery{Aggregate: &gauge}, "place")
 	records := read("health/hrv_rmssd", "summaries", substrate.AggregateBucket{
 		Records: &substrate.AggregateRecords{Filter: substrate.Filter{Kinds: []string{f.observation}}}, Place: "end",
@@ -163,7 +163,7 @@ func TestAggregatePlaceEndTakesTheFallbackZonesOffsetAtTheEnd(t *testing.T) {
 		{"day/25", "500", time.Date(2026, 10, 24, 21, 0, 0, 0, time.UTC), time.Date(2026, 10, 25, 22, 0, 0, 0, time.UTC)},
 		{"day/26", "600", time.Date(2026, 10, 25, 22, 0, 0, 0, time.UTC), time.Date(2026, 10, 26, 22, 0, 0, 0, time.UTC)},
 	} {
-		f.mustPut(t, f.observation, d.id, map[string]any{
+		f.mustPut(t, f.observation, fid(d.id), map[string]any{
 			"metric": f.metricRef("health/active_energy"), "source": f.sourceRef("watch"), "form": "summary",
 			"statistic": "sum", "period": "day", "value": quantity(d.value, "kcal"),
 			"at": d.start.Format(time.RFC3339), "endsAt": d.end.Format(time.RFC3339),
@@ -211,7 +211,7 @@ func TestAggregatePlaceEndReadsOnlyTheWindowsPoints(t *testing.T) {
 	day := time.Date(2026, 9, 2, 0, 0, 0, 0, plus3)
 	first := day.AddDate(0, 0, -5)
 	for at := first; at.Before(day.AddDate(0, 0, 1)); at = at.Add(time.Hour) {
-		f.mustPut(t, f.observation, "steps/"+at.UTC().Format("2006-01-02T15"), map[string]any{
+		f.mustPut(t, f.observation, fid("steps/"+at.UTC().Format("2006-01-02T15")), map[string]any{
 			"metric": f.metricRef("health/steps"), "source": f.sourceRef("garmin"), "form": "amount",
 			"value": quantity("100", "{steps}"), "utcOffset": 180,
 			"at": at.Format(time.RFC3339), "endsAt": at.Add(time.Hour).Format(time.RFC3339),
@@ -224,7 +224,7 @@ func TestAggregatePlaceEndReadsOnlyTheWindowsPoints(t *testing.T) {
 			offsets = append(offsets, at.Sub(span[0]).Milliseconds())
 			vals = append(vals, "60")
 		}
-		f.series("hr/"+span[0].Format("01-02"), map[string]any{
+		f.series(fid("hr/"+span[0].Format("01-02")), map[string]any{
 			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("garmin"),
 			"form": "gauge", "unit": "/min", "hold": "PT4M", "utcOffset": 180,
 		}, span[0], span[1], offsets, vals)

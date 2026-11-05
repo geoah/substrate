@@ -32,7 +32,7 @@ func TestPutCreatesAndSuppressesNoops(t *testing.T) {
 
 	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       enginetest.AccountType,
-		ID:         "gmail:george@acme.com",
+		ID:         fid("gmail:george@acme.com"),
 		Properties: map[string]any{"provider": "gmail", "label": "Work", "status": "ok"},
 	})
 	if acc.Properties["title"] != "Work" {
@@ -46,7 +46,7 @@ func TestPutCreatesAndSuppressesNoops(t *testing.T) {
 	// Byte-identical re-put with the props in a different order.
 	again := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       enginetest.AccountType,
-		ID:         "gmail:george@acme.com",
+		ID:         fid("gmail:george@acme.com"),
 		Properties: map[string]any{"status": "ok", "label": "Work", "provider": "gmail"},
 	})
 	if again.ID != acc.ID {
@@ -65,7 +65,7 @@ func TestPutCreatesAndSuppressesNoops(t *testing.T) {
 	// A real change bumps version and writes exactly one row.
 	changed := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       enginetest.AccountType,
-		ID:         "gmail:george@acme.com",
+		ID:         fid("gmail:george@acme.com"),
 		Properties: map[string]any{"status": "erroring"},
 	})
 	if changed.Version != acc.Version+1 {
@@ -89,11 +89,11 @@ func TestNoopSuppressionAcrossRecords(t *testing.T) {
 	}
 
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "gmail:a",
+		Kind: enginetest.AccountType, ID: fid("gmail:a"),
 		Properties: map[string]any{"provider": "gmail"},
 	})
 	conv := mustPut(t, ds, gmail, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack:t1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: fid("slack:t1"),
 		Properties: map[string]any{"category": "direct", "name": "Alex", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 
@@ -110,7 +110,7 @@ func TestNoopSuppressionAcrossRecords(t *testing.T) {
 		Annotations: map[string]any{"owner/note": map[string]any{"a": 1}},
 	})
 	mustPut(t, ds, gmail, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack:t1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: fid("slack:t1"),
 		Properties: map[string]any{"category": "direct", "name": "Alex", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	if got := mustGet(t, ds, conv.Kind, conv.ID).Version; got != v {
@@ -519,7 +519,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	const targetID = "created-task-1"
+	targetID := fid("created-task-1")
 	req := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
@@ -610,11 +610,11 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 
 	// An id held by ANOTHER type names nothing under (type, id) identity: the
 	// task create lands beside the project, and neither touches the other.
-	proj := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/project", ID: "occupied-1", Properties: map[string]any{"name": "a project"}})
+	proj := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/project", ID: fid("occupied-1"), Properties: map[string]any{"name": "a project"}})
 	otherType := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
-			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": "occupied-1",
+			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": fid("occupied-1"),
 			"diff": map[string]any{"properties": map[string]any{"name": "a task"}},
 		},
 	})
@@ -623,7 +623,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("a create beside another type's id should land: %v", err)
 	}
-	if got := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", "occupied-1"); got.Properties["name"] != "a task" {
+	if got := mustGet(t, ds, "samples.substrate.reamde.dev/tasks/task", fid("occupied-1")); got.Properties["name"] != "a task" {
 		t.Fatalf("per-type create did not mint: %+v", got.Properties)
 	}
 	if got := mustGet(t, ds, proj.Kind, proj.ID); got.Properties["name"] != "a project" {
@@ -631,14 +631,14 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	}
 
 	// A tombstoned row at the id: a create neither resurrects nor overwrites.
-	live := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", ID: "gone-1", Properties: map[string]any{"name": "was here"}})
+	live := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", ID: fid("gone-1"), Properties: map[string]any{"name": "was here"}})
 	if _, err := ds.Delete(ctx, owner, live.Kind, live.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	tomb := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
-			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": "gone-1",
+			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": fid("gone-1"),
 			"diff": map[string]any{"properties": map[string]any{"name": "was here"}},
 		},
 	})
@@ -649,7 +649,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	} else {
 		wantErr(t, err, substrate.ErrConflict, "tombstoned create collision")
 	}
-	if got := mustGet(t, ds, live.Kind, "gone-1"); got.DeletedAt == nil {
+	if got := mustGet(t, ds, live.Kind, fid("gone-1")); got.DeletedAt == nil {
 		t.Fatalf("create resurrected a tombstone: %+v", got)
 	}
 }
@@ -787,15 +787,15 @@ func TestPutResurrectsATombstone(t *testing.T) {
 	}
 
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "gcal:acct",
+		Kind: enginetest.AccountType, ID: fid("gcal:acct"),
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: "gcal:primary",
+		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: fid("gcal:primary"),
 		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	event := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: "gcal:evt-1",
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: fid("gcal:evt-1"),
 		Properties: map[string]any{
 			"summary": "Standup", "at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:30:00Z",
 			"calendar": cal.ID,
@@ -813,7 +813,7 @@ func TestPutResurrectsATombstone(t *testing.T) {
 	// The user restores it and the next sync re-puts the same record.
 	before := maxSeq(t, ds)
 	back := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: "gcal:evt-1",
+		Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: fid("gcal:evt-1"),
 		Properties: map[string]any{
 			"summary": "Standup", "at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:30:00Z",
 			"calendar": cal.ID,
@@ -861,26 +861,26 @@ func TestPurgeThenPutStartsARecordOver(t *testing.T) {
 	_, ds := newVocabularyDataset(t, "tasks")
 	const kind = "samples.substrate.reamde.dev/tasks/task"
 	first := map[string]any{"name": "Sync", "url": "https://example.com/1", "description": "written by the connector"}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: "t1", Properties: first})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: fid("t1"), Properties: first})
 
 	// Without purge the put merges over the tombstone.
-	if _, err := ds.Delete(ctx, owner, kind, "t1", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, kind, fid("t1"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	back := mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: "t1", Properties: map[string]any{"name": "Sync"}})
+	back := mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: fid("t1"), Properties: map[string]any{"name": "Sync"}})
 	if back.Properties["url"] == nil {
 		t.Fatalf("a plain delete and put should restore the old properties: %v", back.Properties)
 	}
 
 	before := maxSeq(t, ds)
-	gone, err := ds.Delete(ctx, owner, kind, "t1", substrate.DeleteInput{Purge: true})
+	gone, err := ds.Delete(ctx, owner, kind, fid("t1"), substrate.DeleteInput{Purge: true})
 	if err != nil {
 		t.Fatalf("purge: %v", err)
 	}
 	if gone.DeletedAt == nil {
 		t.Fatalf("the purge answered a live record: %+v", gone)
 	}
-	if _, err := ds.Get(ctx, kind, "t1"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, kind, fid("t1")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the purged record still reads: %v", err)
 	}
 	rows := changesSince(t, ds, before)
@@ -889,7 +889,7 @@ func TestPurgeThenPutStartsARecordOver(t *testing.T) {
 		t.Fatalf("want a delete then a purged gc row by the caller, got %+v", rows)
 	}
 
-	fresh := mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: "t1", Properties: map[string]any{"name": "Sync"}})
+	fresh := mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: fid("t1"), Properties: map[string]any{"name": "Sync"}})
 	if fresh.Version != 1 {
 		t.Fatalf("the put after a purge is version %d, want a fresh record at 1", fresh.Version)
 	}
@@ -900,13 +900,13 @@ func TestPurgeThenPutStartsARecordOver(t *testing.T) {
 	}
 
 	// A purge also collects a record that is already a tombstone.
-	if _, err := ds.Delete(ctx, owner, kind, "t1", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, kind, fid("t1"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, err := ds.Delete(ctx, owner, kind, "t1", substrate.DeleteInput{Purge: true}); err != nil {
+	if _, err := ds.Delete(ctx, owner, kind, fid("t1"), substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatalf("purge a tombstone: %v", err)
 	}
-	if _, err := ds.Get(ctx, kind, "t1"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, kind, fid("t1")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the purged tombstone still reads: %v", err)
 	}
 }
@@ -1058,12 +1058,12 @@ func TestPatchOnATombstoneIsNotFound(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "gcal:acct",
+		Kind: enginetest.AccountType, ID: fid("gcal:acct"),
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	const calKind = "samples.substrate.reamde.dev/calendar/calendar"
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: calKind, ID: "gcal:primary",
+		Kind: calKind, ID: fid("gcal:primary"),
 		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	if _, err := ds.Delete(ctx, gcal, cal.Kind, cal.ID, substrate.DeleteInput{}); err != nil {
@@ -1183,17 +1183,17 @@ func TestResurrectDoesNotCascade(t *testing.T) {
 	}
 
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "beeper:acct",
+		Kind: enginetest.AccountType, ID: fid("beeper:acct"),
 		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "beeper:c1", Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: fid("beeper:c1"), Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	author := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alex"},
 	})
 	msg := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "beeper:m1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: fid("beeper:m1"),
 		Properties: map[string]any{
 			"text": "hi", "at": "2026-08-05T09:00:00Z",
 			"conversation": conv.ID,
@@ -1421,7 +1421,7 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 	missingRef := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "substrate.reamde.dev/core/recordpatchrequest",
 		Properties: map[string]any{
-			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": "orphan-task",
+			"op": "create", "targetKind": "samples.substrate.reamde.dev/tasks/task", "targetId": fid("orphan-task"),
 			"diff": map[string]any{
 				"properties": map[string]any{"name": "needs a project", "project": "ghost-project"},
 			},
@@ -1438,7 +1438,7 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 		after.Annotations["substrate/conflict"] == nil {
 		t.Fatalf("the create should stay proposed + annotated: %+v", after.Properties)
 	}
-	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", "orphan-task"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "samples.substrate.reamde.dev/tasks/task", fid("orphan-task")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the orphan task should not exist: %v", err)
 	}
 }
@@ -1583,11 +1583,11 @@ func TestDeliveryStatesStampAndAProviderEchoIsANoOp(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "beeper-account:a",
+		Kind: enginetest.AccountType, ID: fid("beeper-account:a"),
 		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack-channel:x1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: fid("slack-channel:x1"),
 		Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	me := mustPut(t, ds, owner, substrate.PutInput{

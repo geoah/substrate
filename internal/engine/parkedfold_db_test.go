@@ -84,15 +84,15 @@ func pfWriteNotes(t *testing.T, svc substrate.Service) substrate.Dataset {
 		t.Fatalf("install the closure: %v", err)
 	}
 	task := mustPut(t, ds, owner, substrate.PutInput{Kind: pfTask, Properties: map[string]any{"name": "the errand"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: pfNote, ID: "first", Properties: map[string]any{
+	mustPut(t, ds, owner, substrate.PutInput{Kind: pfNote, ID: fid("first"), Properties: map[string]any{
 		"name": "quokka notes", "remark": "a remark about wombats",
 		"about": pfTask + "/" + task.ID,
 	}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: pfNote, ID: "second", Properties: map[string]any{
-		"name": "second", "remark": "numbats", "links": []any{pfNote + "/first"},
+	mustPut(t, ds, owner, substrate.PutInput{Kind: pfNote, ID: fid("second"), Properties: map[string]any{
+		"name": "second", "remark": "numbats", "links": []any{pfNote + "/" + fid("first")},
 	}})
-	gone := mustPut(t, ds, owner, substrate.PutInput{Kind: pfNote, ID: "gone", Properties: map[string]any{
-		"name": "gone", "remark": "a tombstone indexes too", "links": []any{pfNote + "/first"},
+	gone := mustPut(t, ds, owner, substrate.PutInput{Kind: pfNote, ID: fid("gone"), Properties: map[string]any{
+		"name": "gone", "remark": "a tombstone indexes too", "links": []any{pfNote + "/" + fid("first")},
 	}})
 	if _, err := ds.Delete(ctx, owner, gone.Kind, gone.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
@@ -140,7 +140,7 @@ func requireDeclaredIndexes(t *testing.T, when string, snap []byte) {
 	if len(fts) != 3 {
 		t.Fatalf("%s: the snapshot holds %d note rows, want 3", when, len(fts))
 	}
-	for id, word := range map[string]string{"first": "wombat", "second": "numbat", "gone": "tombston"} {
+	for id, word := range map[string]string{fid("first"): "wombat", fid("second"): "numbat", fid("gone"): "tombston"} {
 		if !strings.Contains(fts[id], word) {
 			t.Fatalf("%s: note %s indexes %q, which lacks the remark's %q: its bands are not its declaration's", when, id, fts[id], word)
 		}
@@ -164,7 +164,7 @@ func requireParkedKindRefused(t *testing.T, ds substrate.Dataset) {
 			t.Fatalf("the parked kind %s is listed among the kinds", pfNote)
 		}
 	}
-	if _, err := ds.Get(ctx, pfNote, "first"); err == nil {
+	if _, err := ds.Get(ctx, pfNote, fid("first")); err == nil {
 		t.Fatal("a parked kind's record must not be readable")
 	}
 	if _, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{pfNote}}}); err == nil {
@@ -257,7 +257,7 @@ func TestUninstallingAParkedPackageReindexesItsRows(t *testing.T) {
 	engine.DrainIndexReprojection(t, ds2)
 	before := foldOf(t, ds2)
 	fts, refs := pfIndexes(t, before)
-	if len(fts) != 3 || strings.Contains(fts["first"], "wombat") || refs != 0 {
+	if len(fts) != 3 || strings.Contains(fts[fid("first")], "wombat") || refs != 0 {
 		t.Fatalf("after the uninstall the notes index %v with %d refs rows; want the unknown-kind bands and none", fts, refs)
 	}
 	if _, err := svc2.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
@@ -348,7 +348,7 @@ func TestAParkedMappingKeepsTheSlotRowOfALiveSourceKind(t *testing.T) {
 		substrate.BundleInstall{}); err != nil {
 		t.Fatalf("install the mapping closure: %v", err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: pfSource, ID: "linked", Properties: map[string]any{"name": "a source"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: pfSource, ID: fid("linked"), Properties: map[string]any{"name": "a source"}})
 	if n := pfSlotRows(t, foldOf(t, ds)); n != 1 {
 		t.Fatalf("the source holds %d slot rows while the mapping is live, want 1", n)
 	}
@@ -586,11 +586,11 @@ func TestUninstallingAnUnparsedPackageReindexesItsRows(t *testing.T) {
 		substrate.BundleInstall{}); err != nil {
 		t.Fatalf("install the legacy closure: %v", err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: pfLegacyMemo, ID: "one", Properties: map[string]any{
+	mustPut(t, ds, owner, substrate.PutInput{Kind: pfLegacyMemo, ID: fid("one"), Properties: map[string]any{
 		"name": "one", "remark": "about wombats",
 	}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: pfLegacyMemo, ID: "two", Properties: map[string]any{
-		"name": "two", "remark": "about numbats", "peer": pfLegacyMemo + "/one",
+	mustPut(t, ds, owner, substrate.PutInput{Kind: pfLegacyMemo, ID: fid("two"), Properties: map[string]any{
+		"name": "two", "remark": "about numbats", "peer": pfLegacyMemo + "/" + fid("one"),
 	}})
 	_ = svc.Close()
 	if _, err := rawDB(t, dsn).ExecContext(ctx,

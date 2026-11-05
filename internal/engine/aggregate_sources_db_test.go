@@ -41,8 +41,8 @@ func TestAggregateSourcesResolveBareIDsExactly(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
 	at := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
-	f.weighing("w/manual", "manual", "70", at, nil)
-	f.weighing("w/fit", "googlefit/x/manual", "80", at, nil)
+	f.weighing(fid("w/manual"), "manual", "70", at, nil)
+	f.weighing(fid("w/fit"), "googlefit/x/manual", "80", at, nil)
 	read := func(filter substrate.Filter, sources *substrate.AggregateSources) *substrate.AggregateResult {
 		return f.agg(context.Background(), filter, substrate.Aggregate{
 			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
@@ -96,10 +96,10 @@ func TestAggregatePriorityTakesTheSourcesOwnRanks(t *testing.T) {
 		if x.rank != nil {
 			props["priorities"] = map[string]any{f.metricPath("health/body_mass"): x.rank, f.metricPath("health/heart_rate"): 9}
 		}
-		f.mustPut(t, f.source, x.id, props)
-		f.weighing("w/"+x.id, x.id, x.value, at, nil)
-		f.mustPut(t, f.observation, "day/"+x.id, map[string]any{
-			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef(x.id), "form": "summary",
+		f.mustPut(t, f.source, fid(x.id), props)
+		f.weighing(fid("w/"+x.id), fid(x.id), x.value, at, nil)
+		f.mustPut(t, f.observation, fid("day/"+x.id), map[string]any{
+			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef(fid(x.id)), "form": "summary",
 			"statistic": "avg", "period": "day", "value": quantity(x.value, "kg"),
 			"at": at.Format(time.RFC3339), "endsAt": at.Add(time.Hour).Format(time.RFC3339), "utcOffset": 0,
 		})
@@ -124,8 +124,8 @@ func TestAggregatePriorityTakesTheSourcesOwnRanks(t *testing.T) {
 	}{
 		{substrate.AggregateSources{Policy: "priority"}, "", "80"},
 		{substrate.AggregateSources{Policy: "priority"}, "summaries", "80"},
-		{substrate.AggregateSources{Policy: "priority", Order: []string{"alpha"}}, "", "70"},
-		{substrate.AggregateSources{Policy: "priority", Order: []string{"aardvark", "zeta"}}, "summaries", "60"},
+		{substrate.AggregateSources{Policy: "priority", Order: []string{fid("alpha")}}, "", "70"},
+		{substrate.AggregateSources{Policy: "priority", Order: []string{fid("aardvark"), fid("zeta")}}, "summaries", "60"},
 	} {
 		if got := read(x.sources, x.from); got != x.want {
 			t.Errorf("%+v from %q answers %s, want %s", x.sources, x.from, got, x.want)
@@ -143,10 +143,10 @@ func TestAggregateFilterSelectsAbsentStreamKeys(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
 	at := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
-	f.weighing("w/plain", "scale", "60", at, nil)
-	f.weighing("w/workout", "scale", "61", at, map[string]any{"channel": "workout"})
-	f.weighing("w/kitchen", "scale", "62", at, map[string]any{"about": map[string]any{"ref": f.sourcePath("kitchen")}})
-	f.mustPut(t, f.observation, "w/nosource", map[string]any{
+	f.weighing(fid("w/plain"), "scale", "60", at, nil)
+	f.weighing(fid("w/workout"), "scale", "61", at, map[string]any{"channel": "workout"})
+	f.weighing(fid("w/kitchen"), "scale", "62", at, map[string]any{"about": map[string]any{"ref": f.sourcePath("kitchen")}})
+	f.mustPut(t, f.observation, fid("w/nosource"), map[string]any{
 		"metric": f.metricRef("health/body_mass"), "form": "gauge", "value": quantity("63", "kg"),
 		"at": at.Format(time.RFC3339), "hold": "PT1M", "utcOffset": 0,
 	})
@@ -201,8 +201,8 @@ func TestAggregatePriorityRanksAStreamWithNoSourceLast(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
 	at := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
-	f.weighing("w/scale", "scale", "60", at, nil)
-	f.mustPut(t, f.observation, "w/typed", map[string]any{
+	f.weighing(fid("w/scale"), "scale", "60", at, nil)
+	f.mustPut(t, f.observation, fid("w/typed"), map[string]any{
 		"metric": f.metricRef("health/body_mass"), "form": "gauge", "value": quantity("63", "kg"),
 		"at": at.Format(time.RFC3339), "hold": "PT1M", "utcOffset": 0,
 	})
@@ -214,7 +214,7 @@ func TestAggregatePriorityRanksAStreamWithNoSourceLast(t *testing.T) {
 		for k, v := range x {
 			props[k] = v
 		}
-		f.mustPut(t, f.observation, id, props)
+		f.mustPut(t, f.observation, fid(id), props)
 	}
 	for _, x := range []struct {
 		sources substrate.AggregateSources
@@ -248,11 +248,11 @@ func TestAggregateSourcesListNoPathForAStreamWithNoSource(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
 	at := time.Date(2026, 10, 4, 8, 0, 0, 0, time.UTC)
-	f.mustPut(t, f.observation, "typed", map[string]any{
+	f.mustPut(t, f.observation, fid("typed"), map[string]any{
 		"metric": f.metricRef("health/heart_rate"), "form": "gauge", "value": quantity("61", "/min"),
 		"at": at.Format(time.RFC3339), "hold": "PT1M", "utcOffset": 0,
 	})
-	f.weighing("w", "scale", "70", at, nil)
+	f.weighing(fid("w"), "scale", "70", at, nil)
 	for _, metric := range []string{"health/heart_rate", "health/body_mass"} {
 		for _, bucket := range []*substrate.AggregateBucket{nil, {Calendar: "day", Timezone: "UTC"}} {
 			res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
@@ -284,9 +284,9 @@ func TestAggregatePriorityDropsALowerReadingAtTheSameInstant(t *testing.T) {
 			"value": quantity(value, "mm[Hg]"), "at": at.Format(time.RFC3339), "hold": "PT0S", "utcOffset": 0,
 		})
 	}
-	pressure("bp/garmin", "garmin", "118", at)
-	pressure("bp/fit", "fit", "121", at)
-	pressure("bp/apple", "apple", "119", at.Add(30*time.Second))
+	pressure(fid("bp/garmin"), "garmin", "118", at)
+	pressure(fid("bp/fit"), "fit", "121", at)
+	pressure(fid("bp/apple"), "apple", "119", at.Add(30*time.Second))
 	read := func(order ...string) substrate.AggregateRow {
 		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
 			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/systolic_blood_pressure")},
@@ -336,9 +336,9 @@ func TestAggregatePriorityWeighsAHigherPointOutsideTheWindows(t *testing.T) {
 		})
 	}
 	day := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
-	steps("a/night", "a", "100", day.Add(-30*time.Minute), time.Hour)
-	steps("b/midnight", "b", "40", day, 15*time.Minute)
-	steps("b/morning", "b", "10", day.Add(10*time.Hour), 15*time.Minute)
+	steps(fid("a/night"), "a", "100", day.Add(-30*time.Minute), time.Hour)
+	steps(fid("b/midnight"), "b", "40", day, 15*time.Minute)
+	steps(fid("b/morning"), "b", "10", day.Add(10*time.Hour), 15*time.Minute)
 	priority := &substrate.AggregateSources{Policy: "priority", Order: []string{"a", "b"}}
 	read := func(sources *substrate.AggregateSources, from time.Time, rolling *substrate.AggregateRolling) map[string]string {
 		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
@@ -371,7 +371,7 @@ func TestAggregatePriorityWeighsAHigherPointOutsideTheWindows(t *testing.T) {
 
 	// A gauge A writes the day after leaves A's amount weighed: a stream's
 	// newest form says nothing of the forms before it.
-	f.mustPut(t, f.observation, "a/gauge", map[string]any{
+	f.mustPut(t, f.observation, fid("a/gauge"), map[string]any{
 		"metric": f.metricRef("health/steps"), "source": f.sourceRef("a"), "form": "gauge",
 		"value": quantity("5", "{steps}"), "at": day.AddDate(0, 0, 1).Format(time.RFC3339), "utcOffset": 0,
 	})
@@ -382,9 +382,9 @@ func TestAggregatePriorityWeighsAHigherPointOutsideTheWindows(t *testing.T) {
 	}
 
 	sleep := f.sleepKind()
-	f.mustPut(t, sleep, "v", map[string]any{"at": at(day.Add(-20 * time.Minute)), "endsAt": at(day.Add(-10 * time.Minute))})
-	f.mustPut(t, sleep, "w", map[string]any{"at": at(day.Add(31 * time.Minute)), "endsAt": at(day.Add(40 * time.Minute))})
-	steps("b/late", "b", "30", day.Add(25*time.Minute), 15*time.Minute)
+	f.mustPut(t, sleep, fid("v"), map[string]any{"at": at(day.Add(-20 * time.Minute)), "endsAt": at(day.Add(-10 * time.Minute))})
+	f.mustPut(t, sleep, fid("w"), map[string]any{"at": at(day.Add(31 * time.Minute)), "endsAt": at(day.Add(40 * time.Minute))})
+	steps(fid("b/late"), "b", "30", day.Add(25*time.Minute), 15*time.Minute)
 	windows := func(ids ...string) map[string]string {
 		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
 			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
@@ -399,9 +399,9 @@ func TestAggregatePriorityWeighsAHigherPointOutsideTheWindows(t *testing.T) {
 		}
 		return out
 	}
-	alone, beside := windows("w"), windows("v", "w")
-	if alone["w"] != beside["w"] || alone["w"] != "" {
-		t.Errorf("window w alone answers %q, beside v %q; want no row either way: A's amount drops B's", alone["w"], beside["w"])
+	alone, beside := windows(fid("w")), windows(fid("v"), fid("w"))
+	if alone[fid("w")] != beside[fid("w")] || alone[fid("w")] != "" {
+		t.Errorf("window w alone answers %q, beside v %q; want no row either way: A's amount drops B's", alone[fid("w")], beside[fid("w")])
 	}
 }
 
@@ -442,11 +442,11 @@ func TestAggregatePriorityReachesAnOlderLongerSpan(t *testing.T) {
 			}
 			for id, pt := range x.points {
 				when := pt[2].([2]time.Duration)
-				steps(id, pt[0].(string), pt[1].(string), day.Add(when[0]), when[1])
+				steps(fid(id), pt[0].(string), pt[1].(string), day.Add(when[0]), when[1])
 			}
 			// Each stream's newest value is a quarter hour long.
 			for i, src := range x.order {
-				steps(src+"/new", src, "5", day.AddDate(0, 0, 4).Add(time.Duration(i)*time.Hour), 15*time.Minute)
+				steps(fid(src+"/new"), src, "5", day.AddDate(0, 0, 4).Add(time.Duration(i)*time.Hour), 15*time.Minute)
 			}
 			for _, read := range []struct {
 				from    time.Time
@@ -501,13 +501,13 @@ func TestAggregatePriorityTakesALinkedDeviceFromOneSource(t *testing.T) {
 		if rank != nil {
 			props["priorities"] = map[string]any{f.metricPath("health/body_mass"): rank}
 		}
-		f.mustPut(t, f.source, id, props)
+		f.mustPut(t, f.source, fid(id), props)
 	}
-	f.weighing("w/withings", "withings", "72.4", at, nil)
-	f.weighing("w/apple", "apple", "72.4", at.Add(-2*time.Second), nil)
-	f.weighing("w/gym", "gym", "73.1", at.Add(11*time.Hour), nil)
+	f.weighing(fid("w/withings"), fid("withings"), "72.4", at, nil)
+	f.weighing(fid("w/apple"), fid("apple"), "72.4", at.Add(-2*time.Second), nil)
+	f.weighing(fid("w/gym"), fid("gym"), "73.1", at.Add(11*time.Hour), nil)
 	bob := map[string]any{"about": map[string]any{"ref": f.sourcePath("bob")}}
-	f.weighing("w/bob", "apple", "81", at.Add(time.Hour), bob)
+	f.weighing(fid("w/bob"), fid("apple"), "81", at.Add(time.Hour), bob)
 	read := func(about bool, sources substrate.AggregateSources) *substrate.AggregateResult {
 		cond := substrate.Cond{Exists: &about}
 		return f.agg(ctx, substrate.Filter{Properties: map[string]substrate.Cond{"about": cond}}, substrate.Aggregate{
@@ -535,13 +535,13 @@ func TestAggregatePriorityTakesALinkedDeviceFromOneSource(t *testing.T) {
 			t.Errorf("%s: count %s from %v, want %s from %v", label, got, res.Sources, count, want)
 		}
 	}
-	check("unlinked", read(false, priority()), "3", "apple", "gym", "withings")
+	check("unlinked", read(false, priority()), "3", fid("apple"), fid("gym"), fid("withings"))
 
-	f.mustPut(t, link, "scale", map[string]any{
-		"name": "Withings Body+", "sources": []any{f.sourceRef("withings"), f.sourceRef("apple")},
+	f.mustPut(t, link, fid("scale"), map[string]any{
+		"name": "Withings Body+", "sources": []any{f.sourceRef(fid("withings")), f.sourceRef(fid("apple"))},
 	})
-	check("linked", read(false, priority()), "2", "gym", "withings")
-	check("linked, apple ordered first", read(false, priority("apple")), "2", "apple", "gym")
+	check("linked", read(false, priority()), "2", fid("gym"), fid("withings"))
+	check("linked, apple ordered first", read(false, priority(fid("apple"))), "2", fid("apple"), fid("gym"))
 	bySubject := f.agg(ctx, substrate.Filter{}, substrate.Aggregate{
 		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
 		Range:    rng(at.Add(-time.Hour), at.Add(23*time.Hour)),
@@ -560,12 +560,12 @@ func TestAggregatePriorityTakesALinkedDeviceFromOneSource(t *testing.T) {
 		t.Errorf("separate: %d rows, want one per source, the link ignored", len(res.Rows))
 	}
 
-	if _, err := f.ds.Delete(ctx, substrate.ActorAPI, link, "scale", substrate.DeleteInput{}); err != nil {
+	if _, err := f.ds.Delete(ctx, substrate.ActorAPI, link, fid("scale"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the link: %v", err)
 	}
-	f.mustPut(t, link, "a", map[string]any{"name": "a", "sources": []any{f.sourceRef("withings"), f.sourceRef("healthconnect")}})
-	f.mustPut(t, link, "b", map[string]any{"name": "b", "sources": []any{f.sourceRef("healthconnect"), f.sourceRef("apple")}})
-	check("linked through healthconnect", read(false, priority()), "2", "gym", "withings")
+	f.mustPut(t, link, fid("a"), map[string]any{"name": "a", "sources": []any{f.sourceRef(fid("withings")), f.sourceRef(fid("healthconnect"))}})
+	f.mustPut(t, link, fid("b"), map[string]any{"name": "b", "sources": []any{f.sourceRef(fid("healthconnect")), f.sourceRef(fid("apple"))}})
+	check("linked through healthconnect", read(false, priority()), "2", fid("gym"), fid("withings"))
 	f.refusedAgg(substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
 		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
 		Range:    rng(at.Add(-time.Hour), at.Add(23*time.Hour)),
@@ -575,11 +575,11 @@ func TestAggregatePriorityTakesALinkedDeviceFromOneSource(t *testing.T) {
 	}}, "the source links the priority policy reads")
 
 	for _, id := range []string{"a", "b"} {
-		if _, err := f.ds.Delete(ctx, substrate.ActorAPI, link, id, substrate.DeleteInput{}); err != nil {
+		if _, err := f.ds.Delete(ctx, substrate.ActorAPI, link, fid(id), substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete link %s: %v", id, err)
 		}
 	}
-	check("links deleted", read(false, priority()), "3", "apple", "gym", "withings")
+	check("links deleted", read(false, priority()), "3", fid("apple"), fid("gym"), fid("withings"))
 }
 
 // The winner of a linked device is chosen among the streams that hold a value
@@ -593,16 +593,16 @@ func TestAggregatePriorityChoosesALinkedWinnerInTheRead(t *testing.T) {
 	f := openAgg(t)
 	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	for id, rank := range map[string]int{"withings": 1, "apple": 2} {
-		f.mustPut(t, f.source, id, map[string]any{"name": id, "priorities": map[string]any{f.metricPath("health/body_mass"): rank}})
+		f.mustPut(t, f.source, fid(id), map[string]any{"name": id, "priorities": map[string]any{f.metricPath("health/body_mass"): rank}})
 	}
-	f.mustPut(t, f.source+"link", "scale", map[string]any{
-		"name": "scale", "sources": []any{f.sourceRef("withings"), f.sourceRef("apple")},
+	f.mustPut(t, f.source+"link", fid("scale"), map[string]any{
+		"name": "scale", "sources": []any{f.sourceRef(fid("withings")), f.sourceRef(fid("apple"))},
 	})
-	f.weighing("w/withings/02", "withings", "72", day.Add(31*time.Hour), nil)
-	f.weighing("w/withings/01", "withings", "73", day.Add(20*time.Hour), nil)
-	f.weighing("w/apple/01", "apple", "70", day.Add(7*time.Hour), nil)
-	f.mustPut(t, f.observation, "day/apple/01", map[string]any{
-		"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("apple"), "form": "summary",
+	f.weighing(fid("w/withings/02"), fid("withings"), "72", day.Add(31*time.Hour), nil)
+	f.weighing(fid("w/withings/01"), fid("withings"), "73", day.Add(20*time.Hour), nil)
+	f.weighing(fid("w/apple/01"), fid("apple"), "70", day.Add(7*time.Hour), nil)
+	f.mustPut(t, f.observation, fid("day/apple/01"), map[string]any{
+		"metric": f.metricRef("health/body_mass"), "source": f.sourceRef(fid("apple")), "form": "summary",
 		"statistic": "avg", "period": "day", "value": quantity("71", "kg"),
 		"at": day.Format(time.RFC3339), "endsAt": day.Add(24 * time.Hour).Format(time.RFC3339), "utcOffset": 0,
 	})
@@ -643,13 +643,13 @@ func TestAggregatePriorityChoosesALinkedWinnerOnTheRecordedLocalDates(t *testing
 	f := openAgg(t)
 	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	for id, rank := range map[string]int{"withings": 1, "apple": 2} {
-		f.mustPut(t, f.source, id, map[string]any{"name": id, "priorities": map[string]any{f.metricPath("health/body_mass"): rank}})
+		f.mustPut(t, f.source, fid(id), map[string]any{"name": id, "priorities": map[string]any{f.metricPath("health/body_mass"): rank}})
 	}
-	f.mustPut(t, f.source+"link", "scale", map[string]any{
-		"name": "scale", "sources": []any{f.sourceRef("withings"), f.sourceRef("apple")},
+	f.mustPut(t, f.source+"link", fid("scale"), map[string]any{
+		"name": "scale", "sources": []any{f.sourceRef(fid("withings")), f.sourceRef(fid("apple"))},
 	})
-	f.weighing("w/withings", "withings", "72", day.Add(31*time.Hour), nil)
-	f.weighing("w/apple", "apple", "70", day.Add(7*time.Hour), nil)
+	f.weighing(fid("w/withings"), fid("withings"), "72", day.Add(31*time.Hour), nil)
+	f.weighing(fid("w/apple"), fid("apple"), "70", day.Add(7*time.Hour), nil)
 	res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
 		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
 		Range:    &substrate.AggregateRange{Gte: "2026-09-01", Lt: "2026-09-02", RecordedLocal: true},
@@ -673,14 +673,14 @@ func TestAggregatePriorityBoundsTheLinkLookups(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
 	at := time.Date(2026, 9, 1, 7, 0, 0, 0, time.UTC)
-	f.mustPut(t, f.source, "withings", map[string]any{"name": "withings"})
+	f.mustPut(t, f.source, fid("withings"), map[string]any{"name": "withings"})
 	for i := range 300 {
-		f.mustPut(t, f.source+"link", fmt.Sprintf("l%03d", i), map[string]any{
-			"name": "fan", "sources": []any{f.sourceRef("withings"), f.sourceRef(fmt.Sprintf("other%03d", i))},
+		f.mustPut(t, f.source+"link", fid(fmt.Sprintf("l%03d", i)), map[string]any{
+			"name": "fan", "sources": []any{f.sourceRef(fid("withings")), f.sourceRef(fmt.Sprintf("other%03d", i))},
 		})
 	}
-	f.weighing("w/withings", "withings", "72", at, nil)
-	f.weighing("w/apple", "apple", "70", at.Add(time.Hour), nil)
+	f.weighing(fid("w/withings"), fid("withings"), "72", at, nil)
+	f.weighing(fid("w/apple"), fid("apple"), "70", at.Add(time.Hour), nil)
 	ctx, trace := engine.AggregateTraced(context.Background())
 	_, err := f.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
 		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
