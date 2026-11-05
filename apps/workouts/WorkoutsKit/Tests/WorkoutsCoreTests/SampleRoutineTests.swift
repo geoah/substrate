@@ -24,7 +24,7 @@ struct SampleRoutineTests {
         let sets = routine.slots.flatMap(\.sets)
         let exercises = try routine.slots.map { try #require(catalog.exercises[$0.exercise], "no exercise for \($0.key)") }
         #expect(routine.slots.count == 13)
-        #expect(sets.count == 25)
+        #expect(sets.count == 27)
         #expect(routine.notes != nil)
         #expect(routine.slots.allSatisfy { $0.notes != nil }, "every exercise says what it shows")
 
@@ -83,7 +83,7 @@ struct SampleRoutineTests {
         #expect(slots.allSatisfy { $0.notes != nil })
         let text = slots.flatMap(\.lines).joined(separator: "\n")
         for phrase in [
-            "Warm-up: 500 m", "Warm-up: 8 reps", "Warm-up: 12 reps at 50% of body mass", "Set 1 is the top set",
+            "Warm-up: 250 m", "Then 0:15 to Bird Dog", "Warm-up: 8 reps", "Warm-up: 12 reps at 50% of body mass", "Set 1 is the top set",
             "Set 2 backs off 10%", "Warm-up rest 1:00", "2–3 left", "Tempo 3-0-1-0", "Rest after set 2: 3:00",
             "Set 3 is a drop set: 2 drops, 5 kg lighter each, 6 reps each", "BW − 90 lb", "Then straight to Push Up",
             "each until 2–3 reps left", "as many reps as possible", "Set 1 is myo-reps, until a mini-set comes in short",
@@ -94,8 +94,12 @@ struct SampleRoutineTests {
         ] {
             #expect(text.localizedCaseInsensitiveContains(phrase), "the preview names \(phrase):\n\(text)")
         }
-        // The two groups show as their own blocks, with no group letters.
-        #expect(preview.blocks.compactMap(\.header) == ["Superset, rest 1:30 after each round", "Circuit, 2 rounds, rest 1:00 after each round"])
+        // The three groups show as their own blocks, with no group letters.
+        #expect(
+            preview.blocks.compactMap(\.header) == [
+                "Circuit, rest 0:30 after each round", "Superset, rest 1:30 after each round",
+                "Circuit, 2 rounds, rest 1:00 after each round",
+            ])
         #expect(slots.allSatisfy { $0.groupLabel == nil })
     }
 
@@ -142,8 +146,8 @@ struct SampleRoutineTests {
             ticks += 1
         }
         #expect(walk.upNext == nil, "every set was offered and done")
-        // One between the superset's two rounds, one between the circuit's two.
-        #expect(roundRests == 2, "the superset's and the circuit's round rests ran: \(roundRests)")
+        // One between the warm-up circuit's two rounds, the superset's and the circuit's.
+        #expect(roundRests == 3, "the three groups' round rests ran: \(roundRests)")
 
         let state = try walk.state
         let summary = FinishPresenter.summary(state, presentation: try walk.shown, policy: .drop, end: walk.now, healthAllowed: true)
