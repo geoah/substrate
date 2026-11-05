@@ -249,6 +249,18 @@ describe("LoginPage", () => {
     ).toBe("/register")
   })
 
+  it("offers no registration inside an app from the App Store", () => {
+    vi.stubGlobal("substrateShell", {
+      platform: "ios",
+      server: "https://substrate.example.com",
+      appStore: true,
+    })
+    render(<LoginPage />)
+    expect(
+      screen.queryByRole("link", { name: "Create your Substrate" })
+    ).toBeNull()
+  })
+
   it("shows the factor/lockout message on a refused sign-in", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(401, {

@@ -21,7 +21,7 @@ import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
 import { ApiError } from "@/lib/api/types"
 import { safeReturnPath } from "@/lib/return-path"
-import { substrateHostname } from "@/lib/shell"
+import { nativeShell, substrateHostname } from "@/lib/shell"
 import { useSite } from "@/lib/site"
 import { loginRoute } from "@/router"
 
@@ -119,16 +119,18 @@ export function LoginPage() {
       title="Sign in to your Substrate"
       description={site ? `Welcome back to ${site.name}.` : "Welcome back."}
       footer={
-        <>
-          {inviteRequired ? "Have an invite?" : "New here?"}{" "}
-          <Link
-            to="/register"
-            search={{ redirect: returnTo }}
-            className={doorLinkClass}
-          >
-            Create your Substrate
-          </Link>
-        </>
+        nativeShell()?.appStore ? undefined : (
+          <>
+            {inviteRequired ? "Have an invite?" : "New here?"}{" "}
+            <Link
+              to="/register"
+              search={{ redirect: returnTo }}
+              className={doorLinkClass}
+            >
+              Create your Substrate
+            </Link>
+          </>
+        )
       }
     >
       <form onSubmit={form.handleSubmit(onSubmit)}>
