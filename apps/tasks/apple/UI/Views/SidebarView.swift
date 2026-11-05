@@ -56,15 +56,16 @@ struct SidebarView: View {
             Notices(link: link, app: app)
                 .padding(.horizontal)
         }
-        .safeAreaInset(edge: .bottom) {
-            Button {
-                naming = ListNaming(id: nil, name: "")
-            } label: {
-                Label(sidebar.newList, systemImage: "plus.circle.fill")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        .scrollContentBackground(menu == nil ? .hidden : .automatic)
+        .background { if menu == nil { TasksSymbols.screen } }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    naming = ListNaming(id: nil, name: "")
+                } label: {
+                    Label(sidebar.newList, systemImage: "folder.badge.plus")
+                }
             }
-            .buttonStyle(.borderless)
-            .padding()
         }
         .refreshable { shell.send(.refresh) }
         .listNaming($naming)
@@ -89,20 +90,30 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func rowView(_ row: SidebarRow) -> some View {
-        let label = Label(row.title, systemImage: TasksSymbols.symbol(row.symbol))
-            .badge(row.open)
-            .accessibilityValue(row.openWords)
+        let label = Label {
+            Text(row.title).foregroundStyle(Color.primary)
+        } icon: {
+            Image(systemName: TasksSymbols.symbol(row.symbol)).foregroundStyle(Color.brandAccent)
+        }
         if menu == nil {
+            // A button tints what it holds, so the count is drawn here,
+            // grey, rather than as the row's badge.
             Button {
                 select(row.selection)
             } label: {
                 HStack {
-                    label.foregroundStyle(Color.primary)
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                    label
+                    Spacer()
+                    if row.open > 0 { Text(row.open, format: .number).foregroundStyle(Color.secondary) }
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondary.opacity(0.6))
                 }
             }
+            .accessibilityValue(row.openWords)
         } else {
-            label.tag(Item.list(row.selection))
+            label
+                .badge(row.open)
+                .accessibilityValue(row.openWords)
+                .tag(Item.list(row.selection))
         }
     }
 

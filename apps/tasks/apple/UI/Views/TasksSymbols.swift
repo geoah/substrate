@@ -22,10 +22,11 @@ enum TasksSymbols {
         }
     }
 
+    /// A priority's colour, the cards' and the detail's alike: red is the
+    /// most urgent (and lateness), orange high, the rest quiet.
     static func color(_ priority: TaskPriority) -> Color {
         switch priority {
-        case .none, .low: .secondary
-        case .medium: .yellow
+        case .none, .low, .medium: .secondary
         case .high: .orange
         case .urgent: .red
         }
@@ -39,11 +40,51 @@ enum TasksSymbols {
         }
     }
 
+    /// The screen behind the cards: the grouped background, washed with the
+    /// accent at the top.
+    static var screen: some View {
+        LinearGradient(
+            stops: [.init(color: Color.brandAccent.opacity(0.06), location: 0), .init(color: grouped, location: 0.45)],
+            startPoint: .top, endPoint: .bottom
+        )
+        .ignoresSafeArea()
+    }
+
+    static var grouped: Color {
+        #if os(iOS)
+        Color(uiColor: .systemGroupedBackground)
+        #else
+        Color(nsColor: .windowBackgroundColor)
+        #endif
+    }
+
+    /// A card on the screen: white in light mode, raised grey in dark.
+    static var card: Color {
+        #if os(iOS)
+        Color(uiColor: .secondarySystemGroupedBackground)
+        #else
+        Color(nsColor: .controlBackgroundColor)
+        #endif
+    }
+
     static func mark(_ status: TaskStatus) -> String {
         switch status {
         case .open: "circle"
         case .done: "checkmark.circle.fill"
         case .abandoned: "xmark.circle"
+        }
+    }
+}
+
+/// A symbol and its words set close, as a chip or a short line: the
+/// system's label leaves a gap meant for a list row.
+struct TightLabelStyle: LabelStyle {
+    var spacing: CGFloat = 4
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: spacing) {
+            configuration.icon
+            configuration.title
         }
     }
 }

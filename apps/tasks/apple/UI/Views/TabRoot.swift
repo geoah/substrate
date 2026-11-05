@@ -3,20 +3,26 @@ import SubstrateUI
 import SwiftUI
 import TasksCore
 
-/// On a phone: a tab per section of the App menu. Lists pushes a list, then
-/// a task; Today shows its list at once and pushes a task. What is pushed is
-/// the presentation's, never the view's: the list shown and the task open,
-/// so a reminder's tap or a command from anywhere moves the stack, and
-/// going back is a command.
+/// On a phone: a tab per section of the App menu, and apart from them at
+/// the bar's trailing end the system's prominent tab, the round + that adds
+/// a task (seeded with the list shown, and today in Today). Lists pushes a
+/// list, then a task; Today shows its list at once and pushes a task. What
+/// is pushed is the presentation's, never the view's: the list shown and
+/// the task open, so a reminder's tap or a command from anywhere moves the
+/// stack, and going back is a command.
 struct TabRoot: View {
     @Environment(TasksShell.self) private var shell
     let link: LinkPresentation<TasksPresentation>
     let app: TasksPresentation
 
     var body: some View {
-        AppMenuView(app.menu, select: { shell.send(.select(section: $0)) }) { section in
+        AppMenuView(
+            app.menu, select: { shell.send(.select(section: $0)) },
+            action: AppMenuAction(app.list?.newTask ?? "New Task", symbol: "plus") { shell.send(.newTask) }
+        ) { section in
             content(section.id)
         }
+        .environment(\.addsFromTabBar, true)
     }
 
     @ViewBuilder

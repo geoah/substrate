@@ -113,7 +113,9 @@
       "fields": [
         {"name": "selection", "type": "ListSelection"},
         {"name": "title", "type": "String"},
+        {"name": "summary", "type": "ListSummary"},
         {"name": "open", "type": "KeyedList<TaskRow>"},
+        {"name": "openTitle", "type": "String"},
         {"name": "closed", "type": "KeyedList<TaskRow>"},
         {"name": "closedTitle", "type": "String"},
         {"name": "showsClosed", "type": "Bool"},
@@ -146,6 +148,16 @@
             {"name": "_0", "type": "String"}
           ]
         }
+      ]
+    },
+    {
+      "name": "ListSummary",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "headline", "type": "String"},
+        {"name": "detail", "type": "String?"},
+        {"name": "overdue", "type": "String?"}
       ]
     },
     {
@@ -353,6 +365,7 @@
         {"name": "priority", "type": "PriorityBadge?"},
         {"name": "listName", "type": "String?"},
         {"name": "hasNotes", "type": "Bool"},
+        {"name": "notes", "type": "String?"},
         {"name": "spoken", "type": "String"}
       ]
     },

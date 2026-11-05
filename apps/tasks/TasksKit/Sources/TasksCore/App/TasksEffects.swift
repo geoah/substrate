@@ -20,16 +20,14 @@ public extension TasksApp {
             out.append(.readUsage)
         case let .settingsChanged(settings):
             out.append(.saveSettings(settings))
-            if TasksSettings.reminds(settings), state.permission == .notAsked { out.append(.askPermission) }
+            // Asked when the owner turns reminders on, never before: the
+            // system asks only once, and only an answer to a choice they just
+            // made is one they expect.
+            if TasksSettings.reminds(settings), !TasksSettings.reminds(previous.settings), state.permission == .notAsked {
+                out.append(.askPermission)
+            }
         default:
             break
-        }
-        // Asked once there is something to remind of, never at a launch with
-        // nothing due: the system asks only once.
-        if TasksSettings.reminds(state.settings), state.permission == .notAsked, !out.contains(.askPermission),
-            Self.hasDue(state), !Self.hasDue(previous) || previous.permission != .notAsked
-        {
-            out.append(.askPermission)
         }
         // The reminders follow the plan the presenter made, once the device
         // has said what it allows and the tasks and settings are read.
@@ -37,10 +35,6 @@ public extension TasksApp {
             out.append(.schedule(presentation.reminders))
         }
         return out
-    }
-
-    private static func hasDue(_ state: TasksState) -> Bool {
-        state.records.values.contains { $0.kind == TasksKinds.task && $0.properties["dueDay"] != nil }
     }
 
     func ownKey(of effect: Effect) -> String? {

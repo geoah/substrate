@@ -12,6 +12,7 @@ struct TaskEditorView: View {
     @Environment(TasksShell.self) private var shell
     let key: ChildKey
     let editor: TaskEditorPresentation
+    @FocusState private var naming: Bool
 
     var body: some View {
         NavigationStack {
@@ -20,9 +21,10 @@ struct TaskEditorView: View {
                     Section { ProblemBox(notKept) }
                 }
                 Section {
-                    field(editor.name) { shell.send(.setName($0), to: key) }
-                    field(editor.notes, lines: true) { shell.send(.setNotes($0), to: key) }
-                    field(editor.link) { shell.send(.setLink($0), to: key) }
+                    field(editor.name, lines: 1 ... 3) { shell.send(.setName($0), to: key) }
+                        .focused($naming)
+                    field(editor.notes, lines: 2 ... 8) { shell.send(.setNotes($0), to: key) }
+                    field(editor.link, link: true) { shell.send(.setLink($0), to: key) }
                 } footer: {
                     if let problem = editor.problem { Text(problem).foregroundStyle(.red) }
                 }
@@ -59,6 +61,8 @@ struct TaskEditorView: View {
                 }
             }
             .formStyle(.grouped)
+            // A new task starts at its name; an edit leaves the keyboard down.
+            .onAppear { if editor.name.value.isEmpty { naming = true } }
             .navigationTitle(editor.title)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -78,13 +82,22 @@ struct TaskEditorView: View {
         #endif
     }
 
-    /// A text field under its label, the prompt inside it.
-    private func field(_ text: EditorText, lines: Bool = false, set: @escaping (String) -> Void) -> some View {
-        LabeledContent(text.label) {
-            TextField(text.label, text: Binding(get: { text.value }, set: set), prompt: Text(text.prompt), axis: lines ? .vertical : .horizontal)
-                .lineLimit(lines ? 1 ... 6 : 1 ... 1)
-                .multilineTextAlignment(.leading)
+    /// A text field under its label, the prompt inside it, the whole
+    /// width of the form.
+    private func field(
+        _ text: EditorText, lines: ClosedRange<Int> = 1 ... 1, link: Bool = false, set: @escaping (String) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(text.label).font(.subheadline).foregroundStyle(.secondary)
+            TextField(text.label, text: Binding(get: { text.value }, set: set), prompt: Text(text.prompt), axis: lines.upperBound > 1 ? .vertical : .horizontal)
+                .lineLimit(lines)
                 .labelsHidden()
+                #if os(iOS)
+            .keyboardType(link ? .URL : .default)
+            .textInputAutocapitalization(link ? .never : .sentences)
+                #endif
+                .autocorrectionDisabled(link)
         }
+        .padding(.vertical, 2)
     }
 }

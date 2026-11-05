@@ -11,7 +11,7 @@ import kotlinx.serialization.json.JsonElement
 
 /** The SHA-256 of this configuration's golden. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "0543fb5b7a8dadcde8d225c9ddd4c153a5ba6f742fcd92daa4ec642d1e3b18a8"
+    public const val VALUE: String = "a2d0c9aa46f8cc99179326b74a0035803c83a38cedd51c06c9ca230aba1491ee"
 }
 
 @Serializable(with = Confirmation.Serializer::class)
@@ -106,7 +106,9 @@ public sealed interface ListAction {
 public data class ListPresentation(
     val selection: ListSelection,
     val title: String,
+    val summary: ListSummary,
     val open: KeyedList<TaskRow>,
+    val openTitle: String,
     val closed: KeyedList<TaskRow>,
     val closedTitle: String,
     val showsClosed: Boolean,
@@ -142,6 +144,13 @@ public sealed interface ListSelection {
         ),
     )
 }
+
+@Serializable
+public data class ListSummary(
+    val headline: String,
+    val detail: String? = null,
+    val overdue: String? = null,
+)
 
 @Serializable
 public data class PriorityBadge(
@@ -266,6 +275,7 @@ public data class TaskRow(
     val priority: PriorityBadge? = null,
     val listName: String? = null,
     val hasNotes: Boolean,
+    val notes: String? = null,
     val spoken: String,
 )
 
@@ -584,6 +594,7 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "ListAction" to ListAction.Serializer,
     "ListPresentation" to ListPresentation.serializer(),
     "ListSelection" to ListSelection.Serializer,
+    "ListSummary" to ListSummary.serializer(),
     "PriorityBadge" to PriorityBadge.serializer(),
     "SidebarPresentation" to SidebarPresentation.serializer(),
     "SidebarRow" to SidebarRow.serializer(),

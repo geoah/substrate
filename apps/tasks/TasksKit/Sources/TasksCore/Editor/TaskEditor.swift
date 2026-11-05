@@ -153,7 +153,9 @@ public struct TaskEditor: Controller, Equatable {
         case let .prioritized(priority): next.draft.priority = priority
         case .saved, .cancelled: return next
         }
-        next.touched = true
+        // Touched by a change, never by a field telling the draft what it
+        // already holds (a field focusing, a picker drawn).
+        if next.draft != state.draft { next.touched = true }
         return next
     }
 
