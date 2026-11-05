@@ -29,7 +29,7 @@ var hookHoldSource = hookEchoSource + `
 import time
 
 def main(input, host):
-    if host.records.get(WIDGET, "release") is None:
+    if host.records.get(WIDGET, "` + fid("release") + `") is None:
         time.sleep(30)
     return echo(input, host, "held-echo")
 `
@@ -125,7 +125,7 @@ func awaitInvoked(t *testing.T, invoked <-chan struct{}) {
 // releaseHook lets the held body run through.
 func releaseHook(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
-	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: "release", Properties: map[string]any{"name": "release"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: fid("release"), Properties: map[string]any{"name": "release"}})
 }
 
 // pendingHook asserts the trigger holds exactly one recorded request, the

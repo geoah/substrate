@@ -122,18 +122,18 @@ func TestAChangeRequestWritesThroughTheGraph(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := openSwitched(t)
-	putThing(t, ds, "scale", map[string]any{"weight": qty("70", "kg")})
+	putThing(t, ds, fid("scale"), map[string]any{"weight": qty("70", "kg")})
 	const requestKind = "substrate.reamde.dev/core/recordpatchrequest"
 	agent := substrate.Actor("engram")
 	propose := func(props map[string]any) *substrate.Record {
 		t.Helper()
-		target, err := ds.Get(ctx, thingKind, "scale")
+		target, err := ds.Get(ctx, thingKind, fid("scale"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		rec, err := ds.Put(ctx, agent, substrate.PutInput{Kind: requestKind, Properties: map[string]any{
 			"diff":   map[string]any{"properties": props, "ifVersion": target.Version},
-			"target": vocabulary.RecordPath(thingKind, "scale"),
+			"target": vocabulary.RecordPath(thingKind, fid("scale")),
 		}})
 		if err != nil {
 			t.Fatalf("propose %v: %v", props, err)
@@ -151,7 +151,7 @@ func TestAChangeRequestWritesThroughTheGraph(t *testing.T) {
 	if err := accept(req); err != nil {
 		t.Fatalf("accept a weight in pounds: %v", err)
 	}
-	got, err := ds.Get(ctx, thingKind, "scale")
+	got, err := ds.Get(ctx, thingKind, fid("scale"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,13 +164,13 @@ func TestAChangeRequestWritesThroughTheGraph(t *testing.T) {
 		"a unit the graph lacks": {"weight": qty("1", "furlong")},
 		"a value past its bound": {"bounded": qty("100", "kg")},
 	} {
-		target, err := ds.Get(ctx, thingKind, "scale")
+		target, err := ds.Get(ctx, thingKind, fid("scale"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		req, err := ds.Put(ctx, agent, substrate.PutInput{Kind: requestKind, Properties: map[string]any{
 			"diff":   map[string]any{"properties": props, "ifVersion": target.Version},
-			"target": vocabulary.RecordPath(thingKind, "scale"),
+			"target": vocabulary.RecordPath(thingKind, fid("scale")),
 		}})
 		if err != nil {
 			if !errors.Is(err, substrate.ErrValidation) {
@@ -200,8 +200,8 @@ func TestANarrowingIsPreviewedAndRefusedThroughTheGraph(t *testing.T) {
 	ctx := context.Background()
 	ds := openSwitched(t)
 	putUnit(t, ds, "m", map[string]any{"name": "meter", "code": "m"})
-	putThing(t, ds, "pounds", map[string]any{"weight": qty("150", "[lb_av]")})
-	putThing(t, ds, "kilos", map[string]any{"weight": qty("70", "kg")})
+	putThing(t, ds, fid("pounds"), map[string]any{"weight": qty("150", "[lb_av]")})
+	putThing(t, ds, fid("kilos"), map[string]any{"weight": qty("70", "kg")})
 	docs := func(weight map[string]any) []map[string]any {
 		return []map[string]any{
 			vocabulary.KindManifest(thingsPackage, map[string]any{"singular": "thing"}, withProp(thingDeclaration(), "weight", weight)),

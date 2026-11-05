@@ -78,7 +78,7 @@ func TestAFunctionTriggerFailingForTheWindowClearsOnItsFirstOkDelivery(t *testin
 	}
 
 	fixBoom(t, ds)
-	putWidget(t, ds, "w2")
+	putWidget(t, ds, fid("w2"))
 	process(t, ds)
 	if got := failingAlertState(t, ds, triggerID); got != "resolved" {
 		t.Fatalf("after an ok delivery the failing alert is %v, want resolved", got)
@@ -98,10 +98,10 @@ func TestTheNewestOkRunOutlivesTheRetention(t *testing.T) {
 	ds, clock := boomHealthDataset(t)
 	triggerID, _ := parkOne(t, ds)
 	fixBoom(t, ds)
-	putWidget(t, ds, "w2")
+	putWidget(t, ds, fid("w2"))
 	process(t, ds)
 	for i := range 21 {
-		putSkippedWidget(t, ds, "skip"+string(rune('a'+i)))
+		putSkippedWidget(t, ds, fid("skip"+string(rune('a'+i))))
 	}
 	process(t, ds)
 
@@ -139,14 +139,14 @@ func TestASkipNeitherClearsNorBreaksAFailingStreak(t *testing.T) {
 	t.Parallel()
 	ds, clock := boomHealthDataset(t)
 	triggerID, _ := parkOne(t, ds)
-	putSkippedWidget(t, ds, "s1")
+	putSkippedWidget(t, ds, fid("s1"))
 	process(t, ds)
 	clock.Advance(pastFailingWindow)
 	process(t, ds)
 	if got := failingAlertState(t, ds, triggerID); got != "open" {
 		t.Fatalf("a skip after the park kept the alert from opening: %v", got)
 	}
-	putSkippedWidget(t, ds, "s2")
+	putSkippedWidget(t, ds, fid("s2"))
 	process(t, ds)
 	if got := failingAlertState(t, ds, triggerID); got != "open" {
 		t.Fatalf("a skip resolved the failing alert: %v", got)
@@ -235,7 +235,7 @@ func TestARetryThatSkipsTheLastParkResolvesTheFailingAlert(t *testing.T) {
 		t.Fatalf("the failing alert is %v, want open", got)
 	}
 
-	mustPatch(t, ds, fnActor, widgetType, "w1", substrate.PatchInput{Properties: map[string]any{"mode": "skip"}})
+	mustPatch(t, ds, fnActor, widgetType, fid("w1"), substrate.PatchInput{Properties: map[string]any{"mode": "skip"}})
 	if _, err := ds.RetryTriggerFailure(ctx, triggerID, parked.ID); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestDisablingATriggerResolvesItsFailingAlert(t *testing.T) {
 	if got := failingAlertState(t, ds, triggerID); got != "resolved" {
 		t.Fatalf("re-enabling reopened the alert from the old park: %v", got)
 	}
-	putWidget(t, ds, "w2")
+	putWidget(t, ds, fid("w2"))
 	process(t, ds)
 	clock.Advance(pastFailingWindow)
 	process(t, ds)
@@ -302,7 +302,7 @@ func TestParkedRunsOlderThanTheNewestOkRunLeaveWithTheRetention(t *testing.T) {
 	ds, clock := boomHealthDataset(t)
 	triggerID := trigID("boom")
 	for _, w := range []string{"w1", "w2", "w3", "w4"} {
-		putWidget(t, ds, w)
+		putWidget(t, ds, fid(w))
 	}
 	process(t, ds)
 	failures, err := ds.TriggerFailures(ctx, triggerID)
@@ -315,10 +315,10 @@ func TestParkedRunsOlderThanTheNewestOkRunLeaveWithTheRetention(t *testing.T) {
 		}
 	}
 	fixBoom(t, ds)
-	putWidget(t, ds, "ok")
+	putWidget(t, ds, fid("ok"))
 	process(t, ds)
 	for i := range 20 {
-		putSkippedWidget(t, ds, "skip"+string(rune('a'+i)))
+		putSkippedWidget(t, ds, fid("skip"+string(rune('a'+i))))
 	}
 	process(t, ds)
 	if got := runsByStatus(t, ds, triggerID); got["ok"] != 1 || got["parked"] != 1 || got["skipped"] != 20 {
@@ -330,8 +330,8 @@ func TestParkedRunsOlderThanTheNewestOkRunLeaveWithTheRetention(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("apply the raising body: %v", err)
 	}
-	putWidget(t, ds, "w5")
-	putWidget(t, ds, "w6")
+	putWidget(t, ds, fid("w5"))
+	putWidget(t, ds, fid("w6"))
 	process(t, ds)
 	if got := runsByStatus(t, ds, triggerID); got["parked"] != 3 {
 		t.Fatalf("the retention kept %v, want the standing park and the two after the ok run", got)
@@ -356,14 +356,14 @@ func TestASettlePrunesAtMostOneBatchOfRuns(t *testing.T) {
 	ds, _ := boomHealthDataset(t)
 	triggerID := trigID("boom")
 	for _, w := range []string{"w1", "w2", "w3", "w4"} {
-		putWidget(t, ds, w)
+		putWidget(t, ds, fid(w))
 	}
 	process(t, ds)
 	fixBoom(t, ds)
-	putWidget(t, ds, "ok")
+	putWidget(t, ds, fid("ok"))
 	process(t, ds)
 	for i := range 20 {
-		putSkippedWidget(t, ds, "skip"+string(rune('a'+i)))
+		putSkippedWidget(t, ds, fid("skip"+string(rune('a'+i))))
 	}
 	process(t, ds)
 	if got := runsByStatus(t, ds, triggerID); got["ok"] != 1 || got["parked"] != 4 || got["skipped"] != 20 {
@@ -379,7 +379,7 @@ func TestASettlePrunesAtMostOneBatchOfRuns(t *testing.T) {
 		}
 	}
 	for i, want := range []int{2, 0} {
-		putSkippedWidget(t, ds, "more"+string(rune('a'+i)))
+		putSkippedWidget(t, ds, fid("more"+string(rune('a'+i))))
 		process(t, ds)
 		if got := runsByStatus(t, ds, triggerID); got["parked"] != want || got["ok"] != 1 {
 			t.Fatalf("after settle %d the retention kept %v, want %d parked runs and the ok run", i+1, got, want)
@@ -395,7 +395,7 @@ func TestARecordDeliveryOfAPlainKindLeavesItsParksParked(t *testing.T) {
 	ds, _ := boomHealthDataset(t)
 	triggerID, parked := parkOne(t, ds)
 	fixBoom(t, ds)
-	putWidget(t, ds, "w2")
+	putWidget(t, ds, fid("w2"))
 	process(t, ds)
 	if got := runsByStatus(t, ds, triggerID); got["ok"] != 1 {
 		t.Fatalf("runs %v, want w2's ok run", got)

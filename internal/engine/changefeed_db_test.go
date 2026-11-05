@@ -300,7 +300,7 @@ func TestChangesCursorWalkSkipsNoSeqUnderConcurrentWriters(t *testing.T) {
 			for i := range perWriter {
 				_, err := ds.Put(ctx, owner, substrate.PutInput{
 					Kind:       enginetest.AccountType,
-					ID:         extID("gmail.account", fmt.Sprintf("w%d-%d@acme.com", w, i)),
+					ID:         fid(extID("gmail.account", fmt.Sprintf("w%d-%d@acme.com", w, i))),
 					Properties: map[string]any{"provider": "gmail", "label": "L", "status": "ok"},
 				})
 				if err != nil {
@@ -361,11 +361,11 @@ func TestChangesCursorWalkSeesEveryPatchDuringASyncBurst(t *testing.T) {
 	ctx := context.Background()
 
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "slack-account:T1",
+		Kind: enginetest.AccountType, ID: fid("slack-account:T1"),
 		Properties: map[string]any{"provider": "slack", "label": "Acme"},
 	})
 	conv := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack-channel:T1:C1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: fid("slack-channel:T1:C1"),
 		Properties: map[string]any{"category": "channel", "name": "general", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	author := mustPut(t, ds, slack, substrate.PutInput{
@@ -374,7 +374,7 @@ func TestChangesCursorWalkSeesEveryPatchDuringASyncBurst(t *testing.T) {
 
 	newMsg := func(actor substrate.Actor, ext, text, delivery string) *substrate.Record {
 		return mustPut(t, ds, actor, substrate.PutInput{
-			Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: extID("slack.msg", ext),
+			Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: fid(extID("slack.msg", ext)),
 			Properties: map[string]any{
 				"at": "2026-08-03T10:00:00Z", "text": text, "delivery": delivery,
 				"conversation": conv.ID,

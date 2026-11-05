@@ -96,16 +96,16 @@ func aggregateToolFixture(t *testing.T) *dataset {
 		t.Fatalf("install the health catalogue: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: obsPackage + "/source", ID: "scale",
+		Kind: obsPackage + "/source", ID: fid("scale"),
 		Properties: map[string]any{"name": "Scale"},
 	}); err != nil {
 		t.Fatalf("put the source: %v", err)
 	}
 	day := time.Date(2026, 9, 1, 7, 0, 0, 0, time.UTC)
 	for d := range 3 {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: obsPackage + "/observation", ID: fmt.Sprintf("w/%d", d), Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: obsPackage + "/observation", ID: fid(fmt.Sprintf("w/%d", d)), Properties: map[string]any{
 			"metric": map[string]any{"ref": obsPackage + "/metric/health/body_mass"}, "form": "gauge", "hold": "PT0S",
-			"source": map[string]any{"ref": obsPackage + "/source/scale"},
+			"source": map[string]any{"ref": obsPackage + "/source/" + fid("scale")},
 			"value":  map[string]any{"value": fmt.Sprintf("7%d.5", d), "unit": "kg"}, "at": day.AddDate(0, 0, d).Format(time.RFC3339),
 		}}); err != nil {
 			t.Fatalf("put: %v", err)
@@ -126,7 +126,7 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 	ds := aggregateToolFixture(t)
 	observation := obsPackage + "/observation"
 	bodyMass := obsPackage + "/metric/health/body_mass"
-	scale := obsPackage + "/source/scale"
+	scale := obsPackage + "/source/" + fid("scale")
 	days := map[string]any{"gte": "2026-09-01T00:00:00Z", "lt": "2026-09-04T00:00:00Z"}
 	daily := map[string]any{
 		"metric": map[string]any{"ref": bodyMass}, "range": days,
@@ -153,9 +153,9 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 		t.Fatalf("a string filter on heart rate: ok %v, %s; want no rows", ok, out)
 	}
 	// The list arm decodes it the same way.
-	out, ok, _ = ds.runQueryTool(ctx, wide, map[string]any{"filter": `{"kinds":["` + observation + `"],"ids":["w/1"]}`})
+	out, ok, _ = ds.runQueryTool(ctx, wide, map[string]any{"filter": `{"kinds":["` + observation + `"],"ids":["` + fid("w/1") + `"]}`})
 	var page substrate.Page
-	if err := json.Unmarshal([]byte(out), &page); !ok || err != nil || len(page.Records) != 1 || page.Records[0].ID != "w/1" {
+	if err := json.Unmarshal([]byte(out), &page); !ok || err != nil || len(page.Records) != 1 || page.Records[0].ID != fid("w/1") {
 		t.Fatalf("a string filter on the list arm: ok %v, %s; want w/1 alone", ok, out)
 	}
 
@@ -184,7 +184,7 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 	// aggregate leaves a get a get, and an empty downsample beside a bucketed
 	// read is no downsample.
 	for _, filler := range []any{"", map[string]any{}} {
-		out, ok, _ = ds.runQueryTool(ctx, wide, map[string]any{"id": "w/0", "kind": observation, "aggregate": filler})
+		out, ok, _ = ds.runQueryTool(ctx, wide, map[string]any{"id": fid("w/0"), "kind": observation, "aggregate": filler})
 		if !ok || !strings.Contains(out, `"record"`) {
 			t.Fatalf("a get beside aggregate %#v: ok %v, %s; want the record", filler, ok, out)
 		}
@@ -222,7 +222,7 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 			"observations/metric is not in the reads allowlist",
 		},
 		"q beside aggregate":       {wide, map[string]any{"q": "weight", "first": 1.0, "aggregate": daily}, "q is refused beside aggregate"},
-		"a get beside aggregate":   {wide, map[string]any{"id": "w/0", "kind": observation, "aggregate": daily}, "id is refused beside aggregate"},
+		"a get beside aggregate":   {wide, map[string]any{"id": fid("w/0"), "kind": observation, "aggregate": daily}, "id is refused beside aggregate"},
 		"orderBy beside aggregate": {wide, map[string]any{"orderBy": []any{map[string]any{"property": "at"}}, "aggregate": daily}, "orderBy is refused beside aggregate"},
 		"downsample alone":         {wide, map[string]any{"downsample": map[string]any{"points": 3}}, "downsample cuts an aggregate read"},
 		"a property read naming no kinds": {wide, map[string]any{"aggregate": map[string]any{
@@ -281,16 +281,16 @@ func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
 	ds := aggregateToolFixture(t)
 	observation := obsPackage + "/observation"
 	source := obsPackage + "/source"
-	for id, rank := range map[string]int{"scale": 1, "watch": 2} {
+	for id, rank := range map[string]int{fid("scale"): 1, fid("watch"): 2} {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: source, ID: id, Properties: map[string]any{
 			"name": id, "priorities": map[string]any{obsPackage + "/metric/health/body_mass": rank},
 		}}); err != nil {
 			t.Fatalf("put the %s: %v", id, err)
 		}
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: observation, ID: "w/watch", Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: observation, ID: fid("w/watch"), Properties: map[string]any{
 		"metric": map[string]any{"ref": obsPackage + "/metric/health/body_mass"}, "form": "gauge", "hold": "PT0S",
-		"source": map[string]any{"ref": source + "/watch"},
+		"source": map[string]any{"ref": source + "/" + fid("watch")},
 		"value":  map[string]any{"value": "80.5", "unit": "kg"}, "at": "2026-09-01T07:00:00Z",
 	}}); err != nil {
 		t.Fatalf("put: %v", err)
@@ -311,11 +311,11 @@ func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
 	if ok || !strings.Contains(out, "observations/source is not in the reads allowlist") || !strings.Contains(out, "order") {
 		t.Errorf("a priority read with no order, sources not granted: ok %v, %s; want a refusal naming the source kind and the order", ok, out)
 	}
-	if out, ok, _ := ds.runQueryTool(ctx, narrow, map[string]any{"aggregate": read([]any{"watch", "scale"})}); ok || !strings.Contains(out, "observations/sourcelink is not in the reads allowlist") {
+	if out, ok, _ := ds.runQueryTool(ctx, narrow, map[string]any{"aggregate": read([]any{fid("watch"), fid("scale")})}); ok || !strings.Contains(out, "observations/sourcelink is not in the reads allowlist") {
 		t.Errorf("a priority read naming its order, links not granted: ok %v, %s; want a refusal naming the sourcelink kind", ok, out)
 	}
 	linked := queryScope{kinds: []string{observation, obsPackage + "/metric", obsPackage + "/sourcelink"}, rows: 50}
-	if out, ok, _ := ds.runQueryTool(ctx, linked, map[string]any{"aggregate": read([]any{"watch", "scale"})}); !ok || !strings.Contains(out, `"80.5"`) {
+	if out, ok, _ := ds.runQueryTool(ctx, linked, map[string]any{"aggregate": read([]any{fid("watch"), fid("scale")})}); !ok || !strings.Contains(out, `"80.5"`) {
 		t.Errorf("a priority read naming its order: ok %v, %s; want the watch's 80.5", ok, out)
 	}
 	wide := queryScope{kinds: []string{obsPackage + "/*"}, rows: 50}
@@ -337,10 +337,10 @@ func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
 	if _, err := backend(observation, obsPackage+"/metric").Aggregate(ctx, q(nil)); !errors.Is(err, runner.ErrReadForbidden) || !strings.Contains(err.Error(), source) {
 		t.Errorf("a function's priority read with no order, sources not granted: %v, want a read trip naming %s", err, source)
 	}
-	if _, err := backend(observation, obsPackage+"/metric").Aggregate(ctx, q([]any{"scale"})); !errors.Is(err, runner.ErrReadForbidden) || !strings.Contains(err.Error(), obsPackage+"/sourcelink") {
+	if _, err := backend(observation, obsPackage+"/metric").Aggregate(ctx, q([]any{fid("scale")})); !errors.Is(err, runner.ErrReadForbidden) || !strings.Contains(err.Error(), obsPackage+"/sourcelink") {
 		t.Errorf("a function's priority read naming its order, links not granted: %v, want a read trip naming the sourcelink kind", err)
 	}
-	if _, err := backend(observation, obsPackage+"/metric", obsPackage+"/sourcelink").Aggregate(ctx, q([]any{"scale"})); err != nil {
+	if _, err := backend(observation, obsPackage+"/metric", obsPackage+"/sourcelink").Aggregate(ctx, q([]any{fid("scale")})); err != nil {
 		t.Errorf("a function's priority read naming its order: %v", err)
 	}
 	if _, err := backend(obsPackage+"/*").Aggregate(ctx, q(nil)); err != nil {

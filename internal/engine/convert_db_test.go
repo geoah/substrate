@@ -384,7 +384,7 @@ func TestRemapRecomputesTheSubjectsOfAMappedSource(t *testing.T) {
 		t.Fatalf("install the package: %v", err)
 	}
 	lib := substrate.Actor("connector:library")
-	src := mustPut(t, ds, lib, substrate.PutInput{Kind: source, ID: "src:1", Properties: map[string]any{"status": "active"}})
+	src := mustPut(t, ds, lib, substrate.PutInput{Kind: source, ID: fid("src:1"), Properties: map[string]any{"status": "active"}})
 	targetKind, targetID, _ := vocabulary.SplitRecordPath(refPathValue(mustGet(t, ds, source, src.ID), "widget"))
 	if targetKind != cvWidget || mustGet(t, ds, cvWidget, targetID).Properties["status"] != "active" {
 		t.Fatalf("the mapping did not project the source's status onto a widget")
@@ -419,7 +419,7 @@ func TestRemapRecomputesTheSubjectsOfAMappedSource(t *testing.T) {
 	}
 	// The source keeps working under the new declaration, and its target
 	// follows as before.
-	mustPut(t, ds, lib, substrate.PutInput{Kind: source, ID: "src:1", Properties: map[string]any{"status": "open"}})
+	mustPut(t, ds, lib, substrate.PutInput{Kind: source, ID: fid("src:1"), Properties: map[string]any{"status": "open"}})
 	if got := mustGet(t, ds, cvWidget, targetID); got.Properties["status"] != "open" {
 		t.Fatalf("a later source write did not project: %v", got.Properties)
 	}

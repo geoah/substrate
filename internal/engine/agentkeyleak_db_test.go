@@ -158,7 +158,7 @@ def main(input, host):
 		t.Fatalf("install secret tool bundle: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: secretToolPackage + "/sconfig", ID: "s-cfg",
+		Kind: secretToolPackage + "/sconfig", ID: fid("s-cfg"),
 		Properties: map[string]any{"apiToken": secretToolSecret},
 	}); err != nil {
 		t.Fatalf("put config: %v", err)

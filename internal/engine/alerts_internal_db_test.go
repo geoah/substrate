@@ -89,7 +89,7 @@ func TestAnAbandonedClaimKeepsTheParkedAlertOpen(t *testing.T) {
 	// The schedules start in an hour, so only the record trigger runs.
 	ds := supersedeDataset(t, nowUTC().Add(time.Hour), "create")
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: supersedeJob, ID: "inbox", Properties: map[string]any{"name": "inbox"},
+		Kind: supersedeJob, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
 	}

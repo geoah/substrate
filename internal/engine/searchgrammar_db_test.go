@@ -8,6 +8,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -22,7 +23,7 @@ import (
 func seedEvents(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: "gcal-cal:primary",
+		Kind: "samples.substrate.reamde.dev/calendar/calendar", ID: fid("gcal-cal:primary"),
 		Properties: map[string]any{"name": "Primary"},
 	})
 	for _, ev := range []struct{ id, summary, description, location string }{
@@ -31,7 +32,7 @@ func seedEvents(t *testing.T, ds substrate.Dataset) {
 		{"gcal-event:e3", "Lunch", "food and drinks", "Rooftop garden"},
 	} {
 		mustPut(t, ds, gcal, substrate.PutInput{
-			Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: ev.id,
+			Kind: "samples.substrate.reamde.dev/calendar/calendarevent", ID: fid(ev.id),
 			Properties: map[string]any{
 				"at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T14:00:00Z",
 				"summary": ev.summary, "description": ev.description, "location": ev.location,
@@ -72,18 +73,18 @@ func TestFilterSearchMatchesTheRecordIndex(t *testing.T) {
 		search string
 		want   []string
 	}{
-		"a word, wherever the kind indexes it":       {"rack", []string{"gcal-event:e1", "gcal-event:e2"}},
-		"stemmed, so the plural in the prose counts": {"racks", []string{"gcal-event:e1", "gcal-event:e2"}},
-		"two words conjoin":                          {"rack layout", []string{"gcal-event:e1", "gcal-event:e2"}},
-		"a star is a word prefix":                    {"lay*", []string{"gcal-event:e1", "gcal-event:e2"}},
-		"a star on both sides is the same prefix":    {"*lay*", []string{"gcal-event:e1", "gcal-event:e2"}},
+		"a word, wherever the kind indexes it":       {"rack", slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
+		"stemmed, so the plural in the prose counts": {"racks", slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
+		"two words conjoin":                          {"rack layout", slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
+		"a star is a word prefix":                    {"lay*", slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
+		"a star on both sides is the same prefix":    {"*lay*", slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
 		"a prefix nothing starts with":               {"ayout*", nil},
-		"a phrase wants the words adjacent":          {`"rack layout"`, []string{"gcal-event:e1", "gcal-event:e2"}},
+		"a phrase wants the words adjacent":          {`"rack layout"`, slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
 		"a phrase the prose reorders misses":         {`"layout rack"`, nil},
-		"an exclusion":                               {"rack -standup", []string{"gcal-event:e1"}},
-		"OR":                                         {"standup OR lunch", []string{"gcal-event:e2", "gcal-event:e3"}},
-		"the location is a string property, indexed": {"rooftop", []string{"gcal-event:e3"}},
-		"case does not matter":                       {"RACK Layout", []string{"gcal-event:e1", "gcal-event:e2"}},
+		"an exclusion":                               {"rack -standup", []string{fid("gcal-event:e1")}},
+		"OR":                                         {"standup OR lunch", slices.Sorted(slices.Values([]string{fid("gcal-event:e2"), fid("gcal-event:e3")}))},
+		"the location is a string property, indexed": {"rooftop", []string{fid("gcal-event:e3")}},
+		"case does not matter":                       {"RACK Layout", slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
 		"a word no record has":                       {"quarterly", nil},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -99,7 +100,7 @@ func TestFilterSearchMatchesTheRecordIndex(t *testing.T) {
 		Search:     "rack",
 		Properties: map[string]substrate.Cond{"summary": {Eq: "Standup"}},
 	}))
-	if !equalStrings(got, []string{"gcal-event:e2"}) {
+	if !equalStrings(got, []string{fid("gcal-event:e2")}) {
 		t.Fatalf("search + eq = %v", got)
 	}
 	// The list keeps the caller's order and pages by keyset like any list.
@@ -111,7 +112,7 @@ func TestFilterSearchMatchesTheRecordIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Records) != 1 || page.Records[0].ID != "gcal-event:e1" || page.Cursor == "" {
+	if len(page.Records) != 1 || page.Records[0].ID != fid("gcal-event:e1") || page.Cursor == "" {
 		t.Fatalf("first page = %v cursor %q, want e1 (Rack… before Standup) and a cursor", pageIDs(page), page.Cursor)
 	}
 	page, err = ds.List(context.Background(), substrate.Query{
@@ -122,7 +123,7 @@ func TestFilterSearchMatchesTheRecordIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Records) != 1 || page.Records[0].ID != "gcal-event:e2" || page.Cursor != "" {
+	if len(page.Records) != 1 || page.Records[0].ID != fid("gcal-event:e2") || page.Cursor != "" {
 		t.Fatalf("second page = %v cursor %q, want e2 and the end", pageIDs(page), page.Cursor)
 	}
 	// A query with no word to match is refused, not answered empty.
@@ -148,7 +149,7 @@ func TestSearchAnswersTheSameOnEitherMatchPath(t *testing.T) {
 		_, ds := newCoreDataset(t, opts...)
 		importVocabulary(t, ds, "calendar")
 		seedEvents(t, ds)
-		if _, err := ds.Delete(ctx, gcal, "samples.substrate.reamde.dev/calendar/calendarevent", "gcal-event:e3", substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(ctx, gcal, "samples.substrate.reamde.dev/calendar/calendarevent", fid("gcal-event:e3"), substrate.DeleteInput{}); err != nil {
 			t.Fatalf("%s: delete e3: %v", name, err)
 		}
 		paths[name] = ds
@@ -159,10 +160,10 @@ func TestSearchAnswersTheSameOnEitherMatchPath(t *testing.T) {
 			filter substrate.Filter
 			want   []string
 		}{
-			{substrate.Filter{Search: "rack"}, []string{"gcal-event:e1", "gcal-event:e2"}},
-			{substrate.Filter{Search: "rack -standup"}, []string{"gcal-event:e1"}},
+			{substrate.Filter{Search: "rack"}, slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
+			{substrate.Filter{Search: "rack -standup"}, []string{fid("gcal-event:e1")}},
 			{substrate.Filter{Search: "lunch"}, nil},
-			{substrate.Filter{Search: "lunch", Deleted: &tombstones}, []string{"gcal-event:e3"}},
+			{substrate.Filter{Search: "lunch", Deleted: &tombstones}, []string{fid("gcal-event:e3")}},
 			{substrate.Filter{Search: "rack", Deleted: &tombstones}, nil},
 		} {
 			if got := listIDs(t, ds, eventQuery(tc.filter)); !equalStrings(got, tc.want) {
@@ -173,7 +174,7 @@ func TestSearchAnswersTheSameOnEitherMatchPath(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: ranked read: %v", name, err)
 		}
-		if got := hitIDs(hits); !equalStrings(got, []string{"gcal-event:e1", "gcal-event:e2"}) {
+		if got := hitIDs(hits); !equalStrings(got, []string{fid("gcal-event:e1"), fid("gcal-event:e2")}) {
 			t.Errorf("%s: ranked read = %v, want e1 (the title line) then e2", name, got)
 		}
 	}
@@ -194,14 +195,14 @@ func TestCondMatchIsOnePropertysWords(t *testing.T) {
 		prop, q string
 		want    []string
 	}{
-		"the title line, a word":                   {"summary", "rack", []string{"gcal-event:e1"}},
-		"the title line, a prefix":                 {"summary", "lay*", []string{"gcal-event:e1"}},
-		"the prose, not the title line":            {"description", "rack", []string{"gcal-event:e1", "gcal-event:e2"}},
-		"the prose, a phrase":                      {"description", `"rack layout"`, []string{"gcal-event:e2"}},
-		"the prose, an exclusion":                  {"description", "rack -weekly", []string{"gcal-event:e2"}},
-		"another string property alone":            {"location", "room", []string{"gcal-event:e1", "gcal-event:e2"}},
+		"the title line, a word":                   {"summary", "rack", []string{fid("gcal-event:e1")}},
+		"the title line, a prefix":                 {"summary", "lay*", []string{fid("gcal-event:e1")}},
+		"the prose, not the title line":            {"description", "rack", slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
+		"the prose, a phrase":                      {"description", `"rack layout"`, []string{fid("gcal-event:e2")}},
+		"the prose, an exclusion":                  {"description", "rack -weekly", []string{fid("gcal-event:e2")}},
+		"another string property alone":            {"location", "room", slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
 		"a word the property never holds":          {"location", "rack", nil},
-		"the built-in title is the title property": {"title", "standup", []string{"gcal-event:e2"}},
+		"the built-in title is the title property": {"title", "standup", []string{fid("gcal-event:e2")}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := listIDs(t, ds, eventQuery(match(tc.prop, tc.q)))
@@ -213,17 +214,17 @@ func TestCondMatchIsOnePropertysWords(t *testing.T) {
 
 	// A repeated string property matches over its items.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/people/person", ID: "p-ada",
+		Kind: "samples.substrate.reamde.dev/people/person", ID: fid("p-ada"),
 		Properties: map[string]any{"name": "Ada", "phones": []any{"+44 20 7946 0958", "office landline"}},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/people/person", ID: "p-sam",
+		Kind: "samples.substrate.reamde.dev/people/person", ID: fid("p-sam"),
 		Properties: map[string]any{"name": "Sam", "phones": []any{"mobile"}},
 	})
 	got := listIDs(t, ds, substrate.Query{Filter: substrate.Filter{
 		Kinds: []string{"samples.substrate.reamde.dev/people/person"}, Properties: map[string]substrate.Cond{"phones": {Match: "landline"}},
 	}})
-	if !equalStrings(got, []string{"p-ada"}) {
+	if !equalStrings(got, []string{fid("p-ada")}) {
 		t.Fatalf("match over a repeated string = %v", got)
 	}
 
@@ -269,10 +270,10 @@ func TestRankedReadTakesTheSearchGrammar(t *testing.T) {
 		q    string
 		want []string
 	}{
-		"a prefix":     {"lay*", []string{"gcal-event:e1", "gcal-event:e2"}},
-		"a phrase":     {`"rack layout"`, []string{"gcal-event:e1", "gcal-event:e2"}},
-		"an exclusion": {"rack -standup", []string{"gcal-event:e1"}},
-		"OR":           {"standup OR lunch", []string{"gcal-event:e2", "gcal-event:e3"}},
+		"a prefix":     {"lay*", slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
+		"a phrase":     {`"rack layout"`, slices.Sorted(slices.Values([]string{fid("gcal-event:e1"), fid("gcal-event:e2")}))},
+		"an exclusion": {"rack -standup", []string{fid("gcal-event:e1")}},
+		"OR":           {"standup OR lunch", slices.Sorted(slices.Values([]string{fid("gcal-event:e2"), fid("gcal-event:e3")}))},
 	} {
 		t.Run(name, func(t *testing.T) {
 			hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: tc.q, Mode: substrate.SearchLexical, Kinds: events}))
@@ -291,7 +292,7 @@ func TestRankedReadTakesTheSearchGrammar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids := hitIDs(hits); len(ids) != 2 || ids[0] != "gcal-event:e1" {
+	if ids := hitIDs(hits); len(ids) != 2 || ids[0] != fid("gcal-event:e1") {
 		t.Fatalf("ranking = %v, want the titled event first", ids)
 	}
 	// A query of stars alone is refused as a validation problem naming q.

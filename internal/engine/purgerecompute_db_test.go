@@ -24,7 +24,7 @@ func TestPurgeRecomputesTheSubjectOfAnOldTombstone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	contact := eref{Kind: csrcContact, ID: "c-sam"}
+	contact := eref{Kind: csrcContact, ID: fid("c-sam")}
 	if _, err := ds.Put(ctx, csrcActor, substrate.PutInput{
 		Kind: contact.Kind, ID: contact.ID, Properties: map[string]any{"email": "sam@acme.com", "name": "Samuel"},
 	}); err != nil {

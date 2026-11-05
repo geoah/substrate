@@ -270,7 +270,7 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	}
 	// Two metrics of the owner's own: one in a unit no shipped unit answers
 	// but whose spelling is a valid id, one whose spelling is neither.
-	for _, m := range []struct{ id, unit, measure string }{{"test/flow", "kg/h", "mass-flow"}, {"test/odd", "{foo}", "count"}} {
+	for _, m := range []struct{ id, unit, measure string }{{fid("test/flow"), "kg/h", "mass-flow"}, {fid("test/odd"), "{foo}", "count"}} {
 		mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: metric, ID: m.id, Properties: map[string]any{"name": m.id, "form": "gauge"}})
 		row := mustGet(t, ds, metric, m.id).Properties
 		row["unit"], row["measures"] = m.unit, m.measure
@@ -366,8 +366,8 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 		"health/body_mass":          unitRef("kg"),
 		"health/spo2":               unitRef("percent"),
 		"health/resting_heart_rate": unitRef("1/min"),
-		"test/flow":                 unitRef("kg/h"),
-		"test/odd":                  "{foo}",
+		fid("test/flow"):            unitRef("kg/h"),
+		fid("test/odd"):             "{foo}",
 	} {
 		got := mustGet(t, ds, metric, id).Properties
 		if !jsonSame(got["unit"], want) || got["measures"] != nil {
@@ -376,7 +376,7 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	}
 	// The metric left as written refuses a write until the owner points it
 	// at a unit record.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, metric, "test/odd", substrate.PatchInput{Properties: map[string]any{"name": "odd"}}); !errors.Is(err, substrate.ErrValidation) {
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, metric, fid("test/odd"), substrate.PatchInput{Properties: map[string]any{"name": "odd"}}); !errors.Is(err, substrate.ErrValidation) {
 		t.Errorf("a write to the metric left with {foo}: err = %v, want a validation refusal", err)
 	}
 	if u, ok := unitByID(tab, "kg/h"); !ok || u.Name != "kg/h" {
@@ -404,7 +404,7 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 		t.Errorf("observations above 70 kg = %s, want w1,w2 (72.40 kg and 160 lb)", got)
 	}
 	// A new value is admitted by its metric through the graph.
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: observation, ID: "w3", Properties: map[string]any{
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: observation, ID: fid("w3"), Properties: map[string]any{
 		"metric": map[string]any{"ref": metric + "/health/body_mass"}, "form": "gauge", "hold": "PT0S",
 		"value": map[string]any{"value": "71", "unit": "kg"},
 		"at":    "2026-10-08T06:41:12+03:00", "utcOffset": 180, "revision": 1,
@@ -417,11 +417,11 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	if info, err := ds.KindByRef(ctx, kindObservation); err != nil || info.Source != vocabulary.SourceBuiltin {
 		t.Fatalf("the seeded %s after the open: %+v, %v", kindObservation, info, err)
 	}
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: kindMetric, ID: "health/body_mass", Properties: map[string]any{
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: kindMetric, ID: fid("health/body_mass"), Properties: map[string]any{
 		"name": "Body mass", "unit": unitRef("kg"), "form": "gauge",
 	}})
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: kindObservation, ID: "w3", Properties: map[string]any{
-		"metric": map[string]any{"ref": kindMetric + "/health/body_mass"}, "form": "gauge", "hold": "PT0S",
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: kindObservation, ID: fid("w3"), Properties: map[string]any{
+		"metric": map[string]any{"ref": kindMetric + "/" + fid("health/body_mass")}, "form": "gauge", "hold": "PT0S",
 		"value": map[string]any{"value": "71", "unit": "kg"},
 		"at":    "2026-10-08T06:41:12+03:00", "utcOffset": 180, "revision": 1,
 	}})

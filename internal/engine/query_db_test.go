@@ -34,15 +34,15 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "beeper-account:a",
+		Kind: enginetest.AccountType, ID: fid("beeper-account:a"),
 		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack-channel:x1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: fid("slack-channel:x1"),
 		Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	other := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack-channel:x2",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: fid("slack-channel:x2"),
 		Properties: map[string]any{"category": "group", "name": "Family", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	alex := mustPut(t, ds, beeper, substrate.PutInput{
@@ -52,7 +52,7 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 	for i, at := range []string{"2026-08-01T10:00:00Z", "2026-08-02T10:00:00Z", "2026-08-03T10:00:00Z"} {
 		m := mustPut(t, ds, beeper, substrate.PutInput{
 			Kind: "samples.substrate.reamde.dev/messaging/conversationmessage",
-			ID:   extID("slack.msg", string(rune('a'+i))+"1"),
+			ID:   fid(extID("slack.msg", string(rune('a'+i))+"1")),
 			Properties: map[string]any{
 				"at": at, "text": "message " + string(rune('a'+i)),
 				"conversation": conv.ID,
@@ -62,7 +62,7 @@ func TestQueryGrammarFiltersOrdersAndPages(t *testing.T) {
 		msgs = append(msgs, m)
 	}
 	mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "slack-msg:z1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: fid("slack-msg:z1"),
 		Properties: map[string]any{
 			"at": "2026-08-04T10:00:00Z", "text": "elsewhere",
 			"conversation": other.ID,
@@ -323,8 +323,8 @@ func TestListKeysetOrderIsTotalAcrossKinds(t *testing.T) {
 	_, ds := newDataset(t)
 
 	// Two DIFFERENT kinds, the SAME id, the SAME title (the sort key).
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", ID: "dup", Properties: map[string]any{"title": "same"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/organization", ID: "dup", Properties: map[string]any{"title": "same"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", ID: fid("dup"), Properties: map[string]any{"title": "same"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/organization", ID: fid("dup"), Properties: map[string]any{"title": "same"}})
 
 	q := substrate.Query{
 		Filter:  substrate.Filter{Kinds: []string{"samples.substrate.reamde.dev/people/person", "samples.substrate.reamde.dev/people/organization"}},
@@ -857,7 +857,7 @@ func TestAStateAndAnEnumOfOneNameAreEachReadWhereTheyAreStored(t *testing.T) {
 		{"note", "open"},
 		{"note", "archived"},
 	} {
-		id := row.singular + "-" + row.status
+		id := fid(row.singular + "-" + row.status)
 		mustPut(t, ds, owner, substrate.PutInput{
 			Kind: statusPackage + "/" + row.singular, ID: id, Properties: map[string]any{"status": row.status},
 		})
@@ -871,6 +871,16 @@ func TestAStateAndAnEnumOfOneNameAreEachReadWhereTheyAreStored(t *testing.T) {
 		return out
 	}
 	settled := []any{"closed", "done", "blocked", "archived"}
+	// minted is each row's fixture id in the order named; sorted is the same
+	// in the byte order listIDs answers in.
+	minted := func(names ...string) []string {
+		out := make([]string, len(names))
+		for i, n := range names {
+			out[i] = fid(n)
+		}
+		return out
+	}
+	sorted := func(names ...string) []string { return slices.Sorted(slices.Values(minted(names...))) }
 
 	for _, tc := range []struct {
 		name  string
@@ -878,14 +888,14 @@ func TestAStateAndAnEnumOfOneNameAreEachReadWhereTheyAreStored(t *testing.T) {
 		cond  substrate.Cond
 		want  []string
 	}{
-		{"eq over a state and an enum", kinds("ticket", "issue"), substrate.Cond{Eq: "open"}, []string{"issue-open", "ticket-open"}},
-		{"in over a state and an enum", kinds("ticket", "issue"), substrate.Cond{In: settled}, []string{"issue-blocked", "ticket-closed"}},
-		{"eq naming no kind", nil, substrate.Cond{Eq: "open"}, []string{"issue-open", "job-open", "note-open", "ticket-open"}},
-		{"in naming no kind", nil, substrate.Cond{In: settled}, []string{"issue-blocked", "job-done", "note-archived", "ticket-closed"}},
-		{"eq over two states", kinds("ticket", "job"), substrate.Cond{Eq: "open"}, []string{"job-open", "ticket-open"}},
-		{"in over two states", kinds("ticket", "job"), substrate.Cond{In: settled}, []string{"job-done", "ticket-closed"}},
-		{"eq over two enums", kinds("issue", "note"), substrate.Cond{Eq: "open"}, []string{"issue-open", "note-open"}},
-		{"in over two enums", kinds("issue", "note"), substrate.Cond{In: settled}, []string{"issue-blocked", "note-archived"}},
+		{"eq over a state and an enum", kinds("ticket", "issue"), substrate.Cond{Eq: "open"}, sorted("issue-open", "ticket-open")},
+		{"in over a state and an enum", kinds("ticket", "issue"), substrate.Cond{In: settled}, sorted("issue-blocked", "ticket-closed")},
+		{"eq naming no kind", nil, substrate.Cond{Eq: "open"}, sorted("issue-open", "job-open", "note-open", "ticket-open")},
+		{"in naming no kind", nil, substrate.Cond{In: settled}, sorted("issue-blocked", "job-done", "note-archived", "ticket-closed")},
+		{"eq over two states", kinds("ticket", "job"), substrate.Cond{Eq: "open"}, sorted("job-open", "ticket-open")},
+		{"in over two states", kinds("ticket", "job"), substrate.Cond{In: settled}, sorted("job-done", "ticket-closed")},
+		{"eq over two enums", kinds("issue", "note"), substrate.Cond{Eq: "open"}, sorted("issue-open", "note-open")},
+		{"in over two enums", kinds("issue", "note"), substrate.Cond{In: settled}, sorted("issue-blocked", "note-archived")},
 	} {
 		t.Run("filter "+tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -910,22 +920,22 @@ func TestAStateAndAnEnumOfOneNameAreEachReadWhereTheyAreStored(t *testing.T) {
 		{
 			"over a state and an enum",
 			substrate.Filter{Kinds: kinds("ticket", "issue")},
-			[]string{"issue-blocked", "ticket-closed", "issue-open", "ticket-open"},
+			minted("issue-blocked", "ticket-closed", "issue-open", "ticket-open"),
 		},
 		{
 			"naming no kind",
 			substrate.Filter{IDs: all},
-			[]string{"note-archived", "issue-blocked", "ticket-closed", "job-done", "issue-open", "job-open", "note-open", "ticket-open"},
+			minted("note-archived", "issue-blocked", "ticket-closed", "job-done", "issue-open", "job-open", "note-open", "ticket-open"),
 		},
 		{
 			"over two states",
 			substrate.Filter{Kinds: kinds("ticket", "job")},
-			[]string{"ticket-closed", "job-done", "job-open", "ticket-open"},
+			minted("ticket-closed", "job-done", "job-open", "ticket-open"),
 		},
 		{
 			"over two enums",
 			substrate.Filter{Kinds: kinds("issue", "note")},
-			[]string{"note-archived", "issue-blocked", "issue-open", "note-open"},
+			minted("note-archived", "issue-blocked", "issue-open", "note-open"),
 		},
 	} {
 		t.Run("orderBy "+tc.name, func(t *testing.T) {
@@ -997,7 +1007,7 @@ func TestAStateSplitNamingNoKindComparesTheOtherKindsByTheirVote(t *testing.T) {
 		value    any
 	}{{"alpha", 1}, {"beta", "1"}, {"gamma", "low"}} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: pkg + "/" + row.singular, ID: row.singular, Properties: map[string]any{"tierLevel": row.value},
+			Kind: pkg + "/" + row.singular, ID: fid(row.singular), Properties: map[string]any{"tierLevel": row.value},
 		})
 	}
 	for _, tc := range []struct {
@@ -1008,9 +1018,9 @@ func TestAStateSplitNamingNoKindComparesTheOtherKindsByTheirVote(t *testing.T) {
 		// As text "01" is neither row's "1"; cast to the int kind's number,
 		// it was both of them.
 		{"text that reads as a number", substrate.Cond{Eq: "01"}, []string{}},
-		{"the text both rows hold", substrate.Cond{Eq: "1"}, []string{"alpha", "beta"}},
+		{"the text both rows hold", substrate.Cond{Eq: "1"}, slices.Sorted(slices.Values([]string{fid("alpha"), fid("beta")}))},
 		// A state's value, which a number cast could not take.
-		{"a state's value", substrate.Cond{Eq: "low"}, []string{"gamma"}},
+		{"a state's value", substrate.Cond{Eq: "low"}, []string{fid("gamma")}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -1085,8 +1095,11 @@ func TestAReferenceAndAStringOfOneNameAreEachComparedAsDeclared(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("install the kinds: %v", err)
 	}
+	// A step's id is the word a string holds, so the rows are a provider
+	// sync's: it names its records, where an owner's write takes a minted id.
+	syncer := substrate.FunctionActor("providers.example.com", "steps", "sync")
 	for _, id := range []string{"open", "done"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: step, ID: id, Properties: map[string]any{"name": id}})
+		mustPut(t, ds, syncer, substrate.PutInput{Kind: step, ID: id, Properties: map[string]any{"name": id}})
 	}
 	open, done := vocabulary.RecordPath(step, "open"), vocabulary.RecordPath(step, "done")
 	var all []string
@@ -1106,7 +1119,7 @@ func TestAReferenceAndAStringOfOneNameAreEachComparedAsDeclared(t *testing.T) {
 		{"tally-5", 5},
 	} {
 		singular, _, _ := strings.Cut(row.id, "-")
-		mustPut(t, ds, owner, substrate.PutInput{
+		mustPut(t, ds, syncer, substrate.PutInput{
 			Kind: stagePackage + "/" + singular, ID: row.id, Properties: map[string]any{"stage": row.stage},
 		})
 		all = append(all, row.id)
@@ -1114,7 +1127,7 @@ func TestAReferenceAndAStringOfOneNameAreEachComparedAsDeclared(t *testing.T) {
 	// A ticket and a note holding no stage, for presence.
 	for _, id := range []string{"ticket-blank", "note-blank"} {
 		singular, _, _ := strings.Cut(id, "-")
-		mustPut(t, ds, owner, substrate.PutInput{Kind: stagePackage + "/" + singular, ID: id, Properties: map[string]any{}})
+		mustPut(t, ds, syncer, substrate.PutInput{Kind: stagePackage + "/" + singular, ID: id, Properties: map[string]any{}})
 	}
 	engine.DrainIndexReprojection(t, ds)
 	kinds := func(singulars ...string) []string {
@@ -1306,8 +1319,11 @@ func TestAStateAReferenceAndAStringOfOneNameAreEachReadAsDeclared(t *testing.T) 
 	}); err != nil {
 		t.Fatalf("install the kinds: %v", err)
 	}
+	// A step's id is the word a string holds, so the rows are a provider
+	// sync's: it names its records, where an owner's write takes a minted id.
+	syncer := substrate.FunctionActor("providers.example.com", "steps", "sync")
 	for _, id := range []string{"open", "done"} {
-		mustPut(t, ds, owner, substrate.PutInput{Kind: step, ID: id, Properties: map[string]any{"name": id}})
+		mustPut(t, ds, syncer, substrate.PutInput{Kind: step, ID: id, Properties: map[string]any{"name": id}})
 	}
 	open := vocabulary.RecordPath(step, "open")
 	var all []string
@@ -1321,7 +1337,7 @@ func TestAStateAReferenceAndAStringOfOneNameAreEachReadAsDeclared(t *testing.T) 
 		{"note-path", open},
 	} {
 		singular, _, _ := strings.Cut(row.id, "-")
-		mustPut(t, ds, owner, substrate.PutInput{
+		mustPut(t, ds, syncer, substrate.PutInput{
 			Kind: lanePackage + "/" + singular, ID: row.id, Properties: map[string]any{"lane": row.lane},
 		})
 		all = append(all, row.id)

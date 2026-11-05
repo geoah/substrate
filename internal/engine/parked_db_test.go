@@ -36,7 +36,7 @@ def main(input, host):
 func parkOne(t *testing.T, ds substrate.Dataset) (string, substrate.TriggerFailure) {
 	t.Helper()
 	mustPut(t, ds, fnActor, substrate.PutInput{
-		Kind: widgetType, ID: "w1", Properties: map[string]any{"name": "w1", "mode": "go"},
+		Kind: widgetType, ID: fid("w1"), Properties: map[string]any{"name": "w1", "mode": "go"},
 	})
 	process(t, ds)
 	failures, err := ds.TriggerFailures(context.Background(), trigID("boom"))
@@ -74,7 +74,7 @@ func TestARetryTheGuardNowSkipsRetiresTheParkedRow(t *testing.T) {
 	// The work the delivery carried has been done another way, so the guard
 	// is false now — which is the shape the twenty rows were in: a sync
 	// request satisfied by a later run.
-	mustPatch(t, ds, fnActor, widgetType, "w1", substrate.PatchInput{
+	mustPatch(t, ds, fnActor, widgetType, fid("w1"), substrate.PatchInput{
 		Properties: map[string]any{"mode": "done"},
 	})
 
@@ -214,7 +214,7 @@ func TestARetryUnderAFixedBodyRetiresARecordTriggerDelivery(t *testing.T) {
 	if ran != 1 {
 		t.Fatalf("the retry applied %d deliveries, want 1", ran)
 	}
-	if got := stampedTask(t, ds, "w1"); got != "fixed" {
+	if got := stampedTask(t, ds, fid("w1")); got != "fixed" {
 		t.Fatalf("the retry wrote %q, want the fixed body's task", got)
 	}
 	requireNoneParked(t, ds, triggerID)
@@ -246,7 +246,7 @@ func TestARetryAfterADisableAndReEnableRetiresTheParkedRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retry: %v", err)
 	}
-	if ran != 1 || stampedTask(t, ds, "w1") != "fixed" {
+	if ran != 1 || stampedTask(t, ds, fid("w1")) != "fixed" {
 		t.Fatalf("the retry applied %d deliveries; the fixed body's task is missing", ran)
 	}
 	requireNoneParked(t, ds, triggerID)
@@ -267,7 +267,7 @@ func TestARetryOnADisabledTriggerRunsTheDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retry on a disabled trigger: %v", err)
 	}
-	if ran != 1 || stampedTask(t, ds, "w1") != "fixed" {
+	if ran != 1 || stampedTask(t, ds, fid("w1")) != "fixed" {
 		t.Fatalf("the retry applied %d deliveries; the fixed body's task is missing", ran)
 	}
 	requireNoneParked(t, ds, triggerID)

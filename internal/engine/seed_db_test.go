@@ -846,7 +846,7 @@ func TestAPublishedPackageRefusesATokenDeclarationWrite(t *testing.T) {
 	// The records of that kind are not the publisher's: the same token writes
 	// one.
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: pkg + "/widget", ID: "mine", Properties: map[string]any{"name": "ok"},
+		Kind: pkg + "/widget", ID: fid("mine"), Properties: map[string]any{"name": "ok"},
 	}); err != nil {
 		t.Fatalf("a record of a published kind must stay writable: %v", err)
 	}

@@ -104,7 +104,7 @@ func TestFieldDefaultFillsTheObjectsACreateSends(t *testing.T) {
 
 	head := maxSeq(t, ds)
 	created := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: fieldDefaultProfile, ID: "p1",
+		Kind: fieldDefaultProfile, ID: fid("p1"),
 		Properties: map[string]any{
 			"contact": map[string]any{"email": "a@example.com"},
 			"visits": []any{
@@ -131,14 +131,14 @@ func TestFieldDefaultFillsTheObjectsACreateSends(t *testing.T) {
 		},
 	}
 	wantProps(t, "the create's answer", created.Properties, want)
-	wantProps(t, "the stored row", mustGet(t, ds, fieldDefaultProfile, "p1").Properties, want)
-	wantProps(t, "the changelog delta", deltaOf(t, svc, ds, head, "p1"), want)
+	wantProps(t, "the stored row", mustGet(t, ds, fieldDefaultProfile, fid("p1")).Properties, want)
+	wantProps(t, "the changelog delta", deltaOf(t, svc, ds, head, fid("p1")), want)
 
 	// A nested object the writer DID send gets its own field's default, and a
 	// field the writer set to null keeps no value, as a null on a kind's own
 	// property does.
 	nested := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: fieldDefaultProfile, ID: "p2",
+		Kind: fieldDefaultProfile, ID: fid("p2"),
 		Properties: map[string]any{
 			"contact": map[string]any{"locale": nil, "home": map[string]any{"street": "Odos 1"}},
 		},
@@ -156,7 +156,7 @@ func TestFieldDefaultFillsTheObjectsACreateSends(t *testing.T) {
 	if after := foldOf(t, ds); string(before) != string(after) {
 		t.Fatalf("the rebuilt fold is not the fold\n%s", firstDifference(before, after))
 	}
-	wantProps(t, "the rebuilt row", mustGet(t, ds, fieldDefaultProfile, "p1").Properties, want)
+	wantProps(t, "the rebuilt row", mustGet(t, ds, fieldDefaultProfile, fid("p1")).Properties, want)
 }
 
 // A field default fills an object the writer sent. A create that sends no
@@ -168,13 +168,13 @@ func TestFieldDefaultNeverInventsAnObject(t *testing.T) {
 
 	head := maxSeq(t, ds)
 	created := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: fieldDefaultProfile, ID: "bare",
+		Kind: fieldDefaultProfile, ID: fid("bare"),
 		Properties: map[string]any{"note": "no objects"},
 	})
 	for _, rec := range []map[string]any{
 		created.Properties,
-		mustGet(t, ds, fieldDefaultProfile, "bare").Properties,
-		deltaOf(t, svc, ds, head, "bare"),
+		mustGet(t, ds, fieldDefaultProfile, fid("bare")).Properties,
+		deltaOf(t, svc, ds, head, fid("bare")),
 	} {
 		for _, name := range []string{"contact", "visits", "channels"} {
 			if v, held := rec[name]; held {
@@ -187,7 +187,7 @@ func TestFieldDefaultNeverInventsAnObject(t *testing.T) {
 	// of a list; each takes its defaults. An empty list or map holds no
 	// object to fill.
 	filled := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: fieldDefaultProfile, ID: "empty",
+		Kind: fieldDefaultProfile, ID: fid("empty"),
 		Properties: map[string]any{
 			"contact":  map[string]any{},
 			"visits":   []any{map[string]any{}},
@@ -212,7 +212,7 @@ func TestFieldDefaultFillsOnlyTheObjectsAWriteSends(t *testing.T) {
 
 	// Stored before any default existed: this object lacks `locale`.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: fieldDefaultProfile, ID: "old",
+		Kind: fieldDefaultProfile, ID: fid("old"),
 		Properties: map[string]any{
 			"contact": map[string]any{"email": "old@example.com"},
 			"visits":  []any{map[string]any{"day": "monday"}},
@@ -223,7 +223,7 @@ func TestFieldDefaultFillsOnlyTheObjectsAWriteSends(t *testing.T) {
 	// A patch and a put that do not name the objects leave them alone, and
 	// their deltas carry nothing for them.
 	head := maxSeq(t, ds)
-	patched := mustPatch(t, ds, owner, fieldDefaultProfile, "old", substrate.PatchInput{
+	patched := mustPatch(t, ds, owner, fieldDefaultProfile, fid("old"), substrate.PatchInput{
 		Properties: map[string]any{"note": "patched"},
 	})
 	unchanged := map[string]any{
@@ -231,30 +231,30 @@ func TestFieldDefaultFillsOnlyTheObjectsAWriteSends(t *testing.T) {
 		"visits":  []any{map[string]any{"day": "monday"}},
 	}
 	wantProps(t, "a patch that does not touch the objects", patched.Properties, unchanged)
-	if set := deltaOf(t, svc, ds, head, "old"); set["contact"] != nil || set["visits"] != nil {
+	if set := deltaOf(t, svc, ds, head, fid("old")); set["contact"] != nil || set["visits"] != nil {
 		t.Fatalf("the patch's delta carries an object it did not write: %v", set)
 	}
 	head = maxSeq(t, ds)
 	put := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: fieldDefaultProfile, ID: "old",
+		Kind: fieldDefaultProfile, ID: fid("old"),
 		Properties: map[string]any{"note": "put"},
 	})
 	wantProps(t, "a put that does not touch the objects", put.Properties, unchanged)
-	if set := deltaOf(t, svc, ds, head, "old"); set["contact"] != nil || set["visits"] != nil {
+	if set := deltaOf(t, svc, ds, head, fid("old")); set["contact"] != nil || set["visits"] != nil {
 		t.Fatalf("the put's delta carries an object it did not write: %v", set)
 	}
 
 	// A patch that writes `contact` replaces it, and the replacement takes the
 	// default; `visits`, untouched, still lacks its count.
 	head = maxSeq(t, ds)
-	patched = mustPatch(t, ds, owner, fieldDefaultProfile, "old", substrate.PatchInput{
+	patched = mustPatch(t, ds, owner, fieldDefaultProfile, fid("old"), substrate.PatchInput{
 		Properties: map[string]any{"contact": map[string]any{"email": "new@example.com"}},
 	})
 	wantProps(t, "a patch that writes the object", patched.Properties, map[string]any{
 		"contact": map[string]any{"email": "new@example.com", "locale": "en"},
 		"visits":  []any{map[string]any{"day": "monday"}},
 	})
-	set := deltaOf(t, svc, ds, head, "old")
+	set := deltaOf(t, svc, ds, head, fid("old"))
 	wantProps(t, "the patch's delta", set, map[string]any{
 		"contact": map[string]any{"email": "new@example.com", "locale": "en"},
 	})
@@ -264,7 +264,7 @@ func TestFieldDefaultFillsOnlyTheObjectsAWriteSends(t *testing.T) {
 
 	// A put that writes the list and the map fills each item and each value.
 	put = mustPut(t, ds, owner, substrate.PutInput{
-		Kind: fieldDefaultProfile, ID: "old",
+		Kind: fieldDefaultProfile, ID: fid("old"),
 		Properties: map[string]any{
 			"visits":   []any{map[string]any{"day": "monday"}, map[string]any{"day": "friday", "count": 2}},
 			"channels": map[string]any{"work": map[string]any{"address": "w@example.com"}},
@@ -287,22 +287,22 @@ func TestRestoreFillsAFieldDefaultTheTombstonedObjectLacks(t *testing.T) {
 	svc, ds := newCoreDataset(t)
 	applyFieldDefaults(t, ds, false)
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: fieldDefaultProfile, ID: "gone",
+		Kind: fieldDefaultProfile, ID: fid("gone"),
 		Properties: map[string]any{"contact": map[string]any{"email": "gone@example.com"}},
 	})
-	if _, err := ds.Delete(ctx, owner, fieldDefaultProfile, "gone", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, fieldDefaultProfile, fid("gone"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("tombstone: %v", err)
 	}
 	applyFieldDefaults(t, ds, true)
 
 	head := maxSeq(t, ds)
 	restored := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: fieldDefaultProfile, ID: "gone",
+		Kind: fieldDefaultProfile, ID: fid("gone"),
 		Properties: map[string]any{"note": "back"},
 	})
 	want := map[string]any{"contact": map[string]any{"email": "gone@example.com", "locale": "en"}}
 	wantProps(t, "the restored record", restored.Properties, want)
-	wantProps(t, "the restoring delta", deltaOf(t, svc, ds, head, "gone"), want)
+	wantProps(t, "the restoring delta", deltaOf(t, svc, ds, head, fid("gone")), want)
 
 	before := foldOf(t, ds)
 	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
@@ -347,26 +347,26 @@ func TestRequiredFieldWithADefault(t *testing.T) {
 		t.Fatalf("apply the optional field: %v", err)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: kind, ID: "stored",
+		Kind: kind, ID: fid("stored"),
 		Properties: map[string]any{"billing": map[string]any{"email": "a@example.com"}},
 	})
 
 	_, err := ds.ApplyVocabularyDocuments(ctx, owner, docs(true, true))
 	wantNarrowingGuard(t, err, `field "tier" becomes required`, "1 live records", "backfills no stored one")
-	if got := mustGet(t, ds, kind, "stored").Properties["billing"]; !sameJSON(t, got, map[string]any{"email": "a@example.com"}) {
+	if got := mustGet(t, ds, kind, fid("stored")).Properties["billing"]; !sameJSON(t, got, map[string]any{"email": "a@example.com"}) {
 		t.Fatalf("a refused declaration touched a stored object: %s", jsonOf(t, got))
 	}
 
 	// Written with a value, the stored object no longer blocks the pair.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: kind, ID: "stored",
+		Kind: kind, ID: fid("stored"),
 		Properties: map[string]any{"billing": map[string]any{"email": "a@example.com", "tier": "paid"}},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs(true, true)); err != nil {
 		t.Fatalf("the pair must land once no stored object lacks the field: %v", err)
 	}
 	created := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: kind, ID: "new",
+		Kind: kind, ID: fid("new"),
 		Properties: map[string]any{"billing": map[string]any{"email": "b@example.com"}},
 	})
 	wantProps(t, "a required field left out", created.Properties, map[string]any{
@@ -375,7 +375,7 @@ func TestRequiredFieldWithADefault(t *testing.T) {
 	// An explicit null is the writer saying the object holds no value, which
 	// the required field then refuses rather than refilling.
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: kind, ID: "nulled",
+		Kind: kind, ID: fid("nulled"),
 		Properties: map[string]any{"billing": map[string]any{"tier": nil}},
 	})
 	wantProblem(t, err, "props.billing: .tier: this field is required")

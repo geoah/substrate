@@ -72,7 +72,7 @@ func TestKindMoveIsRefusedAtTheApplyDoor(t *testing.T) {
 	ctx := context.Background()
 	ds := mvRepository(t, "widget", mvProps(nil))
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: mvPackage + "/widget", ID: "w-1", Properties: map[string]any{"name": "stays"},
+		Kind: mvPackage + "/widget", ID: fid("w-1"), Properties: map[string]any{"name": "stays"},
 	})
 	err := mvMove(ctx, ds, "widget", "gadget", mvProps(nil))
 	if err == nil {
@@ -83,7 +83,7 @@ func TestKindMoveIsRefusedAtTheApplyDoor(t *testing.T) {
 	}
 	// The row is where it was, and the destination kind did not land either:
 	// the batch is one transaction and the refusal took all of it.
-	if got := mustGet(t, ds, mvPackage+"/widget", "w-1"); got.Properties["name"] != "stays" {
+	if got := mustGet(t, ds, mvPackage+"/widget", fid("w-1")); got.Properties["name"] != "stays" {
 		t.Fatalf("the row moved anyway: %+v", got.Properties)
 	}
 	if _, err := ds.KindByRef(ctx, mvPackage+"/gadget"); err == nil {

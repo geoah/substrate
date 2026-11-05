@@ -83,33 +83,33 @@ func TestGCPassCountsOnlyPurgedRows(t *testing.T) {
 
 	// The pass's only victim is restored under it: nothing is purged, so the
 	// sweep reports zero and ends after that one pass.
-	tombstone("restored-alone")
-	n, passes := sweep("restored-alone")
+	tombstone(fid("restored-alone"))
+	n, passes := sweep(fid("restored-alone"))
 	if n != 0 {
 		t.Fatalf("sweep with its only victim restored reported %d collected, want 0", n)
 	}
 	if len(passes) != 1 || passes[0] != 1 {
 		t.Fatalf("sweep with its only victim restored ran passes finding %v victims, want [1]", passes)
 	}
-	if got := rowState("restored-alone"); got != "live" {
+	if got := rowState(fid("restored-alone")); got != "live" {
 		t.Fatalf("restored victim is %s, want live", got)
 	}
 
 	// Two victims, one restored: the sweep counts the one it purged, and
 	// the purge is why it runs a second pass, which finds nothing.
-	tombstone("restored")
-	tombstone("purged")
-	n, passes = sweep("restored")
+	tombstone(fid("restored"))
+	tombstone(fid("purged"))
+	n, passes = sweep(fid("restored"))
 	if n != 1 {
 		t.Fatalf("sweep with one of two victims restored reported %d collected, want 1", n)
 	}
 	if len(passes) != 2 || passes[0] != 2 || passes[1] != 0 {
 		t.Fatalf("sweep with one of two victims restored ran passes finding %v victims, want [2 0]", passes)
 	}
-	if got := rowState("restored"); got != "live" {
+	if got := rowState(fid("restored")); got != "live" {
 		t.Fatalf("restored victim is %s, want live", got)
 	}
-	if got := rowState("purged"); got != "absent" {
+	if got := rowState(fid("purged")); got != "absent" {
 		t.Fatalf("unrestored victim is %s, want purged", got)
 	}
 
@@ -118,11 +118,11 @@ func TestGCPassCountsOnlyPurgedRows(t *testing.T) {
 	// runs another pass and collects the one tombstone past the batch.
 	var batch []string
 	for i := range gcBatch {
-		id := fmt.Sprintf("batch-%03d", i)
+		id := fid(fmt.Sprintf("batch-%03d", i))
 		tombstone(id)
 		batch = append(batch, id)
 	}
-	tombstone("past-the-batch")
+	tombstone(fid("past-the-batch"))
 	n, passes = sweep(batch...)
 	if n != 1 {
 		t.Fatalf("sweep with a full batch restored reported %d collected, want 1", n)
@@ -130,7 +130,7 @@ func TestGCPassCountsOnlyPurgedRows(t *testing.T) {
 	if len(passes) != 3 || passes[0] != gcBatch || passes[1] != 1 || passes[2] != 0 {
 		t.Fatalf("sweep with a full batch restored ran passes finding %v victims, want [%d 1 0]", passes, gcBatch)
 	}
-	if got := rowState("past-the-batch"); got != "absent" {
+	if got := rowState(fid("past-the-batch")); got != "absent" {
 		t.Fatalf("victim past the restored batch is %s, want purged", got)
 	}
 }

@@ -64,7 +64,7 @@ func TestAgentQueryReads(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-listed",
+		Kind: crewPackage + "/widget", ID: fid("w-listed"),
 		Properties: map[string]any{"name": "first"},
 	}); err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestAgentQueryReads(t *testing.T) {
 		t.Fatalf("query read failed: %v", tool["content"])
 	}
 	content, _ := tool["content"].(string)
-	if !strings.Contains(content, "w-listed") {
+	if !strings.Contains(content, fid("w-listed")) {
 		t.Fatalf("result does not carry the row: %s", content)
 	}
 }
@@ -99,7 +99,7 @@ func TestAgentWithoutWriteToolCannotWrite(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("arch",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-sneak", map[string]any{"name": "no"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-sneak"), map[string]any{"name": "no"})}}},
 		fakeTurn{content: "refused, stopping"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/archivist", "write one")
@@ -113,7 +113,7 @@ func TestAgentWithoutWriteToolCannotWrite(t *testing.T) {
 	if content, _ := tool["content"].(string); !strings.Contains(content, "unknown tool") {
 		t.Fatalf("refusal does not name the gate: %s", content)
 	}
-	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-sneak"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", fid("w-sneak")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the refused write landed: %v", err)
 	}
 	if res.Effects != 0 {
@@ -126,7 +126,7 @@ func TestAgentWriteWritesWithinEmit(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-made", map[string]any{"name": "made"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", fid("w-made"), map[string]any{"name": "made"})}}},
 		fakeTurn{content: "made it"},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget")
@@ -140,10 +140,10 @@ func TestAgentWriteWritesWithinEmit(t *testing.T) {
 	if tool["ok"] != true {
 		t.Fatalf("write failed: %v", tool["content"])
 	}
-	if content, _ := tool["content"].(string); !strings.Contains(content, `"record"`) || !strings.Contains(content, "w-made") {
+	if content, _ := tool["content"].(string); !strings.Contains(content, `"record"`) || !strings.Contains(content, fid("w-made")) {
 		t.Fatalf("the result does not carry the record as written: %s", content)
 	}
-	e, err := ds.Get(ctx, crewPackage+"/widget", "w-made")
+	e, err := ds.Get(ctx, crewPackage+"/widget", fid("w-made"))
 	if err != nil {
 		t.Fatalf("the write did not land: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestAgentWriteWritesWithinEmit(t *testing.T) {
 		t.Fatalf("widget props: %+v", e.Properties)
 	}
 	// The write landed under the AGENT's actor, through the public write path.
-	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{RecordID: "w-made", Kinds: []string{crewPackage + "/widget"}}, 10)
+	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{RecordID: fid("w-made"), Kinds: []string{crewPackage + "/widget"}}, 10)
 	if err != nil || len(changes) == 0 {
 		t.Fatalf("changes: %v %v", changes, err)
 	}
@@ -169,9 +169,9 @@ func TestAgentWriteHoldsEmitAndRefusesUnknownOp(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("edit",
-		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", taskKind, "t-sneak", map[string]any{"title": "no"})}}},
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", taskKind, fid("t-sneak"), map[string]any{"title": "no"})}}},
 		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
-			"op": "merge", "kind": crewPackage + "/widget", "id": "w-a",
+			"op": "merge", "kind": crewPackage + "/widget", "id": fid("w-a"),
 		})}}},
 		fakeTurn{content: "blocked twice"},
 	)
@@ -202,7 +202,7 @@ func TestAgentWriteHoldsEmitAndRefusesUnknownOp(t *testing.T) {
 	if !strings.Contains(toolContents[1], "op must be put, patch or delete") {
 		t.Fatalf("the unknown op refusal does not name the three: %s", toolContents[1])
 	}
-	if _, err := ds.Get(ctx, taskKind, "t-sneak"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, taskKind, fid("t-sneak")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the refused put landed: %v", err)
 	}
 }
@@ -215,7 +215,7 @@ func TestAgentWriteRefusesAnUnknownInputKey(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	fake.script("edit",
 		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
-			"op": "put", "kind": crewPackage + "/widget", "id": "w-flat",
+			"op": "put", "kind": crewPackage + "/widget", "id": fid("w-flat"),
 			"input": map[string]any{"name": "flat"},
 		})}}},
 		fakeTurn{content: "asked wrong"},
@@ -234,7 +234,7 @@ func TestAgentWriteRefusesAnUnknownInputKey(t *testing.T) {
 			t.Fatalf("the refusal does not mention %q: %s", want, content)
 		}
 	}
-	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-flat"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, crewPackage+"/widget", fid("w-flat")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the refused put landed: %v", err)
 	}
 }
@@ -276,13 +276,13 @@ func TestAgentWriteDecidesRequestsWithinEmit(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 
 	widget, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-decided", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-decided"), Properties: map[string]any{"name": "raw"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	task, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: taskKind, ID: "t-guarded", Properties: map[string]any{"name": "not the agent's"},
+		Kind: taskKind, ID: fid("t-guarded"), Properties: map[string]any{"name": "not the agent's"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -385,7 +385,7 @@ func TestTriggerFiresAgentThatAcceptsRequest(t *testing.T) {
 		t.Fatalf("put the proposal trigger: %v", err)
 	}
 	widget, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-reviewed", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-reviewed"), Properties: map[string]any{"name": "raw"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -479,7 +479,7 @@ func TestAgentQueryBoundedOnAtComputesOccurrences(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("declare the series kind: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: series, ID: "meds", Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: series, ID: fid("meds"), Properties: map[string]any{
 		"name": "Meds", "recurrence": "FREQ=DAILY;BYHOUR=7,19;BYMINUTE=30", "timezone": "UTC",
 		"at": "2026-09-01T07:30:00Z", "endsAt": "2026-09-01T07:35:00Z",
 	}}); err != nil {
@@ -494,7 +494,7 @@ func TestAgentQueryBoundedOnAtComputesOccurrences(t *testing.T) {
 	if !ok || rows != 2 {
 		t.Fatalf("query: ok=%v rows=%d %s", ok, rows, out)
 	}
-	for _, id := range []string{"meds_20260924T073000Z", "meds_20260924T193000Z"} {
+	for _, id := range []string{fid("meds") + "_20260924T073000Z", fid("meds") + "_20260924T193000Z"} {
 		if !strings.Contains(out, id) {
 			t.Fatalf("the page misses the computed occurrence %s: %s", id, out)
 		}
@@ -511,15 +511,15 @@ func TestAgentWriteTakesAnInputEncodedAsAString(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	fake.script("edit",
 		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
-			"op": "put", "kind": crewPackage + "/widget", "id": "w-twice",
+			"op": "put", "kind": crewPackage + "/widget", "id": fid("w-twice"),
 			"input": ` {"properties": {"name": "twice"}}`,
 		})}}},
 		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
-			"op": "put", "kind": crewPackage + "/widget", "id": "w-flat",
+			"op": "put", "kind": crewPackage + "/widget", "id": fid("w-flat"),
 			"input": `{"name": "flat"}`,
 		})}}},
 		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
-			"op": "put", "kind": crewPackage + "/widget", "id": "w-word",
+			"op": "put", "kind": crewPackage + "/widget", "id": fid("w-word"),
 			"input": "name=word",
 		})}}},
 		fakeTurn{content: "done"},
@@ -531,7 +531,7 @@ func TestAgentWriteTakesAnInputEncodedAsAString(t *testing.T) {
 	if res.Effects != 1 {
 		t.Fatalf("effects: %+v", res)
 	}
-	e, err := ds.Get(ctx, crewPackage+"/widget", "w-twice")
+	e, err := ds.Get(ctx, crewPackage+"/widget", fid("w-twice"))
 	if err != nil {
 		t.Fatalf("the string-encoded put did not land: %v", err)
 	}
@@ -554,7 +554,7 @@ func TestAgentWriteTakesAnInputEncodedAsAString(t *testing.T) {
 	if !strings.Contains(refusals[1], "input must be an object") {
 		t.Fatalf("the plain string refusal does not name the shape: %s", refusals[1])
 	}
-	for _, id := range []string{"w-flat", "w-word"} {
+	for _, id := range []string{fid("w-flat"), fid("w-word")} {
 		if _, err := ds.Get(ctx, crewPackage+"/widget", id); !errors.Is(err, substrate.ErrNotFound) {
 			t.Fatalf("the refused put %s landed: %v", id, err)
 		}

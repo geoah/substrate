@@ -121,7 +121,7 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 	})
 	lib := substrate.Actor("connector:library")
 	source := mustPut(t, ds, lib, substrate.PutInput{
-		Kind: rnSource, ID: "src:1", Properties: map[string]any{"size": "small"},
+		Kind: rnSource, ID: fid("src:1"), Properties: map[string]any{"size": "small"},
 	})
 	mappedKind, mappedID, _ := vocabulary.SplitRecordPath(refPathValue(mustGet(t, ds, source.Kind, source.ID), "gizmo"))
 	if mappedKind != rnGizmo {
@@ -317,7 +317,7 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 	if got := mustGet(t, ds, rnGizmo, full.ID); got.Properties["apiKey"] == nil || got.Properties["note"] != "patched" {
 		t.Fatalf("the record does not write under the renamed declaration: %v", got.Properties)
 	}
-	mustPut(t, ds, lib, substrate.PutInput{Kind: rnSource, ID: "src:1", Properties: map[string]any{"size": "medium"}})
+	mustPut(t, ds, lib, substrate.PutInput{Kind: rnSource, ID: fid("src:1"), Properties: map[string]any{"size": "medium"}})
 	if got := mustGet(t, ds, rnGizmo, mappedID); got.Properties["dimensions"] != "medium" {
 		t.Fatalf("the rewired mapping did not project onto the new name: %v", got.Properties)
 	}
@@ -479,7 +479,7 @@ func TestRenameRefusesADestinationALiveRecordCarries(t *testing.T) {
 		t.Fatalf("install the package: %v", err)
 	}
 	both := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: rnGizmo, ID: "both", Properties: map[string]any{"size": "big", "dimensions": "wide"},
+		Kind: rnGizmo, ID: fid("both"), Properties: map[string]any{"size": "big", "dimensions": "wide"},
 	})
 	if _, err := ds.Delete(ctx, owner, rnGizmo, both.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("tombstone the record: %v", err)
