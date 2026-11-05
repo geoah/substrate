@@ -311,14 +311,12 @@ A weighing entered by hand:
 
 ```yaml
 kind: substrate.reamde.dev/observations/observation
-metadata:
-  id: manual/2026-10-09-weight
 data:
   properties:
     metric:
       ref: substrate.reamde.dev/observations/metric/health/body_mass
     source:
-      ref: substrate.reamde.dev/observations/source/manual
+      ref: substrate.reamde.dev/observations/source/01jbx9m2qz7k4c5v8n3w6t1hrd
     form: gauge
     value:
       value: "72.1"
@@ -329,8 +327,12 @@ data:
     utcOffset: 180
 ```
 
-`bin/substratectl apply -f weight.yaml` writes it. The `metric` must exist
-(`mustExist: true`); the `source` need not, so a writer may create it after.
+`bin/substratectl apply -f weight.yaml` writes it under an id the substrate
+mints, because a person creates no record under a name
+([0228](decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).
+The `metric` must exist (`mustExist: true`); the `source` need not, so a
+writer may create it after under that minted id, or point at the source
+record it already has.
 `hold` copies the `health/body_mass` metric's, `PT0S`: a weighing is a point
 in time, so it covers its own instant alone and an average of weighings is
 the mean of the readings. Without a hold it stands until the next weighing,

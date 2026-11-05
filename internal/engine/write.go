@@ -347,8 +347,12 @@ func (t *txn) checkCreateID(ty *vocabulary.Kind, id string) error {
 
 // createIDRefusal is the rule on who names a new record (decision 0228),
 // judged against this transaction's actor: nil when the actor may create a
-// record of ty under id, else the refusal.
+// record of ty under id, else the refusal. A declaration is named by the
+// identity it declares, whatever its kind's purpose says.
 func (t *txn) createIDRefusal(ty *vocabulary.Kind, id string) error {
+	if _, declaration := vocabularyRecordKinds[ty.Identity]; declaration {
+		return nil
+	}
 	if substrate.NamesItsRecords(t.actor) || ty.Purpose == vocabulary.PurposeInternal || vocabulary.MintedID(id) {
 		return nil
 	}

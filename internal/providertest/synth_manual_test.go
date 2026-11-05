@@ -102,9 +102,9 @@ func TestSynthManualRecordsLandAndConvert(t *testing.T) {
 
 	// Two values end to end, one each way.
 	for id, wantValue := range map[string][2]string{
-		"harborpoint/2026-08-31/ldl_cholesterol_mass/as/labs/ldl_cholesterol": {"2.897", "mmol/L"},
-		"bioiatriki/2026-07-20/glucose_fasting/as/labs/fasting_glucose_mass":  {"97.3", "mg/dL"},
-		"bioiatriki/2026-07-20/hba1c/as/labs/hba1c_ifcc":                      {"34.4", "mmol/mol"},
+		synth.ManualID("harborpoint/2026-08-31/ldl_cholesterol_mass") + "/as/labs/ldl_cholesterol": {"2.897", "mmol/L"},
+		synth.ManualID("bioiatriki/2026-07-20/glucose_fasting") + "/as/labs/fasting_glucose_mass":  {"97.3", "mg/dL"},
+		synth.ManualID("bioiatriki/2026-07-20/hba1c") + "/as/labs/hba1c_ifcc":                      {"34.4", "mmol/mol"},
 	} {
 		v, u := quantityOf(t, mustGet(t, ds, labResult, id).Properties, "value")
 		if v != wantValue[0] || u != wantValue[1] {
@@ -147,11 +147,11 @@ func TestSynthManualRecordsLandAndConvert(t *testing.T) {
 	if ranged == 0 {
 		t.Error("no derived result carries a converted reference bound")
 	}
-	ldl := mustGet(t, ds, labResult, "bioiatriki/2026-10-05/ldl_cholesterol/as/labs/ldl_cholesterol_mass").Properties
+	ldl := mustGet(t, ds, labResult, synth.ManualID("bioiatriki/2026-10-05/ldl_cholesterol")+"/as/labs/ldl_cholesterol_mass").Properties
 	if high := ldl["referenceRanges"].([]any)[0].(map[string]any)["high"].(map[string]any); high["value"] != "116" || high["unit"] != "mg/dL" {
 		t.Errorf("3 mmol/L of LDL converted to %v %v, want 116 mg/dL", high["value"], high["unit"])
 	}
-	weight := mustGet(t, ds, obsObservation, "manual/2026-09-22-weight").Properties
+	weight := mustGet(t, ds, obsObservation, synth.ManualID("manual/2026-09-22-weight")).Properties
 	if v, u := quantityOf(t, weight, "value"); v != "72.0" || u != "kg" || weight["hold"] != "PT0S" {
 		t.Errorf("the hotel weigh-in is %v", weight)
 	}
