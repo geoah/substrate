@@ -231,6 +231,7 @@ public extension RecordCodec {
                     sideOrder: s.executionEnumeration("sideOrder"),
                     sideMatch: s.bool("sideMatch"),
                     notes: s.string("notes"),
+                    cue: s.string("cue"),
                     sets: s.objects("sets") { (p: inout PropertyReader) throws(CodecError) in
                         try Self.decodePlannedSet(&p, runs: true)
                     }
@@ -275,6 +276,7 @@ public extension RecordCodec {
                 s.enumeration("sideOrder", slot.sideOrder)
                 s.bool("sideMatch", slot.sideMatch)
                 s.string("notes", slot.notes)
+                s.string("cue", slot.cue)
                 s.objects("sets", slot.sets.map { encodePlannedSet($0, fields: setFields) })
                 return s.finish()
             })

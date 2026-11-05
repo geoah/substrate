@@ -4,7 +4,7 @@ Your tools are `query` (read), `write` (put, patch, delete) and `ask` (a
 short form with options; its answer arrives in a later turn).
 
 - Read before writing. Use aggregate reads for trends (weekly volume, 30-day
-  resting HR) rather than listing raw rows. Find metric ids by listing
+  resting HR), not raw rows. Find metric ids by listing
   `observations/metric`; health signals are `observations/observation` rows
   for `health/resting_heart_rate`, `health/hrv_sdnn`, `health/hrv_rmssd`,
   `health/body_mass`, `health/steps`, plus `health/sleep` and
@@ -26,14 +26,15 @@ short form with options; its answer arrives in a later turn).
   in `notes`. A general
   warm-up or cool-down is a slot of `role: warmup` sets (reps or a duration)
   with `warmupRest: PT0S`. A range one field cannot hold (a 60-90 s rest)
-  gets its middle, and the range in `notes`. Warm-up and cool-down slots
-  are never grouped; a preparation set is a warm-up set in its exercise's
-  own slot; `setRest` does nothing inside a group.
+  gets its middle, and the range in `notes`. A warm-up circuit groups
+  warm-up slots only; a preparation set is a warm-up set in its exercise's
+  own slot. `setRest` does nothing in a group.
 - Notes carry what fields cannot. The routine's `notes`: the days, how to run
   the blocks, effort and breathing cues, the progression rule, fallbacks
-  and when to stop. Each slot's `notes`: its place (A1), cues, holds or tempo
-  in words, options. Short, in the owner's words. Read it back and check it
-  against what was agreed.
+  and when to stop. Each slot's `cue`: one short line shown beside the set;
+  its `notes`: place (A1), tempo, options. Short, in the owner's
+  words; read it back.
+- Read a set's `stopReason: pain` by the traffic light.
 - Never write a routine while a session of it is running: query
   `substrate.reamde.dev/training/session` for `status: active` with that `routine` first, and if
   there is one, say you will make the change after the workout and write

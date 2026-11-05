@@ -6,7 +6,8 @@ public enum UpNext {
     /// The plan sequence: slots in display order; a plain slot's rows in
     /// display order; a group as one block, every member's warm-ups first,
     /// then round 1, round 2 and so on, a member dropping out of the rounds
-    /// it has no working set for (02 §3.3).
+    /// it has no working set for (02 §3.3). A warm-up circuit, a group of
+    /// warm-ups alone, runs its warm-ups as its rounds.
     public static func sequence(_ state: SessionState) -> [RowID] {
         var sequence: [RowID] = []
         var placed: Set<String> = []
@@ -18,12 +19,15 @@ public enum UpNext {
             guard !placed.contains(key) else { continue }
             placed.insert(key)
             let units = lanes(ofGroup: key, in: state)
-            for memberUnits in units {
-                for unit in memberUnits where state.rows[unit[0]]?.role == .warmup {
-                    sequence.append(contentsOf: unit)
+            let circuit = isWarmupCircuit(units, in: state)
+            if !circuit {
+                for memberUnits in units {
+                    for unit in memberUnits where state.rows[unit[0]]?.role == .warmup {
+                        sequence.append(contentsOf: unit)
+                    }
                 }
             }
-            let working = units.map { $0.filter { state.rows[$0[0]]?.role != .warmup } }
+            let working = circuit ? units : units.map { $0.filter { state.rows[$0[0]]?.role != .warmup } }
             let roundCount = working.map(\.count).max() ?? 0
             for round in 0 ..< roundCount {
                 for memberUnits in working where round < memberUnits.count {
@@ -57,10 +61,20 @@ public enum UpNext {
     }
 
     /// The round a row belongs to inside its group block: its working head's
-    /// place among its lane's working units; 0 for warm-ups. Outside a group,
-    /// the head's ordinal.
+    /// place among its lane's working units; 0 for warm-ups, but in a warm-up
+    /// circuit, where the warm-ups are the rounds. Outside a group, the
+    /// head's ordinal.
     public static func round(of id: RowID, in state: SessionState) -> Int {
-        guard let row = state.rows[id], let head = state.rows[row.headID], head.role == .working else { return 0 }
+        guard let row = state.rows[id], let head = state.rows[row.headID] else { return 0 }
+        if head.role == .warmup, let group = state.slot(row.slot)?.group {
+            let units = lanes(ofGroup: group, in: state)
+            guard isWarmupCircuit(units, in: state) else { return 0 }
+            for lane in units {
+                if let index = lane.firstIndex(where: { $0.first == head.id }) { return index + 1 }
+            }
+            return 0
+        }
+        guard head.role == .working else { return 0 }
         if let group = state.slot(row.slot)?.group {
             for lane in lanes(ofGroup: group, in: state) {
                 let working = lane.filter { state.rows[$0[0]]?.role != .warmup }
@@ -68,6 +82,17 @@ public enum UpNext {
             }
         }
         return Ordinals.ordinal(of: head.id, in: state) ?? 0
+    }
+
+    /// A group whose every member holds warm-ups alone: a warm-up circuit,
+    /// run in rounds of each member's next warm-up.
+    public static func isWarmupCircuit(group key: String, in state: SessionState) -> Bool {
+        isWarmupCircuit(lanes(ofGroup: key, in: state), in: state)
+    }
+
+    static func isWarmupCircuit(_ lanes: [[[RowID]]], in state: SessionState) -> Bool {
+        let heads = lanes.flatMap { $0.compactMap(\.first) }
+        return !heads.isEmpty && heads.allSatisfy { state.rows[$0]?.role == .warmup }
     }
 
     /// A group's lanes in display order, each its units in display order. A

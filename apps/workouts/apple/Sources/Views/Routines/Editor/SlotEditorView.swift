@@ -2,7 +2,7 @@ import SwiftUI
 import WorkoutsCore
 
 /// One exercise of the routine: which exercise, its planned sets to add,
-/// remove, reorder and open, its rests and its notes.
+/// remove, reorder and open, its rests, its cue and its notes.
 struct SlotEditorView: View {
     let model: RoutineEditorModel
     let initialKey: String
@@ -48,9 +48,24 @@ struct SlotEditorView: View {
                 }
                 sets(slot, measurement: exercise?.measurement ?? .weightreps)
                 rests(slot)
+                Section {
+                    TextField(
+                        "Controlled return, pause without bouncing",
+                        text: Binding {
+                            slot.cue ?? ""
+                        } set: { value in
+                            model.change { $0.update(current) { $0.cue = RoutineEditorText.text(value) } }
+                        }
+                    )
+                    .font(.subheadline)
+                } header: {
+                    Text("Cue")
+                } footer: {
+                    Text("One line, shown beside the set while you do it.")
+                }
                 Section("Notes") {
                     TextField(
-                        "Seat height, cues",
+                        "Seat height, why this exercise",
                         text: Binding {
                             slot.notes ?? ""
                         } set: { value in

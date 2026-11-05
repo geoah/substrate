@@ -21,8 +21,9 @@ data:
   # 1: the coach, declared by the app under each repository's own authority.
   # 2: published under substrate.reamde.dev, the agent in the closure, its
   # provider an input and its models a list. 3: the prompt names training 5.
+  # 4: training 6, its cues, warm-up circuits, reps left and stop reasons.
   # A changed prompt or agent ships as the next version.
-  version: 3
+  version: 4
 ---
 # `requiresAtLeast` training 2: the coach pins and writes
 # `substrate.reamde.dev/training/memory`, which training declares from

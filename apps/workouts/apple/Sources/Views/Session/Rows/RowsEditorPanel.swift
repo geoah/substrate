@@ -36,6 +36,24 @@ struct RowsEditorPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            if let cue = editor.cue {
+                // The slot's cue, beside the set it is for; the notes above the
+                // block stay the longer rationale.
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "lightbulb")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(tint)
+                        .accessibilityHidden(true)
+                    Text(cue)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, typeSize.isAccessibilitySize ? 0 : indent)
+                .padding(.bottom, 4)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Cue: \(cue)")
+            }
             // Running, the clock and the track replace the duration field.
             if let timer = editor.timer, timer.phase != .ready {
                 RowsTimerView(timer: timer, tint: tint)

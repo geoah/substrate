@@ -51,8 +51,13 @@ struct RowsBuilder {
         let isGroup = block.group != nil
         if let group = block.group {
             let lanes = UpNext.lanes(ofGroup: group.key, in: state)
-            items += warmupItems(lanes.flatMap { $0.filter(isWarmup) }, id: block.id, isGroup: true)
-            let working = lanes.map { $0.filter { !isWarmup($0) } }
+            // A warm-up circuit's warm-ups are its rounds; elsewhere every
+            // member's warm-ups come first, before round 1.
+            let circuit = UpNext.isWarmupCircuit(group: group.key, in: state)
+            if !circuit {
+                items += warmupItems(lanes.flatMap { $0.filter(isWarmup) }, id: block.id, isGroup: true)
+            }
+            let working = circuit ? lanes : lanes.map { $0.filter { !isWarmup($0) } }
             let rounds = working.map(\.count).max() ?? 0
             for round in 0 ..< rounds {
                 let members = working.compactMap { round < $0.count ? $0[round] : nil }
@@ -640,6 +645,7 @@ struct RowsBuilder {
             rpeOpen: head.role != .warmup && measurement.recordsReps && (previousRated || plannedEffort),
             plannedRPE: (row.side != nil && !row.isHead ? head.target : row.target)?.effortTop,
             offersStop: head.role != .warmup,
+            cue: state.routineSlot(of: row.slot)?.cue.flatMap { $0.isEmpty ? nil : $0 },
             logPrefix: logPrefix(row, head: head),
             timer: timer,
             secondary: secondary,
@@ -843,7 +849,9 @@ struct RowsBuilder {
         // round in a group, a chain's part.
         let head = state.rows[row.headID] ?? row
         var label = part(row, head: head) ?? ""
-        if label.isEmpty, slot.group != nil, item.role != .warmup {
+        if label.isEmpty, let group = slot.group,
+            item.role != .warmup || UpNext.isWarmupCircuit(group: group, in: state)
+        {
             label = "Round \(max(1, UpNext.round(of: row.id, in: state)))"
         }
         let word: String =

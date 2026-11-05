@@ -99,6 +99,8 @@ public struct RoutineSlot: Codable, Hashable, Sendable {
     public var sideOrder: SideOrder?
     public var sideMatch: Bool?
     public var notes: String?
+    /// One short line the session shows beside the set being done (training 6).
+    public var cue: String?
     public var sets: [PlannedSet]
     /// Unknown fields, kept for round trips (§3.4 rule 7).
     @UnknownFields public var extra: [String: JSONValue]
@@ -114,6 +116,7 @@ public struct RoutineSlot: Codable, Hashable, Sendable {
         sideOrder: SideOrder? = nil,
         sideMatch: Bool? = nil,
         notes: String? = nil,
+        cue: String? = nil,
         sets: [PlannedSet] = [],
         extra: [String: JSONValue] = [:]
     ) {
@@ -127,6 +130,7 @@ public struct RoutineSlot: Codable, Hashable, Sendable {
         self.sideOrder = sideOrder
         self.sideMatch = sideMatch
         self.notes = notes
+        self.cue = cue
         self.sets = sets
         self.extra = extra
     }

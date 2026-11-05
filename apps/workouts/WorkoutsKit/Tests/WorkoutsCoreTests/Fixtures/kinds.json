@@ -580,6 +580,10 @@
               "type": "text"
             },
             {
+              "name": "cue",
+              "type": "string"
+            },
+            {
               "name": "sets",
               "type": "object",
               "repeated": true,
@@ -1358,6 +1362,15 @@
         {
           "name": "failedRepAttempted",
           "type": "bool"
+        },
+        {
+          "name": "stopReason",
+          "type": "enum",
+          "values": [
+            "fatigue",
+            "technique",
+            "pain"
+          ]
         },
         {
           "name": "completionMethod",

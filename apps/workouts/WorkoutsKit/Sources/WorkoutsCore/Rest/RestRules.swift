@@ -75,8 +75,10 @@ public enum RestRules {
             let value = intraSetPause(head: head)
             return RestDecision(slot: .intraSetPause, seconds: value.seconds, source: value.source)
         }
-        // Line 4: after a warm-up.
-        if head.role == .warmup {
+        // Line 4: after a warm-up; in a warm-up circuit, the group's
+        // transitions and round rests, as a working group's (line 5).
+        let circuit = cSlot.group.map { UpNext.isWarmupCircuit(group: $0, in: state) } ?? false
+        if head.role == .warmup, !circuit || nSlot.group != cSlot.group {
             let value = warmupRest(slot: cSlot.key, in: state)
             return RestDecision(slot: .warmupRest, seconds: value.seconds, source: value.source)
         }
@@ -87,8 +89,8 @@ public enum RestRules {
                 let value = transition(slot: cSlot.key, in: state)
                 return RestDecision(slot: .transition, seconds: value.seconds, source: value.source)
             }
-            // Line 6: the next round.
-            let value = roundRest(group: group, in: state)
+            // Line 6: the next round; a warm-up circuit's, absent, is the warm-up rest.
+            let value = circuit ? circuitRoundRest(group: group, slot: cSlot.key, in: state) : roundRest(group: group, in: state)
             return RestDecision(slot: .roundRest, seconds: value.seconds, source: value.source)
         }
         // Line 7: the next block.
@@ -149,6 +151,14 @@ public enum RestRules {
         if let value = state.routineGroup(of: key)?.roundRest { return RestValue(value, .routineGroup) }
         let classes = state.members(ofGroup: key).map { state.exercises[$0.exercise]?.restClass }
         return RestValue(RestDefaults.roundRest(kind: group.groupKind, memberRestClasses: classes), .rule)
+    }
+
+    /// A warm-up circuit's round rest: the session's or the routine's group,
+    /// else the warm-up rest of the member just done.
+    public static func circuitRoundRest(group key: String, slot: String, in state: SessionState) -> RestValue {
+        if let value = state.group(key)?.roundRest { return RestValue(value, .sessionGroup) }
+        if let value = state.routineGroup(of: key)?.roundRest { return RestValue(value, .routineGroup) }
+        return warmupRest(slot: slot, in: state)
     }
 
     /// Session slot, routine slot, 0.
