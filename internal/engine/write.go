@@ -229,7 +229,7 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 		return nil, err
 	}
 	if in.ID != "" && existing == nil {
-		if err := t.checkCreateID(ty); err != nil {
+		if err := t.checkCreateID(ty, id); err != nil {
 			return nil, err
 		}
 	}
@@ -314,17 +314,35 @@ func (t *txn) checkID(typ, id string) error {
 	return nil
 }
 
-// checkCreateID enforces who names a new record: a type some mapping points
-// at is always server-assigned, because nothing external names a subject.
-// Addressing a record that already exists is not naming it, so
-// `PUT …/{name}/{id}` (the console's Save, and `substrate apply`) works on
-// every type.
-func (t *txn) checkCreateID(ty *vocabulary.Kind) error {
-	if len(t.declarations().MappingsTo(ty.Identity)) == 0 {
+// checkCreateID enforces who names a new record. Addressing a record that
+// already exists is not naming it, so `PUT …/{name}/{id}` (the console's
+// Save, and `substratectl apply`) updates any record by its id; only a create
+// is judged here.
+//
+// A kind some mapping points at is always server-assigned, because nothing
+// external names a subject. Otherwise a chosen id is the writer's to give
+// when the writer derives it from data (substrate.NamesItsRecords: the
+// engine, a bundle, a function), when the kind is `internal` (its ids are
+// names the substrate resolves by: a unit's spelling, a provider row, an
+// input's `default`), or when the kind is seeded or published by a provider
+// (its rows mirror an upstream and are named by it, decision 0162). What is
+// left is what the owner authors: a kind the repository installed, written
+// by a person, an app or an agent. That create takes a minted id, which the
+// writer may mint itself so an offline outbox knows it before the server
+// answers; any other id is refused, because a name chosen for what a record
+// says stops matching once the record changes (decision 0228).
+func (t *txn) checkCreateID(ty *vocabulary.Kind, id string) error {
+	if len(t.declarations().MappingsTo(ty.Identity)) != 0 {
+		return fmt.Errorf("%w: %s ids are server-assigned — a mapping points at it, and nothing external names a subject",
+			substrate.ErrValidation, ty.Name)
+	}
+	if t.ds.svc.fixtureIDs || substrate.NamesItsRecords(t.actor) || ty.Purpose == vocabulary.PurposeInternal ||
+		ty.Source == vocabulary.SourceBuiltin || ty.Source == vocabulary.SourcePublished ||
+		vocabulary.MintedID(id) {
 		return nil
 	}
-	return fmt.Errorf("%w: %s ids are server-assigned — a mapping points at it, and nothing external names a subject",
-		substrate.ErrValidation, ty.Name)
+	return fmt.Errorf("%w: %q is not a minted id: a new %s takes the id the substrate assigns. Create it without an id (POST /api/v1/records) and an Idempotency-Key to retry safely, or mint the id as a UUIDv7 in 26 lowercase Crockford base32 characters",
+		substrate.ErrValidation, id, ty.Identity)
 }
 
 // hotProps are the properties that occupy their own storage column: everything

@@ -785,7 +785,15 @@ func mustGet(t *testing.T, ds substrate.Dataset, kind, id string) *substrate.Rec
 // mustPut is Put under the API actor with the error folded into the test.
 func mustPut(t *testing.T, ds substrate.Dataset, in substrate.PutInput) *substrate.Record {
 	t.Helper()
-	row, err := ds.Put(context.Background(), substrate.ActorAPI, in)
+	return mustPutAs(t, ds, substrate.ActorAPI, in)
+}
+
+// mustPutAs is mustPut under another hand: a row an earlier sync left
+// behind is written as that sync's function, the one writer that names a
+// mirror row of a kind the repository installed (decision 0228).
+func mustPutAs(t *testing.T, ds substrate.Dataset, actor substrate.Actor, in substrate.PutInput) *substrate.Record {
+	t.Helper()
+	row, err := ds.Put(context.Background(), actor, in)
 	if err != nil {
 		t.Fatalf("put %s/%s: %v", in.Kind, in.ID, err)
 	}

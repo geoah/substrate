@@ -82,6 +82,51 @@ describe("templateYAML", () => {
     expect(yaml).toMatch(/id: ""\s*# optional/)
   })
 
+  it("offers no metadata.id on a kind the repository installed", () => {
+    const installed: KindInfo = { ...agentKind, source: "installed" }
+    expect(parse(templateYAML(SHIPPED_UNITS, installed))).not.toHaveProperty(
+      "metadata"
+    )
+    const internal: KindInfo = {
+      ...installed,
+      definition: { ...agentKind.definition, purpose: "internal" },
+    }
+    expect(templateYAML(SHIPPED_UNITS, internal)).toMatch(/id: ""\s*# optional/)
+  })
+
+  it("refuses a chosen id on a new record of an installed kind", () => {
+    const installed: KindInfo = { ...agentKind, source: "installed" }
+    const doc = (id: string) =>
+      `kind: crew.test.dev/crew/agent\nmetadata:\n  id: ${id}\ndata:\n  properties:\n    prompt: hi\n`
+    const idErrors = (id: string, ctx = {}) =>
+      validateApplyDoc(SHIPPED_UNITS, doc(id), installed, ctx).filter(
+        (p) => p.severity === "error" && p.path === "metadata.id"
+      )
+    expect(idErrors("floor-first")).toHaveLength(1)
+    // An id the writer minted in the substrate's shape is accepted.
+    expect(idErrors("01h2xcejqtf2nbrexx3vqjhp41")).toHaveLength(0)
+    // An edit addresses the record that exists; the id is the route's.
+    expect(
+      idErrors("floor-first", {
+        record: {
+          id: "floor-first",
+          kind: agentKind.identity,
+          properties: {},
+          labels: {},
+          version: 1,
+          createdAt: "x",
+          updatedAt: "x",
+        },
+      })
+    ).toHaveLength(0)
+    // A seeded kind mirrors an upstream that names its rows.
+    expect(
+      validateApplyDoc(SHIPPED_UNITS, doc("floor-first"), agentKind).filter(
+        (p) => p.path === "metadata.id" && p.severity === "error"
+      )
+    ).toHaveLength(0)
+  })
+
   it("keeps an empty seed list inline with its comment", () => {
     expect(yaml).toMatch(/functions: \[\]\s*# optional, string\[\]/)
   })
@@ -329,7 +374,8 @@ describe("applyManifestYAML (edit seed)", () => {
     const errs = validateApplyDoc(
       SHIPPED_UNITS,
       applyManifestYAML(record),
-      agentKind
+      agentKind,
+      { record }
     ).filter((p) => p.severity === "error")
     expect(errs).toHaveLength(0)
   })

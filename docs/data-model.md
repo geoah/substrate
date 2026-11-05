@@ -48,13 +48,27 @@ is unique per kind, never per repository, so a bare id names nothing: a person
 and a task may both be `9f2k` and stay unrelated. **Always address a record by
 its full identity, on every surface.**
 
-Ids the server mints are 12 characters of lowercase base32. A writer may
-supply its own id on create, which is how a provider composes a stable id out
-of the upstream service's own key; supplied ids allow a wider character set (RFC 3986
-unreserved plus `:`, `@` and `/`, up to 128 characters). The one exception is
-a kind some `recordmapping` points at: its ids are server-assigned, and a
-create carrying an id is refused
-([0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)). Ids
+A minted id is a UUIDv7 written as 26 lowercase Crockford base32 characters
+(`01h2xcejqtf2nbrexx3vqjhp41`): it sorts by creation time and decodes back to
+a UUID. Ids minted before that are 12 characters of lowercase base32 and keep
+working. Who may choose a new record's id
+([0228](decisions/0228-a-new-record-the-owner-authors-takes-a-minted-id.md)):
+
+- A person, an app or an agent creating a record of a kind the repository
+  installed (a sample, the owner's own kind, an app's package) omits the id
+  and the server mints one, or mints one itself in the same shape. Any other
+  id is refused, because an id named after a record's title stops matching
+  once the title changes.
+- A function, a bundle's install and the engine choose their ids, and so may
+  any writer of an `internal` kind or of a kind the substrate seeds or a
+  provider publishes. This is how a provider composes a stable id out of the
+  upstream service's own key. Such ids allow a wider character set (RFC 3986
+  unreserved plus `:`, `@` and `/`, up to 128 characters).
+- A kind some `recordmapping` points at is server-assigned for every writer
+  ([0049](decisions/0049-the-owner-of-a-mappings-target-declares-it.md)).
+
+Updating a record by its id is not choosing one: a `put` at an existing id
+merges into it whoever writes it. Ids
 are never derived from content. An id is stable while its record exists, not
 unique across time: once the sweep has purged a deleted record, a `put` at the
 same kind and id creates a new record there, and a reference another record

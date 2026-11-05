@@ -65,10 +65,11 @@ var (
 	reMetaKey       = regexp.MustCompile(`^` + metaNamespaceRE + `/` + metaNameRE + `$`)
 	reMetaNamespace = regexp.MustCompile(`^` + metaNamespaceRE + `$`)
 	reMetaName      = regexp.MustCompile(`^` + metaNameRE + `$`)
-	// reID is the record-id alphabet. Minted ids are 12 lowercase base32
-	// characters; a writer's own id is its provider key ENCODED into this set,
-	// which is RFC 3986 unreserved (ALPHA / DIGIT / "-" / "." / "_" / "~")
-	// plus the two extra pchars a path segment admits, ":" and "@", plus "/".
+	// reID is the record-id alphabet. Minted ids are 26 lowercase Crockford
+	// base32 characters (MintedID); a writer's own id is its provider key
+	// ENCODED into this set, which is RFC 3986 unreserved (ALPHA / DIGIT /
+	// "-" / "." / "_" / "~") plus the two extra pchars a path segment
+	// admits, ":" and "@", plus "/".
 	//
 	// The "/" is there for exactly one reason: a DECLARATION's id is a KIND
 	// REFERENCE ("samples.substrate.reamde.dev/tasks/task"), and the grammar has one
@@ -107,6 +108,20 @@ func ValidActor(s string) bool { return reActor.MatchString(s) }
 
 // ValidMetaKey reports whether s is a legal namespaced label/annotation key.
 func ValidMetaKey(s string) bool { return reMetaKey.MatchString(s) }
+
+// MintedIDLen is the length of a minted record id.
+const MintedIDLen = 26
+
+// reMinted is the shape of a minted record id: a UUIDv7 as 26 lowercase
+// Crockford base32 characters, the suffix form of a TypeID. The first
+// character carries three bits, so it is 0 to 7.
+var reMinted = regexp.MustCompile(`^[0-7][0-9a-hjkmnp-tv-z]{25}$`)
+
+// MintedID reports whether s has the shape of a minted record id: the id a
+// person, an app or an agent may give a new record of a kind the repository
+// installed (decision 0228). The shape is checked, not the UUID version, so
+// a writer minting offline needs only the encoding.
+func MintedID(s string) bool { return reMinted.MatchString(s) }
 
 // ValidID reports whether s is a legal record id (see reID).
 func ValidID(s string) bool {

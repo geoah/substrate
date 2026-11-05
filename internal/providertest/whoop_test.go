@@ -1130,7 +1130,7 @@ func TestWhoopSyncReadsBackEveryRowItsWindowMissed(t *testing.T) {
 	var paths []string
 	for i := range ghosts {
 		wid := fmt.Sprintf("ghost-%03d", i)
-		mustPut(t, ds, substrate.PutInput{
+		mustPutAs(t, ds, substrate.FunctionActor(providersAuthority, "whoop", "whoopsync"), substrate.PutInput{
 			Kind: whoopWorkoutKind, ID: whoopRow("workout", wid),
 			Properties: map[string]any{
 				"account":   map[string]any{"ref": whoopAccountKind + "/" + whoopAccount},

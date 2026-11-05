@@ -126,7 +126,7 @@ GET /api/v1/records?filter={"kinds":["ada.example.com/tasks/task"],
                     &orderBy=dueAt&first=20&expand=project,assignee
 
 → {"records": [...], "cursor": "eyJv…", "head": 4207, "generation": "7f3a0c2e9b1d4e6f",
-   "included": {"ada.example.com/tasks/project/kq3v9x2m41pf": {"id": "kq3v9x2m41pf",
+   "included": {"ada.example.com/tasks/project/01jbx9m2qz7k4c5v8n3w6t1hrd": {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
                   "kind": "ada.example.com/tasks/project", "properties": {…}, …},
                 "ada.example.com/people/person/9f2k": {…}}}
 ```
@@ -170,7 +170,7 @@ the list to the records holding a reference AT one record, optionally through
 one named property:
 
 ```http
-GET /api/v1/records?filter={"referencing":{"ref":"ada.example.com/tasks/project/kq3v9x2m41pf",
+GET /api/v1/records?filter={"referencing":{"ref":"ada.example.com/tasks/project/01jbx9m2qz7k4c5v8n3w6t1hrd",
                                             "property":"project"}}
 
 → {"records": [...], "head": 4207, "generation": "…",
@@ -230,7 +230,7 @@ POST /api/v1/records
 {"kind": "ada.example.com/tasks/task",
  "properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
-→ 201 {"id": "kq3v9x2m41pf", "kind": "ada.example.com/tasks/task", …, "version": 1}
+→ 201 {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "kind": "ada.example.com/tasks/task", …, "version": 1}
 ```
 
 A body with no `kind` is `422`, an unknown kind `404`, and a body carrying an
@@ -240,6 +240,15 @@ make two doors to one write with two answers about what a repeat does. The
 status is `201` for a create and `200` for an update, the same rule `PUT`
 follows, and `Idempotency-Key` binds to it
 ([idempotency](#idempotency-and-retries)).
+
+A `PUT` that would CREATE a record of a kind the repository installed, sent by
+a person, an app or an agent, is `422` unless its id is a minted one: a UUIDv7
+as 26 lowercase Crockford base32 characters, which the server mints for a
+`POST` and a client may mint itself for an offline create. A `PUT` at a record
+that exists is an update and takes any id. Functions, bundles, `internal`
+kinds and the kinds the substrate seeds or a provider publishes keep their
+composed ids
+([0228](decisions/0228-a-new-record-the-owner-authors-takes-a-minted-id.md)).
 
 ## The flat record
 
@@ -262,7 +271,7 @@ POST /api/v1/records
 {"kind": "samples.substrate.reamde.dev/tasks/task",
  "properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
-→ 201 {"id": "kq3v9x2m41pf", "kind": "samples.substrate.reamde.dev/tasks/task",
+→ 201 {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "kind": "samples.substrate.reamde.dev/tasks/task",
        "properties": {"name": "Buy milk", "title": "Buy milk", "status": "open",
                       "dueAt": "2026-08-13T09:00:00Z"},
        "version": 1, "createdAt": "2026-08-04T10:00:00Z",
@@ -285,7 +294,7 @@ Complete one. A state change is just a patch, and the
 `completedAt`:
 
 ```http
-PATCH /api/v1/samples.substrate.reamde.dev/tasks/task/kq3v9x2m41pf
+PATCH /api/v1/samples.substrate.reamde.dev/tasks/task/01jbx9m2qz7k4c5v8n3w6t1hrd
 {"properties": {"status": "done"}}
 ```
 

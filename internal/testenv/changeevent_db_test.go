@@ -23,6 +23,9 @@ const (
 	eventAuthority = "changeevent.example.com"
 	eventRef       = eventAuthority + "/feed"
 	itemsPath      = "/api/v1/" + eventRef + "/item"
+	// itemID is the one item the test writes: a minted-shape id, the one a
+	// client may create a record of an installed kind under (decision 0228).
+	itemID = "00000000000000000000000001"
 )
 
 const eventVocabulary = `
@@ -119,14 +122,14 @@ func TestEveryChangeSurfaceServesTheEventAndNoEffects(t *testing.T) {
 	// Three writes to one record: created at version 1, updated to 2,
 	// deleted at 3. Each surface below reads the same three rows back.
 	for _, name := range []string{"first", "second"} {
-		status, body := e.Do(http.MethodPut, itemsPath+"/a", map[string]any{
+		status, body := e.Do(http.MethodPut, itemsPath+"/"+itemID, map[string]any{
 			"properties": map[string]any{"name": name},
 		})
 		if status/100 != 2 {
 			t.Fatalf("put: %d %s", status, body)
 		}
 	}
-	if status, body := e.Do(http.MethodDelete, itemsPath+"/a", nil); status/100 != 2 {
+	if status, body := e.Do(http.MethodDelete, itemsPath+"/"+itemID, nil); status/100 != 2 {
 		t.Fatalf("delete: %d %s", status, body)
 	}
 	want := []struct {
@@ -140,7 +143,7 @@ func TestEveryChangeSurfaceServesTheEventAndNoEffects(t *testing.T) {
 		t.Helper()
 		var mine []eventRow
 		for _, r := range rows {
-			if strings.HasSuffix(r.RecordID, "a") && len(r.Affected) > 0 && r.Affected[0].Kind == eventRef+"/item" {
+			if strings.HasSuffix(r.RecordID, itemID) && len(r.Affected) > 0 && r.Affected[0].Kind == eventRef+"/item" {
 				mine = append(mine, r)
 			}
 		}
@@ -151,7 +154,7 @@ func TestEveryChangeSurfaceServesTheEventAndNoEffects(t *testing.T) {
 			if mine[i].Op != w.op {
 				t.Fatalf("%s: row %d op = %s, want %s", surface, i, mine[i].Op, w.op)
 			}
-			wantEvent(t, surface, mine[i], "a", w.version, w.deleted)
+			wantEvent(t, surface, mine[i], itemID, w.version, w.deleted)
 		}
 	}
 
@@ -183,7 +186,7 @@ func TestEveryChangeSurfaceServesTheEventAndNoEffects(t *testing.T) {
 	var hist struct {
 		Changes []eventRow `json:"changes"`
 	}
-	mustDecode(t, e, http.MethodGet, "/api/v1/changes?first=100&recordKind="+eventRef+"/item&recordId=a", nil, &hist)
+	mustDecode(t, e, http.MethodGet, "/api/v1/changes?first=100&recordKind="+eventRef+"/item&recordId="+itemID, nil, &hist)
 	rows = hist.Changes
 	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
 		rows[i], rows[j] = rows[j], rows[i]

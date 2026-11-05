@@ -305,9 +305,11 @@ export function subagentWritesOf(
   }
 }
 
-/** A minted record id: twelve lowercase base32 characters (`engine.newID`).
- * Checked because the NAME alone cannot settle what a call was. */
-const MINTED_ID = /^[a-z2-7]{12}$/
+/** A minted record id (`engine.newID`): a UUIDv7 as 26 lowercase Crockford
+ * base32 characters, or the twelve lowercase base32 characters ids were
+ * minted as before decision 0228. Checked because the NAME alone cannot
+ * settle what a call was. */
+const MINTED_ID = /^(?:[0-7][0-9a-hjkmnp-tv-z]{25}|[a-z2-7]{12})$/
 
 /** The change request a settled `propose` call landed, or undefined.
  *

@@ -450,6 +450,15 @@ func WithTestWebhookClock(now func() time.Time) Option {
 	return func(o *options) { o.webhookNow = now }
 }
 
+// WithTestFixtureIDs lets every writer create a record under an id it
+// chooses, so the suite's fixtures keep ids a failure message can be read by
+// (`t-1`, `g-sam`). OpenForTest turns it on; a test about who names a new
+// record turns it off, and a mapping target stays server-assigned either
+// way. Only this package's tests can reach it.
+func WithTestFixtureIDs(on bool) Option {
+	return func(o *options) { o.fixtureIDs = on }
+}
+
 // IndexReprojectionDone is closed when the dataset's latest background index
 // re-derivation has returned, finished or stopped; a dataset that started
 // none returns a closed channel.
@@ -544,6 +553,10 @@ func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) 
 		// a repository named after its test; a test of the rule itself
 		// passes WithInsecureForeignPackages(false).
 		WithInsecureForeignPackages(true),
+		// Fixtures create records under ids a failure reads by (`t-1`);
+		// the rule on who names a new record (decision 0228) is tested with
+		// WithTestFixtureIDs(false).
+		WithTestFixtureIDs(true),
 	}...)
 	all = append(all, opts...)
 	return Open(ctx, dsn, all...)

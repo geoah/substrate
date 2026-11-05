@@ -696,7 +696,7 @@ stale data. Three guarantees:
 
 ```http
 POST /api/v1/split
-{"merge": "kq3v9x2m41pf"}
+{"merge": "01jbx9m2qz7k4c5v8n3w6t1hrd"}
 ```
 
 The loser comes back to life at its own id, the moved labels, annotations and

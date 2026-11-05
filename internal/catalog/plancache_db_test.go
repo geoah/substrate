@@ -97,7 +97,7 @@ func TestUpgradePreviewIsCountedOncePerChangelogHead(t *testing.T) {
 	// key on the vocabulary alone would keep serving the old hash, which the
 	// door refuses.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: homeAuthority + "/tasks/task", ID: "holds-mine",
+		Kind:       homeAuthority + "/tasks/task",
 		Properties: map[string]any{"mine": "a value the re-import drops"},
 	}); err != nil {
 		t.Fatalf("put the live task: %v", err)

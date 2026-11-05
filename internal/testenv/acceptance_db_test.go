@@ -61,14 +61,33 @@ const (
 	secondAuthority = "second.example.com"
 	secondPassword  = "another-correct-horse-battery"
 
-	corePkg        = "substrate.reamde.dev/core"
-	llmPkg         = "substrate.reamde.dev/llm"
-	googlePkg      = "providers.substrate.reamde.dev/google"
-	embedAPIKey    = "sk-drill-embed-key"
-	embedModel     = "text-embedding-3-small"
-	fileBytes      = "the report the drill attaches: bytes that must read back after the restore"
-	mergeWinner    = "m-a"
-	mergeLoser     = "m-b"
+	corePkg     = "substrate.reamde.dev/core"
+	llmPkg      = "substrate.reamde.dev/llm"
+	googlePkg   = "providers.substrate.reamde.dev/google"
+	embedAPIKey = "sk-drill-embed-key"
+	embedModel  = "text-embedding-3-small"
+	fileBytes   = "the report the drill attaches: bytes that must read back after the restore"
+	// The records the drill creates as the owner take ids in the minted
+	// shape (decision 0228): a new record of a kind the repository installed
+	// is refused under any other.
+	mergeWinner    = "00000000000000000000000005"
+	mergeLoser     = "00000000000000000000000006"
+	idRelease      = "00000000000000000000000001"
+	idFold         = "00000000000000000000000002"
+	idRebuild      = "00000000000000000000000003"
+	idCollect      = "00000000000000000000000004"
+	idSplitA       = "00000000000000000000000007"
+	idSplitB       = "00000000000000000000000008"
+	idReport       = "00000000000000000000000009"
+	idW1           = "00000000000000000000000010"
+	idG1           = "00000000000000000000000011"
+	idW2           = "00000000000000000000000012"
+	idPurgeMe      = "00000000000000000000000013"
+	idStaysDeleted = "00000000000000000000000014"
+	idAfter        = "00000000000000000000000015"
+	secondL0       = "00000000000000000000000100"
+	secondL1       = "00000000000000000000000101"
+	idGithubApp    = "00000000000000000000000016"
 	subjectHold    = "Alex"
 	hookBody       = `{"say":"call the dentist"}`
 	holdBody       = `{"say":"hold the line"}`
@@ -178,6 +197,9 @@ data:
   package: auto
   names:
     singular: flag
+  # A gate a body looks up by its name, so the name is the id: internal,
+  # the one purpose whose ids the owner still chooses (decision 0228).
+  purpose: internal
   displayTemplate: "{name}"
   properties:
     name:
@@ -876,33 +898,33 @@ func (d *drill) seedVocabulary(t *testing.T, e *testenv.Env) {
 // the last label cleared to the empty map (#362), a delete and the put that
 // restores it, a merge that stands and one that is split.
 func (d *drill) writeRecordsAndMerges(t *testing.T, e *testenv.Env) {
-	putRecord(t, e, projectKind, "release", map[string]any{"properties": map[string]any{"name": "The release"}})
+	putRecord(t, e, projectKind, idRelease, map[string]any{"properties": map[string]any{"name": "The release"}})
 	due := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second).Format(time.RFC3339)
-	putRecord(t, e, taskKind, "fold", map[string]any{
+	putRecord(t, e, taskKind, idFold, map[string]any{
 		"properties": map[string]any{
 			"name": "Ship the fold", "description": "carry the values, not just the names",
-			"dueAt": due, "url": "https://example.com/1", "project": "release",
+			"dueAt": due, "url": "https://example.com/1", "project": idRelease,
 		},
 		"labels": map[string]any{"owner/pinned": true},
 	})
-	putRecord(t, e, taskKind, "rebuild", map[string]any{"properties": map[string]any{
-		"name": "Rebuild the repository", "description": "replay every entry of the ledger", "project": "release",
+	putRecord(t, e, taskKind, idRebuild, map[string]any{"properties": map[string]any{
+		"name": "Rebuild the repository", "description": "replay every entry of the ledger", "project": idRelease,
 	}})
-	putRecord(t, e, taskKind, "collect", map[string]any{"properties": map[string]any{"name": "Collect me", "description": "and then go"}})
-	patchRecord(t, e, taskKind, "fold", map[string]any{
+	putRecord(t, e, taskKind, idCollect, map[string]any{"properties": map[string]any{"name": "Collect me", "description": "and then go"}})
+	patchRecord(t, e, taskKind, idFold, map[string]any{
 		"properties":  map[string]any{"description": "values, replayable", "url": nil},
 		"labels":      map[string]any{"owner/pinned": nil, "owner/urgent": "yes"},
 		"annotations": map[string]any{"owner/note": map[string]any{"why": "the payload"}},
 	})
-	patchRecord(t, e, taskKind, "fold", map[string]any{"properties": map[string]any{"status": "done"}})
-	cleared := patchRecord(t, e, taskKind, "fold", map[string]any{"labels": map[string]any{"owner/urgent": nil}})
-	if labels := labelsOf(t, cleared, "fold"); len(labels) != 0 {
+	patchRecord(t, e, taskKind, idFold, map[string]any{"properties": map[string]any{"status": "done"}})
+	cleared := patchRecord(t, e, taskKind, idFold, map[string]any{"labels": map[string]any{"owner/urgent": nil}})
+	if labels := labelsOf(t, cleared, idFold); len(labels) != 0 {
 		t.Fatalf("the last label did not clear: %v", labels)
 	}
 	// The tombstone a later put revives has to fold back as live with the
 	// new properties and labels, not as the record it was.
-	deleteRecord(t, e, taskKind, "collect")
-	putRecord(t, e, taskKind, "collect", map[string]any{
+	deleteRecord(t, e, taskKind, idCollect)
+	putRecord(t, e, taskKind, idCollect, map[string]any{
 		"properties": map[string]any{"name": "Collect me", "description": "restored"},
 		"labels":     map[string]any{"owner/kept": true},
 	})
@@ -910,10 +932,10 @@ func (d *drill) writeRecordsAndMerges(t *testing.T, e *testenv.Env) {
 	putRecord(t, e, taskKind, mergeWinner, map[string]any{"properties": map[string]any{"name": "Winner", "description": "the record that stays"}})
 	putRecord(t, e, taskKind, mergeLoser, map[string]any{"properties": map[string]any{"name": "Loser", "description": "the record that folds in"}})
 	e.MustJSON(http.MethodPost, "/api/v1/merge", substrate.MergeInput{Kind: taskKind, Winner: mergeWinner, Loser: mergeLoser}, nil)
-	putRecord(t, e, taskKind, "s-a", map[string]any{"properties": map[string]any{"name": "Split winner"}})
-	putRecord(t, e, taskKind, "s-b", map[string]any{"properties": map[string]any{"name": "Split loser"}})
+	putRecord(t, e, taskKind, idSplitA, map[string]any{"properties": map[string]any{"name": "Split winner"}})
+	putRecord(t, e, taskKind, idSplitB, map[string]any{"properties": map[string]any{"name": "Split loser"}})
 	var mergeRecord map[string]any
-	e.MustJSON(http.MethodPost, "/api/v1/merge", substrate.MergeInput{Kind: taskKind, Winner: "s-a", Loser: "s-b"}, &mergeRecord)
+	e.MustJSON(http.MethodPost, "/api/v1/merge", substrate.MergeInput{Kind: taskKind, Winner: idSplitA, Loser: idSplitB}, &mergeRecord)
 	d.splitMergeID, _ = mergeRecord["id"].(string)
 	if mergeRecord["kind"] != corePkg+"/recordmerge" || d.splitMergeID == "" {
 		t.Fatalf("merge answered with %v, want the recordmerge record", mergeRecord)
@@ -936,14 +958,14 @@ func (d *drill) writeSecretsAndAttachment(t *testing.T, e *testenv.Env) {
 		t.Fatalf("blob upload answered %s: %v", raw, err)
 	}
 	d.blobDigest = blob.Digest
-	putRecord(t, e, fileKind, "report", map[string]any{"properties": map[string]any{
+	putRecord(t, e, fileKind, idReport, map[string]any{"properties": map[string]any{
 		"name": "report.txt", "data": blob.Digest, "notes": "attached before the restore",
 	}})
 	putRecord(t, e, llmPkg+"/provider", "vectors", map[string]any{"properties": map[string]any{
 		"label": "vectors", "wire": "openai", "baseURL": d.embed.srv.URL,
 		"apiKey": embedAPIKey, "embedModel": embedModel,
 	}})
-	putRecord(t, e, oauthKind, "github-app", map[string]any{"properties": map[string]any{
+	putRecord(t, e, oauthKind, idGithubApp, map[string]any{"properties": map[string]any{
 		"clientId": "Iv1.drill", "clientSecret": "gho_client_secret_value",
 		"accessToken": "gho_access_token_value", "refreshToken": "ghr_refresh_token_value",
 		"expiresAt": time.Now().UTC().Add(time.Hour).Truncate(time.Second).Format(time.RFC3339),
@@ -999,12 +1021,12 @@ func (d *drill) parkAutomations(t *testing.T, e *testenv.Env) substrate.Dataset 
 	putRecord(t, e, corePkg+"/trigger", "on-hold", map[string]any{"properties": map[string]any{
 		"enabled": true, "source": map[string]any{"webhook": map[string]any{"headers": []any{"x-github-event"}}}, "callable": callable("hold"),
 	}})
-	putRecord(t, e, widgetKind, "w1", map[string]any{"properties": map[string]any{"name": "one"}})
-	putRecord(t, e, gadgetKind, "g1", map[string]any{"properties": map[string]any{"name": "big"}})
+	putRecord(t, e, widgetKind, idW1, map[string]any{"properties": map[string]any{"name": "one"}})
+	putRecord(t, e, gadgetKind, idG1, map[string]any{"properties": map[string]any{"name": "big"}})
 	if _, err := dispatcher.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("dispatcher pass: %v", err)
 	}
-	if got := propOf(t, getRecord(t, e, taskKind, "t-w1"), "t-w1", "name"); got != "mirror of one" {
+	if got := propOf(t, getRecord(t, e, taskKind, "t-"+idW1), "t-"+idW1, "name"); got != "mirror of one" {
 		t.Fatalf("the mirror did not deliver: %v", got)
 	}
 	for _, id := range []string{"p-0", "p-1"} {
@@ -1029,22 +1051,22 @@ func (d *drill) parkAutomations(t *testing.T, e *testenv.Env) substrate.Dataset 
 		}
 	}
 	// Written after the pass: undelivered at the stop.
-	putRecord(t, e, widgetKind, "w2", map[string]any{"properties": map[string]any{"name": "two"}})
+	putRecord(t, e, widgetKind, idW2, map[string]any{"properties": map[string]any{"name": "two"}})
 
-	putRecord(t, e, taskKind, "purge-me", map[string]any{"properties": map[string]any{"name": "Purge me"}})
-	deleteRecord(t, e, taskKind, "purge-me")
+	putRecord(t, e, taskKind, idPurgeMe, map[string]any{"properties": map[string]any{"name": "Purge me"}})
+	deleteRecord(t, e, taskKind, idPurgeMe)
 	if _, err := ds.RunGC(ctx); err != nil {
 		t.Fatalf("gc: %v", err)
 	}
-	if status, _ := e.Do(http.MethodGet, recordPath(taskKind, "purge-me"), nil); status != http.StatusNotFound {
+	if status, _ := e.Do(http.MethodGet, recordPath(taskKind, idPurgeMe), nil); status != http.StatusNotFound {
 		t.Fatalf("the purged record still reads: %d", status)
 	}
-	if tombs := listRecords(t, e, taskKind, true); containsID(tombs, "purge-me") {
+	if tombs := listRecords(t, e, taskKind, true); containsID(tombs, idPurgeMe) {
 		t.Fatalf("the purged record is still a tombstone: %v", tombs)
 	}
 	// Deleted after the sweep, so it is a tombstone at the stop.
-	putRecord(t, e, taskKind, "stays-deleted", map[string]any{"properties": map[string]any{"name": "Stays deleted", "description": "a tombstone the sweep has not reached"}})
-	deleteRecord(t, e, taskKind, "stays-deleted")
+	putRecord(t, e, taskKind, idStaysDeleted, map[string]any{"properties": map[string]any{"name": "Stays deleted", "description": "a tombstone the sweep has not reached"}})
+	deleteRecord(t, e, taskKind, idStaysDeleted)
 
 	d.hookFireID = postWebhook(t, e, "on-hook", hookBody, "parked")
 	waitFor(t, "the webhook fire to park", func() bool {
@@ -1069,12 +1091,12 @@ func (d *drill) writeSecondRepository(t *testing.T, e *testenv.Env) {
 		l.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil, nil)
 	}
 	for i, name := range []string{"first", "second", "third"} {
-		putRecord(t, l, secondTask, fmt.Sprintf("l-%d", i), map[string]any{
+		putRecord(t, l, secondTask, fmt.Sprintf("%026d", 100+i), map[string]any{
 			"properties": map[string]any{"name": name, "description": "second " + name},
 			"labels":     map[string]any{"owner/second": true},
 		})
 	}
-	patchRecord(t, l, secondTask, "l-0", map[string]any{"labels": map[string]any{"owner/second": nil}})
+	patchRecord(t, l, secondTask, secondL0, map[string]any{"labels": map[string]any{"owner/second": nil}})
 	putRecord(t, l, llmPkg+"/provider", "second-llm", map[string]any{"properties": map[string]any{
 		"label": "second", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-second-value",
 	}})
@@ -1286,7 +1308,7 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 			t.Errorf("the source recorded no status for trigger %s", id)
 		}
 	}
-	if tombs, _ := d.source.deleted[taskKind].([]any); !containsID(tombs, "stays-deleted") {
+	if tombs, _ := d.source.deleted[taskKind].([]any); !containsID(tombs, idStaysDeleted) {
 		t.Errorf("the source's task tombstones lack stays-deleted: %v", tombs)
 	}
 	for _, finding := range diffStates(d.source, d.restored) {
@@ -1301,7 +1323,7 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 	t.Run("comparator reports a tampered copy", func(t *testing.T) {
 		tampered := *d.restored
 		tampered.records = maps.Clone(d.restored.records)
-		key := taskKind + "/fold"
+		key := taskKind + "/" + idFold
 		var copyOf map[string]any
 		raw, _ := json.Marshal(d.restored.records[key])
 		if err := json.Unmarshal(raw, &copyOf); err != nil {
@@ -1337,13 +1359,13 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 			t.Errorf("%s exists before dispatch resumed: %d", id, status)
 		}
 	}
-	if status, _ := e.Do(http.MethodGet, recordPath(taskKind, "t-w2"), nil); status != http.StatusNotFound {
+	if status, _ := e.Do(http.MethodGet, recordPath(taskKind, "t-"+idW2), nil); status != http.StatusNotFound {
 		t.Errorf("the pending delivery landed before dispatch resumed: t-w2 reads %d", status)
 	}
 
 	// The states the release names, read back by name.
-	fold := getRecord(t, e, taskKind, "fold")
-	if labels := labelsOf(t, fold, "fold"); len(labels) != 0 {
+	fold := getRecord(t, e, taskKind, idFold)
+	if labels := labelsOf(t, fold, idFold); len(labels) != 0 {
 		t.Errorf("the cleared label came back: labels = %v (#362)", labels)
 	}
 	if winner := getRecord(t, e, taskKind, mergeWinner); !reflect.DeepEqual(winner["formerIds"], []any{mergeLoser}) {
@@ -1352,21 +1374,21 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 	if loser := getRecord(t, e, taskKind, mergeLoser); loser["canonicalId"] != mergeWinner {
 		t.Errorf("the merged-away id resolves to %v, want %s", loser["canonicalId"], mergeWinner)
 	}
-	if split := getRecord(t, e, taskKind, "s-b"); split["canonicalId"] != nil || split["deletedAt"] != nil {
+	if split := getRecord(t, e, taskKind, idSplitB); split["canonicalId"] != nil || split["deletedAt"] != nil {
 		t.Errorf("the split loser is not its own live record again: %v", split)
 	}
-	if status, _ := e.Do(http.MethodGet, recordPath(taskKind, "purge-me"), nil); status != http.StatusNotFound {
+	if status, _ := e.Do(http.MethodGet, recordPath(taskKind, idPurgeMe), nil); status != http.StatusNotFound {
 		t.Errorf("the purged record came back: %d", status)
 	}
-	if tombs := listRecords(t, e, taskKind, true); containsID(tombs, "purge-me") || !containsID(tombs, "stays-deleted") {
+	if tombs := listRecords(t, e, taskKind, true); containsID(tombs, idPurgeMe) || !containsID(tombs, idStaysDeleted) {
 		t.Errorf("task tombstones after the restore = %v", tombs)
 	}
 	meta := metaOf(t, getRecord(t, e, subjectKind, d.subjectID), d.subjectID, "name")
 	if alts, _ := meta["alternatives"].([]any); meta["manager"] != "api" || len(alts) != 2 {
 		t.Errorf("subject name provenance after the restore = %v, want the owner's hold over two offers", meta)
 	}
-	file := getRecord(t, e, fileKind, "report")
-	if data, _ := propOf(t, file, "report", "data").(map[string]any); data["digest"] != d.blobDigest || data["status"] != "stored" {
+	file := getRecord(t, e, fileKind, idReport)
+	if data, _ := propOf(t, file, idReport, "data").(map[string]any); data["digest"] != d.blobDigest || data["status"] != "stored" {
 		t.Errorf("the attachment reference resolves to %v, want the stored manifest %s", file["properties"], d.blobDigest)
 	}
 	if got := d.restored.blobs[d.blobDigest]; !bytes.Equal(got, []byte(fileBytes)) {
@@ -1437,10 +1459,10 @@ func (d *drill) resumeDispatch(t *testing.T, e *testenv.Env, ds substrate.Datase
 	if st := statusOf(t, e, "on-hold"); st.Pending != 0 || st.Parked != 0 {
 		t.Errorf("on-hold after the pass = %+v, want nothing pending", st)
 	}
-	if w2 := getRecord(t, e, taskKind, "t-w2"); w2["version"] != float64(1) {
+	if w2 := getRecord(t, e, taskKind, "t-"+idW2); w2["version"] != float64(1) {
 		t.Errorf("the pending delivery landed at version %v, want one delivery", w2["version"])
 	}
-	if w1 := getRecord(t, e, taskKind, "t-w1"); w1["version"] != float64(1) {
+	if w1 := getRecord(t, e, taskKind, "t-"+idW1); w1["version"] != float64(1) {
 		t.Errorf("the settled delivery was delivered again: version %v", w1["version"])
 	}
 }
@@ -1663,14 +1685,14 @@ func (d *drill) secondRestore(t *testing.T) {
 	if status, raw := e.Login(secondAuthority, secondPassword, e.TOTPCode()); status != http.StatusCreated {
 		t.Errorf("login on the restore: %d %s", status, raw)
 	}
-	if labels := labelsOf(t, getRecord(t, e, secondTask, "l-0"), "l-0"); len(labels) != 0 {
+	if labels := labelsOf(t, getRecord(t, e, secondTask, secondL0), secondL0); len(labels) != 0 {
 		t.Errorf("the cleared label came back through the restore: %v", labels)
 	}
-	if labels := labelsOf(t, getRecord(t, e, secondTask, "l-1"), "l-1"); labels["owner/second"] != true {
+	if labels := labelsOf(t, getRecord(t, e, secondTask, secondL1), secondL1); labels["owner/second"] != true {
 		t.Errorf("l-1 lost its label: %v", labels)
 	}
 	// The restored repository takes writes.
-	putRecord(t, e, secondTask, "l-after", map[string]any{"properties": map[string]any{"name": "after"}})
+	putRecord(t, e, secondTask, idAfter, map[string]any{"properties": map[string]any{"name": "after"}})
 	if err := scoped.QueryRowContext(ctx, `SELECT dialect FROM changelog_dialect`).Scan(&stamped); err != nil || stamped != engine.MaxChangelogDialect() {
 		t.Errorf("changelog dialect after the first write = %d (%v), want %d", stamped, err, engine.MaxChangelogDialect())
 	}

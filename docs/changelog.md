@@ -16,9 +16,9 @@ One entry, as the wire carries it, for the task created on the
  "actor": "api",
  "op": "put",
  "kind": "samples.substrate.reamde.dev/tasks/task",
- "recordId": "kq3v9x2m41pf",
+ "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
  "payload": {"created": true, "properties": ["name", "dueAt"]},
- "affected": [{"kind": "samples.substrate.reamde.dev/tasks/task", "id": "kq3v9x2m41pf", "version": 1}],
+ "affected": [{"kind": "samples.substrate.reamde.dev/tasks/task", "id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "version": 1}],
  "hash": "5f0c…64 hex chars…9a1d"}
 ```
 
@@ -112,7 +112,7 @@ A read that passes `values=1` gets, on each affected record, what the entry
 did to each property it moved, before and after, in name order:
 
 ```json
-{"kind": "samples.substrate.reamde.dev/tasks/task", "id": "kq3v9x2m41pf", "version": 4,
+{"kind": "samples.substrate.reamde.dev/tasks/task", "id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "version": 4,
  "properties": [
    {"name": "description", "before": "Numbers from finance first."},
    {"name": "priority", "before": "high", "after": "urgent"},
@@ -257,7 +257,7 @@ under `SUBSTRATE_DATA_ROOT`
 one object per line, keys sorted, the checksum in `sum`:
 
 ```json
-{"actor":"api","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"fold":[{"…":"…"}],"properties":["name","dueAt"]},"principal":"k7…","recordId":"kq3v9x2m41pf","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z","txn":4191}
+{"actor":"api","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"fold":[{"…":"…"}],"properties":["name","dueAt"]},"principal":"k7…","recordId":"01jbx9m2qz7k4c5v8n3w6t1hrd","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z","txn":4191}
 ```
 
 `sum` is `sha256:` plus the hex digest of the same line with the `sum` key
@@ -377,8 +377,8 @@ GET /api/v1/changes?from=4189&generation=7f3a0c2e9b1d4e6f&watch=1
 
 {"bookmark": 4189, "generation": "7f3a0c2e9b1d4e6f"}
 {"seq": 4190, "op": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
- "recordId": "kq3v9x2m41pf", "actor": "api",
- "affected": [{"kind": "samples.substrate.reamde.dev/tasks/task", "id": "kq3v9x2m41pf", "version": 1}]}
+ "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd", "actor": "api",
+ "affected": [{"kind": "samples.substrate.reamde.dev/tasks/task", "id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "version": 1}]}
 ```
 
 Without `from`, the stream opens at the current head and tails forward; the
@@ -455,7 +455,7 @@ GET /api/v1/changes?runs=1&first=2
 
 {"runs": [
   {"actor": "api", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "update",
-   "count": 3, "records": 1, "recordId": "kq3v9x2m41pf",
+   "count": 3, "records": 1, "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
    "newestSeq": 4190, "oldestSeq": 4188, "newestTs": "…", "oldestTs": "…"},
   {"actor": "console", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "create",
    "count": 60, "records": 60,

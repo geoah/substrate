@@ -67,7 +67,9 @@ data:
   #    provider allowlist (decision record 0097).
   # 11: every kind's description opens with one plain sentence
   # saying what a record is to a person.
-  version: 12
+  # 13: the assistant creates a task without an id and the substrate mints
+  #     it (decision record 0228).
+  version: 13
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -368,13 +370,11 @@ data:
     Create each missing task with ONE write call each:
 
       {"op": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
-       "id": "<short-lowercase-slug>",
        "input": {"properties": {"name": "<the task, one line>"}}}
 
     Add dueAt (RFC 3339, UTC) only when the instruction names a time. Add
     description only when the instruction carries detail beyond the heading.
-    Invent the id from the name: lowercase words joined by hyphens, at most
-    six words.
+    Send no id: the substrate assigns one, and the write's result carries it.
 
     Then ONE last write that patches the instruction you were handed, and
     nothing else on it:

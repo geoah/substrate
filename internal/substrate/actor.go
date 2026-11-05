@@ -187,3 +187,18 @@ func ReservedActor(a Actor) bool {
 		strings.HasPrefix(s, AppActorPrefix) ||
 		strings.HasPrefix(s, retiredConnectorPrefix)
 }
+
+// NamesItsRecords reports whether a writer may create a record under an id it
+// chooses. Only code that derives the id from data names its records: the
+// engine and the host's other hands, a bundle's install (a seed or sample
+// carries its records' ids), and a function, whose effects compose ids from
+// upstream keys so a replay converges on the same rows (decision 0162). A
+// person, an app and an agent give a new record of a kind the repository
+// installed a minted id (decision 0228): a name chosen for what a record
+// says stops matching once the record is retitled.
+func NamesItsRecords(a Actor) bool {
+	s := string(a)
+	return s == HostActorNamespace || strings.HasPrefix(s, HostActorNamespace+".") ||
+		IsBundleActor(a) ||
+		strings.HasPrefix(s, FunctionActorPrefix)
+}

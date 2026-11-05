@@ -43,8 +43,10 @@ Every document wears the envelope — kind, metadata, data:
 The kind is the full reference, ` + "`<authority>/<package>/<name>`" + `; a bare
 name is refused by the substrate, naming the kinds it declares under that
 word. A document with ` + "`metadata.id`" + `
-is PUT at that id; without one it is POSTed to the records route, which
-assigns one. The
+is PUT at that id, which updates the record there; without one it is POSTed
+to the records route, which assigns one. A new record of a kind that is not
+` + "`internal`" + ` takes the id the substrate assigns: a PUT that would create
+it under a chosen id is refused. The
 ` + "`status`" + ` block written by ` + "`substratectl get -o yaml`" + ` is ignored, so
 get output is directly apply-able.
 

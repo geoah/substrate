@@ -12,7 +12,6 @@ package engine
 import (
 	"cmp"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base32"
@@ -28,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -226,6 +226,11 @@ type options struct {
 	// statements a read ran and not only what it answered. Tests only; nil
 	// traces nothing.
 	queryTracer pgx.QueryTracer
+	// fixtureIDs lets any writer create a record under a chosen id
+	// (export_test.go WithTestFixtureIDs), so a test about something else
+	// keeps fixture ids it can read. Tests only; false holds every writer to
+	// checkCreateID.
+	fixtureIDs bool
 }
 
 // Option configures Open.
@@ -510,6 +515,8 @@ type service struct {
 	healthFailingAfter time.Duration
 	// foreignPackages is options.foreignPackages.
 	foreignPackages bool
+	// fixtureIDs is options.fixtureIDs.
+	fixtureIDs bool
 	// healthNow is the failing-trigger read's clock (health.go), never nil.
 	healthNow func() time.Time
 	// catchUpBatch is the page size of the table-to-file catch-up.
@@ -845,6 +852,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		orphanGrace:        o.orphanGrace,
 		healthFailingAfter: o.healthFailingAfter,
 		healthNow:          o.healthNow,
+		fixtureIDs:         o.fixtureIDs,
 		foreignPackages:    o.foreignPackages,
 		laneWorkers:        o.laneWorkers,
 		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
@@ -1660,15 +1668,41 @@ func errAuthorityTaken(authority string) error {
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-// newID mints a bare 12-character lowercase base32 record ID: tokens, refs,
-// fires and the other minted records. A repository is not one of them; its id
-// is its authority.
+// crockford is the lowercase Crockford base32 alphabet a minted id is written
+// in: no i, l, o or u, so an id read aloud or copied by hand has one spelling.
+const crockford = "0123456789abcdefghjkmnpqrstvwxyz"
+
+// newID mints a record id: a UUIDv7 written as 26 lowercase Crockford base32
+// characters, the suffix form of a TypeID. The leading 48 bits are the
+// creation time in milliseconds, so ids sort by when they were minted, and the
+// 128 bits decode back to the UUID. A repository is not one of the minted
+// records; its id is its authority.
 func newID() (string, error) {
-	raw := make([]byte, 10)
-	if _, err := rand.Read(raw); err != nil {
+	u, err := uuid.NewV7()
+	if err != nil {
 		return "", err
 	}
-	return strings.ToLower(b32.EncodeToString(raw))[:12], nil
+	return encodeCrockford(u), nil
+}
+
+// encodeCrockford writes 16 bytes as 26 base32 characters, most significant
+// first. 26 characters hold 130 bits, so the first character carries the two
+// padding bits as zeros and is always 0 to 7.
+func encodeCrockford(b [16]byte) string {
+	var out [vocabulary.MintedIDLen]byte
+	for i := range vocabulary.MintedIDLen {
+		var v byte
+		// Character i covers bits i*5-2 to i*5+2 of b; the two before bit 0
+		// are the zero padding.
+		for k := i*5 - 2; k < i*5+3; k++ {
+			v <<= 1
+			if k >= 0 {
+				v |= b[k/8] >> (7 - k%8) & 1
+			}
+		}
+		out[i] = crockford[v]
+	}
+	return string(out[:])
 }
 
 // derivedID is the deterministic ID form: 12 characters of base32(sha256).
