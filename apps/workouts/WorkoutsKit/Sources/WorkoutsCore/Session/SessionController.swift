@@ -259,11 +259,12 @@ public struct SessionController: Controller, Equatable {
     // MARK: The presenter
 
     /// The session in progress is presented with the RPE pre-fill when the
-    /// cover shows Rows (§4.14), in the environment's calendar.
+    /// cover shows Rows (§4.14), and asks before a load goes up when the
+    /// owner wants it to (§5.3), in the environment's calendar.
     func presenterSettings(calendar: Calendar) -> PresenterSettings {
         PresenterSettings(
             calendar: calendar, defaultUnit: settings.defaultUnit, countWarmupsInVolume: settings.countWarmupsInVolume,
-            prefillsRPE: settings.sessionLayout == .rows)
+            prefillsRPE: settings.sessionLayout == .rows, asksBeforeGoingUp: settings.asksBeforeGoingUp)
     }
 
     public func present(_ input: PresenterInput<SessionController>) -> SessionScreenPresentation {

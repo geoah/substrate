@@ -306,7 +306,7 @@ struct PlanBuilder {
         let cues = zip(slots, members).compactMap { slot, member in
             slot.cue.flatMap { $0.isEmpty ? nil : "\(member.name): \($0)" }
         }
-        let title = group.groupKind.label
+        let title = circuit ? "Warm-up circuit" : group.groupKind.label
         return RoutinePlanBlock(
             id: "group-\(group.key)", group: group.key, members: members, title: title,
             subtitle: parts.joined(separator: ", "), notes: notes.isEmpty ? nil : notes.joined(separator: "\n"),

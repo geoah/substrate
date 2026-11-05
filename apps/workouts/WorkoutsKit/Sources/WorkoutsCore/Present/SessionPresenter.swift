@@ -158,7 +158,7 @@ struct Presenting {
             setsPlanned: planned,
             setsText: "\(done) of \(planned)",
             timeLeft: left,
-            endsText: left.map { "ends about \(Format.time(now.addingTimeInterval(TimeInterval($0)), in: settings.timeZone))" }
+            endsText: left.map { "ends ~\(Format.time(now.addingTimeInterval(TimeInterval($0)), in: settings.timeZone))" }
         )
     }
 
@@ -185,19 +185,25 @@ struct Presenting {
 
     func groupHeader(_ key: String, members: [SlotState]) -> GroupHeader? {
         guard let group = state.group(key) else { return nil }
+        // A warm-up circuit's warm-ups are its rounds (§4.6).
+        let circuit = UpNext.isWarmupCircuit(group: key, in: state)
         let rounds =
             members.map { member in
-                state.units(inSlot: member.key).count { state.rows[$0[0]]?.role == .working }
+                state.units(inSlot: member.key).count { circuit || state.rows[$0[0]]?.role == .working }
             }.max() ?? 0
-        let rest = RestRules.roundRest(group: key, in: state).seconds
+        let rest =
+            circuit
+            ? RestRules.circuitRoundRest(group: key, slot: members.last?.key ?? key, in: state).seconds
+            : RestRules.roundRest(group: key, in: state).seconds
         let restText = rest > 0 ? "\(Format.duration(rest)) after each round" : "no rest between rounds"
+        let label = circuit ? "Warm-up circuit" : group.groupKind.label
         return GroupHeader(
             key: key,
             kind: group.groupKind,
             pairing: group.pairing ?? state.routineGroup(of: key)?.pairing,
             rounds: rounds,
             roundRest: rest,
-            title: "\(group.groupKind.label) \(key.uppercased()): \(Format.count(rounds, "round")), \(restText)",
+            title: "\(label) \(key.uppercased()): \(Format.count(rounds, "round")), \(restText)",
             colorIndex: groupColors[key] ?? 0,
             members: members.map(\.key)
         )
