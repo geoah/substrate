@@ -462,7 +462,7 @@ func TestIdempotencyKeyAgentToolKeysDeriveFromTheClientKey(t *testing.T) {
 	if res.Status != threadOK {
 		t.Fatalf("result: %+v", res)
 	}
-	task := mustGetInternal(t, ds, "samples.substrate.reamde.dev/tasks/task", "t-idem")
+	task := mustGetInternal(t, ds, "samples.substrate.reamde.dev/tasks/task", fid("t-idem"))
 	key, _ := task.Properties["name"].(string)
 	if !strings.Contains(key, "/call/key/keeper-dk/") {
 		t.Fatalf("the tool's key does not derive from the client key: %q", key)

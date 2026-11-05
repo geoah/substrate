@@ -723,7 +723,7 @@ func TestAnAgentDeliveryIsClaimedBeforeItsLoopAndCompletedAfter(t *testing.T) {
 			t.Fatalf("a thread whose completion failed reads %v, want %s", th["status"], threadError)
 		}
 	}
-	if !liveExists(t, ds, "t-idem") {
+	if !liveExists(t, ds, fid("t-idem")) {
 		t.Fatal("the loop's tool effect did not commit")
 	}
 	if got := cursorSeq(t, ds, tr.ID); got < wch.Seq {
@@ -1143,7 +1143,7 @@ func TestConcurrentRetriesOfOneAgentFailureRunOneLoop(t *testing.T) {
 	if got := len(agentThreadsOf(t, ds, "keeper")); got != threadsBefore+1 {
 		t.Fatalf("keeper threads after the retries: %d, want %d (one loop)", got, threadsBefore+1)
 	}
-	if n := entriesOf(t, ds, "samples.substrate.reamde.dev/tasks/task", "t-idem"); n != 1 {
+	if n := entriesOf(t, ds, "samples.substrate.reamde.dev/tasks/task", fid("t-idem")); n != 1 {
 		t.Fatalf("the tool effect has %d entries, want one set of effects", n)
 	}
 	if left, err := ds.TriggerFailures(ctx, tr.ID); err != nil || len(left) != 0 {

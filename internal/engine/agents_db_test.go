@@ -353,7 +353,7 @@ def main(input, host):
 def main(input, host):
     key = input["idempotencyKey"]
     return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
-                         "id": "t-idem", "properties": {"name": key}}],
+                         "id": host.ids.minted("fixture", "t-idem"), "properties": {"name": key}}],
             "output": {"key": key}}
 `,
 		}),
@@ -410,7 +410,7 @@ def main(input, host):
 			"source": `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
-                         "id": "t-burned", "properties": {"name": "burned"}}],
+                         "id": host.ids.minted("fixture", "t-burned"), "properties": {"name": "burned"}}],
             "output": {"ok": True}}
 `,
 		}),
@@ -1217,7 +1217,7 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 	// settling ok.
 	var tasks int
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM records WHERE id = 't-idem' AND deleted_at IS NULL`).Scan(&tasks); err != nil {
+		SELECT count(*) FROM records WHERE id = $1 AND deleted_at IS NULL`, fid("t-idem")).Scan(&tasks); err != nil {
 		t.Fatal(err)
 	}
 	if tasks != 1 {

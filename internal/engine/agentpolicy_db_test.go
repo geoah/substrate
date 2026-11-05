@@ -595,7 +595,7 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 	// The floor held the effect: nothing landed, the batch failed honestly,
 	// and the request exists with the thread stamped and NO policy (the
 	// declaration itself demanded review).
-	if _, err := ds.Get(ctx, taskKind, "t-burned"); err == nil {
+	if _, err := ds.Get(ctx, taskKind, fid("t-burned")); err == nil {
 		t.Fatal("a floored effect landed")
 	}
 	tool := lastToolMessage(t, ds, res.Thread)
@@ -603,7 +603,7 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 		t.Fatal("a floored effect reported ok")
 	}
 	req := onlyPatchRequest(t, ds)
-	if req.Properties["op"] != "create" || req.Properties["targetId"] != "t-burned" {
+	if req.Properties["op"] != "create" || req.Properties["targetId"] != fid("t-burned") {
 		t.Fatalf("request: %+v", req.Properties)
 	}
 	if req.Properties["policy"] != nil {
@@ -621,7 +621,7 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	if got, err := ds.Get(ctx, taskKind, "t-burned"); err != nil || got.Properties["name"] != "burned" {
+	if got, err := ds.Get(ctx, taskKind, fid("t-burned")); err != nil || got.Properties["name"] != "burned" {
 		t.Fatalf("the accepted effect did not land: %+v %v", got, err)
 	}
 }

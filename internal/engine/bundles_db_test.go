@@ -40,7 +40,10 @@ func mbConfigTypeDoc() map[string]any {
 	return vocabulary.KindManifest(mbPackage,
 		map[string]any{"singular": "mailconfig"},
 		map[string]any{
-			"traits": []any{"substrate.reamde.dev/core/oauth2"},
+			// A bundle's input kind, internal like every shipped one: the
+			// owner writes its well-known `default` record by that name.
+			"purpose": "internal",
+			"traits":  []any{"substrate.reamde.dev/core/oauth2"},
 			"properties": map[string]any{
 				"authorizationEndpoint": map[string]any{"type": "url"},
 				"tokenEndpoint":         map[string]any{"type": "url"},
