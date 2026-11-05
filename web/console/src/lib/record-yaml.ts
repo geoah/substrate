@@ -95,16 +95,11 @@ function specComment(units: UnitReader, spec: PropSpec): string {
 }
 
 /** Whether a NEW record of `kind` takes a minted id, and a create carrying
- * any other id is refused (`engine.checkCreateID`, decision 0228): a kind the
- * repository installed, unless it is `internal`. A declaration is named by
- * its identity, an `internal` kind's id is a name the substrate resolves by,
- * and a seeded or provider kind mirrors an upstream that names its rows. */
+ * any other id is refused (`engine.checkCreateID`, decision 0228): every kind
+ * but an `internal` one, whose id is a name the substrate resolves by, and a
+ * declaration, which is named by its identity. */
 export function serverAssignsID(kind: KindInfo): boolean {
-  return (
-    kind.source === "installed" &&
-    !isDeclarationKind(kind.identity) &&
-    kindPurpose(kind) !== "internal"
-  )
+  return !isDeclarationKind(kind.identity) && kindPurpose(kind) !== "internal"
 }
 
 /** The shape of a minted id (`vocabulary.MintedID`): a UUIDv7 as 26

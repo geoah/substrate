@@ -13,7 +13,7 @@ import (
 // who names a new record (decision 0228): no fixture ids.
 func openStrictAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	t.Helper()
-	ds := openInternalDataset(t, WithTestFixtureIDs(false))
+	ds := openInternalDataset(t)
 	return ds, provisionAgents(t, ds)
 }
 

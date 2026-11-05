@@ -4,20 +4,20 @@ import (
 	"context"
 	"testing"
 
-	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// A person, an app or an agent creating a record of a kind the repository
-// installed does not name it: a slug chosen for what the record says stops
-// matching once the record is retitled (decision 0228). The create takes a
-// minted id, which the writer may mint itself; updating a record by its id is
-// not naming it; and a writer that derives ids from data keeps doing so.
-func TestACreateOfAnInstalledKindTakesAMintedID(t *testing.T) {
+// A person, an app or an agent creating a record does not name it: a slug
+// chosen for what the record says stops matching once the record is
+// retitled (decision 0228). The create takes a minted id, which the writer
+// may mint or derive itself; updating a record by its id is not naming it;
+// a writer that derives ids from data keeps doing so; an internal kind's id
+// is a name. A seeded kind is held to it like an installed one.
+func TestANewRecordTakesAMintedID(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t, engine.WithTestFixtureIDs(false))
+	_, ds := newDataset(t)
 	const task = "samples.substrate.reamde.dev/tasks/task"
 	props := func(name string) map[string]any { return map[string]any{"name": name} }
 
@@ -29,6 +29,16 @@ func TestACreateOfAnInstalledKindTakesAMintedID(t *testing.T) {
 		_, err := ds.Put(ctx, actor, substrate.PutInput{Kind: task, ID: "floor-first-full-body", Properties: props("Floor first")})
 		wantErr(t, err, substrate.ErrValidation, string(actor)+" naming a new task")
 	}
+	// A seeded kind is no exception: an app writing a seeded source under a
+	// readable id is refused, and under one derived from its key admitted.
+	const source = "substrate.reamde.dev/observations/source"
+	app := substrate.AppActor("sync.example.com")
+	_, err := ds.Put(ctx, app, substrate.PutInput{Kind: source, ID: "apple-watch", Properties: map[string]any{"name": "Watch"}})
+	wantErr(t, err, substrate.ErrValidation, "an app naming a new seeded source")
+	derived := vocabulary.DerivedMintedID("apple", "device-42")
+	if got := mustPut(t, ds, app, substrate.PutInput{Kind: source, ID: derived, Properties: map[string]any{"name": "Watch"}}); got.ID != derived {
+		t.Fatalf("created %q, want the derived %q", got.ID, derived)
+	}
 
 	// No id: the substrate mints one.
 	minted := mustPut(t, ds, owner, substrate.PutInput{Kind: task, Properties: props("Floor first")})
@@ -38,7 +48,6 @@ func TestACreateOfAnInstalledKindTakesAMintedID(t *testing.T) {
 
 	// An id in the minted shape, minted by the writer (an offline outbox).
 	const own = "01h2xcejqtf2nbrexx3vqjhp41"
-	app := substrate.AppActor("workouts.example.com")
 	if got := mustPut(t, ds, app, substrate.PutInput{Kind: task, ID: own, Properties: props("Offline")}); got.ID != own {
 		t.Fatalf("created %q, want %q", got.ID, own)
 	}

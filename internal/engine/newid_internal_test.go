@@ -50,8 +50,8 @@ func TestEncodeCrockfordKnownValues(t *testing.T) {
 		// An example from the TypeID specification's valid.yml.
 		{"0188bac7-4afa-78aa-bc3b-bd1eef28d881", "01h2xcejqtf2nbrexx3vqjhp41"},
 	} {
-		if got := encodeCrockford(uuid.MustParse(tc.in)); got != tc.want {
-			t.Errorf("encodeCrockford(%s) = %s, want %s", tc.in, got, tc.want)
+		if got := vocabulary.EncodeMintedID(uuid.MustParse(tc.in)); got != tc.want {
+			t.Errorf("EncodeMintedID(%s) = %s, want %s", tc.in, got, tc.want)
 		}
 	}
 }
@@ -61,7 +61,7 @@ func decodeCrockford(t *testing.T, s string) uuid.UUID {
 	var u uuid.UUID
 	bits := make([]byte, 0, 130)
 	for i := range len(s) {
-		v := strings.IndexByte(crockford, s[i])
+		v := strings.IndexByte("0123456789abcdefghjkmnpqrstvwxyz", s[i])
 		if v < 0 {
 			t.Fatalf("%q is not Crockford base32", s)
 		}

@@ -241,14 +241,14 @@ status is `201` for a create and `200` for an update, the same rule `PUT`
 follows, and `Idempotency-Key` binds to it
 ([idempotency](#idempotency-and-retries)).
 
-A `PUT` that would CREATE a record of a kind the repository installed, sent by
-a person, an app or an agent, is `422` unless its id is a minted one: a UUIDv7
-as 26 lowercase Crockford base32 characters, which the server mints for a
-`POST` and a client may mint itself for an offline create. A `PUT` at a record
-that exists is an update and takes any id. Functions, bundles, `internal`
-kinds and the kinds the substrate seeds or a provider publishes keep their
-composed ids
-([0228](decisions/0228-a-new-record-the-owner-authors-takes-a-minted-id.md)).
+A `PUT` that would CREATE a record, sent by a person, an app or an agent, is
+`422` unless its id has the minted shape: 26 lowercase Crockford base32
+characters, the first `0` to `7`. The server mints a UUIDv7 for a `POST`; a
+client may mint one itself for an offline create, or derive one from an
+upstream key so a re-sync names the same row. A `PUT` at a record that exists
+is an update and takes any id. Functions, bundles and `internal` kinds keep
+their composed ids
+([0228](decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).
 
 ## The flat record
 

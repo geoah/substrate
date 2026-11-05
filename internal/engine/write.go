@@ -321,18 +321,15 @@ func (t *txn) checkID(typ, id string) error {
 //
 // A kind some mapping points at is always server-assigned, because nothing
 // external names a subject. Otherwise a chosen id is the writer's to give
-// when the writer derives it from data (substrate.NamesItsRecords: the
-// engine, a bundle, a function), when the kind is `internal` (its ids are
-// names the substrate resolves by: a unit's spelling, a provider row, an
-// input's `default`), or when the kind is seeded or published by a provider
-// (its rows mirror an upstream and are named by it, decision 0162). A package
-// an app publishes through the catalog lands as published too, so it is
-// exempt with them until a kind can say its ids are composed. What is
-// left is what the owner authors: a kind the repository installed, written
-// by a person, an app or an agent. That create takes a minted id, which the
-// writer may mint itself so an offline outbox knows it before the server
-// answers; any other id is refused, because a name chosen for what a record
-// says stops matching once the record changes (decision 0228).
+// only when the writer derives it from data (substrate.NamesItsRecords: the
+// engine, a bundle, a function, decision 0162) or the kind is `internal`
+// (its ids are names the substrate resolves by: a unit's spelling, a
+// provider row, an input's `default`). A person, an app or an agent creates
+// every other record under a minted id, which it may mint itself so an
+// offline outbox knows it before the server answers, or derive from an
+// upstream key so a re-sync names the same row; any other id is refused,
+// because a name chosen for what a record says stops matching once the
+// record changes (decision 0228).
 //
 // A create request's target id was judged when the request was written,
 // against the hand that proposed it (admitRequestDiff), so the accept that
@@ -352,9 +349,7 @@ func (t *txn) checkCreateID(ty *vocabulary.Kind, id string) error {
 // judged against this transaction's actor: nil when the actor may create a
 // record of ty under id, else the refusal.
 func (t *txn) createIDRefusal(ty *vocabulary.Kind, id string) error {
-	if t.ds.svc.fixtureIDs || substrate.NamesItsRecords(t.actor) || ty.Purpose == vocabulary.PurposeInternal ||
-		ty.Source == vocabulary.SourceBuiltin || ty.Source == vocabulary.SourcePublished ||
-		vocabulary.MintedID(id) {
+	if substrate.NamesItsRecords(t.actor) || ty.Purpose == vocabulary.PurposeInternal || vocabulary.MintedID(id) {
 		return nil
 	}
 	return fmt.Errorf("%w: %q is not a minted id: a new %s takes the id the substrate assigns. Create it without an id (POST /api/v1/records) and an Idempotency-Key to retry safely, or mint the id as a UUIDv7 in 26 lowercase Crockford base32 characters",

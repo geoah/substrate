@@ -1,6 +1,7 @@
 package vocabulary
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"net"
 	"regexp"
@@ -116,6 +117,44 @@ const MintedIDLen = 26
 // Crockford base32 characters, the suffix form of a TypeID. The first
 // character carries three bits, so it is 0 to 7.
 var reMinted = regexp.MustCompile(`^[0-7][0-9a-hjkmnp-tv-z]{25}$`)
+
+// crockford is the lowercase Crockford base32 alphabet a minted id is written
+// in: no i, l, o or u, so an id read aloud or copied by hand has one spelling.
+const crockford = "0123456789abcdefghjkmnpqrstvwxyz"
+
+// EncodeMintedID writes a UUID's 16 bytes as the 26 characters of a minted
+// id, most significant first. 26 characters hold 130 bits, so the first
+// character carries two zero padding bits and is always 0 to 7.
+func EncodeMintedID(b [16]byte) string {
+	var out [MintedIDLen]byte
+	for i := range MintedIDLen {
+		var v byte
+		// Character i covers bits i*5-2 to i*5+2 of b; the two before bit 0
+		// are the zero padding.
+		for k := i*5 - 2; k < i*5+3; k++ {
+			v <<= 1
+			if k >= 0 {
+				v |= b[k/8] >> (7 - k%8) & 1
+			}
+		}
+		out[i] = crockford[v]
+	}
+	return string(out[:])
+}
+
+// DerivedMintedID is an id in the minted shape computed from parts: the
+// first 16 bytes of their sha256, marked as a UUIDv8 (RFC 9562's version for
+// custom layouts). A writer that must name the same record again, a mirror
+// keyed by an upstream id or a retried request, derives it instead of
+// minting (decision 0228).
+func DerivedMintedID(parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	var u [16]byte
+	copy(u[:], sum[:16])
+	u[6] = u[6]&0x0f | 0x80 // version 8
+	u[8] = u[8]&0x3f | 0x80 // RFC 9562 variant
+	return EncodeMintedID(u)
+}
 
 // MintedID reports whether s has the shape of a minted record id: the id a
 // person, an app or an agent may give a new record of a kind the repository

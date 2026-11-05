@@ -63,7 +63,8 @@ describe("templateYAML", () => {
   it("builds the full apply-able envelope fixed to the kind reference", () => {
     const doc = parse(yaml)
     expect(doc.kind).toBe("crew.test.dev/crew/agent")
-    expect(doc.metadata).toHaveProperty("id")
+    // The substrate mints a new record's id (decision 0228).
+    expect(doc).not.toHaveProperty("metadata")
     expect(doc.data.properties).toMatchObject({
       prompt: "",
       enabled: false,
@@ -79,27 +80,21 @@ describe("templateYAML", () => {
       "# optional, enum: opus (Opus 4) | sonnet (Sonnet 4) | haiku"
     )
     expect(yaml).toContain("# optional, string[]")
-    expect(yaml).toMatch(/id: ""\s*# optional/)
   })
 
-  it("offers no metadata.id on a kind the repository installed", () => {
-    const installed: KindInfo = { ...agentKind, source: "installed" }
-    expect(parse(templateYAML(SHIPPED_UNITS, installed))).not.toHaveProperty(
-      "metadata"
-    )
+  it("offers metadata.id only on an internal kind", () => {
     const internal: KindInfo = {
-      ...installed,
+      ...agentKind,
       definition: { ...agentKind.definition, purpose: "internal" },
     }
     expect(templateYAML(SHIPPED_UNITS, internal)).toMatch(/id: ""\s*# optional/)
   })
 
-  it("refuses a chosen id on a new record of an installed kind", () => {
-    const installed: KindInfo = { ...agentKind, source: "installed" }
+  it("refuses a chosen id on a new record", () => {
     const doc = (id: string) =>
       `kind: crew.test.dev/crew/agent\nmetadata:\n  id: ${id}\ndata:\n  properties:\n    prompt: hi\n`
     const idErrors = (id: string, ctx = {}) =>
-      validateApplyDoc(SHIPPED_UNITS, doc(id), installed, ctx).filter(
+      validateApplyDoc(SHIPPED_UNITS, doc(id), agentKind, ctx).filter(
         (p) => p.severity === "error" && p.path === "metadata.id"
       )
     expect(idErrors("floor-first")).toHaveLength(1)
@@ -118,12 +113,6 @@ describe("templateYAML", () => {
           updatedAt: "x",
         },
       })
-    ).toHaveLength(0)
-    // A seeded kind mirrors an upstream that names its rows.
-    expect(
-      validateApplyDoc(SHIPPED_UNITS, doc("floor-first"), agentKind).filter(
-        (p) => p.path === "metadata.id" && p.severity === "error"
-      )
     ).toHaveLength(0)
   })
 

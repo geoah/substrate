@@ -226,11 +226,6 @@ type options struct {
 	// statements a read ran and not only what it answered. Tests only; nil
 	// traces nothing.
 	queryTracer pgx.QueryTracer
-	// fixtureIDs lets any writer create a record under a chosen id
-	// (export_test.go WithTestFixtureIDs), so a test about something else
-	// keeps fixture ids it can read. Tests only; false holds every writer to
-	// checkCreateID.
-	fixtureIDs bool
 }
 
 // Option configures Open.
@@ -515,8 +510,6 @@ type service struct {
 	healthFailingAfter time.Duration
 	// foreignPackages is options.foreignPackages.
 	foreignPackages bool
-	// fixtureIDs is options.fixtureIDs.
-	fixtureIDs bool
 	// healthNow is the failing-trigger read's clock (health.go), never nil.
 	healthNow func() time.Time
 	// catchUpBatch is the page size of the table-to-file catch-up.
@@ -852,7 +845,6 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		orphanGrace:        o.orphanGrace,
 		healthFailingAfter: o.healthFailingAfter,
 		healthNow:          o.healthNow,
-		fixtureIDs:         o.fixtureIDs,
 		foreignPackages:    o.foreignPackages,
 		laneWorkers:        o.laneWorkers,
 		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
@@ -1668,10 +1660,6 @@ func errAuthorityTaken(authority string) error {
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-// crockford is the lowercase Crockford base32 alphabet a minted id is written
-// in: no i, l, o or u, so an id read aloud or copied by hand has one spelling.
-const crockford = "0123456789abcdefghjkmnpqrstvwxyz"
-
 // newID mints a record id: a UUIDv7 written as 26 lowercase Crockford base32
 // characters, the suffix form of a TypeID. The leading 48 bits are the
 // creation time in milliseconds, so ids sort by when they were minted, and the
@@ -1682,42 +1670,12 @@ func newID() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return encodeCrockford(u), nil
+	return vocabulary.EncodeMintedID(u), nil
 }
 
-// encodeCrockford writes 16 bytes as 26 base32 characters, most significant
-// first. 26 characters hold 130 bits, so the first character carries the two
-// padding bits as zeros and is always 0 to 7.
-func encodeCrockford(b [16]byte) string {
-	var out [vocabulary.MintedIDLen]byte
-	for i := range vocabulary.MintedIDLen {
-		var v byte
-		// Character i covers bits i*5-2 to i*5+2 of b; the two before bit 0
-		// are the zero padding.
-		for k := i*5 - 2; k < i*5+3; k++ {
-			v <<= 1
-			if k >= 0 {
-				v |= b[k/8] >> (7 - k%8) & 1
-			}
-		}
-		out[i] = crockford[v]
-	}
-	return string(out[:])
-}
-
-// derivedMintedID is a deterministic id in the minted shape: the first 16
-// bytes of sha256 over parts, marked as a UUIDv8 (RFC 9562's custom
-// version), in the same 26 Crockford characters as newID. For an id a
-// retry must name again and a person, an app or an agent will see as the
-// record's (a gated create's target).
-func derivedMintedID(parts ...string) string {
-	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
-	var u [16]byte
-	copy(u[:], sum[:16])
-	u[6] = u[6]&0x0f | 0x80 // version 8
-	u[8] = u[8]&0x3f | 0x80 // RFC 9562 variant
-	return encodeCrockford(u)
-}
+// derivedMintedID is vocabulary.DerivedMintedID: an id in the minted shape
+// that a retry must name again (a gated create's target).
+func derivedMintedID(parts ...string) string { return vocabulary.DerivedMintedID(parts...) }
 
 // derivedID is the deterministic ID form: 12 characters of base32(sha256).
 func derivedID(parts ...string) string {

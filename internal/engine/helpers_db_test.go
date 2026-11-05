@@ -520,3 +520,9 @@ func storedRefPaths(v any) []string {
 func refPathValue(e *substrate.Record, name string) string {
 	return storedRefPath(e.Properties[name])
 }
+
+// fid is a fixture's record id: the readable name a test was written with,
+// derived into the minted shape, because a person, an app or an agent may
+// create a record under no other id (decision 0228). The same name is the
+// same id, so a test names a record by fid("t-1") everywhere it reads it.
+func fid(name string) string { return vocabulary.DerivedMintedID("fixture", name) }
