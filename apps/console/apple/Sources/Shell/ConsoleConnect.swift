@@ -69,7 +69,8 @@ struct ConsoleConnect: View {
                 // must offer deletion too (guideline 5.1.1(v)), and a
                 // substrate is deleted on its own server, never here.
                 if !BuildInfo.current.fromAppStore, let origin = ServerAddress.origin(of: address),
-                   let register = URL(string: "/register", relativeTo: origin) {
+                    let register = URL(string: "/register", relativeTo: origin)
+                {
                     Button("Register…") { openURL(register.absoluteURL) }
                         .help("Choose your name on \(ServerAddress.display(origin))'s own page, then sign in here.")
                 }
