@@ -86,6 +86,10 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
             id: "c", name: "propose", callable: "function:x.example.com:pkg:propose",
             arguments: "", output: "{\"id\":\"abcdefghijkl\"}", ok: true)
         #expect(requestID(of: impostor) == nil)
+        let minted = ToolCall(
+            id: "c", name: "propose", callable: "function:substrate.reamde.dev:core:propose",
+            arguments: "", output: "{\"id\":\"01h2xcejqtf2nbrexx3vqjhp41\"}", ok: true)
+        #expect(requestID(of: minted) == "01h2xcejqtf2nbrexx3vqjhp41")
     }
 
     @Test func aTriggeredOpeningReadsAsWhatFired() {
