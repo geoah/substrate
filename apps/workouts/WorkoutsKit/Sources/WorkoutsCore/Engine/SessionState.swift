@@ -353,6 +353,8 @@ public struct SetValues: Codable, Equatable, Sendable {
     public var rpeMethod: EffortMethod?
     public var reachedFailure: Bool?
     public var failedRepAttempted: Bool?
+    /// Why the set ended, where the lifter said.
+    public var stopReason: StopReason?
 
     public init(
         load: Mass? = nil,
@@ -363,7 +365,8 @@ public struct SetValues: Codable, Equatable, Sendable {
         rpe: Decimal? = nil,
         rpeMethod: EffortMethod? = nil,
         reachedFailure: Bool? = nil,
-        failedRepAttempted: Bool? = nil
+        failedRepAttempted: Bool? = nil,
+        stopReason: StopReason? = nil
     ) {
         self.load = load
         self.assistance = assistance
@@ -374,6 +377,7 @@ public struct SetValues: Codable, Equatable, Sendable {
         self.rpeMethod = rpeMethod
         self.reachedFailure = reachedFailure
         self.failedRepAttempted = failedRepAttempted
+        self.stopReason = stopReason
     }
 
     /// The RPE a reader takes as a rating: `rpe` unless it was pre-filled or copied.

@@ -118,7 +118,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 14)
         #expect(!s.stop)
         #expect(s.reason == .historyAddRep)
-        #expect(s.text == "Last time 35 kg × 13 at RPE 9.5; try 35 kg × 14")
+        #expect(s.text == "Last time 35 kg × 13 with 0–1 left; try 35 kg × 14")
     }
 
     @Test("V3. In-session, one point easier than the target")
@@ -136,7 +136,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 11)
         #expect(!s.stop)
         #expect(s.reason == .sessionKeep)
-        #expect(s.text == "Set 1: 60 kg × 10 at RPE 7; try 60 kg × 11")
+        #expect(s.text == "Set 1: 60 kg × 10 with 3 left; try 60 kg × 11")
     }
 
     @Test("V4. In-session, much easier than the target (load up)")
@@ -162,7 +162,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 12)
         #expect(!s.stop)
         #expect(s.reason == .sessionUp)
-        #expect(s.text == "Set 1: 60 kg × 12 at RPE 6, easier than RPE 8; try 65 kg × 12")
+        #expect(s.text == "Set 1: 60 kg × 12 with 4 left, more left than 2; try 65 kg × 12")
     }
 
     @Test("V5. In-session, harder than the target (load down)")
@@ -184,7 +184,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 5)
         #expect(!s.stop)
         #expect(s.reason == .sessionDown)
-        #expect(s.text == "Set 1: 100 kg × 5 at RPE 9.5, harder than RPE 8; try 92.5 kg × 5")
+        #expect(s.text == "Set 1: 100 kg × 5 with 0–1 left, fewer left than 2; try 92.5 kg × 5")
     }
 
     @Test("V6. In-session fatigue allowance")
@@ -202,7 +202,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 8)
         #expect(!s.stop)
         #expect(s.reason == .sessionKeep)
-        #expect(s.text == "Set 1: 60 kg × 10 at RPE 9; try 60 kg × 8")
+        #expect(s.text == "Set 1: 60 kg × 10 with 1 left; try 60 kg × 8")
     }
 
     @Test("V7. Missed reps last time, no RPE")
@@ -259,7 +259,7 @@ struct SuggestVectorTests {
         #expect(b.text == "Warm-up, as last time: 25 kg × 15")
     }
 
-    // Machine lateral raise, stack kg: activation 25 × 17 at RPE 9 done today.
+    // Machine lateral raise, stack kg: activation 25 × 17 with 1 left done today.
     private let activation = set(.myoActivation, load: 25, reps: 17, rpe: 9, ordinal: 1)
 
     private func mini(_ done: [Int], head: DoneSet? = nil) -> Suggestion? {
@@ -394,7 +394,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 9)
         #expect(!s.stop)
         #expect(s.reason == .historyLoadUp)
-        #expect(s.text == "Last time BW × 10 at RPE 9, top of range; try BW + 2.5 kg × 9")
+        #expect(s.text == "Last time BW × 10 with 1 left, top of range; try BW + 2.5 kg × 9")
     }
 
     @Test("V13. Assisted")
@@ -417,7 +417,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 9)
         #expect(!s.stop)
         #expect(s.reason == .historyLoadUp)
-        #expect(s.text == "Last time BW − 30 kg × 12 at RPE 8, top of range; try BW − 25 kg × 9")
+        #expect(s.text == "Last time BW − 30 kg × 12 with 2 left, top of range; try BW − 25 kg × 9")
     }
 
     @Test("V14a. No history, the routine gives a load")
@@ -469,7 +469,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 7)
         #expect(!s.stop)
         #expect(s.reason == .historyLoadUp)
-        #expect(s.text == "Last time 185 lb × 8 at RPE 8, top of range; try 190 lb × 7")
+        #expect(s.text == "Last time 185 lb × 8 with 2 left, top of range; try 190 lb × 7")
     }
 
     @Test("V16. Long break")
@@ -489,7 +489,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 8)
         #expect(!s.stop)
         #expect(s.reason == .historyAddRep)
-        #expect(s.text == "Last time 60 kg × 10 at RPE 8 (45 days ago); try 60 kg × 8")
+        #expect(s.text == "Last time 60 kg × 10 with 2 left (45 days ago); try 60 kg × 8")
     }
 
     @Test("V17. New rep range")
@@ -510,7 +510,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 11)
         #expect(!s.stop)
         #expect(s.reason == .historyNewRange)
-        #expect(s.text == "Last time 100 kg × 5 at RPE 8; for 10–12 reps try 80 kg × 11")
+        #expect(s.text == "Last time 100 kg × 5 with 2 left; for 10–12 reps try 80 kg × 11")
     }
 
     @Test("V18. Unilateral")
@@ -531,7 +531,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 10)
         #expect(!s.stop)
         #expect(s.reason == .historyAddRep)
-        #expect(s.text == "Last time 20 kg × 9 at RPE 8; try 20 kg × 10")
+        #expect(s.text == "Last time 20 kg × 9 with 2 left; try 20 kg × 10")
     }
 
     @Test("V19. Outlier skipped")
@@ -566,7 +566,7 @@ struct SuggestVectorTests {
         #expect(s.reps == 13)
         #expect(!s.stop)
         #expect(s.reason == .historyAddRep)
-        #expect(s.text == "Last time 35 kg × 12 at RPE 8; try 35 kg × 13")
+        #expect(s.text == "Last time 35 kg × 12 with 2 left; try 35 kg × 13")
         // History given oldest first is read newest first all the same (03 §13).
         #expect(run(PendingSet(kind: .normal, ordinal: 1, target: target), stackKg, history: history.reversed()) == s)
     }
@@ -876,7 +876,7 @@ struct SuggestWorkoutsRuleTests {
         #expect(s.load == 10)
         #expect(s.reps == 17)
         #expect(s.reason == .sessionKeep)
-        #expect(s.text == "Set 1: 10 kg × 15 at RPE 6; try 10 kg × 17")
+        #expect(s.text == "Set 1: 10 kg × 15 with 4 left; try 10 kg × 17")
     }
 
     @Test("No grid: from history, the load stays and the reps follow the goal")
@@ -889,7 +889,7 @@ struct SuggestWorkoutsRuleTests {
         #expect(s.load == 10)
         #expect(s.reps == 6)
         #expect(s.reason == .historyAddRep)
-        #expect(s.text == "Last time 10 kg × 7 at RPE 10; try 10 kg × 6")
+        #expect(s.text == "Last time 10 kg × 7 with 0 left; try 10 kg × 6")
     }
 
     @Test("No grid: the routine load is kept as written, and a drop leaves the lighter load to the owner")
@@ -969,7 +969,7 @@ struct SuggestWorkoutsRuleTests {
         #expect(s.load == 2.5)
         #expect(s.reps == 6)
         #expect(s.reason == .historyLoadUp)
-        #expect(s.text == "Last time BW × 12 at RPE 8, top of range; try BW + 2.5 kg × 6")
+        #expect(s.text == "Last time BW × 12 with 2 left, top of range; try BW + 2.5 kg × 6")
     }
 
     @Test("Plain bodyweight from history adds a rep with no top (the push-up)")
@@ -983,7 +983,7 @@ struct SuggestWorkoutsRuleTests {
         #expect(s.load == 0)
         #expect(s.reps == 15)
         #expect(s.reason == .historyAddRep)
-        #expect(s.text == "Last time BW × 14 at RPE 9; try BW × 15")
+        #expect(s.text == "Last time BW × 14 with 1 left; try BW × 15")
     }
 
     @Test("Plain bodyweight with no history: nothing to pick")
@@ -1086,7 +1086,7 @@ struct SuggestBranchTests {
         #expect(s.load == 65)
         #expect(s.reps == 12)
         #expect(s.reason == .sessionUp)
-        #expect(s.text == "Set 1: 60 kg × 15 at RPE 6, easier than RPE 8; try 65 kg × 12")
+        #expect(s.text == "Set 1: 60 kg × 15 with 4 left, more left than 2; try 65 kg × 12")
     }
 
     @Test("In session, a step too coarse for the range keeps the load at the top")
@@ -1097,7 +1097,7 @@ struct SuggestBranchTests {
         #expect(s.load == 6)
         #expect(s.reps == 12)
         #expect(s.reason == .sessionCoarse)
-        #expect(s.text == "Set 1: 6 kg × 14 at RPE 8; next step too big, try 6 kg × 12")
+        #expect(s.text == "Set 1: 6 kg × 14 with 2 left; next step too big, try 6 kg × 12")
     }
 
     @Test("At the heaviest load, in session and from history")
@@ -1108,7 +1108,7 @@ struct SuggestBranchTests {
         #expect(session1.load == 100)
         #expect(session1.reps == 12)
         #expect(session1.reason == .sessionAtMax)
-        #expect(session1.text == "Set 1: 100 kg × 15 at RPE 7, at the heaviest load; try 100 kg × 12")
+        #expect(session1.text == "Set 1: 100 kg × 15 with 3 left, at the heaviest load; try 100 kg × 12")
 
         let last = set(load: 100, reps: 12, rpe: 8, target: target, ordinal: 1, start: daysAgo(7))
         let fromHistory = try #require(
@@ -1118,7 +1118,7 @@ struct SuggestBranchTests {
         #expect(fromHistory.load == 100)
         #expect(fromHistory.reps == 12)
         #expect(fromHistory.reason == .historyAtMax)
-        #expect(fromHistory.text == "Last time 100 kg × 12 at RPE 8, at the heaviest load; try 100 kg × 12")
+        #expect(fromHistory.text == "Last time 100 kg × 12 with 2 left, at the heaviest load; try 100 kg × 12")
     }
 
     @Test("A break of more than 90 days cuts the e1RM by 10 % and adds no rep")
@@ -1134,7 +1134,7 @@ struct SuggestBranchTests {
         #expect(s.load == 57.5)
         #expect(s.reps == 8)
         #expect(s.reason == .historyLoadDown)
-        #expect(s.text == "Last time 60 kg × 10 at RPE 8 (100 days ago), below target; try 57.5 kg × 8")
+        #expect(s.text == "Last time 60 kg × 10 with 2 left (100 days ago), below target; try 57.5 kg × 8")
     }
 
     @Test("Plausibility only counts sessions within 180 days")
@@ -1145,6 +1145,6 @@ struct SuggestBranchTests {
         }
         // One other session in the window: too few to judge, so the newest set stands.
         let s = try #require(run(PendingSet(kind: .normal, ordinal: 1, target: target), stackKg, history: history))
-        #expect(s.text == "Last time 350 kg × 12 at RPE 8, top of range; try 355 kg × 11")
+        #expect(s.text == "Last time 350 kg × 12 with 2 left, top of range; try 355 kg × 11")
     }
 }

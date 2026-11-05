@@ -333,7 +333,7 @@ struct ReviewCodecTests {
 
 // MARK: - Effort provenance
 
-/// One press slot whose planned sets aim at RPE 8, RPE 7 to 8, and 2 to 3
+/// One press slot whose planned sets aim with 2 left, RPE 7 to 8, and 2 to 3
 /// reps in reserve, then an added set with no plan.
 private func provenanceSession() throws -> EngineScript {
     var script = EngineScript(at: engineEpoch)
@@ -407,7 +407,7 @@ struct ReviewEffortTests {
         let s1 = try script.row("press", 0)
         let previous = PreviousSet(
             session: "past", date: engineEpoch, record: "p1",
-            values: SetValues(load: .kg(45), reps: 12, rpe: 9, rpeMethod: .entered), text: "45 kg × 12 @ 9",
+            values: SetValues(load: .kg(45), reps: 12, rpe: 9, rpeMethod: .entered), text: "45 kg × 12 · 1 left",
             deload: false)
         var state = try script.send(.editSet(.init(row: s1, values: previous.copy)))
         #expect(state.rpe(ofRow: s1) == .value(9, .copied))
@@ -429,7 +429,7 @@ struct ReviewEffortTests {
         #expect(set1.text == "105 kg × 9")
         #expect(set1.copy.rpe == .unchanged)
         let set2 = try #require(Previous.find(for: try next.row("leg-press", 3), in: next.current, history: history))
-        #expect(set2.text == "105 kg × 9 @ 8.5")
+        #expect(set2.text == "105 kg × 9 · 1–2 left")
     }
 
     @Test("clearing removes the value and its method; on a pending row it also stops the pre-fill")
@@ -494,7 +494,7 @@ struct ReviewEffortTests {
         let plain = SessionPresenter.present(try script.current, history: HistoryIndex([]), settings: Progression.settings, now: engineEpoch)
         let row = try #require(plain.row(s1))
         #expect(row.rpeEntry == .prefill(8))
-        #expect(row.rpePrefillText == "8")
+        #expect(row.rpePrefillText == "2")
         #expect(row.rpe == nil && row.rpeText == nil)
         #expect(row.commitValues?.rpe == nil)
         var settings = Progression.settings
@@ -743,14 +743,14 @@ struct ReviewSuggestionTests {
         let fromPrefill = try next(after: prefilled)
         #expect(fromPrefill.load == none.load && fromPrefill.reps == none.reps && fromPrefill.reason == none.reason)
         #expect(none.text == "Set 1: 105 kg × 9; try 105 kg × 9")
-        #expect(fromPrefill.text == "Set 1: 105 kg × 9, assuming RPE 8; try 105 kg × 9")
+        #expect(fromPrefill.text == "Set 1: 105 kg × 9, assuming 2 left; try 105 kg × 9")
         let fromCopy = try next(after: done(SetValues(load: .kg(105), reps: 9, rpe: 8, rpeMethod: .copied)))
         #expect(fromCopy.text == fromPrefill.text)
         // A pre-filled 6 is not a set that felt easy: the numbers do not move.
         let easyPrefill = try next(after: done(SetValues(load: .kg(105), reps: 9, rpe: 6, rpeMethod: .prefilled)))
         #expect(easyPrefill.load == none.load && easyPrefill.reps == none.reps)
         let rated = try next(after: done(SetValues(load: .kg(105), reps: 9, rpe: 6, rpeMethod: .entered)))
-        #expect(rated.text.hasPrefix("Set 1: 105 kg × 9 at RPE 6"))
+        #expect(rated.text.hasPrefix("Set 1: 105 kg × 9 with 4 left"))
         #expect(rated.load != none.load || rated.reps != none.reps)
     }
 
@@ -827,15 +827,15 @@ struct ReviewSuggestionTests {
         #expect(SuggestionInputs.target(SetTarget(rirMin: 2, rirMax: 3), termination: nil, config: config).rpe == 8)
         #expect(SuggestionInputs.target(SetTarget(rpeMin: 9), termination: nil, config: config).rpe == 9)
         #expect(SetTarget(rirMin: 12).effortTop == nil)
-        // Day 3's overhead press, planned at RPE 7 to 8.
+        // Day 3's overhead press, planned with 3 left to 8.
         let day3 = try #require(try EngineFixtures.routines()["day-3"])
         let press = try #require(day3.slots.first { $0.key == "overhead-press" }?.sets.first)
         #expect(press.rpeMin == 7 && press.rpeMax == 8 && press.effortTop == 8)
         #expect(SessionEngine.target(from: press).effortTop == 8)
-        #expect(RoutinePresenter.runText(press, count: 3, measurement: .weightreps) == "3 sets of 8–12 reps at RPE 7–8, from 12 kg")
-        #expect(Format.effort(rpeMin: 8, rpeMax: 8, rirMin: nil, rirMax: nil) == "RPE 8")
-        #expect(Format.effort(rpeMin: nil, rpeMax: nil, rirMin: 2, rirMax: 3) == "2–3 reps in reserve")
-        #expect(Format.effort(rpeMin: nil, rpeMax: nil, rirMin: 1, rirMax: 1) == "1 rep in reserve")
+        #expect(RoutinePresenter.runText(press, count: 3, measurement: .weightreps) == "3 sets of 8–12 reps with 2–3 left, from 12 kg")
+        #expect(Format.effort(rpeMin: 8, rpeMax: 8, rirMin: nil, rirMax: nil) == "2 reps left")
+        #expect(Format.effort(rpeMin: nil, rpeMax: nil, rirMin: 2, rirMax: 3) == "2–3 reps left")
+        #expect(Format.effort(rpeMin: nil, rpeMax: nil, rirMin: 1, rirMax: 1) == "1 rep left")
         #expect(
             RoutinePresenter.runText(
                 PlannedSet(key: "s1", repsMin: 5, repsMax: 5, loadPercent: 80, loadReference: .trainingmax),

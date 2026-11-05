@@ -41,7 +41,7 @@ struct RoutinePlanPresenterTests {
         #expect(plan.blocks.map(\.id) == RoutineEditor(routine).blocks.map(\.id))
         let leg = try #require(plan.blocks.first)
         #expect(leg.title == "Leg Press (Machine)")
-        #expect(leg.subtitle == "6\u{2013}10 reps at RPE 8, rest 2:30")
+        #expect(leg.subtitle == "6\u{2013}10 reps with 2 left, rest 2:30")
         #expect(leg.notes?.hasPrefix("Feet high") == true)
         #expect(leg.members.map(\.exercise) == ["leg-press-machine"])
         let lines = leg.lines
@@ -53,7 +53,7 @@ struct RoutinePlanPresenterTests {
                 "100 kg \u{00D7} 6\u{2013}10", "100 kg \u{00D7} 6\u{2013}10",
             ])
         #expect(lines.map(\.role) == [.warmup, .warmup, .working, .working, .working])
-        #expect(lines.map(\.rpe) == [nil, nil, "@ 8", "@ 8", "@ 8"])
+        #expect(lines.map(\.rpe) == [nil, nil, "2 left", "2 left", "2 left"])
         // The warm-up's own rest is its tag; the others take the slot's.
         #expect(lines[1].tags == [RowsTag(text: "rest 1:30", style: .grey)])
         #expect(lines[2].tags.isEmpty)
@@ -63,9 +63,9 @@ struct RoutinePlanPresenterTests {
         #expect(
             lines.map(\.last) == [
                 "last 40 \u{00D7} 12", "last 70 \u{00D7} 6", "last 105 \u{00D7} 9",
-                "last 105 \u{00D7} 9 @ 8.5", "last 105 \u{00D7} 8 @ 9",
+                "last 105 \u{00D7} 9 · 1–2 left", "last 105 \u{00D7} 8 · 1 left",
             ])
-        #expect(lines[2].sentence == "Set 1: 100 kilograms, 6 to 10 reps, RPE 8. Last time 105 kilograms, 9 reps.")
+        #expect(lines[2].sentence == "Set 1: 100 kilograms, 6 to 10 reps, 2 reps left. Last time 105 kilograms, 9 reps.")
         // Each line names its planned set.
         #expect(plan.ref(lines[3].id) == RoutinePlanSetRef(slot: "leg-press", set: "s2"))
         #expect(Set(plan.refs.values).count == routine.slots.reduce(0) { $0 + $1.sets.count })
@@ -127,10 +127,10 @@ struct RoutinePlanPresenterTests {
         #expect(
             lines.map(\.values) == [
                 "8\u{2013}12 reps", "10\u{2013}15 reps", "12\u{2013}15 reps", "10+ reps",
-                "to RIR 2\u{2013}3", "max reps",
+                "to 2\u{2013}3 left", "max reps",
             ])
         // An effort the values carry stands nowhere else.
-        #expect(lines.map(\.rpe) == ["@ 9", nil, nil, "RIR 1\u{2013}2", nil, nil])
+        #expect(lines.map(\.rpe) == ["1 left", nil, nil, "1\u{2013}2 left", nil, nil])
         let headers = block.items.compactMap { item -> String? in if case let .chainHeader(header) = item { header.text } else { nil } }
         #expect(headers == ["Set 3 as myo-reps, 0:15 between mini-sets"])
         #expect(lines.allSatisfy { $0.last == nil })
@@ -160,10 +160,10 @@ struct RoutinePlanPresenterTests {
         #expect(text(PlannedSet(key: "s", load: .kg(20), distance: Length(metres: 40)), .shortdistanceweight) == "20 kg for 40 m")
         #expect(text(PlannedSet(key: "s", durationMin: 120, distance: Length(metres: 500)), .distanceduration) == "500 m in 2:00")
         #expect(text(PlannedSet(key: "s"), .weightreps) == "any reps")
-        #expect(text(PlannedSet(key: "s", rpeMin: 8, rpeMax: 8), .bodyweightreps) == "to RPE 8")
+        #expect(text(PlannedSet(key: "s", rpeMin: 8, rpeMax: 8), .bodyweightreps) == "to 2 left")
         #expect(text(PlannedSet(key: "s", load: .kg(20), rpeMin: 8, rpeMax: 8), .weightreps) == "20 kg")
         #expect(text(PlannedSet(key: "s", repsMax: 12), .repsonly) == "\u{2264}12 reps")
-        #expect(RoutinePlanPresenter.effort(PlannedSet(key: "s", rpeMin: 7, rpeMax: d("8.5"))) == "@ 7\u{2013}8.5")
+        #expect(RoutinePlanPresenter.effort(PlannedSet(key: "s", rpeMin: 7, rpeMax: d("8.5"))) == "1\u{2013}3 left")
     }
 
     @Test("The open set's fields step a load by the exercise's grid and a range by its ends")
@@ -171,7 +171,7 @@ struct RoutinePlanPresenterTests {
         let (routine, catalog) = try Plan.routine(Plan.dayOne)
         let editor = try Plan.editor(routine, catalog, "leg-press", "s1")
         #expect(editor.title == "Set 1" && editor.setLabel == "1" && !editor.isWarmup && editor.structure == nil)
-        #expect(editor.fields.map(\.kind) == [.load, .repsMin, .repsMax])
+        #expect(editor.fields.map(\.kind) == [.load, .repsMin, .repsMax, .repsLeft])
         let load = editor.fields[0]
         #expect(load.value == "100" && load.unit == "kg" && load.isSet)
         #expect(load.minus?.title == "\u{2212}5" && load.minus?.change == .load(.kg(95)))
@@ -184,13 +184,12 @@ struct RoutinePlanPresenterTests {
         #expect(to.minus?.change == .reps(min: 6, max: 9) && to.plus?.change == .reps(min: 6, max: 11))
         // The rest: the slot's, until the set names its own.
         #expect(editor.rest == nil && editor.restDefault == 150 && editor.restText == "2:30 (default)")
-        // The RPE: 8 filled; a tap on it clears the target, on 9 sets it, `½` makes it 8.5.
-        let eight = try #require(editor.rpe.cells.first { $0.value == 8 })
-        let nine = try #require(editor.rpe.cells.first { $0.value == 9 })
-        #expect(eight.style == .filled && nine.style == .plain)
-        #expect(editor.change(for: eight) == .rpe(nil) && editor.change(for: nine) == .rpe(9))
-        #expect(editor.halfChange == .rpe(d("8.5")))
-        #expect(editor.rpe.accessibilityValue == "8, planned")
+        // Reps left, a target like the others: RPE 8 is 2 left; −1 is RPE 9, +1 RPE 7; No target clears it.
+        let left = editor.fields[3]
+        #expect(left.kind == .repsLeft && left.label == "Reps left" && left.value == "2" && left.unit == "reps left")
+        #expect(left.minus?.change == .rpe(9) && left.plus?.change == .rpe(7))
+        #expect(left.accessibilityValue == "2 reps left, planned")
+        #expect(editor.clearEffort == .rpe(nil))
 
         let warmup = try Plan.editor(routine, catalog, "leg-press", "w2")
         #expect(warmup.title == "Warm-up 2" && warmup.setLabel == "W" && warmup.isWarmup)
@@ -209,18 +208,20 @@ struct RoutinePlanPresenterTests {
                 ])
         ]
         let open = try Plan.editor(routine, catalog, "leg-press", "s1")
-        #expect(open.fields.map(\.value) == ["Auto", "Any"])
+        #expect(open.fields.map(\.value) == ["Auto", "Any", "Auto"])
         #expect(open.fields.allSatisfy { !$0.isSet && $0.minus == nil })
         // Monday's first working set was 105 kg.
         #expect(open.fields[0].plus?.change == .load(.kg(105)))
         #expect(open.fields[1].plus?.change == .reps(min: 8, max: 12))
-        #expect(open.rpe.shown == nil && open.halfChange == nil && open.rpe.accessibilityValue == "No RPE target")
+        // No effort target: + sets 2 left, and there is nothing to clear.
+        #expect(open.fields[2].plus?.change == .rpe(8) && open.clearEffort == nil)
 
         // One number is one field, stepping both ends; 1 goes no lower.
         let single = try Plan.editor(routine, catalog, "leg-press", "s2")
-        #expect(single.fields.map(\.label) == ["Load", "Reps"])
+        #expect(single.fields.map(\.label) == ["Load", "Reps", "Reps left"])
         #expect(single.fields[1].minus == nil && single.fields[1].plus?.change == .reps(min: 2, max: 2))
-        #expect(single.reserve == "Aims at 2 reps in reserve")
+        // Reps in reserve read as reps left, and a step writes an RPE in their place.
+        #expect(single.fields[2].value == "2" && single.fields[2].plus?.change == .rpe(7))
         // A low load steps down to nothing: the session suggests it again.
         let low = RoutinePlanPresenter.massField(
             .load, label: "Load", .kg(5), last: nil,
@@ -252,8 +253,8 @@ struct RoutinePlanPresenterTests {
         var routine = Routine(id: "core", name: "Core")
         routine.slots = [RoutineSlot(key: "plank", exercise: "plank", sets: [PlannedSet(key: "s1", durationMin: 30, durationMax: 60)])]
         let editor = try Plan.editor(routine, catalog, "plank", "s1")
-        #expect(editor.fields.map(\.label) == ["Hold from", "to"])
-        #expect(editor.fields.map(\.value) == ["0:30", "1:00"])
+        #expect(editor.fields.map(\.label) == ["Hold from", "to", "Reps left"])
+        #expect(editor.fields.map(\.value) == ["0:30", "1:00", "Auto"])
         #expect(editor.fields[0].plus?.change == .duration(min: 35, max: 60))
         #expect(editor.fields[1].minus?.change == .duration(min: 30, max: 55))
         let line = try #require(try Plan.present(routine, catalog).blocks.first?.lines.first)
@@ -261,7 +262,7 @@ struct RoutinePlanPresenterTests {
         // One time is one field, stepping both ends.
         routine.slots[0].sets[0].durationMax = 30
         let single = try Plan.editor(routine, catalog, "plank", "s1")
-        #expect(single.fields.map(\.label) == ["Hold"])
+        #expect(single.fields.map(\.label) == ["Hold", "Reps left"])
         #expect(single.fields[0].plus?.change == .duration(min: 35, max: 35))
     }
 }

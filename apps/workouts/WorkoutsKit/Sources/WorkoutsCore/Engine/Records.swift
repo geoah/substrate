@@ -212,6 +212,7 @@ public extension SessionEngine {
             rpeScale: .rirbased,
             reachedFailure: values.reachedFailure == true ? true : nil,
             failedRepAttempted: values.failedRepAttempted == true ? true : nil,
+            stopReason: values.stopReason,
             completionMethod: performed.completion,
             notes: row.notes,
             timeBasis: bulk ? .session : .completion,

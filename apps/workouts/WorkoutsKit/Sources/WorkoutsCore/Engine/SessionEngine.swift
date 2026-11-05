@@ -273,7 +273,7 @@ struct Reduction {
         let notes = edit.note.applied(to: row.notes).flatMap(trimmedNote)
         switch edit.values.rpe {
         case .set: state.rows[edit.row]?.rpePrefillDeclined = false
-        case .cleared: state.rows[edit.row]?.rpePrefillDeclined = true
+        case .cleared: state.rows[edit.row]?.rpePrefillDeclined = !edit.values.restoresRPEPrefill
         case .unchanged: break
         }
         guard var performed = row.performed else {

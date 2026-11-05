@@ -161,7 +161,7 @@ public enum RoutinePlanPresenter {
             case (nil, nil):
                 if planned.termination == .amrap { return "max reps" }
                 if aimsAtEffort(planned, measurement: measurement), let effort = effort(planned) {
-                    return "to \(effort.replacingOccurrences(of: "@ ", with: "RPE "))"
+                    return "to \(effort)"
                 }
                 return "any reps"
             }
@@ -199,10 +199,10 @@ public enum RoutinePlanPresenter {
     }
 
     /// The plan's effort beside the values, as a session writes a rating:
-    /// `@ 8`, `@ 7–8`; reps in reserve as `RIR 2`, `RIR 2–3`.
+    /// `2 left`, `2–3 left`, from RPE or from reps in reserve.
     public static func effort(_ planned: PlannedSet) -> String? {
-        if let range = Format.rpeRange(planned.rpeMin, planned.rpeMax) { return "@ \(range)" }
-        return Format.rpeRange(planned.rirMin, planned.rirMax).map { "RIR \($0)" }
+        Format.effortRange(rpeMin: planned.rpeMin, rpeMax: planned.rpeMax, rirMin: planned.rirMin, rirMax: planned.rirMax)
+            .map { "\($0) left" }
     }
 }
 
@@ -314,8 +314,10 @@ struct PlanBuilder {
                 if let min = first.durationMin { aim = "\(Format.durationRange(min, first.durationMax ?? min)) holds" }
             }
             let effort = Format.effort(rpeMin: first.rpeMin, rpeMax: first.rpeMax, rirMin: first.rirMin, rirMax: first.rirMax)
+            let left = Format.effortRange(
+                rpeMin: first.rpeMin, rpeMax: first.rpeMax, rirMin: first.rirMin, rirMax: first.rirMax)
             switch (aim, effort) {
-            case let (aim?, effort?): parts.append("\(aim) at \(effort)")
+            case let (aim?, effort?): parts.append(left.map { "\(aim) with \($0) left" } ?? "\(aim), \(effort)")
             case let (aim?, nil): parts.append(aim)
             case let (nil, effort?): parts.append("each set to \(effort)")
             case (nil, nil): break

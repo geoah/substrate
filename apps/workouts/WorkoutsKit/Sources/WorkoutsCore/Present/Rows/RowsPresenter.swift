@@ -118,8 +118,10 @@ struct RowsBuilder {
             let effort = Format.effort(
                 rpeMin: target.rpeMin, rpeMax: target.rpeMax, rirMin: target.rirMin,
                 rirMax: target.rirMax)
+            let left = Format.effortRange(
+                rpeMin: target.rpeMin, rpeMax: target.rpeMax, rirMin: target.rirMin, rirMax: target.rirMax)
             switch (aim, effort) {
-            case let (aim?, effort?): parts.append("\(aim) at \(effort)")
+            case let (aim?, effort?): parts.append(left.map { "\(aim) with \($0) left" } ?? "\(aim), \(effort)")
             case let (aim?, nil): parts.append(aim)
             case let (nil, effort?): parts.append("each set to \(effort)")
             case (nil, nil): break
@@ -392,6 +394,10 @@ struct RowsBuilder {
         if let roleText = view?.label.roleText {
             tags.append(RowsTag(text: roleText == "Top" ? "top set" : "back-off", style: .grey))
         }
+        // Why a done set ended, in a word; pain in orange, for the coach and the owner alike.
+        if let reason = done?.stopReason {
+            tags.append(RowsTag(text: StopReasonText.short(reason).lowercased(), style: reason == .pain ? .orange : .grey))
+        }
 
         var changes: [RowsChange] = []
         var verdict: RowsVerdict?
@@ -411,7 +417,7 @@ struct RowsBuilder {
         let sentence: String
         switch rowState {
         case .done:
-            let rpe = done?.rpe.map { ", RPE \(Format.rpe($0))" + (done?.rpeMethod == .prefilled ? " as planned" : "") } ?? ""
+            let rpe = done?.rpe.map { ", \(RowsText.spokenRepsLeft($0))" + (done?.rpeMethod == .prefilled ? " as planned" : "") } ?? ""
             let change = RowsText.spokenChanges(changes, unit: unit)
             let mark = verdict.flatMap { changes == [RowsText.sameAsLastTime] && $0 == .same ? nil : ", \($0.spoken)" } ?? ""
             sentence = "\(who), done: \(spokenNow)\(rpe). \(change)\(mark)."
@@ -460,7 +466,7 @@ struct RowsBuilder {
             isChained: !row.isHead && row.side == nil,
             values: values,
             valuesChanged: row.isPending && changedFromSuggestion(row.entered, ghost: ghost, measurement: measurement),
-            rpe: rpeShown.map { "@ \(Format.rpe($0))" },
+            rpe: rpeShown.map(Format.repsLeft),
             rpeIsPrefilled: done?.rpeMethod == .prefilled,
             tags: tags,
             collapsedTag: rowState == .now ? RowsTag(text: "up next", style: .accent) : nil,
@@ -632,6 +638,8 @@ struct RowsBuilder {
             timeStep: card?.timeStep ?? exercise?.resolvedTimeStep ?? 5,
             rpeOffered: true,
             rpeOpen: head.role != .warmup && measurement.recordsReps && (previousRated || plannedEffort),
+            plannedRPE: (row.side != nil && !row.isHead ? head.target : row.target)?.effortTop,
+            offersStop: head.role != .warmup,
             logPrefix: logPrefix(row, head: head),
             timer: timer,
             secondary: secondary,
@@ -849,8 +857,8 @@ struct RowsBuilder {
         return RowsNextPart(
             row: item.id, exercise: exercise, setLabel: item.setLabel, isWarmup: item.role == .warmup, label: label,
             tint: editor.tint, fields: editor.fields,
-            rpe: editor.rpe?.shown.map { "@ \(Format.rpe($0))" },
-            rpeStrip: editor.rpe,
+            rpe: editor.effort?.shown.map(Format.repsLeft),
+            effort: editor.effort,
             primary: RowsButton(
                 title: word, accessibilityLabel: editor.primary.accessibilityLabel,
                 action: editor.primary.action, isEnabled: editor.primary.isEnabled),

@@ -1,12 +1,13 @@
 import SwiftUI
 import WorkoutsCore
 
-/// The RPE sheet (DESIGN.md §7.6): 6 to 10 in half steps on the RIR-based
-/// scale with Hevy's wording, a −0.5 and a +0.5 beside the value, a slider
-/// and a tappable scale, Clear and Done. While a rest runs, its countdown and
-/// a compact −15, +15 and Skip stay at the top, since the rest bar steps
-/// aside while a sheet is up. A timed or distance set ("Rate effort") gets
-/// no reps-in-reserve line. The system's sheet glass, no custom background.
+/// The reps-left sheet (DESIGN.md §7.6): 0 to 4+ reps left, a −1 and a +1
+/// beside the value, a tappable scale, Clear and Done. The value is kept as
+/// the RIR-based RPE every set is logged with (RPE = 10 − reps left). While a
+/// rest runs, its countdown and a compact −15, +15 and Skip stay at the top,
+/// since the rest bar steps aside while a sheet is up. A timed or distance
+/// set ("Rate effort") gets no reps line. The system's sheet glass, no custom
+/// background.
 struct RPESheet: View {
     let rowID: RowID
 
@@ -14,35 +15,23 @@ struct RPESheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var value: Decimal?
-    @State private var slider: Double = 8
     @State private var showsHelp = false
 
     private var row: SetRowPresentation? { session.presentation?.row(rowID) }
     private var measurement: MeasurementType? { row.flatMap { session.presentation?.card($0.slot)?.measurement } }
 
-    private static let lowest: Decimal = 6
-    private static let highest: Decimal = 10
-    private static let step = Decimal(string: "0.5") ?? 0.5
+    /// RPE 10 to 6: 0 to 4+ reps left, whole reps.
+    private static let scaleValues: [Decimal] = [10, 9, 8, 7, 6]
 
     var body: some View {
         VStack(spacing: 10) {
             header
             HStack(spacing: 12) {
-                stepButton(by: -Self.step)
+                stepButton(fewer: true)
                 valueText
                     .frame(maxWidth: .infinity)
-                stepButton(by: Self.step)
+                stepButton(fewer: false)
             }
-            // With no RPE yet the thumb is only a resting place: dimmed, and
-            // Done waits for a value, so what Done saves is what is shown.
-            Slider(value: $slider, in: 6 ... 10, step: 0.5) {
-                Text("RPE")
-            } onEditingChanged: { _ in
-                value = Decimal(slider)
-            }
-            .tint(value == nil ? .secondary : .accentColor)
-            .opacity(value == nil ? 0.4 : 1)
-            .accessibilityValue(value.map(Format.rpe) ?? "not rated")
             scale
             HStack {
                 Button("Clear") {
@@ -65,20 +54,18 @@ struct RPESheet: View {
         // screen, so Done is never below the edge.
         .presentationDetents(typeSize > .large ? [.medium, .large] : [.height(320), .large])
         .animation(.snappy, value: value)
-        .onChange(of: slider) { _, new in value = Decimal(new) }
         .onAppear {
             value = row?.rpe
-            if let rpe = row?.rpe { slider = NSDecimalNumber(decimal: rpe).doubleValue }
         }
     }
 
-    /// The value, its headline and, for a rep set, the reps in reserve.
+    /// The reps left, their headline and, for a rep set, what they mean.
     private var valueText: some View {
         VStack(spacing: 4) {
-            Text(value.map(Format.rpe) ?? " ")
+            Text(value.map { "\(RowsEffort.number($0)) left" } ?? " ")
                 .font(.system(.largeTitle, design: .rounded, weight: .bold).monospacedDigit())
                 .contentTransition(.numericText())
-            Text(value.flatMap(RPEScaleText.headline) ?? RPEScaleText.emptyHeadline)
+            Text(value.flatMap(RPEScaleText.headline) ?? "Reps left")
                 .font(.headline)
             if let reserve {
                 Text(reserve)
@@ -90,24 +77,20 @@ struct RPESheet: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// No line for a timed or distance set: reps in reserve mean nothing there.
+    /// No line for a timed or distance set: reps mean nothing there.
     private var reserve: String? {
-        guard let value else { return RPEScaleText.emptyReserve }
+        guard let value else { return "Tap how many more good reps you had in you" }
         guard let measurement else { return RPEScaleText.reserve(value) }
         return RPEScaleText.reserve(value, measurement: measurement)
     }
 
-    /// −0.5 or +0.5, 44 pt. With no value yet it moves from the slider's
-    /// resting place.
-    private func stepButton(by delta: Decimal) -> some View {
-        let current = value ?? Decimal(slider)
-        let next = min(Self.highest, max(Self.lowest, current + delta))
-        let less = delta < 0
+    /// −1 or +1 rep left, 44 pt. With no value yet, one either side of 2 left.
+    private func stepButton(fewer: Bool) -> some View {
+        let next = RowsEffort.stepped(value, fewer: fewer)
         return Button {
-            value = next
-            slider = NSDecimalNumber(decimal: next).doubleValue
+            if let next { value = next }
         } label: {
-            Image(systemName: less ? "minus" : "plus")
+            Image(systemName: fewer ? "minus" : "plus")
                 .font(.title3.weight(.semibold))
                 .frame(width: 44, height: 44)
                 .background(Color(.tertiarySystemFill), in: .circle)
@@ -115,26 +98,25 @@ struct RPESheet: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.tint)
-        .disabled(value != nil && next == value)
-        .accessibilityLabel(less ? "RPE half a point lower" : "RPE half a point higher")
+        .disabled(next == nil)
+        .accessibilityLabel(fewer ? "1 rep left fewer" : "1 rep left more")
     }
 
-    /// The values, each a tap target.
+    /// 0 to 4+, each a tap target.
     private var scale: some View {
         HStack(spacing: 0) {
-            ForEach(RPEScaleText.values, id: \.self) { rpe in
+            ForEach(Self.scaleValues, id: \.self) { rpe in
                 Button {
                     value = rpe
-                    slider = NSDecimalNumber(decimal: rpe).doubleValue
                 } label: {
-                    Text(Format.rpe(rpe))
-                        .font(.footnote.monospacedDigit().weight(value == rpe ? .bold : .regular))
+                    Text(RowsEffort.number(rpe))
+                        .font(.body.monospacedDigit().weight(value == rpe ? .bold : .regular))
                         .foregroundStyle(value == rpe ? Color.accentColor : .secondary)
-                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("RPE \(Format.rpe(rpe))")
+                .accessibilityLabel("\(RowsEffort.number(rpe)) reps left")
             }
         }
     }
@@ -154,10 +136,10 @@ struct RPESheet: View {
                     .font(.title3)
                     .frame(width: 44, height: 44)
             }
-            .accessibilityLabel("About RPE")
+            .accessibilityLabel("About reps left")
             .popover(isPresented: $showsHelp) {
                 Text(
-                    "RPE says how hard the set was by the reps left in you: 10, none left; 9, one; 8, two; 7, three; 6, four or more. A half step means maybe one more."
+                    "Reps left says how hard the set was: how many more good reps you had in you. 0, none; 1, one more; 4+, four or more."
                 )
                 .font(.footnote)
                 .padding()
@@ -177,7 +159,7 @@ struct RPESheet: View {
     }
 }
 
-/// The running rest at the top of the RPE sheet: its label and countdown,
+/// The running rest at the top of the reps-left sheet: its label and countdown,
 /// then a compact −15, +15 and Skip (§7.6). Content in a sheet, so plain
 /// fills, not glass; each control is 44 pt tall.
 ///

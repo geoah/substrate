@@ -284,7 +284,8 @@ public enum HistoryPresenter {
     }
 
     /// One record as text, by its exercise's measurement, else by what it
-    /// holds. Only a rated RPE is shown: a pre-filled or copied one is no rating.
+    /// holds. Only rated reps left are shown: a pre-filled or copied value is
+    /// no rating. Why it ended follows, in a word: `· form`.
     static func text(of set: PerformedSet, measurement: MeasurementType?) -> String {
         let values = SetValues(
             load: set.load, assistance: set.assistance, reps: set.reps, duration: set.duration,
@@ -304,7 +305,9 @@ public enum HistoryPresenter {
                 case (nil, false, false): .duration
                 }
             }()
-        return Format.set(values, measurement: inferred, rpe: true)
+        let text = Format.set(values, measurement: inferred, rpe: true)
+        guard let reason = set.stopReason else { return text }
+        return text + " \u{00B7} " + StopReasonText.short(reason).lowercased()
     }
 
     static func zone(of session: TrainingSession, _ settings: PresenterSettings) -> TimeZone {

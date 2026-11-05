@@ -3,8 +3,8 @@ import WorkoutsCore
 
 /// A planned set open in place on the routine page: the panel a session
 /// opens on its set (DESIGN.md §7.6a), for the plan's targets. The header
-/// (the label and the set), each target with its steppers, the RPE stops
-/// with the target filled, the rest after the set, and Done; its `…` holds
+/// (the label and the set), each target with its steppers, reps left among
+/// them, the rest after the set, and Done; its `…` holds
 /// the set's role, its place, More options (its label, how it ends) and
 /// Delete. Every number and step comes from `RoutinePlanSetEditor`; each
 /// step is kept in the draft at once.
@@ -33,26 +33,24 @@ struct PlanSetPanel<MenuItems: View>: View {
                 ForEach(editor.fields) { field in
                     PlanFieldRow(field: field, tint: tint) { apply($0) }
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("RPE target")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    RowsRPEStripView(strip: editor.rpe, tint: tint) { cell in
+                if let clear = editor.clearEffort {
+                    Button {
                         Haptics.shared.play(.step)
-                        apply(editor.change(for: cell))
-                    } onHalf: { _ in
-                        guard let change = editor.halfChange else { return }
-                        Haptics.shared.play(.step)
-                        apply(change)
+                        apply(clear)
+                    } label: {
+                        Label("No target", systemImage: "xmark")
+                            .labelStyle(.titleAndIcon)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(tint)
+                            .padding(.horizontal, 10)
+                            .frame(minHeight: 28)
+                            .background(tint.opacity(0.13), in: .capsule)
+                            .frame(minHeight: 44)
+                            .contentShape(.rect)
                     }
-                    if let reserve = editor.reserve {
-                        Text(reserve)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("No reps left target")
                 }
-                .padding(.top, 6)
                 rest
                     .padding(.top, 6)
             }

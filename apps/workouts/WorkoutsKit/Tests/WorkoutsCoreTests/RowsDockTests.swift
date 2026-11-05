@@ -473,7 +473,7 @@ struct RowsIslandWordsTests {
         var opened = session
         try opened.perform(.touch(working.id), at: 5)
         let set = try #require(try opened.layout(at: 6).island.next)
-        #expect(set.rpe == "@ 8" && set.rpeStrip?.isCollapsed == false)
+        #expect(set.rpe == "2 left" && set.effort?.isCollapsed == false)
         #expect(set.fields.allSatisfy { $0.minus != nil && $0.plus != nil })
     }
 

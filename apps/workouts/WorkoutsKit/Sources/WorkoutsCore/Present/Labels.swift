@@ -254,6 +254,27 @@ public enum RPEScaleText {
     public static let emptyReserve = "Slide or tap to rate your effort"
 }
 
+/// Why a set ended, in words (`set.stopReason`).
+public enum StopReasonText {
+    /// `Muscles gave out`, `Form broke down`, `Pain or discomfort`.
+    public static func title(_ reason: StopReason) -> String {
+        switch reason {
+        case .fatigue: "Muscles gave out"
+        case .technique: "Form broke down"
+        case .pain: "Pain or discomfort"
+        }
+    }
+
+    /// The word a chip and a logged line show: `Fatigue`, `Form`, `Pain`.
+    public static func short(_ reason: StopReason) -> String {
+        switch reason {
+        case .fatigue: "Fatigue"
+        case .technique: "Form"
+        case .pain: "Pain"
+        }
+    }
+}
+
 /// The Finish sheet's session RPE words (§7.7, the CR10 scale's anchors
 /// carried over to the unlabelled values).
 public enum SessionRPEText {

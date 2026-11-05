@@ -46,8 +46,8 @@ public struct RowsEditor: Codable, Equatable, Sendable {
     public var reason: String?
     /// Load and reps, or the time, or distance and load, in the grid's order.
     public var fields: [RowsField]
-    /// The RPE strip; nil for a row that takes none.
-    public var rpe: RowsRPEStrip?
+    /// Reps left and why the set ended; nil for a row that takes none.
+    public var effort: RowsEffort?
     /// A timed row's clock and track; nil otherwise.
     public var timer: RowsTimer?
     /// Log (`Log 110 kg × 8 @ 8`), Start, Stop and log, or Save.
@@ -61,7 +61,7 @@ public struct RowsEditor: Codable, Equatable, Sendable {
 
     public init(
         row: RowID, mode: Mode, tint: Tint, title: String, setLabel: String, caption: String?, note: RowsNote?, trailingNote: String?,
-        reason: String?, fields: [RowsField], rpe: RowsRPEStrip?, timer: RowsTimer?, primary: RowsButton,
+        reason: String?, fields: [RowsField], effort: RowsEffort?, timer: RowsTimer?, primary: RowsButton,
         secondary: RowsButton?, delete: RowsButton?, cancelTitle: String?
     ) {
         self.row = row
@@ -74,7 +74,7 @@ public struct RowsEditor: Codable, Equatable, Sendable {
         self.trailingNote = trailingNote
         self.reason = reason
         self.fields = fields
-        self.rpe = rpe
+        self.effort = effort
         self.timer = timer
         self.primary = primary
         self.secondary = secondary
@@ -275,102 +275,165 @@ public struct RowsKeypadChip: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-/// The RPE control: five whole stops, 6 to 10, and a `½` toggle that adds
-/// or takes away the half point, so every half step is two taps away and the
-/// control fits inside the card. The stop holding the value shows it (`8.5`).
-/// A value that is no rating yet (the plan's pre-fill, or a logged pre-filled
-/// or copied value) is outlined, hollow; a tap on it rates it. A rating is
-/// filled solid; a tap on it clears it.
-public struct RowsRPEStrip: Codable, Equatable, Sendable {
-    /// 6, 7, 8, 9 and 10.
-    public var cells: [RowsRPECell]
-    /// The `½` toggle.
-    public var half: RowsRPEHalf
-    /// The value the strip shows, rated or not.
+/// Reps left, built like the load and reps fields: the number, `reps left`,
+/// last time, a reset chip, and `−1` / `+1` under the thumb. 0 to 4, where 4
+/// reads `4+` (RPE 6, "could do 4 or more"); on the RIR-based scale every set
+/// is logged on, the value is `rpe` = 10 − reps left, never converted. The
+/// plan's value is pre-filled hollow, not yet a rating: a step or a tap on the
+/// number rates it, and the reset chip goes back to it. Beside it, why the
+/// set ended (`stop`).
+///
+/// It holds the values its patches are made of, not the patches: an editor
+/// and its line are built and copied on the presenter's stack many times
+/// over, and a patch per control made the frames outgrow a thread's stack.
+public struct RowsEffort: Codable, Equatable, Sendable {
+    /// `2`, `1–2`, `4+`; nil with no value and nothing pre-filled.
+    public var value: String?
+    /// The RPE the number stands for, rated or not.
     public var shown: Decimal?
-    /// `shown` is the owner's rating (a tap, or an imported value).
+    /// `reps left`; `left` on a timed or distance set, where reps mean nothing.
+    public var unit: String
+    /// `shown` is the owner's rating (a step, a tap, or an imported value):
+    /// drawn solid. Otherwise hollow, as the plan's pre-fill or a copy.
     public var isRated: Bool
-    /// Hidden behind `addTitle` until the owner opens it (view state): no value, no
-    /// pre-fill and no rating last time, or a warm-up or timed set.
+    /// `last 2`, after the unit; nil with no rating last time.
+    public var last: String?
+    /// The reset chip: back to the plan's value, or to what was logged when fixing.
+    public var back: Back?
+    /// The RPE `−1` and `+1` rate; nil past the ends (0 and 4+).
+    public var fewer: Decimal?
+    public var more: Decimal?
+    /// Hidden behind `addTitle` until the owner opens it (view state): no
+    /// value, no pre-fill and no rating last time, or a warm-up or timed set.
     public var isCollapsed: Bool
-    /// `RPE`, after a plus symbol: one line at every text size.
+    /// `Reps left`, after a plus symbol.
     public var addTitle: String
-    /// `Leg Press (Machine), set 2, RPE`.
+    /// Why the set ended; nil on a warm-up.
+    public var stop: RowsStopMenu?
+    /// What the header says for a moment after a step: `2 left: hard`.
+    public var meaning: String?
+    /// `Leg Press (Machine), set 2, reps left`.
     public var accessibilityLabel: String
-    /// `8, planned, not rated yet`, `8.5`, `9, copied from last time`, `not rated`.
+    /// `2, planned, not rated yet`, `1`, `not rated`.
     public var accessibilityValue: String
 
+    /// Where the reset chip goes.
+    public enum Back: Codable, Equatable, Sendable {
+        /// The plan's value, unrated, shown as `↺ 2`.
+        case plan(Decimal)
+        /// No value: a rating where the plan names none.
+        case clear
+        /// What a fixed set was logged with, `↺ was 2`; nil when it had none.
+        case logged(Decimal?, EffortMethod?)
+    }
+
     public init(
-        cells: [RowsRPECell], half: RowsRPEHalf, shown: Decimal?, isRated: Bool, isCollapsed: Bool, addTitle: String,
+        value: String?, shown: Decimal?, unit: String, isRated: Bool, last: String?, back: Back?, fewer: Decimal?,
+        more: Decimal?, isCollapsed: Bool, addTitle: String, stop: RowsStopMenu?, meaning: String?,
         accessibilityLabel: String, accessibilityValue: String
     ) {
-        self.cells = cells
-        self.half = half
+        self.value = value
         self.shown = shown
+        self.unit = unit
         self.isRated = isRated
+        self.last = last
+        self.back = back
+        self.fewer = fewer
+        self.more = more
         self.isCollapsed = isCollapsed
         self.addTitle = addTitle
+        self.stop = stop
+        self.meaning = meaning
         self.accessibilityLabel = accessibilityLabel
         self.accessibilityValue = accessibilityValue
     }
 
-    public static let addTitle = "RPE"
+    public static let addTitle = "Reps left"
+    /// The most reps left the control says: 4 reads `4+`.
+    public static let most: Decimal = 4
+
+    /// `−1`: one rep left fewer, rated.
+    public var minus: RowsStep? {
+        fewer.map { RowsStep(title: "\u{2212}1", accessibilityLabel: "1 rep left fewer", patch: .enteringRPE($0)) }
+    }
+
+    /// `+1`: one rep left more, rated.
+    public var plus: RowsStep? {
+        more.map { RowsStep(title: "+1", accessibilityLabel: "1 rep left more", patch: .enteringRPE($0)) }
+    }
+
+    /// A tap on the hollow number rates it as shown; nil once rated.
+    public var rate: SetValuesPatch? {
+        isRated ? nil : shown.map(SetValuesPatch.enteringRPE)
+    }
+
+    /// The reset chip and its patch.
+    public var reset: RowsReset? {
+        switch back {
+        case nil:
+            return nil
+        case let .plan(rpe):
+            let text = Self.number(rpe)
+            return RowsReset(text: text, accessibilityLabel: "Back to \(text) left, as planned", patch: .restoringRPEPrefill)
+        case .clear:
+            return RowsReset(text: "clear", accessibilityLabel: "Clear reps left", patch: .clearingRPE)
+        case let .logged(rpe, method):
+            let was = rpe.map(Self.number) ?? "empty"
+            let patch = rpe.map { SetValuesPatch(rpe: .set($0), rpeMethod: method) } ?? .clearingRPE
+            return RowsReset(text: "was \(was)", accessibilityLabel: "Back to \(was), as logged", patch: patch)
+        }
+    }
 }
 
-/// The `½` beside the RPE stops: on when the value has a half point.
-public struct RowsRPEHalf: Codable, Equatable, Sendable {
-    /// `½`.
-    public var text: String
-    public var isOn: Bool
-    /// The value with the half point added or taken away, rated; nil when
-    /// there is no value yet, or at 10.
-    public var patch: SetValuesPatch?
-    /// What the header says for a moment after the tap.
-    public var meaning: String?
-    /// `Add half a point`, `Take off the half point`.
+/// Why the set ended, a menu beside reps left: three reasons and none.
+public struct RowsStopMenu: Codable, Equatable, Sendable {
+    /// `Why stop?` with none chosen, else the reason's word: `Form`, `Pain`.
+    public var title: String
+    public var selected: StopReason?
+    /// `Leg Press (Machine), set 2, why the set ended`.
     public var accessibilityLabel: String
+    /// `Form broke down`, `not said`.
+    public var accessibilityValue: String
 
-    public init(text: String, isOn: Bool, patch: SetValuesPatch?, meaning: String?, accessibilityLabel: String) {
-        self.text = text
-        self.isOn = isOn
-        self.patch = patch
-        self.meaning = meaning
+    public init(title: String, selected: StopReason?, accessibilityLabel: String, accessibilityValue: String) {
+        self.title = title
+        self.selected = selected
         self.accessibilityLabel = accessibilityLabel
+        self.accessibilityValue = accessibilityValue
+    }
+
+    public static let title = "Why stop?"
+
+    /// The three reasons, the chosen one marked; a tap on it takes it back.
+    public var options: [RowsStopOption] {
+        StopReason.allCases.map { reason in
+            RowsStopOption(
+                reason: reason, title: StopReasonText.title(reason), isSelected: reason == selected,
+                patch: .stopping(reason == selected ? nil : reason))
+        }
+    }
+
+    /// `No reason`, which clears a chosen one; nil with none chosen.
+    public var clear: SetValuesPatch? {
+        selected == nil ? nil : .stopping(nil)
     }
 }
 
-/// One stop of the RPE control (at least 44 pt wide).
-public struct RowsRPECell: Codable, Equatable, Sendable, Identifiable {
-    public enum Style: String, Codable, Equatable, Sendable {
-        case plain
-        /// Shown but no rating: the plan's pre-fill, or a pre-filled or copied
-        /// value. An outline, hollow, at the cell's full size.
-        case outlined
-        /// The owner's rating: filled solid, the fill inset in the cell (no halo).
-        case filled
-    }
-
-    /// The value the stop sets or shows: its whole number, or the shown value with its half point.
-    public var value: Decimal
-    /// `8`, `8.5`.
-    public var text: String
-    /// It shows a half step.
-    public var isHalf: Bool
-    public var style: Style
-    /// A tap: `enteringRPE(value)`, on an outlined cell too (it then counts as
-    /// rated), or `clearingRPE` on the filled cell.
+/// One reason in the stop menu.
+public struct RowsStopOption: Codable, Equatable, Sendable, Identifiable {
+    public var reason: StopReason
+    /// `Muscles gave out`, `Form broke down`, `Pain or discomfort`.
+    public var title: String
+    public var isSelected: Bool
+    /// The reason chosen; on the chosen one, no reason.
     public var patch: SetValuesPatch
-    /// What the header says for a moment after the tap: `RPE 8.5: could do 1 more rep, maybe 2`.
-    public var meaning: String
-    public var id: String { text }
+    public var id: StopReason { reason }
 
-    public init(value: Decimal, text: String, isHalf: Bool, style: Style, patch: SetValuesPatch, meaning: String) {
-        self.value = value
-        self.text = text
-        self.isHalf = isHalf
-        self.style = style
+    public init(reason: StopReason, title: String, isSelected: Bool, patch: SetValuesPatch) {
+        self.reason = reason
+        self.title = title
+        self.isSelected = isSelected
         self.patch = patch
-        self.meaning = meaning
     }
 }
 
@@ -483,6 +546,7 @@ public struct RowsFix: Codable, Equatable, Sendable {
             patch.rpe = draft.rpe.map(FieldPatch.set) ?? .cleared
             patch.rpeMethod = draft.rpe == nil ? nil : draft.rpeMethod ?? .entered
         }
+        patch.stopReason = field(draft.stopReason, logged.stopReason)
         return changed ? patch : nil
     }
 }
@@ -518,9 +582,14 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
     var loadStep: Mass
     var grid: RowsGrid?
     var timeStep: Seconds
-    /// The strip exists; with `rpeOpen` it shows with no value.
+    /// Reps left exists; with `rpeOpen` it shows with no value.
     var rpeOffered: Bool
     var rpeOpen: Bool
+    /// The plan's effort for the row (`SetTarget.effortTop`), which the
+    /// reset chip goes back to.
+    var plannedRPE: Decimal?
+    /// The row says why it ended: a working set, not a warm-up.
+    var offersStop: Bool
     /// `Log`, `Log warm-up`, `Log drop`, `Log A2,`, `Log mini-set 3,`.
     var logPrefix: String
     var timer: RowsTimer?
@@ -532,12 +601,12 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
     func editor(values: SetValues, rpe: RowRPE, commit: SetValues?, canCommit: Bool, isMissing: [ValueField]) -> RowsEditor {
         let shownFields = fields.filter { !(isRunning && $0 == .duration) }
         let fieldPresentations = shownFields.map { field($0, values: values, missing: isMissing.contains($0)) }
-        let strip = rpeOffered ? rpeStrip(rpe) : nil
+        let effort = rpeOffered ? effort(rpe, values: values) : nil
         let primary: RowsButton
         var secondary = secondary
         var delete: RowsButton?
         let shown = shownValues(values)
-        let effort = commit?.rpe ?? rpe.shown
+        let shownEffort = commit?.rpe ?? rpe.shown
         // A mini-set's editor holds its reps alone; its load is the activation's.
         let repsAlone = fields == [.reps] && measurement.loadMode != nil && measurement.loadMode != .bodyweight
         func text(_ values: SetValues) -> String {
@@ -549,12 +618,12 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
         case .fix:
             let text = text(commit ?? shown)
             primary = RowsButton(
-                title: "Save" + (text.isEmpty ? "" : " \(text)") + RowsText.effortSuffix(effort),
+                title: "Save" + (text.isEmpty ? "" : " \(text)") + RowsText.effortSuffix(shownEffort),
                 action: .edit(row, SetValuesPatch()), isEnabled: canCommit)
             delete = RowsButton(title: "Delete set", accessibilityLabel: "Delete \(spoken)", action: .removeSet(row))
         case .log:
             let text = text(commit ?? shown)
-            let logTitle = RowsText.logTitle(prefix: logPrefix, values: text, rpe: effort)
+            let logTitle = RowsText.logTitle(prefix: logPrefix, values: text, rpe: shownEffort)
             if timer != nil, measurement.hasTimer {
                 if isRunning {
                     primary = RowsButton(
@@ -574,7 +643,7 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
         }
         return RowsEditor(
             row: row, mode: mode, tint: tint, title: title, setLabel: setLabel, caption: caption, note: note,
-            trailingNote: trailingNote, reason: reason, fields: fieldPresentations, rpe: strip, timer: timer,
+            trailingNote: trailingNote, reason: reason, fields: fieldPresentations, effort: effort, timer: timer,
             primary: primary,
             secondary: secondary, delete: delete, cancelTitle: mode == .fix ? "Cancel" : nil)
     }
@@ -732,43 +801,92 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
             field: field, title: title, chipsTitle: chips.isEmpty ? nil : chipsTitle, chips: chips,
             allowsDecimal: field == .load || field == .assistance || field == .distance, unit: unit)
     }
+}
 
-    func rpeStrip(_ rpe: RowRPE) -> RowsRPEStrip {
+extension RowsEditorSource {
+    /// Reps left for the row: its value rated or not, the steps from it (from
+    /// last time's, else 2, when empty), the reset chip and why it ended.
+    func effort(_ rpe: RowRPE, values: SetValues) -> RowsEffort {
         let shown = rpe.shown
         let isRated = if case let .value(_, method) = rpe { method.isRating } else { false }
-        func meaning(_ value: Decimal) -> String {
-            let words = RPEScaleText.reserve(value, measurement: measurement) ?? RPEScaleText.headline(value)
-            return "RPE \(Format.rpe(value))" + (words.map { ": \($0.lowercasedFirst)" } ?? "")
+        let last = previous.flatMap { $0.rpe }
+        let left = shown.map { max(0, 10 - $0) }
+        let seed = left ?? last.map { max(0, 10 - $0) } ?? 2
+        func rated(_ newLeft: Decimal) -> Decimal? {
+            newLeft >= 0 && newLeft <= RowsEffort.most ? 10 - newLeft : nil
         }
-        let cells = RPEScaleText.values.filter { $0 == $0.roundedTo(0) }.map { whole in
-            // The stop holding the value stands for it, half point and all.
-            let holds = shown.map { $0 >= whole && $0 < whole + 1 } ?? false
-            let value = holds ? shown ?? whole : whole
-            let style: RowsRPECell.Style = holds ? (isRated ? .filled : .outlined) : .plain
-            return RowsRPECell(
-                value: value, text: Format.rpe(value), isHalf: value != value.roundedTo(0), style: style,
-                patch: style == .filled ? .clearingRPE : .enteringRPE(value), meaning: meaning(value))
+        // From a half point, a step lands on the whole count beside it.
+        let whole = seed.roundedTo(0) == seed
+        let fewer = left == nil || whole ? seed - 1 : (seed - Decimal(5) / 10).roundedTo(0)
+        let more = left == nil || whole ? seed + 1 : (seed + Decimal(5) / 10).roundedTo(0)
+        var back: RowsEffort.Back?
+        switch mode {
+        case .log:
+            if isRated, let shown, let plannedRPE, shown != plannedRPE {
+                back = .plan(plannedRPE)
+            } else if isRated, plannedRPE == nil {
+                back = .clear
+            }
+        case .fix:
+            if values.rpe != baseline.rpe || (values.rpe != nil && values.rpeMethod != baseline.rpeMethod) {
+                back = .logged(baseline.rpe, baseline.rpeMethod)
+            }
         }
-        let isOn = shown.map { $0 != $0.roundedTo(0) } ?? false
-        let toggled: Decimal? = shown.flatMap { value in
-            let next = isOn ? value - Decimal(5) / 10 : value + Decimal(5) / 10
-            return RPEScaleText.values.contains(value) && RPEScaleText.values.contains(next) ? next : nil
-        }
-        let half = RowsRPEHalf(
-            text: "\u{00BD}", isOn: isOn, patch: toggled.map(SetValuesPatch.enteringRPE),
-            meaning: toggled.map(meaning),
-            accessibilityLabel: isOn ? "Take off the half point" : "Add half a point")
         let value: String =
             switch rpe {
             case .none: "not rated"
-            case let .prefill(x): "\(Format.rpe(x)), planned, not rated yet"
-            case let .value(x, .copied): "\(Format.rpe(x)), copied from last time, not rated yet"
-            case let .value(x, .prefilled): "\(Format.rpe(x)), as planned, not rated"
-            case let .value(x, _): Format.rpe(x)
+            case let .prefill(x): "\(RowsEffort.number(x)), planned, not rated yet"
+            case let .value(x, .copied): "\(RowsEffort.number(x)), copied from last time, not rated yet"
+            case let .value(x, .prefilled): "\(RowsEffort.number(x)), as planned, not rated"
+            case let .value(x, _): RowsEffort.number(x)
             }
-        return RowsRPEStrip(
-            cells: cells, half: half, shown: shown, isRated: isRated, isCollapsed: shown == nil && !rpeOpen,
-            addTitle: RowsRPEStrip.addTitle, accessibilityLabel: "\(spoken), RPE", accessibilityValue: value)
+        return RowsEffort(
+            value: shown.map(RowsEffort.number),
+            shown: shown,
+            unit: measurement.recordsReps ? "reps left" : "left",
+            isRated: isRated,
+            last: last.map { "last \(RowsEffort.number($0))" },
+            back: back,
+            fewer: rated(fewer),
+            more: rated(more),
+            isCollapsed: shown == nil && !rpeOpen,
+            addTitle: RowsEffort.addTitle,
+            stop: offersStop ? stopMenu(values.stopReason) : nil,
+            meaning: shown.map(RowsEffort.meaning),
+            accessibilityLabel: "\(spoken), reps left",
+            accessibilityValue: value)
+    }
+
+    func stopMenu(_ selected: StopReason?) -> RowsStopMenu {
+        RowsStopMenu(
+            title: selected.map(StopReasonText.short) ?? RowsStopMenu.title,
+            selected: selected,
+            accessibilityLabel: "\(spoken), why the set ended",
+            accessibilityValue: selected.map(StopReasonText.title) ?? "not said")
+    }
+}
+
+extension RowsEffort {
+    /// The RPE one rep left fewer (`fewer`) or more than `rpe`, inside 0 to
+    /// 4+ reps left; from a half point, the whole count beside it; from no
+    /// value, one either side of 2 left. Nil past the ends.
+    public static func stepped(_ rpe: Decimal?, fewer: Bool) -> Decimal? {
+        let left = rpe.map { max(0, 10 - $0) } ?? 2
+        let whole = rpe == nil || left.roundedTo(0) == left
+        let half = Decimal(5) / 10
+        let next = fewer ? (whole ? left - 1 : (left - half).roundedTo(0)) : (whole ? left + 1 : (left + half).roundedTo(0))
+        return next >= 0 && next <= most ? 10 - next : nil
+    }
+
+    /// `2`, `1–2`, and `4+` for 4: the control's top stands for "4 or more".
+    public static func number(_ rpe: Decimal) -> String {
+        max(0, 10 - rpe) == most ? "4+" : Format.repsLeftNumber(rpe)
+    }
+
+    /// What the header says for a moment after a step: `2 left: hard`,
+    /// `0 left: maximum effort`, `4+ left: moderate effort`.
+    public static func meaning(_ rpe: Decimal) -> String {
+        "\(number(rpe)) left" + (RPEScaleText.headline(rpe).map { ": \($0.lowercasedFirst)" } ?? "")
     }
 }
 

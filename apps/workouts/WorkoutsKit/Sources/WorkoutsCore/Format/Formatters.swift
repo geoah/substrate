@@ -181,9 +181,49 @@ public enum Format {
             }
         }
         if showRPE, let rpe = values.rpe {
-            text += text.isEmpty ? "@ \(self.rpe(rpe))" : " @ \(self.rpe(rpe))"
+            text += (text.isEmpty ? "" : " \u{00B7} ") + repsLeft(rpe)
         }
         return text
+    }
+
+    // MARK: - Reps left
+
+    // Effort is said as the reps left in the tank: on the RIR-based scale
+    // every set is logged on, RPE = 10 − reps left exactly, so the stored
+    // `rpe` is never converted, only said this way (DESIGN §4.14).
+
+    /// The reps left an RPE stands for, as a number: `2`; a half point is
+    /// the two whole counts it sits between, `1–2`.
+    public static func repsLeftNumber(_ rpe: Decimal) -> String {
+        let left = max(0, 10 - rpe)
+        let whole = left.roundedTo(0)
+        guard left != whole else { return number(left) }
+        let lower = (left - Decimal(5) / 10).roundedTo(0)
+        return "\(number(lower))\u{2013}\(number(lower + 1))"
+    }
+
+    /// `2 left`, `1–2 left`, `0 left`.
+    public static func repsLeft(_ rpe: Decimal) -> String {
+        "\(repsLeftNumber(rpe)) left"
+    }
+
+    /// The reps left a plan's RPE range stands for, fewest first: RPE 7–8 is
+    /// `2–3`; a half point widens to the whole counts around it, RPE 7–8.5
+    /// is `1–3`. Nil when it names none.
+    public static func repsLeftRange(rpeMin: Decimal?, rpeMax: Decimal?) -> String? {
+        switch (rpeMin, rpeMax) {
+        case let (lower?, upper?):
+            if lower == upper { return repsLeftNumber(upper) }
+            let half = Decimal(5) / 10
+            func whole(_ left: Decimal, down: Bool) -> Decimal {
+                left.roundedTo(0) == left ? left : (down ? left - half : left + half).roundedTo(0)
+            }
+            let fewest = whole(max(0, 10 - upper), down: true)
+            let most = whole(max(0, 10 - lower), down: false)
+            return "\(number(fewest))\u{2013}\(number(most))"
+        case let (one?, nil), let (nil, one?): return repsLeftNumber(one)
+        case (nil, nil): return nil
+        }
     }
 
     /// RPE with at most one decimal, trailing zero removed: `9.5`, `8`.
@@ -201,13 +241,20 @@ public enum Format {
         }
     }
 
-    /// A plan's effort target: `RPE 8`, `RPE 7–8`, `2 reps in reserve`,
-    /// `2–3 reps in reserve`; nil when it names none.
+    /// A plan's effort target as the reps left: `2 reps left`, `2–3 reps
+    /// left`, `1 rep left`, from RPE (7–8 is 2–3) or from reps in reserve;
+    /// nil when it names none.
     public static func effort(rpeMin: Decimal?, rpeMax: Decimal?, rirMin: Decimal?, rirMax: Decimal?) -> String? {
-        if let range = rpeRange(rpeMin, rpeMax) { return "RPE \(range)" }
-        guard let range = rpeRange(rirMin, rirMax) else { return nil }
-        let one = (rirMin ?? rirMax) == (rirMax ?? rirMin) && (rirMin ?? rirMax) == 1
-        return "\(range) \(one ? "rep" : "reps") in reserve"
+        if let range = effortRange(rpeMin: rpeMin, rpeMax: rpeMax, rirMin: rirMin, rirMax: rirMax) {
+            return "\(range) \(range == "1" ? "rep" : "reps") left"
+        }
+        return nil
+    }
+
+    /// A plan's effort target as a count of reps left alone: `2`, `2–3`;
+    /// from RPE when it names one, else from reps in reserve.
+    public static func effortRange(rpeMin: Decimal?, rpeMax: Decimal?, rirMin: Decimal?, rirMax: Decimal?) -> String? {
+        repsLeftRange(rpeMin: rpeMin, rpeMax: rpeMax) ?? rpeRange(rirMin, rirMax)
     }
 
     /// What a percentage load is of, in words: `one-rep max`, `training max`.

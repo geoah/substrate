@@ -83,6 +83,17 @@ public enum EffortMethod: String, Codable, Sendable, CaseIterable {
     public static func isRating(_ method: EffortMethod?) -> Bool { method?.isRating ?? true }
 }
 
+/// Why a set ended before more reps, where the lifter said (`set.stopReason`).
+/// Absent: it ended at the plan's reps, or nobody said.
+public enum StopReason: String, Codable, Sendable, CaseIterable {
+    /// The muscles gave out: the set is evidence of what they could do.
+    case fatigue
+    /// Form broke down: the reps done are no ceiling.
+    case technique
+    /// Pain or discomfort: as `technique`, and worth the coach's attention.
+    case pain
+}
+
 /// Unknown fields of a nested object (a routine slot, a planned set, a
 /// target), kept so an older build never erases what a newer one wrote
 /// (§3.4 rule 7). Decodes as empty when its key is missing, so a journal

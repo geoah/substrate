@@ -416,7 +416,7 @@ public struct SetRowPresentation: Codable, Equatable, Sendable, Identifiable {
         self.rpe = rpe
         self.rpeText = rpeText
         self.rpeEntry = rpeEntry
-        if case let .prefill(value) = rpeEntry { rpePrefillText = Format.rpe(value) }
+        if case let .prefill(value) = rpeEntry { rpePrefillText = RowsEffort.number(value) }
         self.effortText = effortText
         self.canRateEffort = canRateEffort
         self.rpeAccessibilityLabel = rpeAccessibilityLabel

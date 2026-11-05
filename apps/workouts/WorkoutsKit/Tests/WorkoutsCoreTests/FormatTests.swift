@@ -58,7 +58,7 @@ struct FormatTests {
         #expect(Format.load(SetValues(load: .kg(35)), mode: nil) == nil)
     }
 
-    @Test("A set: load × reps with U+00D7, reps only, timed, distance, and RPE as @ 9.5")
+    @Test("A set: load × reps with U+00D7, reps only, timed, distance, and RPE as · 0–1 left")
     func sets() {
         #expect(Format.set(SetValues(load: .kg(35), reps: 13), measurement: .weightreps) == "35 kg \u{00D7} 13")
         #expect(Format.set(SetValues(reps: 15), measurement: .repsonly) == "× 15")
@@ -74,9 +74,9 @@ struct FormatTests {
                 == "20 kg for 40 m")
         #expect(
             Format.set(SetValues(load: .kg(35), reps: 13, rpe: d("9.5")), measurement: .weightreps, rpe: true)
-                == "35 kg × 13 @ 9.5")
+                == "35 kg × 13 · 0–1 left")
         #expect(Format.set(SetValues(load: .kg(35), reps: 13, rpe: d("9.5")), measurement: .weightreps) == "35 kg × 13")
-        #expect(Format.set(SetValues(reps: 14, rpe: 9), measurement: .bodyweightreps, rpe: true) == "BW × 14 @ 9")
+        #expect(Format.set(SetValues(reps: 14, rpe: 9), measurement: .bodyweightreps, rpe: true) == "BW × 14 · 1 left")
         #expect(Format.set(SetValues(reps: 15), measurement: .bodyweightreps, repsHint: true) == "BW × \u{2248}15")
         #expect(Format.set(SetValues(load: .kg(25)), measurement: .weightreps) == "25 kg")
         #expect(Format.set(SetValues(), measurement: .weightreps) == "")
@@ -138,7 +138,7 @@ struct LabelTests {
         #expect(MeasurementType.distanceduration.gridColumns == [.set, .previous, .distance, .time, .tick])
         #expect(MeasurementType.shortdistanceweight.gridColumns == [.set, .previous, .load, .distance, .tick])
         #expect(MeasurementType.shortdistanceweight.hasStopwatchBelowRow)
-        #expect(MeasurementType.weightreps.gridColumns.map { $0.title(unit: .kg) } == ["SET", "PREVIOUS", "KG", "REPS", "RPE", ""])
+        #expect(MeasurementType.weightreps.gridColumns.map { $0.title(unit: .kg) } == ["SET", "PREVIOUS", "KG", "REPS", "LEFT", ""])
         #expect(MeasurementType.weightedbodyweightreps.valueColumns.map { $0.title(unit: .lb) } == ["+LB", "REPS"])
         #expect(MeasurementType.bodyweightassistedreps.valueColumns.map { $0.title(unit: .kg) } == ["\u{2212}KG", "REPS"])
         #expect(MeasurementType.distanceduration.valueColumns.map { $0.title(unit: .kg) } == ["M", "TIME"])
