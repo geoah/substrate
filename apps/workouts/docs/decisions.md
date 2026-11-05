@@ -21,7 +21,11 @@ The decisions that shape the server, rather than this app, are decision records 
 - [The build spec's own decisions](#the-build-specs-own-decisions)
 - [Moving into substrate](#moving-into-substrate)
 - [After the reviews of #1100](#after-the-reviews-of-1100)
+- [The owner's answers of 2026-11-02](#the-owners-answers-of-2026-11-02)
 - [The sample routine (owner)](#the-sample-routine-owner)
+- [Editing routines (owner)](#editing-routines-owner)
+- [Movements and the exercise library (owner)](#movements-and-the-exercise-library-owner)
+- [Effort and progression (owner, 2026-11-05)](#effort-and-progression-owner-2026-11-05)
 - [Open questions](#open-questions)
 
 ## What the app is for (owner)
@@ -680,35 +684,43 @@ with reps left will also improve the UI, as it's just the single number that we 
 have like + similar to the KG and things like that, and the other option should be just like
 toggles that we can toggle or like drop downs next to them". The proposal, what each
 suggestion changes and in what order, is
-[design/effort-and-progression.md](design/effort-and-progression.md); Phase 1 is below.
+[design/effort-and-progression.md](design/effort-and-progression.md); Phase 1 is below, as
+Codex Astra's review of the proposal left it.
 
 ### P1. Effort is said as reps left, a number with − and +
 
 - **Decided by** the owner, 2026-11-05.
 - **What:** the RPE strip (6 to 10 and ½) goes; the open set gets reps left built like the
   load and the reps, 0 to 4+, with the plan's value pre-filled hollow. Every surface says
-  `2 left` where it said `@ 8`. The value stays `set.rpe` on the RIR-based scale, where
-  RPE = 10 − reps left exactly, so no reader changes; writing `set.rir` instead was set aside
-  because every reader would then read two fields for one number.
+  `2 left` where it said `@ 8`; a hold or a distance says the scale's word (`Hard`) instead,
+  having no reps to leave. Native entry keeps the existing RIR-based RPE encoding and
+  provenance (`set.rpe`, 0 to 3 left is RPE 10 to 7, the capped `4+` is 6), so no reader
+  changes; a second spelling in `set.rir` would buy no reader anything.
 - **Source:** owner, 2026-11-05; [DESIGN.md §4.14](../DESIGN.md#414-rpe-provenance-and-the-pre-fill).
 
 ### P2. Why a set ended is a menu beside reps left, and a field of its own
 
 - **Decided by** the owner ("toggles … or drop downs next to them"), the values by the lead.
-- **What:** `set.stopReason` (training 6): `fatigue`, `technique`, `pain`, absent when the set
-  ended at the plan's reps or nobody said. Kept apart from `reachedFailure`. A technique or
-  pain stop is no evidence for going up, and the coach reads `pain` by its traffic light.
+- **What:** `set.stopReason` (training 6, `other` in 7): `fatigue`, `technique`, `pain`,
+  `other`, the lifter's report of the primary reason, absent when not reported, and
+  independent of `reachedFailure`. A technique, pain or other stop is no evidence of
+  capacity: it never raises a load and e1RM leaves it out. The coach reads `pain` by its
+  traffic light.
 - **Source:** owner, 2026-11-05; the other agent's "Actual effort logging".
 
-### P3. A load goes up when the owner says so
+### P3. An increase from earlier sessions waits for the owner
 
 - **Decided by** the lead, from the other agent's "Progression suggestions"; open to the owner.
-- **What:** two sessions with every working set at the top of its range and at least the
-  planned reps left offer the next load, with the reasons, Use and Stay. Until then the
-  history rule keeps the load at the top of the range instead of raising it on its own.
-  "Ask before going up a load" in Settings, on by default, turns the old rule back on.
+- **What:** where the history rule would raise a load, the suggestion keeps it at the top of
+  the range and the exercise offers the increase, "Try a higher load?", with its reason, Use
+  and Keep. Two sessions at the top of today's range with the planned reps left give the
+  reason, or offer the next step themselves. Increases from today's own sets stay automatic.
+  "Confirm increases from earlier sessions" in Settings, on by default, turns the old rule
+  back on when off.
 - **Why:** the old rule raised a load after one easy-looking session, and a load nobody chose
-  appeared; the offer makes progressive overload a decision with its reason shown.
+  appeared; the offer makes progressive overload a decision with its reason shown. A gate
+  that waited for two qualifying sessions instead would stall every exercise that can never
+  qualify, which the review of the proposal found.
 - **Source:** [DESIGN.md §5.3](../DESIGN.md#53-the-apps-rules-around-03).
 
 ### P4. A group of warm-ups runs as a circuit
@@ -729,9 +741,10 @@ suggestion changes and in what order, is
 ### P6. The session says when it should end
 
 - **Decided by** the lead, from the other agent's "Flexible rest and time estimates".
-- **What:** "ends about 11:42" under the session's length, from the pending sets' working
-  time (measured today) and the rests the plan gives. A finish time rather than a countdown,
-  so it stays right while nothing changes.
+- **What:** "ends ~11:42" beside the session's length, from the pending sets' working time
+  (today's pace, never the measured rest, which may hold a set's own time), their mini-sets
+  and the rests the plan gives. A finish time rather than a countdown, so it stays right
+  while nothing changes.
 - **Source:** [DESIGN.md §4.15](../DESIGN.md#415-time-left).
 
 ## Open questions
