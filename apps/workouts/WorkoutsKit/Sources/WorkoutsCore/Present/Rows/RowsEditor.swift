@@ -58,11 +58,14 @@ public struct RowsEditor: Codable, Equatable, Sendable {
     public var delete: RowsButton?
     /// `Cancel`, when fixing: drop the draft, send nothing.
     public var cancelTitle: String?
+    /// The routine slot's one-line cue, beside the set being done:
+    /// `Controlled return, pause without bouncing`.
+    public var cue: String?
 
     public init(
         row: RowID, mode: Mode, tint: Tint, title: String, setLabel: String, caption: String?, note: RowsNote?, trailingNote: String?,
         reason: String?, fields: [RowsField], effort: RowsEffort?, timer: RowsTimer?, primary: RowsButton,
-        secondary: RowsButton?, delete: RowsButton?, cancelTitle: String?
+        secondary: RowsButton?, delete: RowsButton?, cancelTitle: String?, cue: String? = nil
     ) {
         self.row = row
         self.mode = mode
@@ -80,6 +83,7 @@ public struct RowsEditor: Codable, Equatable, Sendable {
         self.secondary = secondary
         self.delete = delete
         self.cancelTitle = cancelTitle
+        self.cue = cue
     }
 
     /// The undo offer's words after a Log: `Bird Dog, set 1 logged`, `Set 2 logged`.
@@ -590,6 +594,8 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
     var plannedRPE: Decimal?
     /// The row says why it ended: a working set, not a warm-up.
     var offersStop: Bool
+    /// The routine slot's cue.
+    var cue: String?
     /// `Log`, `Log warm-up`, `Log drop`, `Log A2,`, `Log mini-set 3,`.
     var logPrefix: String
     var timer: RowsTimer?
@@ -645,7 +651,8 @@ struct RowsEditorSource: Codable, Equatable, Sendable {
             row: row, mode: mode, tint: tint, title: title, setLabel: setLabel, caption: caption, note: note,
             trailingNote: trailingNote, reason: reason, fields: fieldPresentations, effort: effort, timer: timer,
             primary: primary,
-            secondary: secondary, delete: delete, cancelTitle: mode == .fix ? "Cancel" : nil)
+            secondary: secondary, delete: delete, cancelTitle: mode == .fix ? "Cancel" : nil,
+            cue: mode == .log ? cue : nil)
     }
 
     /// The values the editor shows: typed over the suggestion (`log`), the draft (`fix`).

@@ -24,11 +24,11 @@
     },
     {
       "package": "substrate.reamde.dev/training",
-      "atLeast": 5
+      "atLeast": 6
     },
     {
       "package": "substrate.reamde.dev/trainingcoach",
-      "atLeast": 3
+      "atLeast": 4
     }
   ],
   "scopes": [

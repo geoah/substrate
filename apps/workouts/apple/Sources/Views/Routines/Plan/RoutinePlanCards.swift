@@ -126,6 +126,20 @@ private struct PlanBlockCard: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+                if let cue = block.cue {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "lightbulb")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tint)
+                            .accessibilityHidden(true)
+                        Text(cue)
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 3)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Cue: \(cue)")
+                }
                 if let notes = block.notes {
                     NotesText(notes)
                         .font(.footnote)

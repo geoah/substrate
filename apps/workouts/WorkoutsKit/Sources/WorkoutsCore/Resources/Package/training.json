@@ -1,6 +1,6 @@
 {
   "package": "substrate.reamde.dev/training",
-  "version": 5,
+  "version": 6,
   "documents": [
     {
       "kind": "substrate.reamde.dev/core/package",
@@ -10,7 +10,7 @@
       "data": {
         "authority": "substrate.reamde.dev",
         "package": "training",
-        "version": 5
+        "version": 6
       }
     },
     {
@@ -1400,6 +1400,10 @@
                 "type": "text",
                 "description": "what to remember about this exercise in this routine, such as the seat height"
               },
+              "cue": {
+                "type": "string",
+                "description": "one short line shown beside the set being done, such as controlled return, pause without bouncing"
+              },
               "sets": {
                 "type": "object",
                 "repeated": true,
@@ -2739,6 +2743,24 @@
           "failedRepAttempted": {
             "type": "bool",
             "description": "true when a further rep was tried and missed, as Strong's Failure tag means"
+          },
+          "stopReason": {
+            "type": "enum",
+            "description": "why the set ended, where the lifter said; absent when it ended at the plan's reps or nobody said",
+            "values": [
+              {
+                "value": "fatigue",
+                "label": "Muscular fatigue"
+              },
+              {
+                "value": "technique",
+                "label": "Technique breakdown"
+              },
+              {
+                "value": "pain",
+                "label": "Pain or discomfort"
+              }
+            ]
           },
           "completionMethod": {
             "type": "enum",

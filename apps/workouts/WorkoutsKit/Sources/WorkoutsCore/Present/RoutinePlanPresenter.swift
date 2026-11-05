@@ -59,6 +59,8 @@ public struct RoutinePlanBlock: Equatable, Sendable, Identifiable {
     public var subtitle: String?
     /// The slots' notes, each after its exercise's name in a group.
     public var notes: String?
+    /// The slots' cues, one line each, after its exercise's name in a group.
+    public var cue: String?
     /// The lines in the order a session does them: warm-ups, then the
     /// working sets (by round in a group), a chain's header above its set.
     public var items: [RowsItem]
@@ -67,7 +69,7 @@ public struct RoutinePlanBlock: Equatable, Sendable, Identifiable {
 
     public init(
         id: String, group: String?, members: [RoutinePlanMember], title: String, subtitle: String?, notes: String?,
-        items: [RowsItem], spokenTitle: String
+        cue: String? = nil, items: [RowsItem], spokenTitle: String
     ) {
         self.id = id
         self.group = group
@@ -75,6 +77,7 @@ public struct RoutinePlanBlock: Equatable, Sendable, Identifiable {
         self.title = title
         self.subtitle = subtitle
         self.notes = notes
+        self.cue = cue
         self.items = items
         self.spokenTitle = spokenTitle
     }
@@ -258,19 +261,24 @@ struct PlanBuilder {
         }
         return RoutinePlanBlock(
             id: "slot-\(slot.key)", group: nil, members: [member], title: member.name,
-            subtitle: subtitle(slot), notes: slot.notes, items: items, spokenTitle: member.name)
+            subtitle: subtitle(slot), notes: slot.notes, cue: slot.cue.flatMap { $0.isEmpty ? nil : $0 }, items: items,
+            spokenTitle: member.name)
     }
 
     mutating func group(_ group: RoutineGroup, members slots: [RoutineSlot]) -> RoutinePlanBlock {
         let members = slots.map(member)
         let lasts = Dictionary(slots.map { ($0.key, lastSets($0)) }, uniquingKeysWith: { first, _ in first })
         var items: [RowsItem] = []
-        for slot in slots {
-            for planned in slot.sets where planned.role == .warmup {
-                items.append(.set(line(planned, in: slot, group: group, last: lasts[slot.key] ?? [:])))
+        // A warm-up circuit (warm-ups alone) runs them as its rounds, as a session does.
+        let circuit = slots.contains { !$0.sets.isEmpty } && slots.allSatisfy { $0.sets.allSatisfy { $0.role == .warmup } }
+        if !circuit {
+            for slot in slots {
+                for planned in slot.sets where planned.role == .warmup {
+                    items.append(.set(line(planned, in: slot, group: group, last: lasts[slot.key] ?? [:])))
+                }
             }
         }
-        let working = slots.map { slot in slot.sets.filter { $0.role == .working } }
+        let working = slots.map { slot in slot.sets.filter { circuit || $0.role == .working } }
         let rounds = working.map(\.count).max() ?? 0
         for round in 0 ..< rounds {
             items.append(
@@ -287,16 +295,22 @@ struct PlanBuilder {
         let list = names.count == 1 ? names[0] : names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
         let rest =
             group.roundRest
-            ?? RestDefaults.roundRest(
-                kind: group.groupKind, memberRestClasses: slots.map { exercises[$0.exercise]?.restClass })
+            ?? (circuit
+                ? slots.last?.warmupRest ?? rests.warmupRest
+                : RestDefaults.roundRest(
+                    kind: group.groupKind, memberRestClasses: slots.map { exercises[$0.exercise]?.restClass }))
         var parts = [list]
         if let count = group.rounds { parts.append(Format.count(count, "round")) }
         parts.append(rest > 0 ? "rest \(Format.duration(rest)) after each round" : "no rest between rounds")
         let notes = zip(slots, members).compactMap { slot, member in slot.notes.map { "\(member.name): \($0)" } }
+        let cues = zip(slots, members).compactMap { slot, member in
+            slot.cue.flatMap { $0.isEmpty ? nil : "\(member.name): \($0)" }
+        }
         let title = group.groupKind.label
         return RoutinePlanBlock(
             id: "group-\(group.key)", group: group.key, members: members, title: title,
             subtitle: parts.joined(separator: ", "), notes: notes.isEmpty ? nil : notes.joined(separator: "\n"),
+            cue: cues.isEmpty ? nil : cues.joined(separator: "\n"),
             items: items, spokenTitle: "\(title), \(list)")
     }
 

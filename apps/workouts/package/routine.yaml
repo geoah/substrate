@@ -244,6 +244,12 @@ data:
           type: text
           description: what to remember about this exercise in this routine,
             such as the seat height
+        # One line the session shows beside the set being done (training 6);
+        # the notes stay the longer rationale, folded.
+        cue:
+          type: string
+          description: one short line shown beside the set being done, such as
+            controlled return, pause without bouncing
         # ---- planned sets (level 2; fields at level 3) ----
         sets:
           type: object

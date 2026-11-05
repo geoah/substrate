@@ -151,6 +151,7 @@ extension RecordCodec {
                         .enumeration("sideOrder", SideOrder.self),
                         .bool("sideMatch"),
                         .text("notes"),
+                        .string("cue"),
                         .object("sets", repeated: true, fields: plannedSetFields),
                     ]),
             ])
