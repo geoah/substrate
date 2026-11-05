@@ -417,43 +417,44 @@ in review were recomputed by hand from the same rules.
 - Every first working set is a cold start from the routine's load: "First
   time; routine load, try 100 kg × 6".
 - The iso-lateral press's set 1 went 20 kg × 10 at RPE 7, so set 2 is raised
-  inside the session: "Set 1: 20 kg × 10 at RPE 7, easier than RPE 8; try
+  inside the session: "Set 1: 20 kg × 10 with 3 left, more left than 2; try
   22.5 kg × 8".
 - The Romanian deadlift's set 1 stopped at 7 reps with no RPE. That counts
-  as RPE 10, so set 2 is cut: "Set 1: 16 kg × 7, harder than RPE 7; try
+  as RPE 10, so set 2 is cut: "Set 1: 16 kg × 7, fewer left than 3; try
   12 kg × 10".
 - The lateral raise's set 1 went 6 kg × 13 at RPE 7, so the activation set
-  is kept at the load with the reps the set implies: "Set 1: 6 kg × 13 at
-  RPE 7; try 6 kg × 15".
+  is kept at the load with the reps the set implies: "Set 1: 6 kg × 13 with
+  3 left; try 6 kg × 15".
 - The myo-rep set's fourth mini-set got 3: "Stop: mini-set 4 got 3, first
   was 4".
 
 **The second Day 1 session (Mon 26 Oct)**, four days later:
 
-| Set                         | Suggested                                                      | Done                         |
-| --------------------------- | -------------------------------------------------------------- | ---------------------------- |
-| Leg press W1, W2            | Warm-up, as last time: 40 kg × 12, then 70 kg × 6              | as suggested                 |
-| Leg press 1                 | Last time 100 kg × 10 at RPE 7.5, top of range; try 105 kg × 9 | 105 kg × 9, RPE 8 pre-filled |
-| Leg press 2                 | Set 1: 105 kg × 9, assuming RPE 8; try 105 kg × 9              | 105 kg × 9 at RPE 8.5        |
-| Leg press 3                 | Set 2: 105 kg × 9 at RPE 8.5; try 105 kg × 8                   | 105 kg × 8 at RPE 9          |
-| Iso-lateral press 1         | Last time 20 kg × 10 at RPE 7, top of range; try 22.5 kg × 8   | 22.5 kg × 10 at RPE 8        |
-| Iso-lateral press 2         | Set 1: 22.5 kg × 10 at RPE 8; try 22.5 kg × 10                 | 22.5 kg × 9 at RPE 8.5       |
-| Iso-lateral press 3         | Set 2: 22.5 kg × 9 at RPE 8.5; try 22.5 kg × 8                 | 22.5 kg × 8 at RPE 8.5       |
-| Seated row 1                | Last time 45 kg × 12 at RPE 8, top of range; try 50 kg × 9     | 50 kg × 10 at RPE 8          |
-| Seated row 2                | Set 1: 50 kg × 10 at RPE 8; try 50 kg × 10                     | 50 kg × 10 at RPE 8.5        |
-| Seated row 3                | Set 2: 50 kg × 10 at RPE 8.5; try 50 kg × 9                    | 50 kg × 9 at RPE 9           |
-| Lateral raise 1             | Last time 6 kg × 13 at RPE 7; try 6 kg × 15                    | 6 kg × 14 at RPE 7           |
-| Lateral raise 2, activation | Set 1: 6 kg × 14 at RPE 7; try 6 kg × 16                       | 6 kg × 17 at RPE 9           |
-| Lateral raise 2, mini-sets  | Mini-set 1 to 5: 6 kg × 4, then "Stop: 5 mini-sets done"       | 4, 4, 4, 4, 4                |
-| Romanian deadlift 1         | Last time 16 kg × 7, below target; try 12 kg × 11              | 12 kg × 12 at RPE 7          |
-| Romanian deadlift 2         | Set 1: 12 kg × 12 at RPE 7; try 12 kg × 12                     | 12 kg × 12 at RPE 7.5        |
-| Romanian deadlift 3         | Set 2: 12 kg × 12 at RPE 7.5; try 12 kg × 11                   | 12 kg × 12 at RPE 8          |
+| Set                         | Suggested                                                         | Done                         |
+| --------------------------- | ----------------------------------------------------------------- | ---------------------------- |
+| Leg press W1, W2            | Warm-up, as last time: 40 kg × 12, then 70 kg × 6                 | as suggested                 |
+| Leg press 1                 | Last time 100 kg × 10 with 2–3 left, top of range; try 105 kg × 9 | 105 kg × 9, RPE 8 pre-filled |
+| Leg press 2                 | Set 1: 105 kg × 9, assuming 2 left; try 105 kg × 9                | 105 kg × 9 at RPE 8.5        |
+| Leg press 3                 | Set 2: 105 kg × 9 with 1–2 left; try 105 kg × 8                   | 105 kg × 8 at RPE 9          |
+| Iso-lateral press 1         | Last time 20 kg × 10 with 3 left, top of range; try 22.5 kg × 8   | 22.5 kg × 10 at RPE 8        |
+| Iso-lateral press 2         | Set 1: 22.5 kg × 10 with 2 left; try 22.5 kg × 10                 | 22.5 kg × 9 at RPE 8.5       |
+| Iso-lateral press 3         | Set 2: 22.5 kg × 9 with 1–2 left; try 22.5 kg × 8                 | 22.5 kg × 8 at RPE 8.5       |
+| Seated row 1                | Last time 45 kg × 12 with 2 left, top of range; try 50 kg × 9     | 50 kg × 10 at RPE 8          |
+| Seated row 2                | Set 1: 50 kg × 10 with 2 left; try 50 kg × 10                     | 50 kg × 10 at RPE 8.5        |
+| Seated row 3                | Set 2: 50 kg × 10 with 1–2 left; try 50 kg × 9                    | 50 kg × 9 at RPE 9           |
+| Lateral raise 1             | Last time 6 kg × 13 with 3 left; try 6 kg × 15                    | 6 kg × 14 at RPE 7           |
+| Lateral raise 2, activation | Set 1: 6 kg × 14 with 3 left; try 6 kg × 16                       | 6 kg × 17 at RPE 9           |
+| Lateral raise 2, mini-sets  | Mini-set 1 to 5: 6 kg × 4, then "Stop: 5 mini-sets done"          | 4, 4, 4, 4, 4                |
+| Romanian deadlift 1         | Last time 16 kg × 7, below target; try 12 kg × 11                 | 12 kg × 12 at RPE 7          |
+| Romanian deadlift 2         | Set 1: 12 kg × 12 with 3 left; try 12 kg × 12                     | 12 kg × 12 at RPE 7.5        |
+| Romanian deadlift 3         | Set 2: 12 kg × 12 with 2–3 left; try 12 kg × 11                   | 12 kg × 12 at RPE 8          |
 
 Leg press set 1's RPE 8 was pre-filled from the plan and logged untouched,
 so the suggestion reads it as no rating: the set met its range, so it is
 taken at the target's top, RPE 8, which gives the same numbers as a rated 8
-and a reason that says "assuming RPE 8", never "at RPE 8" (package README,
-"Effort provenance").
+and a reason that says "assuming 2 left", never "with 2 left" (package
+README, "Effort provenance"). The app says every effort as the reps left,
+the same number on this scale, where 03 says RPE.
 
 The history rule appears in each of its three directions: one step up when
 the top of the range was reached, reps added inside the range, and a load

@@ -1373,12 +1373,17 @@ One formatter module, used everywhere ([req 37](docs/research/README.md#session-
 
 **Effort is said as reps left** (owner, 2026-11-05; proposal 2026-11-05, 1a): every surface shows and steps the reps
 left in the tank, a single number like the load and the reps (`2 left`, `2–3 reps left`, `1–2 left` for a half point,
-`4+` at the top of the control). The value is stored as before, in `set.rpe` on the RIR-based scale every set is logged
-on (`rpeScale: rirbased`), where RPE = 10 − reps left exactly, so the rules below, the suggestion, e1RM, History, the
-Hevy import and the coach read it unchanged; `set.rir` stays what another app logged as reps in reserve. The plan's
-target (`set.target.rpeMin` to `rirMax`) and the effort done (`set.rpe`) were already separate. Why a set ended is a
-field of its own (`set.stopReason`: `fatigue`, `technique`, `pain`, training 6), chosen beside reps left and never
-derived from them. The session rating at Finish is CR10, another scale, and stays as it is.
+`4+` at the top of the control, a capped category: "4 or more"). Native entry keeps the existing RIR-based RPE encoding
+and provenance: `set.rpe` on the scale every set is logged on (`rpeScale: rirbased`), where 0 to 3 left is RPE 10 to 7
+and `4+` is 6, so the rules below, the suggestion, e1RM, History, the Hevy import and the coach read it unchanged;
+`set.rir` stays what another app logged as reps in reserve. A value off the control (a half point, an import past 4)
+is kept as stored and shown as it is until a step moves it, and display text is never written back. A hold or a
+distance has no reps to leave: its row says the scale's word (`Hard`, `RPEScaleText.headline`) and steps Easier and
+Harder on the same value (`RowsEffort.saysWords`). The plan's target (`set.target.rpeMin` to `rirMax`) and the effort
+done (`set.rpe`) were already separate. Why a set ended is a field of its own (`set.stopReason`: `fatigue`,
+`technique`, `pain`, `other`; training 6, `other` in 7), the lifter's report of the primary reason, chosen beside reps
+left, never derived from them and never turned into failure (§5.3 reads it). The session rating at Finish is CR10,
+another scale, and stays as it is.
 
 The Rows session screen shows the plan's RPE pre-filled on the set being logged, and one tap logs the set with it.
 Each set record says how its RPE got there (`rpeMethod`, D1), and nothing decides that by comparing values: the event
@@ -1386,11 +1391,15 @@ says it.
 
 - **Untouched, ticked**: `completeSet` with `state.acceptingRPEPrefill(values, row:)` logs the plan's value as
   `prefilled`.
-- **A value tapped**, even the one already shown: `editSet` with `SetValuesPatch.enteringRPE(_:)` (or `rpe: .set`
-  with no method) logs `entered`.
+- **A value tapped**, even the one already shown (`RowsEffort.rate`, a tap on the hollow number), or a step of − or +:
+  `editSet` with `SetValuesPatch.enteringRPE(_:)` (or `rpe: .set` with no method) logs `entered`. With nothing shown
+  the steps start from last time's rating, else 2 left; from a half point they land on the whole count beside it.
+- **Reset**: the chip's `SetValuesPatch.restoringRPEPrefill` removes the value and lets the plan's pre-fill back,
+  unrated.
 - **PREVIOUS tapped**: `editSet` with `previous.copy`, whose rated RPE carries `rpeMethod: .copied`, logs `copied`. A
   tap after it makes it `entered`.
-- **Cleared**: `editSet` with `SetValuesPatch.clearingRPE` logs no RPE and no method.
+- **Cleared** (a long press on the number, `RowsEffort.clear`): `editSet` with `SetValuesPatch.clearingRPE` logs no
+  RPE and no method.
 - **The Table's RPE sheet**: Done on a value sends `SetRowPresentation.rpePatch(for:)`, which is `enteringRPE` even on
   the value the sheet opened on (a copied value, or one logged pre-filled in Rows before the layout changed), and
   nothing only when the row already holds that value as `entered`. Clear sends `clearingRPE` when the row holds a
@@ -1417,15 +1426,17 @@ says it.
 
 ### 4.15 Time left
 
-The session's header says when the session should end (`SessionHeaderStats.endsText`, "ends about 11:42";
+The session's title says when the session should end (`SessionHeaderStats.endsText`, "ends ~11:42";
 `SessionEstimate`, proposal 2026-11-05, 1f): from now, what is left of a running rest, then each pending row in plan
-order (§4.6) with its working time and the rest the plan gives after it, as §4.7 picks it with the rows done in that
-order (transitions, round rests, side switches and warm-up rests included; none after the last). A timed set works for
-its goal; any other set for the median of today's measured sets of its exercise, else of all of today's, else 45 s.
-A set is measured from the tick before it, less the rest the plan gave (`restPlanned`), so a rest run over counts as
-the set's; a timed set from its start; a sample outside 5 s to 5 min is left out. It is worked out again on every
-change and shows nothing while the clock is paused. Mini-sets a chain grows one at a time are not known ahead, so a
-myo-rep set ends a little later than said.
+order (§4.6, both sides of a unilateral set) with its working time and the rest the plan gives after it, as §4.7 picks
+it with the rows done in that order (transitions, round rests, side switches and warm-up rests included; none after
+the last). A running timed set works for what is left of its goal, a pending one for its goal; any other set for the
+median of today's measured sets of its exercise, else of all of today's, else 45 s. A myo-rep, myo-rep match or
+rest-pause head adds the mini-sets it will grow one at a time, which no row holds yet: the planned count, else 3, each
+15 s and its pause. A set is measured from the tick before it, less the rest the plan gave (`restPlanned`, else
+`restBefore`), so a rest run over counts as the set's; never less the rest measured alone, which may hold the set's own
+working time (§4.8); a timed set from its start; a sample outside 5 s to 5 min is left out. It is an estimate of the
+plan at today's pace, worked out again on every change, and shows nothing while the clock is paused.
 
 ## 5. Suggestions, PREVIOUS and ghost values
 
@@ -1580,28 +1591,49 @@ The engine is re-run after every change and never commits anything ([req 29](doc
   band's or a suspension trainer's lighter setting, so the drop leaves the load to the owner (`Drop from 20 kg: a
   lighter load, to failure`, no load suggested) and never reports "No lighter load", which would remove the planned
   drops.
-- **"Assuming RPE x".** [03 §12](docs/research/03-progression.md#12-explanation-strings)'s `{prev}` adds `at RPE {e}` only for a rated RPE. A set that carried a pre-filled or
-  copied RPE, read as none (§5.2), adds `, assuming RPE {e}` with the effective RPE the rule used, never "at": the 26
-  October leg press set 2 reads "Set 1: 105 kg × 9, assuming RPE 8; try 105 kg × 9" (the examples README). A set with
-  no RPE at all keeps 03's text.
+- **"Assuming 2 left".** [03 §12](docs/research/03-progression.md#12-explanation-strings)'s `{prev}` adds `at RPE {e}` only for a rated RPE; the app says the same number as
+  reps left (§4.14): ` with {10 − e} left`, and 03's "easier than RPE {t}" and "harder than RPE {t}" read "more left
+  than {10 − t}" and "fewer left than {10 − t}". A set that carried a pre-filled or copied RPE, read as none (§5.2),
+  adds `, assuming {10 − e} left` with the effective RPE the rule used, never "with": the 26 October leg press set 2
+  reads "Set 1: 105 kg × 9, assuming 2 left; try 105 kg × 9" (the examples README). A set with no RPE at all keeps
+  03's text.
+- **A set that ended for technique, pain or another reason** (`stopReason` `technique`, `pain` or `other`,
+  `StopReason.limitsEvidence`) is no evidence of capacity. It never raises a load: in the session [03 §11.2](docs/research/03-progression.md#112-working-set-with-evidence-from-today-in-session) keeps
+  the load at the top of the range where it would go up; from history [03 §11.3](docs/research/03-progression.md#113-working-set-from-history) gains no rep, raises no load and
+  aims a changed range no higher than last time's load (§11.5 likewise). e1RM leaves it out (the exercise's trend and
+  best set, and the medians of 03 §10.7's plausibility test and §5.7's check), so skipping it cannot bring back an
+  older, kinder estimate. A side pair takes the limiting side's reason. A `fatigue` stop reads as its effort says; no reason is turned into RPE 10 or a failed
+  rep.
 - **History's body share.** A past set's effective load uses the exercise's current `bodyShare`, as [03 §10.4](docs/research/03-progression.md#104-effective-load) does; the
   set's own copy (§3.5) is what volume reads (§4.11).
-- **The progression offer** (proposal 2026-11-05, 1c; `ProgressionOffer`, `ProgressionGate`). With "Ask before going
-  up a load" on (the default, §7.10), an exercise is **ready to go up** when in each of its two newest sessions (no
-  deload, the newer within 28 days, the older within 28 days of it) every working set at the session's heaviest
-  working load reached its target's `repsMax` (an open top never qualifies) with at least the planned reps left
-  (a rating at or below the target's top RPE; a set logged with the plan's value untouched counts as at the plan and
-  is said "as planned"; one that reached failure has none left), the load was the same both times, and no set ended
-  for technique or pain. A lighter back-off set neither qualifies nor spoils it. An exercise with no grid, or plain
-  bodyweight, is never offered; an assisted one goes up by one step less assistance. Rows shows the offer above the
-  exercise's lines until a working set of it is done today (§7.6a), with the next point of the grid. The answer is the
-  session's (`SessionEvent.answerProgression`, kept in `SessionState.progression` by slot; nothing is written to a
-  record for it): **Use** makes the first working set of the day suggest the new load at the bottom of the range
-  (`progressionUp`, "Going up from 105 kg: try 107.5 kg × 8"), after which 03 §11.2 reads today's sets as before;
-  **Stay**, no answer, or an exercise not yet ready keeps the load where [03 §11.3](docs/research/03-progression.md#113-working-set-from-history) (and §11.5 from history) would raise it, at the top
-  of the range (`historyHold`, said as `historyLoadUp` is). In-session changes, going down, timed sets and every other
-  rule stay as 03 says. With the setting off the history rule raises loads on its own, as 03 does, and no offer shows;
-  the engine's vectors run that way.
+- **The progression offer** (proposal 2026-11-05, 1c and its review; `SessionEvaluator.progressionOffer`,
+  `ProgressionGate`, `SlotProgression`). With "Confirm increases from earlier sessions" on (the default, §7.10), a
+  load increase that comes from earlier sessions waits for the owner. Where [03 §11.3](docs/research/03-progression.md#113-working-set-from-history) (and §11.5 from history) would
+  raise the load, the suggestion keeps it at the top of the range (`historyHold`, said as `historyLoadUp` is), and a
+  changed range is aimed no higher than last time's load. Rows offers the increase above the exercise's lines until a
+  working set of it is done today (§7.6a) whenever the engine, run on the automatic rule, would raise the first
+  pending working set's load from history (`historyLoadUp`, `historyNewRange`), or the evidence below holds; never in
+  a deload session. The offer's load is the evidence's next point of the grid when it holds, else the engine's; its
+  reason is the evidence's ("All 3 sets reached 12 reps at 105 kg in both sessions, with at least 2 reps left."; an
+  unrated set makes it "… in both sessions. Effort wasn't rated."), else the engine's own line ("Last time 105 kg × 12
+  with 4 left, top of range."; a changed range adds "the plan's range changed"). An exercise with no grid, or plain
+  bodyweight, is never offered; an assisted one goes up by one step less assistance, a weighted one by more added load.
+- **The offer's evidence** (`ProgressionOffer.check`): in each of the exercise's two newest sessions (neither a
+  deload, which starts the count again; the newer within 28 days of today, the older within 28 days of the newer), at
+  least today's planned number of working sets at the session's heaviest working load (`planned`: today's working
+  heads on the first one's range, back-off sets left out) reached the top of today's range (`repsMax`; an open top
+  never qualifies), each on today's target (the same range, top and effort, `sameTarget`), and the load was the same
+  both times. Each rated set left at least the planned reps (a rating at or below the target's top RPE); an unrated
+  one (pre-filled, copied) is said so; none reached failure where the plan left reps; none ended for technique, pain
+  or another reason. A lighter back-off set neither counts nor spoils it; drops and mini-sets never count; a side pair
+  counts by its weaker side and its higher rating (§5.2).
+- **The answer** is the session's (`SessionEvent.answerProgression`, kept in `SessionState.progression` by slot and
+  journaled, so it survives a relaunch; nothing is written to a record for it). **Use** makes the first working set of
+  the day suggest the new load at the bottom of the range (`progressionUp`, "Going up from 105 kg: try 107.5 kg ×
+  8"), after which 03 §11.2 reads today's sets as before. **Keep**, or no answer, keeps the held load. Increases from
+  today's own sets stay automatic, as the setting's name says; going down, timed sets and every other rule stay as 03
+  says. With the setting off the history rule raises loads on its own, as 03 does, and no offer shows; the engine's
+  vectors run that way.
 
 ### 5.4 PREVIOUS
 
@@ -2209,7 +2241,8 @@ line when fixing). In order:
   chip goes under `last`; at larger sizes `last` goes under the number; at the accessibility sizes the stepper goes
   under them.
 - Reps left (`RowsEffort`, owner, 2026-11-05), a third value built like the others: the number in a 44 pt capsule,
-  "reps left" (on a timed or distance set, "left"), `last` and the reset chip, and "−1 | +1" under the thumb. 0 to 4,
+  "reps left", `last` and the reset chip, and "−1 | +1" under the thumb (on a timed or distance set, the scale's word,
+  "Hard", "effort", and Easier and Harder; §4.14). A long press on the number offers "Clear reps left". 0 to 4,
   where 4 reads "4+" (RPE 6, "could do 4 or more"); a value with a half point from an import or an older entry reads
   "1–2", and a step from it lands on the whole count beside it. The plan's value (and a pre-filled or copied one) is
   drawn hollow, a dashed outline; a rating is filled solid. A step rates it as `entered`, and so does a tap on the
@@ -2219,9 +2252,10 @@ line when fixing). In order:
   left, so nothing that reads it changes (§4.14). Folded behind "Reps left" when there is nothing to show (a warm-up,
   a timed set, or a set with no planned effort and none last time).
 - Why the set ended (`RowsStopMenu`), under reps left on a working set: a chip, "Why stop?" with a chevron, that
-  lists "Muscles gave out", "Form broke down" and "Pain or discomfort" (`set.stopReason`: `fatigue`, `technique`,
-  `pain`) and, once one is chosen, "No reason". The chip then shows the reason's word ("Form", "Pain" in orange). A
-  done line carries the word as a tag, as History does after the values.
+  lists "Muscular fatigue", "Form broke down", "Pain or discomfort" and "Other reason" (`set.stopReason`: `fatigue`,
+  `technique`, `pain`, `other`) and, once one is chosen, "Clear reason". The chip then shows the reason's word
+  ("Fatigue", "Form", "Pain" in orange, "Other"). A done line carries the word as a tag, as History does after the
+  values.
 - A timed set: ready, the duration row with its stepper and, under it, the track with the goal's tick labelled above and
   last time's below. Running, the duration row gives way to the clock (28 pt, counting up, its width reserved so it
   never moves anything) with "0:21 to beat last time" beside it, and the track filling.
@@ -2341,10 +2375,10 @@ strip are opaque. Light and dark use the system colours, the accent, the group p
 (`RowsStyle`).
 
 **The progression offer** (§5.3), above a block's lines until a working set of the exercise is done: a green-tinted
-card, "Ready to go up" (in a group, after the exercise's name), the reasons in 13 pt ("Last 2 sessions: every working
-set reached 12 reps at 105 kg, with 2 or more left (as planned)."), and "Use 107.5 kg" (filled, green) beside "Stay at
-105 kg" (bordered), stacked where they do not fit. Answered, it is one line, "Going up to 107.5 kg" or "Staying at
-105 kg", with Undo.
+card, "Try a higher load?" (in a group, after the exercise's name), the reason in 13 pt ("All 3 sets reached 12 reps
+at 105 kg in both sessions, with at least 2 reps left."), and "Use 107.5 kg" (filled, green) beside "Keep 105 kg"
+(bordered), stacked where they do not fit. Answered, it is one line, "Going up to 107.5 kg" or "Keeping 105 kg", with
+Undo.
 
 **Haptics.** A light tick (`.selection`) on every stepper step and reps-left step; `.success` when a Log is journaled (§9.3).
 
@@ -2518,7 +2552,7 @@ Session
   Keep the screen awake                           [on]
   Count warm-ups in volume                       [off]
   Scroll to the next exercise in a superset       [on]
-  Ask before going up a load                      [on]   (the progression offer, §5.3)
+  Confirm increases from earlier sessions        [on]   (the progression offer, §5.3)
 Alerts
   Rest alerts: on, time sensitive                      (or "not time sensitive", "not asked yet", or a warning; §9.2)
 Apple Health
@@ -2957,7 +2991,9 @@ and from `xcodebuild test` through the scheme's test target.
 ### 10.2 Suggestion vectors, verbatim from [03 §14](docs/research/03-progression.md#14-test-vectors)
 
 Each is one `@Test` asserting the load, reps (or duration), `stop`, reason and the exact text; intermediate numbers to
-1e-4 where the vector gives them.
+1e-4 where the vector gives them. The texts below are 03's; the tests hold the app's, which says the effort as reps
+left (§5.3): "at RPE 9.5" reads "with 0–1 left", "easier than RPE 8" reads "more left than 2". The vectors run on the
+automatic rule, as 03 specifies it, which "Confirm increases from earlier sessions" (§5.3) holds back in the app.
 
 Defaults unless a vector says otherwise: `defaultRPE` 8, `repGain` 1, gap 7 days, no other history, body mass constant,
 `myoStopRule` repDrop, `myoMaxMiniSets` 5, `dropPercent` 0.20, `timeStep` 5 s. Grids: barbell kg is `base 20, step
@@ -3125,54 +3161,55 @@ ago) set 1 = 35 × 11 at RPE 8; S4 (24 days ago) set 1 = 30 × 14 at RPE 8.
 ### 10.3 Example progression vectors
 
 `ExampleProgressionTests` load the generated fixtures and run the whole path (records, history index,
-`SuggestionInputs`, `suggest`) over `sessions.json` alone, history newest first, as the examples README computed them.
+`SuggestionInputs`, `suggest`) over `sessions.json` alone, history newest first, as the examples README computed them,
+on the automatic rule (§5.3) and in the app's words for effort.
 
 **Thu 22 Oct (no history):**
 
 - Every first working set: "First time; routine load, try 100 kg × 6" for the leg press, and the same form for each.
-- Iso-lateral press set 2: "Set 1: 20 kg × 10 at RPE 7, easier than RPE 8; try 22.5 kg × 8".
-- Romanian deadlift set 2: "Set 1: 16 kg × 7, harder than RPE 7; try 12 kg × 10".
-- Lateral raise set 2: "Set 1: 6 kg × 13 at RPE 7; try 6 kg × 15".
+- Iso-lateral press set 2: "Set 1: 20 kg × 10 with 3 left, more left than 2; try 22.5 kg × 8".
+- Romanian deadlift set 2: "Set 1: 16 kg × 7, fewer left than 3; try 12 kg × 10".
+- Lateral raise set 2: "Set 1: 6 kg × 13 with 3 left; try 6 kg × 15".
 - The myo set's chain: "Stop: mini-set 4 got 3, first was 4".
 
 **Mon 26 Oct, from 22 Oct:**
 
-| Set                         | Suggested                                                      |
-| --------------------------- | -------------------------------------------------------------- |
-| Leg press W1, W2            | Warm-up, as last time: 40 kg × 12, then 70 kg × 6              |
-| Leg press 1                 | Last time 100 kg × 10 at RPE 7.5, top of range; try 105 kg × 9 |
-| Leg press 2                 | Set 1: 105 kg × 9, assuming RPE 8; try 105 kg × 9              |
-| Leg press 3                 | Set 2: 105 kg × 9 at RPE 8.5; try 105 kg × 8                   |
-| Iso-lateral press 1         | Last time 20 kg × 10 at RPE 7, top of range; try 22.5 kg × 8   |
-| Iso-lateral press 2         | Set 1: 22.5 kg × 10 at RPE 8; try 22.5 kg × 10                 |
-| Iso-lateral press 3         | Set 2: 22.5 kg × 9 at RPE 8.5; try 22.5 kg × 8                 |
-| Seated row 1                | Last time 45 kg × 12 at RPE 8, top of range; try 50 kg × 9     |
-| Seated row 2                | Set 1: 50 kg × 10 at RPE 8; try 50 kg × 10                     |
-| Seated row 3                | Set 2: 50 kg × 10 at RPE 8.5; try 50 kg × 9                    |
-| Lateral raise 1             | Last time 6 kg × 13 at RPE 7; try 6 kg × 15                    |
-| Lateral raise 2, activation | Set 1: 6 kg × 14 at RPE 7; try 6 kg × 16                       |
-| Lateral raise 2, mini-sets  | Mini-set 1 to 5: 6 kg × 4, then "Stop: 5 mini-sets done"       |
-| Romanian deadlift 1         | Last time 16 kg × 7, below target; try 12 kg × 11              |
-| Romanian deadlift 2         | Set 1: 12 kg × 12 at RPE 7; try 12 kg × 12                     |
-| Romanian deadlift 3         | Set 2: 12 kg × 12 at RPE 7.5; try 12 kg × 11                   |
+| Set                         | Suggested                                                         |
+| --------------------------- | ----------------------------------------------------------------- |
+| Leg press W1, W2            | Warm-up, as last time: 40 kg × 12, then 70 kg × 6                 |
+| Leg press 1                 | Last time 100 kg × 10 with 2–3 left, top of range; try 105 kg × 9 |
+| Leg press 2                 | Set 1: 105 kg × 9, assuming 2 left; try 105 kg × 9                |
+| Leg press 3                 | Set 2: 105 kg × 9 with 1–2 left; try 105 kg × 8                   |
+| Iso-lateral press 1         | Last time 20 kg × 10 with 3 left, top of range; try 22.5 kg × 8   |
+| Iso-lateral press 2         | Set 1: 22.5 kg × 10 with 2 left; try 22.5 kg × 10                 |
+| Iso-lateral press 3         | Set 2: 22.5 kg × 9 with 1–2 left; try 22.5 kg × 8                 |
+| Seated row 1                | Last time 45 kg × 12 with 2 left, top of range; try 50 kg × 9     |
+| Seated row 2                | Set 1: 50 kg × 10 with 2 left; try 50 kg × 10                     |
+| Seated row 3                | Set 2: 50 kg × 10 with 1–2 left; try 50 kg × 9                    |
+| Lateral raise 1             | Last time 6 kg × 13 with 3 left; try 6 kg × 15                    |
+| Lateral raise 2, activation | Set 1: 6 kg × 14 with 3 left; try 6 kg × 16                       |
+| Lateral raise 2, mini-sets  | Mini-set 1 to 5: 6 kg × 4, then "Stop: 5 mini-sets done"          |
+| Romanian deadlift 1         | Last time 16 kg × 7, below target; try 12 kg × 11                 |
+| Romanian deadlift 2         | Set 1: 12 kg × 12 with 3 left; try 12 kg × 12                     |
+| Romanian deadlift 3         | Set 2: 12 kg × 12 with 2–3 left; try 12 kg × 11                   |
 
 Leg press set 1 was logged with the plan's RPE 8 pre-filled and untouched (`rpeMethod: prefilled`), so set 2 reads it
 as no rating and says "assuming" (§5.3).
 
 **The next Fully Body Collection #1 session (30 Oct), before anything is done**, with body mass 82.4 kg:
 
-| Set                                  | Suggested                                                   |
-| ------------------------------------ | ----------------------------------------------------------- |
-| Chest press W1                       | Warm-up, as last time: 25 kg × 15                           |
-| Chest press 1                        | Last time 35 kg × 15, top of range; try 40 kg × 11          |
-| Chest press 2                        | Last time 35 kg × 13 at RPE 9.5; try 35 kg × 14             |
-| Chest press 2a, after set 2 at 35 kg | Drop 20% from 35 kg: 25 kg to failure                       |
-| Plank 1                              | Last time 1:02; try 1:07                                    |
-| Plank 2                              | Last time 0:53; try 0:58                                    |
-| Bulgarian split squat 1              | Last time 10 kg × 10 at RPE 8.5; try 10 kg × 10             |
-| Bulgarian split squat 2              | Last time 10 kg × 9 at RPE 9; try 10 kg × 9                 |
-| Push up 1                            | Last time BW × 14 at RPE 9; try BW × 15 (a hint, `rirstop`) |
-| Push up 2                            | Last time BW × 11 at RPE 9; try BW × 12 (a hint, `rirstop`) |
+| Set                                  | Suggested                                                      |
+| ------------------------------------ | -------------------------------------------------------------- |
+| Chest press W1                       | Warm-up, as last time: 25 kg × 15                              |
+| Chest press 1                        | Last time 35 kg × 15, top of range; try 40 kg × 11             |
+| Chest press 2                        | Last time 35 kg × 13 with 0–1 left; try 35 kg × 14             |
+| Chest press 2a, after set 2 at 35 kg | Drop 20% from 35 kg: 25 kg to failure                          |
+| Plank 1                              | Last time 1:02; try 1:07                                       |
+| Plank 2                              | Last time 0:53; try 0:58                                       |
+| Bulgarian split squat 1              | Last time 10 kg × 10 with 1–2 left; try 10 kg × 10             |
+| Bulgarian split squat 2              | Last time 10 kg × 9 with 1 left; try 10 kg × 9                 |
+| Push up 1                            | Last time BW × 14 with 1 left; try BW × 15 (a hint, `rirstop`) |
+| Push up 2                            | Last time BW × 11 with 1 left; try BW × 12 (a hint, `rirstop`) |
 
 Plus the app's own rule (§5.3): in the coverage session, after the 110 kg × 6 top set, the back-off set suggests 95 kg
 ("Back-off 10% from 110 kg: try 95 kg × …", reps per §5.3).

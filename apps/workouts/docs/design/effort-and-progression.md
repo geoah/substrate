@@ -6,7 +6,9 @@ in reserve and replacing them with reps left will also improve the UI, as it's j
 number that we can now have like + similar to the KG and things like that, and the other option
 should be just like toggles that we can toggle or like drop downs next to them". This page says
 what the app already holds for each suggestion, what each one changes, and in what order. The
-first phase ships to TestFlight for the owner to try before its pull request opens.
+first phase ships to TestFlight for the owner to try before its pull request opens. Codex Astra
+reviewed it; [its findings](#review-codex-astra-2026-11-05) are folded into Phase 1 as written
+here.
 
 ## The suggestions, against what exists
 
@@ -31,20 +33,26 @@ label on easy sets, and nothing that infers medical clearance from a session wit
 The RPE strip goes. In its place, under load and reps, the open set gets a third row built
 like them: the number, `reps left`, and `−1` / `+1` under the thumb.
 
-- **Range and meaning.** 0 to 4, where 4 reads `4+` (the strip's 6, "could do 4 or more").
-  On a timed or distance set the row reads `left` (in the tank), with the same words for
-  VoiceOver ("could do 2 more", "nothing left").
+- **Range and meaning.** 0 to 4, where 4 reads `4+`: a capped category (the strip's 6, "could
+  do 4 or more"), not a count. A hold or a distance has no reps to leave, so its row says the
+  effort in the scale's words (`Hard`, `Very hard`), stepped with Easier and Harder, on the
+  same stored value. A CR10 value from an import is never read as reps left.
 - **The plan's value is pre-filled, as today.** A set whose plan names an effort opens on it,
-  drawn hollow (not yet a rating). Logging it untouched logs it as `prefilled`; a tap on − or +
-  makes it the lifter's rating (`entered`). A reset chip goes back to the plan's value; a set
-  whose plan names none opens empty, with `+` starting at the plan's or last time's value.
-- **Stored as today.** The value stays in `set.rpe` on the RIR-based scale (`rpeScale:
-  rirbased`), where RPE = 10 − reps left exactly, with `rpeMethod` as today. Nothing a reader
-  does changes: the suggestion, e1RM, History, the Hevy import and the coach read it as they
-  do. Writing `set.rir` instead was weighed and set aside: on this scale it is the same number,
-  and every reader would then have to read two fields. The target (`set.target.rpeMin` to
-  `rirMax`) and the effort done (`set.rpe`) were already separate, which is the other agent's
-  point about target and actual RIR.
+  drawn hollow (not yet a rating). Logging it untouched logs it as `prefilled`. A tap on the
+  hollow number confirms it as the lifter's rating (`entered`); − or + changes and rates it in
+  one tap. The reset chip goes back to the plan's value, unrated; a long press on the number
+  clears it, which also stops the pre-fill. A set whose plan names none opens folded, its
+  steps starting from last time's rating, else 2 left. A half point from an import or an older
+  entry is kept as stored and shown as `1–2` until a step lands on a whole count beside it.
+- **Stored as today.** Native entry continues to use the existing RIR-based RPE encoding and
+  provenance: `set.rpe` on `rpeScale: rirbased`, where 0 to 3 left is RPE 10 to 7 and `4+` is
+  stored as 6, with `rpeMethod` as today. Nothing a reader does changes: the suggestion, e1RM,
+  History, the Hevy import and the coach read it as they do. Writing `set.rir` instead was set
+  aside for this release: readers already fall back to a rated `rir` (DESIGN §5.2), but a
+  second spelling of the number the app writes buys none of them anything. Display text is
+  never written back. The target (`set.target.rpeMin` to `rirMax`) and the effort done
+  (`set.rpe`) were already separate, which is the other agent's point about target and actual
+  RIR.
 - **Said as reps left everywhere.** `@ 8` becomes `2 left` on the lines, the island, the Log
   button, PREVIOUS and History; the plan's `RPE 7–8` becomes `2–3 left`; the suggestion's
   "assuming RPE 8" becomes "assuming 2 left". A value with a half point, from an import or an
@@ -54,47 +62,63 @@ like them: the number, `reps left`, and `−1` / `+1` under the thumb.
 
 ### 1b. Why the set ended, a menu beside reps left (suggestion 2)
 
-Beside the reps-left number, a menu chip, `Why stop?`, holds three choices and none:
+Beside the reps-left number, a menu chip, `Why stop?`, holds four reasons and, once one is
+chosen, Clear reason. The reason is the lifter's report of the primary reason the set ended,
+independent of whether another full rep was possible or attempted: `reachedFailure` and
+`failedRepAttempted` stay as they are, and a fatigue stop is never turned into RPE 10 or a
+failed rep.
 
 | Choice | Stored | Read as |
 | --- | --- | --- |
-| Muscles gave out | `stopReason: fatigue` | the set is evidence of what the muscles could do |
-| Form broke down | `stopReason: technique` | the reps done are not a ceiling; no progression from it |
+| Muscular fatigue | `stopReason: fatigue` | a reason, read with the set's effort as before |
+| Form broke down | `stopReason: technique` | no evidence of capacity: it never raises a load, and e1RM leaves it out |
 | Pain or discomfort | `stopReason: pain` | as technique, and the line shows it in orange |
-| (none) | absent | the plan's reps reached, or not said |
+| Other reason | `stopReason: other` | as technique; the set's notes say what (time, an interruption) |
+| (none) | absent | not reported |
 
-A logged line shows the reason as a word after its values (`form`, `pain`), History shows it,
+A logged line shows the reason as a word after its values (`Form`, `Pain`), History shows it,
 and the coach reads it: its instructions say to treat a `pain` stop by its pain traffic light.
 
-### 1c. Ready to go up: a progression offer (suggestion 3)
+### 1c. Try a higher load: a progression offer (suggestion 3)
 
-An exercise is **ready to go up** when, in each of its two newest sessions (same exercise and
-setup, not a deload, the newer within 28 days):
+With **Confirm increases from earlier sessions** on (the default), a load increase that comes
+from earlier sessions waits for the lifter. Where the history rule (03 §11.3, and §11.5 from
+history) would raise the first working set's load, or a changed rep range would put it above
+last time's, the suggestion keeps the load and aims at the top of the range, and the
+exercise's block opens with a card: **Try a higher load?**, the reason, and **Use 107.5 kg**
+or **Keep 105 kg**. The new load is the engine's, on the exercise's grid; with no grid, or on
+plain bodyweight, there is no offer, and an assisted exercise goes up by one step less
+assistance.
 
-- every working set reached the top of its planned rep range (`repsMax`; a range of one count
-  is its count), at one load, the same in both sessions;
-- each did so with at least the planned reps left (a rating of reps left at or above the
-  plan's lowest, `10 − rpeMax`). A set logged with the plan's value untouched counts as at the
-  plan, and the reasoning says "as planned" rather than claiming a rating;
-- no set ended for form or pain (1b), and none reached failure unplanned.
+The reason is two sessions' evidence when it holds, else the engine's own line ("Last time
+105 kg × 12 with 4 left, top of range."). The evidence offers the next step even where the
+engine would not. It holds when, in each of the exercise's two newest sessions (neither a
+deload, which starts the count again; the newer within 28 days of today, the older within 28
+days of the newer):
 
-The exercise's block then opens with a card above its first working set: **Ready to go up**,
-the reasoning ("Last 2 sessions: every working set reached 12 reps with 2 or more left at
-105 kg"), and two buttons, **Use 107.5 kg** and **Stay at 105 kg**. The new load is one step
-of the exercise's grid (no grid: no offer).
+- at least today's planned number of working sets at the session's heaviest working load
+  reached the top of today's range (`repsMax`; an open top never qualifies), at the same load
+  both times, each on today's target (the same range and effort). Lighter back-off sets
+  neither count nor spoil it; drops and mini-sets never count; a left and right pair counts
+  by its weaker side and its harder rating;
+- each rated set left at least the planned reps (a rating at or below the target's top RPE),
+  and none reached failure where the plan left reps. When a set was not rated (the plan's
+  value logged untouched, a copy), the reason says so;
+- none ended for form, pain or another reason (1b).
 
-- **Use**: the first working set suggests the new load at the bottom of the range
-  ("Going up from 105 kg: try 107.5 kg × 8"); the sets after it follow the in-session rule
-  (03 §11.2) as now.
-- **Stay**, or no answer: the suggestion keeps the load and aims at the top of the range.
-- **When the offer is not met**, the history rule no longer raises the load on its own: where
-  03 §11.3 would load up after one session, the app keeps the load at the top of the range
-  ("Last time 105 kg × 12, top of range; try 105 kg × 12") until the offer is accepted. Going
-  down, in-session changes and every other rule stay as 03 specifies them, and the engine's
-  vectors still run with the automatic rule. A setting, **Progression: Ask before going up**
-  (default) or **Automatic**, keeps the old behaviour one switch away.
+The reason then reads "All 3 sets reached 12 reps at 105 kg in both sessions, with at least 2
+reps left.", or "… in both sessions. Effort wasn't rated."
 
-Nothing is written for an answer: the sets logged at the new load are the record of it.
+- **Use**: the first working set suggests the new load at the bottom of the range ("Going up
+  from 105 kg: try 107.5 kg × 8"); the sets after it follow the in-session rule (03 §11.2).
+- **Keep**, or no answer: the load stays, aiming at the top of the range.
+- **The answer is the session's**, kept in its journal so it survives a relaunch, with Undo.
+  Nothing else is written: the sets logged at the new load are the record of it.
+- **Increases from today's own sets stay automatic** (03 §11.2), as the setting's name says.
+  A set that ended for form, pain or another reason never raises the load, in the session or
+  from history, and e1RM leaves it out, so skipping it cannot bring back an older estimate.
+- **Off**, the history rule raises loads on its own, as 03 does, and no offer shows; the
+  engine's vectors run that way. A deload session shows no offer.
 
 ### 1d. Warm-up circuits (suggestion 1)
 
@@ -112,14 +136,19 @@ The open set shows it under its title; the plan shows it on its card; the routin
 it; the slot's notes stay the longer rationale, folded, in Markdown. The coach writes a cue
 where it helps.
 
-### 1f. The time left (suggestion 6)
+### 1f. The time it ends (suggestion 6)
 
-The session's header adds the time left, "about 32 min left", from the pending sets: each
-set's working time (today's median for that exercise from its rests and ticks, else 45 s; a
-timed set's goal) plus the rest the plan gives after it (§4.7: transitions, round rests, side
-switches and warm-up rests included). It is recomputed on every change, so a skipped or
-extended rest moves it. Rest extensions stay −15 and +15; "Do as straight sets" stays in the
-group's menu.
+The session's title adds when it should end, "12 min · ends ~11:42". From now, it adds what is
+left of a running rest or a running timed set, then each pending row in plan order (both sides
+of a unilateral set), with its working time and the rest the plan gives after it (DESIGN §4.7:
+transitions, round rests, side switches and warm-up rests included; none after the last). It
+also adds the mini-sets a myo-rep or rest-pause set will grow (the planned count, else 3). A
+timed set works for its goal; any other set for the median of today's sets of its exercise,
+else 45 s. A set is measured from the tick before it, less the rest the plan gave. The rest
+measured may hold the set's own working time (DESIGN §4.8), so it is not subtracted. A sample
+outside 5 s to 5 min is left out. It is an estimate of the plan at today's pace, recomputed on
+every change, so a skipped or extended rest moves it. Rest extensions stay −15 and +15; "Do as
+straight sets" stays in the group's menu.
 
 ## Phase 2: next
 
@@ -145,14 +174,16 @@ group's menu.
 
 ## The package
 
-Phase 1 is training version 6 and the coach's version 4, each additive:
+Phase 1 is training version 6 and the coach's version 4, each additive, then training 7 and
+the coach's 5 for the review (`other`, and the two descriptions below):
 
 ```yaml
 # set.yaml, beside reachedFailure
 stopReason:
   type: enum
-  description: why the set ended before more reps, where the lifter said; absent when it
-    ended at the plan's reps or nobody said
+  description: the lifter-reported primary reason for ending the set;
+    absent means not reported, and it is independent of whether another
+    full rep was possible or attempted
   values:
     - value: fatigue
       label: Muscular fatigue
@@ -160,22 +191,82 @@ stopReason:
       label: Technique breakdown
     - value: pain
       label: Pain or discomfort
+    - value: other
+      label: Other reason
 
 # routine.yaml, a slot field beside notes
 cue:
   type: string
-  description: one short line shown beside the set being done, such as controlled return;
-    pause without bouncing
+  description: a brief plain-text coaching cue for this exercise in
+    this routine slot, shown beside the set being done; longer guidance
+    belongs in notes
 ```
 
-The app asks for training 6 as it is built against it; a repository on 5 is asked to approve
-the update, as the app already does for a version behind. Phase 2 would be version 7: the
-`checkin` kind and the memory's limits.
+The app asks for training 7 as it is built against it; a repository on an earlier version is
+asked to approve the update, as the app already does for a version behind. Phase 2 would be
+version 8: the `checkin` kind and the memory's limits.
+
+## Review (Codex Astra, 2026-11-05)
+
+Codex Astra reviewed this proposal against the code after the first TestFlight build. Each
+finding, and what Phase 1 does about it:
+
+1. **"2 left" on a plank or a carry has no unit.** Taken: a hold or a distance says the effort
+   in the scale's words, with Easier and Harder, on the same stored value (1a).
+2. **The strip's one-tap confirmation was lost, and clearing, the empty start and half points
+   were unspecified.** Taken: a tap on the hollow number rates it, a long press clears it, the
+   reset chip goes back to the plan unrated, an empty set starts from last time's rating else
+   2, and a half point is kept until a step lands on a whole count (1a).
+3. **The storage rationale was inaccurate, and `4+` is no exact inverse.** Taken: native entry
+   keeps the existing RIR-based RPE encoding and provenance, and `4+` is a capped category (1a).
+4. **`stopReason` must be independent of failure, and absent must mean not reported.** Taken:
+   `fatigue` is "Muscular fatigue" and the description is Astra's (training 7).
+5. **An honest escape choice.** Taken: `other`, "Other reason", with the set's notes for the
+   detail, read as no evidence of capacity, and the menu's empty choice is "Clear reason". No
+   `time` value.
+6. **Stop reasons must reach the evidence, not only the offer.** Taken: a form, pain or other
+   stop never raises a load, in the session or from history, and e1RM leaves it out; a left
+   and right pair takes the limiting side's reason (1c).
+7. **A pre-filled target proves no readiness.** Taken: when a set was not rated, the reason
+   says "Effort wasn't rated." instead of claiming the reps left.
+8. **Comparable sessions and sets.** Taken: the evidence needs today's planned number of sets
+   at one load, on today's range and effort, in both sessions; drops and mini-sets never
+   count; a left and right pair counts by its weaker side and its harder rating, as the
+   suggestion already reads it. Different top and back-off loads count the top set's alone.
+9. **Recency, deloads and load modes.** Taken: the older session within 28 days of the newer,
+   a deload among the two newest starts the count again, a deload session shows no offer, and
+   the exercise's load space gives the next setting: less assistance, more added load, and
+   none for plain bodyweight.
+10. **The strict gate could stall progression, and its setting said more than it held.**
+    Taken: the offer shows whenever the engine would raise the load from earlier sessions, a
+    new range included, and the evidence strengthens its reason or offers the step itself.
+    The setting is "Confirm increases from earlier sessions"; increases from today's own sets
+    stay automatic. The answer is kept in the session's journal.
+11. **The card's copy, and tests for the shipped default.** Taken: "Try a higher load?", "Use
+    107.5 kg" and "Keep 105 kg"; `ProgressionTests` hold the evidence, the gate, the engine's
+    offer, the deload reset and the setting. The research vectors still run on the automatic
+    rule.
+12. **The cue's owner and persistence.** Taken: the description is Astra's. A session already
+    reads its cue from the routine as it was at Start, which it keeps, so a routine changed or
+    deleted mid-session moves nothing; a finished session does not show cues, so there is no
+    `session.slots[].cue`.
+13. **The layout budget.** Already so: reps left is its own row under load and reps, Why stop?
+    sits beside it, the cue goes under the title and wraps, and the finish time is the title's
+    second line. In the island, reps left is a button beside load and reps that opens its
+    steps and Why stop? on a row of their own.
+14. **A warm-up circuit's order and its rests must change together.** Already so in the first
+    build (DESIGN §4.6, §4.7): rounds and a dedicated rest branch, classified from the group's
+    whole plan, so finishing its working sets never turns a mixed group into a circuit.
+15. **Timestamps do not measure working time.** Taken: a set's time is the gap less the rest
+    the plan gave, never the rest measured; a running rest and a running timed set count what
+    is left; mini-sets count as planned; and the title says "ends ~" (1f).
+16. **Scope.** Agreed: check-ins, enforced constraints and programme history stay in later
+    phases, and a pain stop is not a check-in. The offer no longer replaces the progression
+    policy: it confirms the engine's own increases.
 
 ## Open questions for the owner
 
-1. **Two sessions, or the newest alone with confirmation?** The offer waits for two; a
-   beginner progressing every session may want one.
-2. **Reps left 0 to 4+, or 0 to 5+?** The strip stopped at "4 or more"; a wider range helps
+1. **Reps left 0 to 4+, or 0 to 5+?** The strip stopped at "4 or more"; a wider range helps
    high-rep accessories.
-3. **The progression default.** Ask before going up, or keep the automatic rule as the default?
+2. **The progression default.** Confirm increases from earlier sessions, or keep the automatic
+   rule as the default?
