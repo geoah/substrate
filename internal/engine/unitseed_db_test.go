@@ -251,8 +251,8 @@ func TestSeedSkipsARefreshThatSplitsUsedUnits(t *testing.T) {
 	mustPut(t, ds, substrate.ActorSystem, substrate.PutInput{Kind: vocabulary.KindConversion, ID: "oz-kg", Properties: map[string]any{
 		"from": unit("widget"), "to": unit("gadget"), "factor": "2",
 	}})
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: pointer, ID: "w", Properties: map[string]any{"to": unit("widget")}})
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: pointer, ID: "g", Properties: map[string]any{"to": unit("gadget")}})
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: pointer, ID: fid("w"), Properties: map[string]any{"to": unit("widget")}})
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: pointer, ID: fid("g"), Properties: map[string]any{"to": unit("gadget")}})
 	for _, ref := range []struct{ kind, id string }{{vocabulary.KindConversion, "st-kg"}, {vocabulary.KindUnit, "st"}} {
 		if _, err := ds.Delete(ctx, substrate.ActorSystem, ref.kind, ref.id, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("another writer deletes %s: %v", ref.id, err)
@@ -308,7 +308,7 @@ func TestUnitUsesSurviveARebuild(t *testing.T) {
 	svc, ds, _, _ := unitSeededRepository(t, true)
 	hold := installHolds(t, ds)
 	ctx := context.Background()
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: hold, ID: "h", Properties: map[string]any{
+	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: hold, ID: fid("h"), Properties: map[string]any{
 		"weight": map[string]any{"value": "150", "unit": "[lb_av]"},
 	}})
 	if _, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindConversion, "oz-kg", substrate.DeleteInput{}); err != nil {

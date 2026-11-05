@@ -171,17 +171,17 @@ func TestTheRebuiltIndexMatchesTheLiveOne(t *testing.T) {
 	if err := refsVocabulary(t, ds, true); err != nil {
 		t.Fatalf("install the vocabulary: %v", err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: fid("h1")})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: refsSpoke, ID: "s1", Properties: map[string]any{"hubs": []any{"h1"}},
+		Kind: refsSpoke, ID: fid("s1"), Properties: map[string]any{"hubs": []any{fid("h1")}},
 	})
 	// A tombstone holds rows the narrowing counts never see, which is where the
 	// live path and the replay had the most room to disagree — and it is what
 	// lets `hub` be dropped below, since no LIVE record carries it.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: refsSpoke, ID: "s2", Properties: map[string]any{"hub": "h1"},
+		Kind: refsSpoke, ID: fid("s2"), Properties: map[string]any{"hub": fid("h1")},
 	})
-	if _, err := ds.Delete(ctx, owner, refsSpoke, "s2", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, refsSpoke, fid("s2"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	// Drop `hub` from the declaration: every spoke's rows are re-projected
@@ -208,25 +208,25 @@ func TestReDeriveFollowsTheOrdinals(t *testing.T) {
 	if err := refsVocabulary(t, ds, true); err != nil {
 		t.Fatalf("install the vocabulary: %v", err)
 	}
-	for _, id := range []string{"h1", "h2", "h3"} {
+	for _, id := range []string{fid("h1"), fid("h2"), fid("h3")} {
 		mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: id})
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: refsSpoke, ID: "s1",
-		Properties: map[string]any{"hub": "h1", "hubs": []any{"h1", "h2"}},
+		Kind: refsSpoke, ID: fid("s1"),
+		Properties: map[string]any{"hub": fid("h1"), "hubs": []any{fid("h1"), fid("h2")}},
 	})
-	if got := refRows(t, raw, refsSpoke, "s1"); len(got) != 3 {
+	if got := refRows(t, raw, refsSpoke, fid("s1")); len(got) != 3 {
 		t.Fatalf("the first write derived %d rows, want 3", len(got))
 	}
 
 	// h1 moves from ord 0 to ord 1, h2 leaves, h3 arrives.
-	if _, err := ds.Patch(ctx, owner, refsSpoke, "s1", substrate.PatchInput{
-		Properties: map[string]any{"hubs": []any{"h3", "h1"}},
+	if _, err := ds.Patch(ctx, owner, refsSpoke, fid("s1"), substrate.PatchInput{
+		Properties: map[string]any{"hubs": []any{fid("h3"), fid("h1")}},
 	}); err != nil {
 		t.Fatalf("patch: %v", err)
 	}
 
-	after := refRows(t, raw, refsSpoke, "s1")
+	after := refRows(t, raw, refsSpoke, fid("s1"))
 	if len(after) != 3 {
 		t.Fatalf("the re-derive left %d rows, want 3: %+v", len(after), after)
 	}
@@ -237,7 +237,7 @@ func TestReDeriveFollowsTheOrdinals(t *testing.T) {
 			order = append(order, r.dst)
 		}
 	}
-	if len(order) != 2 || order[0] != "h3" || order[1] != "h1" {
+	if len(order) != 2 || order[0] != fid("h3") || order[1] != fid("h1") {
 		t.Fatalf("the repeated reference derived %v, want [h3 h1]", order)
 	}
 }
@@ -271,7 +271,7 @@ func TestAReferenceFreeKindIssuesNoRefsStatements(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("install the vocabulary: %v", err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: fid("h1")})
 
 	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -288,14 +288,14 @@ func TestAReferenceFreeKindIssuesNoRefsStatements(t *testing.T) {
 
 	// A kind with no reference site: the write must not reach the table.
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: note, ID: "n1", Properties: map[string]any{"text": "hello"},
+		Kind: note, ID: fid("n1"), Properties: map[string]any{"text": "hello"},
 	}); err != nil {
 		t.Fatalf("a reference-free write paid refs bookkeeping: %v", err)
 	}
 	// A kind with one: the same guard fires, so the silence above was the skip
 	// and not a disarmed trigger.
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: refsSpoke, ID: "s1", Properties: map[string]any{"hub": "h1"},
+		Kind: refsSpoke, ID: fid("s1"), Properties: map[string]any{"hub": fid("h1")},
 	}); err == nil {
 		t.Fatal("the guard did not fire on a reference-bearing write")
 	}
@@ -337,15 +337,15 @@ func TestAContainerFlipAboveAReferenceReDerivesTombstones(t *testing.T) {
 	if err := nested(false); err != nil {
 		t.Fatalf("install the vocabulary: %v", err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: fid("h1")})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: agent, ID: "a1",
-		Properties: map[string]any{"tool": map[string]any{"callable": "h1"}},
+		Kind: agent, ID: fid("a1"),
+		Properties: map[string]any{"tool": map[string]any{"callable": fid("h1")}},
 	})
-	if got := refRows(t, raw, agent, "a1"); len(got) != 1 || got[0].path != "callable" {
+	if got := refRows(t, raw, agent, fid("a1")); len(got) != 1 || got[0].path != "callable" {
 		t.Fatalf("the nested pointer derived %+v, want one row at `callable`", got)
 	}
-	if _, err := ds.Delete(ctx, owner, agent, "a1", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, agent, fid("a1"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
@@ -355,7 +355,7 @@ func TestAContainerFlipAboveAReferenceReDerivesTombstones(t *testing.T) {
 	// The stored value is the object the old declaration described, which the
 	// new one does not read, so the re-derive leaves nothing rather than a row
 	// addressed as if the flip had not happened.
-	if got := refRows(t, raw, agent, "a1"); len(got) != 0 {
+	if got := refRows(t, raw, agent, fid("a1")); len(got) != 0 {
 		t.Fatalf("the flip left %+v, want the old address gone", got)
 	}
 }
@@ -370,25 +370,25 @@ func TestDeleteKeepsTheIndexAndAReWriteReplacesIt(t *testing.T) {
 	if err := refsVocabulary(t, ds, true); err != nil {
 		t.Fatalf("install the vocabulary: %v", err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: "h1"})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: "h2"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: fid("h1")})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: fid("h2")})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: refsSpoke, ID: "s1", Properties: map[string]any{"hub": "h1"},
+		Kind: refsSpoke, ID: fid("s1"), Properties: map[string]any{"hub": fid("h1")},
 	})
 
-	if _, err := ds.Delete(ctx, owner, refsSpoke, "s1", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, refsSpoke, fid("s1"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if got := refRows(t, raw, refsSpoke, "s1"); len(got) != 1 || got[0].dst != "h1" {
+	if got := refRows(t, raw, refsSpoke, fid("s1")); len(got) != 1 || got[0].dst != fid("h1") {
 		t.Fatalf("a tombstone lost its rows: %+v", got)
 	}
 
 	// Clearing the property clears the row; the write is the only thing that
 	// ever removes one.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: refsSpoke, ID: "s1", Properties: map[string]any{"hub": nil},
+		Kind: refsSpoke, ID: fid("s1"), Properties: map[string]any{"hub": nil},
 	})
-	if got := refRows(t, raw, refsSpoke, "s1"); len(got) != 0 {
+	if got := refRows(t, raw, refsSpoke, fid("s1")); len(got) != 0 {
 		t.Fatalf("clearing the property left %+v", got)
 	}
 }
@@ -406,14 +406,14 @@ func TestVocabularyApplyReprojectsTheIndex(t *testing.T) {
 	if err := refsVocabulary(t, ds, true); err != nil {
 		t.Fatalf("install the vocabulary: %v", err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: fid("h1")})
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: refsSpoke, ID: "s1", Properties: map[string]any{"hub": "h1", "hubs": []any{"h1"}},
+		Kind: refsSpoke, ID: fid("s1"), Properties: map[string]any{"hub": fid("h1"), "hubs": []any{fid("h1")}},
 	})
-	if _, err := ds.Delete(ctx, owner, refsSpoke, "s1", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, owner, refsSpoke, fid("s1"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if got := refRows(t, raw, refsSpoke, "s1"); len(got) != 2 {
+	if got := refRows(t, raw, refsSpoke, fid("s1")); len(got) != 2 {
 		t.Fatalf("the tombstone holds %+v, want both rows", got)
 	}
 
@@ -422,7 +422,7 @@ func TestVocabularyApplyReprojectsTheIndex(t *testing.T) {
 	if err := refsVocabulary(t, ds, false); err != nil {
 		t.Fatalf("drop the reference: %v", err)
 	}
-	got := refRows(t, raw, refsSpoke, "s1")
+	got := refRows(t, raw, refsSpoke, fid("s1"))
 	if len(got) != 1 || got[0].property != "hubs" {
 		t.Fatalf("the re-projection left %+v, want only the repeated reference", got)
 	}
@@ -443,8 +443,8 @@ const candPackage = "candidate.example.substrate.reamde.dev/candidate"
 // trigger on widgets naming the function. None of it exists in the registry
 // the repository holds when the batch opens. Not exercised here: checkBundleWrite
 // and checkBundleOwnerGate (the install's transaction is internal, which both
-// skip) and checkCreateID (no mapping targets widget, so its explicit id is
-// admitted).
+// skip) and checkCreateID (no mapping targets widget, and its explicit id is
+// minted).
 func TestABatchWritesAgainstItsOwnCandidate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -501,9 +501,9 @@ def main(input, host):
 		}),
 	}
 	data := []substrate.PutInput{
-		{Kind: widget, ID: "w1", Properties: map[string]any{"name": "first"}},
-		{Kind: holder, ID: "h1", Properties: map[string]any{"points": "w1"}},
-		{Kind: mirror, ID: "m1", Properties: map[string]any{"name": "mirrored"}},
+		{Kind: widget, ID: fid("w1"), Properties: map[string]any{"name": "first"}},
+		{Kind: holder, ID: fid("h1"), Properties: map[string]any{"points": fid("w1")}},
+		{Kind: mirror, ID: fid("m1"), Properties: map[string]any{"name": "mirrored"}},
 		{Kind: trigger, ID: "on-widget", Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{widget}}},
@@ -514,13 +514,13 @@ def main(input, host):
 		t.Fatalf("a closure must be able to ship records of the kinds it declares: %v", err)
 	}
 
-	mustGet(t, ds, widget, "w1")
-	if got := refPathValue(mustGet(t, ds, holder, "h1"), "points"); got != vocabulary.RecordPath(widget, "w1") {
+	mustGet(t, ds, widget, fid("w1"))
+	if got := refPathValue(mustGet(t, ds, holder, fid("h1")), "points"); got != vocabulary.RecordPath(widget, fid("w1")) {
 		t.Fatalf("the holder's reference resolved to %q, want the batch's own widget", got)
 	}
 	// The mapping declared in the batch minted the mirror's subject and mapped
 	// the name onto it.
-	subjKind, subjID, ok := vocabulary.SplitRecordPath(refPathValue(mustGet(t, ds, mirror, "m1"), "subject"))
+	subjKind, subjID, ok := vocabulary.SplitRecordPath(refPathValue(mustGet(t, ds, mirror, fid("m1")), "subject"))
 	if !ok || subjKind != subject {
 		t.Fatalf("the mirror's subject is %q/%q, want a minted %s", subjKind, subjID, subject)
 	}
@@ -554,11 +554,11 @@ func TestAClosureActorsDeclaredTierHoldsOnFirstInstall(t *testing.T) {
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}
 	if _, err := ds.InstallBundleClosure(ctx, keeper, closure, []substrate.PutInput{
-		{Kind: widget, ID: "w1", Properties: map[string]any{"name": "kept"}},
+		{Kind: widget, ID: fid("w1"), Properties: map[string]any{"name": "kept"}},
 	}, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("install under the declared actor: %v", err)
 	}
-	m, ok := mustGet(t, ds, widget, "w1").PropertyMeta["name"]
+	m, ok := mustGet(t, ds, widget, fid("w1")).PropertyMeta["name"]
 	if !ok {
 		t.Fatal("the installed record carries no propertyMeta for name")
 	}

@@ -37,7 +37,7 @@ func TestAPutAtVersionZeroNeverResurrectsATombstone(t *testing.T) {
 	zero := int64(0)
 	put := func(address string) (*substrate.Record, error) {
 		return ds.Put(ctx, substrate.ActorConsole, substrate.PutInput{
-			Kind: mbAccountType, ID: "phone-1", Properties: map[string]any{"address": address}, IfVersion: &zero,
+			Kind: mbAccountType, ID: fid("phone-1"), Properties: map[string]any{"address": address}, IfVersion: &zero,
 		})
 	}
 	conflict := func(what string, err error, have int64) {
@@ -63,14 +63,14 @@ func TestAPutAtVersionZeroNeverResurrectsATombstone(t *testing.T) {
 		t.Fatalf("the refused put wrote %+v", changesSince(t, ds, before))
 	}
 
-	del, err := ds.Delete(ctx, owner, mbAccountType, "phone-1", substrate.DeleteInput{})
+	del, err := ds.Delete(ctx, owner, mbAccountType, fid("phone-1"), substrate.DeleteInput{})
 	if err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	before = maxSeq(t, ds)
 	_, err = put("eve@example.com")
 	conflict("a put at version 0 over a tombstone", err, del.Version)
-	got := mustGet(t, ds, mbAccountType, "phone-1")
+	got := mustGet(t, ds, mbAccountType, fid("phone-1"))
 	if got.DeletedAt == nil || got.Version != del.Version || got.Properties["address"] != "ada@example.com" {
 		t.Fatalf("the refused put touched the tombstone: deleted %v, version %d, %v", got.DeletedAt, got.Version, got.Properties)
 	}
@@ -79,7 +79,7 @@ func TestAPutAtVersionZeroNeverResurrectsATombstone(t *testing.T) {
 	}
 
 	// Collected, the id holds nothing, and the same write creates afresh.
-	if _, err := ds.Delete(ctx, owner, mbAccountType, "phone-1", substrate.DeleteInput{Purge: true}); err != nil {
+	if _, err := ds.Delete(ctx, owner, mbAccountType, fid("phone-1"), substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
 	again, err := put("eve@example.com")
@@ -106,7 +106,7 @@ func TestConcurrentPutsAtVersionZeroCreateOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, errs[i] = ds.Put(ctx, substrate.ActorConsole, substrate.PutInput{
-				Kind: mbAccountType, ID: "phone-2", IfVersion: &zero,
+				Kind: mbAccountType, ID: fid("phone-2"), IfVersion: &zero,
 				Properties: map[string]any{"address": fmt.Sprintf("device%d@example.com", i)},
 			})
 		}()
@@ -124,7 +124,7 @@ func TestConcurrentPutsAtVersionZeroCreateOnce(t *testing.T) {
 	if created != 1 {
 		t.Fatalf("%d of %d racing puts at version 0 created the row, want 1", created, n)
 	}
-	if got := mustGet(t, ds, mbAccountType, "phone-2"); got.Version != 1 {
+	if got := mustGet(t, ds, mbAccountType, fid("phone-2")); got.Version != 1 {
 		t.Fatalf("the row is at version %d after one create", got.Version)
 	}
 }

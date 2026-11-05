@@ -15,6 +15,7 @@ import (
 	"math"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -176,11 +177,11 @@ func storedUnit(t *testing.T, rec *substrate.Record, name string) string {
 func TestQuantityStoresTheUnitID(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	rec := putThing(t, ds, "a", map[string]any{
+	rec := putThing(t, ds, fid("a"), map[string]any{
 		"weight":  qty("1", "[lb_av]"),
 		"parts":   map[string]any{"mass": qty("2", "pound")},
 		"samples": []any{qty("3", "[lb_av]"), qty("4", "kg")},
-		"peer":    map[string]any{"ref": thingKind + "/b", "load": qty("5", "[lb_av]")},
+		"peer":    map[string]any{"ref": thingKind + "/" + fid("b"), "load": qty("5", "[lb_av]")},
 	})
 	if u := storedUnit(t, rec, "weight"); u != "lb" {
 		t.Errorf("weight stored %q, want lb", u)
@@ -205,7 +206,7 @@ func TestOldCodesAndAliasesResolveToTheID(t *testing.T) {
 		"lb": "lb", "[lb_av]": "lb", "pound": "lb", " kg ": "kg",
 		"°C": "Cel", "Cel": "Cel", "%": "percent", "{steps}": "steps",
 	} {
-		rec, err := putThingErr(ds, "s", map[string]any{"loose": qty("1", spelling)})
+		rec, err := putThingErr(ds, fid("s"), map[string]any{"loose": qty("1", spelling)})
 		if err != nil {
 			t.Errorf("%q: %v", spelling, err)
 			continue
@@ -221,9 +222,9 @@ func TestOldCodesAndAliasesResolveToTheID(t *testing.T) {
 func TestUnknownUnitIsRefused(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	_, err := putThingErr(ds, "u", map[string]any{"loose": qty("1", "mg")})
+	_, err := putThingErr(ds, fid("u"), map[string]any{"loose": qty("1", "mg")})
 	wantValidation(t, "mg, which the table reads and the graph does not", err, `props.loose.unit: "mg" names no unit of this repository`)
-	_, err = putThingErr(ds, "u", map[string]any{"samples": []any{qty("1", "kg"), qty("1", "stone")}})
+	_, err = putThingErr(ds, fid("u"), map[string]any{"samples": []any{qty("1", "kg"), qty("1", "stone")}})
 	wantValidation(t, "a list item", err, `props.samples[1].unit`)
 }
 
@@ -233,13 +234,13 @@ func TestPropertyUnitAdmitsItsComponent(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
 	for _, u := range []string{"kg", "g", "lb"} {
-		if _, err := putThingErr(ds, "w", map[string]any{"weight": qty("1", u)}); err != nil {
+		if _, err := putThingErr(ds, fid("w"), map[string]any{"weight": qty("1", u)}); err != nil {
 			t.Errorf("weight in %s: %v", u, err)
 		}
 	}
-	_, err := putThingErr(ds, "w", map[string]any{"weight": qty("1", "K")})
+	_, err := putThingErr(ds, fid("w"), map[string]any{"weight": qty("1", "K")})
 	wantValidation(t, "a temperature under a mass anchor", err, "K does not convert to kg")
-	_, err = putThingErr(ds, "w", map[string]any{"economy": qty("1", "L/100km")})
+	_, err = putThingErr(ds, fid("w"), map[string]any{"economy": qty("1", "L/100km")})
 	wantValidation(t, "an expression route", err, "expression conversion")
 }
 
@@ -248,11 +249,11 @@ func TestPropertyUnitsNarrows(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
 	for _, u := range []string{"kg", "lb", "[lb_av]"} {
-		if _, err := putThingErr(ds, "n", map[string]any{"narrow": qty("1", u)}); err != nil {
+		if _, err := putThingErr(ds, fid("n"), map[string]any{"narrow": qty("1", u)}); err != nil {
 			t.Errorf("narrow in %s: %v", u, err)
 		}
 	}
-	_, err := putThingErr(ds, "n", map[string]any{"narrow": qty("1", "g")})
+	_, err := putThingErr(ds, fid("n"), map[string]any{"narrow": qty("1", "g")})
 	wantValidation(t, "g, of the component but not listed", err, "g is not one of the declared units kg, lb")
 	err = enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "things", Authority: thingsPackage,
@@ -272,16 +273,16 @@ func TestPropertyDeltaReadsDifferences(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
 	// A difference of 10 K is 10 Cel and 18 degF: the offset never applies.
-	if _, err := putThingErr(ds, "d", map[string]any{"change": qty("18", "degF")}); err != nil {
+	if _, err := putThingErr(ds, fid("d"), map[string]any{"change": qty("18", "degF")}); err != nil {
 		t.Fatalf("18 degF as a difference: %v", err)
 	}
-	_, err := putThingErr(ds, "d", map[string]any{"change": qty("10.5", "Cel")})
+	_, err := putThingErr(ds, fid("d"), map[string]any{"change": qty("10.5", "Cel")})
 	wantValidation(t, "10.5 Cel as a difference past 10 K", err, "must be <= 10 K")
 	// As an absolute temperature, 300 K is 26.85 Cel, under 100 Cel.
-	if _, err := putThingErr(ds, "h", map[string]any{"heat": qty("300", "K")}); err != nil {
+	if _, err := putThingErr(ds, fid("h"), map[string]any{"heat": qty("300", "K")}); err != nil {
 		t.Fatalf("300 K under 100 Cel: %v", err)
 	}
-	_, err = putThingErr(ds, "h", map[string]any{"heat": qty("374", "K")})
+	_, err = putThingErr(ds, fid("h"), map[string]any{"heat": qty("374", "K")})
 	wantValidation(t, "374 K past 100 Cel", err, "must be <= 100 °C")
 }
 
@@ -290,12 +291,12 @@ func TestPropertyDeltaReadsDifferences(t *testing.T) {
 func TestBoundRefusesAValueItCannotCompare(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	if _, err := putThingErr(ds, "b", map[string]any{"bounded": qty("90.718474", "kg")}); err != nil {
+	if _, err := putThingErr(ds, fid("b"), map[string]any{"bounded": qty("90.718474", "kg")}); err != nil {
 		t.Fatalf("exactly 200 lb: %v", err)
 	}
-	_, err := putThingErr(ds, "b", map[string]any{"bounded": qty("90.7184741", "kg")})
+	_, err := putThingErr(ds, fid("b"), map[string]any{"bounded": qty("90.7184741", "kg")})
 	wantValidation(t, "past 200 lb by 0.1 mg", err, "must be <= 200 lb")
-	_, err = putThingErr(ds, "b", map[string]any{"bounded": qty("-1", "g")})
+	_, err = putThingErr(ds, fid("b"), map[string]any{"bounded": qty("-1", "g")})
 	wantValidation(t, "below 0 kg", err, "must be >= 0 kg")
 	// A bound no admitted unit reaches would refuse every value: refused at
 	// the apply.
@@ -344,17 +345,17 @@ func TestTitlePrintsTheSymbolAndSearchTheID(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
 	putUnit(t, ds, "kg", map[string]any{"name": "kilogram", "code": "kg", "symbol": "kilo"})
-	rec := putThing(t, ds, "t", map[string]any{"weight": qty("72.5", "kg")})
+	rec := putThing(t, ds, fid("t"), map[string]any{"weight": qty("72.5", "kg")})
 	if rec.Title != "72.5 kilo" {
 		t.Fatalf("title = %q, want %q", rec.Title, "72.5 kilo")
 	}
 	putUnit(t, ds, "kg", map[string]any{"name": "kilogram", "code": "kg", "symbol": "KG"})
-	if got, err := ds.Get(context.Background(), thingKind, "t"); err != nil || got.Title != "72.5 kilo" {
+	if got, err := ds.Get(context.Background(), thingKind, fid("t")); err != nil || got.Title != "72.5 kilo" {
 		t.Fatalf("after a symbol edit: title = %q, %v", got.Title, err)
 	}
 	fts := func() string {
 		var out string
-		if err := ds.db.QueryRowContext(context.Background(), `SELECT fts::text FROM records WHERE kind = $1 AND id = 't'`, thingKind).Scan(&out); err != nil {
+		if err := ds.db.QueryRowContext(context.Background(), `SELECT fts::text FROM records WHERE kind = $1 AND id = $2`, thingKind, fid("t")).Scan(&out); err != nil {
 			t.Fatal(err)
 		}
 		return out
@@ -443,20 +444,20 @@ func putObservationErr(ds *dataset, id string, props map[string]any) error {
 func TestObservedValueWithoutItsMetricIsRefused(t *testing.T) {
 	t.Parallel()
 	ds := openSwitchedObserved(t)
-	if err := putMetricErr(ds, "body_mass", map[string]any{"unit": "kg"}); err != nil {
+	if err := putMetricErr(ds, fid("body_mass"), map[string]any{"unit": "kg"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := putObservationErr(ds, "o1", observation("body_mass", qty("72.4", "kg"))); err != nil {
+	if err := putObservationErr(ds, fid("o1"), observation(fid("body_mass"), qty("72.4", "kg"))); err != nil {
 		t.Fatalf("a value of a live metric: %v", err)
 	}
-	if err := putMetricErr(ds, "brief", map[string]any{"unit": "kg"}); err != nil {
+	if err := putMetricErr(ds, fid("brief"), map[string]any{"unit": "kg"}); err != nil {
 		t.Fatal(err)
 	}
 	err := ds.inTx(context.Background(), substrate.ActorAPI, false, func(tx *txn) error {
-		if _, err := tx.put(substrate.PutInput{Kind: obsKind, ID: "o2", Properties: observation("brief", qty("1", "kg"))}); err != nil {
+		if _, err := tx.put(substrate.PutInput{Kind: obsKind, ID: fid("o2"), Properties: observation(fid("brief"), qty("1", "kg"))}); err != nil {
 			return err
 		}
-		_, err := tx.softDeleteIf(eref{Kind: metricKind, ID: "brief"}, nil)
+		_, err := tx.softDeleteIf(eref{Kind: metricKind, ID: fid("brief")}, nil)
 		return err
 	})
 	wantValidation(t, "a value whose metric the transaction deletes", err, "is no live metric record")
@@ -464,8 +465,8 @@ func TestObservedValueWithoutItsMetricIsRefused(t *testing.T) {
 	// in K, refused by the kg metric as it stood, is admitted once the same
 	// transaction moves the metric to K.
 	if err := putInOneTx(ds,
-		substrate.PutInput{Kind: obsKind, ID: "o3", Properties: observation("brief", qty("1", "K"))},
-		substrate.PutInput{Kind: metricKind, ID: "brief", Properties: map[string]any{"name": "brief", "form": "gauge", "unit": unitRef("K")}},
+		substrate.PutInput{Kind: obsKind, ID: fid("o3"), Properties: observation(fid("brief"), qty("1", "K"))},
+		substrate.PutInput{Kind: metricKind, ID: fid("brief"), Properties: map[string]any{"name": "brief", "form": "gauge", "unit": unitRef("K")}},
 	); err != nil {
 		t.Fatalf("a value its metric admits once the transaction ends: %v", err)
 	}
@@ -476,22 +477,22 @@ func TestObservedValueWithoutItsMetricIsRefused(t *testing.T) {
 func TestObservedValueOutsideItsMetricsUnitsIsRefused(t *testing.T) {
 	t.Parallel()
 	ds := openSwitchedObserved(t)
-	if err := putMetricErr(ds, "mass", map[string]any{"unit": "kg"}); err != nil {
+	if err := putMetricErr(ds, fid("mass"), map[string]any{"unit": "kg"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := putMetricErr(ds, "narrow", map[string]any{"unit": "kg", "units": []any{map[string]any{"ref": vocabulary.KindUnit + "/lb"}}}); err != nil {
+	if err := putMetricErr(ds, fid("narrow"), map[string]any{"unit": "kg", "units": []any{map[string]any{"ref": vocabulary.KindUnit + "/lb"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := putObservationErr(ds, "a", observation("mass", qty("1", "[lb_av]"))); err != nil {
+	if err := putObservationErr(ds, fid("a"), observation(fid("mass"), qty("1", "[lb_av]"))); err != nil {
 		t.Fatalf("lb under a kg metric: %v", err)
 	}
-	wantValidation(t, "K under a kg metric", putObservationErr(ds, "b", observation("mass", qty("1", "K"))), "K does not convert to the metric's unit kg")
-	if err := putObservationErr(ds, "c", observation("narrow", qty("1", "lb"))); err != nil {
+	wantValidation(t, "K under a kg metric", putObservationErr(ds, fid("b"), observation(fid("mass"), qty("1", "K"))), "K does not convert to the metric's unit kg")
+	if err := putObservationErr(ds, fid("c"), observation(fid("narrow"), qty("1", "lb"))); err != nil {
 		t.Fatalf("a listed unit: %v", err)
 	}
-	wantValidation(t, "g under a metric listing lb", putObservationErr(ds, "d", observation("narrow", qty("1", "g"))), "g is not one of the metric's units kg, lb")
+	wantValidation(t, "g under a metric listing lb", putObservationErr(ds, fid("d"), observation(fid("narrow"), qty("1", "g"))), "g is not one of the metric's units kg, lb")
 	wantValidation(t, "a metric listing a unit apart from its own",
-		putMetricErr(ds, "odd", map[string]any{"unit": "kg", "units": []any{map[string]any{"ref": vocabulary.KindUnit + "/K"}}}), "K does not convert to the metric's unit kg")
+		putMetricErr(ds, fid("odd"), map[string]any{"unit": "kg", "units": []any{map[string]any{"ref": vocabulary.KindUnit + "/K"}}}), "K does not convert to the metric's unit kg")
 }
 
 // A metric may not be created, edited, restored or deleted so that a stored
@@ -499,47 +500,47 @@ func TestObservedValueOutsideItsMetricsUnitsIsRefused(t *testing.T) {
 func TestMetricEditThatStrandsValuesIsRefused(t *testing.T) {
 	t.Parallel()
 	ds := openSwitchedObserved(t)
-	if err := putMetricErr(ds, "m", map[string]any{"unit": "kg"}); err != nil {
+	if err := putMetricErr(ds, fid("m"), map[string]any{"unit": "kg"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := putObservationErr(ds, "live", observation("m", qty("1", "lb"))); err != nil {
+	if err := putObservationErr(ds, fid("live"), observation(fid("m"), qty("1", "lb"))); err != nil {
 		t.Fatal(err)
 	}
-	if err := putObservationErr(ds, "gone", observation("m", qty("1", "g"))); err != nil {
+	if err := putObservationErr(ds, fid("gone"), observation(fid("m"), qty("1", "g"))); err != nil {
 		t.Fatal(err)
 	}
-	if err := deleteRecord(ds, obsKind, "gone", false); err != nil {
+	if err := deleteRecord(ds, obsKind, fid("gone"), false); err != nil {
 		t.Fatal(err)
 	}
-	wantConflict(t, "an edit leaving lb out", putMetricErr(ds, "m", map[string]any{"unit": "kg", "units": []any{"g"}}), "a stored value in lb")
-	wantConflict(t, "an edit leaving the tombstone's g out", putMetricErr(ds, "m", map[string]any{"unit": "kg", "units": []any{"lb"}}), "a stored value in g")
-	wantConflict(t, "an edit moving the unit to another component", putMetricErr(ds, "m", map[string]any{"unit": "K"}), "a stored value in")
-	if err := putMetricErr(ds, "m", map[string]any{"unit": "g"}); err != nil {
+	wantConflict(t, "an edit leaving lb out", putMetricErr(ds, fid("m"), map[string]any{"unit": "kg", "units": []any{"g"}}), "a stored value in lb")
+	wantConflict(t, "an edit leaving the tombstone's g out", putMetricErr(ds, fid("m"), map[string]any{"unit": "kg", "units": []any{"lb"}}), "a stored value in g")
+	wantConflict(t, "an edit moving the unit to another component", putMetricErr(ds, fid("m"), map[string]any{"unit": "K"}), "a stored value in")
+	if err := putMetricErr(ds, fid("m"), map[string]any{"unit": "g"}); err != nil {
 		t.Fatalf("an edit every value still converts under: %v", err)
 	}
-	wantConflict(t, "deleting a metric values point at", deleteRecord(ds, metricKind, "m", false), "cannot be deleted")
+	wantConflict(t, "deleting a metric values point at", deleteRecord(ds, metricKind, fid("m"), false), "cannot be deleted")
 	// Purging the values, the tombstone included, frees the metric.
-	if err := deleteRecord(ds, obsKind, "live", true); err != nil {
+	if err := deleteRecord(ds, obsKind, fid("live"), true); err != nil {
 		t.Fatal(err)
 	}
-	wantConflict(t, "deleting a metric a tombstone points at", deleteRecord(ds, metricKind, "m", false), "cannot be deleted")
-	if err := deleteRecord(ds, obsKind, "gone", true); err != nil {
+	wantConflict(t, "deleting a metric a tombstone points at", deleteRecord(ds, metricKind, fid("m"), false), "cannot be deleted")
+	if err := deleteRecord(ds, obsKind, fid("gone"), true); err != nil {
 		t.Fatal(err)
 	}
-	if err := deleteRecord(ds, metricKind, "m", false); err != nil {
+	if err := deleteRecord(ds, metricKind, fid("m"), false); err != nil {
 		t.Fatalf("deleting a metric nothing points at: %v", err)
 	}
 	// A restore is held like a create: a value of the deleted metric is
 	// written again only beside it, and the restored metric admits it.
-	if err := putMetricErr(ds, "m", map[string]any{"unit": "K"}); err != nil {
+	if err := putMetricErr(ds, fid("m"), map[string]any{"unit": "K"}); err != nil {
 		t.Fatalf("restoring the metric: %v", err)
 	}
-	wantValidation(t, "a value the restored metric refuses", putObservationErr(ds, "again", observation("m", qty("1", "kg"))), "kg does not convert to the metric's unit K")
+	wantValidation(t, "a value the restored metric refuses", putObservationErr(ds, fid("again"), observation(fid("m"), qty("1", "kg"))), "kg does not convert to the metric's unit K")
 	// A value and a metric edit in one transaction: the edit is judged
 	// against the value it writes too.
 	err := putInOneTx(ds,
-		substrate.PutInput{Kind: obsKind, ID: "k1", Properties: observation("m", qty("1", "K"))},
-		substrate.PutInput{Kind: metricKind, ID: "m", Properties: map[string]any{"name": "m", "form": "gauge", "unit": unitRef("kg")}},
+		substrate.PutInput{Kind: obsKind, ID: fid("k1"), Properties: observation(fid("m"), qty("1", "K"))},
+		substrate.PutInput{Kind: metricKind, ID: fid("m"), Properties: map[string]any{"name": "m", "form": "gauge", "unit": unitRef("kg")}},
 	)
 	wantValidation(t, "a value the metric the transaction leaves refuses", err, "K does not convert to the metric's unit kg")
 }
@@ -572,6 +573,17 @@ func wantIDs(t *testing.T, what string, p *substrate.Page, err error, want ...st
 	}
 }
 
+// fixtureIDsInOrder is the fixture ids of names, sorted: the order a list by
+// id answers them in, and the order the engine takes their record locks in.
+func fixtureIDsInOrder(names ...string) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = fid(n)
+	}
+	slices.Sort(out)
+	return out
+}
+
 func weightFilter(op, value, unit string) substrate.Filter {
 	c := substrate.Cond{}
 	q := qty(value, unit)
@@ -592,17 +604,17 @@ func weightFilter(op, value, unit string) substrate.Filter {
 func TestFilterConvertsThroughTheLinearComponent(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	putThing(t, ds, "a", map[string]any{"weight": qty("453.59237", "g")})
-	putThing(t, ds, "b", map[string]any{"weight": qty("453.5924", "g")})
-	putThing(t, ds, "c", map[string]any{"weight": qty("0.5", "kg")})
-	putThing(t, ds, "d", map[string]any{"weight": qty("1", "[lb_av]")})
+	putThing(t, ds, fid("a"), map[string]any{"weight": qty("453.59237", "g")})
+	putThing(t, ds, fid("b"), map[string]any{"weight": qty("453.5924", "g")})
+	putThing(t, ds, fid("c"), map[string]any{"weight": qty("0.5", "kg")})
+	putThing(t, ds, fid("d"), map[string]any{"weight": qty("1", "[lb_av]")})
 	order := []substrate.Order{{Property: "id"}}
 	p, err := listThings(ds, substrate.Query{Filter: weightFilter("eq", "1", "lb"), OrderBy: order})
-	wantIDs(t, "equal to 1 lb", p, err, "a", "d")
+	wantIDs(t, "equal to 1 lb", p, err, fixtureIDsInOrder("a", "d")...)
 	p, err = listThings(ds, substrate.Query{Filter: weightFilter("gt", "1", "pound"), OrderBy: order})
-	wantIDs(t, "above 1 lb", p, err, "b", "c")
+	wantIDs(t, "above 1 lb", p, err, fixtureIDsInOrder("b", "c")...)
 	p, err = listThings(ds, substrate.Query{Filter: weightFilter("lt", "0.4536", "kg"), OrderBy: order})
-	wantIDs(t, "below 0.4536 kg", p, err, "a", "b", "d")
+	wantIDs(t, "below 0.4536 kg", p, err, fixtureIDsInOrder("a", "b", "d")...)
 	_, err = listThings(ds, substrate.Query{Filter: weightFilter("gt", "1", "K")})
 	wantValidation(t, "an operand of another component under a kg anchor", err, "K and kg do not convert")
 	_, err = listThings(ds, substrate.Query{Filter: weightFilter("gt", "1", "stone")})
@@ -614,7 +626,7 @@ func TestFilterConvertsThroughTheLinearComponent(t *testing.T) {
 func TestUnusedUnitsNeverWidenAFilter(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	putThing(t, ds, "a", map[string]any{"weight": qty("1", "kg")})
+	putThing(t, ds, fid("a"), map[string]any{"weight": qty("1", "kg")})
 	ctx := context.Background()
 	tx, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -645,7 +657,7 @@ func TestUnusedUnitsNeverWidenAFilter(t *testing.T) {
 func TestExpressionConversionIsRefusedInAFilter(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	putThing(t, ds, "a", map[string]any{"economy": qty("30", "mpg")})
+	putThing(t, ds, fid("a"), map[string]any{"economy": qty("30", "mpg")})
 	_, err := listThings(ds, substrate.Query{Filter: substrate.Filter{Properties: map[string]substrate.Cond{
 		"economy": {Lt: qty("8", "L/100km")},
 	}}})
@@ -657,11 +669,11 @@ func TestExpressionConversionIsRefusedInAFilter(t *testing.T) {
 func TestOrderWithoutAnAnchorIsRefused(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	putThing(t, ds, "a", map[string]any{"weight": qty("1", "lb"), "loose": qty("1", "kg")})
-	putThing(t, ds, "b", map[string]any{"weight": qty("0.5", "kg"), "loose": qty("1", "K")})
-	putThing(t, ds, "c", map[string]any{"weight": qty("400", "g")})
+	putThing(t, ds, fid("a"), map[string]any{"weight": qty("1", "lb"), "loose": qty("1", "kg")})
+	putThing(t, ds, fid("b"), map[string]any{"weight": qty("0.5", "kg"), "loose": qty("1", "K")})
+	putThing(t, ds, fid("c"), map[string]any{"weight": qty("400", "g")})
 	p, err := listThings(ds, substrate.Query{OrderBy: []substrate.Order{{Property: "weight"}}})
-	wantIDs(t, "ordered by weight", p, err, "c", "a", "b")
+	wantIDs(t, "ordered by weight", p, err, fid("c"), fid("a"), fid("b"))
 	_, err = listThings(ds, substrate.Query{OrderBy: []substrate.Order{{Property: "loose"}}})
 	wantValidation(t, "an order by an unanchored quantity", err, "declares no unit")
 	// A second kind anchoring the name in another component is refused
@@ -698,17 +710,17 @@ func installOther(t *testing.T, ds *dataset, weight map[string]any) {
 func TestPropertyDeltaFiltersOrdersAndRestores(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	putThing(t, ds, "f", map[string]any{"change": qty("18", "degF")}) // 10 K
-	putThing(t, ds, "c", map[string]any{"change": qty("9.5", "Cel")}) // 9.5 K
-	putThing(t, ds, "k", map[string]any{"change": qty("2", "K")})
+	putThing(t, ds, fid("f"), map[string]any{"change": qty("18", "degF")}) // 10 K
+	putThing(t, ds, fid("c"), map[string]any{"change": qty("9.5", "Cel")}) // 9.5 K
+	putThing(t, ds, fid("k"), map[string]any{"change": qty("2", "K")})
 	p, err := listThings(ds, substrate.Query{Filter: substrate.Filter{Properties: map[string]substrate.Cond{
 		"change": {Gt: qty("9", "K")},
 	}}, OrderBy: []substrate.Order{{Property: "change"}}})
-	wantIDs(t, "differences above 9 K, ascending", p, err, "c", "f")
-	if err := deleteRecord(ds, thingKind, "f", false); err != nil {
+	wantIDs(t, "differences above 9 K, ascending", p, err, fid("c"), fid("f"))
+	if err := deleteRecord(ds, thingKind, fid("f"), false); err != nil {
 		t.Fatal(err)
 	}
-	rec := putThing(t, ds, "f", map[string]any{"weight": qty("1", "kg")})
+	rec := putThing(t, ds, fid("f"), map[string]any{"weight": qty("1", "kg")})
 	if q, _ := rec.Properties["change"].(map[string]any); q["value"] != "18" || q["unit"] != "degF" {
 		t.Fatalf("the restore dropped the difference: %v", rec.Properties)
 	}
@@ -721,7 +733,7 @@ func TestCursorAfterAConversionChangeIsRefused(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
 	for i, w := range []string{"1", "2", "3"} {
-		putThing(t, ds, string(rune('a'+i)), map[string]any{"weight": qty(w, "lb")})
+		putThing(t, ds, fid(string(rune('a'+i))), map[string]any{"weight": qty(w, "lb")})
 	}
 	q := substrate.Query{Filter: weightFilter("gt", "100", "g"), OrderBy: []substrate.Order{{Property: "createdAt"}}, First: 1}
 	first, err := listThings(ds, q)
@@ -771,17 +783,17 @@ func TestQuantityIndexIsRefused(t *testing.T) {
 func TestChangedConversionMovesNoStoredValue(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	putThing(t, ds, "a", map[string]any{"weight": qty("1", "lb")})
-	before, _ := ds.Get(context.Background(), thingKind, "a")
+	putThing(t, ds, fid("a"), map[string]any{"weight": qty("1", "lb")})
+	before, _ := ds.Get(context.Background(), thingKind, fid("a"))
 	p, err := listThings(ds, substrate.Query{Filter: weightFilter("gt", "453.6", "g")})
 	wantIDs(t, "above 453.6 g before", p, err)
 	putConversion(t, ds, "lb-g", "lb", "g", map[string]any{"factor": "454"})
-	after, _ := ds.Get(context.Background(), thingKind, "a")
+	after, _ := ds.Get(context.Background(), thingKind, fid("a"))
 	if after.Version != before.Version || storedUnit(t, after, "weight") != "lb" {
 		t.Fatalf("a conversion edit rewrote a stored value: %v -> %v", before.Properties, after.Properties)
 	}
 	p, err = listThings(ds, substrate.Query{Filter: weightFilter("gt", "453.6", "g")})
-	wantIDs(t, "above 453.6 g after", p, err, "a")
+	wantIDs(t, "above 453.6 g after", p, err, fid("a"))
 }
 
 // --- parity with the engine's old table --------------------------------------------
@@ -863,6 +875,12 @@ func parityFilterAnswers(t *testing.T, ds *dataset) map[string]string {
 	for _, o := range []map[string]any{qty("1", "/min"), qty("60", "/min"), qty("3600", "/h")} {
 		probes = append(probes, probe{"rate", substrate.Cond{Eq: o}}, probe{"rate", substrate.Cond{Gte: o}})
 	}
+	// The readings live under fixture ids; the frozen answers name them, in
+	// the order a list by those names gives.
+	names := map[string]string{}
+	for name := range parityReadings {
+		names[fid(name)] = name
+	}
 	out := map[string]string{}
 	split := 0
 	for _, p := range probes {
@@ -875,7 +893,12 @@ func parityFilterAnswers(t *testing.T, ds *dataset) map[string]string {
 		if err != nil {
 			t.Fatalf("%s: %v", label, err)
 		}
-		out[label] = strings.Join(pageIDs(page), ",")
+		matched := make([]string, len(page.Records))
+		for i, r := range page.Records {
+			matched[i] = names[r.ID]
+		}
+		slices.Sort(matched)
+		out[label] = strings.Join(matched, ",")
 		if len(page.Records) > 0 && len(page.Records) < len(parityReadings) {
 			split++
 		}
@@ -965,11 +988,11 @@ func near(a, b string, tol float64) bool {
 func TestAffineSumsAcrossTwoEdges(t *testing.T) {
 	t.Parallel()
 	ds := openSwitchedObserved(t)
-	if err := putMetricErr(ds, "temp", map[string]any{"unit": "K"}); err != nil {
+	if err := putMetricErr(ds, fid("temp"), map[string]any{"unit": "K"}); err != nil {
 		t.Fatal(err)
 	}
 	for i, v := range []map[string]any{qty("10", "Cel"), qty("50", "[degF]"), qty("0", "Cel"), qty("32", "degF")} {
-		if err := putAt(ds, fmt.Sprintf("t%d", i), "temp", "amount", v, aggDay.Add(time.Duration(i+1)*time.Hour), nil); err != nil {
+		if err := putAt(ds, fid(fmt.Sprintf("t%d", i)), fid("temp"), "amount", v, aggDay.Add(time.Duration(i+1)*time.Hour), nil); err != nil {
 			t.Fatalf("put t%d: %v", i, err)
 		}
 	}
@@ -979,7 +1002,7 @@ func TestAffineSumsAcrossTwoEdges(t *testing.T) {
 		{"degF", "164", "41", "32", "50"},
 	} {
 		for _, raw := range []bool{true, false} {
-			got, unit, err := aggregateDay(ds, raw, "temp", c.unit, "sum", "avg", "min", "max")
+			got, unit, err := aggregateDay(ds, raw, fid("temp"), c.unit, "sum", "avg", "min", "max")
 			if err != nil {
 				t.Fatalf("in %q (raw %v): %v", c.unit, raw, err)
 			}
@@ -997,7 +1020,7 @@ func TestAffineSumsAcrossTwoEdges(t *testing.T) {
 			}
 		}
 	}
-	_, _, err := aggregateDay(ds, false, "temp", "kg", "avg")
+	_, _, err := aggregateDay(ds, false, fid("temp"), "kg", "avg")
 	wantValidation(t, "a unit outside the metric's component", err, "kg does not convert to K")
 }
 
@@ -1005,13 +1028,13 @@ func TestAffineSumsAcrossTwoEdges(t *testing.T) {
 func TestExpressionConversionIsRefusedInAnAggregate(t *testing.T) {
 	t.Parallel()
 	ds := openSwitchedObserved(t)
-	if err := putMetricErr(ds, "economy", map[string]any{"unit": "mpg"}); err != nil {
+	if err := putMetricErr(ds, fid("economy"), map[string]any{"unit": "mpg"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := putAt(ds, "e1", "economy", "gauge", qty("30", "mpg"), aggDay.Add(time.Hour), nil); err != nil {
+	if err := putAt(ds, fid("e1"), fid("economy"), "gauge", qty("30", "mpg"), aggDay.Add(time.Hour), nil); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := aggregateDay(ds, false, "economy", "L/100km", "avg")
+	_, _, err := aggregateDay(ds, false, fid("economy"), "L/100km", "avg")
 	wantValidation(t, "an aggregate across an expression", err, "only through an expression conversion")
 }
 
@@ -1027,13 +1050,13 @@ func TestOverflowingFactorIsRefused(t *testing.T) {
 	for i := range 6 {
 		putConversion(t, ds, fmt.Sprintf("u%d-u%d", i, i+1), fmt.Sprintf("u%d", i), fmt.Sprintf("u%d", i+1), map[string]any{"factor": huge})
 	}
-	if err := putMetricErr(ds, "vast", map[string]any{"unit": "u0"}); err != nil {
+	if err := putMetricErr(ds, fid("vast"), map[string]any{"unit": "u0"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := putAt(ds, "v1", "vast", "gauge", qty("1", "u0"), aggDay.Add(time.Hour), nil); err != nil {
+	if err := putAt(ds, fid("v1"), fid("vast"), "gauge", qty("1", "u0"), aggDay.Add(time.Hour), nil); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := aggregateDay(ds, true, "vast", "u6", "avg")
+	_, _, err := aggregateDay(ds, true, fid("vast"), "u6", "avg")
 	wantValidation(t, "a factor of 1e360", err, "past the range of a float")
 }
 
@@ -1071,22 +1094,22 @@ func TestCircularRawAndRollupAgreeAfterATurnChange(t *testing.T) {
 	ds := d.(*dataset)
 	switchedGraph(t, ds)
 	putUnit(t, ds, "arcmin", map[string]any{"name": "minute of arc", "code": "'", "symbol": "′", "turn": nil})
-	if err := putMetricErr(ds, "wind", map[string]any{"unit": "deg"}); err != nil {
+	if err := putMetricErr(ds, fid("wind"), map[string]any{"unit": "deg"}); err != nil {
 		t.Fatal(err)
 	}
 	circular := map[string]any{"circular": true}
 	for i, v := range []map[string]any{qty("350", "deg"), qty("600", "arcmin"), qty("30", "deg")} {
-		if err := putAt(ds, fmt.Sprintf("w%d", i), "wind", "gauge", v, aggDay.Add(time.Duration(i+1)*time.Hour), circular); err != nil {
+		if err := putAt(ds, fid(fmt.Sprintf("w%d", i)), fid("wind"), "gauge", v, aggDay.Add(time.Duration(i+1)*time.Hour), circular); err != nil {
 			t.Fatalf("put w%d: %v", i, err)
 		}
 	}
 	agree := func(ds *dataset, unit, want string) {
 		t.Helper()
-		raw, _, err := aggregateDay(ds, true, "wind", unit, "circularMean")
+		raw, _, err := aggregateDay(ds, true, fid("wind"), unit, "circularMean")
 		if err != nil {
 			t.Fatalf("raw circular mean in %s: %v", unit, err)
 		}
-		rolled, _, err := aggregateDay(ds, false, "wind", unit, "circularMean")
+		rolled, _, err := aggregateDay(ds, false, fid("wind"), unit, "circularMean")
 		if err != nil {
 			t.Fatalf("rolled-up circular mean in %s: %v", unit, err)
 		}
@@ -1101,12 +1124,12 @@ func TestCircularRawAndRollupAgreeAfterATurnChange(t *testing.T) {
 	// A circle of 720 degrees: every stored value keeps its number and its
 	// unit and now names another direction, minutes of arc with it.
 	putUnit(t, ds, "deg", map[string]any{"name": "degree", "code": "deg", "symbol": "°", "turn": "720"})
-	if _, _, err := aggregateDay(ds, false, "wind", "", "circularMean"); !errors.Is(err, substrate.ErrObservedRederiving) {
+	if _, _, err := aggregateDay(ds, false, fid("wind"), "", "circularMean"); !errors.Is(err, substrate.ErrObservedRederiving) {
 		t.Fatalf("a read while the rollups are derived again: %v", err)
 	}
 	DrainIndexReprojection(t, ds)
 	agree(ds, "", circularMeanDeg(720, 350, 10, 30))
-	if err := putAt(ds, "w3", "wind", "gauge", qty("200", "deg"), aggDay.Add(4*time.Hour), circular); err != nil {
+	if err := putAt(ds, fid("w3"), fid("wind"), "gauge", qty("200", "deg"), aggDay.Add(4*time.Hour), circular); err != nil {
 		t.Fatal(err)
 	}
 	want := circularMeanDeg(720, 350, 10, 30, 200)
@@ -1151,7 +1174,7 @@ func parityObserve(t *testing.T, ds *dataset) {
 		"signal": {"unit": "dBm"},
 		"vast":   {"unit": "kg", "form": "amount"},
 	} {
-		if err := putMetricErr(ds, id, props); err != nil {
+		if err := putMetricErr(ds, fid(id), props); err != nil {
 			t.Fatalf("metric %s: %v", id, err)
 		}
 	}
@@ -1170,7 +1193,7 @@ func parityObserve(t *testing.T, ds *dataset) {
 		{"vast", "amount", []map[string]any{qty("9"+strings.Repeat("0", 279), "kg"), qty("-4"+strings.Repeat("0", 279), "kg"), qty("1", "kg")}, nil},
 	} {
 		for i, v := range w.values {
-			if err := putAt(ds, fmt.Sprintf("%s%d", w.metric, i), w.metric, w.form, v, aggDay.Add(time.Duration(i+1)*time.Hour), w.extra); err != nil {
+			if err := putAt(ds, fid(fmt.Sprintf("%s%d", w.metric, i)), fid(w.metric), w.form, v, aggDay.Add(time.Duration(i+1)*time.Hour), w.extra); err != nil {
 				t.Fatalf("put %s %d: %v", w.metric, i, err)
 			}
 		}
@@ -1205,7 +1228,7 @@ func parityAnswers(t *testing.T, ds *dataset) map[string]map[string]string {
 		for _, unit := range c.units {
 			for _, raw := range []bool{true, false} {
 				label := fmt.Sprintf("%s in %q (raw %v)", c.metric, unit, raw)
-				got, _, err := aggregateDay(ds, raw, c.metric, unit, c.reducers...)
+				got, _, err := aggregateDay(ds, raw, fid(c.metric), unit, c.reducers...)
 				if err != nil {
 					t.Fatalf("%s: %v", label, err)
 				}
@@ -1217,7 +1240,7 @@ func parityAnswers(t *testing.T, ds *dataset) map[string]map[string]string {
 		}
 	}
 	for _, red := range []string{"sum", "avg"} {
-		_, _, err := aggregateDay(ds, false, "signal", "", red)
+		_, _, err := aggregateDay(ds, false, fid("signal"), "", red)
 		wantValidation(t, "the "+red+" of a power level", err, "level")
 	}
 	return out
@@ -1245,7 +1268,7 @@ func TestShippedUnitsAnswerAsTheTableDid(t *testing.T) {
 	t.Parallel()
 	ds := openParity(t, testdb.Repository(t))
 	for id, props := range parityReadings {
-		if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: tableKind, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: tableKind, ID: fid(id), Properties: props}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
@@ -1306,9 +1329,9 @@ func sameKeys[V any](t *testing.T, what string, got, want map[string]V) {
 func TestPropertyAggregateConvertsThroughTheGraph(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	putThing(t, ds, "a", map[string]any{"weight": qty("1", "lb")})
-	putThing(t, ds, "b", map[string]any{"weight": qty("500", "g")})
-	putThing(t, ds, "c", map[string]any{"weight": qty("0.25", "kg")})
+	putThing(t, ds, fid("a"), map[string]any{"weight": qty("1", "lb")})
+	putThing(t, ds, fid("b"), map[string]any{"weight": qty("500", "g")})
+	putThing(t, ds, fid("c"), map[string]any{"weight": qty("0.25", "kg")})
 	now := time.Now().UTC()
 	read := func(unit string) (map[string]string, string, error) {
 		res, err := ds.Aggregate(context.Background(), substrate.AggregateQuery{
@@ -1367,7 +1390,7 @@ func TestDeclarationPreviewReadsTheGraphInOneSnapshot(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
 	ctx := context.Background()
-	putThing(t, ds, "a", map[string]any{"weight": qty("1", "lb")})
+	putThing(t, ds, fid("a"), map[string]any{"weight": qty("1", "lb")})
 	rev, err := readUnitRevision(ctx, ds.db)
 	if err != nil {
 		t.Fatal(err)
@@ -1453,7 +1476,7 @@ func TestFlippedDeltaThatRereadsAValueIsRefused(t *testing.T) {
 	if err := applyThing(ds, deltaThing(true)); err != nil {
 		t.Fatalf("declare the differences: %v", err)
 	}
-	putThing(t, ds, "g", map[string]any{"gain": qty("2", "lb")})
+	putThing(t, ds, fid("g"), map[string]any{"gain": qty("2", "lb")})
 	flip := func(name string) error {
 		decl := deltaThing(true)
 		switch name {
@@ -1479,21 +1502,21 @@ func TestFlippedDeltaThatRereadsAValueIsRefused(t *testing.T) {
 	}{
 		{"rise", "r", map[string]any{"rise": qty("10", "Cel")}, `property "rise" declares`},
 		{"parts.rise", "p", map[string]any{"parts": map[string]any{"rise": qty("1", "degF")}}, `object "parts" field "rise" declares`},
-		{"peer.rise", "l", map[string]any{"peer": map[string]any{"ref": thingKind + "/g", "rise": qty("1", "K")}}, `link property "rise" declares`},
+		{"peer.rise", "l", map[string]any{"peer": map[string]any{"ref": thingKind + "/" + fid("g"), "rise": qty("1", "K")}}, `link property "rise" declares`},
 	} {
-		putThing(t, ds, c.id, c.props)
+		putThing(t, ds, fid(c.id), c.props)
 		err := flip(c.name)
 		if err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "live") || !strings.Contains(err.Error(), "reread") {
 			t.Errorf("%s flipped over a live value: err = %v", c.name, err)
 		}
-		if err := deleteRecord(ds, thingKind, c.id, false); err != nil {
+		if err := deleteRecord(ds, thingKind, fid(c.id), false); err != nil {
 			t.Fatal(err)
 		}
 		err = flip(c.name)
 		if err == nil || !strings.Contains(err.Error(), "deleted records hold a value it would reread") {
 			t.Errorf("%s flipped over a tombstone: err = %v", c.name, err)
 		}
-		if err := deleteRecord(ds, thingKind, c.id, true); err != nil {
+		if err := deleteRecord(ds, thingKind, fid(c.id), true); err != nil {
 			t.Fatal(err)
 		}
 		if err := flip(c.name); err != nil {
@@ -1518,8 +1541,8 @@ func TestPropertyAggregateReadsEachKindsDelta(t *testing.T) {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
 		t.Fatalf("declare the other kind: %v", err)
 	}
-	putThing(t, ds, "d", map[string]any{"change": qty("10", "Cel")})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: otherKind, ID: "t", Properties: map[string]any{"change": qty("10", "Cel")}}); err != nil {
+	putThing(t, ds, fid("d"), map[string]any{"change": qty("10", "Cel")})
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: otherKind, ID: fid("t"), Properties: map[string]any{"change": qty("10", "Cel")}}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -1585,7 +1608,7 @@ func TestOverflowingAnswerIsRefused(t *testing.T) {
 		"meter":  {"unit": "small", "form": "counter"},
 		"wind":   {"unit": "deg"},
 	} {
-		if err := putMetricErr(ds, id, props); err != nil {
+		if err := putMetricErr(ds, fid(id), props); err != nil {
 			t.Fatalf("metric %s: %v", id, err)
 		}
 	}
@@ -1606,7 +1629,7 @@ func TestOverflowingAnswerIsRefused(t *testing.T) {
 		{"c2", "meter", "counter", qty("1"+strings.Repeat("0", 12), "small"), 2, nil},
 		{"w1", "wind", "gauge", qty("90", "deg"), 1, map[string]any{"circular": true}},
 	} {
-		if err := putAt(ds, w.id, w.metric, w.form, w.value, at(w.h), w.extra); err != nil {
+		if err := putAt(ds, fid(w.id), fid(w.metric), w.form, w.value, at(w.h), w.extra); err != nil {
 			t.Fatalf("put %s: %v", w.id, err)
 		}
 	}
@@ -1619,10 +1642,10 @@ func TestOverflowingAnswerIsRefused(t *testing.T) {
 			{"a rate of 1e312 an hour", "meter", "big", "rate"},
 			{"a mean angle of 9e308", "wind", "wide", "circularMean"},
 		} {
-			_, _, err := aggregateDay(ds, raw, c.metric, c.unit, c.reducer)
+			_, _, err := aggregateDay(ds, raw, fid(c.metric), c.unit, c.reducer)
 			wantValidation(t, fmt.Sprintf("%s (raw %v)", c.what, raw), err, "past the range of a float")
 		}
-		got, _, err := aggregateDay(ds, raw, "one", "big", "stddev", "avg")
+		got, _, err := aggregateDay(ds, raw, fid("one"), "big", "stddev", "avg")
 		if err != nil || got["stddev"] != "0" || !near(got["avg"], "1e300", 1e286) {
 			t.Errorf("one value in a unit 1e300 larger (raw %v): %v %v, want a deviation of 0 and a mean of 1e300", raw, got, err)
 		}
@@ -1662,7 +1685,7 @@ func TestDeclaredQuantityDefaultIsHeldToItsDeclaration(t *testing.T) {
 	if err := applyThing(ds, withProp(thingDeclaration(), "capped", capped(qty("20", "lb")))); err != nil {
 		t.Fatalf("a default under its max: %v", err)
 	}
-	rec := putThing(t, ds, "d", map[string]any{"weight": qty("1", "kg")})
+	rec := putThing(t, ds, fid("d"), map[string]any{"weight": qty("1", "kg")})
 	if storedUnit(t, rec, "capped") != "lb" {
 		t.Fatalf("the default stored %v", rec.Properties["capped"])
 	}
@@ -1676,15 +1699,15 @@ func TestKindlessFilterSkipsAnUnrelatedAnchor(t *testing.T) {
 	ds := openSwitched(t)
 	ctx := context.Background()
 	installOther(t, ds, map[string]any{"type": "quantity", "unit": "K"})
-	putThing(t, ds, "heavy", map[string]any{"weight": qty("2", "kg")})
-	putThing(t, ds, "light", map[string]any{"weight": qty("1", "lb")})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: otherKind, ID: "warm", Properties: map[string]any{"weight": qty("300", "K")}}); err != nil {
+	putThing(t, ds, fid("heavy"), map[string]any{"weight": qty("2", "kg")})
+	putThing(t, ds, fid("light"), map[string]any{"weight": qty("1", "lb")})
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: otherKind, ID: fid("warm"), Properties: map[string]any{"weight": qty("300", "K")}}); err != nil {
 		t.Fatal(err)
 	}
 	p, err := ds.List(ctx, substrate.Query{Filter: weightFilter("gt", "1", "kg"), OrderBy: []substrate.Order{{Property: "id"}}})
-	wantIDs(t, "weight above 1 kg over every kind", p, err, "heavy")
+	wantIDs(t, "weight above 1 kg over every kind", p, err, fid("heavy"))
 	p, err = ds.List(ctx, substrate.Query{Filter: weightFilter("gt", "0", "Cel"), OrderBy: []substrate.Order{{Property: "id"}}})
-	wantIDs(t, "weight above 0 Cel over every kind", p, err, "warm")
+	wantIDs(t, "weight above 0 Cel over every kind", p, err, fid("warm"))
 	_, err = ds.List(ctx, substrate.Query{Filter: weightFilter("gt", "1", "deg")})
 	wantValidation(t, "an operand no kind's anchor reaches", err, "compares against a quantity value")
 }
@@ -1696,8 +1719,8 @@ func TestKindlessFilterSkipsAnUnrelatedAnchor(t *testing.T) {
 func TestQuantityNarrowingCountsThroughTheGraph(t *testing.T) {
 	t.Parallel()
 	ds := openSwitched(t)
-	putThing(t, ds, "g", map[string]any{"weight": qty("500", "g")})
-	putThing(t, ds, "l", map[string]any{"weight": qty("3", "lb")})
+	putThing(t, ds, fid("g"), map[string]any{"weight": qty("500", "g")})
+	putThing(t, ds, fid("l"), map[string]any{"weight": qty("3", "lb")})
 	listed := withProp(thingDeclaration(), "weight", map[string]any{"type": "quantity", "unit": "kg", "units": []any{"lb"}})
 	err := applyThing(ds, listed)
 	if err == nil || !strings.Contains(err.Error(), "1 live records hold a value it refuses") {
@@ -1710,7 +1733,7 @@ func TestQuantityNarrowingCountsThroughTheGraph(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "1 live records hold a value it refuses") {
 		t.Fatalf("a max of 1 kg over 3 lb: err = %v", err)
 	}
-	if err := deleteRecord(ds, thingKind, "l", true); err != nil {
+	if err := deleteRecord(ds, thingKind, fid("l"), true); err != nil {
 		t.Fatal(err)
 	}
 	if err := applyThing(ds, capped); err != nil {

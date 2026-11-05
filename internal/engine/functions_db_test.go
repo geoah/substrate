@@ -761,7 +761,7 @@ def main(input, host):
 	)
 	ctx := context.Background()
 
-	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: "w", Properties: map[string]any{"count": float64(0)}})
+	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: fid("w"), Properties: map[string]any{"count": float64(0)}})
 	var parked []substrate.TriggerFailure
 	for range 30 {
 		process(t, ds)

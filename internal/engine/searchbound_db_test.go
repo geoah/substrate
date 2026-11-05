@@ -47,13 +47,13 @@ func boundHitIDs(res substrate.SearchResult) []string {
 func TestLexicalSearchRanksStrictMatchesFirstAndTopsUp(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
-	putBoundTask(t, ds, "both", "flight booking confirmation BA286")
-	putBoundTask(t, ds, "flight-only", "flight to Lisbon")
-	putBoundTask(t, ds, "booking-only", "booking for dinner")
-	putBoundTask(t, ds, "neither", "groceries")
+	putBoundTask(t, ds, fid("both"), "flight booking confirmation BA286")
+	putBoundTask(t, ds, fid("flight-only"), "flight to Lisbon")
+	putBoundTask(t, ds, fid("booking-only"), "booking for dinner")
+	putBoundTask(t, ds, fid("neither"), "groceries")
 	res := lexicalSearch(t, ds, "flight booking confirmation")
 	got := boundHitIDs(res)
-	if len(got) != 3 || got[0] != "both" {
+	if len(got) != 3 || got[0] != fid("both") {
 		t.Fatalf("hits = %v, want both first, then the two relaxed matches", got)
 	}
 	if res.Capped || res.Note != "" {
@@ -68,10 +68,10 @@ func TestLexicalSearchReadsABoundedShareOfTheMatches(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t, engine.WithSearchReadMax(2))
 	for i := 1; i <= 5; i++ {
-		putBoundTask(t, ds, fmt.Sprintf("common-%d", i), "common errand")
+		putBoundTask(t, ds, fid(fmt.Sprintf("common-%d", i)), "common errand")
 	}
 	res := lexicalSearch(t, ds, "common")
-	if got := boundHitIDs(res); !equalStrings(slices.Sorted(slices.Values(got)), []string{"common-4", "common-5"}) {
+	if got := boundHitIDs(res); !equalStrings(slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values([]string{fid("common-4"), fid("common-5")}))) {
 		t.Fatalf("strict pass hits = %v, want the two newest", got)
 	}
 	if !res.Capped || !strings.Contains(res.Note, "only the newest 2 matches were ranked") {
@@ -79,14 +79,14 @@ func TestLexicalSearchReadsABoundedShareOfTheMatches(t *testing.T) {
 	}
 
 	// One row matches every word; the relaxed top-up reads two of the rest.
-	putBoundTask(t, ds, "both", "rare common errand")
+	putBoundTask(t, ds, fid("both"), "rare common errand")
 	res = lexicalSearch(t, ds, "rare errand")
 	got := boundHitIDs(res)
-	if len(got) != 3 || got[0] != "both" {
+	if len(got) != 3 || got[0] != fid("both") {
 		t.Fatalf("hits = %v, want the strict match first and two from the top-up", got)
 	}
 	for _, id := range got[1:] {
-		if id == "common-1" || id == "common-2" || id == "common-3" {
+		if id == fid("common-1") || id == fid("common-2") || id == fid("common-3") {
 			t.Fatalf("the top-up read %s, older than the two newest relaxed matches: %v", id, got)
 		}
 	}
@@ -102,7 +102,7 @@ func TestLexicalSearchReadsABoundedShareOfTheMatches(t *testing.T) {
 func TestLexicalSearchPastItsBudgetBeforeAnyMatchAnswersCapped(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t, engine.WithSearchBudget(time.Nanosecond))
-	putBoundTask(t, ds, "a", "flight booking")
+	putBoundTask(t, ds, fid("a"), "flight booking")
 	res, err := ds.Search(context.Background(), substrate.SearchInput{Q: "flight booking", Mode: substrate.SearchLexical})
 	if err != nil {
 		t.Fatalf("a search past its budget failed: %v", err)

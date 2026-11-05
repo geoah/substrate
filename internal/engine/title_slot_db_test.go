@@ -73,7 +73,7 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 		t.Fatalf("install the memo kind: %v", err)
 	}
 	memo := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tsPackage + "/memo", ID: "m1",
+		Kind: tsPackage + "/memo", ID: fid("m1"),
 		Properties: map[string]any{"title": "old heading", "note": "as written"},
 	})
 	if memo.Title != "old heading" {
@@ -95,14 +95,14 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 
 	// A write that touches something else re-derives the title. Without the
 	// `|title` alternative this row would go blank here.
-	moved := mustPatch(t, ds, owner, tsPackage+"/memo", "m1", substrate.PatchInput{
+	moved := mustPatch(t, ds, owner, tsPackage+"/memo", fid("m1"), substrate.PatchInput{
 		Properties: map[string]any{"note": "amended"},
 	})
 	if moved.Title != "old heading" {
 		t.Fatalf("the legacy title did not survive the template: %q", moved.Title)
 	}
 	// And the declared property wins the moment it holds anything.
-	named := mustPatch(t, ds, owner, tsPackage+"/memo", "m1", substrate.PatchInput{
+	named := mustPatch(t, ds, owner, tsPackage+"/memo", fid("m1"), substrate.PatchInput{
 		Properties: map[string]any{"name": "new heading"},
 	})
 	if named.Title != "new heading" || named.Properties["name"] != "new heading" {
@@ -113,7 +113,7 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 	// carries, so a rebuild under the NEW declaration reproduces both the
 	// legacy row and the renamed one rather than re-rendering them.
 	legacy := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tsPackage + "/memo", ID: "m2", Properties: map[string]any{"note": "untouched"},
+		Kind: tsPackage + "/memo", ID: fid("m2"), Properties: map[string]any{"note": "untouched"},
 	})
 	if legacy.Title != "" {
 		t.Fatalf("a row written after the template with no heading has no title: %q", legacy.Title)
@@ -125,7 +125,7 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 	if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
-	if got := mustGet(t, ds, tsPackage+"/memo", "m1"); got.Title != "new heading" {
+	if got := mustGet(t, ds, tsPackage+"/memo", fid("m1")); got.Title != "new heading" {
 		t.Fatalf("the rebuild lost the title: %q", got.Title)
 	}
 }
@@ -140,7 +140,7 @@ func TestClearingTheHeadingKeepsTheRenderedTitle(t *testing.T) {
 	_, ds := newDataset(t)
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, ID: "t-headed",
+		Kind: taskType, ID: fid("t-headed"),
 		Properties: map[string]any{"name": "Buy milk"},
 	})
 	cleared := mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{
@@ -186,13 +186,13 @@ func TestDisplayTemplateRendersStateAndTemporalSlots(t *testing.T) {
 	}
 
 	created := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: tsPackage + "/entry", ID: "e1",
+		Kind: tsPackage + "/entry", ID: fid("e1"),
 		Properties: map[string]any{"at": "2026-09-26T10:00:00Z", "body": "shipped"},
 	})
 	if want := "open at 2026-09-26T10:00:00Z: shipped"; created.Title != want {
 		t.Fatalf("the initial state, the instant and the body render: got %q, want %q", created.Title, want)
 	}
-	moved := mustPatch(t, ds, owner, tsPackage+"/entry", "e1", substrate.PatchInput{
+	moved := mustPatch(t, ds, owner, tsPackage+"/entry", fid("e1"), substrate.PatchInput{
 		Properties: map[string]any{"status": "done"},
 	})
 	if want := "done at 2026-09-26T10:00:00Z: shipped"; moved.Title != want {
@@ -201,7 +201,7 @@ func TestDisplayTemplateRendersStateAndTemporalSlots(t *testing.T) {
 	// An unset slot renders nothing and takes its separator with it
 	// (Template.dropSeparators), so the trailing ": " goes with the empty
 	// body and only the literal's word is left.
-	bare := mustPut(t, ds, owner, substrate.PutInput{Kind: tsPackage + "/entry", ID: "e2"})
+	bare := mustPut(t, ds, owner, substrate.PutInput{Kind: tsPackage + "/entry", ID: fid("e2")})
 	if want := "open at"; bare.Title != want {
 		t.Fatalf("an unset instant and body render empty: got %q, want %q", bare.Title, want)
 	}

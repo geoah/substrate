@@ -372,7 +372,7 @@ func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 	}
 
 	_, err := ds.Put(ctx, slack, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "slack:T1:C1:1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: fid("slack:T1:C1:1"),
 		Properties: map[string]any{"text": "orphan"},
 	})
 	if err == nil {
@@ -384,18 +384,18 @@ func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 	}
 
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "slack:T1",
+		Kind: enginetest.AccountType, ID: fid("slack:T1"),
 		Properties: map[string]any{"provider": "slack"},
 	})
 	conv := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: "slack:T1:C1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversation", ID: fid("slack:T1:C1"),
 		Properties: map[string]any{"category": "channel", "name": "general", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	author := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Alex"},
 	})
 	msg := mustPut(t, ds, slack, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "slack:T1:C1:1",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: fid("slack:T1:C1:1"),
 		Properties: map[string]any{
 			"text":         "hello",
 			"conversation": conv.ID,
@@ -413,7 +413,7 @@ func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 	// addressed to the property, never a silent stub: there is no
 	// resolve-by-value any more.
 	if _, err := ds.Put(ctx, slack, substrate.PutInput{
-		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: "slack:T1:C1:2",
+		Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", ID: fid("slack:T1:C1:2"),
 		Properties: map[string]any{
 			"conversation": "slack:T1:C2",
 			"author":       author.ID,

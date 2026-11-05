@@ -39,7 +39,7 @@ func TestAnAppKeepsWritingTheKeysItsTokenWroteBeforeItsActorMoved(t *testing.T) 
 			old := string(c.before) + "/seen"
 			id := "n-" + string(c.now)[len("app:"):]
 			rec, err := ds.Put(app, c.before, substrate.PutInput{
-				Kind: kind, ID: vocabularySafeID(id), Properties: map[string]any{"text": "x"},
+				Kind: kind, ID: fid(vocabularySafeID(id)), Properties: map[string]any{"text": "x"},
 				Labels: map[string]any{old: "1"}, Annotations: map[string]any{old: "first"},
 			})
 			if err != nil {

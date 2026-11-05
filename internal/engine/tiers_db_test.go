@@ -167,8 +167,8 @@ func TestExtensionWriteIsAVisiblePin(t *testing.T) {
 	ds := newTierDataset(t)
 	ctx := context.Background()
 
-	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
-	pid := tierProfileOf(t, ds, "rec-1")
+	tierSyncRecord(t, ds, fid("rec-1"), "Synced Name", "ada@example.com")
+	pid := tierProfileOf(t, ds, fid("rec-1"))
 	p := tierGet(t, ds, pid)
 	if p.Properties["name"] != "Synced Name" {
 		t.Fatalf("recompute did not fill name: %v", p.Properties["name"])
@@ -186,7 +186,7 @@ func TestExtensionWriteIsAVisiblePin(t *testing.T) {
 	wantMeta(t, p, "name", string(tierFixer), substrate.TierBundle)
 
 	// A fresher sync yields to the pin — visibly, as an alternative.
-	tierSyncRecord(t, ds, "rec-1", "Fresher Name", "ada@example.com")
+	tierSyncRecord(t, ds, fid("rec-1"), "Fresher Name", "ada@example.com")
 	p = tierGet(t, ds, pid)
 	if p.Properties["name"] != "Fixer Name" {
 		t.Fatalf("the sync overwrote a bundle pin: %v", p.Properties["name"])
@@ -226,8 +226,8 @@ func TestTierIsActorDataNotSpelling(t *testing.T) {
 	ds := newTierDataset(t)
 	ctx := context.Background()
 
-	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
-	pid := tierProfileOf(t, ds, "rec-1")
+	tierSyncRecord(t, ds, fid("rec-1"), "Synced Name", "ada@example.com")
+	pid := tierProfileOf(t, ds, fid("rec-1"))
 
 	// A stranger's actor SPELLED like a function is still a stranger: no
 	// function document backs it, so it holds at the owner tier.
@@ -267,7 +267,7 @@ func TestTierIsActorDataNotSpelling(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("sync patch: %v", err)
 	}
-	tierSyncRecord(t, ds, "rec-1", "Fresher Name", "ada@example.com")
+	tierSyncRecord(t, ds, fid("rec-1"), "Fresher Name", "ada@example.com")
 	p = tierGet(t, ds, pid)
 	if p.Properties["name"] != "Fresher Name" {
 		t.Fatalf("a machine-tier hold blocked recompute: %v", p.Properties["name"])
@@ -290,8 +290,8 @@ func TestUndeclaredReservedActorHoldsAtTheMachineTier(t *testing.T) {
 	ds := newTierDataset(t)
 	ctx := context.Background()
 
-	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
-	pid := tierProfileOf(t, ds, "rec-1")
+	tierSyncRecord(t, ds, fid("rec-1"), "Synced Name", "ada@example.com")
+	pid := tierProfileOf(t, ds, fid("rec-1"))
 
 	// No authority declares this hand: nothing in the registry answers for
 	// it, and the name is reserved — the spelling actors carried before
@@ -305,7 +305,7 @@ func TestUndeclaredReservedActorHoldsAtTheMachineTier(t *testing.T) {
 	p := tierGet(t, ds, pid)
 	wantMeta(t, p, "name", string(gone), substrate.TierMachine)
 
-	tierSyncRecord(t, ds, "rec-1", "Fresher Name", "ada@example.com")
+	tierSyncRecord(t, ds, fid("rec-1"), "Fresher Name", "ada@example.com")
 	p = tierGet(t, ds, pid)
 	if p.Properties["name"] != "Fresher Name" {
 		t.Fatalf("an undeclared reserved actor pinned a mapped property against recompute: %v", p.Properties["name"])
@@ -385,8 +385,8 @@ func TestMergeCarriesTier(t *testing.T) {
 		t.Fatalf("put winner: %v", err)
 	}
 	// The loser is a synced profile whose name the bundle actor pinned.
-	tierSyncRecord(t, ds, "rec-2", "Synced Name", "bob@example.com")
-	loserID := tierProfileOf(t, ds, "rec-2")
+	tierSyncRecord(t, ds, fid("rec-2"), "Synced Name", "bob@example.com")
+	loserID := tierProfileOf(t, ds, fid("rec-2"))
 	if _, err := ds.Patch(ctx, tierFixer, typeTierProfile, loserID, substrate.PatchInput{
 		Properties: map[string]any{"name": "Held Name"},
 	}); err != nil {
@@ -475,15 +475,15 @@ func TestDeclaringAnActorAtTheMachineTierReleasesWhatItHolds(t *testing.T) {
 	ds := newTierDataset(t)
 	ctx := context.Background()
 
-	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
-	pid := tierProfileOf(t, ds, "rec-1")
+	tierSyncRecord(t, ds, fid("rec-1"), "Synced Name", "ada@example.com")
+	pid := tierProfileOf(t, ds, fid("rec-1"))
 
 	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, pid, substrate.PatchInput{
 		Properties: map[string]any{"name": "Imported Name"},
 	}); err != nil {
 		t.Fatalf("import patch: %v", err)
 	}
-	tierSyncRecord(t, ds, "rec-1", "Fresher Name", "ada@example.com")
+	tierSyncRecord(t, ds, fid("rec-1"), "Fresher Name", "ada@example.com")
 	p := tierGet(t, ds, pid)
 	if p.Properties["name"] != "Imported Name" {
 		t.Fatalf("a sync overwrote an undeclared actor's owner-tier hold: %v", p.Properties["name"])
@@ -509,8 +509,8 @@ func TestAStoredOwnerRowOfAMachineActorReadsAsMachine(t *testing.T) {
 	ds := newTierDataset(t)
 	ctx := context.Background()
 
-	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
-	pid := tierProfileOf(t, ds, "rec-1")
+	tierSyncRecord(t, ds, fid("rec-1"), "Synced Name", "ada@example.com")
+	pid := tierProfileOf(t, ds, fid("rec-1"))
 	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, pid, substrate.PatchInput{
 		Properties: map[string]any{"nickname": "ada"},
 	}); err != nil {
@@ -547,8 +547,8 @@ func TestDeclaringAnActorAtTheMachineTierDeletesWhatNoSourceOffers(t *testing.T)
 		t.Fatal("a profile an owner-tier hand wrote is marked before the declaration")
 	}
 
-	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
-	linked := tierProfileOf(t, ds, "rec-1")
+	tierSyncRecord(t, ds, fid("rec-1"), "Synced Name", "ada@example.com")
+	linked := tierProfileOf(t, ds, fid("rec-1"))
 	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, linked, substrate.PatchInput{
 		Properties: map[string]any{"emails": []any{"ada@example.com", "ada@work.example"}},
 	}); err != nil {
@@ -586,8 +586,8 @@ func TestReapplyingAMachineActorsPackageReleasesItsStaleHolds(t *testing.T) {
 	ctx := context.Background()
 
 	declareImporterAtMachine(t, ds)
-	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
-	pid := tierProfileOf(t, ds, "rec-1")
+	tierSyncRecord(t, ds, fid("rec-1"), "Synced Name", "ada@example.com")
+	pid := tierProfileOf(t, ds, fid("rec-1"))
 	if _, err := ds.Patch(ctx, tierImporter, typeTierProfile, pid, substrate.PatchInput{
 		Properties: map[string]any{"name": "Imported Name"},
 	}); err != nil {

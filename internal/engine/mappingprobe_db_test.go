@@ -106,15 +106,15 @@ func TestAnExactProbeAnswersWhatTheRowPredicateDid(t *testing.T) {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
-	put(ds, probeSubject, "b", "u-1", "shared@example.com", "B@example.com")
-	put(ds, probeSubject, "a", "u-1", "a@example.com", "shared@example.com")
-	put(ds, probeSubject, "c", "u-2")
-	put(ds, probeSubject, "gone", "u-3", "gone@example.com")
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, probeSubject, "gone", substrate.DeleteInput{}); err != nil {
+	put(ds, probeSubject, fid("b"), "u-1", "shared@example.com", "B@example.com")
+	put(ds, probeSubject, fid("a"), "u-1", "a@example.com", "shared@example.com")
+	put(ds, probeSubject, fid("c"), "u-2")
+	put(ds, probeSubject, fid("gone"), "u-3", "gone@example.com")
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, probeSubject, fid("gone"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	put(ds, probeOther, "o", "u-2", "a@example.com")
-	put(other, probeSubject, "elsewhere", "u-1", "a@example.com")
+	put(ds, probeOther, fid("o"), "u-2", "a@example.com")
+	put(other, probeSubject, fid("elsewhere"), "u-1", "a@example.com")
 
 	for _, tc := range []struct {
 		prop     string
@@ -122,12 +122,12 @@ func TestAnExactProbeAnswersWhatTheRowPredicateDid(t *testing.T) {
 		value    string
 		want     []string
 	}{
-		{"url", false, "u-1", []string{"a", "b"}},
-		{"url", false, "u-2", []string{"c"}},
+		{"url", false, "u-1", fixtureIDsInOrder("a", "b")},
+		{"url", false, "u-2", []string{fid("c")}},
 		{"url", false, "U-1", nil},
 		{"url", false, "u-3", nil},
-		{"emails", true, "shared@example.com", []string{"a", "b"}},
-		{"emails", true, "a@example.com", []string{"a"}},
+		{"emails", true, "shared@example.com", fixtureIDsInOrder("a", "b")},
+		{"emails", true, "a@example.com", []string{fid("a")}},
 		{"emails", true, "b@example.com", nil},
 		{"emails", true, "gone@example.com", nil},
 		// A probe whose shape is not the stored value's finds nothing either
@@ -143,7 +143,7 @@ func TestAnExactProbeAnswersWhatTheRowPredicateDid(t *testing.T) {
 			t.Errorf("probe %s=%q (repeated %v) = %v, the row predicate found %v", tc.prop, tc.value, tc.repeated, got, row)
 		}
 	}
-	if got := indexedProbe(t, other, probeSubject, "url", false, "u-1"); !slices.Equal(got, []string{"elsewhere"}) {
+	if got := indexedProbe(t, other, probeSubject, "url", false, "u-1"); !slices.Equal(got, []string{fid("elsewhere")}) {
 		t.Errorf("the other repository's probe = %v, want its own record alone", got)
 	}
 }
@@ -162,7 +162,7 @@ func TestAnExactProbeSeeksThePropsIndex(t *testing.T) {
 	if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
 		for i := range n {
 			if _, err := tx.put(substrate.PutInput{
-				Kind: probeSubject, ID: fmt.Sprintf("s%04d", i),
+				Kind: probeSubject, ID: fid(fmt.Sprintf("s%04d", i)),
 				Properties: map[string]any{
 					"url":    fmt.Sprintf("u-%d", i),
 					"emails": []any{fmt.Sprintf("p%d@example.com", i), fmt.Sprintf("q%d@example.com", i)},
@@ -219,8 +219,8 @@ func TestAnExactProbeSeeksThePropsIndex(t *testing.T) {
 		value    string
 		want     string
 	}{
-		{"url", false, "u-421", "s0421"},
-		{"emails", true, "q421@example.com", "s0421"},
+		{"url", false, "u-421", fid("s0421")},
+		{"emails", true, "q421@example.com", fid("s0421")},
 	} {
 		var got []string
 		q := log.sent(t, "records_containing", func() {

@@ -27,13 +27,13 @@ func TestAStopHoldsAgainstAResolutionThatLandedMidTurn(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-stop", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-stop"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	hold, _ := heldTurn(t)
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-stop","diff":{"properties":{"name":"better"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-stop") + `","diff":{"properties":{"name":"better"}}}`}}},
 		fakeTurn{content: "partial reply", hold: hold},
 	)
 	log := newEventLog()
@@ -107,7 +107,7 @@ func TestTheSweepLeavesAStoppedThreadAlone(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-self", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-self"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestTheSweepLeavesAStoppedThreadAlone(t *testing.T) {
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"name": "better"}},
 			"thread": thread,
-			"target": vocabulary.RecordPath(crewPackage+"/widget", "w-self"),
+			"target": vocabulary.RecordPath(crewPackage+"/widget", fid("w-self")),
 		},
 	}); err != nil {
 		t.Fatalf("put request: %v", err)
@@ -315,7 +315,7 @@ func TestAStopDuringTheFinalWriteSettlesStoppedAndResumesNothing(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-late", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-late"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +332,7 @@ func TestAStopDuringTheFinalWriteSettlesStoppedAndResumesNothing(t *testing.T) {
 		return nil
 	}
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-late","diff":{"properties":{"name":"better"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-late") + `","diff":{"properties":{"name":"better"}}}`}}},
 		fakeTurn{content: "final answer"},
 	)
 	log := newEventLog()

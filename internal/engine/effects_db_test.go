@@ -120,7 +120,7 @@ func TestEffectIfAbsentMintsSerialize(t *testing.T) {
 	// overwrites.
 	ds := newRaceDataset(t)
 	ctx := context.Background()
-	const id = "mint-target"
+	id := fid("mint-target")
 
 	apply := func(val string) error {
 		return ds.inTx(ctx, raceActor, false, func(tx *txn) error {

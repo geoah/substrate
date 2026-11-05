@@ -49,12 +49,12 @@ func TestResumeNeverWithholdsTheContinuation(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-stoic", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-stoic"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	fake.script("stoic",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-stoic","diff":{"properties":{"name":"better"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-stoic") + `","diff":{"properties":{"name":"better"}}}`}}},
 		fakeTurn{content: "proposed."},
 	)
 	res, err := ds.CallAgent(ctx, crewPackage+"/stoic", "change the widget")
@@ -84,7 +84,7 @@ func TestSelfResolutionDoesNotResumeOwnThread(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-selfish", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-selfish"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestSelfResolutionDoesNotResumeOwnThread(t *testing.T) {
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"name": "better"}},
 			"thread": first.Thread,
-			"target": vocabulary.RecordPath(crewPackage+"/widget", "w-selfish"),
+			"target": vocabulary.RecordPath(crewPackage+"/widget", fid("w-selfish")),
 		},
 	}); err != nil {
 		t.Fatalf("put request: %v", err)
@@ -115,7 +115,7 @@ func TestSelfResolutionDoesNotResumeOwnThread(t *testing.T) {
 	if _, err := ds.CallAgent(ctx, crewPackage+"/selfjudge", "work the inbox"); err != nil {
 		t.Fatalf("second call: %v", err)
 	}
-	if got, err := ds.Get(ctx, crewPackage+"/widget", "w-selfish"); err != nil || got.Properties["name"] != "better" {
+	if got, err := ds.Get(ctx, crewPackage+"/widget", fid("w-selfish")); err != nil || got.Properties["name"] != "better" {
 		t.Fatalf("the accept did not land: %+v %v", got, err)
 	}
 	if len(systemMessages(t, ds, first.Thread)) != 1 {
@@ -131,14 +131,14 @@ func TestSettleRecheckConsumesMidTurnResolutions(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-mid", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-mid"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	arrived := make(chan struct{})
 	release := make(chan struct{})
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-mid","diff":{"properties":{"name":"better"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-mid") + `","diff":{"properties":{"name":"better"}}}`}}},
 		// The barrier turn: the loop is MID-RUN (lease held) while the test
 		// accepts the proposal, so the accept's resume loses the lease.
 		fakeTurn{content: "still thinking.", arrived: arrived, release: release},
@@ -225,12 +225,12 @@ func TestConflictedAcceptReportsBack(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: crewPackage + "/widget", ID: "w-moved", Properties: map[string]any{"name": "raw"},
+		Kind: crewPackage + "/widget", ID: fid("w-moved"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	fake.script("root",
-		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"w-moved","diff":{"properties":{"name":"better"}}}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"kind":"crew.test.dev/crew/widget","target":"` + fid("w-moved") + `","diff":{"properties":{"name":"better"}}}`}}},
 		fakeTurn{content: "proposed."},
 		// The conflict notification resumes the thread too: the agent should
 		// hear that its held write can no longer land as reviewed.
@@ -241,7 +241,7 @@ func TestConflictedAcceptReportsBack(t *testing.T) {
 		t.Fatalf("call: %v", err)
 	}
 	// The target moves under the pending request, so the accept's CAS fails.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, crewPackage+"/widget", "w-moved", substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, crewPackage+"/widget", fid("w-moved"), substrate.PatchInput{
 		Properties: map[string]any{"name": "owner-took-it"},
 	}); err != nil {
 		t.Fatal(err)
@@ -261,7 +261,7 @@ func TestConflictedAcceptReportsBack(t *testing.T) {
 	if err := json.Unmarshal([]byte(content), &env); err != nil {
 		t.Fatalf("the report is not an envelope: %q", content)
 	}
-	if env["event"] != "proposalConflicted" || !strings.Contains(content, "w-moved") {
+	if env["event"] != "proposalConflicted" || !strings.Contains(content, fid("w-moved")) {
 		t.Fatalf("envelope: %+v", env)
 	}
 	// The request is still proposed, annotated, and the thread resumed.

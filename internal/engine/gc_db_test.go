@@ -96,11 +96,11 @@ func TestOwnerRefReferenceCascade(t *testing.T) {
 	}
 
 	acc := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "acct-one",
+		Kind: enginetest.AccountType, ID: fid("acct-one"),
 		Properties: map[string]any{"provider": "testmirror", "label": "One"},
 	})
 	other := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "acct-two",
+		Kind: enginetest.AccountType, ID: fid("acct-two"),
 		Properties: map[string]any{"provider": "testmirror", "label": "Two"},
 	})
 
@@ -108,22 +108,22 @@ func TestOwnerRefReferenceCascade(t *testing.T) {
 	// supplies the kind, so the stored reference carries the path the sweep
 	// probes under `ref` (decision 0044).
 	synced := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: mirrorPackage + "/owned", ID: "synced-one",
+		Kind: mirrorPackage + "/owned", ID: fid("synced-one"),
 		Properties: map[string]any{"label": "synced", "account": acc.ID},
 	})
 	if got := storedRefPath(mustGet(t, ds, synced.Kind, synced.ID).Properties["account"]); got != enginetest.AccountType+"/"+acc.ID {
 		t.Fatalf("stored account = %v, want the canonical path", got)
 	}
 	elsewhere := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: mirrorPackage + "/owned", ID: "synced-two",
+		Kind: mirrorPackage + "/owned", ID: fid("synced-two"),
 		Properties: map[string]any{"label": "other account", "account": other.ID},
 	})
 	provenance := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: mirrorPackage + "/pointer", ID: "pointer-one",
+		Kind: mirrorPackage + "/pointer", ID: fid("pointer-one"),
 		Properties: map[string]any{"label": "not an owner", "account": acc.ID},
 	})
 	legacy := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: mirrorPackage + "/legacy", ID: "legacy-one",
+		Kind: mirrorPackage + "/legacy", ID: fid("legacy-one"),
 		Properties: map[string]any{"label": "a string", "account": acc.ID},
 	})
 
@@ -282,36 +282,36 @@ func TestOwnerRefTraitReferenceCascade(t *testing.T) {
 	}
 
 	accA := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorPackage + "/providera", ID: "acct-a",
+		Kind: traitMirrorPackage + "/providera", ID: fid("acct-a"),
 		Properties: map[string]any{"label": "A"},
 	})
 	accB := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorPackage + "/providerb", ID: "acct-b",
+		Kind: traitMirrorPackage + "/providerb", ID: fid("acct-b"),
 		Properties: map[string]any{"label": "B"},
 	})
 
 	// A trait pin supplies no kind for a bare id, so the value is a full path.
 	synced := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorPackage + "/session", ID: "sess-a",
+		Kind: traitMirrorPackage + "/session", ID: fid("sess-a"),
 		Properties: map[string]any{"label": "on A", "account": accA.Kind + "/" + accA.ID},
 	})
 	elsewhere := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorPackage + "/session", ID: "sess-b",
+		Kind: traitMirrorPackage + "/session", ID: fid("sess-b"),
 		Properties: map[string]any{"label": "on B", "account": accB.Kind + "/" + accB.ID},
 	})
 	provenance := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorPackage + "/pointer", ID: "ptr-a",
+		Kind: traitMirrorPackage + "/pointer", ID: fid("ptr-a"),
 		Properties: map[string]any{"label": "not an owner", "account": accA.Kind + "/" + accA.ID},
 	})
 
 	// A referent whose kind does not implement the trait is refused: the write
 	// path checks the pin, not only the shape.
 	stranger := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorPackage + "/stranger", ID: "str-1",
+		Kind: traitMirrorPackage + "/stranger", ID: fid("str-1"),
 		Properties: map[string]any{"label": "no trait"},
 	})
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: traitMirrorPackage + "/session", ID: "sess-bad",
+		Kind: traitMirrorPackage + "/session", ID: fid("sess-bad"),
 		Properties: map[string]any{"label": "bad", "account": stranger.Kind + "/" + stranger.ID},
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not implement the pinned trait") {
@@ -350,11 +350,11 @@ func TestIncomingOverTraitReference(t *testing.T) {
 		t.Fatalf("install trait mirror types: %v", err)
 	}
 	accA := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorPackage + "/providera", ID: "acct-a",
+		Kind: traitMirrorPackage + "/providera", ID: fid("acct-a"),
 		Properties: map[string]any{"label": "A"},
 	})
 	sess := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: traitMirrorPackage + "/session", ID: "sess-a",
+		Kind: traitMirrorPackage + "/session", ID: fid("sess-a"),
 		Properties: map[string]any{"label": "on A", "account": accA.Kind + "/" + accA.ID},
 	})
 	page := referencing(t, ds, accA.Kind, accA.ID, substrate.Filter{}, 50, "")
