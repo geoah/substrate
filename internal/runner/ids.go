@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"strconv"
 	"strings"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The deterministic id algorithm, in Go: the MIRROR of host.py's `ids.external`
@@ -25,6 +27,11 @@ import (
 // these two hash whatever they are handed. A caller passing an empty component
 // gets a digest here and an error in a body, so the vectors and the callers
 // both stay on non-empty components.
+
+// MintedID is host.py's `ids.minted`: vocabulary.DerivedMintedID over the
+// parts, the minted-shape id a body derives when only a minted id may name
+// a new record (decision 0228).
+func MintedID(parts ...string) string { return vocabulary.DerivedMintedID(parts...) }
 
 // ExternalID is a stable id for one external record: provider + account + its
 // id. The provider becomes a human-readable slug in front of the digest;

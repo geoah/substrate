@@ -1,7 +1,7 @@
 package runner
 
 // The deterministic-id contract: ids.go is byte-identical to host.py's
-// `ids.external` and `ids.url`. The golden vectors in testdata/id_vectors.json
+// `ids.external`, `ids.url` and `ids.minted`. The golden vectors in testdata/id_vectors.json
 // were minted by host.py; this test recomputes them through ids.go, so a
 // refactor of either side that changes an id fails here instead of silently
 // splitting one harvested record into two. It also covers the ASCII-only slug
@@ -30,11 +30,15 @@ func TestIDVectorsMatchPython(t *testing.T) {
 			URL string `json:"url"`
 			ID  string `json:"id"`
 		} `json:"url"`
+		Minted []struct {
+			Parts []string `json:"parts"`
+			ID    string   `json:"id"`
+		} `json:"minted"`
 	}
 	if err := json.Unmarshal(raw, &vecs); err != nil {
 		t.Fatalf("decode vectors: %v", err)
 	}
-	if len(vecs.External) == 0 || len(vecs.URL) == 0 {
+	if len(vecs.External) == 0 || len(vecs.URL) == 0 || len(vecs.Minted) == 0 {
 		t.Fatalf("vectors file is empty")
 	}
 	for _, v := range vecs.External {
@@ -46,6 +50,11 @@ func TestIDVectorsMatchPython(t *testing.T) {
 	for _, v := range vecs.URL {
 		if got := URLID(v.URL); got != v.ID {
 			t.Errorf("URLID(%q) = %q, want %q (Python parity)", v.URL, got, v.ID)
+		}
+	}
+	for _, v := range vecs.Minted {
+		if got := MintedID(v.Parts...); got != v.ID {
+			t.Errorf("MintedID(%q) = %q, want %q (Python parity)", v.Parts, got, v.ID)
 		}
 	}
 }

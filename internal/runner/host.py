@@ -281,6 +281,25 @@ class Ids:
         digest = _id_hash("url", "", u)
         return (slug + "-" + digest) if slug else digest
 
+    def minted(self, *parts):
+        """An id in the minted shape derived from parts: what a body writes
+        when the record's kind is not internal and the body runs as an
+        agent's tool, where only a minted id may name a new record (decision
+        0228). The same parts give the same id, so a retry names the same
+        record. Mirrors vocabulary.DerivedMintedID: the first 16 bytes of
+        sha256 over the parts joined by NUL, marked UUID version 8, written as
+        26 lowercase Crockford base32 characters."""
+        if not parts:
+            raise ValueError("ids.minted: give at least one part")
+        for i, p in enumerate(parts):
+            _need_component("minted", "part %d" % i, p)
+        raw = bytearray(hashlib.sha256("\x00".join(parts).encode("utf-8")).digest()[:16])
+        raw[6] = (raw[6] & 0x0F) | 0x80
+        raw[8] = (raw[8] & 0x3F) | 0x80
+        n = int.from_bytes(bytes(raw), "big")
+        alphabet = "0123456789abcdefghjkmnpqrstvwxyz"
+        return "".join(alphabet[(n >> (5 * (25 - i))) & 31] for i in range(26))
+
 
 class Page:
     """The paged-checkpoint wrapper. `resume()` returns the opaque cursor the
