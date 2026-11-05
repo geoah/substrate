@@ -13,7 +13,9 @@ public enum TasksSettings {
     public static let hours = [7, 8, 9, 12, 18]
     public static let defaultHour = 9
 
-    public static func reminds(_ values: SettingsValues) -> Bool { values.toggle(remind, default: true) }
+    /// Off until the owner turns it on, which is when the system is asked
+    /// whether the app may notify.
+    public static func reminds(_ values: SettingsValues) -> Bool { values.toggle(remind, default: false) }
 
     public static func hour(_ values: SettingsValues) -> Int {
         Int(values.choice(remindHour, default: String(defaultHour))) ?? defaultHour
@@ -66,7 +68,9 @@ public enum TasksSettings {
         return [
             SettingsSection(
                 id: .app("reminders"), title: "Reminders", rows: reminders,
-                footer: "A task due at a time reminds you then; a task due on a day, at the hour above."),
+                footer: reminds(values)
+                    ? "A task due at a time reminds you then; a task due on a day, at the hour above."
+                    : "Turned on, you are asked once whether Substrate Tasks may send notifications."),
             SettingsSection(id: .app("lists"), title: "Lists", rows: lists),
         ]
     }

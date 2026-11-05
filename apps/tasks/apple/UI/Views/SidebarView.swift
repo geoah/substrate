@@ -60,11 +60,15 @@ struct SidebarView: View {
             Button {
                 naming = ListNaming(id: nil, name: "")
             } label: {
-                Label(sidebar.newList, systemImage: "plus.circle.fill")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Label(sidebar.newList, systemImage: "plus")
+                    .font(.body.weight(.semibold))
+                    .padding(.horizontal, 6)
             }
-            .buttonStyle(.borderless)
-            .padding()
+            .buttonStyle(.glass)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
         }
         .refreshable { shell.send(.refresh) }
         .listNaming($naming)
@@ -89,20 +93,30 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func rowView(_ row: SidebarRow) -> some View {
-        let label = Label(row.title, systemImage: TasksSymbols.symbol(row.symbol))
-            .badge(row.open)
-            .accessibilityValue(row.openWords)
+        let label = Label {
+            Text(row.title).foregroundStyle(Color.primary)
+        } icon: {
+            Image(systemName: TasksSymbols.symbol(row.symbol)).foregroundStyle(Color.brandAccent)
+        }
         if menu == nil {
+            // A button tints what it holds, so the count is drawn here,
+            // grey, rather than as the row's badge.
             Button {
                 select(row.selection)
             } label: {
                 HStack {
-                    label.foregroundStyle(Color.primary)
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                    label
+                    Spacer()
+                    if row.open > 0 { Text(row.open, format: .number).foregroundStyle(Color.secondary) }
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondary.opacity(0.6))
                 }
             }
+            .accessibilityValue(row.openWords)
         } else {
-            label.tag(Item.list(row.selection))
+            label
+                .badge(row.open)
+                .accessibilityValue(row.openWords)
+                .tag(Item.list(row.selection))
         }
     }
 

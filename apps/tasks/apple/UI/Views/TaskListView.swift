@@ -7,16 +7,15 @@ import TasksCore
 
 /// One list's tasks: the open ones in the order the presentation gives,
 /// dragged to reorder where it allows, then the completed ones when shown;
-/// the quick add field at the bottom. Every change is a command.
+/// New Task at the bottom, and the list's options one tap away. Every
+/// change is a command.
 struct TaskListView: View {
     @Environment(TasksShell.self) private var shell
     @Environment(\.horizontalSizeClass) private var sizeClass
     let list: ListPresentation
     let app: TasksPresentation
     let link: LinkPresentation<TasksPresentation>
-    @State private var draft = ""
     @State private var naming: ListNaming?
-    @FocusState private var adding: Bool
 
     var body: some View {
         List(selection: selection) { rows }
@@ -27,8 +26,7 @@ struct TaskListView: View {
             }
             .navigationTitle(list.title)
             .refreshable { shell.send(.refresh) }
-            .scrollDismissesKeyboard(.immediately)
-            .safeAreaInset(edge: .bottom) { quickAdd }
+            .safeAreaInset(edge: .bottom) { newTaskButton }
             .toolbar { toolbar }
             .listNaming($naming)
     }
@@ -62,25 +60,27 @@ struct TaskListView: View {
         }
     }
 
+    /// On a phone the row's content opens the task, beside its round mark;
+    /// beside a detail column the row is the list's selection.
     @ViewBuilder
     private func rowView(_ row: TaskRow) -> some View {
         Group {
             if sizeClass == .compact {
-                Button {
-                    shell.send(.open(task: row.id))
-                } label: {
-                    TaskRowView(row: row)
-                }
-                .buttonStyle(.plain)
+                TaskRowView(row: row, open: { shell.send(.open(task: row.id)) })
             } else {
                 TaskRowView(row: row).tag(row.id)
             }
         }
+        // The open task's row is marked whichever path drew it: an iPad's
+        // middle column is compact too, and there no selection draws one.
+        // On a phone the task covers its list while it is open.
+        .listRowBackground(Color.secondary.opacity(app.detail?.id == row.id ? 0.15 : 0))
         .swipeActions(edge: .leading) {
             Button(row.toggle) { shell.send(row.status == .open ? .complete(row.id) : .reopen(row.id)) }
                 .tint(.green)
         }
-        .swipeActions(edge: .trailing) {
+        // Deleting is never a full swipe: it takes the revealed button.
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(list.rowMenu.swipeDelete, role: .destructive) { shell.send(.deleteTask(row.id)) }
             if row.status == .open {
                 Button(list.rowMenu.abandon) { shell.send(.abandon(row.id)) }
@@ -100,51 +100,72 @@ struct TaskListView: View {
         shell.send(.reorderTask(list.open.rows[source].id, to: to > source ? to - 1 : to))
     }
 
-    private var quickAdd: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "plus.circle.fill").foregroundStyle(Color.brandAccent).font(.title3)
-            TextField(list.quickAdd, text: $draft)
-                .focused($adding)
-                .submitLabel(.done)
-                .onSubmit {
-                    // Return on what was typed adds it and stays for the
-                    // next; return on an empty field ends adding.
-                    adding = !draft.trimmingCharacters(in: .whitespaces).isEmpty
-                    shell.send(.quickAdd(draft))
-                    draft = ""
-                }
+    /// The one way to add a task: the editor, seeded with this list (and
+    /// today, in Today).
+    private var newTaskButton: some View {
+        Button {
+            shell.send(.newTask)
+        } label: {
+            Label(list.newTask, systemImage: "plus")
+                .font(.body.weight(.semibold))
+                .padding(.horizontal, 6)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .glassEffect(.regular.interactive(), in: .capsule)
+        .buttonStyle(.glassProminent)
+        .controlSize(.large)
+        .tint(.brandAccent)
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.horizontal)
         .padding(.bottom, 8)
     }
 
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                shell.send(.newTask)
-            } label: {
-                Label(list.newTask, systemImage: "square.and.pencil")
+    /// The order, as Settings offers it: one choice for every list.
+    private var sort: (label: String, selected: String, options: [SettingsOption])? {
+        for section in app.settings {
+            for row in section.rows where row.id == .app(TasksSettings.order) {
+                if case let .choice(selected, options) = row.control { return (row.label, selected, options) }
             }
         }
-        ToolbarItem(placement: .secondaryAction) {
-            Menu {
-                if list.selection != .today {
-                    Button(list.toggleClosed) {
-                        shell.send(.settings(.toggle(row: .app(TasksSettings.showCompleted), on: !list.showsClosed)))
+        return nil
+    }
+
+    /// Today is what is due, in due order and open: nothing to sort or show.
+    private var offersViewOptions: Bool { list.selection != .today }
+
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        if offersViewOptions || !list.actions.isEmpty {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    if offersViewOptions {
+                        if let sort {
+                            Picker(
+                                sort.label,
+                                selection: Binding(
+                                    get: { sort.selected },
+                                    set: { shell.send(.settings(.choose(row: .app(TasksSettings.order), option: $0))) })
+                            ) {
+                                ForEach(sort.options, id: \.id) { Text($0.label).tag($0.id) }
+                            }
+                            .pickerStyle(.menu)
+                        }
+                        Button(list.toggleClosed, systemImage: list.showsClosed ? "eye.slash" : "eye") {
+                            shell.send(.settings(.toggle(row: .app(TasksSettings.showCompleted), on: !list.showsClosed)))
+                        }
                     }
-                }
-                ForEach(list.actions, id: \.self) { action in
-                    switch action.action {
-                    case let .rename(id): Button(action.title) { naming = ListNaming(id: id, name: list.title) }
-                    case let .delete(id): Button(action.title, role: .destructive) { shell.send(.deleteList(id)) }
+                    if !list.actions.isEmpty {
+                        Divider()
+                        ForEach(list.actions, id: \.self) { action in
+                            switch action.action {
+                            case let .rename(id):
+                                Button(action.title, systemImage: "pencil") { naming = ListNaming(id: id, name: list.title) }
+                            case let .delete(id):
+                                Button(action.title, systemImage: "trash", role: .destructive) { shell.send(.deleteList(id)) }
+                            }
+                        }
                     }
+                } label: {
+                    Label("List Options", systemImage: "ellipsis")
                 }
-            } label: {
-                Label("List Options", systemImage: "ellipsis.circle")
             }
         }
     }

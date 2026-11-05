@@ -121,6 +121,7 @@ public enum TasksPresenter {
         if let due { spoken.append("due \(due.text)") }
         if let priority { spoken.append("priority \(priority.text)") }
         if let listName { spoken.append("in \(listName)") }
+        if task.notes != nil { spoken.append("has notes") }
         return TaskRow(
             id: task.id, title: title, status: task.status, toggle: task.isOpen ? "Mark as Done" : "Reopen", due: due,
             priority: priority, listName: listName, hasNotes: task.notes != nil, spoken: spoken.joined(separator: ", "))

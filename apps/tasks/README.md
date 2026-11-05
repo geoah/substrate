@@ -16,7 +16,7 @@ draws it and sends commands, nothing else.
 | `apple/UI/` | `SubstrateTasksUI`: the kit's `AppShell` over the app's root, and the SwiftUI views |
 | `apple/Tests/` | the views drawn from TasksKit's fixtures, on the Mac |
 | `android/` | the Android app: the Gradle module `:tasks`, its Compose UI, its bridge configuration and generated Kotlin, and its gallery test over `fixtures/tasks.json` |
-| `docs/screenshots/` | the app on an iPhone and an iPad simulator against a local substrate (the approval, Today, the lists, a list, a task, the editor, offline, Settings, and the iPad's three columns), and the Mac's split layout drawn offscreen; `android/`, the app on an Android emulator against one (sign-in, a list, a task, offline, Settings, a reminder) |
+| `docs/screenshots/` | the app on an iPhone and an iPad simulator against a local substrate (the approval, Today, the lists, a list and its options, a task, the editor, offline, Settings, and the iPad's three columns), and the Mac's split layout drawn offscreen; `android/`, the app on an Android emulator against one (sign-in, a list, a task, offline, Settings, a reminder) |
 
 ## TasksKit
 
@@ -130,8 +130,9 @@ whose revisions follow `TasksState.revision`. TasksKit needed nothing but
   planning it) until it is shown, a tap reaching kit-device's unexported
   `NotificationOpened` and, from it, the app's `reminderTapped`; the
   exported launcher activity reads nothing from its intent, so no other
-  app can make a tap. The permission is asked the first time a task has a
-  due date. `USE_EXACT_ALARM` suits a sideloaded app; distributing through
+  app can make a tap. Reminders are off until the owner turns them on in
+  Settings, and turning them on is when the permission is asked.
+  `USE_EXACT_ALARM` suits a sideloaded app; distributing through
   Google Play would need `SCHEDULE_EXACT_ALARM` with the flow that asks
   the owner for it, unless Play accepts the app's use as one that
   qualifies for `USE_EXACT_ALARM`.

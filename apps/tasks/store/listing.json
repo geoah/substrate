@@ -1,7 +1,7 @@
 {
   "subtitle": "To-dos kept on your own server",
   "promotionalText": "Your lists and tasks, kept in the substrate you run, and on every device you sign in to.",
-  "description": "Substrate Tasks is a to-do list that lives in your substrate, the personal server you run or choose. Your lists and tasks are records on that server, so they stay yours: there is no account with us, and nothing goes anywhere else.\n\n• Tasks with a due day or a due time, and a priority\n• Lists in the order you choose\n• Reminders when a task is due\n• Works offline: changes wait on your device and are sent when you are back online\n• Updates live when something changes on your server\n• On iPhone, iPad and Mac\n\nSubstrate Tasks is a client for a substrate. Sign in with your server's address and approve what the app may do there: it asks only for your lists and tasks.",
+  "description": "Substrate Tasks is a to-do list that lives in your substrate, the personal server you run or choose. Your lists and tasks are records on that server, so they stay yours: there is no account with us, and nothing goes anywhere else.\n\n• Tasks with a due day or a due time, and a priority\n• Lists in the order you choose\n• Reminders when a task is due, once you turn them on\n• Works offline: changes wait on your device and are sent when you are back online\n• Updates live when something changes on your server\n• On iPhone, iPad and Mac\n\nSubstrate Tasks is a client for a substrate. Sign in with your server's address and approve what the app may do there: it asks only for your lists and tasks.",
   "keywords": [
     "todo",
     "to-do",

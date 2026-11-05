@@ -121,6 +121,10 @@ struct LiveAppTests {
         rig.server.on { $0.method == "PATCH" ? (200, json(taskRecord("t2", "Call the vet", status: "done", version: 2))) : nil }
         let harness = rig.harness()
         await harness.runtime.linkChanged(signedIn)
+        try await harness.until { await $0.state.linked.phase == .following }
+        // Off until the owner turns them on.
+        #expect(rig.notifications.pending.isEmpty)
+        await harness.send(.settings(.toggle(row: .app(TasksSettings.remind), on: true)))
         try await harness.until { _ in rig.notifications.pending.count == 2 }
         let vet = try #require(rig.notifications.pending[Reminders.id("t2")])
         #expect(vet.fireAt == Date(timeIntervalSince1970: 1_793_718_000))
@@ -145,15 +149,18 @@ struct LiveAppTests {
         #expect(await harness.presentation.detail?.title == "Pay rent")
     }
 
-    @Test func permissionIsAskedOnceSomethingIsDueAndNotBefore() async throws {
+    @Test func permissionIsAskedWhenRemindersAreTurnedOnAndNotBefore() async throws {
         let rig = try Rig(notifications: RecordedNotifications(.notAsked, granting: .on))
         serve(rig)
         let harness = rig.harness()
         await harness.runtime.linkChanged(signedIn)
         try await harness.until { await $0.state.linked.phase == .following }
-        #expect(!rig.notifications.calls.contains(.requestPermission))
+        // Something due is not reason enough: reminders are off.
         await harness.send(.show(.today))
         await harness.send(.quickAdd("Water plants"))
+        try await harness.until { titles(await $0.presentation).contains("Water plants") }
+        #expect(!rig.notifications.calls.contains(.requestPermission))
+        await harness.send(.settings(.toggle(row: .app(TasksSettings.remind), on: true)))
         try await harness.until { _ in rig.notifications.calls.filter { $0 == .requestPermission }.count == 1 }
         try await harness.until { await $0.state.permission == .on }
         // Due today at the chosen hour, which is past: nothing to schedule.
@@ -473,14 +480,19 @@ struct AppTests {
         let (_, harness) = try await loaded([taskRecord("a", "A", dueDay: "2026-11-04")])
         let app = await harness.presentation
         #expect(app.settings.map(\.title) == ["Reminders", "Lists"])
-        #expect(app.settings[0].rows.map(\.label) == ["Remind Me When Tasks Are Due", "Tasks Due on a Day", "Reminders Set on This iPhone"])
+        // Off by default, so the reminders' own rows wait for the switch.
+        #expect(app.settings[0].rows.map(\.label) == ["Remind Me When Tasks Are Due"])
+        let on = SettingsValues(toggles: [TasksSettings.remind: true])
+        #expect(
+            TasksSettings.sections(on, permission: .on, scheduled: 0, device: "this iPhone", locale: Locale(identifier: "en_US"))[0]
+                .rows.map(\.label) == ["Remind Me When Tasks Are Due", "Tasks Due on a Day", "Reminders Set on This iPhone"])
         #expect(app.about.version == LabeledValue("Version", "0.1.0 (1)"))
         // Android's device words are lowercase; the label is title case throughout.
         for (device, label) in [
             ("this phone", "Reminders Set on This Phone"), ("this tablet", "Reminders Set on This Tablet"),
             ("this iPad", "Reminders Set on This iPad"), ("this Mac", "Reminders Set on This Mac"),
         ] {
-            let sections = TasksSettings.sections(SettingsValues(), permission: .on, scheduled: 0, device: device, locale: Locale(identifier: "en_US"))
+            let sections = TasksSettings.sections(on, permission: .on, scheduled: 0, device: device, locale: Locale(identifier: "en_US"))
             #expect(sections[0].rows.last?.label == label)
         }
         // Routed as the shell routes them, with what TasksShell configures.

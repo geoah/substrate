@@ -85,7 +85,7 @@ struct TapTests {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = TimeZone(identifier: zone)!
             return Reminders.plan(
-                model, settings: SettingsValues(), permission: .on, now: now, calendar: calendar,
+                model, settings: SettingsValues(toggles: [TasksSettings.remind: true]), permission: .on, now: now, calendar: calendar,
                 locale: Locale(identifier: "en_US")
             ).first?.fireAt
         }
