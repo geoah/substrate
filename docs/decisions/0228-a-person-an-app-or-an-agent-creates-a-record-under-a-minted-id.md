@@ -56,7 +56,11 @@ Chosen: the second.
   first `0` to `7`), not the UUID version: only an id the server mints is
   guaranteed to be a UUIDv7.
 - **Code that derives ids from data keeps naming records:** the engine and
-  the host's other hands, a bundle's install, and a function's effects.
+  the host's other hands, a bundle's install, and a function's effects. A
+  bundle closure's data documents keep the ids the package ships whoever
+  installs it, by the catalog or by `substratectl apply` of its files. A
+  function run as an agent's tool writes as the agent, and derives a
+  minted-shape id with `host.ids.minted`.
 - **A create request is judged when it is written, against the hand that
   proposes it,** because its accept runs under the owner's actor. A gated
   create or a `propose create` with no id gets a minted target id at once

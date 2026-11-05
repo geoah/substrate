@@ -372,7 +372,14 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 						continue
 					}
 				}
-				if _, err := t.put(in); err != nil {
+				// A closure's data document keeps the id its package ships,
+				// whoever installs it: the id is the package author's, as
+				// it is when the catalog installs it under the bundle's own
+				// hand (decision 0228).
+				t.idAdmitted = true
+				_, err := t.put(in)
+				t.idAdmitted = false
+				if err != nil {
 					return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
 				}
 			}
