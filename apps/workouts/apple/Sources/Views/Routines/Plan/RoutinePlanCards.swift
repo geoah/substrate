@@ -127,7 +127,7 @@ private struct PlanBlockCard: View {
                         .foregroundStyle(.secondary)
                 }
                 if let notes = block.notes {
-                    Text(notes)
+                    NotesText(notes)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.top, 3)

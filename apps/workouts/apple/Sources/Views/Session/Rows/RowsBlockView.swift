@@ -119,7 +119,7 @@ struct RowsBlockView: View {
                 }
                 // The notes where they help: on the exercise being done now.
                 if holdsOpenRow, let notes {
-                    Text(notes)
+                    NotesText(notes)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.top, 3)
