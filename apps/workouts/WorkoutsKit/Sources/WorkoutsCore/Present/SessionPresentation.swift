@@ -158,10 +158,17 @@ public struct SessionHeaderStats: Codable, Equatable, Sendable {
     public var setsPlanned: Int
     /// `3 of 40`, under `setsTitle`.
     public var setsText: String
+    /// What the pending sets and their rests take (`SessionEstimate`); nil
+    /// with nothing left, or while the clock is paused.
+    public var timeLeft: Seconds?
+    /// `ends about 11:42`, the time the estimate runs to, which stays right
+    /// while nothing changes; nil with no estimate.
+    public var endsText: String?
 
     public init(
         clockStart: Date, clockPausedAt: Date?, elapsed: Seconds, durationText: String, isPaused: Bool, volume: Mass,
-        volumeText: String, setsDone: Int, setsPlanned: Int, setsText: String
+        volumeText: String, setsDone: Int, setsPlanned: Int, setsText: String, timeLeft: Seconds? = nil,
+        endsText: String? = nil
     ) {
         self.clockStart = clockStart
         self.clockPausedAt = clockPausedAt
@@ -173,6 +180,8 @@ public struct SessionHeaderStats: Codable, Equatable, Sendable {
         self.setsDone = setsDone
         self.setsPlanned = setsPlanned
         self.setsText = setsText
+        self.timeLeft = timeLeft
+        self.endsText = endsText
     }
 }
 

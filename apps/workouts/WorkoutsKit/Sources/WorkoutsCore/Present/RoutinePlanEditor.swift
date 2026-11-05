@@ -363,8 +363,9 @@ public extension RoutinePlanPresenter {
         let whole = left.roundedTo(0) == left
         let fewer = whole ? left - 1 : (left - Decimal(5) / 10).roundedTo(0)
         let more = whole ? left + 1 : (left + Decimal(5) / 10).roundedTo(0)
-        let shown = Format.effortRange(
-            rpeMin: planned.rpeMin, rpeMax: planned.rpeMax, rirMin: planned.rirMin, rirMax: planned.rirMax)
+        let shown =
+            Format.effortRange(
+                rpeMin: planned.rpeMin, rpeMax: planned.rpeMax, rirMin: planned.rirMin, rirMax: planned.rirMax)
             ?? Format.number(left)
         let value = left == RowsEffort.most && shown == "4" ? "4+" : shown
         return RoutinePlanField(

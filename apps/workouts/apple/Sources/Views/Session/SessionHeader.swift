@@ -2,8 +2,9 @@ import SwiftUI
 import UIKit
 import WorkoutsCore
 
-/// The cover's header (DESIGN.md §7.6): three labelled stats, Duration,
-/// Volume and Working sets (warm-ups never move it, so the label says so).
+/// The cover's header (DESIGN.md §7.6): three labelled stats, Duration with
+/// the time the session should end under it, Volume and Working sets
+/// (warm-ups never move it, so the label says so).
 /// Duration's clock ticks with no app code; a tap pauses or resumes it. At
 /// the largest text sizes the three stack.
 struct SessionHeaderView: View {
@@ -22,12 +23,19 @@ struct SessionHeaderView: View {
     private var stats: some View {
         Button(action: togglePause) {
             stat(SessionHeaderStats.durationTitle) {
-                if header.isPaused {
-                    Text(header.durationText)
-                        .foregroundStyle(.orange)
-                } else {
-                    SessionClockText(clockStart: header.clockStart, pausedAt: header.clockPausedAt)
-                        .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 0) {
+                    if header.isPaused {
+                        Text(header.durationText)
+                            .foregroundStyle(.orange)
+                    } else {
+                        SessionClockText(clockStart: header.clockStart, pausedAt: header.clockPausedAt)
+                            .foregroundStyle(.tint)
+                    }
+                    if let ends = header.endsText {
+                        Text(ends)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .contentShape(.rect)

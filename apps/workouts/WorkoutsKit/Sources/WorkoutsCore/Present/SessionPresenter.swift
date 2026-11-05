@@ -145,6 +145,7 @@ struct Presenting {
         let volume = Counting.volume(state)
         let done = Counting.workingSetsDone(state)
         let planned = Counting.workingSetsPlanned(state)
+        let left = pausedAt == nil && state.phase == .active ? SessionEstimate.timeLeft(state, now: now) : nil
         return SessionHeaderStats(
             clockStart: clockStart,
             clockPausedAt: pausedAt,
@@ -155,7 +156,9 @@ struct Presenting {
             volumeText: Format.volume(volume),
             setsDone: done,
             setsPlanned: planned,
-            setsText: "\(done) of \(planned)"
+            setsText: "\(done) of \(planned)",
+            timeLeft: left,
+            endsText: left.map { "ends about \(Format.time(now.addingTimeInterval(TimeInterval($0)), in: settings.timeZone))" }
         )
     }
 
