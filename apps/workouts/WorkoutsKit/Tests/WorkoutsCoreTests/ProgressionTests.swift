@@ -161,6 +161,25 @@ struct ProgressionGateTests {
         let after = try #require(run(.ask(accepted: 102.5), today: [working(102.5, 10, rpe: 8, ordinal: 1)]))
         #expect(after.reason != .progressionUp)
     }
+
+    @Test("taken: a back-off set never takes the top set's new load, before its parent or after it")
+    func goingUpBackoff() throws {
+        var backoffPlan = plan
+        backoffPlan.dropPercent = 0.10
+        let backoff = PendingSet(kind: .normal, ordinal: 2, target: backoffPlan)
+        let before = try #require(
+            suggest(
+                pending: backoff, exercise: barbell, today: [], history: history, bodyMass: nil, now: now, calendar: utc,
+                progression: .ask(accepted: 102.5)))
+        #expect(before.reason != .progressionUp && before.load ?? 0 < 102.5)
+        var after = backoff
+        after.parent = working(102.5, 9, rpe: 8, ordinal: 1)
+        let backedOff = try #require(
+            suggest(
+                pending: after, exercise: barbell, today: [working(102.5, 9, rpe: 8, ordinal: 1)], history: history, bodyMass: nil,
+                now: now, calendar: utc, progression: .ask(accepted: 102.5)))
+        #expect(backedOff.reason == .backoff && backedOff.load == 90)
+    }
 }
 
 @Suite("The progression offer on the Rows layout", .timeLimit(.minutes(10)))

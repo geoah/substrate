@@ -1630,7 +1630,8 @@ The engine is re-run after every change and never commits anything ([req 29](doc
 - **The answer** is the session's (`SessionEvent.answerProgression`, kept in `SessionState.progression` by slot and
   journaled, so it survives a relaunch; nothing is written to a record for it). **Use** makes the first working set of
   the day suggest the new load at the bottom of the range (`progressionUp`, "Going up from 105 kg: try 107.5 kg ×
-  8"), after which 03 §11.2 reads today's sets as before. **Keep**, or no answer, keeps the held load. Increases from
+  8"), after which 03 §11.2 reads today's sets as before; a back-off set never takes the new load, and backs off from
+  its parent once that is done. **Keep**, or no answer, keeps the held load. Increases from
   today's own sets stay automatic, as the setting's name says; going down, timed sets and every other rule stay as 03
   says. With the setting off the history rule raises loads on its own, as 03 does, and no offer shows; the engine's
   vectors run that way.
@@ -2221,7 +2222,8 @@ filled with the accent at 8 % and a 1 pt accent line (orange for a warm-up or a 
 line when fixing). In order:
 
 - The header, at least 36 pt: the ring, the badge and title (17 pt semibold), the note (a sparkle and the suggestion's
-  reason in 13 pt; a status such as "of 2" or "logged at 12:06" in 15 pt; a red dot and "holding"; never "after the
+  reason in 13 pt; a status such as "of 2" (in a group, after the exercise's name, "warm-up 1 of 2"; none in a warm-up
+  circuit, whose round says it) or "logged at 12:06" in 15 pt; a red dot and "holding"; never "after the
   rest": a set waits for nothing), and on the right a plus symbol and "Reps left" on one line while reps left are folded, `trailingNote` ("no rest", orange), and the set menu `…` (the Table's set
   menu items) or Cancel when fixing. The note sits beside the title when it fits, else on its own line under it. After
   a reps-left step the new value's meaning ("1 left: very hard") shows in the note's place for 2.5 s without
