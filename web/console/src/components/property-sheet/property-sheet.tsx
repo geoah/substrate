@@ -24,6 +24,7 @@ import { editStyle, isBlockValue, propertyIcon } from "./sheet-model"
 import { ago } from "./dates"
 import { focusLost } from "./focus-return"
 import { sheetRows, type RowLock, type SheetRow } from "./sheet-rows"
+import { StructuredValue } from "./structured-value"
 import { useRecordPatch, writeError } from "./use-record-patch"
 import {
   IdentityCard,
@@ -41,6 +42,7 @@ import {
 } from "@/lib/provenance"
 import { splitRecordPath } from "@/lib/record-path"
 import { typeLabel } from "@/lib/record-schema"
+import { isStructured } from "@/lib/structured-layout"
 import { cn } from "@/lib/utils"
 import { useUnits } from "@/hooks/use-units"
 
@@ -151,6 +153,114 @@ function Value({ row }: { row: SheetRow }) {
     )
   }
   return <DeclaredValue spec={spec} value={value} />
+}
+
+/** A property that holds a structure (a declared object, or a list of them)
+ * as a section of the sheet: its label heads the full width, and the value
+ * under it is read and edited in place, value by value, with no editor of
+ * its own beside or under it. */
+function StructuredRow({
+  row,
+  record,
+  kinds,
+  labelId,
+  holders,
+  moved,
+  detailOpen,
+  onDetails,
+  through,
+  readOnly,
+  error,
+}: {
+  row: SheetRow
+  record: SubstrateRecord
+  kinds: KindInfo[]
+  labelId: string
+  holders: boolean
+  moved: boolean
+  detailOpen: boolean
+  onDetails: () => void
+  through?: Through
+  readOnly: boolean
+  error?: string
+}) {
+  const locked = Boolean(row.lock && row.lock !== "provider" && row.filled)
+  const chip = Boolean(
+    row.filled && row.meta?.manager && (holders || departsFromDefault(row.meta))
+  )
+  return (
+    <div
+      className="contents"
+      data-property={row.name}
+      data-filled={row.filled}
+      data-moved={moved || undefined}
+      data-structured=""
+    >
+      <div
+        role="group"
+        aria-labelledby={labelId}
+        className={cn(
+          "col-span-full mt-2 mb-1 min-w-0 rounded-md px-0.5 transition-colors duration-700",
+          moved && "bg-primary-soft"
+        )}
+      >
+        <StructuredValue
+          spec={row.spec}
+          value={row.value}
+          edit={row.field ? { record, kinds, property: row.name } : undefined}
+          heading={
+            <Label
+              row={row}
+              id={labelId}
+              onDetails={row.meta?.manager ? onDetails : undefined}
+            />
+          }
+          aside={
+            (locked || chip) && (
+              <span
+                data-slot="provenance"
+                className="flex items-center gap-1.5"
+              >
+                {locked && (
+                  <span
+                    title={LOCK_WORDS[row.lock!]}
+                    aria-label={LOCK_WORDS[row.lock!]}
+                    className="text-faint"
+                  >
+                    <LockIcon aria-hidden className="size-3" />
+                  </span>
+                )}
+                {chip && (
+                  <OwnershipChip
+                    row={row}
+                    open={detailOpen}
+                    onToggle={onDetails}
+                    through={through}
+                  />
+                )}
+              </span>
+            )
+          }
+        />
+      </div>
+      {error && (
+        <p
+          role="alert"
+          className="col-span-full -mt-0.5 mb-1.5 rounded-md bg-bad-soft px-2.5 py-1.5 text-[12.5px] text-destructive"
+        >
+          {error}
+        </p>
+      )}
+      {detailOpen && row.meta?.manager && (
+        <OwnershipDetail
+          row={row}
+          record={record}
+          readOnly={readOnly}
+          through={through}
+        />
+      )}
+    </div>
+  )
 }
 
 export interface PropertySheetProps {
@@ -266,6 +376,24 @@ export function PropertySheet({
       className="my-[18px] grid grid-cols-[minmax(96px,120px)_minmax(0,1fr)] gap-y-0.5 sm:grid-cols-[minmax(120px,170px)_minmax(0,1fr)_auto]"
     >
       {rows.map((row) => {
+        if (isStructured(row.spec) && row.lock !== "undeclared") {
+          return (
+            <StructuredRow
+              key={row.name}
+              row={row}
+              record={record}
+              kinds={kinds}
+              labelId={`${uid}-${row.name}-label`}
+              holders={holders}
+              moved={moved.has(row.name)}
+              detailOpen={open.includes(row.name)}
+              onDetails={() => toggleDetail(row.name)}
+              through={throughOf(row)}
+              readOnly={readOnly}
+              error={rowErrors[row.name]}
+            />
+          )
+        }
         const isEditing = editing === row.name && Boolean(row.field)
         const style = row.field ? editStyle(row.field) : "line"
         const panel = isEditing && style === "panel"

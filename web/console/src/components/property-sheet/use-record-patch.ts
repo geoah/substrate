@@ -50,6 +50,13 @@ export function useEditBase(record: SubstrateRecord): number {
   return base
 }
 
+/** The key every in-place write to one record runs under, so a surface can
+ * hold its next edit until the write before it has landed and the page has
+ * re-read the version that write made. */
+export function recordPatchKey(record: SubstrateRecord) {
+  return ["record-patch", record.kind, record.id] as const
+}
+
 /** `base`: the version the edit began from (see useEditBase); without one, a
  * write asserts the version on the page now, which is right only for a
  * one-gesture write that shows no draft (a checkbox). */
@@ -58,6 +65,7 @@ export function useRecordPatch(record: SubstrateRecord, base?: number) {
   const draft = useSheetDraft()
   const { authority, pkg, name } = splitKind(record.kind)
   return useMutation({
+    mutationKey: recordPatchKey(record),
     mutationFn: async (properties: Record<string, unknown>) => {
       if (draft) {
         draft.write(properties)

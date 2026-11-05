@@ -21,7 +21,7 @@ import { prefersNativeDate } from "./calendar"
 import { DatePicker } from "./date-picker"
 import { fromLocalInput, toLocalInput } from "./dates"
 import { ListEditor } from "./list-editor"
-import { editStyle, propertyWrite } from "./sheet-model"
+import { editStyle, liftWrite, propertyWrite, type Lift } from "./sheet-model"
 import { type SheetRow } from "./sheet-rows"
 import { useEditBase, useRecordPatch, writeError } from "./use-record-patch"
 import { EnumTag } from "@/components/identity/enum-tag"
@@ -61,6 +61,9 @@ export interface InlineEditorProps {
   kinds: KindInfo[]
   onDone: () => void
   onError: (message: string | undefined) => void
+  /** Set for a value held inside a structured property: the editor edits
+   * the value and the write carries the whole property. */
+  lift?: Lift
 }
 
 export function InlineEditor(props: InlineEditorProps) {
@@ -86,10 +89,14 @@ export function InlineEditor(props: InlineEditorProps) {
 }
 
 /** Saves one write and reports how it went. */
-function useSave({ row, record, onDone, onError }: InlineEditorProps) {
+function useSave({ row, record, onDone, onError, lift }: InlineEditorProps) {
   const patch = useRecordPatch(record, useEditBase(record))
   async function save(next: FormValue) {
-    const write = propertyWrite(row.field, row.value, next)
+    const write = liftWrite(
+      propertyWrite(row.field, row.value, next),
+      row.field.name,
+      lift
+    )
     if (write.error) {
       onError(write.error)
       return

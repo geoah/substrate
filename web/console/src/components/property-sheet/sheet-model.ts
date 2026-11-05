@@ -103,6 +103,24 @@ export function propertyWrite(
   return { properties: { [field.name]: submitted.value } }
 }
 
+/** Turns the write an editor makes for its own value (the value, or `null`
+ * to take it out) into the write of the property that holds it: a value
+ * inside a structured property is written as the whole property. */
+export type Lift = (value: unknown) => {
+  properties?: Record<string, unknown>
+  error?: string
+}
+
+/** A write for `name`, lifted into its holder's write where it has one. */
+export function liftWrite(
+  write: { properties?: Record<string, unknown>; error?: string },
+  name: string,
+  lift?: Lift
+): { properties?: Record<string, unknown>; error?: string } {
+  if (!lift || write.error || !write.properties) return write
+  return lift(write.properties[name])
+}
+
 /** The one write a list editor makes: the whole list, each item checked
  * against the element's datatype ALONE (the list's own parse splits on lines,
  * which would cut a multi-line item into several). An item saved as the text
