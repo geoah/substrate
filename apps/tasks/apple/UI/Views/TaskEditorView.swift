@@ -23,7 +23,7 @@ struct TaskEditorView: View {
                 Section {
                     field(editor.name, lines: 1 ... 3) { shell.send(.setName($0), to: key) }
                         .focused($naming)
-                    field(editor.notes, lines: 3 ... 8) { shell.send(.setNotes($0), to: key) }
+                    field(editor.notes, lines: 2 ... 8) { shell.send(.setNotes($0), to: key) }
                     field(editor.link, link: true) { shell.send(.setLink($0), to: key) }
                 } footer: {
                     if let problem = editor.problem { Text(problem).foregroundStyle(.red) }

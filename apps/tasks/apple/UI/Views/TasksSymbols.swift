@@ -22,10 +22,11 @@ enum TasksSymbols {
         }
     }
 
+    /// A priority's colour, the cards' and the detail's alike: red is the
+    /// most urgent (and lateness), orange high, the rest quiet.
     static func color(_ priority: TaskPriority) -> Color {
         switch priority {
-        case .none, .low: .secondary
-        case .medium: .yellow
+        case .none, .low, .medium: .secondary
         case .high: .orange
         case .urgent: .red
         }

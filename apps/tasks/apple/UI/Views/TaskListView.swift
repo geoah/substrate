@@ -59,8 +59,11 @@ struct TaskListView: View {
 
     @ViewBuilder
     private var rows: some View {
-        SummaryCard(summary: list.summary)
-            .plainRow(top: 4, bottom: 10)
+        // Today's day at a glance; a list's own count is its heading's.
+        if list.selection == .today {
+            SummaryCard(summary: list.summary)
+                .plainRow(top: 4, bottom: 6)
+        }
         if !list.open.rows.isEmpty {
             Section {
                 heading(list.openTitle, count: list.open.rows.count, note: list.orderNote)
@@ -86,7 +89,7 @@ struct TaskListView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
-                    .background(.quaternary, in: .capsule)
+                    .background(Color.primary.opacity(0.06), in: .capsule)
             }
             Spacer()
             if let note { Text(note).font(.footnote).foregroundStyle(.secondary) }
@@ -152,12 +155,13 @@ struct TaskListView: View {
                     if offersViewOptions {
                         if let sort {
                             Picker(
-                                sort.label,
                                 selection: Binding(
                                     get: { sort.selected },
                                     set: { shell.send(.settings(.choose(row: .app(TasksSettings.order), option: $0))) })
                             ) {
                                 ForEach(sort.options, id: \.id) { Text($0.label).tag($0.id) }
+                            } label: {
+                                Label(sort.label, systemImage: "arrow.up.arrow.down")
                             }
                             .pickerStyle(.menu)
                         }
@@ -245,32 +249,26 @@ private struct SummaryCard: View {
         .background {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(TasksSymbols.card)
-                .shadow(color: .black.opacity(0.05), radius: 12, y: 4)
+                .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
         }
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Adding a task: a round, dark +, the one way in. It opens the editor,
-/// seeded with the list shown (and today, in Today).
+/// Adding a task beside a detail (an iPad): a round glass +, kin to the
+/// phone's prominent tab. It opens the editor, seeded with the list shown
+/// (and today, in Today).
 struct NewTaskButton: View {
     @Environment(TasksShell.self) private var shell
     let title: String
 
     var body: some View {
-        Button {
-            shell.send(.newTask)
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(TasksSymbols.card)
-                .frame(width: 52, height: 52)
-                .background(Circle().fill(Color.primary))
-                .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
-                .contentShape(.circle)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
+        Button(title, systemImage: "plus") { shell.send(.newTask) }
+            .labelStyle(.iconOnly)
+            .font(.title2.weight(.medium))
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .controlSize(.extraLarge)
     }
 }
 

@@ -25,7 +25,7 @@ struct TaskRowView: View {
                     .font(.system(size: markSize))
                     .foregroundStyle(row.status == .done ? Color.green : Color.secondary)
                     .contentTransition(.symbolEffect(.replace))
-                    .frame(minWidth: 32, minHeight: 32)
+                    .frame(minWidth: 44, minHeight: 44)
                     .contentShape(.rect)
             }
             .buttonStyle(.borderless)
@@ -43,16 +43,22 @@ struct TaskRowView: View {
                     .accessibilityAction(named: Text(row.toggle), toggle)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.leading, 6)
+        .padding(.trailing, 14)
+        .padding(.vertical, 6)
         .background {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(TasksSymbols.card.opacity(isOpen ? 1 : 0.6))
-                .shadow(color: .black.opacity(isOpen ? 0.06 : 0), radius: 10, y: 3)
+                .shadow(color: .black.opacity(isOpen ? 0.03 : 0), radius: 6, y: 2)
         }
         .overlay {
+            // The open task, beside its detail: a wash of the accent and a
+            // fine line, never an alarm.
             if selected {
-                RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.brandAccent, lineWidth: 2)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.brandAccent.opacity(0.06))
+                    .strokeBorder(Color.brandAccent.opacity(0.45), lineWidth: 1)
+                    .allowsHitTesting(false)
             }
         }
     }
@@ -93,7 +99,7 @@ struct TaskRowView: View {
     @ViewBuilder
     private var chips: some View {
         if let priority = row.priority {
-            Chip(text: priority.text.uppercased(), symbol: "flag.fill", color: priorityColor(priority.priority), emphasis: true)
+            Chip(text: priority.text, symbol: "flag.fill", color: TasksSymbols.color(priority.priority), emphasis: true)
         }
         if let due = row.due {
             Chip(text: due.text, symbol: "clock", color: dueColor(due.tone), emphasis: due.tone == .overdue)
@@ -108,14 +114,6 @@ struct TaskRowView: View {
         case .overdue: .red
         case .soon: .orange
         case .quiet: .secondary
-        }
-    }
-
-    private func priorityColor(_ priority: TaskPriority) -> Color {
-        switch priority {
-        case .urgent, .high: .red
-        case .medium: .orange
-        case .none, .low: .secondary
         }
     }
 
@@ -135,7 +133,7 @@ private struct Chip: View {
     var body: some View {
         Label(text, systemImage: symbol)
             .labelStyle(TightLabelStyle(spacing: 4))
-            .font(.caption.weight(emphasis ? .bold : .medium))
+            .font(.caption.weight(emphasis ? .semibold : .medium))
             .foregroundStyle(color)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
