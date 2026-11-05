@@ -83,15 +83,22 @@ public enum EffortMethod: String, Codable, Sendable, CaseIterable {
     public static func isRating(_ method: EffortMethod?) -> Bool { method?.isRating ?? true }
 }
 
-/// Why a set ended before more reps, where the lifter said (`set.stopReason`).
-/// Absent: it ended at the plan's reps, or nobody said.
+/// The lifter-reported primary reason a set ended (`set.stopReason`).
+/// Absent: not reported. Independent of whether another full rep was
+/// possible or attempted (`reachedFailure`, `failedRepAttempted`).
 public enum StopReason: String, Codable, Sendable, CaseIterable {
-    /// The muscles gave out: the set is evidence of what they could do.
+    /// Muscular fatigue: a reason, not a claim that no rep was left.
     case fatigue
     /// Form broke down: the reps done are no ceiling.
     case technique
     /// Pain or discomfort: as `technique`, and worth the coach's attention.
     case pain
+    /// Anything else, an interruption or the clock; the set's notes say more.
+    case other
+
+    /// The set says nothing of what the lifter could do: no load is raised
+    /// from it, and no offer counts it.
+    public var limitsEvidence: Bool { self != .fatigue }
 }
 
 /// Unknown fields of a nested object (a routine slot, a planned set, a

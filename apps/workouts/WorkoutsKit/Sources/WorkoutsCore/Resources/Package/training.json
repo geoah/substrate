@@ -1,6 +1,6 @@
 {
   "package": "substrate.reamde.dev/training",
-  "version": 6,
+  "version": 7,
   "documents": [
     {
       "kind": "substrate.reamde.dev/core/package",
@@ -10,7 +10,7 @@
       "data": {
         "authority": "substrate.reamde.dev",
         "package": "training",
-        "version": 6
+        "version": 7
       }
     },
     {
@@ -1402,7 +1402,7 @@
               },
               "cue": {
                 "type": "string",
-                "description": "one short line shown beside the set being done, such as controlled return, pause without bouncing"
+                "description": "a brief plain-text coaching cue for this exercise in this routine slot, shown beside the set being done; longer guidance belongs in notes"
               },
               "sets": {
                 "type": "object",
@@ -2746,7 +2746,7 @@
           },
           "stopReason": {
             "type": "enum",
-            "description": "why the set ended, where the lifter said; absent when it ended at the plan's reps or nobody said",
+            "description": "the lifter-reported primary reason for ending the set; absent means not reported, and it is independent of whether another full rep was possible or attempted",
             "values": [
               {
                 "value": "fatigue",
@@ -2759,6 +2759,10 @@
               {
                 "value": "pain",
                 "label": "Pain or discomfort"
+              },
+              {
+                "value": "other",
+                "label": "Other reason"
               }
             ]
           },

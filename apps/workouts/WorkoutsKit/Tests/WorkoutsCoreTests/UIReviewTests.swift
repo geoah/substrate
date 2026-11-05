@@ -227,19 +227,20 @@ struct UIReviewPresenterTests {
         // Rated before the set, then Play and Stop: the RPE goes with the time.
         try script.send(.editSet(.init(row: first, values: SetValuesPatch(rpe: .set(8)))))
         rows = try present()
-        #expect(rows.row(first)?.effortText == "2 left" && rows.row(first)?.rpeText == "2")
+        // A hold's effort is the scale's word: reps left mean nothing there.
+        #expect(rows.row(first)?.effortText == "hard" && rows.row(first)?.rpeText == "2")
         try script.send(.startTimedSet(row: first, target: 45))
         script.wait(50)
         let stop = try #require(try present().row(first)?.stopValues)
         #expect(stop.rpe == 8)
         try script.send(.stopTimedSet(.init(row: first, recordID: script.setID(), values: stop)))
-        #expect(try present().row(first)?.effortText == "2 left")
+        #expect(try present().row(first)?.effortText == "hard")
 
         // Rated after the set: an edit of a done timed row.
         try script.tick(second, SetValues(duration: 40))
         let rated = try script.send(.editSet(.init(row: second, values: SetValuesPatch(rpe: .set(9.5)))))
         #expect(rated.rows[second]?.performed?.values.rpe == 9.5)
-        #expect(try present().row(second)?.effortText == "0\u{2013}1 left")
+        #expect(try present().row(second)?.effortText == "very hard")
         let sets = SessionEngine.setRecords(rated)
         #expect(sets.compactMap(\.rpe) == [8, 9.5])
         #expect(sets.map(\.duration) == [50, 40])
@@ -261,7 +262,7 @@ struct UIReviewPresenterTests {
             try script.current, history: HistoryIndex(), settings: Progression.settings,
             now: script.now)
         let shown = try #require(presentation.row(row))
-        #expect(shown.canRateEffort && shown.effortText == "3 left")
+        #expect(shown.canRateEffort && shown.effortText == "challenging")
         let values = try #require(shown.commitValues)
         #expect(values.rpe == 7)
         let state = try script.tick(row, values)

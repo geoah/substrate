@@ -394,15 +394,17 @@ data:
       type: bool
       description: true when a further rep was tried and missed, as Strong's
         Failure tag means
-    # Why the set ended short of more reps, where the lifter said (training 6).
-    # Apart from `reachedFailure`: a set can end at failure with no reason
-    # given, or for pain well short of it. Substrate Workouts reads a
-    # `technique` or `pain` stop as no evidence of capacity, and the coach
-    # reads `pain` by its traffic light.
+    # Why the set ended, as the lifter reported it (training 6; `other` in 7).
+    # Apart from `reachedFailure`: a set can reach failure with no reason
+    # given, or end for pain at the plan's reps. Substrate Workouts reads a
+    # `technique`, `pain` or `other` stop as no evidence of capacity, and the
+    # coach reads `pain` by its traffic light; `fatigue` is a reason, not a
+    # claim that no rep was left.
     stopReason:
       type: enum
-      description: why the set ended, where the lifter said; absent when it
-        ended at the plan's reps or nobody said
+      description: the lifter-reported primary reason for ending the set;
+        absent means not reported, and it is independent of whether another
+        full rep was possible or attempted
       values:
         - value: fatigue
           label: Muscular fatigue
@@ -410,6 +412,8 @@ data:
           label: Technique breakdown
         - value: pain
           label: Pain or discomfort
+        - value: other
+          label: Other reason
     # Finish's "Mark them done as shown" commits rows nobody ticked; a reader
     # may want to tell those apart, since their values were never confirmed
     # one by one.

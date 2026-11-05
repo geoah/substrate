@@ -96,8 +96,12 @@ struct SuggestRules: Sendable {
         return false
     }
 
-    /// 03 §11.2: from the set just done today.
+    /// 03 §11.2: from the set just done today. A set that ended for
+    /// technique, pain or another reason never raises the load (DESIGN §5.3):
+    /// it is no evidence of capacity, and skipping it would bring back an
+    /// older, kinder estimate.
     func inSession(_ done: DoneSet, ordinal k: Int) -> Suggestion {
+        let limited = done.stopReason?.limitsEvidence == true
         let effort = done.effectiveRPE(defaultRPE: exercise.defaultRPE)
         let reps = done.effectiveReps ?? 0
         let n = Double(reps) + 10 - effort.value
@@ -109,7 +113,7 @@ struct SuggestRules: Sendable {
         else {
             // 03 §11.5: no effective load, or too far from failure to estimate.
             let r0 = Int((Double(reps) + rpe - effort.value - fatigue + 1e-6).rounded(.down))
-            return repsOnly(setting: setting, predicted: r0, inSession: true) { reason, new in
+            return repsOnly(setting: setting, predicted: r0, inSession: true, limited: limited) { reason, new in
                 sessionText(reason, k: k, prev: prev, new: new)
             }
         }
@@ -122,7 +126,9 @@ struct SuggestRules: Sendable {
         } else if range.contains(r0) {
             (load, newReps, reason) = (lw, r0, .sessionKeep)
         } else if range.isAboveTop(r0), let hi = range.hi {
-            if let stepUp = grid.next(lw) {
+            if limited {
+                (load, newReps, reason) = (lw, hi, .sessionKeep)
+            } else if let stepUp = grid.next(lw) {
                 var up = grid.next(grid.floor(e1RM * RPECurve.p(Double(hi + 1) + 10 - rpe))) ?? stepUp
                 up = max(up, stepUp)
                 // One suggestion never raises the load by more than one step or 10 %.
@@ -144,13 +150,16 @@ struct SuggestRules: Sendable {
             text: sessionText(reason, k: k, prev: prev, new: text.set(load: newSetting, reps: newReps)))
     }
 
-    /// 03 §11.3: from the same set last time.
+    /// 03 §11.3: from the same set last time. A reference that ended for
+    /// technique, pain or another reason gains no rep and raises no load.
     func fromHistory(_ reference: SuggestEvidence.Reference) -> Suggestion {
         let done = reference.set
+        let limited = done.stopReason?.limitsEvidence == true
+        let holds = holdsLoad || limited
         let effort = done.effectiveRPE(defaultRPE: exercise.defaultRPE)
         let reps = done.effectiveReps ?? 0
         let n = Double(reps) + 10 - effort.value
-        var gain = exercise.repGain
+        var gain = limited ? 0 : exercise.repGain
         var cut = 1.0
         if reference.days > 90 {
             (cut, gain) = (0.90, 0)
@@ -169,7 +178,7 @@ struct SuggestRules: Sendable {
         else {
             // 03 §11.5.
             let goal = Int((Double(reps) + rpe - effort.value + 1e-6).rounded(.down)) + gain
-            return repsOnly(setting: setting, predicted: goal, inSession: false) { reason, new in
+            return repsOnly(setting: setting, predicted: goal, inSession: false, limited: limited) { reason, new in
                 historyText(reason, prev: prev, new: new)
             }
         }
@@ -184,7 +193,7 @@ struct SuggestRules: Sendable {
             } else if range.contains(goal) {
                 (load, newReps, reason) = (lpNow, goal, .historyAddRep)
             } else if range.isAboveTop(goal), let hi = range.hi {
-                if holdsLoad, grid.next(lpNow) != nil {
+                if holds, grid.next(lpNow) != nil {
                     // The owner decides when to go up (DESIGN §5.3): the top of the range again.
                     (load, newReps, reason) = (lpNow, hi, .historyHold)
                 } else if let up = grid.next(lpNow) {
@@ -203,7 +212,10 @@ struct SuggestRules: Sendable {
         } else {
             // The rep scheme changed: aim at the middle of the new range (its bottom when the top is open).
             let mid = range.hi.map { (range.lo + $0) / 2 } ?? range.lo
-            let fresh = grid.floor(e1RM * RPECurve.p(Double(mid) + 10 - rpe))
+            var fresh = grid.floor(e1RM * RPECurve.p(Double(mid) + 10 - rpe))
+            // A new range never raises the load past last time's while the
+            // owner decides increases, or after a limited set (DESIGN §5.3).
+            if holds, fresh > lpNow + 1e-9 { fresh = lpNow }
             let r = max(1, range.capped(RPECurve.repsAt(fresh, e1RM: e1RM, rpe: rpe)))
             (load, newReps, reason) = (fresh, r, .historyNewRange)
         }
@@ -216,17 +228,18 @@ struct SuggestRules: Sendable {
     /// 03 §11.5: work on the setting as logged, one step at a time. Its reasons
     /// and texts are 11.2's in session and 11.3's from history.
     func repsOnly(
-        setting: Double?, predicted: Int, inSession session: Bool,
+        setting: Double?, predicted: Int, inSession session: Bool, limited: Bool = false,
         text explain: (Reason, String) -> String
     ) -> Suggestion {
         let space = LoadSpace(exercise: exercise, bodyMass: nil)
         let value = space?.value(ofSetting: setting)
         var (load, reps, reason) = (setting, predicted, session ? Reason.sessionKeep : .historyAddRep)
-        if !session, holdsLoad, range.isAboveTop(predicted), let hi = range.hi, let space, let value,
+        if limited || !session && holdsLoad, range.isAboveTop(predicted), let hi = range.hi, let space, let value,
             space.grid?.next(value) != nil
         {
-            // The owner decides when to go up (DESIGN §5.3).
-            (reps, reason) = (hi, .historyHold)
+            // No raise after a limited set, nor from history while the owner
+            // decides increases (DESIGN §5.3): the top of the range again.
+            (reps, reason) = (hi, session ? .sessionKeep : .historyHold)
         } else if range.isAboveTop(predicted), let space, let value, let heavier = space.grid?.next(value) {
             load = space.setting(ofValue: heavier)
             (reps, reason) = (range.lo, session ? .sessionUp : .historyLoadUp)

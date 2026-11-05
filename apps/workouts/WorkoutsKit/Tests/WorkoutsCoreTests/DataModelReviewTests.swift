@@ -820,6 +820,17 @@ struct ReviewSuggestionTests {
         #expect(unrated.rpe == nil && unrated.unratedRPE == 9)
     }
 
+    @Test("a side that ended for pain limits the pair, whichever side it was")
+    func chainFoldStop() {
+        func side(_ side: Side, _ reason: StopReason?) -> DoneSet {
+            SuggestionInputs.doneSet(
+                kind: .normal, values: SetValues(load: .kg(10), reps: 10, stopReason: reason),
+                side: side, config: config, target: target, completedAt: now, ordinal: 1)
+        }
+        #expect(SuggestionInputs.merged(side(.left, .fatigue), with: side(.right, .pain)).stopReason == .pain)
+        #expect(SuggestionInputs.merged(side(.left, nil), with: side(.right, .fatigue)).stopReason == .fatigue)
+    }
+
     @Test("a range's top is the load selector: RPE 7 to 8 reads 8, 2 to 3 in reserve reads 8")
     func ranges() throws {
         let config = config

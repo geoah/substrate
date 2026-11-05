@@ -707,9 +707,14 @@ struct RowsEffortRow: View {
                     .contentShape(.capsule)
             }
             .buttonStyle(.plain)
-            // Not `disabled`: a rated value is drawn solid at full strength,
-            // and a disabled button would dim it; it just takes no tap.
-            .allowsHitTesting(effort.rate != nil)
+            .contextMenu {
+                if let clear = effort.clear {
+                    Button(clear.title, systemImage: "xmark.circle", role: .destructive) { onPatch(clear.patch) }
+                }
+            }
+            .accessibilityAction(named: effort.clear?.title ?? "") {
+                if let clear = effort.clear { onPatch(clear.patch) }
+            }
             .accessibilityLabel(effort.accessibilityLabel)
             .accessibilityValue(effort.accessibilityValue)
             .accessibilityHint(effort.rate == nil ? "" : "Rates it as shown")
@@ -757,8 +762,8 @@ struct RowsEffortRow: View {
 }
 
 /// Why the set ended: `Why stop?` with a chevron, or the reason chosen
-/// (pain in orange); a tap lists the three reasons and, with one chosen,
-/// `No reason`.
+/// (pain in orange); a tap lists the four reasons and, with one chosen,
+/// `Clear reason`.
 struct RowsStopMenuChip: View {
     let menu: RowsStopMenu
     let tint: Color
@@ -779,7 +784,7 @@ struct RowsStopMenuChip: View {
             }
             if let clear = menu.clear {
                 Divider()
-                Button("No reason") { onPatch(clear) }
+                Button("Clear reason") { onPatch(clear) }
             }
         } label: {
             HStack(spacing: 4) {

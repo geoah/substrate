@@ -62,7 +62,7 @@ struct RPESheet: View {
     /// The reps left, their headline and, for a rep set, what they mean.
     private var valueText: some View {
         VStack(spacing: 4) {
-            Text(value.map { "\(RowsEffort.number($0)) left" } ?? " ")
+            Text(value.map { measurement?.recordsReps == false ? RPEScaleText.headline($0) ?? "" : "\(RowsEffort.number($0)) left" } ?? " ")
                 .font(.system(.largeTitle, design: .rounded, weight: .bold).monospacedDigit())
                 .contentTransition(.numericText())
             Text(value.flatMap(RPEScaleText.headline) ?? "Reps left")

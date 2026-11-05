@@ -1369,7 +1369,8 @@
           "values": [
             "fatigue",
             "technique",
-            "pain"
+            "pain",
+            "other"
           ]
         },
         {

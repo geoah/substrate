@@ -107,7 +107,7 @@ struct RowsBuilder {
     // MARK: - The progression offer
 
     /// The offer for one exercise (DESIGN §5.3), until a working set of it
-    /// is done today: ready to go up with its reasons and two answers, or
+    /// is done today: "Try a higher load?" with its reason, Use and Keep; or
     /// the answer given and Undo.
     func progressionOffer(slot key: String, isGroup: Bool) -> RowsProgressionOffer? {
         guard p.settings.asksBeforeGoingUp,
@@ -117,7 +117,7 @@ struct RowsBuilder {
         func titled(_ text: String) -> String { isGroup ? "\(name): \(text.lowercasedFirst)" : text }
         let undo = RowsButton(
             title: "Undo", accessibilityLabel: "Undo, \(name)", action: .answerProgression(slot: key, answer: nil))
-        let check = evaluator.progressionCheck(slot: key)
+        let offer = evaluator.progressionOffer(slot: key)
         switch state.progressionAnswer(ofSlot: key) {
         case let .up(mass)?:
             return RowsProgressionOffer(
@@ -125,24 +125,18 @@ struct RowsBuilder {
                 stay: nil, undo: undo)
         case .stay?:
             return RowsProgressionOffer(
-                slot: key, state: .staying, title: titled(check.map { "Staying at \($0.loadText)" } ?? "Staying at the same load"),
+                slot: key, state: .staying, title: titled(offer.map { "Keeping \($0.currentText)" } ?? "Keeping the same load"),
                 detail: nil, accept: nil, stay: nil, undo: undo)
         case nil:
-            guard let check, let exercise = state.exercise(ofSlot: key) else { return nil }
+            guard let offer, let exercise = state.exercise(ofSlot: key) else { return nil }
             let unit = evaluator.config(exercise).unit
-            let reached = check.topReps.map { "reached \($0) reps" } ?? "reached the top of its range"
-            let left =
-                check.plannedLeft > 0
-                ? ", with \(Format.number(check.plannedLeft)) or more left" + (check.assumedEffort ? " (as planned)" : "")
-                : ""
             return RowsProgressionOffer(
-                slot: key, state: .offered, title: titled("Ready to go up"),
-                detail: "Last \(ProgressionOffer.sessions) sessions: every working set \(reached) at \(check.loadText)\(left).",
+                slot: key, state: .offered, title: titled("Try a higher load?"), detail: offer.reason,
                 accept: RowsButton(
-                    title: "Use \(check.nextText)", accessibilityLabel: "\(name), go up to \(check.nextText)",
-                    action: .answerProgression(slot: key, answer: .up(Mass(suggested: check.next, unit: unit)))),
+                    title: "Use \(offer.nextText)", accessibilityLabel: "\(name), go up to \(offer.nextText)",
+                    action: .answerProgression(slot: key, answer: .up(Mass(suggested: offer.next, unit: unit)))),
                 stay: RowsButton(
-                    title: "Stay at \(check.loadText)", accessibilityLabel: "\(name), stay at \(check.loadText)",
+                    title: "Keep \(offer.currentText)", accessibilityLabel: "\(name), keep \(offer.currentText)",
                     action: .answerProgression(slot: key, answer: .stay)),
                 undo: nil)
         }
@@ -470,7 +464,10 @@ struct RowsBuilder {
         let sentence: String
         switch rowState {
         case .done:
-            let rpe = done?.rpe.map { ", \(RowsText.spokenRepsLeft($0))" + (done?.rpeMethod == .prefilled ? " as planned" : "") } ?? ""
+            let rpe =
+                done?.rpe.map {
+                    ", \(RowsText.spokenEffort($0, measurement: measurement))" + (done?.rpeMethod == .prefilled ? " as planned" : "")
+                } ?? ""
             let change = RowsText.spokenChanges(changes, unit: unit)
             let mark = verdict.flatMap { changes == [RowsText.sameAsLastTime] && $0 == .same ? nil : ", \($0.spoken)" } ?? ""
             sentence = "\(who), done: \(spokenNow)\(rpe). \(change)\(mark)."
@@ -519,7 +516,7 @@ struct RowsBuilder {
             isChained: !row.isHead && row.side == nil,
             values: values,
             valuesChanged: row.isPending && changedFromSuggestion(row.entered, ghost: ghost, measurement: measurement),
-            rpe: rpeShown.map(Format.repsLeft),
+            rpe: rpeShown.map { Format.effort($0, measurement: measurement) },
             rpeIsPrefilled: done?.rpeMethod == .prefilled,
             tags: tags,
             collapsedTag: rowState == .now ? RowsTag(text: "up next", style: .accent) : nil,
@@ -913,7 +910,7 @@ struct RowsBuilder {
         return RowsNextPart(
             row: item.id, exercise: exercise, setLabel: item.setLabel, isWarmup: item.role == .warmup, label: label,
             tint: editor.tint, fields: editor.fields,
-            rpe: editor.effort?.shown.map(Format.repsLeft),
+            rpe: editor.effort?.shown.map { Format.effort($0, measurement: state.exercise(ofSlot: row.slot)?.measurement ?? .weightreps) },
             effort: editor.effort,
             primary: RowsButton(
                 title: word, accessibilityLabel: editor.primary.accessibilityLabel,

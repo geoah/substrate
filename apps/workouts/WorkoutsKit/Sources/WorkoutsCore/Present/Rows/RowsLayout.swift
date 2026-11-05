@@ -61,7 +61,7 @@ public struct RowsBlock: Codable, Equatable, Sendable, Identifiable {
     public var isFinished: Bool
     /// What a finished block's line shows; nil until the block is finished.
     public var summary: RowsBlockSummary?
-    /// The progression offer of each member ready to go up (DESIGN §5.3),
+    /// The progression offer of each member with one (DESIGN §5.3),
     /// above the block's lines until a working set of it is done.
     public var offers: [RowsProgressionOffer]
 
@@ -618,7 +618,7 @@ public struct RowsNextPart: Codable, Equatable, Sendable {
     }
 }
 
-/// The progression offer on an exercise (DESIGN §5.3): ready to go up, why,
+/// The progression offer on an exercise (DESIGN §5.3): a higher load, why,
 /// and the owner's two answers; once answered, what was chosen and Undo.
 public struct RowsProgressionOffer: Codable, Equatable, Sendable, Identifiable {
     public enum State: String, Codable, Equatable, Sendable {
@@ -627,15 +627,15 @@ public struct RowsProgressionOffer: Codable, Equatable, Sendable, Identifiable {
 
     public var slot: String
     public var state: State
-    /// `Ready to go up`, `Going up to 107.5 kg`, `Staying at 105 kg`; in a
+    /// `Try a higher load?`, `Going up to 107.5 kg`, `Keeping 105 kg`; in a
     /// group after the exercise's name.
     public var title: String
-    /// Why: `Last 2 sessions: every working set reached 12 reps at 105 kg,
-    /// with 2 or more left.`; nil once answered.
+    /// Why: `All 3 sets reached 12 reps at 105 kg in both sessions, with at
+    /// least 2 reps left.`, or the suggestion's own reason; nil once answered.
     public var detail: String?
     /// `Use 107.5 kg`.
     public var accept: RowsButton?
-    /// `Stay at 105 kg`.
+    /// `Keep 105 kg`.
     public var stay: RowsButton?
     /// `Undo`, once answered: the offer again.
     public var undo: RowsButton?

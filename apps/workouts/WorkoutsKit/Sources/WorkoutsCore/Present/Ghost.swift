@@ -57,7 +57,7 @@ final class SessionEvaluator {
     private var previouses: [RowID: PreviousSet?] = [:]
     private var lastTimes: [ExerciseID: ExerciseHistory?] = [:]
     private var ghosts: [RowID: GhostValues] = [:]
-    private var checks: [String: ProgressionCheck?] = [:]
+    private var offers: [String: SlotProgression?] = [:]
 
     init(state: SessionState, history: HistoryIndex, now: Date, calendar: Calendar, asksBeforeGoingUp: Bool = false) {
         self.state = state
@@ -78,16 +78,48 @@ final class SessionEvaluator {
         return .ask(accepted: SuggestionInputs.convert(mass, to: config(exercise).unit))
     }
 
-    /// Whether the slot's exercise is ready to go up: never in a deload
-    /// session, nor while the owner lets loads rise on their own.
-    func progressionCheck(slot: String) -> ProgressionCheck? {
-        if let cached = checks[slot] { return cached }
-        var result: ProgressionCheck?
-        if asksBeforeGoingUp, state.session.deload != true, let exercise = state.exercise(ofSlot: slot) {
-            result = ProgressionOffer.check(history: past(exercise), exercise: config(exercise), now: now, calendar: calendar)
-        }
-        checks[slot] = result
+    /// The offer for the slot's exercise (DESIGN §5.3): when the engine
+    /// would raise the first working set's load from earlier sessions, or the
+    /// two newest sessions show it ready, which then gives the reason and
+    /// the load. Never in a deload session, nor while loads rise on their own.
+    func progressionOffer(slot: String) -> SlotProgression? {
+        if let cached = offers[slot] { return cached }
+        let result = computeOffer(slot: slot)
+        offers[slot] = result
         return result
+    }
+
+    private func computeOffer(slot key: String) -> SlotProgression? {
+        guard asksBeforeGoingUp, state.session.deload != true, let exercise = state.exercise(ofSlot: key) else { return nil }
+        let heads = state.units(inSlot: key).compactMap { state.rows[$0[0]] }
+            .filter { $0.role == .working && $0.roleLabel != .backoff && $0.side != .right }
+        guard let first = heads.first(where: \.isPending), let (pending, config) = pending(first, exercise: exercise) else {
+            return nil
+        }
+        let text = SuggestText(unit: config.unit, mode: config.mode)
+        // A deload among the two newest sessions starts the count again.
+        let newest = history.history(of: exercise.id, setup: nil, excluding: state.session.id).prefix(ProgressionOffer.sessions)
+        let planned = heads.filter { head in
+            SuggestionInputs.target(head.target, termination: head.termination, config: config).repsMax == pending.target.repsMax
+        }.count
+        if !newest.contains(where: { $0.session.deload == true }),
+            let evidence = ProgressionOffer.check(
+                history: past(exercise), exercise: config, plan: pending.target, planned: planned, now: now, calendar: calendar)
+        {
+            return SlotProgression(
+                current: evidence.load, next: evidence.next, currentText: evidence.loadText, nextText: evidence.nextText,
+                reason: evidence.reason)
+        }
+        // Else the engine's own increase, which the gate holds back.
+        guard let automatic = runSuggestion(for: first, exercise: exercise, excludingChain: nil, gate: .automatic),
+            let held = runSuggestion(for: first, exercise: exercise, excludingChain: nil, gate: .ask(accepted: nil)),
+            [.historyLoadUp, .historyNewRange].contains(automatic.reason),
+            let up = automatic.load, let stay = held.load, up > stay + 1e-9,
+            let upText = text.load(up), let stayText = text.load(stay)
+        else { return nil }
+        let said = automatic.text.components(separatedBy: "; ").first ?? automatic.text
+        let why = automatic.reason == .historyNewRange ? "\(said); the plan's range changed." : "\(said)."
+        return SlotProgression(current: stay, next: up, currentText: stayText, nextText: upText, reason: why)
     }
 
     // MARK: - Inputs
@@ -285,8 +317,11 @@ final class SessionEvaluator {
         return runSuggestion(for: row, exercise: exercise, excludingChain: nil)
     }
 
-    /// Runs `suggest` for a row (pending, or one about to be generated).
-    func runSuggestion(for row: Row, exercise: Exercise, excludingChain excluded: RowID?) -> Suggestion? {
+    /// Runs `suggest` for a row (pending, or one about to be generated),
+    /// under the slot's progression gate unless `gate` names another.
+    func runSuggestion(
+        for row: Row, exercise: Exercise, excludingChain excluded: RowID?, gate: ProgressionGate? = nil
+    ) -> Suggestion? {
         guard let built = pending(row, exercise: exercise) else { return nil }
         let sets: [DoneSet] =
             switch built.0.kind {
@@ -296,7 +331,7 @@ final class SessionEvaluator {
         return suggestNext(
             pending: built.0, exercise: built.1, today: sets, history: past(exercise),
             bodyMass: bodyMass, now: now, calendar: calendar,
-            progression: progressionGate(slot: row.slot, exercise: exercise))
+            progression: gate ?? progressionGate(slot: row.slot, exercise: exercise))
     }
 
     /// The stop text of a myo, myo-match or rest-pause chain that has ended

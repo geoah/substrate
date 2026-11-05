@@ -276,7 +276,8 @@ public enum SuggestionInputs {
     }
 
     /// A side pair as one set: both sides' reps, the higher rated RPE, the
-    /// shorter hold (the weaker side, as with reps) and the later side's time.
+    /// shorter hold (the weaker side, as with reps), the limiting stop reason
+    /// and the later side's time.
     static func merged(_ first: DoneSet, with second: DoneSet) -> DoneSet {
         var pair = first
         pair.repsLeft = first.repsLeft ?? second.repsLeft
@@ -285,7 +286,9 @@ public enum SuggestionInputs {
         pair.unratedRPE = pair.rpe == nil ? [first.unratedRPE, second.unratedRPE].compactMap(\.self).max() : nil
         pair.duration = [first.duration, second.duration].compactMap(\.self).min()
         pair.reachedFailure = first.reachedFailure || second.reachedFailure
-        pair.stopReason = first.stopReason ?? second.stopReason
+        // A side that ended for form, pain or another reason limits the pair.
+        let reasons = [first.stopReason, second.stopReason].compactMap(\.self)
+        pair.stopReason = reasons.first(where: \.limitsEvidence) ?? reasons.first
         pair.completedAt = max(first.completedAt, second.completedAt)
         if pair.load == nil {
             pair.load = second.load

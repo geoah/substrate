@@ -321,7 +321,7 @@ data:
     one, so the history stays. Keep about 40 or fewer active rows, review them
     at every block review, and confirm the goal and limitations with the owner.
 
-    # Fields you write (training package version 6)
+    # Fields you write (training package version 7)
 
     Fields go under `input.properties`. `*` required, `[]` a list, no type a
     string. A reference is a record path

@@ -248,8 +248,9 @@ data:
         # the notes stay the longer rationale, folded.
         cue:
           type: string
-          description: one short line shown beside the set being done, such
-            as controlled return, pause without bouncing
+          description: a brief plain-text coaching cue for this exercise in
+            this routine slot, shown beside the set being done; longer guidance
+            belongs in notes
         # ---- planned sets (level 2; fields at level 3) ----
         sets:
           type: object
