@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.118.0](https://github.com/geoah/substrate/compare/v0.117.0...v0.118.0) (2026-11-05)
+
+
+### Added
+
+* **tasks:** tasks as cards, + as the tab bar's prominent tab, one-tap list options, reminders off until asked for ([#1192](https://github.com/geoah/substrate/issues/1192)) ([1160166](https://github.com/geoah/substrate/commit/11601667c23b00eee61bddba41ece1e4da7f527b))
+
+
+### Fixed
+
+* **apps:** turn TestFlight's notify off while each build processes, not after every upload ([#1193](https://github.com/geoah/substrate/issues/1193)) ([36cba2c](https://github.com/geoah/substrate/commit/36cba2ca973556fca033b076a67c3c63952cb83c))
+
 ## [0.117.0](https://github.com/geoah/substrate/compare/v0.116.0...v0.117.0) (2026-11-05)
 
 
