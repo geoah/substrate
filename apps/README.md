@@ -539,9 +539,18 @@ server's sign-in, which fills `{server}`, `{user}` and `{password}` in the
 notes) and `SUBSTRATE_APPLE_REVIEW_CONTACT_FIRST`, `_LAST`, `_EMAIL` and
 `_PHONE`, without which App Store Connect refuses review details.
 
-TestFlight does not notify testers of each build: `apps:testflight` turns
-"notify testers" off for every build it uploads, while App Store Connect
-processes it (`SUBSTRATE_APPLE_TESTFLIGHT_NOTIFY=1` leaves it on).
+TestFlight does not notify testers of each build. App Store Connect turns
+"notify testers" on for every build, and a group with automatic
+distribution gets a build the moment processing ends. So `apps:testflight`
+starts watching before its first upload, turns notifying off for each build
+while App Store Connect is still processing it, and once it is processed,
+adds it to every internal group that takes no build of its own
+(`SUBSTRATE_APPLE_TESTFLIGHT_NOTIFY=1` hands it over with notifying on).
+rxtx.dev's `apps/apple/apps.yaml` makes its groups that way; one made
+earlier with automatic distribution keeps it, since the API cannot change
+it, and is quiet only when the switch beats processing. A build uploaded
+any other way reaches a group without automatic distribution only when it
+is added in App Store Connect.
 
 ## Driving a debug build
 
